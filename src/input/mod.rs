@@ -2382,6 +2382,23 @@ impl State {
                     self.niri.queue_redraw_mru_output();
                 }
             }
+            Action::ViewOffset{ id, offset, } => {
+                let window = if let Some(id) = id {
+                    self.niri
+                        .layout
+                        .workspaces_mut()
+                        .find_map(|ws| ws.windows_mut().find(|w| w.id().get() == id))
+                } else {
+                    self.niri
+                        .layout
+                        .active_workspace_mut()
+                        .and_then(|ws| ws.active_window_mut())
+                };
+                if let Some(window) = window {
+                    window.set_view_offset(offset);
+                }
+                self.niri.queue_redraw_all();
+            }
         }
     }
 
