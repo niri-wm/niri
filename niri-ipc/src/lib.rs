@@ -1345,6 +1345,8 @@ pub struct Window {
     ///
     /// The timestamp comes from the monotonic clock.
     pub focus_timestamp: Option<Timestamp>,
+    /// Offset of screen for this window
+    pub view_offset: f64,
 }
 
 /// A moment in time.
