@@ -34,9 +34,11 @@ layout {
         active-color "#7fc8ff"
         inactive-color "#505050"
         urgent-color "#9b0000"
+        view-lock-color "#ffff7f"
         // active-gradient from="#80c8ff" to="#bbddff" angle=45
         // inactive-gradient from="#505050" to="#808080" angle=45 relative-to="workspace-view"
         // urgent-gradient from="#800" to="#a33" angle=45
+        // view-lock-gradient from="#7f3700" to="#380080" angle=45
     }
 
     border {
@@ -46,9 +48,11 @@ layout {
         active-color "#ffc87f"
         inactive-color "#505050"
         urgent-color "#9b0000"
+        view-lock-color "#ffff7f"
         // active-gradient from="#ffbb66" to="#ffc880" angle=45 relative-to="workspace-view"
         // inactive-gradient from="#505050" to="#808080" angle=45 relative-to="workspace-view" in="srgb-linear"
         // urgent-gradient from="#800" to="#a33" angle=45
+        // view-lock-gradient from="#7f3700" to="#380080" angle=45
     }
 
     shadow {
@@ -288,6 +292,9 @@ layout {
         // Color of the border around windows that request your attention.
         urgent-color "#9b0000"
 
+        // Color of the border around windows when the view lock is locked
+        view-lock-color "#ffff7f"
+
         // active-gradient from="#ffbb66" to="#ffc880" angle=45 relative-to="workspace-view"
         // inactive-gradient from="#505050" to="#808080" angle=45 relative-to="workspace-view" in="srgb-linear"
     }
@@ -460,6 +467,7 @@ It can be `left`, `right`, `top`, or `bottom`.
 When `gaps-between-tabs` is zero, only the first and the last tabs have rounded corners, otherwise all tabs do.
 
 `active-color`, `inactive-color`, `urgent-color`, `active-gradient`, `inactive-gradient`, `urgent-gradient` let you override the colors for the tabs.
+There is no either `view-lock-color` and `view-lock-gradient` for tabs.
 They have the same semantics as the border and focus ring colors and gradients.
 
 Tab colors are picked in this order:
