@@ -54,9 +54,13 @@ use crate::utils::spawning::{spawn, spawn_sh};
 use crate::utils::{center, get_monotonic_time, CastSessionId, ResizeEdge};
 
 pub mod backend_ext;
+#[cfg(feature = "reis")]
+pub mod eis_backend;
 pub mod move_grab;
 pub mod pick_color_grab;
 pub mod pick_window_grab;
+#[cfg(feature = "xdp-gnome-remote-desktop")]
+pub mod remote_desktop_backend;
 pub mod resize_grab;
 pub mod scroll_swipe_gesture;
 pub mod scroll_tracker;
@@ -111,6 +115,7 @@ impl<D: SeatHandler> PointerOrTouchStartData<D> {
 }
 
 impl State {
+    /// Handler for all input events.
     pub fn process_input_event<I: InputBackend + 'static>(&mut self, event: InputEvent<I>)
     where
         I::Device: 'static, // Needed for downcasting.
@@ -193,6 +198,8 @@ impl State {
         }
     }
 
+    /// Special handler for events that come from libinput. After this it should be processed
+    /// by [`Self::process_input_event`].
     pub fn process_libinput_event(&mut self, event: &mut InputEvent<LibinputInputBackend>) {
         let _span = tracy_client::span!("process_libinput_event");
 
@@ -246,9 +253,8 @@ impl State {
             let desc = TabletDescriptor::from(&device);
             tablet_seat.add_tablet::<Self>(&self.niri.display_handle, &desc);
         }
-        if device.has_capability(DeviceCapability::Touch) && self.niri.seat.get_touch().is_none() {
-            self.niri.seat.add_touch();
-        }
+
+        self.refresh_wayland_device_caps();
     }
 
     fn on_device_removed(&mut self, device: impl Device) {
@@ -263,7 +269,23 @@ impl State {
                 tablet_seat.clear_tools();
             }
         }
-        if device.has_capability(DeviceCapability::Touch) && self.niri.touch.is_empty() {
+
+        self.refresh_wayland_device_caps();
+    }
+
+    /// Updates the Wayland devices (e.g. `wl_touch`) for necessary capabilities.
+    pub fn refresh_wayland_device_caps(&mut self) {
+        let touch_cap_needed =
+            !self.niri.touch.is_empty() || self.niri.remote_desktop.needs_touch_cap();
+        if touch_cap_needed {
+            if self.niri.seat.get_touch().is_none() {
+                trace!("Adding wl_touch to wl_seat");
+                self.niri.seat.add_touch();
+            }
+        } else {
+            if self.niri.seat.get_touch().is_some() {
+                trace!("Removing wl_touch from wl_seat");
+            }
             self.niri.seat.remove_touch();
         }
     }

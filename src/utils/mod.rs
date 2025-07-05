@@ -95,6 +95,33 @@ impl Display for CastStreamId {
     }
 }
 
+/// Unique ID for a remote desktop session.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct RemoteDesktopSessionId(u64);
+
+impl RemoteDesktopSessionId {
+    pub fn next() -> Self {
+        static COUNTER: IdCounter = IdCounter::new();
+        Self(COUNTER.next())
+    }
+
+    pub fn get(self) -> u64 {
+        self.0
+    }
+}
+
+impl Display for RemoteDesktopSessionId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl From<u64> for RemoteDesktopSessionId {
+    fn from(value: u64) -> Self {
+        Self(value)
+    }
+}
+
 bitflags! {
     #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
     pub struct ResizeEdge: u32 {
