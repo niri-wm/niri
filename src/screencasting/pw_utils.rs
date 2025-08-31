@@ -121,6 +121,12 @@ struct CastInner {
     rendering_buffers: Vec<(NonNull<pw_buffer>, SyncPoint)>,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct DmaNegotiationResult {
+    modifier: Modifier,
+    plane_count: i32,
+}
+
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 enum CastState {
@@ -130,14 +136,12 @@ enum CastState {
     ConfirmationPending {
         size: Size<u32, Physical>,
         alpha: bool,
-        modifier: Modifier,
-        plane_count: i32,
+        extra_negotiation_result: DmaNegotiationResult,
     },
     Ready {
         size: Size<u32, Physical>,
         alpha: bool,
-        modifier: Modifier,
-        plane_count: i32,
+        extra_negotiation_result: DmaNegotiationResult,
         // Lazily-initialized to keep the initialization to a single place.
         damage_tracker: Option<OutputDamageTracker>,
         cursor_damage_tracker: Option<OutputDamageTracker>,
@@ -483,8 +487,10 @@ impl PipeWire {
                         *state = CastState::ConfirmationPending {
                             size: format_size,
                             alpha: format_has_alpha,
-                            modifier,
-                            plane_count: plane_count as i32,
+                            extra_negotiation_result: DmaNegotiationResult {
+                                modifier,
+                                plane_count: plane_count as i32,
+                            },
                         };
 
                         let fixated_format = FormatSet::from_iter([Format {
@@ -524,22 +530,20 @@ impl PipeWire {
                         CastState::ConfirmationPending {
                             size,
                             alpha,
-                            modifier,
-                            plane_count,
+                            extra_negotiation_result,
                         }
                         | CastState::Ready {
                             size,
                             alpha,
-                            modifier,
-                            plane_count,
+                            extra_negotiation_result,
                             ..
                         } if *alpha == format_has_alpha
-                            && *modifier == Modifier::from(format.modifier()) =>
+                            && extra_negotiation_result.modifier
+                                == Modifier::from(format.modifier()) =>
                         {
                             let size = *size;
                             let alpha = *alpha;
-                            let modifier = *modifier;
-                            let plane_count = *plane_count;
+                            let extra_negotiation_result = *extra_negotiation_result;
 
                             let (damage_tracker, cursor_damage_tracker) =
                                 if let CastState::Ready {
@@ -558,14 +562,13 @@ impl PipeWire {
                             *state = CastState::Ready {
                                 size,
                                 alpha,
-                                modifier,
-                                plane_count,
+                                extra_negotiation_result,
                                 damage_tracker,
                                 cursor_damage_tracker,
                                 last_cursor_location: None,
                             };
 
-                            plane_count
+                            extra_negotiation_result.plane_count
                         }
                         _ => {
                             // We're negotiating a single modifier, or alpha or modifier changed,
@@ -593,8 +596,10 @@ impl PipeWire {
                             *state = CastState::Ready {
                                 size: format_size,
                                 alpha: format_has_alpha,
-                                modifier,
-                                plane_count: plane_count as i32,
+                                extra_negotiation_result: DmaNegotiationResult {
+                                    modifier,
+                                    plane_count: plane_count as i32,
+                                },
                                 damage_tracker: None,
                                 cursor_damage_tracker: None,
                                 last_cursor_location: None,
@@ -684,11 +689,11 @@ impl PipeWire {
                     let (size, alpha, modifier) = if let CastState::Ready {
                         size,
                         alpha,
-                        modifier,
+                        extra_negotiation_result,
                         ..
                     } = &inner.state
                     {
-                        (*size, *alpha, *modifier)
+                        (*size, *alpha, extra_negotiation_result.modifier)
                     } else {
                         trace!("add_buffer, but not ready yet");
                         return;
