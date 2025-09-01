@@ -130,6 +130,8 @@ struct DmaNegotiationResult {
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 enum CastState {
+    // extra_negotiation_result = Some(_) means DMA sharing
+    // extra_negotiation_result = None    means SHM sharing
     ResizePending {
         pending_size: Size<u32, Physical>,
     },
