@@ -1364,7 +1364,7 @@ impl Cast {
                             elements.rev(),
                         ) {
                             Ok(sync_point) => {
-                                mark_buffer_as_good(pw_buffer, &mut self.sequence_counter);
+                                mark_buffer_after_render(pw_buffer, &mut self.sequence_counter);
                                 trace!("queueing buffer with seq={}", self.sequence_counter);
                                 self.queue_after_sync(pw_buffer, sync_point);
                                 true
@@ -1414,7 +1414,7 @@ impl Cast {
                             elements.rev(),
                         ) {
                             Ok(()) => {
-                                mark_buffer_as_good(pw_buffer, &mut self.sequence_counter);
+                                mark_buffer_after_render(pw_buffer, &mut self.sequence_counter);
                                 trace!("queueing buffer with seq={}", self.sequence_counter);
                                 self.queue_after_sync(pw_buffer, SyncPoint::signaled());
                                 true
@@ -1471,7 +1471,7 @@ impl Cast {
 
                 match clear_dmabuf(renderer, dmabuf) {
                     Ok(sync_point) => {
-                        mark_buffer_as_good(pw_buffer, &mut self.sequence_counter);
+                        mark_buffer_after_render(pw_buffer, &mut self.sequence_counter);
                         trace!("queueing clear buffer with seq={}", self.sequence_counter);
                         self.queue_after_sync(pw_buffer, sync_point);
                         true
@@ -1501,7 +1501,7 @@ impl Cast {
 
                 match clear_shmbuf(&shmbuf) {
                     Ok (()) => {
-                        mark_buffer_as_good(pw_buffer, &mut self.sequence_counter);
+                        mark_buffer_after_render(pw_buffer, &mut self.sequence_counter);
                         trace!("queueing clear buffer with seq={}", self.sequence_counter);
                         self.queue_after_sync(pw_buffer, SyncPoint::signaled());
                         true
@@ -1667,7 +1667,7 @@ unsafe fn return_unused_buffer(stream: &Stream, pw_buffer: NonNull<pw_buffer>) {
     pw_stream_queue_buffer(stream.as_raw_ptr(), pw_buffer);
 }
 
-unsafe fn mark_buffer_as_good(pw_buffer: NonNull<pw_buffer>, sequence: &mut u64) {
+unsafe fn mark_buffer_after_render(pw_buffer: NonNull<pw_buffer>, sequence: &mut u64) {
     let pw_buffer = pw_buffer.as_ptr();
     let spa_buffer = (*pw_buffer).buffer;
     let chunk = (*(*spa_buffer).datas).chunk;
