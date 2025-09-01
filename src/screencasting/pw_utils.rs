@@ -1364,7 +1364,7 @@ impl Cast {
                             elements.rev(),
                         ) {
                             Ok(sync_point) => {
-                                mark_buffer_after_render(pw_buffer, &mut self.sequence_counter);
+                                mark_buffer_after_render(pw_buffer, &mut self.sequence_counter, SharingBuf::DMA(()));
                                 trace!("queueing buffer with seq={}", self.sequence_counter);
                                 self.queue_after_sync(pw_buffer, sync_point);
                                 true
@@ -1414,7 +1414,7 @@ impl Cast {
                             elements.rev(),
                         ) {
                             Ok(()) => {
-                                mark_buffer_after_render(pw_buffer, &mut self.sequence_counter);
+                                mark_buffer_after_render(pw_buffer, &mut self.sequence_counter, SharingBuf::SHM(&shmbuf));
                                 trace!("queueing buffer with seq={}", self.sequence_counter);
                                 self.queue_after_sync(pw_buffer, SyncPoint::signaled());
                                 true
@@ -1471,7 +1471,7 @@ impl Cast {
 
                 match clear_dmabuf(renderer, dmabuf) {
                     Ok(sync_point) => {
-                        mark_buffer_after_render(pw_buffer, &mut self.sequence_counter);
+                        mark_buffer_after_render(pw_buffer, &mut self.sequence_counter, SharingBuf::DMA(()));
                         trace!("queueing clear buffer with seq={}", self.sequence_counter);
                         self.queue_after_sync(pw_buffer, sync_point);
                         true
@@ -1501,7 +1501,7 @@ impl Cast {
 
                 match clear_shmbuf(&shmbuf) {
                     Ok (()) => {
-                        mark_buffer_after_render(pw_buffer, &mut self.sequence_counter);
+                        mark_buffer_after_render(pw_buffer, &mut self.sequence_counter, SharingBuf::SHM(&shmbuf));
                         trace!("queueing clear buffer with seq={}", self.sequence_counter);
                         self.queue_after_sync(pw_buffer, SyncPoint::signaled());
                         true
@@ -1622,6 +1622,11 @@ pub struct Shmbuf {
     size: usize,
 }
 
+enum SharingBuf<'a> {
+    DMA (()),
+    SHM (&'a Shmbuf),
+}
+
 fn allocate_shmbuf(size: Size<u32, Physical>) -> anyhow::Result<Shmbuf> {
     let (w, h) = (size.w as usize, size.h as usize);
     let stride = w * SHM_BYTES_PER_PIXEL;
@@ -1667,21 +1672,31 @@ unsafe fn return_unused_buffer(stream: &Stream, pw_buffer: NonNull<pw_buffer>) {
     pw_stream_queue_buffer(stream.as_raw_ptr(), pw_buffer);
 }
 
-unsafe fn mark_buffer_after_render(pw_buffer: NonNull<pw_buffer>, sequence: &mut u64) {
+unsafe fn mark_buffer_after_render(pw_buffer: NonNull<pw_buffer>, sequence: &mut u64, buf: SharingBuf) {
     let pw_buffer = pw_buffer.as_ptr();
     let spa_buffer = (*pw_buffer).buffer;
     let chunk = (*(*spa_buffer).datas).chunk;
 
-    // With DMA-BUFs, consumers should ignore the size field, and producers are allowed
-    // to set it to 0.
-    //
-    // https://docs.pipewire.org/page_dma_buf.html
-    //
-    // However, OBS checks for size != 0 as a workaround for old compositor versions,
-    // so we set it to 1.
-    (*chunk).size = 1;
-    // Clear the corrupted flag we may have set before.
-    (*chunk).flags = SPA_CHUNK_FLAG_NONE as i32;
+    match buf {
+        SharingBuf::DMA(_) => {
+            // With DMA-BUFs, consumers should ignore the size field, and producers are allowed
+            // to set it to 0.
+            //
+            // https://docs.pipewire.org/page_dma_buf.html
+            //
+            // However, OBS checks for size != 0 as a workaround for old compositor versions,
+            // so we set it to 1.
+            (*chunk).size = 1;
+            // Clear the corrupted flag we may have set before.
+            (*chunk).flags = SPA_CHUNK_FLAG_NONE as i32;
+        }
+        SharingBuf::SHM(shmbuf) => {
+            (*chunk).size = 1;
+            (*chunk).stride = shmbuf.stride as i32;
+            (*chunk).offset = 0;
+        }
+    }
+
 
     *sequence = sequence.wrapping_add(1);
     if let Some(header) = find_meta_header(spa_buffer) {
