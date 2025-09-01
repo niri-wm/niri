@@ -240,7 +240,7 @@ fn make_video_params(
         })
     };
 
-    pipewire::spa::pod::Object {
+    pod::Object {
         type_: SpaTypes::ObjectParamFormat.as_raw(),
         id: ParamType::EnumFormat.as_raw(),
         properties: [
@@ -1617,7 +1617,7 @@ fn allocate_dmabuf(
 
 #[derive(Debug, Clone)]
 pub struct Shmbuf {
-    fd: Rc<smithay::reexports::rustix::fd::OwnedFd>,
+    fd: Rc<rustix::fd::OwnedFd>,
     stride: usize,
     size: usize,
 }
@@ -1631,21 +1631,21 @@ fn allocate_shmbuf(size: Size<u32, Physical>) -> anyhow::Result<Shmbuf> {
     let (w, h) = (size.w as usize, size.h as usize);
     let stride = w * SHM_BYTES_PER_PIXEL;
     let size = stride * h;
-    let fd = smithay::reexports::rustix::fs::memfd_create(
+    let fd = rustix::fs::memfd_create(
         "shm_buffer",
-        smithay::reexports::rustix::fs::MemfdFlags::CLOEXEC
-            | smithay::reexports::rustix::fs::MemfdFlags::ALLOW_SEALING,
+        rustix::fs::MemfdFlags::CLOEXEC
+        | rustix::fs::MemfdFlags::ALLOW_SEALING,
     )
-    .context("error creating memfd")?;
-    let _ = smithay::reexports::rustix::fs::ftruncate(&fd, size.try_into().unwrap())
+        .context("error creating memfd")?;
+    let _ = rustix::fs::ftruncate(&fd, size.try_into().unwrap())
         .context("error set size of the fd")?;
-    let _ = smithay::reexports::rustix::fs::fcntl_add_seals(
+    let _ = rustix::fs::fcntl_add_seals(
         &fd,
-        smithay::reexports::rustix::fs::SealFlags::SEAL
-            | smithay::reexports::rustix::fs::SealFlags::SHRINK
-            | smithay::reexports::rustix::fs::SealFlags::GROW,
+        rustix::fs::SealFlags::SEAL
+        | rustix::fs::SealFlags::SHRINK
+        | rustix::fs::SealFlags::GROW,
     )
-    .context("error sealing the fd")?;
+        .context("error sealing the fd")?;
     Ok(Shmbuf {
         fd: fd.into(),
         size,
@@ -1898,13 +1898,13 @@ fn clear_shmbuf(shmbuf: &Shmbuf) -> anyhow::Result<()> {
     let bytes: Vec<u8> = vec![0u8; shmbuf.size];            
     unsafe {
         let buf = rustix::mm::mmap(
-                std::ptr::null_mut(),
-                shmbuf.size as usize,
-                rustix::mm::ProtFlags::READ | rustix::mm::ProtFlags::WRITE,
-                rustix::mm::MapFlags::SHARED,
-                shmbuf.fd.clone(),
-                0,
-            )?;
+            std::ptr::null_mut(),
+            shmbuf.size as usize,
+            rustix::mm::ProtFlags::READ | rustix::mm::ProtFlags::WRITE,
+            rustix::mm::MapFlags::SHARED,
+            shmbuf.fd.clone(),
+            0,
+        )?;
         ptr::copy_nonoverlapping(bytes.as_ptr(), buf.cast(), shmbuf.size);
         let _ = rustix::mm::munmap(buf, shmbuf.size).unwrap();
     }
