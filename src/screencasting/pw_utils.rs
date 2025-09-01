@@ -297,14 +297,14 @@ fn make_video_params_for_initial_negotiation(
     refresh: u32,
     alpha: bool,
 ) -> Vec<pod::Object> {
-    let f = |alpha_| {
-        let video_formats = if alpha_ {
+    let f = |alpha| {
+        let video_formats = if alpha {
             vec![VideoFormat::BGRA]
         } else {
             vec![VideoFormat::BGRx]
         };
 
-        let fourcc = if alpha_ {
+        let fourcc = if alpha {
             Fourcc::Argb8888
         } else {
             Fourcc::Xrgb8888
