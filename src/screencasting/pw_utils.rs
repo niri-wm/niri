@@ -60,6 +60,8 @@ use crate::utils::{get_monotonic_time, CastSessionId, CastStreamId};
 // Give a 0.1 ms allowance for presentation time errors.
 const CAST_DELAY_ALLOWANCE: Duration = Duration::from_micros(100);
 const SHM_BLOCKS: usize = 1;
+const SHM_BYTES_PER_PIXEL: usize = 4;
+
 
 const CURSOR_FORMAT: spa_video_format = SPA_VIDEO_FORMAT_BGRA;
 const CURSOR_BPP: u32 = 4;
@@ -113,6 +115,7 @@ struct CastInner {
     refresh: u32,
     min_time_between_frames: Duration,
     dmabufs: HashMap<i64, Dmabuf>,
+    shmbufs: HashMap<i64, Shmbuf>,
     /// Buffers dequeued from PipeWire in process of rendering.
     ///
     /// This is an ordered list of buffers that we started rendering to and waiting for the
@@ -452,6 +455,7 @@ impl PipeWire {
             refresh,
             min_time_between_frames: Duration::ZERO,
             dmabufs: HashMap::new(),
+            shmbufs: HashMap::new(),
             rendering_buffers: Vec::new(),
         }));
 
@@ -868,7 +872,7 @@ impl PipeWire {
                         } => {
                             match extra_negotiation_result {
                                 Some(DmaNegotiationResult { modifier, .. }) => {
-                                    trace!("size={size:?}, alpha={alpha}, modifier={modifier:?}");
+                                    trace!("pw stream: add_buffer (dma), size={size:?}, alpha={alpha}, modifier={modifier:?}");
                                     unsafe {
                                         let spa_buffer = (*buffer).buffer;
 
@@ -928,7 +932,32 @@ impl PipeWire {
                                     }
                                 },
                                 None => {
-                                    warn!("pw stream: shared memory sharing hasn't been implemented")
+                                    trace!("pw stream: add_buffer (shm), size={size:?}, alpha={alpha}");
+                                    unsafe {
+                                        let spa_buffer = (*buffer).buffer;
+
+                                        let shmbuf = match allocate_shmbuf(size) {
+                                            Ok(x) => x,
+                                            Err(err) => {
+                                                warn!("error allocating shmbuf: {err:?}");
+                                                stop_cast();
+                                                return;
+                                            }
+                                        };
+
+                                        assert_eq!((*spa_buffer).n_datas as usize, SHM_BLOCKS);
+
+                                        let spa_data = (*spa_buffer).datas;
+                                        assert!((*spa_data).type_ & (1 << DataType::MemFd.as_raw()) > 0);
+
+                                        (*spa_data).type_ = DataType::MemFd.as_raw();
+                                        (*spa_data).maxsize = shmbuf.size as u32;
+                                        (*spa_data).fd = shmbuf.fd.as_raw_fd() as i64;
+                                        (*spa_data).flags = SPA_DATA_FLAG_READWRITE;
+
+                                        let fd = (*(*spa_buffer).datas).fd;
+                                        assert!(inner.shmbufs.insert(fd, shmbuf).is_none());
+                                    }
                                 }
                             }
                         },
@@ -951,10 +980,21 @@ impl PipeWire {
                     unsafe {
                         let spa_buffer = (*buffer).buffer;
                         let spa_data = (*spa_buffer).datas;
-                        assert!((*spa_buffer).n_datas > 0);
 
-                        let fd = (*spa_data).fd;
-                        inner.dmabufs.remove(&fd);
+                        if (*spa_data).type_ == DataType::DmaBuf.as_raw() {
+                            trace!("pw stream: remove_buffer (dma)");
+                            assert!((*spa_buffer).n_datas > 0);
+
+                            let fd = (*spa_data).fd;
+                            inner.dmabufs.remove(&fd);
+                        } else if (*spa_data).type_ == DataType::MemFd.as_raw() {
+                            trace!("pw stream: remove_buffer (shm)");
+                            assert_eq!((*spa_buffer).n_datas, SHM_BLOCKS as u32);
+                            let fd = (*spa_data).fd;
+                            inner.shmbufs.remove(&fd);
+                        } else {
+                            warn!("pw stream: remove_buffer (unknown), impossible case happens, {:?}", (*spa_data).type_);
+                        }
                     }
                 }
             })
@@ -1475,6 +1515,40 @@ fn allocate_dmabuf(
         .context("error exporting GBM buffer object as dmabuf")?;
     Ok(dmabuf)
 }
+
+#[derive(Debug, Clone)]
+pub struct Shmbuf {
+    fd: Rc<smithay::reexports::rustix::fd::OwnedFd>,
+    stride: usize,
+    size: usize,
+}
+
+fn allocate_shmbuf(size: Size<u32, Physical>) -> anyhow::Result<Shmbuf> {
+    let (w, h) = (size.w as usize, size.h as usize);
+    let stride = w * SHM_BYTES_PER_PIXEL;
+    let size = stride * h;
+    let fd = smithay::reexports::rustix::fs::memfd_create(
+        "shm_buffer",
+        smithay::reexports::rustix::fs::MemfdFlags::CLOEXEC
+            | smithay::reexports::rustix::fs::MemfdFlags::ALLOW_SEALING,
+    )
+    .context("error creating memfd")?;
+    let _ = smithay::reexports::rustix::fs::ftruncate(&fd, size.try_into().unwrap())
+        .context("error set size of the fd")?;
+    let _ = smithay::reexports::rustix::fs::fcntl_add_seals(
+        &fd,
+        smithay::reexports::rustix::fs::SealFlags::SEAL
+            | smithay::reexports::rustix::fs::SealFlags::SHRINK
+            | smithay::reexports::rustix::fs::SealFlags::GROW,
+    )
+    .context("error sealing the fd")?;
+    Ok(Shmbuf {
+        fd: fd.into(),
+        size,
+        stride,
+    })
+}
+
 
 unsafe fn return_unused_buffer(stream: &Stream, pw_buffer: NonNull<pw_buffer>) {
     // pw_stream_return_buffer() requires too new PipeWire (1.4.0). So, mark as
