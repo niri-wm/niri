@@ -1416,11 +1416,13 @@ impl Cast {
                             Ok(()) => {
                                 mark_buffer_as_good(pw_buffer, &mut self.sequence_counter);
                                 trace!("queueing buffer with seq={}", self.sequence_counter);
+                                self.queue_after_sync(pw_buffer, SyncPoint::signaled());
                                 true
                             }
                             Err(err) => {
                                 warn!("error rendering to shmbuf: {err:?}");
                                 return_unused_buffer(&self.stream, pw_buffer);
+                                self.queue_after_sync(pw_buffer, SyncPoint::signaled());
                                 false
                             }
                         }
@@ -1501,6 +1503,7 @@ impl Cast {
                     Ok (()) => {
                         mark_buffer_as_good(pw_buffer, &mut self.sequence_counter);
                         trace!("queueing clear buffer with seq={}", self.sequence_counter);
+                        self.queue_after_sync(pw_buffer, SyncPoint::signaled());
                         true
                     }
                     Err(err) => {
