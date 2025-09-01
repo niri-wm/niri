@@ -437,6 +437,22 @@ impl PipeWire {
                     );
                     inner.min_time_between_frames = min_frame_time;
 
+                    // We have following cases when param_changed:
+                    //
+                    // 1. Modifier exists and its flags contain DONT_FIXATE
+                    //
+                    //    Do test allocation, set CastState to ConfirmationPending and send param
+                    //    again.
+                    //
+                    // 2. Modifier exists and it doesn't need fixation
+                    //
+                    //    Do test allocation to ensure the modifier work, then set CastState to
+                    //    Ready. Then set buffer to DMA.
+                    //
+                    // 3. Modifier doesn't exist
+                    //
+                    //    set CastState to Ready and set buffer to SHM.
+
                     let object = pod.as_object().unwrap();
                     let Some(prop_modifier) =
                         object.find_prop(spa::utils::Id(FormatProperties::VideoModifier.0))
