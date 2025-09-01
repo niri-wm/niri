@@ -1457,28 +1457,64 @@ impl Cast {
         let buffer = pw_buffer.as_ptr();
 
         unsafe {
-            let spa_buffer = (*buffer).buffer;
+            if (*(*(*buffer).buffer).datas).type_ == DataType::DmaBuf.as_raw() {
+                let spa_buffer = (*buffer).buffer;
 
-            if self.cursor_mode == CursorMode::Metadata {
-                add_invisible_cursor(spa_buffer);
+                if self.cursor_mode == CursorMode::Metadata {
+                    add_invisible_cursor(spa_buffer);
+                }
+
+                let fd = (*(*spa_buffer).datas).fd;
+                let dmabuf = self.inner.borrow().dmabufs[&fd].clone();
+
+                match clear_dmabuf(renderer, dmabuf) {
+                    Ok(sync_point) => {
+                        mark_buffer_as_good(pw_buffer, &mut self.sequence_counter);
+                        trace!("queueing clear buffer with seq={}", self.sequence_counter);
+                        self.queue_after_sync(pw_buffer, sync_point);
+                        true
+                    }
+                    Err(err) => {
+                        warn!("error clearing dmabuf: {err:?}");
+                        return_unused_buffer(&self.stream, pw_buffer);
+                        false
+                    }
+                }
+            } else if (*(*(*buffer).buffer).datas).type_ == DataType::MemFd.as_raw() {
+                let blocks = (*(*buffer).buffer).n_datas;
+
+                if blocks as usize != SHM_BLOCKS {
+                    warn!("expected {SHM_BLOCKS} blocks, got {blocks}");
+                    return false;
+                };
+
+                let spa_buffer = (*buffer).buffer;
+
+                if self.cursor_mode == CursorMode::Metadata {
+                    add_invisible_cursor(spa_buffer);
+                }
+
+                let fd = (*(*spa_buffer).datas).fd;
+                let shmbuf = self.inner.borrow().shmbufs[&fd].clone();
+
+                match clear_shmbuf(shmbuf) {
+                    Ok (()) => {
+                        mark_buffer_as_good(pw_buffer, &mut self.sequence_counter);
+                        trace!("queueing clear buffer with seq={}", self.sequence_counter);
+                        true
+
+                    }
+                    Err(err) => {
+                        warn!("error clearing shmbuf: {err:?}");
+                        return_unused_buffer(&self.stream, pw_buffer);
+                        false
+                    }
+                }
+            } else {
+                warn!("unknown data type in dequeue_buffer_and_clear");
+                false
             }
 
-            let fd = (*(*spa_buffer).datas).fd;
-            let dmabuf = self.inner.borrow().dmabufs[&fd].clone();
-
-            match clear_dmabuf(renderer, dmabuf) {
-                Ok(sync_point) => {
-                    mark_buffer_as_good(pw_buffer, &mut self.sequence_counter);
-                    trace!("queueing clear buffer with seq={}", self.sequence_counter);
-                    self.queue_after_sync(pw_buffer, sync_point);
-                    true
-                }
-                Err(err) => {
-                    warn!("error clearing dmabuf: {err:?}");
-                    return_unused_buffer(&self.stream, pw_buffer);
-                    false
-                }
-            }
         }
     }
 }
@@ -1839,4 +1875,21 @@ unsafe fn add_cursor_metadata(
         bitmap_meta.size.height = size.h as _;
         bitmap_meta.stride = size.w * CURSOR_BPP as i32;
     }
+}
+
+fn clear_shmbuf(shmbuf: Shmbuf) -> anyhow::Result<()> {
+    let bytes: Vec<u8> = vec![0u8; shmbuf.size];            
+    unsafe {
+        let buf = rustix::mm::mmap(
+                std::ptr::null_mut(),
+                shmbuf.size as usize,
+                rustix::mm::ProtFlags::READ | rustix::mm::ProtFlags::WRITE,
+                rustix::mm::MapFlags::SHARED,
+                shmbuf.fd.clone(),
+                0,
+            )?;
+        ptr::copy_nonoverlapping(bytes.as_ptr(), buf.cast(), shmbuf.size);
+        let _ = rustix::mm::munmap(buf, shmbuf.size).unwrap();
+    }
+    Ok(())
 }
