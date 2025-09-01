@@ -1497,12 +1497,11 @@ impl Cast {
                 let fd = (*(*spa_buffer).datas).fd;
                 let shmbuf = self.inner.borrow().shmbufs[&fd].clone();
 
-                match clear_shmbuf(shmbuf) {
+                match clear_shmbuf(&shmbuf) {
                     Ok (()) => {
                         mark_buffer_as_good(pw_buffer, &mut self.sequence_counter);
                         trace!("queueing clear buffer with seq={}", self.sequence_counter);
                         true
-
                     }
                     Err(err) => {
                         warn!("error clearing shmbuf: {err:?}");
@@ -1877,7 +1876,7 @@ unsafe fn add_cursor_metadata(
     }
 }
 
-fn clear_shmbuf(shmbuf: Shmbuf) -> anyhow::Result<()> {
+fn clear_shmbuf(shmbuf: &Shmbuf) -> anyhow::Result<()> {
     let bytes: Vec<u8> = vec![0u8; shmbuf.size];            
     unsafe {
         let buf = rustix::mm::mmap(
