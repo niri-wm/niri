@@ -1422,7 +1422,6 @@ impl Cast {
                             Err(err) => {
                                 warn!("error rendering to shmbuf: {err:?}");
                                 return_unused_buffer(&self.stream, pw_buffer);
-                                self.queue_after_sync(pw_buffer, SyncPoint::signaled());
                                 false
                             }
                         }
