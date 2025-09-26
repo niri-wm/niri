@@ -907,6 +907,7 @@ mod tests {
                 Mod+Shift+E allow-inhibiting=false { quit skip-confirmation=true; }
                 Mod+WheelScrollDown cooldown-ms=150 { focus-workspace-down; }
                 Super+Alt+S allow-when-locked=true { spawn-sh "pkill orca || exec orca"; }
+                Mod release=true { toggle-overview; }
             }
 
             switch-events {
@@ -2163,6 +2164,21 @@ mod tests {
                         release: false,
                         cooldown: None,
                         allow_when_locked: true,
+                        allow_inhibiting: true,
+                        hotkey_overlay_title: None,
+                    },
+                    Bind {
+                        key: Key {
+                            trigger: KeyCompositor,
+                            modifiers: Modifiers(
+                                0x0,
+                            ),
+                        },
+                        action: ToggleOverview,
+                        repeat: true,
+                        release: true,
+                        cooldown: None,
+                        allow_when_locked: false,
                         allow_inhibiting: true,
                         hotkey_overlay_title: None,
                     },
