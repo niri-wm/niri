@@ -95,6 +95,15 @@ binds {
 
 These will only trigger if no other keys were released and no keys or mouse buttons were pressed after the bound key was pressed.
 
+Note that the modifier state is updated before binds are evaluated, so if you want to configure a modifier key as both a normal bind and a release bind the entries are slightly different.
+
+```kdl
+binds {
+    Alt+Ctrl+Control_L repeat=false { spawn "wpctl" "set-mute" "@DEFAULT_AUDIO_SOURCE@" "0"; }
+    Alt+Control_L release=true { spawn "wpctl" "set-mute" "@DEFAULT_AUDIO_SOURCE@" "1"; }
+}
+```
+
 ### Scroll Bindings
 
 You can bind mouse wheel scroll ticks using the following syntax.
