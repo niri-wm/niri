@@ -150,6 +150,7 @@ impl From<MruBind> for Bind {
             key: x.key,
             action: Action::from(x.action),
             repeat: true,
+            release: false,
             cooldown: None,
             allow_when_locked: false,
             allow_inhibiting: x.allow_inhibiting,

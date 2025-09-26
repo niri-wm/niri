@@ -81,6 +81,20 @@ binds {
 
 This is mostly useful for the scroll bindings.
 
+### Release bindings
+
+<sup>Since: next release</sup>
+
+Binds can be set to trigger on release instead of on the initial key press. This is mostly useful when you want to bind a modifier key to an action, as it avoids unwanted triggering when you're trying to use other binds involving that modifier.
+
+```kdl
+binds {
+    Alt_L release=true { toggle-overview; }
+}
+```
+
+These will only trigger if no other keys were released and no keys or mouse buttons were pressed after the bound key was pressed.
+
 ### Scroll Bindings
 
 You can bind mouse wheel scroll ticks using the following syntax.
