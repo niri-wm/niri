@@ -93,14 +93,14 @@ binds {
 }
 ```
 
-These will only trigger if no other keys were released and no keys or mouse buttons were pressed after the bound key was pressed.
+These will normally only trigger if no other keys were released and no keys or mouse buttons were pressed after the bound key was pressed. If you want one to always trigger you should also set `allow-invalidation=false`.
 
 Note that the modifier state is updated before binds are evaluated, so if you want to configure a modifier key as both a normal bind and a release bind the entries are slightly different.
 
 ```kdl
 binds {
     Alt+Ctrl+Control_L repeat=false { spawn "wpctl" "set-mute" "@DEFAULT_AUDIO_SOURCE@" "0"; }
-    Alt+Control_L release=true { spawn "wpctl" "set-mute" "@DEFAULT_AUDIO_SOURCE@" "1"; }
+    Alt+Control_L release=true allow-invalidation=false { spawn "wpctl" "set-mute" "@DEFAULT_AUDIO_SOURCE@" "1"; }
 }
 ```
 
