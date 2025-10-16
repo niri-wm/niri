@@ -501,6 +501,9 @@ pub enum Action {
     FocusFloating,
     FocusTiling,
     SwitchFocusBetweenFloatingAndTiling,
+    ToggleFloatingLayout,
+    HideFloatingLayout,
+    UnhideFloatingLayout,
     #[knuffel(skip)]
     MoveFloatingWindowById {
         id: Option<u64>,
@@ -876,6 +879,9 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::SwitchFocusBetweenFloatingAndTiling {} => {
                 Self::SwitchFocusBetweenFloatingAndTiling
             }
+            niri_ipc::Action::ToggleFloatingLayout {} => Self::ToggleFloatingLayout,
+            niri_ipc::Action::HideFloatingLayout {} => Self::HideFloatingLayout,
+            niri_ipc::Action::UnhideFloatingLayout {} => Self::UnhideFloatingLayout,
             niri_ipc::Action::MoveFloatingWindow { id, x, y } => {
                 Self::MoveFloatingWindowById { id, x, y }
             }
