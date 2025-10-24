@@ -16,7 +16,7 @@ pub struct Input {
     pub trackpoint: Trackpoint,
     pub trackball: Trackball,
     pub tablet: Tablet,
-    pub touch: Touch,
+    pub touch_screens: TouchScreens,
     pub disable_power_key_handling: bool,
     pub warp_mouse_to_focus: Option<WarpMouseToFocus>,
     pub focus_follows_mouse: Option<FocusFollowsMouse>,
@@ -39,8 +39,8 @@ pub struct InputPart {
     pub trackball: Option<Trackball>,
     #[knuffel(child)]
     pub tablet: Option<Tablet>,
-    #[knuffel(child)]
-    pub touch: Option<Touch>,
+    #[knuffel(children(name = "touch"))]
+    pub touch_screens: TouchScreens,
     #[knuffel(child)]
     pub disable_power_key_handling: Option<Flag>,
     #[knuffel(child)]
@@ -64,15 +64,7 @@ impl MergeWith<InputPart> for Input {
             workspace_auto_back_and_forth,
         );
 
-        merge_clone!(
-            (self, part),
-            touchpad,
-            mouse,
-            trackpoint,
-            trackball,
-            tablet,
-            touch,
-        );
+        merge_clone!((self, part), touchpad, mouse, trackpoint, trackball, tablet);
 
         merge_clone_opt!(
             (self, part),
@@ -81,6 +73,10 @@ impl MergeWith<InputPart> for Input {
             mod_key,
             mod_key_nested,
         );
+
+        self.touch_screens
+            .0
+            .extend(part.touch_screens.0.iter().cloned());
     }
 }
 
