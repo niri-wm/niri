@@ -351,8 +351,10 @@ impl From<TapButtonMap> for input::TapButtonMap {
     }
 }
 
-#[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]
+#[derive(knuffel::Decode, Debug, Clone, PartialEq)]
 pub struct Tablet {
+    #[knuffel(argument)]
+    pub name: Option<String>,
     #[knuffel(child)]
     pub off: bool,
     #[knuffel(child, unwrap(arguments))]
@@ -361,6 +363,42 @@ pub struct Tablet {
     pub map_to_output: Option<String>,
     #[knuffel(child)]
     pub left_handed: bool,
+}
+
+const DEFAULT_TABLET: Tablet = Tablet {
+    name: None,
+    off: false,
+    calibration_matrix: None,
+    map_to_output: None,
+    left_handed: false,
+};
+impl Default for Tablet {
+    fn default() -> Self {
+        DEFAULT_TABLET
+    }
+}
+
+#[derive(Debug, Default, PartialEq)]
+pub struct Tablets(pub Vec<Tablet>);
+
+impl FromIterator<Tablet> for Tablets {
+    fn from_iter<T: IntoIterator<Item = Tablet>>(iter: T) -> Self {
+        Self(Vec::from_iter(iter))
+    }
+}
+
+impl Tablets {
+    pub fn find<'a>(&'a self, name: Option<&str>) -> &'a Tablet {
+        name.and_then(|name| {
+            self.0.iter().find(|t| {
+                t.name
+                    .as_deref()
+                    .is_some_and(|n| n.eq_ignore_ascii_case(name))
+            })
+        })
+        .or_else(|| self.0.iter().find(|t| t.name.is_none()))
+        .unwrap_or(&DEFAULT_TABLET)
+    }
 }
 
 #[derive(knuffel::Decode, Debug, Clone, PartialEq)]
