@@ -132,7 +132,7 @@ use crate::input::scroll_swipe_gesture::ScrollSwipeGesture;
 use crate::input::scroll_tracker::ScrollTracker;
 use crate::input::{
     apply_libinput_settings, mods_with_finger_scroll_binds, mods_with_mouse_binds,
-    mods_with_wheel_binds, TabletData,
+    mods_with_wheel_binds, DeviceData, TabletData,
 };
 use crate::ipc::server::IpcServer;
 use crate::layer::mapped::LayerSurfaceRenderElement;
@@ -265,7 +265,7 @@ pub struct Niri {
     /// startup, libinput will immediately send a closed event.
     pub is_lid_closed: bool,
 
-    pub devices: HashSet<input::Device>,
+    pub devices: HashMap<input::Device, DeviceData>,
     pub tablets: HashMap<input::Device, TabletData>,
     pub touch: HashSet<input::Device>,
 
@@ -1633,7 +1633,7 @@ impl State {
 
         if libinput_config_changed {
             let config = self.niri.config.borrow();
-            for mut device in self.niri.devices.iter().cloned() {
+            for mut device in self.niri.devices.keys().cloned() {
                 apply_libinput_settings(&config.input, &mut device);
             }
         }
@@ -2500,7 +2500,7 @@ impl Niri {
             monitors_active: true,
             is_lid_closed: false,
 
-            devices: HashSet::new(),
+            devices: HashMap::new(),
             tablets: HashMap::new(),
             touch: HashSet::new(),
 

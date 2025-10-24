@@ -69,6 +69,11 @@ use backend_ext::{NiriInputBackend as InputBackend, NiriInputDevice as _};
 
 pub const DOUBLE_CLICK_TIME: Duration = Duration::from_millis(400);
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct DeviceData {
+    pub name: String,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TabletData {
     pub aspect_ratio: f64,
@@ -198,7 +203,9 @@ impl State {
 
         match event {
             InputEvent::DeviceAdded { device } => {
-                self.niri.devices.insert(device.clone());
+                let name = device.name().to_string();
+                let data = DeviceData { name };
+                self.niri.devices.insert(device.clone(), data);
 
                 if device.has_capability(input::DeviceCapability::TabletTool) {
                     match device.size() {
