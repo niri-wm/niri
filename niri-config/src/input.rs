@@ -367,14 +367,51 @@ pub struct Tablet {
     pub left_handed: bool,
 }
 
-#[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]
+#[derive(knuffel::Decode, Debug, Clone, PartialEq)]
 pub struct Touch {
+    #[knuffel(argument)]
+    pub name: Option<String>,
     #[knuffel(child)]
     pub off: bool,
     #[knuffel(child, unwrap(arguments))]
     pub calibration_matrix: Option<Vec<f32>>,
     #[knuffel(child, unwrap(argument))]
     pub map_to_output: Option<String>,
+}
+
+const DEFAULT_TOUCH: Touch = Touch {
+    name: None,
+    off: false,
+    calibration_matrix: None,
+    map_to_output: None,
+};
+impl Default for Touch {
+    fn default() -> Self {
+        DEFAULT_TOUCH
+    }
+}
+
+#[derive(Debug, Default, PartialEq)]
+pub struct TouchScreens(pub Vec<Touch>);
+
+impl FromIterator<Touch> for TouchScreens {
+    fn from_iter<T: IntoIterator<Item = Touch>>(iter: T) -> Self {
+        Self(Vec::from_iter(iter))
+    }
+}
+
+impl TouchScreens {
+    pub fn find<'a>(&'a self, name: Option<&str>) -> &'a Touch {
+        name.and_then(|name| {
+            self.0.iter().find(|t| {
+                t.name
+                    .as_deref()
+                    .is_some_and(|n| n.eq_ignore_ascii_case(name))
+            })
+        })
+        .or_else(|| self.0.iter().find(|t| t.name.is_none()))
+        .unwrap_or(&DEFAULT_TOUCH)
+    }
 }
 
 #[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
