@@ -299,27 +299,32 @@ impl State {
     where
         I::Device: 'static,
     {
-        let device_output = event.device().output(self);
+        let device = event.device();
+        let device_output = device.output(self);
         let device_output = device_output.as_ref();
-        let (target_geo, keep_ratio, px, transform) =
-            if let Some(output) = device_output.or_else(|| self.niri.output_for_tablet()) {
-                (
-                    self.niri.global_space.output_geometry(output).unwrap(),
-                    true,
-                    1. / output.current_scale().fractional_scale(),
-                    output.current_transform(),
-                )
-            } else {
-                let geo = self.global_bounding_rectangle()?;
+        let data = (&device as &dyn Any)
+            .downcast_ref::<input::Device>()
+            .and_then(|device| self.niri.devices.get(device));
+        let (target_geo, keep_ratio, px, transform) = if let Some(output) =
+            device_output.or_else(|| self.niri.output_for_tablet(data.map(|d| d.name.as_ref())))
+        {
+            (
+                self.niri.global_space.output_geometry(output).unwrap(),
+                true,
+                1. / output.current_scale().fractional_scale(),
+                output.current_transform(),
+            )
+        } else {
+            let geo = self.global_bounding_rectangle()?;
 
-                // FIXME: this 1 px size should ideally somehow be computed for the rightmost output
-                // corresponding to the position on the right when clamping.
-                let output = self.niri.global_space.outputs().next().unwrap();
-                let scale = output.current_scale().fractional_scale();
+            // FIXME: this 1 px size should ideally somehow be computed for the rightmost output
+            // corresponding to the position on the right when clamping.
+            let output = self.niri.global_space.outputs().next().unwrap();
+            let scale = output.current_scale().fractional_scale();
 
-                // Do not keep ratio for the unified mode as this is what OpenTabletDriver expects.
-                (geo, false, 1. / scale, Transform::Normal)
-            };
+            // Do not keep ratio for the unified mode as this is what OpenTabletDriver expects.
+            (geo, false, 1. / scale, Transform::Normal)
+        };
 
         let mut pos = {
             let size = transform.invert().transform_size(target_geo.size);
@@ -4922,7 +4927,7 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
 
     let is_tablet = device.has_capability(input::DeviceCapability::TabletTool);
     if is_tablet {
-        let c = &config.tablet;
+        let c = config.tablets.find(Some(device.name()));
         let _ = device.config_send_events_set_mode(if c.off {
             input::SendEventsMode::DISABLED
         } else {

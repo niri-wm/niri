@@ -1494,7 +1494,7 @@ impl State {
             || config.input.mouse != old_config.input.mouse
             || config.input.trackball != old_config.input.trackball
             || config.input.trackpoint != old_config.input.trackpoint
-            || config.input.tablet != old_config.input.tablet
+            || config.input.tablets != old_config.input.tablets
             || config.input.touch_screens != old_config.input.touch_screens
         {
             libinput_config_changed = true;
@@ -3578,9 +3578,9 @@ impl Niri {
             .map(|(_, m)| m.window.clone())
     }
 
-    pub fn output_for_tablet(&self) -> Option<&Output> {
+    pub fn output_for_tablet(&self, name: Option<&str>) -> Option<&Output> {
         let config = self.config.borrow();
-        let map_to_output = config.input.tablet.map_to_output.as_ref();
+        let map_to_output = config.input.tablets.find(name).map_to_output.as_ref();
         map_to_output.and_then(|name| self.output_by_name_match(name))
     }
 
