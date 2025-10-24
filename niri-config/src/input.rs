@@ -777,6 +777,47 @@ mod tests {
     }
 
     #[test]
+    fn parse_touch_screens_name() {
+        // Test no name and name provided
+        let parsed = do_parse(
+            r#"
+            touch {
+                map-to-output "eDP-1"
+            }
+
+            touch "ELAN9009:00 04F3:2F2A" {
+                map-to-output "DP-1"
+            }
+            "#,
+        );
+
+        assert_debug_snapshot!(parsed.touch_screens, @r#"
+        TouchScreens(
+            [
+                Touch {
+                    name: None,
+                    off: false,
+                    calibration_matrix: None,
+                    map_to_output: Some(
+                        "eDP-1",
+                    ),
+                },
+                Touch {
+                    name: Some(
+                        "ELAN9009:00 04F3:2F2A",
+                    ),
+                    off: false,
+                    calibration_matrix: None,
+                    map_to_output: Some(
+                        "DP-1",
+                    ),
+                },
+            ],
+        )
+        "#);
+    }
+
+    #[test]
     fn scroll_factor_h_v_factors() {
         let sf = ScrollFactor {
             base: Some(FloatOrInt(2.0)),
