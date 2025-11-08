@@ -291,12 +291,13 @@ fn make_video_params(
     }
 }
 
-fn make_video_params_for_initial_negotiation(
+/// this function return an extra Vec<u8> to avoid extra allocation when building Pod
+fn make_video_params_for_initial_negotiation_with_extra_buffer(
     possible_modifiers: &FormatSet,
     size: Size<u32, Physical>,
     refresh: u32,
     alpha: bool,
-) -> Vec<pod::Object> {
+) -> Vec<(pod::Object, Vec<u8>)> {
     let f = |alpha| {
         let video_formats = if alpha {
             vec![VideoFormat::BGRA]
@@ -318,34 +319,28 @@ fn make_video_params_for_initial_negotiation(
         trace!("offering: {modifiers:?}");
 
         if modifiers.len() == 0 {
-            vec![make_video_params(
-                &video_formats,
-                &vec![],
-                size,
-                refresh,
-                false,
-            )]
+            vec![
+                (make_video_params(&video_formats, &vec![], size, refresh, false), Vec::new()),
+            ]
         } else {
             vec![
-                make_video_params(&video_formats, &modifiers, size, refresh, false),
-                make_video_params(&video_formats, &vec![], size, refresh, false),
+                (make_video_params(&video_formats, &modifiers, size, refresh, false), Vec::new()),
+                (make_video_params(&video_formats, &vec![], size, refresh, false), Vec::new()),
             ]
         }
     };
-    let pod_objects = if alpha {
+    let pod_objects_with_extra_buffer = if alpha {
         [f(true), f(false)].concat()
     } else {
         f(false)
     };
-    pod_objects
+    pod_objects_with_extra_buffer
 }
 
 macro_rules! make_video_params_for_initial_negotiation_macro {
     ($params:ident, $formats:expr, $size:expr, $refresh:expr, $alpha:expr) => {
-        let $params = make_video_params_for_initial_negotiation($formats, $size, $refresh, $alpha);
-        let mut obj_with_buffer: Vec<(&pod::Object, Vec<u8>)> =
-            $params.iter().map(|obj| (obj, Vec::new())).collect();
-        let $params: Vec<_> = obj_with_buffer
+        let mut $params = make_video_params_for_initial_negotiation_with_extra_buffer($formats, $size, $refresh, $alpha);
+        let $params: Vec<_> = $params
             .iter_mut()
             .map(|(obj, buf)| make_pod(buf, (*obj).clone()))
             .collect();
