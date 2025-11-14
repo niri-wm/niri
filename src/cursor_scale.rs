@@ -28,6 +28,7 @@
 
 use std::time::Instant;
 
+use niri_config::ShakeConfig;
 use smithay::utils::{Logical, Point};
 
 use crate::animation::{Animation, Clock, Curve};
@@ -39,46 +40,31 @@ const TOLERANCE: f64 = 1.0;
 
 #[derive(Debug, Clone)]
 pub struct CursorScaleParams {
-    /// Maximum scale multiplier for the cursor (e.g., 2.5 = 250% size).
-    pub max_mult: f64,
-
-    /// Time in milliseconds before cursor returns to normal size after movement stops.
-    pub inactivity_timeout_ms: u64,
-
-    /// Duration in milliseconds for the expansion animation.
-    pub expand_duration_ms: u64,
-
-    /// Duration in milliseconds for the decay (shrink) animation.
-    pub decay_duration_ms: u64,
-
-    /// Time window in milliseconds for collecting movement history.
-    /// Positions older than this are discarded.
-    pub shake_interval_ms: u64,
-
-    /// Minimum shake factor (distance/diagonal ratio) to trigger cursor scaling.
-    /// KDE uses 2.0: path must be at least 2x the bounding box diagonal.
-    pub shake_sensitivity: f64,
-
-    /// Minimum diagonal size in pixels of the bounding box to consider as a shake.
-    /// Prevents tiny movements from triggering the effect.
-    pub min_diagonal: f64,
+    off: bool,
+    max_mult: f64,
+    inactivity_timeout_ms: u64,
+    expand_duration_ms: u64,
+    decay_duration_ms: u64,
+    shake_interval_ms: u64,
+    shake_sensitivity: f64,
+    min_diagonal: f64,
 }
 
-impl Default for CursorScaleParams {
-    fn default() -> Self {
+impl From<ShakeConfig> for CursorScaleParams {
+    fn from(config: ShakeConfig) -> Self {
         Self {
-            max_mult: 4.5,
-            inactivity_timeout_ms: 250,
-            expand_duration_ms: 200,
-            decay_duration_ms: 300,
-            shake_interval_ms: 400,
-            shake_sensitivity: 2.0,
-            min_diagonal: 100.0,
+            off: config.off,
+            max_mult: config.max_multiplier,
+            inactivity_timeout_ms: config.inactivity_timeout_ms,
+            expand_duration_ms: config.expand_duration_ms,
+            decay_duration_ms: config.decay_duration_ms,
+            shake_interval_ms: config.shake_interval_ms,
+            shake_sensitivity: config.sensitivity,
+            min_diagonal: config.min_diagonal,
         }
     }
 }
 
-/// A single point in the cursor movement history.
 #[derive(Debug, Clone)]
 struct HistoryItem {
     position: Point<f64, Logical>,
@@ -88,48 +74,24 @@ struct HistoryItem {
 /// Tracks cursor movement and detects shake gestures to scale the cursor.
 #[derive(Debug)]
 pub struct CursorScaleTracker {
-    /// History of cursor positions within the shake detection window.
     history: Vec<HistoryItem>,
-
-    /// Timestamp of the last cursor movement.
     last_motion_instant: Option<Instant>,
-
-    /// Current cursor scale multiplier (1.0 = normal size).
     current_mult: f64,
-
-    /// Active expansion animation (enlarging cursor).
     expand_anim: Option<Animation>,
-
-    /// Active decay animation (shrinking cursor back to normal).
     decay_anim: Option<Animation>,
-
-    /// Timestamp of the last cursor expansion (for cooldown).
     last_expand_instant: Option<Instant>,
-
-    /// Configuration parameters.
     params: CursorScaleParams,
-
-    /// Animation clock for creating timed animations.
     clock: Clock,
 }
 
-impl Default for CursorScaleTracker {
-    fn default() -> Self {
-        Self {
-            history: Vec::new(),
-            last_motion_instant: None,
-            current_mult: 1.0,
-            expand_anim: None,
-            decay_anim: None,
-            last_expand_instant: None,
-            params: CursorScaleParams::default(),
-            clock: Clock::default(),
-        }
-    }
+/// Checks if two movement deltas have the same sign (direction).
+/// Movements smaller than TOLERANCE are considered direction-neutral.
+fn same_sign(a: f64, b: f64) -> bool {
+    (a >= -TOLERANCE && b >= -TOLERANCE) || (a <= TOLERANCE && b <= TOLERANCE)
 }
 
 impl CursorScaleTracker {
-    pub fn new(clock: Clock, params: CursorScaleParams) -> Self {
+    pub fn new(clock: Clock, params: impl Into<CursorScaleParams>) -> Self {
         Self {
             history: Vec::new(),
             last_motion_instant: None,
@@ -137,25 +99,20 @@ impl CursorScaleTracker {
             expand_anim: None,
             decay_anim: None,
             last_expand_instant: None,
-            params,
+            params: params.into(),
             clock,
         }
     }
 
-    /// Checks if two movement deltas have the same sign (direction).
-    /// Movements smaller than TOLERANCE are considered direction-neutral.
-    fn same_sign(a: f64, b: f64) -> bool {
-        (a >= -TOLERANCE && b >= -TOLERANCE) || (a <= TOLERANCE && b <= TOLERANCE)
+    pub fn reload(&mut self, params: impl Into<CursorScaleParams>) {
+        self.params = params.into();
     }
 
     /// Updates the tracker with a new cursor position.
-    //
-    // This is the core of the shake detection algorithm. It:
-    // 1. Maintains a history of positions (pruning old ones)
-    // 2. Optimizes the history by only tracking direction changes
-    // 3. Calculates the shake factor (path length / bounding box diagonal)
-    // 4. Triggers cursor expansion when shake is detected
     pub fn on_motion(&mut self, pos: Point<f64, Logical>) {
+        if self.params.off {
+            return;
+        }
         let now = Instant::now();
         self.last_motion_instant = Some(now);
 
@@ -177,10 +134,8 @@ impl CursorScaleTracker {
             let last = &self.history[last_idx];
             let prev = &self.history[last_idx - 1];
 
-            let same_x =
-                Self::same_sign(last.position.x - prev.position.x, pos.x - last.position.x);
-            let same_y =
-                Self::same_sign(last.position.y - prev.position.y, pos.y - last.position.y);
+            let same_x = same_sign(last.position.x - prev.position.x, pos.x - last.position.x);
+            let same_y = same_sign(last.position.y - prev.position.y, pos.y - last.position.y);
 
             if same_x && same_y {
                 // Movement continues in the same direction: update the endpoint.
@@ -189,14 +144,12 @@ impl CursorScaleTracker {
                     timestamp: now,
                 };
             } else {
-                // Direction changed: add a new point.
                 self.history.push(HistoryItem {
                     position: pos,
                     timestamp: now,
                 });
             }
         } else {
-            // First two points: always add.
             self.history.push(HistoryItem {
                 position: pos,
                 timestamp: now,
@@ -265,6 +218,9 @@ impl CursorScaleTracker {
     ///
     /// Returns `true` if the cursor size changed (requires redraw).
     pub fn advance_animations(&mut self, cursor_manager: &mut CursorManager) -> bool {
+        if self.params.off {
+            return false;
+        }
         let now = Instant::now();
         let mut changed = false;
 

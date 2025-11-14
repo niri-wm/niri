@@ -113,7 +113,7 @@ impl CursorManager {
 
     /// Set the common dynamic multiplier for cursor sizes.
     pub fn set_size_multiplier(&mut self, m: f32) {
-        let m = m.max(1.0).min(3.0);
+        let m = m.clamp(1.0, 3.0);
         if (self.dynamic_size_multiplier.get() - m).abs() > 0.001 {
             self.dynamic_size_multiplier.set(m);
             self.named_cursor_cache.get_mut().clear();
