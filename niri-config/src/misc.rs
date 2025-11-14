@@ -14,12 +14,78 @@ pub struct SpawnShAtStartup {
     pub command: String,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct ShakeConfig {
+    pub off: bool,
+    pub max_multiplier: f64,
+    pub inactivity_timeout_ms: u64,
+    pub expand_duration_ms: u64,
+    pub decay_duration_ms: u64,
+    pub shake_interval_ms: u64,
+    pub min_diagonal: f64,
+    pub sensitivity: f64,
+}
+
+impl Default for ShakeConfig {
+    fn default() -> Self {
+        Self {
+            off: true,
+            max_multiplier: 4.5,
+            inactivity_timeout_ms: 250,
+            expand_duration_ms: 200,
+            decay_duration_ms: 300,
+            shake_interval_ms: 400,
+            min_diagonal: 100.0,
+            sensitivity: 2.0,
+        }
+    }
+}
+
+#[derive(knuffel::Decode, Debug, PartialEq)]
+pub struct ShakeConfigPart {
+    #[knuffel(child)]
+    pub off: bool,
+    #[knuffel(child)]
+    pub on: bool,
+    #[knuffel(child, unwrap(argument))]
+    pub max_multiplier: Option<f64>,
+    #[knuffel(child, unwrap(argument))]
+    pub inactivity_timeout_ms: Option<u64>,
+    #[knuffel(child, unwrap(argument))]
+    pub expand_duration_ms: Option<u64>,
+    #[knuffel(child, unwrap(argument))]
+    pub decay_duration_ms: Option<u64>,
+    #[knuffel(child, unwrap(argument))]
+    pub shake_interval_ms: Option<u64>,
+    #[knuffel(child, unwrap(argument))]
+    pub min_diagonal: Option<f64>,
+    #[knuffel(child, unwrap(argument))]
+    pub sensitivity: Option<f64>,
+}
+
+impl MergeWith<ShakeConfigPart> for ShakeConfig {
+    fn merge_with(&mut self, part: &ShakeConfigPart) {
+        self.off |= part.off;
+        if part.on {
+            self.off = false;
+        }
+        merge_clone!((self, part), sensitivity);
+        merge_clone!((self, part), max_multiplier);
+        merge_clone!((self, part), inactivity_timeout_ms);
+        merge_clone!((self, part), expand_duration_ms);
+        merge_clone!((self, part), decay_duration_ms);
+        merge_clone!((self, part), shake_interval_ms);
+        merge_clone!((self, part), min_diagonal);
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub struct Cursor {
     pub xcursor_theme: String,
     pub xcursor_size: u8,
     pub hide_when_typing: bool,
     pub hide_after_inactive_ms: Option<u32>,
+    pub shake: ShakeConfig,
 }
 
 impl Default for Cursor {
@@ -29,6 +95,7 @@ impl Default for Cursor {
             xcursor_size: 24,
             hide_when_typing: false,
             hide_after_inactive_ms: None,
+            shake: Default::default(),
         }
     }
 }
@@ -43,6 +110,8 @@ pub struct CursorPart {
     pub hide_when_typing: Option<Flag>,
     #[knuffel(child, unwrap(argument))]
     pub hide_after_inactive_ms: Option<u32>,
+    #[knuffel(child)]
+    pub shake: Option<ShakeConfigPart>,
 }
 
 impl MergeWith<CursorPart> for Cursor {
@@ -50,6 +119,7 @@ impl MergeWith<CursorPart> for Cursor {
         merge_clone!((self, part), xcursor_theme, xcursor_size);
         merge!((self, part), hide_when_typing);
         merge_clone_opt!((self, part), hide_after_inactive_ms);
+        merge!((self, part), shake);
     }
 }
 
