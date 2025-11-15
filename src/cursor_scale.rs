@@ -75,6 +75,8 @@ struct HistoryItem {
 #[derive(Debug)]
 pub struct CursorScaleTracker {
     history: Vec<HistoryItem>,
+    // global position history
+    global_history: Vec<HistoryItem>,
     last_motion_instant: Option<Instant>,
     current_mult: f64,
     expand_anim: Option<Animation>,
@@ -94,6 +96,7 @@ impl CursorScaleTracker {
     pub fn new(clock: Clock, params: impl Into<CursorScaleParams>) -> Self {
         Self {
             history: Vec::new(),
+            global_history: Vec::new(),
             last_motion_instant: None,
             current_mult: 1.0,
             expand_anim: None,
@@ -109,7 +112,7 @@ impl CursorScaleTracker {
     }
 
     /// Updates the tracker with a new cursor position.
-    pub fn on_motion(&mut self, pos: Point<f64, Logical>) {
+    pub fn on_motion(&mut self, is_global: bool, pos: Point<f64, Logical>) {
         if self.params.off {
             return;
         }
@@ -124,59 +127,64 @@ impl CursorScaleTracker {
             return;
         }
 
+        let history = if is_global {
+            &mut self.global_history
+        } else {
+            &mut self.history
+        };
         let shake_interval = std::time::Duration::from_millis(self.params.shake_interval_ms);
 
-        self.history
+        history
             .retain(|item| now.duration_since(item.timestamp) < shake_interval);
 
-        if self.history.len() >= 2 {
-            let last_idx = self.history.len() - 1;
-            let last = &self.history[last_idx];
-            let prev = &self.history[last_idx - 1];
+        if history.len() >= 2 {
+            let last_idx = history.len() - 1;
+            let last = &history[last_idx];
+            let prev = &history[last_idx - 1];
 
             let same_x = same_sign(last.position.x - prev.position.x, pos.x - last.position.x);
             let same_y = same_sign(last.position.y - prev.position.y, pos.y - last.position.y);
 
             if same_x && same_y {
                 // Movement continues in the same direction: update the endpoint.
-                self.history[last_idx] = HistoryItem {
+                history[last_idx] = HistoryItem {
                     position: pos,
                     timestamp: now,
                 };
             } else {
-                self.history.push(HistoryItem {
+                history.push(HistoryItem {
                     position: pos,
                     timestamp: now,
                 });
             }
         } else {
-            self.history.push(HistoryItem {
+            history.push(HistoryItem {
                 position: pos,
                 timestamp: now,
             });
         }
 
         // Need at least 2 points to calculate shake.
-        if self.history.len() < 2 {
+        if history.len() < 2 {
             return;
         }
 
         // Calculate bounding box and total path distance.
-        let mut left = self.history[0].position.x;
-        let mut top = self.history[0].position.y;
-        let mut right = self.history[0].position.x;
-        let mut bottom = self.history[0].position.y;
+        let mut left = history[0].position.x;
+        let mut top = history[0].position.y;
+        let mut right = history[0].position.x;
+        let mut bottom = history[0].position.y;
         let mut distance = 0.0;
 
-        for i in 1..self.history.len() {
-            let delta_x = self.history[i].position.x - self.history[i - 1].position.x;
-            let delta_y = self.history[i].position.y - self.history[i - 1].position.y;
+        for i in 1..history.len() {
+            let delta_x = history[i].position.x - history[i - 1].position.x;
+            let delta_y = history[i].position.y - history[i - 1].position.y;
             distance += (delta_x * delta_x + delta_y * delta_y).sqrt();
 
-            left = left.min(self.history[i].position.x);
-            top = top.min(self.history[i].position.y);
-            right = right.max(self.history[i].position.x);
-            bottom = bottom.max(self.history[i].position.y);
+            left = left.min(history[i].position.x);
+            top = top.min(history[i].position.y);
+            right = right.max(history[i].position.x);
+            bottom = bottom.max(history[i].position.y);
         }
 
         let bounds_width = right - left;
@@ -210,7 +218,7 @@ impl CursorScaleTracker {
                 self.last_expand_instant = Some(now);
             }
 
-            self.history.clear();
+            history.clear();
         }
     }
 
