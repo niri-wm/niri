@@ -26,7 +26,7 @@
 // movement covers sufficient area (100px diagonal), the cursor smoothly animates to a larger size.
 // After a period of inactivity, it smoothly returns to normal size.
 
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use niri_config::ShakeConfig;
 use smithay::utils::{Logical, Point};
@@ -42,12 +42,12 @@ const TOLERANCE: f64 = 1.0;
 pub struct CursorScaleParams {
     off: bool,
     max_mult: f64,
-    inactivity_timeout_ms: u64,
     expand_duration_ms: u64,
     decay_duration_ms: u64,
     shake_interval_ms: u64,
     shake_sensitivity: f64,
     min_diagonal: f64,
+    post_expand_delay_ms: u64,
 }
 
 impl From<ShakeConfig> for CursorScaleParams {
@@ -55,12 +55,12 @@ impl From<ShakeConfig> for CursorScaleParams {
         Self {
             off: config.off,
             max_mult: config.max_multiplier,
-            inactivity_timeout_ms: config.inactivity_timeout_ms,
             expand_duration_ms: config.expand_duration_ms,
             decay_duration_ms: config.decay_duration_ms,
             shake_interval_ms: config.shake_interval_ms,
             shake_sensitivity: config.sensitivity,
             min_diagonal: config.min_diagonal,
+            post_expand_delay_ms: config.post_expand_delay_ms,
         }
     }
 }
@@ -117,11 +117,13 @@ impl CursorScaleTracker {
             return;
         }
         let now = Instant::now();
-        self.last_motion_instant = Some(now);
 
         if self.decay_anim.is_some() {
-            self.decay_anim = None;
+            self.last_motion_instant = Some(now);
+            return;
         }
+
+        self.last_motion_instant = Some(now);
 
         if self.expand_anim.is_some() {
             return;
@@ -132,10 +134,9 @@ impl CursorScaleTracker {
         } else {
             &mut self.history
         };
-        let shake_interval = std::time::Duration::from_millis(self.params.shake_interval_ms);
+        let shake_interval = Duration::from_millis(self.params.shake_interval_ms);
 
-        history
-            .retain(|item| now.duration_since(item.timestamp) < shake_interval);
+        history.retain(|item| now.duration_since(item.timestamp) < shake_interval);
 
         if history.len() >= 2 {
             let last_idx = history.len() - 1;
@@ -258,18 +259,20 @@ impl CursorScaleTracker {
 
             if anim.is_done() {
                 self.decay_anim = None;
-                self.current_mult = 1.0;
-                cursor_manager.set_size_multiplier(1.0);
+                if (self.current_mult - 1.0).abs() > 0.0001 {
+                    self.current_mult = 1.0;
+                    cursor_manager.set_size_multiplier(1.0);
+                    changed = true;
+                }
             }
 
             return changed;
         }
 
         if self.current_mult > 1.01 {
-            if let Some(last_motion) = self.last_motion_instant {
-                let elapsed_ms = now.duration_since(last_motion).as_millis() as u64;
-
-                if elapsed_ms >= self.params.inactivity_timeout_ms {
+            if let Some(last_expand) = self.last_expand_instant {
+                let elapsed_ms = now.duration_since(last_expand).as_millis() as u64;
+                if elapsed_ms >= self.params.post_expand_delay_ms {
                     let anim = Animation::ease(
                         self.clock.clone(),
                         self.current_mult,
@@ -279,7 +282,29 @@ impl CursorScaleTracker {
                         Curve::EaseOutCubic,
                     );
                     self.decay_anim = Some(anim);
-                    return true;
+
+                    let value = self.decay_anim.as_ref().unwrap().value();
+                    if (self.current_mult - value).abs() > 0.001 {
+                        self.current_mult = value;
+                        cursor_manager.set_size_multiplier(self.current_mult as f32);
+                        changed = true;
+                    }
+                }
+            } else {
+                let anim = Animation::ease(
+                    self.clock.clone(),
+                    self.current_mult,
+                    1.0,
+                    0.0,
+                    self.params.decay_duration_ms,
+                    Curve::EaseOutCubic,
+                );
+                self.decay_anim = Some(anim);
+                let value = self.decay_anim.as_ref().unwrap().value();
+                if (self.current_mult - value).abs() > 0.001 {
+                    self.current_mult = value;
+                    cursor_manager.set_size_multiplier(self.current_mult as f32);
+                    changed = true;
                 }
             }
         }

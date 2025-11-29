@@ -25,7 +25,7 @@ cursor {
     // shake {
         // off
         // max-multiplier 2.5
-        // inactivity-timeout-ms 250
+        // post-expand-delay-ms 250
         // expand-duration-ms 200
         // decay-duration-ms 300
         // shake-interval-ms 400
@@ -222,7 +222,7 @@ cursor {
     shake {
         off
         max-multiplier 2.5
-        inactivity-timeout-ms 250
+        post-expand-delay-ms 250
         expand-duration-ms 200
         decay-duration-ms 300
         shake-interval-ms 400
@@ -242,13 +242,13 @@ shake {
 }
 ```
 
-#### `inactivity-timeout-ms`
+#### `post-expand-delay-ms`
 
-When the cursor is enlarged, this is the maximum idle time (ms) after the last pointer motion before the shrink animation (decay) is automatically started. In addition to this timeout, the tracker may start decay earlier for abrupt stops — so the cursor usually restores promptly when you stop moving.
+When the cursor is enlarged, this is the additional delay (ms) after the expansion animation finishes before the shrink animation (decay) is started. Once decay begins it will not be interrupted by further pointer movement.
 
 ```kdl
 shake {
-    inactivity-timeout-ms 250
+    post-expand-delay-ms 250
 }
 ```
 
