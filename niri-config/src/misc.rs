@@ -18,7 +18,7 @@ pub struct SpawnShAtStartup {
 pub struct ShakeConfig {
     pub off: bool,
     pub max_multiplier: f64,
-    pub inactivity_timeout_ms: u64,
+    pub post_expand_delay_ms: u64,
     pub expand_duration_ms: u64,
     pub decay_duration_ms: u64,
     pub shake_interval_ms: u64,
@@ -31,7 +31,7 @@ impl Default for ShakeConfig {
         Self {
             off: true,
             max_multiplier: 4.5,
-            inactivity_timeout_ms: 250,
+            post_expand_delay_ms: 250,
             expand_duration_ms: 200,
             decay_duration_ms: 300,
             shake_interval_ms: 400,
@@ -50,7 +50,7 @@ pub struct ShakeConfigPart {
     #[knuffel(child, unwrap(argument))]
     pub max_multiplier: Option<f64>,
     #[knuffel(child, unwrap(argument))]
-    pub inactivity_timeout_ms: Option<u64>,
+    pub post_expand_delay_ms: Option<u64>,
     #[knuffel(child, unwrap(argument))]
     pub expand_duration_ms: Option<u64>,
     #[knuffel(child, unwrap(argument))]
@@ -71,7 +71,7 @@ impl MergeWith<ShakeConfigPart> for ShakeConfig {
         }
         merge_clone!((self, part), sensitivity);
         merge_clone!((self, part), max_multiplier);
-        merge_clone!((self, part), inactivity_timeout_ms);
+        merge_clone!((self, part), post_expand_delay_ms);
         merge_clone!((self, part), expand_duration_ms);
         merge_clone!((self, part), decay_duration_ms);
         merge_clone!((self, part), shake_interval_ms);
