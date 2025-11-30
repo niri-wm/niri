@@ -4089,6 +4089,15 @@ impl State {
         };
         let slot = evt.slot();
 
+        // Track touch point for multi-finger gesture detection.
+        let was_single = self.niri.touch_gesture_points.len() == 1;
+        self.niri.touch_gesture_points.insert(Some(slot), pos);
+
+        // When second finger arrives, start gesture recognition.
+        if was_single && self.niri.touch_gesture_points.len() == 2 {
+            self.niri.touch_gesture_cumulative = Some((0., 0.));
+        }
+
         let serial = SERIAL_COUNTER.next_serial();
 
         let under = self.niri.contents_under(pos);
@@ -4217,6 +4226,23 @@ impl State {
         };
         let slot = evt.slot();
 
+        // Remove touch point from gesture tracking.
+        self.niri.touch_gesture_points.remove(&Some(slot));
+
+        // End gesture when fewer than 2 fingers remain.
+        if self.niri.touch_gesture_points.len() < 2 {
+            self.niri.touch_gesture_cumulative = None;
+
+            // End any ongoing gesture animations.
+            if let Some(output) = self.niri.layout.workspace_switch_gesture_end(Some(true)) {
+                self.niri.queue_redraw(&output);
+            }
+            if let Some(output) = self.niri.layout.view_offset_gesture_end(Some(true)) {
+                self.niri.queue_redraw(&output);
+            }
+            self.niri.layout.overview_gesture_end();
+        }
+
         if let Some(capture) = self.niri.screenshot_ui.pointer_up(Some(slot)) {
             if capture {
                 self.confirm_screenshot(true);
@@ -4243,6 +4269,112 @@ impl State {
             return;
         };
         let slot = evt.slot();
+
+        // Track touch gesture with 2+ fingers.
+        if let Some(old_pos) = self.niri.touch_gesture_points.get(&Some(slot)).copied() {
+            // Calculate delta from this finger's movement.
+            let delta_x = pos.x - old_pos.x;
+            let delta_y = pos.y - old_pos.y;
+
+            // Update stored position.
+            self.niri.touch_gesture_points.insert(Some(slot), pos);
+
+            // Process gesture if we're tracking (3+ fingers).
+            if self.niri.touch_gesture_points.len() >= 3 {
+                let timestamp = Duration::from_micros(evt.time());
+
+                // Check if we're still in recognition phase.
+                if let Some((cx, cy)) = &mut self.niri.touch_gesture_cumulative {
+                    *cx += delta_x;
+                    *cy += delta_y;
+
+                    // Check if gesture moved far enough to decide direction.
+                    // Threshold matches touchpad gestures (16px from GNOME Shell).
+                    let (cx, cy) = (*cx, *cy);
+                    if cx * cx + cy * cy >= 16. * 16. {
+                        self.niri.touch_gesture_cumulative = None;
+
+                        let finger_count = self.niri.touch_gesture_points.len();
+
+                        if finger_count >= 4 {
+                            // 4+ finger gesture: toggle overview.
+                            self.niri.layout.overview_gesture_begin();
+                        } else if let Some(output) = self.niri.output_under_cursor() {
+                            // 2-3 finger gesture: workspace switch or view offset.
+                            let is_overview_open = self.niri.layout.is_overview_open();
+
+                            if cx.abs() > cy.abs() {
+                                // Horizontal gesture: view offset (scroll within workspace).
+                                let output_ws = if is_overview_open {
+                                    self.niri.workspace_under_cursor(true)
+                                } else {
+                                    self.niri.output_under_cursor().and_then(|output| {
+                                        let mon = self.niri.layout.monitor_for_output(&output)?;
+                                        Some((output, mon.active_workspace_ref()))
+                                    })
+                                };
+
+                                if let Some((output, ws)) = output_ws {
+                                    let ws_idx =
+                                        self.niri.layout.find_workspace_by_id(ws.id()).unwrap().0;
+                                    self.niri.layout.view_offset_gesture_begin(
+                                        &output,
+                                        Some(ws_idx),
+                                        true,
+                                    );
+                                }
+                            } else {
+                                // Vertical gesture: workspace switch.
+                                self.niri
+                                    .layout
+                                    .workspace_switch_gesture_begin(&output, true);
+                            }
+                        }
+                    }
+                }
+
+                // Apply natural scroll if configured (invert deltas for natural feel).
+                let natural_scroll = self.niri.config.borrow().input.touch.natural_scroll;
+                let (gesture_delta_x, gesture_delta_y) = if natural_scroll {
+                    (-delta_x, -delta_y)
+                } else {
+                    (delta_x, delta_y)
+                };
+
+                // Continue ongoing gesture animations.
+                // Swipe down → previous workspace, swipe up → next workspace.
+                if self
+                    .niri
+                    .layout
+                    .workspace_switch_gesture_update(gesture_delta_y, timestamp, true)
+                    .is_some()
+                {
+                    self.niri.queue_redraw_all();
+                }
+
+                // Swipe right → scroll left (prev window), swipe left → scroll right (next window).
+                if self
+                    .niri
+                    .layout
+                    .view_offset_gesture_update(gesture_delta_x, timestamp, true)
+                    .is_some()
+                {
+                    self.niri.queue_redraw_all();
+                }
+
+                // Update overview gesture (uses vertical delta like touchpad).
+                // Overview always uses uninverted delta, matching touchpad behavior.
+                if let Some(redraw) = self
+                    .niri
+                    .layout
+                    .overview_gesture_update(-delta_y, timestamp)
+                {
+                    if redraw {
+                        self.niri.queue_redraw_all();
+                    }
+                }
+            }
+        }
 
         if let Some(output) = self.niri.screenshot_ui.selection_output().cloned() {
             let geom = self.niri.global_space.output_geometry(&output).unwrap();
@@ -4292,6 +4424,16 @@ impl State {
         let Some(handle) = self.niri.seat.get_touch() else {
             return;
         };
+
+        // Clear all touch gesture state.
+        self.niri.touch_gesture_points.clear();
+        self.niri.touch_gesture_cumulative = None;
+
+        // Cancel any ongoing gesture animations.
+        self.niri.layout.workspace_switch_gesture_end(Some(false));
+        self.niri.layout.view_offset_gesture_end(Some(false));
+        self.niri.layout.overview_gesture_end();
+
         handle.cancel(self);
     }
 
