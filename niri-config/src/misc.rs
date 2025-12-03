@@ -24,6 +24,10 @@ pub struct ShakeConfig {
     pub shake_interval_ms: u64,
     pub min_diagonal: f64,
     pub sensitivity: f64,
+    pub cooldown_ms: Option<u64>,
+    pub behavior: Option<String>,
+    pub stopped_threshold_ms: Option<u64>,
+    pub shake_relax_ms: Option<u64>,
 }
 
 impl Default for ShakeConfig {
@@ -37,6 +41,10 @@ impl Default for ShakeConfig {
             shake_interval_ms: 400,
             min_diagonal: 100.0,
             sensitivity: 2.0,
+            cooldown_ms: Some(400),
+            behavior: Some(String::from("hold")),
+            stopped_threshold_ms: Some(50),
+            shake_relax_ms: Some(150),
         }
     }
 }
@@ -61,6 +69,14 @@ pub struct ShakeConfigPart {
     pub min_diagonal: Option<f64>,
     #[knuffel(child, unwrap(argument))]
     pub sensitivity: Option<f64>,
+    #[knuffel(child, unwrap(argument))]
+    pub cooldown_ms: Option<u64>,
+    #[knuffel(child, unwrap(argument, str))]
+    pub behavior: Option<String>,
+    #[knuffel(child, unwrap(argument))]
+    pub stopped_threshold_ms: Option<u64>,
+    #[knuffel(child, unwrap(argument))]
+    pub shake_relax_ms: Option<u64>,
 }
 
 impl MergeWith<ShakeConfigPart> for ShakeConfig {
@@ -76,6 +92,10 @@ impl MergeWith<ShakeConfigPart> for ShakeConfig {
         merge_clone!((self, part), decay_duration_ms);
         merge_clone!((self, part), shake_interval_ms);
         merge_clone!((self, part), min_diagonal);
+        merge_clone_opt!((self, part), cooldown_ms);
+        merge_clone_opt!((self, part), behavior);
+        merge_clone_opt!((self, part), stopped_threshold_ms);
+        merge_clone_opt!((self, part), shake_relax_ms);
     }
 }
 
