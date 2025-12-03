@@ -222,6 +222,10 @@ cursor {
     shake {
         off
         max-multiplier 2.5
+        behavior "hold"
+        cooldown-ms 400
+        stopped-threshold-ms 50
+        shake-relax-ms 150
         post-expand-delay-ms 250
         expand-duration-ms 200
         decay-duration-ms 300
@@ -239,6 +243,48 @@ Maximum cursor scale multiplier applied when a shake is detected. For example, `
 ```kdl
 shake {
     max-multiplier 2.5
+}
+```
+
+#### `behavior`
+
+Selects the shake behaviour.
+  - `"hold"` (default): keep the cursor enlarged while the pointer is moving; when the pointer stops the shrink animation is scheduled.
+  - `"intensity"`: keep the cursor enlarged while shake intensity is high; start shrinking when intensity drops below `sensitivity`.
+
+```kdl
+shake {
+    behavior "hold"
+}
+```
+
+#### `cooldown-ms`
+
+After a shrink (decay) completes, ignore new shake-triggered expansions until this many milliseconds have passed. Prevents immediate re-expansions when the pointer is noisy.
+
+```kdl
+shake {
+    cooldown-ms 400
+}
+```
+
+#### `stopped-threshold-ms`
+
+Only for `behavior "hold"`. The pointer is considered "stopped" if no motion has been observed for this many milliseconds; when stopped the shrink is scheduled after `post-expand-delay-ms`.
+
+```kdl
+shake {
+    stopped-threshold-ms 50
+}
+```
+
+#### `shake-relax-ms`
+
+Only for `behavior "intensity"`. How long the shake factor must remain below `sensitivity` before decay is scheduled. Prevents transient dips from triggering shrink.
+
+```kdl
+shake {
+    shake-relax-ms 150
 }
 ```
 
