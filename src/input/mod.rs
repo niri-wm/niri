@@ -2631,15 +2631,43 @@ impl State {
         // contents_under() will return no surface when the hot corner should trigger, so
         // pointer.motion() will set the current focus to None.
         if under.hot_corner && pointer.current_focus().is_none() {
-            if !was_inside_hot_corner
+            // Main pressure constants
+            let dividend = 14.;
+            let pressure_cap = 20;
+            let target = 200;
+
+            if (!was_inside_hot_corner
                 && pointer
                     .with_grab(|_, grab| grab_allows_hot_corner(grab))
                     .unwrap_or(true)
+                && self.niri.hot_corner_pressure >= pressure_cap)
+                || pointer
+                    .with_grab(|_, grab| grab_allows_hot_corner(grab))
+                    .unwrap_or(true)
+                    && self.niri.hot_corner_pressure > target
             {
                 self.niri.layout.toggle_overview();
+                // set to minimum after trigger to avoid re-triggers without exiting
+                self.niri.hot_corner_pressure = i32::MIN;
+                info!("TRIGGERED");
+            }
+
+            // TODO: Only works for bottom-left right now
+
+            let vec = ((event.delta().y - event.delta().x) / dividend) as i32;
+
+            //TODO: Check addition for overflow
+            if vec < pressure_cap {
+                self.niri.hot_corner_pressure += vec;
+            } else {
+                self.niri.hot_corner_pressure += pressure_cap;
+                info!("Max pressure velocity reached");
             }
             self.niri.pointer_inside_hot_corner = true;
+        } else {
+            self.niri.hot_corner_pressure = 0;
         }
+        info!("{}", self.niri.hot_corner_pressure);
 
         // Activate a new confinement if necessary.
         self.niri.maybe_activate_pointer_constraint();
