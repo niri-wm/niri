@@ -1139,7 +1139,9 @@ mod tests {
                                 y: 20,
                             },
                         ),
-                        bpc: _10,
+                        bpc: Some(
+                            _10,
+                        ),
                         mode: Some(
                             Mode {
                                 custom: false,
@@ -1185,7 +1187,7 @@ mod tests {
                         scale: None,
                         transform: Normal,
                         position: None,
-                        bpc: _8,
+                        bpc: None,
                         mode: Some(
                             Mode {
                                 custom: true,
@@ -1212,7 +1214,7 @@ mod tests {
                         scale: None,
                         transform: Normal,
                         position: None,
-                        bpc: _8,
+                        bpc: None,
                         mode: None,
                         modeline: Some(
                             Modeline {

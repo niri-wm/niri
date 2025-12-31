@@ -88,22 +88,6 @@ const COLOR_FORMATS_10: [Fourcc; 8] = [
     Fourcc::Abgr8888,
 ];
 
-// Requires drm-fourcc update in smithay for non-floating formats
-const COLOR_FORMATS_16: [Fourcc; 12] = [
-    Fourcc::Xrgb16161616f,
-    Fourcc::Xbgr16161616f,
-    Fourcc::Argb16161616f,
-    Fourcc::Abgr16161616f,
-    Fourcc::Xrgb2101010,
-    Fourcc::Xbgr2101010,
-    Fourcc::Argb2101010,
-    Fourcc::Abgr2101010,
-    Fourcc::Xrgb8888,
-    Fourcc::Xbgr8888,
-    Fourcc::Argb8888,
-    Fourcc::Abgr8888,
-];
-
 pub struct Tty {
     config: Rc<RefCell<Config>>,
     session: LibSeatSession,
@@ -699,6 +683,19 @@ impl Tty {
                         if let Ok(props) =
                             ConnectorProperties::try_new(&device.drm, surface.connector)
                         {
+                            if let Some(bpc) = self
+                                .config
+                                .borrow()
+                                .outputs
+                                .find(&surface.name)
+                                .and_then(|o| o.bpc)
+                            {
+                                match set_max_bpc(&props, bpc as u64) {
+                                    Ok(_) => (),
+                                    Err(err) => debug!("couldn't set max bpc: {err:?}"),
+                                }
+                            }
+
                             match reset_hdr(&props) {
                                 Ok(()) => (),
                                 Err(err) => debug!("couldn't reset HDR properties: {err:?}"),
@@ -1313,6 +1310,13 @@ impl Tty {
 
         let mut orientation = None;
         if let Ok(props) = ConnectorProperties::try_new(&device.drm, connector.handle()) {
+            if let Some(bpc) = config.bpc {
+                match set_max_bpc(&props, bpc as u64) {
+                    Ok(_) => (),
+                    Err(err) => debug!("couldn't set max bpc: {err:?}"),
+                }
+            }
+
             match reset_hdr(&props) {
                 Ok(()) => (),
                 Err(err) => debug!("couldn't reset HDR properties: {err:?}"),
@@ -1444,10 +1448,9 @@ impl Tty {
             })
             .collect::<FormatSet>();
 
-        let color_formats: &[Fourcc] = match config.bpc {
+        let color_formats: &[Fourcc] = match config.bpc.unwrap_or_default() {
             Bpc::_8 => &COLOR_FORMATS_8,
             Bpc::_10 => &COLOR_FORMATS_10,
-            Bpc::_16 => &COLOR_FORMATS_16,
         };
 
         // Create the compositor.
@@ -3300,6 +3303,33 @@ fn reset_hdr(props: &ConnectorProperties) -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+fn set_max_bpc(props: &ConnectorProperties, bpc: u64) -> anyhow::Result<u64> {
+    let (info, value) = props.find(c"max bpc")?;
+
+    let property::ValueType::UnsignedRange(min, max) = info.value_type() else {
+        bail!("wrong property type")
+    };
+
+    let bpc = bpc.clamp(min, max);
+
+    let property::Value::UnsignedRange(value) = info.value_type().convert_value(*value) else {
+        bail!("wrong property type")
+    };
+
+    if value != bpc {
+        props
+            .device
+            .set_property(
+                props.connector,
+                info.handle(),
+                property::Value::UnsignedRange(bpc).into(),
+            )
+            .context("error setting property")?;
+    }
+
+    Ok(bpc)
 }
 
 fn is_vrr_capable(device: &DrmDevice, connector: connector::Handle) -> Option<bool> {

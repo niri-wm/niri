@@ -59,8 +59,8 @@ pub struct Output {
     pub transform: Transform,
     #[knuffel(child)]
     pub position: Option<Position>,
-    #[knuffel(child, unwrap(argument), default)]
-    pub bpc: Bpc,
+    #[knuffel(child, unwrap(argument))]
+    pub bpc: Option<Bpc>,
     #[knuffel(child)]
     pub mode: Option<Mode>,
     #[knuffel(child)]
@@ -103,7 +103,7 @@ impl Default for Output {
             scale: None,
             transform: Transform::Normal,
             position: None,
-            bpc: Bpc::default(),
+            bpc: None,
             mode: None,
             modeline: None,
             variable_refresh_rate: None,
@@ -133,10 +133,9 @@ pub struct Position {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Bpc {
+    _8 = 8,
     #[default]
-    _8,
-    _10,
-    _16,
+    _10 = 10,
 }
 
 #[derive(knuffel::Decode, Debug, Clone, PartialEq, Default)]
@@ -275,8 +274,7 @@ impl TryFrom<u8> for Bpc {
         match value {
             8 => Ok(Bpc::_8),
             10 => Ok(Bpc::_10),
-            16 => Ok(Bpc::_16),
-            _ => Err(r#"invalid bpc, can be 8, 10, or 16"#),
+            _ => Err(r#"invalid bpc, can be 8 or 10"#),
         }
     }
 }
