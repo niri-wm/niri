@@ -568,6 +568,7 @@ fn print_output(output: Output) -> anyhow::Result<()> {
         vrr_supported,
         vrr_enabled,
         logical,
+        max_bpc,
     } = output;
 
     let serial = serial.as_deref().unwrap_or("Unknown");
@@ -649,6 +650,10 @@ fn print_output(output: Output) -> anyhow::Result<()> {
             Transform::Flipped270 => "270° counter-clockwise, flipped horizontally",
         };
         println!("  Transform: {transform}");
+    }
+
+    if let Some(max_bpc) = max_bpc {
+        println!("  Max bits per channel: {max_bpc}");
     }
 
     println!("  Available modes:");
