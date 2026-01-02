@@ -2209,6 +2209,17 @@ impl Tty {
                     OutputId::next()
                 });
 
+                let props = ConnectorProperties::try_new(&device.drm, connector.handle()).ok();
+                let max_bpc = props.as_ref().and_then(|p| p.find(c"max bpc").ok());
+                let max_bpc = max_bpc.and_then(|(info, value)| {
+                    info.value_type()
+                        .convert_value(*value)
+                        .as_unsigned_range()
+                        .map(|v| v as u8)
+                });
+
+                let format = surface.map(|s| s.compositor.format().to_string());
+
                 let ipc_output = niri_ipc::Output {
                     name: connector_name,
                     make: output_name.make.unwrap_or_else(|| "Unknown".into()),
@@ -2221,6 +2232,8 @@ impl Tty {
                     vrr_supported,
                     vrr_enabled,
                     logical,
+                    max_bpc,
+                    format,
                 };
 
                 ipc_outputs.insert(id, ipc_output);
