@@ -845,24 +845,15 @@ impl OutputPowerManagementHandler for State {
     }
 
     fn get_output_power_mode(&mut self, output: &Output) -> output_power_management::Mode {
-        // todo: per-output power management
-        let _ = output;
-
-        self.niri.monitors_active.into()
+        self.niri
+            .output_state
+            .get(output)
+            .map(|state| state.power_mode)
+            .unwrap_or(output_power_management::Mode::On)
     }
 
     fn set_output_power_mode(&mut self, output: &Output, mode: output_power_management::Mode) {
-        // todo: per-output power management
-        let _ = output;
-
-        match mode {
-            output_power_management::Mode::Off => {
-                self.niri.deactivate_monitors(&mut self.backend);
-            }
-            output_power_management::Mode::On => {
-                self.niri.activate_monitors(&mut self.backend);
-            }
-        }
+        self.niri.set_output_power(output, mode, &mut self.backend);
     }
 }
 delegate_output_power_management!(State);

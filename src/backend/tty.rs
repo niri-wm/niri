@@ -2238,6 +2238,17 @@ impl Tty {
         }
     }
 
+    pub fn set_output_power(&mut self, output: &Output, active: bool) {
+        let tty_state: &TtyOutputState = output.user_data().get().unwrap();
+        let device = self.devices.get_mut(&tty_state.node).unwrap();
+        let surface = device.surfaces.get_mut(&tty_state.crtc).unwrap();
+
+        if !active {
+            let _ = surface.compositor.clear();
+        }
+        // When active=true, next render_frame() re-enables CRTC
+    }
+
     pub fn update_ignored_nodes_config(&mut self, niri: &mut Niri) {
         let _span = tracy_client::span!("Tty::update_ignored_nodes_config");
 
