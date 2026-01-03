@@ -209,11 +209,20 @@ where
         resource: &ZwlrOutputPowerV1,
         _data: &OutputPowerState,
     ) {
-        let output_powers = &mut state.output_power_manager_state().output_powers;
-        let Some((output, _)) = output_powers.iter().find(|(_, x)| x.contains(resource)) else {
+        let output_power_state = state.output_power_manager_state();
+        let found_output: Option<Output> = output_power_state
+            .output_powers
+            .iter()
+            .find_map(|(out, list)| list.contains(resource).then(|| out.clone()));
+        let Some(output) = found_output else {
             return;
         };
-        output_powers.remove(&output.clone());
+        if let Some(list) = output_power_state.output_powers.get_mut(&output) {
+            list.retain(|x| x != resource);
+            if list.is_empty() {
+                output_power_state.output_powers.remove(&output);
+            }
+        }
     }
 }
 
