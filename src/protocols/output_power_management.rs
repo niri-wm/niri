@@ -12,7 +12,7 @@ use zwlr_output_power_v1::ZwlrOutputPowerV1;
 
 const VERSION: u32 = 1;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 pub enum Mode {
     Off,
     On,
@@ -91,13 +91,10 @@ impl OutputPowerManagementManagerState {
     }
 
     pub fn output_power_mode_changed(&mut self, output: &Output, mode: Mode) {
-        match self.output_powers.get_mut(output) {
-            Some(list) => {
-                for num in list {
-                    num.mode(mode.into());
-                }
+        if let Some(list) = self.output_powers.get_mut(output) {
+            for num in list {
+                num.mode(mode.into());
             }
-            None => {}
         }
     }
 }
@@ -149,7 +146,7 @@ where
                         .output_power_manager_state()
                         .output_powers
                         .entry(output.clone())
-                        .or_insert_with(Vec::new)
+                        .or_default()
                         .push(zwlr_output_power.clone());
                     zwlr_output_power.mode(state.get_output_power_mode(&output).into());
                     return;

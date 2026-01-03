@@ -479,6 +479,7 @@ pub struct OutputState {
     screen_transition: Option<ScreenTransition>,
     /// Damage tracker used for the debug damage visualization.
     pub debug_damage_tracker: OutputDamageTracker,
+    pub power_mode: output_power_management::Mode,
 }
 
 #[derive(Debug, Default)]
@@ -2817,6 +2818,7 @@ impl Niri {
             lock_color_buffer: SolidColorBuffer::new(size, CLEAR_COLOR_LOCKED),
             screen_transition: None,
             debug_damage_tracker: OutputDamageTracker::from_output(&output),
+            power_mode: output_power_management::Mode::On,
         };
         let rv = self.output_state.insert(output.clone(), state);
         assert!(rv.is_none(), "output was already tracked");
@@ -2988,9 +2990,11 @@ impl Niri {
 
         self.monitors_active = true;
 
+        // Notify per-output power states when activating monitors
         for output in self.global_space.outputs() {
+            let output_state = self.output_state.get_mut(output).unwrap();
             self.output_power_management_state
-                .output_power_mode_changed(output, output_power_management::Mode::On);
+                .output_power_mode_changed(output, output_state.power_mode);
         }
 
         self.queue_redraw_all();
@@ -4363,6 +4367,11 @@ impl Niri {
         let mut res = RenderResult::Skipped;
         if self.monitors_active {
             let state = self.output_state.get_mut(output).unwrap();
+            if state.power_mode == output_power_management::Mode::Off {
+                state.redraw_state = RedrawState::Idle;
+                return;
+            }
+
             state.unfinished_animations_remain = self.layout.are_animations_ongoing(Some(output));
             state.unfinished_animations_remain |=
                 self.config_error_notification.are_animations_ongoing();
@@ -4470,6 +4479,27 @@ impl Niri {
 
             self.render_for_screencopy_with_damage(renderer, output);
         });
+    }
+
+    pub fn set_output_power(
+        &mut self,
+        output: &Output,
+        mode: output_power_management::Mode,
+        backend: &mut Backend,
+    ) {
+        let output_state = self.output_state.get_mut(output).unwrap();
+        if output_state.power_mode == mode {
+            return;
+        }
+        output_state.power_mode = mode;
+        backend.set_output_power(self, output, mode == output_power_management::Mode::On);
+
+        if mode == output_power_management::Mode::On {
+            self.queue_redraw(output);
+        }
+
+        self.output_power_management_state
+            .output_power_mode_changed(output, mode);
     }
 
     pub fn refresh_on_demand_vrr(&mut self, backend: &mut Backend, output: &Output) {
