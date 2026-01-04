@@ -70,14 +70,7 @@ use crate::render_helpers::renderer::AsGlesRenderer;
 use crate::render_helpers::{resources, shaders, RenderTarget};
 use crate::utils::{get_monotonic_time, is_laptop_panel, logical_output, PanelOrientation};
 
-const COLOR_FORMATS_8: [Fourcc; 4] = [
-    Fourcc::Xrgb8888,
-    Fourcc::Xbgr8888,
-    Fourcc::Argb8888,
-    Fourcc::Abgr8888,
-];
-
-const COLOR_FORMATS_10: [Fourcc; 8] = [
+const COLOR_FORMATS: [Fourcc; 8] = [
     Fourcc::Xrgb2101010,
     Fourcc::Xbgr2101010,
     Fourcc::Argb2101010,
@@ -690,7 +683,7 @@ impl Tty {
                                 .find(&surface.name)
                                 .and_then(|o| o.bpc)
                             {
-                                match set_max_bpc(&props, bpc as u64) {
+                                match set_max_bpc(&props, bpc) {
                                     Ok(_) => (),
                                     Err(err) => debug!("couldn't set max bpc: {err:?}"),
                                 }
@@ -1311,7 +1304,7 @@ impl Tty {
         let mut orientation = None;
         if let Ok(props) = ConnectorProperties::try_new(&device.drm, connector.handle()) {
             if let Some(bpc) = config.bpc {
-                match set_max_bpc(&props, bpc as u64) {
+                match set_max_bpc(&props, bpc) {
                     Ok(_) => (),
                     Err(err) => debug!("couldn't set max bpc: {err:?}"),
                 }
@@ -1448,11 +1441,6 @@ impl Tty {
             })
             .collect::<FormatSet>();
 
-        let color_formats: &[Fourcc] = match config.bpc.unwrap_or_default() {
-            Bpc::_8 => &COLOR_FORMATS_8,
-            Bpc::_10 => &COLOR_FORMATS_10,
-        };
-
         // Create the compositor.
         let res = DrmCompositor::new(
             OutputModeSource::Auto(output.clone()),
@@ -1460,7 +1448,7 @@ impl Tty {
             None,
             device.allocator.clone(),
             GbmFramebufferExporter::new(device.gbm.clone(), device.render_node.into()),
-            color_formats.iter().copied(),
+            COLOR_FORMATS,
             // This is only used to pick a good internal format, so it can use the surface's render
             // formats, even though we only ever render on the primary GPU.
             render_formats.clone(),
@@ -1490,7 +1478,7 @@ impl Tty {
                     None,
                     device.allocator.clone(),
                     GbmFramebufferExporter::new(device.gbm.clone(), device.render_node.into()),
-                    color_formats.iter().copied(),
+                    COLOR_FORMATS,
                     render_formats,
                     device.drm.cursor_size(),
                     Some(device.gbm.clone()),
@@ -2447,6 +2435,18 @@ impl Tty {
                     },
                 };
 
+                if let Some(bpc) = config.bpc {
+                    if let Ok(props) = ConnectorProperties::try_new(&device.drm, surface.connector)
+                    {
+                        match set_max_bpc(&props, bpc) {
+                            Ok(_) => (),
+                            Err(err) => debug!("couldn't set max bpc: {err:?}"),
+                        }
+                    } else {
+                        warn!("failed to get connector properties");
+                    }
+                }
+
                 let change_mode = surface.compositor.pending_mode() != mode;
 
                 let vrr_enabled = surface.compositor.vrr_enabled();
@@ -3318,13 +3318,14 @@ fn reset_hdr(props: &ConnectorProperties) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn set_max_bpc(props: &ConnectorProperties, bpc: u64) -> anyhow::Result<u64> {
+fn set_max_bpc(props: &ConnectorProperties, bpc: Bpc) -> anyhow::Result<u64> {
     let (info, value) = props.find(c"max bpc")?;
 
     let property::ValueType::UnsignedRange(min, max) = info.value_type() else {
         bail!("wrong property type")
     };
 
+    let bpc = bpc as u64;
     let bpc = bpc.clamp(min, max);
 
     let property::Value::UnsignedRange(value) = info.value_type().convert_value(*value) else {
