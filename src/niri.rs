@@ -2968,6 +2968,10 @@ impl Niri {
         for output in self.global_space.outputs() {
             self.output_power_management_state
                 .output_power_mode_changed(output, output_power_management::Mode::Off);
+
+            if let Some(state) = self.output_state.get_mut(output) {
+                state.power_mode = output_power_management::Mode::Off;
+            }
         }
     }
 
