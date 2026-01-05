@@ -3138,6 +3138,24 @@ impl<W: LayoutElement> Layout<W> {
         workspace.toggle_window_floating(window);
     }
 
+    pub fn toggle_window_pinned(&mut self, window: Option<&W::Id>) {
+        let monitor = if let Some(window) = window {
+            Some(
+                self.monitors_mut()
+                    .find(|mon| mon.has_window(window))
+                    .unwrap(),
+            )
+        } else {
+            self.active_monitor()
+        };
+
+        let Some(monitor) = monitor else {
+            return;
+        };
+
+        monitor.toggle_window_pinned(window);
+    }
+
     pub fn set_window_floating(&mut self, window: Option<&W::Id>, floating: bool) {
         if let Some(InteractiveMoveState::Moving(move_)) = &mut self.interactive_move {
             if window.is_none() || window == Some(move_.tile.window().id()) {

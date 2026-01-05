@@ -75,6 +75,8 @@ pub struct Monitor<W: LayoutElement> {
     insert_hint_element: InsertHintElement,
     /// Location to render the insert hint element.
     insert_hint_render_loc: Option<InsertHintRenderLoc>,
+    /// Pinned windows.
+    pinned_windows: Vec<W::Id>,
     /// Whether the overview is open.
     pub(super) overview_open: bool,
     /// Progress of the overview zoom animation, 1 is fully in overview.
@@ -338,6 +340,7 @@ impl<W: LayoutElement> Monitor<W> {
             insert_hint: None,
             insert_hint_element: InsertHintElement::new(options.layout.insert_hint),
             insert_hint_render_loc: None,
+            pinned_windows: Vec::new(),
             overview_open: false,
             overview_progress: None,
             workspace_switch: None,
@@ -985,6 +988,8 @@ impl<W: LayoutElement> Monitor<W> {
             _ => self.active_workspace_idx.saturating_sub(1),
         };
 
+        self.move_pinned_windows(new_idx);
+
         self.activate_workspace(new_idx);
     }
 
@@ -999,6 +1004,8 @@ impl<W: LayoutElement> Monitor<W> {
             _ => min(self.active_workspace_idx + 1, self.workspaces.len() - 1),
         };
 
+        self.move_pinned_windows(new_idx);
+
         self.activate_workspace(new_idx);
     }
 
@@ -1008,7 +1015,11 @@ impl<W: LayoutElement> Monitor<W> {
     }
 
     pub fn switch_workspace(&mut self, idx: usize) {
-        self.activate_workspace(min(idx, self.workspaces.len() - 1));
+        let idx = min(idx, self.workspaces.len() - 1);
+
+        self.move_pinned_windows(idx);
+
+        self.activate_workspace(idx);
     }
 
     pub fn switch_workspace_auto_back_and_forth(&mut self, idx: usize) {
@@ -1339,6 +1350,34 @@ impl<W: LayoutElement> Monitor<W> {
         self.workspace_switch = None;
 
         self.clean_up_workspaces();
+    }
+
+    pub fn toggle_window_pinned(&mut self, id: Option<&W::Id>) {
+        let active_id = self.active_window().map(|w| w.id().clone());
+        let Some(id) = id.cloned().or(active_id) else {
+            return;
+        };
+
+        if let Some(pos) = self.pinned_windows.iter().position(|w| w == &id) {
+            self.pinned_windows.remove(pos);
+        } else {
+            self.pinned_windows.push(id);
+        }
+    }
+
+    fn move_pinned_windows(&mut self, new_idx: usize) {
+        let mut pinned_windows = core::mem::take(&mut self.pinned_windows);
+
+        pinned_windows.retain(|id| {
+            if self.active_workspace().is_floating(id) {
+                self.move_to_workspace(Some(id), new_idx, ActivateWindow::Smart);
+                true
+            } else {
+                false
+            }
+        });
+
+        self.pinned_windows = pinned_windows;
     }
 
     /// Returns the geometry of the active tile relative to and clamped to the output.

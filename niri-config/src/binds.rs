@@ -333,6 +333,9 @@ pub enum Action {
     ToggleWindowFloating,
     #[knuffel(skip)]
     ToggleWindowFloatingById(u64),
+    ToggleWindowPinned,
+    #[knuffel(skip)]
+    ToggleWindowPinnedById(u64),
     MoveWindowToFloating,
     #[knuffel(skip)]
     MoveWindowToFloatingById(u64),
