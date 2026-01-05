@@ -83,17 +83,17 @@ impl OutputPowerManagementManagerState {
     }
 
     pub fn output_removed(&mut self, output: &Output) {
-        if let Some(list) = self.output_powers.remove(output) {
-            for num in list {
-                num.failed();
+        if let Some(power_ctls) = self.output_powers.remove(output) {
+            for power_ctl in power_ctls {
+                power_ctl.failed();
             }
         }
     }
 
     pub fn output_power_mode_changed(&mut self, output: &Output, mode: Mode) {
-        if let Some(list) = self.output_powers.get_mut(output) {
-            for num in list {
-                num.mode(mode.into());
+        if let Some(power_ctls) = self.output_powers.get_mut(output) {
+            for power_ctl in power_ctls {
+                power_ctl.mode(mode.into());
             }
         }
     }
@@ -152,8 +152,7 @@ where
                     return;
                 }
 
-                // Output not found,
-                // or output power instance already exists
+                // Output not found
                 zwlr_output_power.failed();
             }
             zwlr_output_power_manager_v1::Request::Destroy => (),
