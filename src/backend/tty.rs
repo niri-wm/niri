@@ -412,6 +412,8 @@ struct ConnectorProperties<'a> {
     device: &'a DrmDevice,
     connector: connector::Handle,
     properties: Vec<(property::Info, property::RawValue)>,
+    has_change: bool,
+    requests: AtomicModeReq,
 }
 
 impl Tty {
@@ -673,7 +675,7 @@ impl Tty {
                     // Apply pending gamma changes and restore our existing gamma.
                     let device = self.devices.get_mut(&node).unwrap();
                     for (crtc, surface) in device.surfaces.iter_mut() {
-                        if let Ok(props) =
+                        if let Ok(mut props) =
                             ConnectorProperties::try_new(&device.drm, surface.connector)
                         {
                             if let Some(bpc) = self
@@ -683,15 +685,17 @@ impl Tty {
                                 .find(&surface.name)
                                 .and_then(|o| o.bpc)
                             {
-                                match set_max_bpc(&props, bpc) {
-                                    Ok(_) => (),
-                                    Err(err) => debug!("couldn't set max bpc: {err:?}"),
-                                }
+                                if let Err(err) = props.set_max_bpc(bpc) {
+                                    warn!("failed to get `max bpc` property: {err}");
+                                };
                             }
 
-                            match reset_hdr(&props) {
-                                Ok(()) => (),
-                                Err(err) => debug!("couldn't reset HDR properties: {err:?}"),
+                            if let Err(err) = props.reset_hdr() {
+                                warn!("failed to get HDR properties: {err}");
+                            };
+
+                            if let Err(err) = props.commit() {
+                                warn!("failed to atomically commit properties: {err}");
                             }
                         } else {
                             warn!("failed to get connector properties");
@@ -1302,24 +1306,26 @@ impl Tty {
         debug!("picking mode: {mode:?}");
 
         let mut orientation = None;
-        if let Ok(props) = ConnectorProperties::try_new(&device.drm, connector.handle()) {
+        if let Ok(mut props) = ConnectorProperties::try_new(&device.drm, connector.handle()) {
             if let Some(bpc) = config.bpc {
-                match set_max_bpc(&props, bpc) {
-                    Ok(_) => (),
-                    Err(err) => debug!("couldn't set max bpc: {err:?}"),
-                }
+                if let Err(err) = props.set_max_bpc(bpc) {
+                    warn!("failed to get `max bpc` property: {err}");
+                };
             }
 
-            match reset_hdr(&props) {
-                Ok(()) => (),
-                Err(err) => debug!("couldn't reset HDR properties: {err:?}"),
-            }
+            if let Err(err) = props.reset_hdr() {
+                warn!("failed to get HDR properties: {err}");
+            };
 
             match get_panel_orientation(&props) {
                 Ok(x) => orientation = Some(x),
                 Err(err) => {
                     trace!("couldn't get panel orientation: {err:?}");
                 }
+            }
+
+            if let Err(err) = props.commit() {
+                warn!("failed to atomically commit properties: {err}");
             }
         } else {
             warn!("failed to get connector properties");
@@ -2436,11 +2442,14 @@ impl Tty {
                 };
 
                 if let Some(bpc) = config.bpc {
-                    if let Ok(props) = ConnectorProperties::try_new(&device.drm, surface.connector)
+                    if let Ok(mut props) =
+                        ConnectorProperties::try_new(&device.drm, surface.connector)
                     {
-                        match set_max_bpc(&props, bpc) {
-                            Ok(_) => (),
-                            Err(err) => debug!("couldn't set max bpc: {err:?}"),
+                        if let Err(err) = props.set_max_bpc(bpc) {
+                            warn!("failed to get `max bpc` property: {err}");
+                        };
+                        if let Err(err) = props.commit() {
+                            warn!("failed to atomically commit properties: {err}");
                         }
                     } else {
                         warn!("failed to get connector properties");
@@ -3275,6 +3284,8 @@ impl<'a> ConnectorProperties<'a> {
             device,
             connector,
             properties,
+            has_change: false,
+            requests: AtomicModeReq::new(),
         })
     }
 
@@ -3287,63 +3298,71 @@ impl<'a> ConnectorProperties<'a> {
 
         Err(anyhow!("couldn't find property: {name:?}"))
     }
-}
 
-const DRM_MODE_COLORIMETRY_DEFAULT: u64 = 0;
+    fn reset_hdr(&mut self) -> anyhow::Result<()> {
+        const DRM_MODE_COLORIMETRY_DEFAULT: u64 = 0;
 
-fn reset_hdr(props: &ConnectorProperties) -> anyhow::Result<()> {
-    let (info, value) = props.find(c"HDR_OUTPUT_METADATA")?;
-    let property::ValueType::Blob = info.value_type() else {
-        bail!("wrong property type")
-    };
+        let (info, value) = self.find(c"HDR_OUTPUT_METADATA")?;
 
-    if *value != 0 {
-        props
-            .device
-            .set_property(props.connector, info.handle(), 0)
-            .context("error setting property")?;
+        let property::ValueType::Blob = info.value_type() else {
+            bail!("wrong property type")
+        };
+        if *value != 0 {
+            self.requests
+                .add_raw_property(self.connector.into(), info.handle(), 0);
+            self.has_change = true;
+        }
+
+        let (info, value) = self.find(c"Colorspace")?;
+        let property::ValueType::Enum(_) = info.value_type() else {
+            bail!("wrong property type")
+        };
+        if *value != DRM_MODE_COLORIMETRY_DEFAULT {
+            self.requests.add_raw_property(
+                self.connector.into(),
+                info.handle(),
+                DRM_MODE_COLORIMETRY_DEFAULT,
+            );
+            self.has_change = true;
+        }
+
+        Ok(())
     }
 
-    let (info, value) = props.find(c"Colorspace")?;
-    let property::ValueType::Enum(_) = info.value_type() else {
-        bail!("wrong property type")
-    };
-    if *value != DRM_MODE_COLORIMETRY_DEFAULT {
-        props
-            .device
-            .set_property(props.connector, info.handle(), DRM_MODE_COLORIMETRY_DEFAULT)
-            .context("error setting property")?;
-    }
+    fn set_max_bpc(&mut self, bpc: Bpc) -> anyhow::Result<u64> {
+        let (info, value) = self.find(c"max bpc")?;
 
-    Ok(())
-}
+        let property::ValueType::UnsignedRange(min, max) = info.value_type() else {
+            bail!("wrong property type")
+        };
 
-fn set_max_bpc(props: &ConnectorProperties, bpc: Bpc) -> anyhow::Result<u64> {
-    let (info, value) = props.find(c"max bpc")?;
+        let bpc = bpc as u64;
+        let bpc = bpc.clamp(min, max);
 
-    let property::ValueType::UnsignedRange(min, max) = info.value_type() else {
-        bail!("wrong property type")
-    };
+        let property::Value::UnsignedRange(value) = info.value_type().convert_value(*value) else {
+            bail!("wrong property type")
+        };
 
-    let bpc = bpc as u64;
-    let bpc = bpc.clamp(min, max);
-
-    let property::Value::UnsignedRange(value) = info.value_type().convert_value(*value) else {
-        bail!("wrong property type")
-    };
-
-    if value != bpc {
-        props
-            .device
-            .set_property(
-                props.connector,
+        if value != bpc {
+            self.requests.add_raw_property(
+                self.connector.into(),
                 info.handle(),
                 property::Value::UnsignedRange(bpc).into(),
-            )
-            .context("error setting property")?;
+            );
+            self.has_change = true;
+        }
+
+        Ok(bpc)
     }
 
-    Ok(bpc)
+    fn commit(self) -> anyhow::Result<()> {
+        if self.has_change {
+            self.device
+                .atomic_commit(AtomicCommitFlags::ALLOW_MODESET, self.requests)?;
+        }
+
+        Ok(())
+    }
 }
 
 fn is_vrr_capable(device: &DrmDevice, connector: connector::Handle) -> Option<bool> {
