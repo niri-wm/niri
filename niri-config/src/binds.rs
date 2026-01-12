@@ -218,6 +218,8 @@ pub enum Action {
     FocusWorkspaceUp,
     #[knuffel(skip)]
     FocusWorkspaceUpUnderMouse,
+    FocusWorkspaceDownOrFirst,
+    FocusWorkspaceUpOrLast,
     FocusWorkspace(#[knuffel(argument)] WorkspaceReference),
     FocusWorkspacePrevious,
     MoveWindowToWorkspaceDown(#[knuffel(property(name = "focus"), default = true)] bool),
@@ -505,6 +507,8 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::CenterVisibleColumns {} => Self::CenterVisibleColumns,
             niri_ipc::Action::FocusWorkspaceDown {} => Self::FocusWorkspaceDown,
             niri_ipc::Action::FocusWorkspaceUp {} => Self::FocusWorkspaceUp,
+            niri_ipc::Action::FocusWorkspaceDownOrFirst {} => Self::FocusWorkspaceDownOrFirst,
+            niri_ipc::Action::FocusWorkspaceUpOrLast {} => Self::FocusWorkspaceUpOrLast,
             niri_ipc::Action::FocusWorkspace { reference } => {
                 Self::FocusWorkspace(WorkspaceReference::from(reference))
             }
