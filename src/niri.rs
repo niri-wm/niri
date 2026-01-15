@@ -4078,7 +4078,16 @@ impl Niri {
             }
 
             for elem in elements.drain(..) {
-                process_zoom!(elem, LayerSurface, SolidColor, Wayland, Monitor);
+                process_zoom!(
+                    elem,
+                    Monitor,
+                    RescaledTile,
+                    LayerSurface,
+                    Wayland,
+                    SolidColor,
+                    ExitConfirmDialog,
+                    Texture
+                );
             }
 
             elements = zoomed_elements;
@@ -4282,10 +4291,16 @@ impl Niri {
             mon.render_insert_hint_between_workspaces(renderer, &mut |elem| push(elem.into()));
 
             // Macro instead of closure to avoid borrowing push().
+            // When zoom == 1.0 (no overview zoom), push elements directly without
+            // wrapping in Relocated* types, so cursor zoom post-processing can handle them.
             macro_rules! process {
                 ($geo:expr) => {{
                     &mut |elem| {
-                        if let Some(elem) = scale_relocate_crop(elem, output_scale, zoom, $geo) {
+                        if zoom == 1.0 {
+                            push(elem.into());
+                        } else if let Some(elem) =
+                            scale_relocate_crop(elem, output_scale, zoom, $geo)
+                        {
                             push(elem.into());
                         }
                     }
@@ -4303,7 +4318,12 @@ impl Niri {
                 push_normal_from_layer!(Layer::Bottom, process!(geo));
                 push_normal_from_layer!(Layer::Background, process!(geo));
 
-                process!(geo)(ws.render_background());
+                let bg = ws.render_background();
+                if zoom == 1.0 {
+                    push(bg.into());
+                } else if let Some(elem) = scale_relocate_crop(bg, output_scale, zoom, geo) {
+                    push(elem.into());
+                }
             }
         }
 
@@ -6225,12 +6245,6 @@ niri_render_elements! {
         Monitor = MonitorRenderElement<R>,
         RescaledTile = RescaleRenderElement<TileRenderElement<R>>,
         LayerSurface = LayerSurfaceRenderElement<R>,
-        RelocatedLayerSurface = CropRenderElement<RelocateRenderElement<RescaleRenderElement<
-            LayerSurfaceRenderElement<R>
-        >>>,
-        RelocatedColor = CropRenderElement<RelocateRenderElement<RescaleRenderElement<
-            SolidColorRenderElement
-        >>>,
         Pointer = PointerRenderElements<R>,
         Wayland = WaylandSurfaceRenderElement<R>,
         SolidColor = SolidColorRenderElement,
@@ -6245,14 +6259,23 @@ niri_render_elements! {
         RelocatedMonitor = CropRenderElement<RelocateRenderElement<RescaleRenderElement<
             MonitorRenderElement<R>
         >>>,
+        RelocatedTile = CropRenderElement<RelocateRenderElement<RescaleRenderElement<
+            RescaleRenderElement<TileRenderElement<R>>
+        >>>,
+        RelocatedLayerSurface = CropRenderElement<RelocateRenderElement<RescaleRenderElement<
+            LayerSurfaceRenderElement<R>
+        >>>,
         RelocatedWayland = CropRenderElement<RelocateRenderElement<RescaleRenderElement<
             WaylandSurfaceRenderElement<R>
         >>>,
-        RelocatedTile = CropRenderElement<RelocateRenderElement<RescaleRenderElement<
-            TileRenderElement<R>
+        RelocatedColor = CropRenderElement<RelocateRenderElement<RescaleRenderElement<
+            SolidColorRenderElement
         >>>,
         RelocatedExitConfirmDialog = CropRenderElement<RelocateRenderElement<RescaleRenderElement<
             ExitConfirmDialogRenderElement
+        >>>,
+        RelocatedTexture = CropRenderElement<RelocateRenderElement<RescaleRenderElement<
+            PrimaryGpuTextureRenderElement
         >>>,
     }
 }
