@@ -4086,7 +4086,8 @@ impl Niri {
                     Wayland,
                     SolidColor,
                     ExitConfirmDialog,
-                    Texture
+                    Texture,
+                    RelocatedColor
                 );
             }
 
@@ -6265,6 +6266,9 @@ niri_render_elements! {
         RelocatedLayerSurface = CropRenderElement<RelocateRenderElement<RescaleRenderElement<
             LayerSurfaceRenderElement<R>
         >>>,
+        RelocatedPointer = CropRenderElement<RelocateRenderElement<RescaleRenderElement<
+            PointerRenderElements<R>
+        >>>,
         RelocatedWayland = CropRenderElement<RelocateRenderElement<RescaleRenderElement<
             WaylandSurfaceRenderElement<R>
         >>>,
@@ -6277,5 +6281,10 @@ niri_render_elements! {
         RelocatedTexture = CropRenderElement<RelocateRenderElement<RescaleRenderElement<
             PrimaryGpuTextureRenderElement
         >>>,
+        ReRelocatedColor = CropRenderElement<RelocateRenderElement<RescaleRenderElement<
+            CropRenderElement<RelocateRenderElement<RescaleRenderElement<
+                SolidColorRenderElement
+            >>
+        >>>>
     }
 }
