@@ -14,29 +14,12 @@ pub struct SpawnShAtStartup {
     pub command: String,
 }
 
-/// Quality setting for cursor zoom magnification
-#[derive(knuffel::DecodeScalar, Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub enum ZoomQuality {
-    /// Bilinear interpolation (default, smooth but may appear blurry at high zoom)
-    #[default]
-    Smooth,
-    /// Nearest-neighbor interpolation for crisp, pixel-perfect zoom
-    PixelPerfect,
-}
-
-impl MergeWith<ZoomQuality> for ZoomQuality {
-    fn merge_with(&mut self, part: &ZoomQuality) {
-        *self = *part;
-    }
-}
-
 #[derive(Debug, PartialEq)]
 pub struct Cursor {
     pub xcursor_theme: String,
     pub xcursor_size: u8,
     pub hide_when_typing: bool,
     pub hide_after_inactive_ms: Option<u32>,
-    pub zoom_quality: ZoomQuality,
 }
 
 impl Default for Cursor {
@@ -46,7 +29,6 @@ impl Default for Cursor {
             xcursor_size: 24,
             hide_when_typing: false,
             hide_after_inactive_ms: None,
-            zoom_quality: ZoomQuality::default(),
         }
     }
 }
@@ -61,8 +43,6 @@ pub struct CursorPart {
     pub hide_when_typing: Option<Flag>,
     #[knuffel(child, unwrap(argument))]
     pub hide_after_inactive_ms: Option<u32>,
-    #[knuffel(child, unwrap(argument))]
-    pub zoom_quality: Option<ZoomQuality>,
 }
 
 impl MergeWith<CursorPart> for Cursor {
@@ -70,7 +50,6 @@ impl MergeWith<CursorPart> for Cursor {
         merge_clone!((self, part), xcursor_theme, xcursor_size);
         merge!((self, part), hide_when_typing);
         merge_clone_opt!((self, part), hide_after_inactive_ms);
-        merge!((self, part), zoom_quality);
     }
 }
 

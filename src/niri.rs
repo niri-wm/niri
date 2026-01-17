@@ -16,7 +16,7 @@ use calloop::futures::Scheduler;
 use niri_config::debug::PreviewRender;
 use niri_config::{
     Config, FloatOrInt, Key, Modifiers, OutputName, TrackLayout, WarpMouseToFocusMode,
-    WorkspaceReference, Xkb, ZoomQuality,
+    WorkspaceReference, Xkb,
 };
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::input::Keycode;
@@ -33,7 +33,7 @@ use smithay::backend::renderer::element::{
 };
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::renderer::sync::SyncPoint;
-use smithay::backend::renderer::{Color32F, Renderer, TextureFilter};
+use smithay::backend::renderer::Color32F;
 use smithay::desktop::utils::{
     bbox_from_surface_tree, output_update, send_dmabuf_feedback_surface_tree,
     send_frames_surface_tree, surface_presentation_feedback_flags_from_states,
@@ -4032,24 +4032,6 @@ impl Niri {
         target: RenderTarget,
     ) -> Vec<OutputRenderElements<R>> {
         let mut elements = Vec::new();
-        let zoom_factor = self.cursor_zoom_factor;
-
-        if zoom_factor > 1.0 {
-            let zoom_quality = self.config.borrow().cursor.zoom_quality;
-            // Nearest-neighbor filtering must be set before DRM compositor renders.
-            if zoom_quality == ZoomQuality::PixelPerfect {
-                let gles = renderer.as_gles_renderer();
-                let _ = gles.upscale_filter(TextureFilter::Nearest).map_err(|err| {
-                    warn!("error setting upscale filter to Nearest: {err:?}");
-                });
-                let _ = gles
-                    .downscale_filter(TextureFilter::Nearest)
-                    .map_err(|err| {
-                        warn!("error setting downscale filter to Nearest: {err:?}");
-                    });
-            }
-        }
-
         self.render_inner(renderer, output, include_pointer, target, &mut |elem| {
             elements.push(elem)
         });
@@ -4061,7 +4043,7 @@ impl Niri {
 
         // Apply cursor zoom to all elements except the cursor itself
         // if cursor zoom is active. Per-monitor like overview zoom.
-        if zoom_factor > 1.0 {
+        if self.cursor_zoom_factor > 1.0 {
             let zoom_factor = self.cursor_zoom_factor;
             let pointer = self.seat.get_pointer().unwrap();
             let cursor_pos = pointer.current_location();
@@ -4069,6 +4051,7 @@ impl Niri {
             let cursor_pos_in_output = cursor_pos - output_geo.loc.to_f64();
             let output_size = output_geo.size.to_f64();
             let output_rect = Rectangle::new(Point::new(0., 0.), output_size);
+
             let mut zoomed_elements = Vec::with_capacity(elements.len());
 
             macro_rules! process_zoom {
@@ -6220,10 +6203,6 @@ fn scale_relocate_crop<E: Element>(
     CropRenderElement::from_element(elem, output_scale, ws_geo)
 }
 
-/// Apply cursor zoom to an element with the specified quality setting.
-///
-/// When zoom_quality is PixelPerfect, sets up nearest-neighbor texture filtering
-/// for crisp, pixel-perfect scaling instead of blurry bilinear interpolation.
 fn apply_cursor_zoom<E: Element>(
     element: E,
     output_scale: Scale<f64>,
