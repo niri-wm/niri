@@ -9,7 +9,7 @@ use input::event::gesture::GestureEventCoordinates as _;
 use niri_config::{
     Action, Bind, Binds, Config, Key, ModKey, Modifiers, MruDirection, SwitchBinds, Trigger,
 };
-use niri_ipc::LayoutSwitchTarget;
+use niri_ipc::{LayoutSwitchTarget, ZoomBehavior};
 use smithay::backend::input::{
     AbsolutePositionEvent, Axis, AxisSource, ButtonState, Device, DeviceCapability, Event,
     GestureBeginEvent, GestureEndEvent, GesturePinchUpdateEvent as _, GestureSwipeUpdateEvent as _,
@@ -2674,6 +2674,61 @@ impl State {
         // Redraw to update the cursor position.
         // FIXME: redraw only outputs overlapping the cursor.
         self.niri.queue_redraw_all();
+
+        // Update cursor zoom center for EdgePushed behavior
+        for monitor in self.niri.layout.monitors_mut() {
+            if monitor.cursor_zoom_factor <= 1.0
+                || monitor.cursor_zoom_center_behavior != ZoomBehavior::EdgePushed
+            {
+                continue;
+            }
+
+            let output_geo = match self.niri.global_space.output_geometry(monitor.output()) {
+                Some(geo) => geo.to_f64(),
+                None => continue,
+            };
+
+            // Get cursor position within this monitor
+            let cursor_in_monitor = new_pos - output_geo.loc.to_f64();
+            if !output_geo.contains(cursor_in_monitor.to_i32_round()) {
+                continue;
+            }
+
+            let output_size = output_geo.size;
+            let edge_threshold = output_size.to_f64() * 0.1; // 10% from each edge
+
+            // Calculate target center based on cursor position relative to edges
+            let target_center = if cursor_in_monitor.x < edge_threshold.w {
+                // Cursor near left edge - push center left
+                Point::from((cursor_in_monitor.x * 0.3, cursor_in_monitor.y))
+            } else if cursor_in_monitor.x > output_size.w - edge_threshold.w {
+                // Cursor near right edge - push center right
+                Point::from((
+                    cursor_in_monitor.x * 1.7 - output_size.w * 0.7,
+                    cursor_in_monitor.y,
+                ))
+            } else if cursor_in_monitor.y < edge_threshold.h {
+                // Cursor near top edge - push center up
+                Point::from((cursor_in_monitor.x, cursor_in_monitor.y * 0.3))
+            } else if cursor_in_monitor.y > output_size.h - edge_threshold.h {
+                // Cursor near bottom edge - push center down
+                Point::from((
+                    cursor_in_monitor.x,
+                    cursor_in_monitor.y * 1.7 - output_size.h * 0.7,
+                ))
+            } else {
+                // Cursor in middle - keep current center
+                monitor.cursor_zoom_center
+            };
+
+            // Smooth transition to target center (lerp with 0.1 factor)
+            monitor.cursor_zoom_center = Point::from((
+                monitor.cursor_zoom_center.x
+                    + (target_center.x - monitor.cursor_zoom_center.x) * 0.1,
+                monitor.cursor_zoom_center.y
+                    + (target_center.y - monitor.cursor_zoom_center.y) * 0.1,
+            ));
+        }
     }
 
     fn on_pointer_motion_absolute<I: InputBackend>(
