@@ -223,6 +223,7 @@ pub trait LayoutElement {
     fn is_ignoring_opacity_window_rule(&self) -> bool;
 
     fn is_urgent(&self) -> bool;
+    fn is_pinned(&self) -> bool;
 
     fn configure_intent(&self) -> ConfigureIntent;
     fn send_pending_configure(&mut self);
@@ -3137,24 +3138,6 @@ impl<W: LayoutElement> Layout<W> {
             return;
         };
         workspace.toggle_window_floating(window);
-    }
-
-    pub fn toggle_window_pinned(&mut self, window: Option<&W::Id>) {
-        let monitor = if let Some(window) = window {
-            Some(
-                self.monitors_mut()
-                    .find(|mon| mon.has_window(window))
-                    .unwrap(),
-            )
-        } else {
-            self.active_monitor()
-        };
-
-        let Some(monitor) = monitor else {
-            return;
-        };
-
-        monitor.toggle_window_pinned(window);
     }
 
     pub fn set_window_floating(&mut self, window: Option<&W::Id>, floating: bool) {

@@ -2121,15 +2121,25 @@ impl State {
                 }
             }
             Action::ToggleWindowPinned => {
-                self.niri.layout.toggle_window_pinned(None);
-                // FIXME: granular
-                self.niri.queue_redraw_all();
+                if let Some(mapped) = self
+                    .niri
+                    .layout
+                    .active_workspace_mut()
+                    .and_then(|w| w.active_window_mut())
+                {
+                    mapped.set_pinned(!mapped.is_pinned());
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
+                }
             }
             Action::ToggleWindowPinnedById(id) => {
-                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
-                let window = window.map(|(_, m)| m.window.clone());
-                if let Some(window) = window {
-                    self.niri.layout.toggle_window_pinned(Some(&window));
+                let mapped = self
+                    .niri
+                    .layout
+                    .workspaces_mut()
+                    .find_map(|ws| ws.windows_mut().find(|w| w.id().get() == id));
+                if let Some(mapped) = mapped {
+                    mapped.set_pinned(!mapped.is_pinned());
                     // FIXME: granular
                     self.niri.queue_redraw_all();
                 }

@@ -31,6 +31,8 @@ pub struct WindowRule {
     pub open_floating: Option<bool>,
     #[knuffel(child, unwrap(argument))]
     pub open_focused: Option<bool>,
+    #[knuffel(child, unwrap(argument))]
+    pub open_pinned: Option<bool>,
 
     // Rules applied dynamically.
     #[knuffel(child, unwrap(argument))]
@@ -88,6 +90,8 @@ pub struct Match {
     pub is_active_in_column: Option<bool>,
     #[knuffel(property)]
     pub is_floating: Option<bool>,
+    #[knuffel(property)]
+    pub is_pinned: Option<bool>,
     #[knuffel(property)]
     pub is_window_cast_target: Option<bool>,
     #[knuffel(property)]

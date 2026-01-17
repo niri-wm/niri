@@ -76,8 +76,6 @@ pub struct Monitor<W: LayoutElement> {
     insert_hint_element: InsertHintElement,
     /// Location to render the insert hint element.
     insert_hint_render_loc: Option<InsertHintRenderLoc>,
-    /// Pinned windows.
-    pinned_windows: Vec<W::Id>,
     /// Pending pinned windows to be moved to the new workspace after animation.
     pending_pinned_windows: Vec<(RemovedTile<W>, bool)>,
     /// Whether the overview is open.
@@ -343,7 +341,6 @@ impl<W: LayoutElement> Monitor<W> {
             insert_hint: None,
             insert_hint_element: InsertHintElement::new(options.layout.insert_hint),
             insert_hint_render_loc: None,
-            pinned_windows: Vec::new(),
             pending_pinned_windows: Vec::new(),
             overview_open: false,
             overview_progress: None,
@@ -1354,19 +1351,6 @@ impl<W: LayoutElement> Monitor<W> {
         self.clean_up_workspaces();
     }
 
-    pub fn toggle_window_pinned(&mut self, id: Option<&W::Id>) {
-        let active_id = self.active_window().map(|w| w.id().clone());
-        let Some(id) = id.cloned().or(active_id) else {
-            return;
-        };
-
-        if let Some(pos) = self.pinned_windows.iter().position(|w| w == &id) {
-            self.pinned_windows.remove(pos);
-        } else {
-            self.pinned_windows.push(id);
-        }
-    }
-
     fn finish_pinned_windows_move(&mut self) {
         let pending_pinned_windows = core::mem::take(&mut self.pending_pinned_windows);
 
@@ -1400,21 +1384,16 @@ impl<W: LayoutElement> Monitor<W> {
             return;
         }
 
-        let mut pinned_windows = core::mem::take(&mut self.pinned_windows);
+        let active_window_id = self.active_window().map(|w| w.id().clone());
+        let pinned_windows = self.active_workspace().pinned_windows();
 
-        pinned_windows.retain(|id| {
-            if self.active_workspace().is_floating(id) {
-                let activate = self.active_window().map(|w| w.id()) == Some(id);
-                let removed =
-                    self.workspaces[self.active_workspace_idx].remove_tile(id, Transaction::new());
-                self.pending_pinned_windows.push((removed, activate));
-                true
-            } else {
-                false
-            }
-        });
-
-        self.pinned_windows = pinned_windows;
+        for window in pinned_windows {
+            let removed = self
+                .active_workspace()
+                .remove_tile(&window, Transaction::new());
+            self.pending_pinned_windows
+                .push((removed, active_window_id == Some(window)));
+        }
     }
 
     /// Returns the geometry of the active tile relative to and clamped to the output.
