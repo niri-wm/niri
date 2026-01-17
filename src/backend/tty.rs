@@ -1877,7 +1877,8 @@ impl Tty {
         // Overlay planes are disabled by default as they cause weird performance issues on my
         // system.
         let flags = {
-            let debug = &self.config.borrow().debug;
+            let config = self.config.borrow();
+            let debug = &config.debug;
 
             let primary_scanout_flag = if debug.restrict_primary_scanout_to_matching_format {
                 FrameFlags::ALLOW_PRIMARY_PLANE_SCANOUT
@@ -1901,6 +1902,21 @@ impl Tty {
                 if output_state.frame_clock.vrr() {
                     flags.insert(FrameFlags::SKIP_CURSOR_ONLY_UPDATES);
                 }
+            }
+
+            // When pixel-perfect cursor zoom is active, disable direct scanout so that
+            // the GPU texture filter (Nearest) is used instead of hardware plane scaling
+            // which typically uses bilinear filtering.
+            let zoom_factor = niri
+                .layout
+                .monitor_for_output(output)
+                .map(|m| m.cursor_zoom_factor)
+                .unwrap_or(1.0);
+            if zoom_factor > 1.0
+                && config.cursor.zoom_quality == niri_config::ZoomQuality::PixelPerfect
+            {
+                flags.remove(primary_scanout_flag);
+                flags.remove(FrameFlags::ALLOW_OVERLAY_PLANE_SCANOUT);
             }
 
             flags

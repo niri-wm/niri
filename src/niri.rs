@@ -18,6 +18,7 @@ use niri_config::{
     Config, FloatOrInt, Key, Modifiers, OutputName, TrackLayout, WarpMouseToFocusMode,
     WorkspaceReference, Xkb,
 };
+
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::input::Keycode;
 use smithay::backend::renderer::damage::OutputDamageTracker;
@@ -33,7 +34,7 @@ use smithay::backend::renderer::element::{
 };
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::renderer::sync::SyncPoint;
-use smithay::backend::renderer::Color32F;
+use smithay::backend::renderer::{Color32F, Renderer, TextureFilter};
 use smithay::desktop::utils::{
     bbox_from_surface_tree, output_update, send_dmabuf_feedback_surface_tree,
     send_frames_surface_tree, surface_presentation_feedback_flags_from_states,
@@ -4039,14 +4040,6 @@ impl Niri {
         target: RenderTarget,
     ) -> Vec<OutputRenderElements<R>> {
         let mut elements = Vec::new();
-        self.render_inner(renderer, output, include_pointer, target, &mut |elem| {
-            elements.push(elem)
-        });
-
-        let output_scale = Scale::from(output.current_scale().fractional_scale());
-        if self.debug_draw_opaque_regions {
-            draw_opaque_regions(&mut elements, output_scale);
-        }
 
         // Apply cursor zoom to all elements except the cursor itself
         // if cursor zoom is active. Per-monitor like overview zoom.
@@ -4055,6 +4048,29 @@ impl Niri {
             .monitor_for_output(output)
             .map(|m| m.cursor_zoom_factor)
             .unwrap_or(1.0);
+
+        if cursor_zoom_factor > 1.0 {
+            let zoom_quality = self.config.borrow().cursor.zoom_quality;
+            // Nearest-neighbor filtering must be set before DRM compositor renders.
+            // Reset to Linear for smooth mode, or set to Nearest for pixel-perfect.
+            let filter = TextureFilter::from(zoom_quality);
+            let gles = renderer.as_gles_renderer();
+            let _ = gles.upscale_filter(filter).map_err(|err| {
+                warn!("error setting upscale filter: {err:?}");
+            });
+            let _ = gles.downscale_filter(filter).map_err(|err| {
+                warn!("error setting downscale filter: {err:?}");
+            });
+        }
+
+        self.render_inner(renderer, output, include_pointer, target, &mut |elem| {
+            elements.push(elem)
+        });
+
+        let output_scale = Scale::from(output.current_scale().fractional_scale());
+        if self.debug_draw_opaque_regions {
+            draw_opaque_regions(&mut elements, output_scale);
+        }
 
         let elements = if cursor_zoom_factor > 1.0 {
             let monitor = self.layout.monitor_for_output(output).unwrap();
