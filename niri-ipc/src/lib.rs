@@ -935,8 +935,10 @@ pub enum Action {
     /// Toggle pinned status of a window.
     ToggleWindowPinned {
         /// Id of the window to toggle pinned.
+        ///
+        /// If `None`, uses the focused window.
         #[cfg_attr(feature = "clap", arg(long))]
-        id: u64,
+        id: Option<u64>,
     },
     /// Reload the config file.
     ///

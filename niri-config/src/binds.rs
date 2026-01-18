@@ -702,7 +702,10 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::ToggleWindowUrgent { id } => Self::ToggleWindowUrgent(id),
             niri_ipc::Action::SetWindowUrgent { id } => Self::SetWindowUrgent(id),
             niri_ipc::Action::UnsetWindowUrgent { id } => Self::UnsetWindowUrgent(id),
-            niri_ipc::Action::ToggleWindowPinned { id } => Self::ToggleWindowPinnedById(id),
+            niri_ipc::Action::ToggleWindowPinned { id: None } => Self::ToggleWindowPinned,
+            niri_ipc::Action::ToggleWindowPinned { id: Some(id) } => {
+                Self::ToggleWindowPinnedById(id)
+            }
             niri_ipc::Action::LoadConfigFile { path } => Self::LoadConfigFile(path),
         }
     }
