@@ -541,7 +541,7 @@ window-rule {
 }
 ```
 
-Only *floating* pinned windows will be actively pinned to the monitor on workspace switch, so you likely want `open-floating` too.
+Only *floating* pinned windows will remain fixed to the monitor on workspace switch, so you likely want `open-floating` too.
 
 ```kdl
 // Open the Firefox picture-in-picture window as floating and pinned.
