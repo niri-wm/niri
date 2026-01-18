@@ -93,8 +93,7 @@ impl Winit {
                 logical: Some(logical_output(&output)),
                 zoom_factor: 1.0,
                 zoom_behavior: niri_ipc::ZoomBehavior::default(),
-                zoom_filter: niri_ipc::ZoomFilter::default(),
-                zoom_bounds: 0,
+                zoom_threshold: 0.15,
             },
         )])));
 
@@ -283,8 +282,7 @@ impl Winit {
             if let Some(mon) = niri.layout.monitor_for_output(&self.output) {
                 output.zoom_factor = mon.cursor_zoom();
                 output.zoom_behavior = mon.cursor_zoom_behavior().into();
-                output.zoom_filter = mon.cursor_zoom_filter().into();
-                output.zoom_bounds = mon.cursor_zoom_bounds();
+                output.zoom_threshold = mon.cursor_zoom_threshold();
             }
         }
     }

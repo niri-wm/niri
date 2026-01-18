@@ -1926,11 +1926,8 @@ impl State {
                         niri_ipc::ZoomAction::Behavior { behavior } => {
                             zoom.behavior = Some(behavior);
                         }
-                        niri_ipc::ZoomAction::Filter { filter } => {
-                            zoom.filter = Some(filter.into());
-                        }
-                        niri_ipc::ZoomAction::Bounds { bound } => {
-                            zoom.bounds = Some(bound);
+                        niri_ipc::ZoomAction::Threshold { threshold } => {
+                            zoom.threshold = Some(threshold.clamp(0.0, 1.0));
                         }
                     }
                 }
@@ -1959,12 +1956,9 @@ impl State {
             if let Some(mon) = output.and_then(|o| self.niri.layout.monitor_for_output(o)) {
                 ipc_output.zoom_factor = mon.cursor_zoom();
                 ipc_output.zoom_behavior = mon.cursor_zoom_behavior().into();
-                ipc_output.zoom_filter = mon.cursor_zoom_filter().into();
-                ipc_output.zoom_bounds = mon.cursor_zoom_bounds().into();
+                ipc_output.zoom_threshold = mon.cursor_zoom_threshold();
             }
         }
-
-        #[cfg(feature = "dbus")]
         self.niri.on_ipc_outputs_changed();
 
         let new_config = self.backend.ipc_outputs().lock().unwrap().clone();
@@ -4075,12 +4069,15 @@ impl Niri {
 
         let monitor = self.layout.monitor_for_output(output).unwrap();
         let cursor_zoom_factor = monitor.cursor_zoom_factor;
-        let zoom_filter = monitor.cursor_zoom_filter();
 
         if cursor_zoom_factor > 1.0 {
-            // Nearest-neighbor filtering must be set before DRM compositor renders.
-            // Reset to Linear for smooth mode, or set to Nearest for pixel-perfect.
-            let filter = TextureFilter::from(zoom_filter);
+            // Use Nearest neighbor filtering for high zoom levels (pixel-perfect),
+            // Linear for lower zoom levels (smooth).
+            let filter = if cursor_zoom_factor > 3.0 {
+                TextureFilter::Nearest
+            } else {
+                TextureFilter::Linear
+            };
             let gles = renderer.as_gles_renderer();
             let _ = gles.upscale_filter(filter).map_err(|err| {
                 warn!("error setting upscale filter: {err:?}");
@@ -4114,7 +4111,6 @@ impl Niri {
             };
 
             let scale_with_zoom = self.config.borrow().cursor.scale_with_zoom;
-            let bound = monitor.cursor_zoom_bounds;
 
             // Apply zoom to a OutputRenderElement variant.
             macro_rules! zoom_variant {
@@ -4123,7 +4119,6 @@ impl Niri {
                         $elem,
                         output_scale,
                         cursor_zoom_factor,
-                        bound,
                         zoom_center,
                         output_rect,
                     )
@@ -6282,7 +6277,6 @@ fn apply_cursor_zoom<E: Element>(
     element: E,
     output_scale: Scale<f64>,
     zoom: f64,
-    bound: i32,
     cursor_pos: Point<f64, Logical>,
     output_geo: Rectangle<f64, Logical>,
 ) -> Option<CropRenderElement<RelocateRenderElement<RescaleRenderElement<E>>>> {

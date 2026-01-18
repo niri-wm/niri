@@ -1912,12 +1912,7 @@ impl Tty {
                 .monitor_for_output(output)
                 .map(|m| m.cursor_zoom_factor)
                 .unwrap_or(1.0);
-            let zoom_filter = niri
-                .layout
-                .monitor_for_output(output)
-                .map(|m| m.cursor_zoom_filter())
-                .unwrap_or_default();
-            if zoom_factor > 1.0 && zoom_filter == niri_config::ZoomFilter::Nearest {
+            if zoom_factor > 3.0 {
                 flags.remove(primary_scanout_flag);
                 flags.remove(FrameFlags::ALLOW_OVERLAY_PLANE_SCANOUT);
             }
@@ -2184,24 +2179,15 @@ impl Tty {
                 let logical = output.map(logical_output);
 
                 // Get zoom state from the monitor if available.
-                let (zoom_factor, zoom_behavior, zoom_filter, zoom_bounds) = output
+                let (zoom_factor, zoom_behavior, zoom_threshold) = output
                     .and_then(|o| niri.layout.monitor_for_output(o))
-                    .map_or(
+                    .map_or((1.0, niri_ipc::ZoomBehavior::default(), 0.15), |mon| {
                         (
-                            1.0,
-                            niri_ipc::ZoomBehavior::default(),
-                            niri_ipc::ZoomFilter::default(),
-                            0,
-                        ),
-                        |mon| {
-                            (
-                                mon.cursor_zoom(),
-                                mon.cursor_zoom_behavior(),
-                                mon.cursor_zoom_filter().into(),
-                                mon.cursor_zoom_bounds(),
-                            )
-                        },
-                    );
+                            mon.cursor_zoom(),
+                            mon.cursor_zoom_behavior(),
+                            mon.cursor_zoom_threshold(),
+                        )
+                    });
 
                 let id = device.known_crtcs.get(&crtc).map(|info| info.id);
                 let id = id.unwrap_or_else(|| {
@@ -2223,8 +2209,7 @@ impl Tty {
                     logical,
                     zoom_factor,
                     zoom_behavior,
-                    zoom_filter,
-                    zoom_bounds,
+                    zoom_threshold,
                 };
 
                 ipc_outputs.insert(id, ipc_output);

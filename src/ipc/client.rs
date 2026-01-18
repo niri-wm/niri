@@ -570,8 +570,7 @@ fn print_output(output: Output) -> anyhow::Result<()> {
         logical,
         zoom_factor,
         zoom_behavior,
-        zoom_filter,
-        zoom_bounds,
+        zoom_threshold,
         ..
     } = output;
 
@@ -662,12 +661,7 @@ fn print_output(output: Output) -> anyhow::Result<()> {
         niri_ipc::ZoomBehavior::EdgePushed => "edge-pushed",
     };
     print!(", {b}");
-    let f = match zoom_filter {
-        niri_ipc::ZoomFilter::Nearest => "nearest",
-        niri_ipc::ZoomFilter::Linear => "linear",
-    };
-    print!(", {f}");
-    print!(", bounds: {zoom_bounds}px");
+    print!(", threshold: {:.2}", zoom_threshold);
     println!();
 
     println!("  Available modes:");

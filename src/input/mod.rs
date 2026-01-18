@@ -2703,11 +2703,26 @@ impl State {
             let visible_top = focal.y * (zoom - 1.0) / zoom;
             let visible_bottom = focal.y + (output_h - focal.y) / zoom;
 
-            // Check if cursor is outside visible area
-            let cursor_outside = cursor_in_monitor.x < visible_left
-                || cursor_in_monitor.x > visible_right
-                || cursor_in_monitor.y < visible_top
-                || cursor_in_monitor.y > visible_bottom;
+            // Cursor has physical dimensions - the hotspot is the point, but the rendered
+            // cursor icon extends beyond. Use a bounding box for cursor collision.
+            // Standard X11 cursors have ~16-24px icons with hotspot at tip.
+            let cursor_half_size = 16.0;
+
+            // Threshold as fraction of output size - cursor can move within this margin
+            // before triggering edge-push panning.
+            let threshold_x = output_w * monitor.cursor_zoom_threshold;
+            let threshold_y = output_h * monitor.cursor_zoom_threshold;
+
+            // Check if cursor BOUNDING BOX is outside visible area (plus threshold margin)
+            let cursor_left = cursor_in_monitor.x - cursor_half_size;
+            let cursor_right = cursor_in_monitor.x + cursor_half_size;
+            let cursor_top = cursor_in_monitor.y - cursor_half_size;
+            let cursor_bottom = cursor_in_monitor.y + cursor_half_size;
+
+            let cursor_outside = cursor_left < visible_left - threshold_x
+                || cursor_right > visible_right + threshold_x
+                || cursor_top < visible_top - threshold_y
+                || cursor_bottom > visible_bottom + threshold_y;
 
             if cursor_outside {
                 // Move focal point by delta scaled by zoom

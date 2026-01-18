@@ -1,7 +1,3 @@
-use std::str::FromStr;
-
-use smithay::backend::renderer::TextureFilter;
-
 use crate::appearance::{Color, WorkspaceShadow, WorkspaceShadowPart, DEFAULT_BACKDROP_COLOR};
 use crate::utils::{Flag, MergeWith};
 use crate::FloatOrInt;
@@ -16,62 +12,6 @@ pub struct SpawnAtStartup {
 pub struct SpawnShAtStartup {
     #[knuffel(argument)]
     pub command: String,
-}
-
-/// Filter setting for cursor zoom magnification
-#[derive(knuffel::DecodeScalar, Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub enum ZoomFilter {
-    #[default]
-    Linear,
-    Nearest,
-}
-
-impl FromStr for ZoomFilter {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_lowercase().as_str() {
-            "nearest" => Ok(ZoomFilter::Nearest),
-            "linear" => Ok(ZoomFilter::Linear),
-            _ => Err(format!(
-                "invalid zoom filter '{}', expected 'nearest' or 'linear'",
-                s
-            )),
-        }
-    }
-}
-
-impl From<ZoomFilter> for TextureFilter {
-    fn from(zoom_filter: ZoomFilter) -> Self {
-        match zoom_filter {
-            ZoomFilter::Nearest => TextureFilter::Nearest,
-            ZoomFilter::Linear => TextureFilter::Linear,
-        }
-    }
-}
-
-impl From<niri_ipc::ZoomFilter> for ZoomFilter {
-    fn from(filter: niri_ipc::ZoomFilter) -> Self {
-        match filter {
-            niri_ipc::ZoomFilter::Nearest => ZoomFilter::Nearest,
-            niri_ipc::ZoomFilter::Linear => ZoomFilter::Linear,
-        }
-    }
-}
-
-impl From<ZoomFilter> for niri_ipc::ZoomFilter {
-    fn from(filter: ZoomFilter) -> Self {
-        match filter {
-            ZoomFilter::Nearest => niri_ipc::ZoomFilter::Nearest,
-            ZoomFilter::Linear => niri_ipc::ZoomFilter::Linear,
-        }
-    }
-}
-
-impl MergeWith<ZoomFilter> for ZoomFilter {
-    fn merge_with(&mut self, part: &ZoomFilter) {
-        *self = *part;
-    }
 }
 
 #[derive(Debug, PartialEq)]

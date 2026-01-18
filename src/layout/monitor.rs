@@ -3,7 +3,7 @@ use std::iter::zip;
 use std::rc::Rc;
 use std::time::Duration;
 
-use niri_config::{CornerRadius, LayoutPart, ZoomFilter};
+use niri_config::{CornerRadius, LayoutPart};
 use niri_ipc::ZoomBehavior;
 use smithay::backend::renderer::element::utils::{
     CropRenderElement, Relocate, RelocateRenderElement, RescaleRenderElement,
@@ -94,10 +94,8 @@ pub struct Monitor<W: LayoutElement> {
     pub cursor_zoom_center: Point<f64, Logical>,
     /// Behavior for how the zoom center is maintained.
     pub cursor_zoom_center_behavior: ZoomBehavior,
-    /// Filter setting for cursor zoom magnification.
-    pub cursor_zoom_filter: ZoomFilter,
-    /// Bounds for cursor zoom center (padding from edges in logical pixels).
-    pub cursor_zoom_bounds: i32,
+    /// Cursor zoom threshold for edge-pushed behavior (fraction of output size, default 0.15).
+    pub cursor_zoom_threshold: f64,
 }
 
 #[derive(Debug)]
@@ -359,8 +357,7 @@ impl<W: LayoutElement> Monitor<W> {
             cursor_zoom_factor: 1.0,
             cursor_zoom_center: Point::from((0., 0.)),
             cursor_zoom_center_behavior: ZoomBehavior::default(),
-            cursor_zoom_filter: ZoomFilter::default(),
-            cursor_zoom_bounds: 0,
+            cursor_zoom_threshold: 0.15,
         }
     }
 
@@ -1398,12 +1395,8 @@ impl<W: LayoutElement> Monitor<W> {
         self.cursor_zoom_center_behavior
     }
 
-    pub fn cursor_zoom_filter(&self) -> ZoomFilter {
-        self.cursor_zoom_filter
-    }
-
-    pub fn cursor_zoom_bounds(&self) -> i32 {
-        self.cursor_zoom_bounds
+    pub fn cursor_zoom_threshold(&self) -> f64 {
+        self.cursor_zoom_threshold
     }
 
     pub fn set_cursor_zoom(&mut self, factor: f64, center: Point<f64, Logical>) {
@@ -1434,11 +1427,8 @@ impl<W: LayoutElement> Monitor<W> {
             if let Some(behavior) = zoom.behavior {
                 self.cursor_zoom_center_behavior = behavior;
             }
-            if let Some(filter) = zoom.filter {
-                self.cursor_zoom_filter = filter;
-            }
-            if let Some(bounds) = zoom.bounds {
-                self.cursor_zoom_bounds = bounds;
+            if let Some(threshold) = zoom.threshold {
+                self.cursor_zoom_threshold = threshold.clamp(0.0, 1.0);
             }
         }
     }

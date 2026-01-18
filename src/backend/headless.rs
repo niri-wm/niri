@@ -111,8 +111,7 @@ impl Headless {
                 logical: Some(logical_output(&output)),
                 zoom_factor: 1.0,
                 zoom_behavior: niri_ipc::ZoomBehavior::default(),
-                zoom_filter: niri_ipc::ZoomFilter::default(),
-                zoom_bounds: 0,
+                zoom_threshold: 0.15,
             },
         );
 
@@ -170,8 +169,7 @@ impl Headless {
             if let Some(mon) = output.and_then(|o| niri.layout.monitor_for_output(o)) {
                 ipc_output.zoom_factor = mon.cursor_zoom();
                 ipc_output.zoom_behavior = mon.cursor_zoom_behavior().into();
-                ipc_output.zoom_filter = mon.cursor_zoom_filter().into();
-                ipc_output.zoom_bounds = mon.cursor_zoom_bounds();
+                ipc_output.zoom_threshold = mon.cursor_zoom_threshold();
             }
         }
     }

@@ -1136,44 +1136,6 @@ impl std::fmt::Display for ZoomBehavior {
     }
 }
 
-/// Filter setting for cursor zoom magnification.
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default)]
-#[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
-#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
-pub enum ZoomFilter {
-    /// Nearest neighbor filtering (pixel-perfect).
-    #[default]
-    #[serde(rename = "nearest")]
-    Nearest,
-    /// Linear filtering (smooth).
-    #[serde(rename = "linear")]
-    Linear,
-}
-
-impl std::fmt::Display for ZoomFilter {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ZoomFilter::Nearest => write!(f, "nearest"),
-            ZoomFilter::Linear => write!(f, "linear"),
-        }
-    }
-}
-
-impl std::str::FromStr for ZoomFilter {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_lowercase().as_str() {
-            "nearest" => Ok(ZoomFilter::Nearest),
-            "linear" => Ok(ZoomFilter::Linear),
-            _ => Err(format!(
-                "invalid zoom filter '{}', expected 'nearest' or 'linear'",
-                s
-            )),
-        }
-    }
-}
-
 /// Zoom subactions for configuring zoom on an output.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[cfg_attr(feature = "clap", derive(clap::Parser))]
@@ -1193,17 +1155,11 @@ pub enum ZoomAction {
         #[cfg_attr(feature = "clap", arg())]
         behavior: ZoomBehavior,
     },
-    /// Set the zoom filter.
-    Filter {
-        /// Zoom filter to set ("nearest" or "linear").
+    /// Set the zoom threshold as fraction of output size.
+    Threshold {
+        /// Zoom threshold to set (0.0 - 1.0).
         #[cfg_attr(feature = "clap", arg())]
-        filter: ZoomFilter,
-    },
-    /// Set the zoom bounds in pixels.
-    Bounds {
-        /// Zoom bounds to set in pixels.
-        #[cfg_attr(feature = "clap", arg())]
-        bound: i32,
+        threshold: f64,
     },
 }
 
@@ -1438,12 +1394,10 @@ pub struct Output {
     pub zoom_factor: f64,
     /// Current zoom behavior.
     pub zoom_behavior: ZoomBehavior,
-    /// Current zoom filter.
-    pub zoom_filter: ZoomFilter,
-    /// Current zoom bounds in pixels.
+    /// Current zoom threshold as fraction of output size.
     ///
-    /// `None` if no bounds are configured.
-    pub zoom_bounds: i32,
+    /// Default is 0.15.
+    pub zoom_threshold: f64,
 }
 
 /// Output mode.
