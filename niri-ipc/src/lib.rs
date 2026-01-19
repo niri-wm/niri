@@ -1016,50 +1016,6 @@ pub enum ColumnDisplay {
     Tabbed,
 }
 
-/// Zoom factor that can be absolute or relative.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
-pub enum ZoomFactor {
-    /// Set zoom to an absolute value (e.g., 2.0 for 2x magnification).
-    Absolute(f64),
-    /// Adjust zoom relative to current value (e.g., +0.5 to increase by 0.5).
-    Relative(f64),
-}
-
-impl ZoomFactor {
-    /// Apply this zoom factor to a current zoom value, returning the new zoom.
-    /// Result is clamped to minimum of 1.0.
-    pub fn apply_to(self, current: f64) -> f64 {
-        match self {
-            ZoomFactor::Absolute(f) => f.max(1.0),
-            ZoomFactor::Relative(delta) => (current + delta).max(1.0),
-        }
-    }
-}
-
-impl FromStr for ZoomFactor {
-    type Err = std::num::ParseFloatError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let s = s.trim();
-        if s.starts_with('+') || s.starts_with('-') {
-            s.parse::<f64>().map(ZoomFactor::Relative)
-        } else {
-            s.parse::<f64>().map(ZoomFactor::Absolute)
-        }
-    }
-}
-
-impl std::fmt::Display for ZoomFactor {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ZoomFactor::Absolute(v) => write!(f, "{v}"),
-            ZoomFactor::Relative(v) if *v >= 0.0 => write!(f, "+{v}"),
-            ZoomFactor::Relative(v) => write!(f, "{v}"),
-        }
-    }
-}
-
 /// Cursor zoom movement mode.
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
@@ -1107,9 +1063,9 @@ impl std::fmt::Display for ZoomMovement {
 pub enum ZoomAction {
     /// Set the zoom factor.
     Factor {
-        /// Zoom factor to set (absolute or relative).
-        #[cfg_attr(feature = "clap", arg(value_parser = |s: &str| s.parse::<ZoomFactor>().map_err(|e| e.to_string())))]
-        factor: ZoomFactor,
+        /// Zoom factor to set (absolute like "2.0" or relative like "+0.5", "-0.5").
+        #[cfg_attr(feature = "clap", arg())]
+        factor: String,
     },
     /// Set the zoom movement mode.
     Movement {

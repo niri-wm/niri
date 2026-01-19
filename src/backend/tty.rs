@@ -1910,7 +1910,7 @@ impl Tty {
             let zoom_factor = niri
                 .layout
                 .monitor_for_output(output)
-                .map(|m| m.cursor_zoom_factor)
+                .map(|m| m.zoom_factor)
                 .unwrap_or(1.0);
             if zoom_factor > 3.0 {
                 flags.remove(primary_scanout_flag);
@@ -2183,9 +2183,9 @@ impl Tty {
                     .and_then(|o| niri.layout.monitor_for_output(o))
                     .map_or((1.0, niri_ipc::ZoomMovement::default(), 0.15), |mon| {
                         (
-                            mon.cursor_zoom(),
-                            mon.cursor_zoom_movement(),
-                            mon.cursor_zoom_threshold(),
+                            mon.zoom_factor,
+                            mon.zoom_movement,
+                            mon.zoom_threshold,
                         )
                     });
 

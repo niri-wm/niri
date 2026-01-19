@@ -1915,13 +1915,23 @@ impl State {
                 if let Some(action) = action {
                     let zoom = config.zoom.get_or_insert_with(Default::default);
                     match action {
-                        niri_ipc::ZoomAction::Factor { factor } => {
-                            zoom.factor = match factor {
-                                niri_ipc::ZoomFactor::Absolute(f) => Some(FloatOrInt(f)),
-                                niri_ipc::ZoomFactor::Relative(add) => zoom
-                                    .factor
-                                    .map(|f| FloatOrInt((f.0 + add).clamp(1.0, 100.0))),
-                            };
+                        niri_ipc::ZoomAction::Factor { factor, .. } => {
+                            let factor_str = factor.trim();
+                            let is_relative =
+                                factor_str.starts_with('+') || factor_str.starts_with('-');
+                            match factor_str.parse::<f64>() {
+                                Ok(f) if !is_relative => {
+                                    // Absolute zoom factor
+                                    zoom.factor = Some(FloatOrInt(f.max(1.0)));
+                                }
+                                Ok(delta) => {
+                                    // Relative zoom adjustment
+                                    zoom.factor = zoom
+                                        .factor
+                                        .map(|f| FloatOrInt((f.0 + delta).clamp(1.0, 100.0)));
+                                }
+                                Err(_) => {}
+                            }
                         }
                         niri_ipc::ZoomAction::Movement { movement } => {
                             zoom.movement = Some(movement);
@@ -1954,9 +1964,9 @@ impl State {
             ipc_output.logical = output.map(logical_output);
 
             if let Some(mon) = output.and_then(|o| self.niri.layout.monitor_for_output(o)) {
-                ipc_output.zoom_factor = mon.cursor_zoom();
-                ipc_output.zoom_movement = mon.cursor_zoom_movement().into();
-                ipc_output.zoom_threshold = mon.cursor_zoom_threshold();
+                ipc_output.zoom_factor = mon.zoom_factor;
+                ipc_output.zoom_movement = mon.zoom_movement;
+                ipc_output.zoom_threshold = mon.zoom_threshold;
             }
         }
         self.niri.on_ipc_outputs_changed();
@@ -4068,13 +4078,13 @@ impl Niri {
         let mut elements = Vec::new();
 
         let monitor = self.layout.monitor_for_output(output).unwrap();
-        let cursor_zoom_factor = monitor.cursor_zoom_factor;
-        let cursor_zoom_enabled = monitor.cursor_zoom_enabled;
+        let zoom_factor = monitor.zoom_factor;
+        let zoom_enabled = monitor.zoom_enabled;
 
-        if cursor_zoom_enabled && cursor_zoom_factor > 1.0 {
+        if zoom_enabled && zoom_factor > 1.0 {
             // Use Nearest neighbor filtering for high zoom levels (pixel-perfect),
             // Linear for lower zoom levels (smooth).
-            let filter = if cursor_zoom_factor > 3.0 {
+            let filter = if zoom_factor > 3.0 {
                 TextureFilter::Nearest
             } else {
                 TextureFilter::Linear
@@ -4097,60 +4107,66 @@ impl Niri {
             draw_opaque_regions(&mut elements, output_scale);
         }
 
-        let elements = if cursor_zoom_enabled && cursor_zoom_factor > 1.0 {
+        let elements = if zoom_enabled && zoom_factor > 1.0 {
             let output_geo = self.global_space.output_geometry(output).unwrap();
             let output_size = output_geo.size.to_f64();
             let output_rect = Rectangle::new(Point::new(0., 0.), output_size);
 
-            let zoom_center = match monitor.cursor_zoom_movement {
+            let zoom_center = match monitor.zoom_movement {
                 niri_ipc::ZoomMovement::Cursor => {
                     let pointer = self.seat.get_pointer().unwrap();
                     let cursor_pos = pointer.current_location();
                     cursor_pos - output_geo.loc.to_f64()
                 }
-                niri_ipc::ZoomMovement::EdgePushed => monitor.cursor_zoom_center,
+                niri_ipc::ZoomMovement::EdgePushed => monitor.zoom_center,
             };
 
             let scale_with_zoom = self.config.borrow().cursor.scale_with_zoom;
 
-            // Apply zoom to a OutputRenderElement variant.
-            macro_rules! zoom_variant {
-                ($elem:expr) => {
-                    apply_cursor_zoom(
-                        $elem,
-                        output_scale,
-                        cursor_zoom_factor,
-                        zoom_center,
-                        output_rect,
-                    )
-                };
+            // Compute physical offset for zoom repositioning.
+            macro_rules! zoom_offset {
+                ($center:expr) => {{
+                    let offset_x = ($center.x * (1.0 - zoom_factor)) as i32;
+                    let offset_y = ($center.y * (1.0 - zoom_factor)) as i32;
+                    Point::<i32, Physical>::from((
+                        (offset_x as f64 * output_scale.x) as i32,
+                        (offset_y as f64 * output_scale.y) as i32,
+                    ))
+                }};
             }
 
-            macro_rules! reposition_variant {
-                ($elem:expr) => {
-                    reposition_cursor_in_zoom(
-                        $elem,
-                        output_scale,
-                        cursor_zoom_factor,
-                        zoom_center,
-                        output_rect,
-                    )
-                };
-            }
-
-            // Generate match arms for each OutputRenderElement variant that should be zoomed.
+            // Generate match arms for each OutputRenderElement variant.
             macro_rules! process_zoom {
                 ($elem:expr, $($variant:ident),*) => {
                     match $elem {
-                        OutputRenderElements::Pointer(elem) if scale_with_zoom => {
-                            zoom_variant!(elem).map(Into::into).into()
-                        }
                         OutputRenderElements::Pointer(elem) => {
-                            reposition_variant!(elem).map(Into::into).into()
+                            let offset = zoom_offset!(zoom_center);
+                            let zoom_factor = if scale_with_zoom { zoom_factor } else { 1.0 };
+                            let elements = {
+                                let scaled =
+                                    RescaleRenderElement::from_element(elem, (0, 0).into(), zoom_factor);
+                                let scaled_and_relocated = RelocateRenderElement::from_element(
+                                    scaled, offset, Relocate::Relative,
+                                );
+                                scaled_and_relocated
+                            };
+                            CropRenderElement::from_element(
+                                elements, output_scale,
+                                output_rect.to_physical_precise_round(output_scale),
+                            ).map(Into::into).into()
                         }
                         $(
                             OutputRenderElements::$variant(elem) => {
-                                zoom_variant!(elem).map(Into::into).into()
+                                let offset = zoom_offset!(zoom_center);
+                                let scaled =
+                                    RescaleRenderElement::from_element(elem, (0, 0).into(), zoom_factor);
+                                let relocated = RelocateRenderElement::from_element(
+                                    scaled, offset, Relocate::Relative,
+                                );
+                                CropRenderElement::from_element(
+                                    relocated, output_scale,
+                                    output_rect.to_physical_precise_round(output_scale),
+                                ).map(Into::into).into()
                             }
                         )*
                         // Other elements pass through unchanged
@@ -6287,71 +6303,6 @@ fn scale_relocate_crop<E: Element>(
     let elem = RescaleRenderElement::from_element(elem, Point::from((0, 0)), zoom);
     let elem = RelocateRenderElement::from_element(elem, ws_geo.loc, Relocate::Relative);
     CropRenderElement::from_element(elem, output_scale, ws_geo)
-}
-
-fn apply_cursor_zoom<E: Element>(
-    element: E,
-    output_scale: Scale<f64>,
-    zoom: f64,
-    cursor_pos: Point<f64, Logical>,
-    output_geo: Rectangle<f64, Logical>,
-) -> Option<CropRenderElement<RelocateRenderElement<RescaleRenderElement<E>>>> {
-    let offset_x = (cursor_pos.x * (1.0 - zoom)) as i32;
-    let offset_y = (cursor_pos.y * (1.0 - zoom)) as i32;
-    let physical_offset = Point::<i32, Physical>::from((
-        (offset_x as f64 * output_scale.x) as i32,
-        (offset_y as f64 * output_scale.y) as i32,
-    ));
-
-    let scaled = RescaleRenderElement::from_element(element, (0, 0).into(), zoom);
-    let relocated =
-        RelocateRenderElement::from_element(scaled, physical_offset, Relocate::Relative);
-
-    CropRenderElement::from_element(
-        relocated,
-        output_scale,
-        output_geo.to_physical_precise_round(output_scale),
-    )
-}
-
-fn reposition_cursor_in_zoom<E: Element>(
-    element: E,
-    output_scale: Scale<f64>,
-    zoom: f64,
-    cursor_pos: Point<f64, Logical>,
-    output_geo: Rectangle<f64, Logical>,
-) -> Option<CropRenderElement<RelocateRenderElement<E>>> {
-    // Cursor position in zoomed view: original_pos * zoom + offset
-    // where offset = cursor_pos * (1 - zoom)
-    // So: screen_pos = original_pos * zoom + cursor_pos * (1 - zoom)
-    // For cursor at cursor_pos: screen_pos = cursor_pos * zoom + cursor_pos * (1 - zoom) = cursor_pos
-    // Delta from original: cursor_pos - cursor_pos = 0? No, the element has its own geometry.
-    //
-    // The element's original position is elem.geometry().loc. In the zoomed view,
-    // that position maps to: elem_pos * zoom + cursor_pos * (1 - zoom)
-    // So we need to relocate by: elem_pos * (zoom - 1) + cursor_pos * (1 - zoom)
-    //                          = (cursor_pos - elem_pos) * (1 - zoom)
-    let elem_geo = element.geometry(output_scale);
-    let elem_pos_logical: Point<f64, Logical> = Point::from((
-        elem_geo.loc.x as f64 / output_scale.x,
-        elem_geo.loc.y as f64 / output_scale.y,
-    ));
-
-    let offset_x = ((cursor_pos.x - elem_pos_logical.x) * (1.0 - zoom)) as i32;
-    let offset_y = ((cursor_pos.y - elem_pos_logical.y) * (1.0 - zoom)) as i32;
-    let physical_offset = Point::<i32, Physical>::from((
-        (offset_x as f64 * output_scale.x) as i32,
-        (offset_y as f64 * output_scale.y) as i32,
-    ));
-
-    let relocated =
-        RelocateRenderElement::from_element(element, physical_offset, Relocate::Relative);
-
-    CropRenderElement::from_element(
-        relocated,
-        output_scale,
-        output_geo.to_physical_precise_round(output_scale),
-    )
 }
 
 niri_render_elements! {

@@ -167,9 +167,9 @@ impl Headless {
                 .outputs()
                 .find(|o| o.name() == ipc_output.name);
             if let Some(mon) = output.and_then(|o| niri.layout.monitor_for_output(o)) {
-                ipc_output.zoom_factor = mon.cursor_zoom();
-                ipc_output.zoom_movement = mon.cursor_zoom_movement().into();
-                ipc_output.zoom_threshold = mon.cursor_zoom_threshold();
+                ipc_output.zoom_factor = mon.zoom_factor;
+                ipc_output.zoom_movement = mon.zoom_movement;
+                ipc_output.zoom_threshold = mon.zoom_threshold;
             }
         }
     }

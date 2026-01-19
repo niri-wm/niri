@@ -2388,7 +2388,7 @@ impl State {
                 };
                 if let Some(output) = target_output {
                     if let Some(monitor) = self.niri.layout.monitor_for_output_mut(&output) {
-                        monitor.cursor_zoom_enabled = !monitor.cursor_zoom_enabled;
+                        monitor.zoom_enabled = !monitor.zoom_enabled;
                     }
                     self.niri.queue_redraw_all();
                 }
@@ -2644,8 +2644,8 @@ impl State {
         // Update cursor zoom center for EdgePushed movement (like cosmic-comp's OnEdge)
         // When cursor exits visible zoomed area, pan by cursor delta scaled by zoom
         for monitor in self.niri.layout.monitors_mut() {
-            let zoom = monitor.cursor_zoom_factor;
-            if zoom <= 1.0 || monitor.cursor_zoom_movement != ZoomMovement::EdgePushed {
+            let zoom = monitor.zoom_factor;
+            if zoom <= 1.0 || monitor.zoom_movement != ZoomMovement::EdgePushed {
                 continue;
             }
 
@@ -2659,15 +2659,15 @@ impl State {
                 continue;
             }
 
-            let output_w = output_geo.size.w as f64;
-            let output_h = output_geo.size.h as f64;
+            let output_w = output_geo.size.w;
+            let output_h = output_geo.size.h;
 
             // Calculate visible area bounds matching the render formula:
             // offset = cursor_pos * (1 - zoom)
             // For point p, screen_pos = (p - cursor_pos) * zoom + cursor_pos
             // visible_left: screen=0 → p = cursor_pos * (zoom-1)/zoom
             // visible_right: screen=output_w → p = cursor_pos + (output_w - cursor_pos)/zoom
-            let focal = monitor.cursor_zoom_center;
+            let focal = monitor.zoom_center;
             let visible_left = focal.x * (zoom - 1.0) / zoom;
             let visible_right = focal.x + (output_w - focal.x) / zoom;
             let visible_top = focal.y * (zoom - 1.0) / zoom;
@@ -2677,8 +2677,8 @@ impl State {
             // This ensures safe zone scales properly with zoom level.
             let visible_w = visible_right - visible_left;
             let visible_h = visible_bottom - visible_top;
-            let threshold_x = visible_w * monitor.cursor_zoom_threshold;
-            let threshold_y = visible_h * monitor.cursor_zoom_threshold;
+            let threshold_x = visible_w * monitor.zoom_threshold;
+            let threshold_y = visible_h * monitor.zoom_threshold;
 
             // Check if cursor is outside safe zone (visible area shrunk by threshold).
             let safe_left = visible_left + threshold_x;
@@ -2695,7 +2695,7 @@ impl State {
                 // Compute focal to place cursor slightly inside safe zone edge.
                 // Add small epsilon to prevent floating-point oscillation at boundary.
                 let z = zoom;
-                let tr = monitor.cursor_zoom_threshold;
+                let tr = monitor.zoom_threshold;
                 let zf = z / (z - 1.0);
                 let epsilon = 1.0;
 
@@ -2721,7 +2721,7 @@ impl State {
                 new_focal_x = new_focal_x.clamp(0.0, output_w);
                 new_focal_y = new_focal_y.clamp(0.0, output_h);
 
-                monitor.cursor_zoom_center = Point::from((new_focal_x, new_focal_y));
+                monitor.zoom_center = Point::from((new_focal_x, new_focal_y));
             }
         }
 

@@ -89,15 +89,15 @@ pub struct Monitor<W: LayoutElement> {
     /// Layout config overrides for this monitor.
     layout_config: Option<niri_config::LayoutPart>,
     /// Cursor zoom factor for this monitor (1.0 = no zoom).
-    pub cursor_zoom_factor: f64,
+    pub zoom_factor: f64,
     /// Whether cursor zoom is enabled for this monitor.
-    pub cursor_zoom_enabled: bool,
+    pub zoom_enabled: bool,
     /// Cursor zoom center position for this monitor (in output-local logical coordinates).
-    pub cursor_zoom_center: Point<f64, Logical>,
+    pub zoom_center: Point<f64, Logical>,
     /// Cursor zoom movement mode for this monitor.
-    pub cursor_zoom_movement: ZoomMovement,
+    pub zoom_movement: ZoomMovement,
     /// Cursor zoom threshold for edge-pushed behavior (fraction of output size, default 0.15).
-    pub cursor_zoom_threshold: f64,
+    pub zoom_threshold: f64,
 }
 
 #[derive(Debug)]
@@ -356,11 +356,11 @@ impl<W: LayoutElement> Monitor<W> {
             base_options,
             options,
             layout_config,
-            cursor_zoom_factor: 1.0,
-            cursor_zoom_enabled: false,
-            cursor_zoom_center: Point::from((0., 0.)),
-            cursor_zoom_movement: ZoomMovement::default(),
-            cursor_zoom_threshold: 0.15,
+            zoom_factor: 1.0,
+            zoom_enabled: false,
+            zoom_center: Point::from((0., 0.)),
+            zoom_movement: ZoomMovement::default(),
+            zoom_threshold: 0.15,
         }
     }
 
@@ -1390,74 +1390,16 @@ impl<W: LayoutElement> Monitor<W> {
         compute_overview_zoom(&self.options, progress)
     }
 
-    pub fn cursor_zoom(&self) -> f64 {
-        self.cursor_zoom_factor
-    }
-
-    pub fn cursor_zoom_enabled(&self) -> bool {
-        self.cursor_zoom_enabled
-    }
-
-    pub fn cursor_zoom_movement(&self) -> ZoomMovement {
-        self.cursor_zoom_movement
-    }
-
-    pub fn cursor_zoom_threshold(&self) -> f64 {
-        self.cursor_zoom_threshold
-    }
-
-    pub fn set_cursor_zoom(&mut self, factor: f64, center: Point<f64, Logical>) {
-        self.cursor_zoom_factor = factor.max(1.0);
-        self.cursor_zoom_center = center;
-    }
-
-    pub fn enable_cursor_zoom(&mut self, factor: f64, center: Point<f64, Logical>) {
-        self.cursor_zoom_enabled = true;
-        self.cursor_zoom_factor = factor.max(1.0);
-        self.cursor_zoom_center = center;
-    }
-
-    pub fn disable_cursor_zoom(&mut self) {
-        self.cursor_zoom_enabled = false;
-        self.cursor_zoom_factor = 1.0;
-    }
-
-    pub fn toggle_cursor_zoom(&mut self) -> bool {
-        self.cursor_zoom_enabled = !self.cursor_zoom_enabled;
-        if self.cursor_zoom_enabled && self.cursor_zoom_factor <= 1.0 {
-            // Default to 2x zoom when enabling if not already set
-            self.cursor_zoom_factor = 2.0;
-        } else if !self.cursor_zoom_enabled {
-            self.cursor_zoom_factor = 1.0;
-        }
-        self.cursor_zoom_enabled
-    }
-
-    pub fn adjust_cursor_zoom(&mut self, delta: f64) {
-        self.cursor_zoom_factor = (self.cursor_zoom_factor + delta).max(1.0);
-    }
-
-    pub fn set_cursor_zoom_movement(&mut self, movement: ZoomMovement) {
-        self.cursor_zoom_movement = movement;
-    }
-
-    pub fn toggle_cursor_zoom_movement(&mut self) {
-        self.cursor_zoom_movement = match self.cursor_zoom_movement {
-            ZoomMovement::Cursor => ZoomMovement::EdgePushed,
-            ZoomMovement::EdgePushed => ZoomMovement::Cursor,
-        };
-    }
-
     pub fn update_zoom_config(&mut self, zoom: Option<&niri_config::output::Zoom>) {
         if let Some(zoom) = zoom {
             if let Some(factor) = zoom.factor {
-                self.cursor_zoom_factor = factor.0;
+                self.zoom_factor = factor.0;
             }
             if let Some(movement) = zoom.movement {
-                self.cursor_zoom_movement = movement;
+                self.zoom_movement = movement;
             }
             if let Some(threshold) = zoom.threshold {
-                self.cursor_zoom_threshold = threshold.clamp(0.0, 1.0);
+                self.zoom_threshold = threshold.clamp(0.0, 1.0);
             }
         }
     }

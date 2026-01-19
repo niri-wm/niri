@@ -280,9 +280,9 @@ impl Winit {
         let mut ipc_outputs = self.ipc_outputs.lock().unwrap();
         if let Some(output) = ipc_outputs.values_mut().next() {
             if let Some(mon) = niri.layout.monitor_for_output(&self.output) {
-                output.zoom_factor = mon.cursor_zoom();
-                output.zoom_movement = mon.cursor_zoom_movement().into();
-                output.zoom_threshold = mon.cursor_zoom_threshold();
+                output.zoom_factor = mon.zoom_factor;
+                output.zoom_movement = mon.zoom_movement;
+                output.zoom_threshold = mon.zoom_threshold;
             }
         }
     }
