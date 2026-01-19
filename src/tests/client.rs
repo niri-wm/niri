@@ -4,7 +4,7 @@ use std::fmt;
 use std::fmt::Write as _;
 use std::os::unix::net::UnixStream;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use calloop::EventLoop;
@@ -21,6 +21,10 @@ use smithay::reexports::wayland_protocols_wlr::layer_shell::v1::client::zwlr_lay
 };
 use smithay::reexports::wayland_protocols_wlr::layer_shell::v1::client::zwlr_layer_surface_v1::{
     self, ZwlrLayerSurfaceV1,
+};
+use smithay::reexports::wayland_protocols_wlr::output_power_management::v1::client::{
+    zwlr_output_power_manager_v1::ZwlrOutputPowerManagerV1,
+    zwlr_output_power_v1::{self, ZwlrOutputPowerV1},
 };
 use wayland_backend::client::Backend;
 use wayland_client::globals::Global;
@@ -55,9 +59,11 @@ pub struct State {
     pub layer_shell: Option<ZwlrLayerShellV1>,
     pub spbm: Option<WpSinglePixelBufferManagerV1>,
     pub viewporter: Option<WpViewporter>,
+    pub output_power_manager: Option<ZwlrOutputPowerManagerV1>,
 
     pub windows: Vec<Window>,
     pub layers: Vec<LayerSurface>,
+    pub output_powers: HashMap<WlOutput, Vec<PowerControl>>,
 }
 
 pub struct Window {
@@ -124,6 +130,17 @@ pub struct SyncData {
     pub done: AtomicBool,
 }
 
+#[derive(Debug, Default)]
+pub struct PowerControlData {
+    pub mode_events: Vec<zwlr_output_power_v1::Mode>,
+    pub failed_received: bool,
+}
+
+pub struct PowerControl {
+    pub power: ZwlrOutputPowerV1,
+    pub data: Arc<Mutex<PowerControlData>>,
+}
+
 static CLIENT_ID_COUNTER: IdCounter = IdCounter::new();
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -181,8 +198,10 @@ impl Client {
             layer_shell: None,
             spbm: None,
             viewporter: None,
+            output_power_manager: None,
             windows: Vec::new(),
             layers: Vec::new(),
+            output_powers: HashMap::new(),
         };
 
         Self {
@@ -231,6 +250,14 @@ impl Client {
 
     pub fn layer(&mut self, surface: &WlSurface) -> &mut LayerSurface {
         self.state.layer(surface)
+    }
+
+    pub fn create_output_power_control(&mut self, output: &WlOutput) -> &PowerControl {
+        self.state.create_output_power_control(output)
+    }
+
+    pub fn output_power_control(&self, output: &WlOutput) -> &PowerControl {
+        self.state.output_power_control(output)
     }
 
     pub fn output(&mut self, name: &str) -> WlOutput {
@@ -318,6 +345,22 @@ impl State {
             .iter_mut()
             .find(|w| w.surface == *surface)
             .unwrap()
+    }
+
+    pub fn create_output_power_control(&mut self, output: &WlOutput) -> &PowerControl {
+        let manager = self.output_power_manager.as_ref().unwrap();
+        let data = Arc::new(Mutex::new(PowerControlData::default()));
+        let power = manager.get_output_power(output, &self.qh, data.clone());
+        let control = PowerControl { power, data };
+        self.output_powers
+            .entry(output.clone())
+            .or_default()
+            .push(control);
+        self.output_powers[output].last().unwrap()
+    }
+
+    pub fn output_power_control(&self, output: &WlOutput) -> &PowerControl {
+        self.output_powers[output].last().unwrap()
     }
 }
 
@@ -522,6 +565,9 @@ impl Dispatch<WlRegistry, ()> for State {
                     let version = min(version, WlOutput::interface().version);
                     let output = registry.bind(name, version, qh, ());
                     state.outputs.insert(output, String::new());
+                } else if interface == ZwlrOutputPowerManagerV1::interface().name {
+                    let version = min(version, ZwlrOutputPowerManagerV1::interface().version);
+                    state.output_power_manager = Some(registry.bind(name, version, qh, ()));
                 }
 
                 let global = Global {
@@ -773,5 +819,42 @@ impl Dispatch<WpViewport, ()> for State {
         _qhandle: &QueueHandle<Self>,
     ) {
         unreachable!()
+    }
+}
+
+impl Dispatch<ZwlrOutputPowerManagerV1, ()> for State {
+    fn event(
+        _state: &mut Self,
+        _proxy: &ZwlrOutputPowerManagerV1,
+        _event: <ZwlrOutputPowerManagerV1 as wayland_client::Proxy>::Event,
+        _data: &(),
+        _conn: &Connection,
+        _qhandle: &QueueHandle<Self>,
+    ) {
+        unreachable!()
+    }
+}
+
+impl Dispatch<ZwlrOutputPowerV1, Arc<Mutex<PowerControlData>>> for State {
+    fn event(
+        _state: &mut Self,
+        _proxy: &ZwlrOutputPowerV1,
+        event: <ZwlrOutputPowerV1 as wayland_client::Proxy>::Event,
+        data: &Arc<Mutex<PowerControlData>>,
+        _conn: &Connection,
+        _qhandle: &QueueHandle<Self>,
+    ) {
+        let mut guard = data.lock().unwrap();
+        match event {
+            zwlr_output_power_v1::Event::Mode { mode } => {
+                if let Ok(m) = mode.into_result() {
+                    guard.mode_events.push(m);
+                }
+            }
+            zwlr_output_power_v1::Event::Failed => {
+                guard.failed_received = true;
+            }
+            _ => unreachable!(),
+        }
     }
 }
