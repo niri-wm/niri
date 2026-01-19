@@ -3053,6 +3053,9 @@ impl Niri {
             let output_state = self.output_state.get_mut(output).unwrap();
             self.output_power_management_state
                 .output_power_mode_changed(output, output_state.power_mode);
+            if let Some(state) = self.output_state.get_mut(output) {
+                state.power_mode = output_power_management::Mode::On;
+            }
         }
 
         self.queue_redraw_all();
