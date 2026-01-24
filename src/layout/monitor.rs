@@ -545,6 +545,7 @@ impl<W: LayoutElement> Monitor<W> {
         width: ColumnWidth,
         is_full_width: bool,
         is_floating: bool,
+        force_unhide_workspace: bool,
     ) {
         // Currently, everything a workspace sets on a Tile is the same across all workspaces of a
         // monitor. So we can use any workspace, not necessarily the exact target workspace.
@@ -558,6 +559,7 @@ impl<W: LayoutElement> Monitor<W> {
             width,
             is_full_width,
             is_floating,
+            force_unhide_workspace,
         );
     }
 
@@ -606,8 +608,17 @@ impl<W: LayoutElement> Monitor<W> {
         width: ColumnWidth,
         is_full_width: bool,
         is_floating: bool,
+        force_unhide_workspace: bool,
     ) {
         let (mut workspace_idx, target) = self.resolve_add_window_target(target);
+
+        // Force-unhide the workspace if requested and it's hidden.
+        if force_unhide_workspace && self.workspaces[workspace_idx].hidden {
+            let ws_id = self.workspaces[workspace_idx].id();
+            if let Some(idx) = self.unhide_workspace_by_id(ws_id, true) {
+                workspace_idx = idx;
+            }
+        }
 
         let first_hidden_idx = self.workspaces.iter().position(|ws| ws.hidden);
         let is_last_visible = first_hidden_idx
@@ -974,6 +985,7 @@ impl<W: LayoutElement> Monitor<W> {
             removed.width,
             removed.is_full_width,
             removed.is_floating,
+            false,
         );
     }
 
@@ -1008,6 +1020,7 @@ impl<W: LayoutElement> Monitor<W> {
             removed.width,
             removed.is_full_width,
             removed.is_floating,
+            false,
         );
     }
 
@@ -1061,6 +1074,7 @@ impl<W: LayoutElement> Monitor<W> {
             removed.width,
             removed.is_full_width,
             removed.is_floating,
+            false,
         );
 
         if self.workspace_switch.is_none() {
