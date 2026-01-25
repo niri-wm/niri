@@ -2900,6 +2900,8 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     pub fn render<R: NiriRenderer>(
         &self,
         mut ctx: RenderCtx<R>,
+        pos_in_backdrop: Point<f64, Logical>,
+        zoom: f64,
         focus_ring: bool,
         push: &mut dyn FnMut(ScrollingSpaceRenderElement<R>),
     ) {
@@ -2954,7 +2956,15 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                     continue;
                 }
 
-                tile.render(ctx.r(), tile_pos, focus_ring, &mut |elem| push(elem.into()));
+                let pos_in_backdrop = pos_in_backdrop + tile_pos.upscale(zoom);
+                tile.render(
+                    ctx.r(),
+                    tile_pos,
+                    pos_in_backdrop,
+                    zoom,
+                    focus_ring,
+                    &mut |elem| push(elem.into()),
+                );
             }
         }
     }

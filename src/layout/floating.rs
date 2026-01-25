@@ -1056,6 +1056,8 @@ impl<W: LayoutElement> FloatingSpace<W> {
     pub fn render<R: NiriRenderer>(
         &self,
         mut ctx: RenderCtx<R>,
+        pos_in_backdrop: Point<f64, Logical>,
+        zoom: f64,
         view_rect: Rectangle<f64, Logical>,
         focus_ring: bool,
         push: &mut dyn FnMut(FloatingSpaceRenderElement<R>),
@@ -1075,7 +1077,15 @@ impl<W: LayoutElement> FloatingSpace<W> {
             // For the active tile, draw the focus ring.
             let focus_ring = focus_ring && Some(tile.window().id()) == active.as_ref();
 
-            tile.render(ctx.r(), tile_pos, focus_ring, &mut |elem| push(elem.into()));
+            let pos_in_backdrop = pos_in_backdrop + tile_pos.upscale(zoom);
+            tile.render(
+                ctx.r(),
+                tile_pos,
+                pos_in_backdrop,
+                zoom,
+                focus_ring,
+                &mut |elem| push(elem.into()),
+            );
         }
     }
 

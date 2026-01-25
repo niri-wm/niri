@@ -94,6 +94,7 @@ tracing-subscriber.workspace = true
 tracing.workspace = true
 tracy-client.workspace = true
 wayland-backend = "0.3.12"
+wayland-protocols-plasma = { version = "0.3.10", features = ["server"] }
 wayland-scanner = "0.31.8"
 xcursor = "0.3.10"
 zbus = { version = "5.13.0", optional = true }

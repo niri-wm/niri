@@ -78,6 +78,7 @@ pub struct Config {
     pub hotkey_overlay: HotkeyOverlay,
     pub config_notification: ConfigNotification,
     pub animations: Animations,
+    pub blur: Blur,
     pub gestures: Gestures,
     pub overview: Overview,
     pub environment: Environment,
@@ -194,6 +195,7 @@ where
                 "hotkey-overlay" => m_merge!(hotkey_overlay),
                 "config-notification" => m_merge!(config_notification),
                 "animations" => m_merge!(animations),
+                "blur" => m_merge!(blur),
                 "gestures" => m_merge!(gestures),
                 "overview" => m_merge!(overview),
                 "xwayland-satellite" => m_merge!(xwayland_satellite),
@@ -1616,6 +1618,13 @@ mod tests {
                     },
                 ),
             },
+            blur: Blur {
+                off: false,
+                passes: 3,
+                offset: 3.0,
+                noise: 0.02,
+                saturation: 1.5,
+            },
             gestures: Gestures {
                 dnd_edge_view_scroll: DndEdgeViewScroll {
                     trigger_width: 10.0,
@@ -1845,6 +1854,15 @@ mod tests {
                     ),
                     scroll_factor: None,
                     tiled_state: None,
+                    background_effect: BackgroundEffectRule {
+                        xray: None,
+                        blur: BlurRule {
+                            off: false,
+                            on: false,
+                        },
+                        noise: None,
+                        saturation: None,
+                    },
                 },
             ],
             layer_rules: [
@@ -1879,6 +1897,15 @@ mod tests {
                     geometry_corner_radius: None,
                     place_within_backdrop: None,
                     baba_is_float: None,
+                    background_effect: BackgroundEffectRule {
+                        xray: None,
+                        blur: BlurRule {
+                            off: false,
+                            on: false,
+                        },
+                        noise: None,
+                        saturation: None,
+                    },
                 },
             ],
             binds: Binds(

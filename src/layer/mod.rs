@@ -1,6 +1,6 @@
 use niri_config::layer_rule::{LayerRule, Match};
 use niri_config::utils::MergeWith as _;
-use niri_config::{BlockOutFrom, CornerRadius, ShadowRule};
+use niri_config::{BackgroundEffect, BlockOutFrom, CornerRadius, ShadowRule};
 use smithay::desktop::LayerSurface;
 
 pub mod mapped;
@@ -26,6 +26,9 @@ pub struct ResolvedLayerRules {
 
     /// Whether to bob this window up and down.
     pub baba_is_float: bool,
+
+    /// Background effect configuration.
+    pub background_effect: BackgroundEffect,
 }
 
 impl ResolvedLayerRules {
@@ -70,6 +73,10 @@ impl ResolvedLayerRules {
             }
 
             resolved.shadow.merge_with(&rule.shadow);
+
+            resolved
+                .background_effect
+                .merge_with(&rule.background_effect);
         }
 
         resolved
