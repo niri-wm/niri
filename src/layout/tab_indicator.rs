@@ -113,7 +113,14 @@ impl TabIndicator {
 
         let flip = self.config.flip;
         let offset = round((side - length) / 2.);
-        let mut shader_loc = Point::from((-gap - width, if flip { side - offset } else { offset }));
+        let mut shader_loc = Point::from((
+            -gap - width,
+            if flip {
+                side - offset - px_per_tab
+            } else {
+                offset
+            },
+        ));
         match position {
             TabIndicatorPosition::Left => (),
             TabIndicatorPosition::Right => shader_loc.x = area.size.w + gap,
@@ -124,17 +131,6 @@ impl TabIndicator {
             }
         }
         shader_loc += area.loc;
-
-        if flip {
-            match position {
-                TabIndicatorPosition::Left | TabIndicatorPosition::Right => {
-                    shader_loc.y -= px_per_tab
-                }
-                TabIndicatorPosition::Top | TabIndicatorPosition::Bottom => {
-                    shader_loc.x -= px_per_tab
-                }
-            }
-        }
 
         (0..count).map(move |_| {
             let mut px_per_tab = px_per_tab;
