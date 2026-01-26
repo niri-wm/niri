@@ -479,6 +479,7 @@ impl Default for TabIndicator {
     fn default() -> Self {
         Self {
             off: false,
+            flip: false,
             hide_when_single_tab: false,
             place_within_column: false,
             gap: 5.,
@@ -495,7 +496,6 @@ impl Default for TabIndicator {
             active_gradient: None,
             inactive_gradient: None,
             urgent_gradient: None,
-            flip: false,
         }
     }
 }
