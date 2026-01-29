@@ -9,12 +9,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3eca13c82f9a5cd813120b2e9b6a5d10532c6e4cd140c295cebd1f770095c8a5"
 
 [[package]]
-name = "accesskit_atspi_common"
-version = "0.15.0"
+name = "accesskit"
+version = "0.23.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3eb9cc46b7fb6987c4f891f0301b230b29d9e69b4854f060a0cf41fbc407ab77"
+checksum = "0467c58e646d849edd7fe043d6711b8ad58f27a39a5f33886f1f2ca9852e8259"
 dependencies = [
- "accesskit",
+ "uuid",
+]
+
+[[package]]
+name = "accesskit_atspi_common"
+version = "0.16.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c6778622dca77b55464f993289ffa9c2f192976e5891c2c30e2439af61b6ddf2"
+dependencies = [
+ "accesskit 0.23.0",
  "accesskit_consumer",
  "atspi-common",
  "serde",
@@ -23,21 +32,21 @@ dependencies = [
 
 [[package]]
 name = "accesskit_consumer"
-version = "0.32.0"
+version = "0.33.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "69d880a613f29621c90e801feec40f5dd61d837d7e20bf9b67676d45e7364a36"
+checksum = "6fce4cd9f6ea13c76d53403ff1583163f7a9e58381ecfbf4c8449affd7c09c24"
 dependencies = [
- "accesskit",
+ "accesskit 0.23.0",
  "hashbrown 0.16.1",
 ]
 
 [[package]]
 name = "accesskit_unix"
-version = "0.18.0"
+version = "0.19.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d5d552169ef018149966ed139bb0311c6947b3343e9140d1b9f88d69da9528fd"
+checksum = "f861c80792fd2f3d0fccd89be70ecd76295b9ea641e6116e331036cec0cec707"
 dependencies = [
- "accesskit",
+ "accesskit 0.23.0",
  "accesskit_atspi_common",
  "async-channel",
  "async-executor",
@@ -2161,7 +2170,7 @@ dependencies = [
 name = "niri"
 version = "25.11.0"
 dependencies = [
- "accesskit",
+ "accesskit 0.22.0",
  "accesskit_unix",
  "anyhow",
  "approx 0.5.1",
