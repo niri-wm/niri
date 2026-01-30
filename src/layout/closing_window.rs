@@ -21,7 +21,7 @@ use crate::render_helpers::shader_element::ShaderRenderElement;
 use crate::render_helpers::shaders::{mat3_uniform, ProgramType, Shaders};
 use crate::render_helpers::snapshot::RenderSnapshot;
 use crate::render_helpers::texture::{TextureBuffer, TextureRenderElement};
-use crate::render_helpers::{render_to_encompassing_texture, RenderTarget};
+use crate::render_helpers::{render_to_encompassing_texture, RenderCtx};
 use crate::utils::transaction::TransactionBlocker;
 
 #[derive(Debug)]
@@ -159,12 +159,11 @@ impl ClosingWindow {
 
     pub fn render(
         &self,
-        renderer: &mut GlesRenderer,
+        ctx: RenderCtx<GlesRenderer>,
         view_rect: Rectangle<f64, Logical>,
         scale: Scale<f64>,
-        target: RenderTarget,
     ) -> ClosingWindowRenderElement {
-        let (buffer, offset) = if target.should_block_out(self.block_out_from) {
+        let (buffer, offset) = if ctx.target.should_block_out(self.block_out_from) {
             (&self.blocked_out_buffer, self.blocked_out_buffer_offset)
         } else {
             (&self.buffer, self.buffer_offset)
@@ -200,7 +199,10 @@ impl ClosingWindow {
         let progress = anim.value();
         let clamped_progress = anim.clamped_value().clamp(0., 1.);
 
-        if Shaders::get(renderer).program(ProgramType::Close).is_some() {
+        if Shaders::get(ctx.renderer)
+            .program(ProgramType::Close)
+            .is_some()
+        {
             let area_loc = Vec2::new(view_rect.loc.x as f32, view_rect.loc.y as f32);
             let area_size = Vec2::new(view_rect.size.w as f32, view_rect.size.h as f32);
 

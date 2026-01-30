@@ -35,7 +35,10 @@ impl Shaders {
 
         let border = ShaderProgram::compile(
             renderer,
-            include_str!("border.frag"),
+            concat!(
+                include_str!("border.frag"),
+                include_str!("rounding_alpha.frag")
+            ),
             &[
                 UniformName::new("colorspace", UniformType::_1f),
                 UniformName::new("hue_interpolation", UniformType::_1f),
@@ -58,7 +61,10 @@ impl Shaders {
 
         let shadow = ShaderProgram::compile(
             renderer,
-            include_str!("shadow.frag"),
+            concat!(
+                include_str!("shadow.frag"),
+                include_str!("rounding_alpha.frag")
+            ),
             &[
                 UniformName::new("shadow_color", UniformType::_4f),
                 UniformName::new("sigma", UniformType::_1f),
@@ -78,7 +84,10 @@ impl Shaders {
 
         let clipped_surface = renderer
             .compile_custom_texture_shader(
-                include_str!("clipped_surface.frag"),
+                concat!(
+                    include_str!("clipped_surface.frag"),
+                    include_str!("rounding_alpha.frag")
+                ),
                 &[
                     UniformName::new("niri_scale", UniformType::_1f),
                     UniformName::new("geo_size", UniformType::_2f),
@@ -183,6 +192,7 @@ fn compile_resize_program(
     let mut program = include_str!("resize_prelude.frag").to_string();
     program.push_str(src);
     program.push_str(include_str!("resize_epilogue.frag"));
+    program.push_str(include_str!("rounding_alpha.frag"));
 
     ShaderProgram::compile(
         renderer,
