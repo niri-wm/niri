@@ -1,6 +1,6 @@
 use std::ptr;
 
-use anyhow::{ensure, Context};
+use anyhow::{ensure, Context as _};
 use niri_config::BlockOutFrom;
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::allocator::{Buffer, Fourcc};
@@ -17,6 +17,7 @@ use solid_color::{SolidColorBuffer, SolidColorRenderElement};
 
 use self::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use self::texture::{TextureBuffer, TextureRenderElement};
+use crate::render_helpers::renderer::AsGlesRenderer;
 
 pub mod border;
 pub mod clipped_surface;
@@ -37,6 +38,34 @@ pub mod snapshot;
 pub mod solid_color;
 pub mod surface;
 pub mod texture;
+
+/// A rendering context.
+///
+/// Bundles together things needed by most rendering code.
+pub struct RenderCtx<'a, R> {
+    pub renderer: &'a mut R,
+    pub target: RenderTarget,
+}
+
+impl<'a, R> RenderCtx<'a, R> {
+    /// Reborrows this context with a smaller lifetime.
+    #[inline]
+    pub fn r<'b>(&'b mut self) -> RenderCtx<'b, R> {
+        RenderCtx {
+            renderer: self.renderer,
+            target: self.target,
+        }
+    }
+}
+
+impl<'a, R: AsGlesRenderer> RenderCtx<'a, R> {
+    pub fn as_gles<'b>(&'b mut self) -> RenderCtx<'b, GlesRenderer> {
+        RenderCtx {
+            renderer: self.renderer.as_gles_renderer(),
+            target: self.target,
+        }
+    }
+}
 
 /// What we're rendering for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -6,7 +6,8 @@ use smithay::backend::renderer::element::{Kind, RenderElement};
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
 use smithay::utils::{Logical, Physical, Point, Rectangle, Scale, Size, Transform};
 
-use super::{render_to_encompassing_texture, RenderTarget, ToRenderElement};
+use super::{render_to_encompassing_texture, ToRenderElement};
+use crate::render_helpers::RenderCtx;
 
 /// Snapshot of a render.
 #[derive(Debug)]
@@ -43,11 +44,10 @@ where
 {
     pub fn texture(
         &self,
-        renderer: &mut GlesRenderer,
+        ctx: RenderCtx<GlesRenderer>,
         scale: Scale<f64>,
-        target: RenderTarget,
     ) -> Option<&(GlesTexture, Rectangle<i32, Physical>)> {
-        if target.should_block_out(self.block_out_from) {
+        if ctx.target.should_block_out(self.block_out_from) {
             self.blocked_out_texture.get_or_init(|| {
                 let _span = tracy_client::span!("RenderSnapshot::texture");
 
@@ -60,7 +60,7 @@ where
                     .collect();
 
                 match render_to_encompassing_texture(
-                    renderer,
+                    ctx.renderer,
                     scale,
                     Transform::Normal,
                     Fourcc::Abgr8888,
@@ -86,7 +86,7 @@ where
                     .collect();
 
                 match render_to_encompassing_texture(
-                    renderer,
+                    ctx.renderer,
                     scale,
                     Transform::Normal,
                     Fourcc::Abgr8888,

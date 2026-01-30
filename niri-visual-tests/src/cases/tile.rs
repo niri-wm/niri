@@ -2,7 +2,7 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use niri::layout::Options;
-use niri::render_helpers::RenderTarget;
+use niri::render_helpers::{RenderCtx, RenderTarget};
 use niri_config::Color;
 use smithay::backend::renderer::element::RenderElement;
 use smithay::backend::renderer::gles::GlesRenderer;
@@ -121,13 +121,13 @@ impl TestCase for Tile {
         );
 
         let mut rv = Vec::new();
-        self.tile.render(
+        let ctx = RenderCtx {
             renderer,
-            location,
-            true,
-            RenderTarget::Output,
-            &mut |elem| rv.push(Box::new(elem) as _),
-        );
+            target: RenderTarget::Output,
+        };
+        self.tile.render(ctx, location, true, &mut |elem| {
+            rv.push(Box::new(elem) as _)
+        });
         rv
     }
 }
