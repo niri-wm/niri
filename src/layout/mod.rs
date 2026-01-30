@@ -64,7 +64,7 @@ use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::snapshot::RenderSnapshot;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
 use crate::render_helpers::texture::TextureBuffer;
-use crate::render_helpers::{BakedBuffer, RenderTarget};
+use crate::render_helpers::{BakedBuffer, RenderCtx};
 use crate::rubber_band::RubberBand;
 use crate::utils::transaction::{Transaction, TransactionBlocker};
 use crate::utils::{
@@ -154,41 +154,38 @@ pub trait LayoutElement {
     /// location.
     fn render<R: NiriRenderer>(
         &self,
-        renderer: &mut R,
+        mut ctx: RenderCtx<R>,
         location: Point<f64, Logical>,
         scale: Scale<f64>,
         alpha: f32,
-        target: RenderTarget,
         push: &mut dyn FnMut(LayoutElementRenderElement<R>),
     ) {
-        self.render_popups(renderer, location, scale, alpha, target, push);
-        self.render_normal(renderer, location, scale, alpha, target, push);
+        self.render_popups(ctx.r(), location, scale, alpha, push);
+        self.render_normal(ctx.r(), location, scale, alpha, push);
     }
 
     /// Renders the non-popup parts of the element.
     fn render_normal<R: NiriRenderer>(
         &self,
-        renderer: &mut R,
+        ctx: RenderCtx<R>,
         location: Point<f64, Logical>,
         scale: Scale<f64>,
         alpha: f32,
-        target: RenderTarget,
         push: &mut dyn FnMut(LayoutElementRenderElement<R>),
     ) {
-        let _ = (renderer, location, scale, alpha, target, push);
+        let _ = (ctx, location, scale, alpha, push);
     }
 
     /// Renders the popups of the element.
     fn render_popups<R: NiriRenderer>(
         &self,
-        renderer: &mut R,
+        ctx: RenderCtx<R>,
         location: Point<f64, Logical>,
         scale: Scale<f64>,
         alpha: f32,
-        target: RenderTarget,
         push: &mut dyn FnMut(LayoutElementRenderElement<R>),
     ) {
-        let _ = (renderer, location, scale, alpha, target, push);
+        let _ = (ctx, location, scale, alpha, push);
     }
 
     /// Requests the element to change its size.
@@ -4721,9 +4718,8 @@ impl<W: LayoutElement> Layout<W> {
 
     pub fn render_interactive_move_for_output<R: NiriRenderer>(
         &self,
-        renderer: &mut R,
+        ctx: RenderCtx<R>,
         output: &Output,
-        target: RenderTarget,
         push: &mut dyn FnMut(RescaleRenderElement<TileRenderElement<R>>),
     ) {
         if self.update_render_elements_time != self.clock.now() {
@@ -4741,15 +4737,13 @@ impl<W: LayoutElement> Layout<W> {
         let scale = Scale::from(move_.output.current_scale().fractional_scale());
         let zoom = self.overview_zoom();
         let location = move_.tile_render_location(zoom);
-        move_
-            .tile
-            .render(renderer, location, true, target, &mut |elem| {
-                push(RescaleRenderElement::from_element(
-                    elem,
-                    location.to_physical_precise_round(scale),
-                    zoom,
-                ));
-            });
+        move_.tile.render(ctx, location, true, &mut |elem| {
+            push(RescaleRenderElement::from_element(
+                elem,
+                location.to_physical_precise_round(scale),
+                zoom,
+            ));
+        });
     }
 
     pub fn refresh(&mut self, is_active: bool) {

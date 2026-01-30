@@ -27,7 +27,7 @@ use crate::render_helpers::resize::ResizeRenderElement;
 use crate::render_helpers::shadow::ShadowRenderElement;
 use crate::render_helpers::snapshot::RenderSnapshot;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
-use crate::render_helpers::RenderTarget;
+use crate::render_helpers::{RenderCtx, RenderTarget};
 use crate::utils::transaction::Transaction;
 use crate::utils::{
     baba_is_float_offset, round_logical_in_physical, round_logical_in_physical_max1,
@@ -1009,10 +1009,9 @@ impl<W: LayoutElement> Tile<W> {
 
     fn render_inner<R: NiriRenderer>(
         &self,
-        renderer: &mut R,
+        mut ctx: RenderCtx<R>,
         location: Point<f64, Logical>,
         focus_ring: bool,
-        target: RenderTarget,
         push: &mut dyn FnMut(TileRenderElement<R>),
     ) {
         let _span = tracy_client::span!("Tile::render_inner");
@@ -1058,48 +1057,43 @@ impl<W: LayoutElement> Tile<W> {
             .scaled_by(1. - expanded_progress as f32);
 
         // Popups go on top, whether it's resize or not.
-        self.window.render_popups(
-            renderer,
-            window_render_loc,
-            scale,
-            win_alpha,
-            target,
-            &mut |elem| push(elem.into()),
-        );
+        self.window
+            .render_popups(ctx.r(), window_render_loc, scale, win_alpha, &mut |elem| {
+                push(elem.into())
+            });
 
         // If we're resizing, try to render a shader, or a fallback.
         let mut pushed_resize = false;
         if let Some(resize) = &self.resize_animation {
-            if ResizeRenderElement::has_shader(renderer) {
-                let gles_renderer = renderer.as_gles_renderer();
+            if ResizeRenderElement::has_shader(ctx.renderer) {
+                let mut ctx = ctx.as_gles();
 
-                if let Some(texture_from) = resize.snapshot.texture(gles_renderer, scale, target) {
+                if let Some(texture_from) = resize.snapshot.texture(ctx.r(), scale) {
                     let mut window_elements = Vec::new();
                     self.window.render_normal(
-                        gles_renderer,
+                        ctx.r(),
                         Point::from((0., 0.)),
                         scale,
                         1.,
-                        target,
                         &mut |elem| window_elements.push(elem),
                     );
 
                     let current = resize
                         .offscreen
-                        .render(gles_renderer, scale, &window_elements)
+                        .render(ctx.renderer, scale, &window_elements)
                         .map_err(|err| warn!("error rendering window to texture: {err:?}"))
                         .ok();
 
                     // Clip blocked-out resizes unconditionally because they use solid color render
                     // elements.
-                    let clip_to_geometry = if target
-                        .should_block_out(resize.snapshot.block_out_from)
-                        && target.should_block_out(rules.block_out_from)
-                    {
-                        true
-                    } else {
-                        clip_to_geometry
-                    };
+                    let clip_to_geometry =
+                        if ctx.target.should_block_out(resize.snapshot.block_out_from)
+                            && ctx.target.should_block_out(rules.block_out_from)
+                        {
+                            true
+                        } else {
+                            clip_to_geometry
+                        };
 
                     if let Some((elem_current, _sync_point, mut data)) = current {
                         let texture_current = elem_current.texture().clone();
@@ -1148,12 +1142,12 @@ impl<W: LayoutElement> Tile<W> {
         }
 
         // If we're not resizing, render the window itself.
-        let has_border_shader = BorderRenderElement::has_shader(renderer);
+        let has_border_shader = BorderRenderElement::has_shader(ctx.renderer);
         if !pushed_resize {
             let geo = Rectangle::new(window_render_loc, window_size);
             let radius = radius.fit_to(window_size.w as f32, window_size.h as f32);
 
-            let clip_shader = ClippedSurfaceRenderElement::shader(renderer).cloned();
+            let clip_shader = ClippedSurfaceRenderElement::shader(ctx.renderer).cloned();
             let clip = |elem| match elem {
                 LayoutElementRenderElement::Wayland(elem) => {
                     // If we should clip to geometry, render a clipped window.
@@ -1210,14 +1204,10 @@ impl<W: LayoutElement> Tile<W> {
                 push(damage.with_location(window_render_loc).into());
             }
 
-            self.window.render_normal(
-                renderer,
-                window_render_loc,
-                scale,
-                win_alpha,
-                target,
-                &mut |elem| push(clip(elem)),
-            );
+            self.window
+                .render_normal(ctx.r(), window_render_loc, scale, win_alpha, &mut |elem| {
+                    push(clip(elem))
+                });
         }
 
         if fullscreen_progress > 0. {
@@ -1264,7 +1254,7 @@ impl<W: LayoutElement> Tile<W> {
 
         if let Some(width) = self.visual_border_width() {
             self.border.render(
-                renderer,
+                ctx.renderer,
                 location + Point::from((width, width)),
                 &mut |elem| push(elem.into()),
             );
@@ -1276,21 +1266,20 @@ impl<W: LayoutElement> Tile<W> {
         // a bit weird).
         if focus_ring && expanded_progress < 1. {
             self.focus_ring
-                .render(renderer, location, &mut |elem| push(elem.into()));
+                .render(ctx.renderer, location, &mut |elem| push(elem.into()));
         }
 
         if expanded_progress < 1. {
             self.shadow
-                .render(renderer, location, &mut |elem| push(elem.into()));
+                .render(ctx.renderer, location, &mut |elem| push(elem.into()));
         }
     }
 
     pub fn render<R: NiriRenderer>(
         &self,
-        renderer: &mut R,
+        mut ctx: RenderCtx<R>,
         location: Point<f64, Logical>,
         focus_ring: bool,
-        target: RenderTarget,
         push: &mut dyn FnMut(TileRenderElement<R>),
     ) {
         let _span = tracy_client::span!("Tile::render");
@@ -1306,17 +1295,13 @@ impl<W: LayoutElement> Tile<W> {
         self.window().set_offscreen_data(None);
 
         if let Some(open) = &self.open_animation {
-            let renderer = renderer.as_gles_renderer();
+            let mut ctx = ctx.as_gles();
             let mut elements = Vec::new();
-            self.render_inner(
-                renderer,
-                Point::from((0., 0.)),
-                focus_ring,
-                target,
-                &mut |elem| elements.push(elem),
-            );
+            self.render_inner(ctx.r(), Point::from((0., 0.)), focus_ring, &mut |elem| {
+                elements.push(elem)
+            });
             match open.render(
-                renderer,
+                ctx.renderer,
                 &elements,
                 self.animated_tile_size(),
                 location,
@@ -1333,16 +1318,12 @@ impl<W: LayoutElement> Tile<W> {
                 }
             }
         } else if let Some(alpha) = &self.alpha_animation {
-            let renderer = renderer.as_gles_renderer();
+            let mut ctx = ctx.as_gles();
             let mut elements = Vec::new();
-            self.render_inner(
-                renderer,
-                Point::from((0., 0.)),
-                focus_ring,
-                target,
-                &mut |elem| elements.push(elem),
-            );
-            match alpha.offscreen.render(renderer, scale, &elements) {
+            self.render_inner(ctx.r(), Point::from((0., 0.)), focus_ring, &mut |elem| {
+                elements.push(elem)
+            });
+            match alpha.offscreen.render(ctx.renderer, scale, &elements) {
                 Ok((elem, _sync, data)) => {
                     let offset = elem.offset();
                     let elem = elem.with_alpha(tile_alpha).with_offset(location + offset);
@@ -1358,9 +1339,7 @@ impl<W: LayoutElement> Tile<W> {
         }
 
         if !pushed {
-            self.render_inner(renderer, location, focus_ring, target, &mut |elem| {
-                push(elem)
-            });
+            self.render_inner(ctx, location, focus_ring, &mut |elem| push(elem));
         }
     }
 
@@ -1377,20 +1356,24 @@ impl<W: LayoutElement> Tile<W> {
 
         let mut contents = Vec::new();
         self.render(
-            renderer,
+            RenderCtx {
+                renderer,
+                target: RenderTarget::Output,
+            },
             Point::from((0., 0.)),
             false,
-            RenderTarget::Output,
             &mut |elem| contents.push(elem),
         );
 
         // A bit of a hack to render blocked out as for screencast, but I think it's fine here.
         let mut blocked_out_contents = Vec::new();
         self.render(
-            renderer,
+            RenderCtx {
+                renderer,
+                target: RenderTarget::Screencast,
+            },
             Point::from((0., 0.)),
             false,
-            RenderTarget::Screencast,
             &mut |elem| blocked_out_contents.push(elem),
         );
 

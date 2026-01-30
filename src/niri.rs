@@ -156,7 +156,7 @@ use crate::render_helpers::surface::push_elements_from_surface_tree;
 use crate::render_helpers::texture::TextureBuffer;
 use crate::render_helpers::{
     encompassing_geo, render_to_dmabuf, render_to_encompassing_texture, render_to_shm,
-    render_to_texture, render_to_vec, shaders, RenderTarget,
+    render_to_texture, render_to_vec, shaders, RenderCtx, RenderTarget,
 };
 #[cfg(feature = "xdp-gnome-screencast")]
 use crate::screencasting::Screencasting;
@@ -4027,13 +4027,12 @@ impl Niri {
 
     pub fn render<R: NiriRenderer>(
         &self,
-        renderer: &mut R,
+        ctx: RenderCtx<R>,
         output: &Output,
         include_pointer: bool,
-        target: RenderTarget,
     ) -> Vec<OutputRenderElements<R>> {
         let mut elements = Vec::new();
-        self.render_inner(renderer, output, include_pointer, target, &mut |elem| {
+        self.render_inner(ctx, output, include_pointer, &mut |elem| {
             elements.push(elem)
         });
         elements
@@ -4041,17 +4040,16 @@ impl Niri {
 
     pub fn render_inner<R: NiriRenderer>(
         &self,
-        renderer: &mut R,
+        mut ctx: RenderCtx<R>,
         output: &Output,
         include_pointer: bool,
-        mut target: RenderTarget,
         push: &mut dyn FnMut(OutputRenderElements<R>),
     ) {
         let _span = tracy_client::span!("Niri::render");
 
-        if target == RenderTarget::Output {
+        if ctx.target == RenderTarget::Output {
             if let Some(preview) = self.config.borrow().debug.preview_render {
-                target = match preview {
+                ctx.target = match preview {
                     PreviewRender::Screencast => RenderTarget::Screencast,
                     PreviewRender::ScreenCapture => RenderTarget::ScreenCapture,
                 };
@@ -4071,23 +4069,23 @@ impl Niri {
 
         // The pointer goes on the top.
         if include_pointer && self.pointer_visibility.is_visible() {
-            self.render_pointer(renderer, output, &mut |elem| push(elem.into()));
+            self.render_pointer(ctx.renderer, output, &mut |elem| push(elem.into()));
         }
 
         // Next, the screen transition texture.
         {
             let state = self.output_state.get(output).unwrap();
             if let Some(transition) = &state.screen_transition {
-                push(transition.render(target).into());
+                push(transition.render(ctx.target).into());
             }
         }
 
         // Next, the exit confirm dialog.
         self.exit_confirm_dialog
-            .render(renderer, output, &mut |elem| push(elem.into()));
+            .render(ctx.renderer, output, &mut |elem| push(elem.into()));
 
         // Next, the config error notification too.
-        if let Some(element) = self.config_error_notification.render(renderer, output) {
+        if let Some(element) = self.config_error_notification.render(ctx.renderer, output) {
             push(element.into());
         }
 
@@ -4096,7 +4094,7 @@ impl Niri {
             let state = self.output_state.get(output).unwrap();
             if let Some(surface) = state.lock_surface.as_ref() {
                 push_elements_from_surface_tree(
-                    renderer,
+                    ctx.renderer,
                     surface.wl_surface(),
                     Point::new(0, 0),
                     output_scale,
@@ -4133,7 +4131,7 @@ impl Niri {
         // If the screenshot UI is open, draw it.
         if self.screenshot_ui.is_open() {
             self.screenshot_ui
-                .render_output(output, target, &mut |elem| push(elem.into()));
+                .render_output(output, ctx.target, &mut |elem| push(elem.into()));
 
             // Add the backdrop for outputs that were connected while the screenshot UI was open.
             push(backdrop);
@@ -4142,15 +4140,13 @@ impl Niri {
         }
 
         // Draw the hotkey overlay on top.
-        if let Some(element) = self.hotkey_overlay.render(renderer, output) {
+        if let Some(element) = self.hotkey_overlay.render(ctx.renderer, output) {
             push(element.into());
         }
 
         // Then, the Alt-Tab switcher.
         self.window_mru_ui
-            .render_output(self, output, renderer, target, &mut |elem| {
-                push(elem.into())
-            });
+            .render_output(self, output, ctx.r(), &mut |elem| push(elem.into()));
 
         // Don't draw the focus ring on the workspaces while interactively moving above those
         // workspaces, since the interactively-moved window already has a focus ring.
@@ -4167,7 +4163,7 @@ impl Niri {
         // into different functions).
         macro_rules! push_popups_from_layer {
             ($layer:expr, $backdrop:expr, $push:expr) => {{
-                self.render_layer_popups(renderer, target, &layer_map, $layer, $backdrop, $push);
+                self.render_layer_popups(ctx.r(), &layer_map, $layer, $backdrop, $push);
             }};
             ($layer:expr, true) => {{
                 push_popups_from_layer!($layer, true, &mut |elem| push(elem.into()));
@@ -4181,7 +4177,7 @@ impl Niri {
         }
         macro_rules! push_normal_from_layer {
             ($layer:expr, $backdrop:expr, $push:expr) => {{
-                self.render_layer_normal(renderer, target, &layer_map, $layer, $backdrop, $push);
+                self.render_layer_normal(ctx.r(), &layer_map, $layer, $backdrop, $push);
             }};
             ($layer:expr, true) => {{
                 push_normal_from_layer!($layer, true, &mut |elem| push(elem.into()));
@@ -4202,13 +4198,11 @@ impl Niri {
         // Otherwise, we will render all layer-shell pop-ups and the top layer on top.
         if mon.render_above_top_layer() {
             self.layout
-                .render_interactive_move_for_output(renderer, output, target, &mut |elem| {
-                    push(elem.into())
-                });
+                .render_interactive_move_for_output(ctx.r(), output, &mut |elem| push(elem.into()));
 
-            mon.render_insert_hint_between_workspaces(renderer, &mut |elem| push(elem.into()));
+            mon.render_insert_hint_between_workspaces(ctx.renderer, &mut |elem| push(elem.into()));
 
-            mon.render_workspaces(renderer, target, focus_ring, &mut |elem| push(elem.into()));
+            mon.render_workspaces(ctx.r(), focus_ring, &mut |elem| push(elem.into()));
 
             push_popups_from_layer!(Layer::Top);
             push_normal_from_layer!(Layer::Top);
@@ -4227,11 +4221,9 @@ impl Niri {
             push_normal_from_layer!(Layer::Top);
 
             self.layout
-                .render_interactive_move_for_output(renderer, output, target, &mut |elem| {
-                    push(elem.into())
-                });
+                .render_interactive_move_for_output(ctx.r(), output, &mut |elem| push(elem.into()));
 
-            mon.render_insert_hint_between_workspaces(renderer, &mut |elem| push(elem.into()));
+            mon.render_insert_hint_between_workspaces(ctx.renderer, &mut |elem| push(elem.into()));
 
             // Macro instead of closure to avoid borrowing push().
             macro_rules! process {
@@ -4249,7 +4241,7 @@ impl Niri {
                 push_popups_from_layer!(Layer::Background, process!(geo));
             }
 
-            mon.render_workspaces(renderer, target, focus_ring, &mut |elem| push(elem.into()));
+            mon.render_workspaces(ctx.r(), focus_ring, &mut |elem| push(elem.into()));
 
             for (ws, geo) in mon.workspaces_with_render_geo() {
                 push_normal_from_layer!(Layer::Bottom, process!(geo));
@@ -4259,7 +4251,7 @@ impl Niri {
             }
         }
 
-        mon.render_workspace_shadows(renderer, &mut |elem| push(elem.into()));
+        mon.render_workspace_shadows(ctx.renderer, &mut |elem| push(elem.into()));
 
         // Then the backdrop.
         push_popups_from_layer!(Layer::Background, true);
@@ -4289,29 +4281,27 @@ impl Niri {
 
     fn render_layer_normal<R: NiriRenderer>(
         &self,
-        renderer: &mut R,
-        target: RenderTarget,
+        mut ctx: RenderCtx<R>,
         layer_map: &LayerMap,
         layer: Layer,
         for_backdrop: bool,
         push: &mut dyn FnMut(LayerSurfaceRenderElement<R>),
     ) {
         for (mapped, geo) in self.layers_in_render_order(layer_map, layer, for_backdrop) {
-            mapped.render_normal(renderer, geo.loc.to_f64(), target, push);
+            mapped.render_normal(ctx.r(), geo.loc.to_f64(), push);
         }
     }
 
     fn render_layer_popups<R: NiriRenderer>(
         &self,
-        renderer: &mut R,
-        target: RenderTarget,
+        mut ctx: RenderCtx<R>,
         layer_map: &LayerMap,
         layer: Layer,
         for_backdrop: bool,
         push: &mut dyn FnMut(LayerSurfaceRenderElement<R>),
     ) {
         for (mapped, geo) in self.layers_in_render_order(layer_map, layer, for_backdrop) {
-            mapped.render_popups(renderer, geo.loc.to_f64(), target, push);
+            mapped.render_popups(ctx.r(), geo.loc.to_f64(), push);
         }
     }
 
@@ -4935,7 +4925,11 @@ impl Niri {
             if let Some(screencopy) = screencopy {
                 if screencopy.output() == output {
                     let elements = elements.get_or_init(|| {
-                        self.render(renderer, output, true, RenderTarget::ScreenCapture)
+                        let ctx = RenderCtx {
+                            renderer,
+                            target: RenderTarget::ScreenCapture,
+                        };
+                        self.render(ctx, output, true)
                     });
                     // FIXME: skip elements if not including pointers
                     let render_result = Self::render_for_screencopy_internal(
@@ -4998,12 +4992,12 @@ impl Niri {
 
         self.update_render_elements(Some(output));
 
-        let elements = self.render(
+        let ctx = RenderCtx {
             renderer,
-            output,
-            screencopy.overlay_cursor(),
-            RenderTarget::ScreenCapture,
-        );
+            target: RenderTarget::ScreenCapture,
+        };
+        let elements = self.render(ctx, output, screencopy.overlay_cursor());
+
         let Some(damage_tracker) = self.screencopy_state.damage_tracker(manager) else {
             error!("screencopy queue must not be deleted as long as frames exist");
             bail!("screencopy queue missing");
@@ -5126,7 +5120,8 @@ impl Niri {
                 RenderTarget::ScreenCapture,
             ];
             let screenshot = targets.map(|target| {
-                let elements = self.render::<GlesRenderer>(renderer, &output, false, target);
+                let ctx = RenderCtx { renderer, target };
+                let elements = self.render(ctx, &output, false);
                 let elements = elements.iter().rev();
 
                 let res = render_to_texture(
@@ -5203,12 +5198,11 @@ impl Niri {
         let size = transform.transform_size(size);
 
         let scale = Scale::from(output.current_scale().fractional_scale());
-        let elements = self.render::<GlesRenderer>(
+        let ctx = RenderCtx {
             renderer,
-            output,
-            include_pointer,
-            RenderTarget::ScreenCapture,
-        );
+            target: RenderTarget::ScreenCapture,
+        };
+        let elements = self.render(ctx, output, include_pointer);
         let elements = elements.iter().rev();
         let pixels = render_to_vec(
             renderer,
@@ -5258,12 +5252,15 @@ impl Niri {
         }
         let pointer_count = elements.len();
 
-        mapped.render(
+        let ctx = RenderCtx {
             renderer,
+            target: RenderTarget::ScreenCapture,
+        };
+        mapped.render(
+            ctx,
             mapped.window.geometry().loc.to_f64(),
             scale,
             alpha,
-            RenderTarget::ScreenCapture,
             &mut |elem| elements.push(elem.into()),
         );
 
@@ -5419,12 +5416,11 @@ impl Niri {
         let transform = output.current_transform();
         let size = transform.transform_size(size);
 
-        let elements = self.render::<GlesRenderer>(
+        let ctx = RenderCtx {
             renderer,
-            &output,
-            include_pointer,
-            RenderTarget::ScreenCapture,
-        );
+            target: RenderTarget::ScreenCapture,
+        };
+        let elements = self.render(ctx, &output, include_pointer);
         let elements = elements.iter().rev();
         let pixels = render_to_vec(
             renderer,
@@ -5897,7 +5893,8 @@ impl Niri {
                     RenderTarget::ScreenCapture,
                 ];
                 let textures = targets.map(|target| {
-                    let elements = self.render::<GlesRenderer>(renderer, &output, false, target);
+                    let ctx = RenderCtx { renderer, target };
+                    let elements = self.render(ctx, &output, false);
                     let elements = elements.iter().rev();
 
                     let res = render_to_texture(
