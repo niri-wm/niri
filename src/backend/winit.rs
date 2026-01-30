@@ -21,7 +21,7 @@ use smithay::wayland::presentation::Refresh;
 use super::{IpcOutputMap, OutputId, RenderResult};
 use crate::niri::{Niri, RedrawState, State};
 use crate::render_helpers::debug::draw_damage;
-use crate::render_helpers::{resources, shaders, RenderTarget};
+use crate::render_helpers::{resources, shaders, RenderCtx, RenderTarget};
 use crate::utils::{get_monotonic_time, logical_output};
 
 pub struct Winit {
@@ -195,8 +195,11 @@ impl Winit {
         let _ = renderer.downscale_filter(filter);
 
         // Render the elements.
-        let mut elements =
-            niri.render::<GlesRenderer>(renderer, output, true, RenderTarget::Output);
+        let ctx = RenderCtx {
+            renderer: self.backend.renderer(),
+            target: RenderTarget::Output,
+        };
+        let mut elements = niri.render_to_vec(ctx, output, true);
 
         // Visualize the damage, if enabled.
         if niri.debug_draw_damage {

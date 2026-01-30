@@ -13,7 +13,7 @@ use smithay::input::SeatHandler;
 use smithay::utils::{Logical, Physical, Point, Scale, Size, Transform};
 
 use crate::niri::State;
-use crate::render_helpers::{render_and_download, RenderTarget};
+use crate::render_helpers::{render_and_download, RenderCtx, RenderTarget};
 use crate::zoom::zoom_display_cursor_logical;
 
 pub struct PickColorGrab {
@@ -66,15 +66,16 @@ impl PickColorGrab {
                 let pos = pos_within_output.to_physical_precise_floor(scale);
                 let size = Size::<i32, Physical>::from((1, 1));
 
-                // Use un-zoomed elements and sample at logical position.
                 let mut elements = Vec::new();
-                data.niri.render_inner(
+                let ctx = RenderCtx {
                     renderer,
-                    &output,
-                    false,
-                    RenderTarget::Output,
-                    &mut |elem| elements.push(elem),
-                );
+                    // This is an interactive operation so we can render without blocking out.
+                    target: RenderTarget::Output,
+                };
+                data.niri.render(ctx, &output, false, &mut |elem| {
+                    // Use un-zoomed elements and sample at logical position.
+                    elements.push(elem)
+                });
 
                 let mapping = match render_and_download(
                     renderer,

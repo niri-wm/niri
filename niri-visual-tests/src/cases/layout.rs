@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use niri::animation::Clock;
 use niri::layout::{ActivateWindow, AddWindowTarget, LayoutElement as _, Options, SizingMode};
-use niri::render_helpers::RenderTarget;
+use niri::render_helpers::{RenderCtx, RenderTarget};
 use niri_config::{Color, OutputName, PresetSize};
 use smithay::backend::renderer::element::RenderElement;
 use smithay::backend::renderer::gles::GlesRenderer;
@@ -270,12 +270,14 @@ impl TestCase for Layout {
         self.layout.update_render_elements(Some(&self.output));
 
         let mut rv = Vec::new();
+        let ctx = RenderCtx {
+            renderer,
+            target: RenderTarget::Output,
+        };
         self.layout
             .monitor_for_output(&self.output)
             .unwrap()
-            .render_workspaces(renderer, RenderTarget::Output, true, &mut |elem| {
-                rv.push(Box::new(elem) as _)
-            });
+            .render_workspaces(ctx, true, &mut |elem| rv.push(Box::new(elem) as _));
         rv
     }
 }
