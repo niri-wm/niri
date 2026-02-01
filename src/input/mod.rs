@@ -4316,19 +4316,22 @@ impl State {
                         if finger_count >= 4 {
                             // 4+ finger gesture: toggle overview.
                             self.niri.layout.overview_gesture_begin();
-                        } else if let Some(output) = self.niri.output_under_cursor() {
+                        } else if let Some((output, _pos_within_output)) =
+                            self.niri.output_under(pos)
+                        {
+                            let output = output.clone();
                             // 3 finger gesture: workspace switch or view offset.
                             let is_overview_open = self.niri.layout.is_overview_open();
 
                             if cx.abs() > cy.abs() {
                                 // Horizontal gesture: view offset (scroll within workspace).
                                 let output_ws = if is_overview_open {
-                                    self.niri.workspace_under_cursor(true)
+                                    self.niri.workspace_under(true, pos)
                                 } else {
-                                    self.niri.output_under_cursor().and_then(|output| {
-                                        let mon = self.niri.layout.monitor_for_output(&output)?;
-                                        Some((output, mon.active_workspace_ref()))
-                                    })
+                                    self.niri
+                                        .layout
+                                        .monitor_for_output(&output)
+                                        .map(|mon| (output.clone(), mon.active_workspace_ref()))
                                 };
 
                                 if let Some((output, ws)) = output_ws {
