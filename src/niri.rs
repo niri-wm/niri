@@ -44,7 +44,6 @@ use smithay::desktop::{
     find_popup_root_surface, layer_map_for_output, LayerMap, LayerSurface, PopupGrab, PopupManager,
     PopupUngrabStrategy, Space, Window, WindowSurfaceType,
 };
-use smithay::input::keyboard::xkb::{Context as XkbContext, Keymap};
 use smithay::input::keyboard::{Layout as KeyboardLayout, XkbConfig};
 use smithay::input::pointer::{
     CursorIcon, CursorImageStatus, CursorImageSurfaceData, Focus,
@@ -331,9 +330,6 @@ pub struct Niri {
 
     /// Most recent XKB settings from org.freedesktop.locale1.
     pub xkb_from_locale1: Option<Xkb>,
-
-    pub xkb_default_context: XkbContext,
-    pub xkb_default_keymap: Keymap,
 
     /// Whether to reset the keymap on the next physical keyboard event.
     ///
@@ -2343,10 +2339,6 @@ impl Niri {
         }
         seat.add_pointer();
 
-        //Create default context and keymap for persistent translation
-        let context = XkbContext::new(0);
-        let keymap = Keymap::new_from_names(&context, "", "", "", "", None, 0).unwrap();
-
         let cursor_shape_manager_state = CursorShapeManagerState::new::<State>(&display_handle);
         let cursor_manager =
             CursorManager::new(&config_.cursor.xcursor_theme, config_.cursor.xcursor_size);
@@ -2518,8 +2510,6 @@ impl Niri {
             is_fdo_idle_inhibited: Arc::new(AtomicBool::new(false)),
             keyboard_shortcuts_inhibiting_surfaces: HashMap::new(),
             xkb_from_locale1: None,
-            xkb_default_context: context,
-            xkb_default_keymap: keymap,
             reset_keymap: false,
             cursor_manager,
             cursor_texture_cache: Default::default(),

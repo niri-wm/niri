@@ -457,9 +457,8 @@ impl State {
                 let raw = if keysym_binded {
                     keysym.raw_latin_sym_or_raw_current_sym()
                 } else {
-                    let keymap = &this.niri.xkb_default_keymap;
-                    keymap
-                        .key_get_syms_by_level(key_code, 0, 0)
+                    let xkb = keysym.xkb().lock().unwrap();
+                    xkb.raw_syms_for_key_in_layout(key_code, Layout(0))
                         .first()
                         .cloned()
                 };
