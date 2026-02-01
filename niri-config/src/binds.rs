@@ -9,6 +9,7 @@ use miette::miette;
 use niri_ipc::{
     ColumnDisplay, LayoutSwitchTarget, PositionChange, SizeChange, WorkspaceReferenceArg,
 };
+use smithay::backend::input::Keycode;
 use smithay::input::keyboard::keysyms::KEY_NoSymbol;
 use smithay::input::keyboard::xkb::{keysym_from_name, KEYSYM_CASE_INSENSITIVE, KEYSYM_NO_FLAGS};
 use smithay::input::keyboard::Keysym;
@@ -39,6 +40,7 @@ pub struct Key {
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub enum Trigger {
     Keysym(Keysym),
+    Keycode(Keycode),
     MouseLeft,
     MouseRight,
     MouseMiddle,
@@ -1009,6 +1011,11 @@ impl FromStr for Key {
             Trigger::TabletStylusButton2
         } else if key.eq_ignore_ascii_case("TabletStylusButton3") {
             Trigger::TabletStylusButton3
+        } else if let Some(num) = key.strip_prefix("keycode:") {
+            let Ok(keycode) = num.parse::<u32>() else {
+                return Err(miette!("invalid keycode: {key}"));
+            };
+            Trigger::Keycode(keycode.into())
         } else {
             let mut keysym = keysym_from_name(key, KEYSYM_CASE_INSENSITIVE);
             // The keyboard event handling code can receive either
