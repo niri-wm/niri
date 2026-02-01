@@ -4093,10 +4093,16 @@ impl State {
         let was_single = self.niri.touch_gesture_points.len() == 1;
         self.niri.touch_gesture_points.insert(Some(slot), pos);
 
-        // When second finger arrives, start gesture recognition.
+        // When second finger arrives, start cumulative tracking for gesture recognition.
+        // Actual gestures (workspace/view/scroll) require 3+ fingers and are processed
+        // in on_touch_motion once the third finger arrives and moves.
         if was_single && self.niri.touch_gesture_points.len() == 2 {
             self.niri.touch_gesture_cumulative = Some((0., 0.));
         }
+
+        // Check if we're tracking a multi-finger gesture (2+ fingers).
+        // If so, we should not forward events to clients.
+        let tracking_gesture = self.niri.touch_gesture_points.len() >= 2;
 
         let serial = SERIAL_COUNTER.next_serial();
 
@@ -4206,16 +4212,19 @@ impl State {
             self.niri.focus_layer_surface_if_on_demand(under.layer);
         };
 
-        handle.down(
-            self,
-            under.surface,
-            &DownEvent {
-                slot,
-                location: pos,
-                serial,
-                time: evt.time_msec(),
-            },
-        );
+        // Only forward to client if not tracking a multi-finger gesture.
+        if !tracking_gesture {
+            handle.down(
+                self,
+                under.surface,
+                &DownEvent {
+                    slot,
+                    location: pos,
+                    serial,
+                    time: evt.time_msec(),
+                },
+            );
+        }
 
         // We're using touch, hide the pointer.
         self.niri.pointer_visibility = PointerVisibility::Disabled;
@@ -4225,6 +4234,9 @@ impl State {
             return;
         };
         let slot = evt.slot();
+
+        // Check if we're tracking a multi-finger gesture before removing this touch point.
+        let tracking_gesture = self.niri.touch_gesture_points.len() >= 2;
 
         // Remove touch point from gesture tracking.
         self.niri.touch_gesture_points.remove(&Some(slot));
@@ -4251,15 +4263,18 @@ impl State {
             }
         }
 
-        let serial = SERIAL_COUNTER.next_serial();
-        handle.up(
-            self,
-            &UpEvent {
-                slot,
-                serial,
-                time: evt.time_msec(),
-            },
-        )
+        // Only forward to client if not tracking a multi-finger gesture.
+        if !tracking_gesture {
+            let serial = SERIAL_COUNTER.next_serial();
+            handle.up(
+                self,
+                &UpEvent {
+                    slot,
+                    serial,
+                    time: evt.time_msec(),
+                },
+            )
+        }
     }
     fn on_touch_motion<I: InputBackend>(&mut self, evt: I::TouchMotionEvent) {
         let Some(handle) = self.niri.seat.get_touch() else {
@@ -4271,6 +4286,7 @@ impl State {
         let slot = evt.slot();
 
         // Track touch gesture with 2+ fingers.
+        let mut gesture_handled = false;
         if let Some(old_pos) = self.niri.touch_gesture_points.get(&Some(slot)).copied() {
             // Calculate delta from this finger's movement.
             let delta_x = pos.x - old_pos.x;
@@ -4282,6 +4298,7 @@ impl State {
             // Process gesture if we're tracking (3+ fingers).
             if self.niri.touch_gesture_points.len() >= 3 {
                 let timestamp = Duration::from_micros(evt.time());
+                gesture_handled = true;
 
                 // Check if we're still in recognition phase.
                 if let Some((cx, cy)) = &mut self.niri.touch_gesture_cumulative {
@@ -4300,7 +4317,7 @@ impl State {
                             // 4+ finger gesture: toggle overview.
                             self.niri.layout.overview_gesture_begin();
                         } else if let Some(output) = self.niri.output_under_cursor() {
-                            // 2-3 finger gesture: workspace switch or view offset.
+                            // 3 finger gesture: workspace switch or view offset.
                             let is_overview_open = self.niri.layout.is_overview_open();
 
                             if cx.abs() > cy.abs() {
@@ -4392,16 +4409,19 @@ impl State {
             self.niri.queue_redraw(&output);
         }
 
-        let under = self.niri.contents_under(pos);
-        handle.motion(
-            self,
-            under.surface,
-            &TouchMotionEvent {
-                slot,
-                location: pos,
-                time: evt.time_msec(),
-            },
-        );
+        // Only forward to client if not handling a multi-finger gesture.
+        if !gesture_handled {
+            let under = self.niri.contents_under(pos);
+            handle.motion(
+                self,
+                under.surface,
+                &TouchMotionEvent {
+                    slot,
+                    location: pos,
+                    time: evt.time_msec(),
+                },
+            );
+        }
 
         // Inform the layout of an ongoing DnD operation.
         let is_dnd_grab = handle
