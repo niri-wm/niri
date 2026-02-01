@@ -452,9 +452,19 @@ impl State {
             time,
             |this, mods, keysym| {
                 let key_code = event.key_code();
-                let modified = keysym.modified_sym();
-                let raw = keysym.raw_latin_sym_or_raw_current_sym();
+                let keysym_binded = this.niri.config.borrow().input.bind_to_keysyms;
+
                 let modifiers = modifiers_from_state(*mods);
+                let modified = keysym.modified_sym();
+
+                let raw = if keysym_binded {
+                    keysym.raw_latin_sym_or_raw_current_sym()
+                } else {
+                    let xkb = keysym.xkb().lock().unwrap();
+                    xkb.raw_syms_for_key_in_layout(key_code, Layout(0))
+                        .first()
+                        .cloned()
+                };
 
                 // After updating XKB state from accessibility-grabbed keys, return right away and
                 // don't handle them.
