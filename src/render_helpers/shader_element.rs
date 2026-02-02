@@ -10,6 +10,7 @@ use smithay::backend::renderer::gles::{
 };
 use smithay::backend::renderer::utils::{CommitCounter, OpaqueRegions};
 use smithay::backend::renderer::DebugFlags;
+use smithay::utils::user_data::UserDataMap;
 use smithay::utils::{Buffer, Logical, Physical, Point, Rectangle, Scale, Size};
 
 use super::renderer::AsGlesFrame;
@@ -293,6 +294,7 @@ impl RenderElement<GlesRenderer> for ShaderRenderElement {
         dest: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
         _opaque_regions: &[Rectangle<i32, Physical>],
+        _cache: Option<&UserDataMap>,
     ) -> Result<(), GlesError> {
         let _span = tracy_client::span!("ShaderRenderElement::draw");
 
@@ -527,10 +529,11 @@ impl<'render> RenderElement<TtyRenderer<'render>> for ShaderRenderElement {
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
         opaque_regions: &[Rectangle<i32, Physical>],
+        cache: Option<&UserDataMap>,
     ) -> Result<(), TtyRendererError<'render>> {
         let frame = frame.as_gles_frame();
 
-        RenderElement::<GlesRenderer>::draw(self, frame, src, dst, damage, opaque_regions)?;
+        RenderElement::<GlesRenderer>::draw(self, frame, src, dst, damage, opaque_regions, cache)?;
 
         Ok(())
     }
