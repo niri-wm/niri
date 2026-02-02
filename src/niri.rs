@@ -148,7 +148,7 @@ use crate::protocols::mutter_x11_interop::MutterX11InteropManagerState;
 use crate::protocols::output_management::OutputManagementManagerState;
 use crate::protocols::screencopy::{Screencopy, ScreencopyBuffer, ScreencopyManagerState};
 use crate::protocols::virtual_pointer::VirtualPointerManagerState;
-use crate::render_helpers::debug::draw_opaque_regions;
+use crate::render_helpers::debug::push_opaque_regions;
 use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
@@ -4036,12 +4036,6 @@ impl Niri {
         self.render_inner(renderer, output, include_pointer, target, &mut |elem| {
             elements.push(elem)
         });
-
-        if self.debug_draw_opaque_regions {
-            let output_scale = Scale::from(output.current_scale().fractional_scale());
-            draw_opaque_regions(&mut elements, output_scale);
-        }
-
         elements
     }
 
@@ -4065,6 +4059,15 @@ impl Niri {
         }
 
         let output_scale = Scale::from(output.current_scale().fractional_scale());
+
+        let push = if self.debug_draw_opaque_regions {
+            &mut move |elem| {
+                push_opaque_regions(&elem, output_scale, push);
+                push(elem);
+            }
+        } else {
+            push
+        };
 
         // The pointer goes on the top.
         if include_pointer && self.pointer_visibility.is_visible() {

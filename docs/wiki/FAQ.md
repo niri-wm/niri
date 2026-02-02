@@ -45,7 +45,7 @@ hotkey-overlay {
 To run X11 apps, you can use [xwayland-satellite](https://github.com/Supreeeme/xwayland-satellite).
 Check [the Xwayland wiki page](./Xwayland.md) for instructions.
 
-Keep in mind that you can run many Electron apps such as VSCode natively on Wayland by passing the right flags, e.g. `code --ozone-platform-hint=auto`
+Keep in mind that you can run many Electron apps such as VSCode or Discord natively on Wayland by passing the right flags, as described [here](./Application-Issues.md#electron-applications).
 
 ### Why doesn't niri integrate Xwayland like other compositors?
 
