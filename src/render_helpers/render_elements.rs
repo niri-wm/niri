@@ -93,11 +93,30 @@ macro_rules! niri_render_elements {
                     $($name::$variant(elem) => elem.kind()),+
                 }
             }
+
+            fn is_framebuffer_effect(&self) -> bool {
+                match self {
+                    $($name::$variant(elem) => elem.is_framebuffer_effect()),+
+                }
+            }
         }
 
         impl smithay::backend::renderer::element::RenderElement<smithay::backend::renderer::gles::GlesRenderer>
             for $($name_R<smithay::backend::renderer::gles::GlesRenderer>)? $($name_no_R)?
         {
+            fn capture_framebuffer(
+                &self,
+                frame: &mut smithay::backend::renderer::gles::GlesFrame<'_, '_>,
+                src: smithay::utils::Rectangle<f64, smithay::utils::Buffer>,
+                dst: smithay::utils::Rectangle<i32, smithay::utils::Physical>,
+            ) -> Result<(), smithay::backend::renderer::gles::GlesError> {
+                match self {
+                    $($name::$variant(elem) => {
+                        smithay::backend::renderer::element::RenderElement::<smithay::backend::renderer::gles::GlesRenderer>::capture_framebuffer(elem, frame, src, dst)
+                    })+
+                }
+            }
+
             fn draw(
                 &self,
                 frame: &mut smithay::backend::renderer::gles::GlesFrame<'_, '_>,
@@ -123,6 +142,19 @@ macro_rules! niri_render_elements {
         impl<'render> smithay::backend::renderer::element::RenderElement<$crate::backend::tty::TtyRenderer<'render>>
             for $($name_R<$crate::backend::tty::TtyRenderer<'render>>)? $($name_no_R)?
         {
+            fn capture_framebuffer(
+                &self,
+                frame: &mut $crate::backend::tty::TtyFrame<'render, '_, '_>,
+                src: smithay::utils::Rectangle<f64, smithay::utils::Buffer>,
+                dst: smithay::utils::Rectangle<i32, smithay::utils::Physical>,
+            ) -> Result<(), $crate::backend::tty::TtyRendererError<'render>> {
+                match self {
+                    $($name::$variant(elem) => {
+                        smithay::backend::renderer::element::RenderElement::<$crate::backend::tty::TtyRenderer<'render>>::capture_framebuffer(elem, frame, src, dst)
+                    })+
+                }
+            }
+
             fn draw(
                 &self,
                 frame: &mut $crate::backend::tty::TtyFrame<'render, '_, '_>,
