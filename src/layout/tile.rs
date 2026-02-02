@@ -255,6 +255,8 @@ impl<W: LayoutElement> Tile<W> {
 
         let shadow_config = self.options.layout.shadow.merged_with(&rules.shadow);
         self.shadow.update_config(shadow_config);
+
+        self.background_effect.update_config(self.options.blur);
     }
 
     pub fn update_shaders(&mut self) {
