@@ -465,7 +465,7 @@ pub enum Action {
     },
     /// Consume the window to the right into the focused column.
     ConsumeWindowIntoColumn {},
-    /// Expel the focused window from the column.
+    /// Expel the bottom window from the focused column.
     ExpelWindowFromColumn {},
     /// Swap focused window with one to the right.
     SwapWindowRight {},
