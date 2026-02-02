@@ -9,7 +9,6 @@ use calloop::timer::{TimeoutAction, Timer};
 use input::event::gesture::GestureEventCoordinates as _;
 use niri_config::{
     Action, Bind, Binds, Config, Key, ModKey, Modifiers, MruDirection, SwitchBinds, Trigger, Xkb,
-    ZoomMovementMode,
 };
 use niri_ipc::LayoutSwitchTarget;
 use smithay::backend::input::{
@@ -2415,19 +2414,26 @@ impl State {
                     None => self.niri.layout.active_output().cloned(),
                 };
                 if let Some(output) = target_output {
-                    let zoom_state = output.user_data().get::<Mutex<OutputZoomState>>().unwrap();
-                    let mut zoom_state = zoom_state.lock().unwrap();
-                    let factor_str = level.trim();
-                    let is_relative = factor_str.starts_with('+') || factor_str.starts_with('-');
-                    match factor_str.parse::<f64>() {
-                        Ok(f) if !is_relative => {
-                            zoom_state.level = f.max(1.0);
+                    let zoom_state_guard =
+                        output.user_data().get::<Mutex<OutputZoomState>>().unwrap();
+                    if let Some(mut zoom_state) = zoom_state_guard.lock().ok() {
+                        let factor_str = level.trim();
+                        let is_relative =
+                            factor_str.starts_with('+') || factor_str.starts_with('-');
+                        match factor_str.parse::<f64>() {
+                            Ok(f) if !is_relative => {
+                                zoom_state.level = f.max(1.0);
+                            }
+                            Ok(delta) => {
+                                zoom_state.level = (zoom_state.level + delta).clamp(1.0, 100.0);
+                            }
+                            Err(_) => {}
                         }
-                        Ok(delta) => {
-                            zoom_state.level = (zoom_state.level + delta).clamp(1.0, 100.0);
-                        }
-                        Err(_) => {}
                     }
+                    let cursor_pos = self.niri.tablet_cursor_location.unwrap_or_else(|| {
+                        self.niri.seat.get_pointer().unwrap().current_location()
+                    });
+                    self.niri.update_zoom_focal_point(&output, cursor_pos, None);
                     self.niri.queue_redraw(&output);
                 }
             }
@@ -2738,118 +2744,9 @@ impl State {
             }
         }
 
-        if let Some((output, new_pos_within_output)) = self.niri.output_under(new_pos) {
-            let output_state = output.user_data().get::<Mutex<OutputZoomState>>().unwrap();
-            let mut zoom_state = output_state.lock().unwrap();
-
-            let (zoom_factor, zoom_locked) = (zoom_state.level, zoom_state.locked);
-
-            let output_geometry = self
-                .niri
-                .global_space
-                .output_geometry(output)
-                .unwrap()
-                .to_f64();
-
-            // cursor_position is in output-local coordinates
-            let cursor_position = new_pos_within_output;
-
-            let focal_point = zoom_state.focal_point;
-
-            // Calculate zoomed_geometry in LOCAL coordinates (origin at 0,0)
-            let zoomed_geometry_local = {
-                let mut geo: Rectangle<f64, Logical> = Rectangle::from_size(output_geometry.size);
-                geo.loc -= focal_point;
-                geo = geo.downscale(zoom_factor);
-                geo.loc += focal_point;
-                geo
-            };
-
-            // Calculate zoomed_geometry in GLOBAL coordinates (for OnEdge checks)
-            let zoomed_geometry_global = {
-                let focal_point_global = focal_point + output_geometry.loc;
-                let mut geo = output_geometry;
-                geo.loc -= focal_point_global;
-                geo = geo.downscale(zoom_factor);
-                geo.loc += focal_point_global;
-                geo
-            };
-
-            let movement = &self.niri.config.borrow().zoom.movement_mode;
-
-            match (zoom_locked, movement) {
-                (false, ZoomMovementMode::CursorFollow) => {
-                    zoom_state.focal_point = cursor_position;
-                }
-                (false, ZoomMovementMode::Centered) => {
-                    let new_zoomed_loc =
-                        cursor_position - zoomed_geometry_local.size.downscale(2.0).to_point();
-
-                    let denom_w = output_geometry.size.w - zoomed_geometry_local.size.w;
-                    let denom_h = output_geometry.size.h - zoomed_geometry_local.size.h;
-
-                    if denom_w.abs() > f64::EPSILON && denom_h.abs() > f64::EPSILON {
-                        let scale_factor_w = output_geometry.size.w / denom_w;
-                        let scale_factor_h = output_geometry.size.h / denom_h;
-
-                        let mut new_focal = Point::from((
-                            new_zoomed_loc.x * scale_factor_w,
-                            new_zoomed_loc.y * scale_factor_h,
-                        ));
-
-                        new_focal.x = new_focal
-                            .x
-                            .clamp(0.0, output_geometry.size.w - f64::EPSILON);
-                        new_focal.y = new_focal
-                            .y
-                            .clamp(0.0, output_geometry.size.h - f64::EPSILON);
-
-                        zoom_state.focal_point = new_focal;
-                    }
-                }
-                (false, ZoomMovementMode::OnEdge) => {
-                    let original_rect = Rectangle::new(pos, (16.0, 16.0).into());
-
-                    if !zoomed_geometry_global.overlaps_or_touches(original_rect) {
-                        // Cursor jumped far away — pan the viewport towards the recenter target
-                        let new_zoomed_loc =
-                            cursor_position - zoomed_geometry_local.size.downscale(2.0).to_point();
-
-                        let denom_w = output_geometry.size.w - zoomed_geometry_local.size.w;
-                        let denom_h = output_geometry.size.h - zoomed_geometry_local.size.h;
-
-                        if denom_w.abs() > f64::EPSILON && denom_h.abs() > f64::EPSILON {
-                            let scale_factor_w = output_geometry.size.w / denom_w;
-                            let scale_factor_h = output_geometry.size.h / denom_h;
-
-                            let mut new_focal = Point::from((
-                                new_zoomed_loc.x * scale_factor_w,
-                                new_zoomed_loc.y * scale_factor_h,
-                            ));
-
-                            new_focal.x = new_focal
-                                .x
-                                .clamp(0.0, output_geometry.size.w - f64::EPSILON);
-                            new_focal.y = new_focal
-                                .y
-                                .clamp(0.0, output_geometry.size.h - f64::EPSILON);
-
-                            zoom_state.focal_point = new_focal;
-                        }
-                    } else if !zoomed_geometry_global.contains(new_pos) {
-                        let delta = new_pos - pos;
-                        let mut new_focal = focal_point + delta.upscale(zoom_factor);
-                        new_focal.x = new_focal
-                            .x
-                            .clamp(0.0, output_geometry.size.w - f64::EPSILON);
-                        new_focal.y = new_focal
-                            .y
-                            .clamp(0.0, output_geometry.size.h - f64::EPSILON);
-                        zoom_state.focal_point = new_focal;
-                    }
-                }
-                (true, _) => { /* do nothing, focal point is locked */ }
-            }
+        if let Some((output, _)) = self.niri.output_under(new_pos) {
+            self.niri
+                .update_zoom_focal_point(output, new_pos, Some(pos));
         }
 
         // Redraw to update the cursor position.
@@ -2949,6 +2846,10 @@ impl State {
                 let output = output.clone();
                 self.niri.layout.dnd_update(output, pos_within_output);
             }
+        }
+
+        if let Some((output, _)) = self.niri.output_under(pos) {
+            self.niri.update_zoom_focal_point(output, pos, None);
         }
 
         // Redraw to update the cursor position.
@@ -3794,6 +3695,10 @@ impl State {
 
             self.niri.pointer_visibility = PointerVisibility::Visible;
             self.niri.tablet_cursor_location = Some(pos);
+        }
+
+        if let Some((output, _)) = self.niri.output_under(pos) {
+            self.niri.update_zoom_focal_point(output, pos, None);
         }
 
         // Redraw to update the cursor position.

@@ -16,7 +16,7 @@ use calloop::futures::Scheduler;
 use niri_config::debug::PreviewRender;
 use niri_config::{
     Config, FloatOrInt, Key, Modifiers, OutputName, TrackLayout, WarpMouseToFocusMode,
-    WorkspaceReference, Xkb,
+    WorkspaceReference, Xkb, ZoomMovementMode,
 };
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::input::Keycode;
@@ -2980,6 +2980,169 @@ impl Niri {
                 .to_f64();
 
         Some((output, pos_within_output))
+    }
+
+    /// Update the zoom focal point for the given output based on cursor position.
+    ///
+    /// # Arguments
+    /// * `output` - The output whose zoom state to update
+    /// * `new_pos_global` - Current cursor position in global coordinates
+    /// * `old_pos_global` - Previous cursor position (for OnEdge mode edge-pushing).
+    ///                      Pass `None` for absolute events or zoom changes,
+    ///                      which will use Centered/CursorFollow behavior.
+    pub fn update_zoom_focal_point(
+        &self,
+        output: &Output,
+        new_pos_global: Point<f64, Logical>,
+        old_pos_global: Option<Point<f64, Logical>>,
+    ) {
+        let Some(mutex) = output.user_data().get::<Mutex<OutputZoomState>>() else {
+            return;
+        };
+        let Ok(mut zoom_state) = mutex.lock() else {
+            return;
+        };
+
+        // Skip if zoom is not active or locked
+        if zoom_state.level <= 1.0 || zoom_state.locked {
+            return;
+        }
+
+        let zoom_factor = zoom_state.level;
+        let focal_point = zoom_state.focal_point;
+
+        let Some(output_geometry) = self.global_space.output_geometry(output) else {
+            return;
+        };
+        let output_geometry = output_geometry.to_f64();
+
+        // cursor_position is in output-local coordinates
+        let cursor_position = new_pos_global - output_geometry.loc;
+
+        // Calculate zoomed_geometry in LOCAL coordinates (origin at 0,0)
+        let zoomed_geometry_local = {
+            let mut geo: Rectangle<f64, Logical> = Rectangle::from_size(output_geometry.size);
+            geo.loc -= focal_point;
+            geo = geo.downscale(zoom_factor);
+            geo.loc += focal_point;
+            geo
+        };
+
+        let movement = &self.config.borrow().zoom.movement_mode;
+
+        match movement {
+            ZoomMovementMode::CursorFollow => {
+                zoom_state.focal_point = cursor_position;
+            }
+            ZoomMovementMode::Centered => {
+                let new_zoomed_loc =
+                    cursor_position - zoomed_geometry_local.size.downscale(2.0).to_point();
+
+                let denom_w = output_geometry.size.w - zoomed_geometry_local.size.w;
+                let denom_h = output_geometry.size.h - zoomed_geometry_local.size.h;
+
+                if denom_w.abs() > f64::EPSILON && denom_h.abs() > f64::EPSILON {
+                    let scale_factor_w = output_geometry.size.w / denom_w;
+                    let scale_factor_h = output_geometry.size.h / denom_h;
+
+                    let mut new_focal = Point::from((
+                        new_zoomed_loc.x * scale_factor_w,
+                        new_zoomed_loc.y * scale_factor_h,
+                    ));
+
+                    new_focal.x = new_focal
+                        .x
+                        .clamp(0.0, output_geometry.size.w - f64::EPSILON);
+                    new_focal.y = new_focal
+                        .y
+                        .clamp(0.0, output_geometry.size.h - f64::EPSILON);
+
+                    zoom_state.focal_point = new_focal;
+                }
+            }
+            ZoomMovementMode::OnEdge => {
+                // Calculate zoomed_geometry in GLOBAL coordinates (for OnEdge checks)
+                let zoomed_geometry_global = {
+                    let focal_point_global = focal_point + output_geometry.loc;
+                    let mut geo = output_geometry;
+                    geo.loc -= focal_point_global;
+                    geo = geo.downscale(zoom_factor);
+                    geo.loc += focal_point_global;
+                    geo
+                };
+
+                // OnEdge requires old_pos for proper edge-pushing behavior.
+                // If not available (absolute events, zoom changes), fall back to Centered.
+                let Some(old_pos) = old_pos_global else {
+                    // Fall back to Centered behavior
+                    let new_zoomed_loc =
+                        cursor_position - zoomed_geometry_local.size.downscale(2.0).to_point();
+
+                    let denom_w = output_geometry.size.w - zoomed_geometry_local.size.w;
+                    let denom_h = output_geometry.size.h - zoomed_geometry_local.size.h;
+
+                    if denom_w.abs() > f64::EPSILON && denom_h.abs() > f64::EPSILON {
+                        let scale_factor_w = output_geometry.size.w / denom_w;
+                        let scale_factor_h = output_geometry.size.h / denom_h;
+
+                        let mut new_focal = Point::from((
+                            new_zoomed_loc.x * scale_factor_w,
+                            new_zoomed_loc.y * scale_factor_h,
+                        ));
+
+                        new_focal.x = new_focal
+                            .x
+                            .clamp(0.0, output_geometry.size.w - f64::EPSILON);
+                        new_focal.y = new_focal
+                            .y
+                            .clamp(0.0, output_geometry.size.h - f64::EPSILON);
+
+                        zoom_state.focal_point = new_focal;
+                    }
+                    return;
+                };
+
+                let original_rect = Rectangle::new(old_pos, (16.0, 16.0).into());
+
+                if !zoomed_geometry_global.overlaps_or_touches(original_rect) {
+                    // Cursor jumped far away — pan the viewport towards the recenter target
+                    let new_zoomed_loc =
+                        cursor_position - zoomed_geometry_local.size.downscale(2.0).to_point();
+
+                    let denom_w = output_geometry.size.w - zoomed_geometry_local.size.w;
+                    let denom_h = output_geometry.size.h - zoomed_geometry_local.size.h;
+
+                    if denom_w.abs() > f64::EPSILON && denom_h.abs() > f64::EPSILON {
+                        let scale_factor_w = output_geometry.size.w / denom_w;
+                        let scale_factor_h = output_geometry.size.h / denom_h;
+
+                        let mut new_focal = Point::from((
+                            new_zoomed_loc.x * scale_factor_w,
+                            new_zoomed_loc.y * scale_factor_h,
+                        ));
+
+                        new_focal.x = new_focal
+                            .x
+                            .clamp(0.0, output_geometry.size.w - f64::EPSILON);
+                        new_focal.y = new_focal
+                            .y
+                            .clamp(0.0, output_geometry.size.h - f64::EPSILON);
+
+                        zoom_state.focal_point = new_focal;
+                    }
+                } else if !zoomed_geometry_global.contains(new_pos_global) {
+                    let delta = new_pos_global - old_pos;
+                    let mut new_focal = focal_point + delta.upscale(zoom_factor);
+                    new_focal.x = new_focal
+                        .x
+                        .clamp(0.0, output_geometry.size.w - f64::EPSILON);
+                    new_focal.y = new_focal
+                        .y
+                        .clamp(0.0, output_geometry.size.h - f64::EPSILON);
+                    zoom_state.focal_point = new_focal;
+                }
+            }
+        }
     }
 
     fn is_inside_hot_corner(&self, output: &Output, pos: Point<f64, Logical>) -> bool {
