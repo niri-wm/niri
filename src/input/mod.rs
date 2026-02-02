@@ -9,6 +9,7 @@ use calloop::timer::{TimeoutAction, Timer};
 use input::event::gesture::GestureEventCoordinates as _;
 use niri_config::{
     Action, Bind, Binds, Config, Key, ModKey, Modifiers, MruDirection, SwitchBinds, Trigger, Xkb,
+    ZoomIncrementType,
 };
 use niri_ipc::LayoutSwitchTarget;
 use smithay::backend::input::{
@@ -2425,7 +2426,14 @@ impl State {
                                 zoom_state.level = f.max(1.0);
                             }
                             Ok(delta) => {
-                                zoom_state.level = (zoom_state.level + delta).clamp(1.0, 100.0);
+                                let increment_type = &self.niri.config.borrow().zoom.increment_type;
+                                let new_level = match increment_type {
+                                    ZoomIncrementType::Linear => zoom_state.level + delta,
+                                    ZoomIncrementType::Exponential => {
+                                        (zoom_state.level.ln() + delta).exp()
+                                    }
+                                };
+                                zoom_state.level = new_level.clamp(1.0, 100.0);
                             }
                             Err(_) => {}
                         }
