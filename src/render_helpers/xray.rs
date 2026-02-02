@@ -10,6 +10,7 @@ use smithay::backend::renderer::gles::{
 };
 use smithay::backend::renderer::utils::{CommitCounter, OpaqueRegions};
 use smithay::backend::renderer::Color32F;
+use smithay::utils::user_data::UserDataMap;
 use smithay::utils::{Buffer, Logical, Physical, Point, Rectangle, Scale, Size, Transform};
 
 use crate::backend::tty::{TtyFrame, TtyRenderer, TtyRendererError};
@@ -283,6 +284,7 @@ impl RenderElement<GlesRenderer> for XrayElement {
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
         _opaque_regions: &[Rectangle<i32, Physical>],
+        _cache: Option<&UserDataMap>,
     ) -> Result<(), GlesError> {
         let mut buffer = self.buffer.borrow_mut();
         let texture = match buffer.render(frame, self.blur) {
@@ -342,9 +344,18 @@ impl<'render> RenderElement<TtyRenderer<'render>> for XrayElement {
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
         opaque_regions: &[Rectangle<i32, Physical>],
+        cache: Option<&UserDataMap>,
     ) -> Result<(), TtyRendererError<'render>> {
         let gles_frame = frame.as_gles_frame();
-        RenderElement::<GlesRenderer>::draw(&self, gles_frame, src, dst, damage, opaque_regions)?;
+        RenderElement::<GlesRenderer>::draw(
+            &self,
+            gles_frame,
+            src,
+            dst,
+            damage,
+            opaque_regions,
+            cache,
+        )?;
         Ok(())
     }
 }
