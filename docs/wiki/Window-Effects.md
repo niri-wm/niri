@@ -49,3 +49,24 @@ You can enable it with `xray true` background effect [window](./Configuration:-W
 
 Xray is automatically enabled by default if any other background effect (like blur) is active.
 This is because it's much more efficient: with xray active, niri only needs to blur the background once, and then can reuse this blurred version with no extra work (since the wallpaper changes very rarely).
+
+#### Non-xray effects (experimental)
+
+You can disable xray with `xray false` background effect window rule.
+This gives you the normal kind of blur where everything below a window is blurred.
+Keep in mind that non-xray blur and other non-xray effects are more expensive as niri has to recompute them any time you move the window, or the contents underneath change.
+
+Non-xray effects are currently experimental because they have some known limitations.
+
+- They disappear during window open/close animations and while dragging a tiled window.
+Fixing this requries subframe support in the Smithay rendering code.
+
+- Multiple clones of a non-xray background effect will interfere with each other and cause visual glitches.
+You can see this if you enable non-xray effects on a bottom or background layer surface, then open the [Overview](./Overview.md).
+Bottom and background layer surfaces are cloned on all workspaces that you can see in the Overview, causing interference.
+Fixing this requires support for framebuffer effect clones in the Smithay rendering code.
+
+- Non-xray blur "fades out" near the very edges of a monitor.
+This happens because when we copy the framebuffer contents with `glBlitFramebuffer()`, it skips pixels outside the monitor bounds.
+I'm not actually sure why, since the documentation indicates it should clamp the pixel values to edge in this case.
+If we get this working, blur "fading out" would be fixed.

@@ -1,3 +1,4 @@
+use std::array;
 use std::sync::Arc;
 
 use niri_config::CornerRadius;
@@ -5,12 +6,17 @@ use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::utils::{Logical, Physical, Point, Rectangle, Scale};
 
 use crate::niri_render_elements;
+use crate::render_helpers::blur::BlurOptions;
 use crate::render_helpers::damage::ExtraDamage;
+use crate::render_helpers::framebuffer_effect::{FramebufferEffect, FramebufferEffectElement};
 use crate::render_helpers::xray::XrayElement;
-use crate::render_helpers::RenderCtx;
+use crate::render_helpers::{RenderCtx, RenderTarget};
 
 #[derive(Debug)]
 pub struct BackgroundEffect {
+    // Framebuffer effects are per-render-target because they store the framebuffer contents in a
+    // texture, and those differ per render target.
+    nonxray: [FramebufferEffect; RenderTarget::COUNT],
     /// Damage when options change.
     damage: ExtraDamage,
     /// Corner radius for clipping.
@@ -151,6 +157,7 @@ impl EffectSubregion {
 
 niri_render_elements! {
     BackgroundEffectElement => {
+        FramebufferEffect = FramebufferEffectElement,
         Xray = XrayElement,
         ExtraDamage = ExtraDamage,
     }
@@ -159,6 +166,7 @@ niri_render_elements! {
 impl BackgroundEffect {
     pub fn new() -> Self {
         Self {
+            nonxray: array::from_fn(|_| FramebufferEffect::new()),
             damage: ExtraDamage::new(),
             corner_radius: CornerRadius::default(),
             blur_config: niri_config::Blur::default(),
@@ -236,6 +244,7 @@ impl BackgroundEffect {
         // Use noise/saturation from options, falling back to blur defaults if blurred, and
         // to no effect if not blurred.
         let blur = self.options.blur && !self.blur_config.off;
+        let blur_options = blur.then_some(BlurOptions::from(self.blur_config));
         let noise = if blur { self.blur_config.noise } else { 0. };
         let noise = self.options.noise.unwrap_or(noise) as f32;
         let saturation = if blur {
@@ -256,6 +265,11 @@ impl BackgroundEffect {
             });
         } else {
             // Render non-xray effect.
+            let elem = &self.nonxray[ctx.target as usize];
+            if let Some(elem) = elem.render(ctx.renderer, params, blur_options, noise, saturation) {
+                push(damage.into());
+                push(elem.into());
+            }
         }
     }
 }

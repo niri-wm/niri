@@ -91,6 +91,8 @@ impl MappedLayer {
         shadow_config.on = false;
         shadow_config.merge_with(&self.rules.shadow);
         self.shadow.update_config(shadow_config);
+
+        self.background_effect.update_config(config.blur);
     }
 
     pub fn update_shaders(&mut self) {
