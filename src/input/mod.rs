@@ -2,14 +2,16 @@ use std::any::Any;
 use std::cmp::min;
 use std::collections::hash_map::Entry;
 use std::collections::HashSet;
+use std::sync::Mutex;
 use std::time::Duration;
 
 use calloop::timer::{TimeoutAction, Timer};
 use input::event::gesture::GestureEventCoordinates as _;
 use niri_config::{
     Action, Bind, Binds, Config, Key, ModKey, Modifiers, MruDirection, SwitchBinds, Trigger, Xkb,
+    ZoomMovementMode,
 };
-use niri_ipc::{LayoutSwitchTarget, ZoomMovement};
+use niri_ipc::LayoutSwitchTarget;
 use smithay::backend::input::{
     AbsolutePositionEvent, Axis, AxisSource, ButtonState, Device, DeviceCapability, Event,
     GestureBeginEvent, GestureEndEvent, GesturePinchUpdateEvent as _, GestureSwipeUpdateEvent as _,
@@ -34,7 +36,7 @@ use smithay::input::SeatHandler;
 use smithay::output::Output;
 use smithay::reexports::wayland_server::protocol::wl_data_source::WlDataSource;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::utils::{Logical, Point, Rectangle, Transform, SERIAL_COUNTER};
+use smithay::utils::{Logical, Point, Rectangle, Scale, Transform, SERIAL_COUNTER};
 use smithay::wayland::keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitor;
 use smithay::wayland::pointer_constraints::{with_pointer_constraint, PointerConstraint};
 use smithay::wayland::tablet_manager::{TabletDescriptor, TabletSeatTrait};
@@ -46,7 +48,7 @@ use self::spatial_movement_grab::SpatialMovementGrab;
 #[cfg(feature = "dbus")]
 use crate::dbus::freedesktop_a11y::KbMonBlock;
 use crate::layout::scrolling::ScrollDirection;
-use crate::layout::{ActivateWindow, LayoutElement as _};
+use crate::layout::{ActivateWindow, LayoutElement as _, OutputZoomState};
 use crate::niri::{CastTarget, PointerVisibility, State};
 use crate::protocols::virtual_keyboard::VirtualKeyboard;
 use crate::ui::mru::{WindowMru, WindowMruUi};
@@ -2407,116 +2409,37 @@ impl State {
                     self.niri.queue_redraw_mru_output();
                 }
             }
-            Action::ToggleZoom { output } => {
+            Action::SetZoomLevel(level, output) => {
                 let target_output = match output {
                     Some(name) => self.niri.output_by_name_match(&name).cloned(),
                     None => self.niri.layout.active_output().cloned(),
                 };
                 if let Some(output) = target_output {
-                    if let Some(monitor) = self.niri.layout.monitor_for_output_mut(&output) {
-                        monitor.zoom_enabled = !monitor.zoom_enabled;
-                        let zoom_state = niri_ipc::ZoomState {
-                            factor: monitor.zoom_factor,
-                            enabled: monitor.zoom_enabled,
-                            movement: monitor.zoom_movement,
-                            threshold: monitor.zoom_threshold,
-                            frozen: monitor.zoom_frozen,
-                        };
-                        self.ipc_send_zoom_state_change(&output.name(), zoom_state);
-                    }
-                    self.niri.queue_redraw_all();
-                }
-            }
-            Action::ToggleZoomFreeze { output } => {
-                let target_output = match output {
-                    Some(name) => self.niri.output_by_name_match(&name).cloned(),
-                    None => self.niri.layout.active_output().cloned(),
-                };
-                if let Some(output) = target_output {
-                    if let Some(monitor) = self.niri.layout.monitor_for_output_mut(&output) {
-                        monitor.zoom_frozen = !monitor.zoom_frozen;
-                        let zoom_state = niri_ipc::ZoomState {
-                            factor: monitor.zoom_factor,
-                            enabled: monitor.zoom_enabled,
-                            movement: monitor.zoom_movement,
-                            threshold: monitor.zoom_threshold,
-                            frozen: monitor.zoom_frozen,
-                        };
-                        self.ipc_send_zoom_state_change(&output.name(), zoom_state);
-                    }
-                    self.niri.queue_redraw_all();
-                }
-            }
-            Action::SetZoomFactor { factor, output } => {
-                let target_output = match output {
-                    Some(name) => self.niri.output_by_name_match(&name).cloned(),
-                    None => self.niri.layout.active_output().cloned(),
-                };
-                if let Some(output) = target_output {
-                    if let Some(monitor) = self.niri.layout.monitor_for_output_mut(&output) {
-                        let factor_str = factor.trim();
-                        let is_relative =
-                            factor_str.starts_with('+') || factor_str.starts_with('-');
-                        match factor_str.parse::<f64>() {
-                            Ok(f) if !is_relative => {
-                                monitor.zoom_factor = f.max(1.0);
-                            }
-                            Ok(delta) => {
-                                monitor.zoom_factor =
-                                    (monitor.zoom_factor + delta).clamp(1.0, 100.0);
-                            }
-                            Err(_) => {}
+                    let zoom_state = output.user_data().get::<Mutex<OutputZoomState>>().unwrap();
+                    let mut zoom_state = zoom_state.lock().unwrap();
+                    let factor_str = level.trim();
+                    let is_relative = factor_str.starts_with('+') || factor_str.starts_with('-');
+                    match factor_str.parse::<f64>() {
+                        Ok(f) if !is_relative => {
+                            zoom_state.level = f.max(1.0);
                         }
-                        let zoom_state = niri_ipc::ZoomState {
-                            factor: monitor.zoom_factor,
-                            enabled: monitor.zoom_enabled,
-                            movement: monitor.zoom_movement,
-                            threshold: monitor.zoom_threshold,
-                            frozen: monitor.zoom_frozen,
-                        };
-                        self.ipc_send_zoom_state_change(&output.name(), zoom_state);
+                        Ok(delta) => {
+                            zoom_state.level = (zoom_state.level + delta).clamp(1.0, 100.0);
+                        }
+                        Err(_) => {}
                     }
-                    self.niri.queue_redraw_all();
+                    self.niri.queue_redraw(&output);
                 }
             }
-            Action::SetZoomMovement { movement, output } => {
+            Action::ToggleZoomLock(output) => {
                 let target_output = match output {
                     Some(name) => self.niri.output_by_name_match(&name).cloned(),
                     None => self.niri.layout.active_output().cloned(),
                 };
                 if let Some(output) = target_output {
-                    if let Some(monitor) = self.niri.layout.monitor_for_output_mut(&output) {
-                        monitor.zoom_movement = movement;
-                        let zoom_state = niri_ipc::ZoomState {
-                            factor: monitor.zoom_factor,
-                            enabled: monitor.zoom_enabled,
-                            movement: monitor.zoom_movement,
-                            threshold: monitor.zoom_threshold,
-                            frozen: monitor.zoom_frozen,
-                        };
-                        self.ipc_send_zoom_state_change(&output.name(), zoom_state);
-                    }
-                    self.niri.queue_redraw_all();
-                }
-            }
-            Action::SetZoomThreshold { threshold, output } => {
-                let target_output = match output {
-                    Some(name) => self.niri.output_by_name_match(&name).cloned(),
-                    None => self.niri.layout.active_output().cloned(),
-                };
-                if let Some(output) = target_output {
-                    if let Some(monitor) = self.niri.layout.monitor_for_output_mut(&output) {
-                        monitor.zoom_threshold = threshold.clamp(0.0, 1.0);
-                        let zoom_state = niri_ipc::ZoomState {
-                            factor: monitor.zoom_factor,
-                            enabled: monitor.zoom_enabled,
-                            movement: monitor.zoom_movement,
-                            threshold: monitor.zoom_threshold,
-                            frozen: monitor.zoom_frozen,
-                        };
-                        self.ipc_send_zoom_state_change(&output.name(), zoom_state);
-                    }
-                    self.niri.queue_redraw_all();
+                    let zoom_state = output.user_data().get::<Mutex<OutputZoomState>>().unwrap();
+                    let mut zoom_state = zoom_state.lock().unwrap();
+                    zoom_state.locked = !zoom_state.locked;
                 }
             }
         }
@@ -2538,8 +2461,24 @@ impl State {
 
         let pos = pointer.current_location();
 
+        // Get the output under the current pointer position for zoom-aware acceleration.
+        let zoom_multiplier = if let Some((output, _)) = self.niri.output_under(pos) {
+            output
+                .user_data()
+                .get::<Mutex<OutputZoomState>>()
+                .and_then(|m| m.lock().ok())
+                .map(|z| if z.level > 1.0 { 1.0 / z.level } else { 1.0 })
+                .unwrap_or(1.0)
+        } else {
+            1.0
+        };
+
+        // Apply zoom-aware delta scaling: at higher zoom levels, reduce pointer
+        // deltas proportionally to maintain consistent visual cursor velocity.
+        let delta = event.delta().upscale(Scale::from(zoom_multiplier));
+
         // We have an output, so we can compute the new location and focus.
-        let mut new_pos = pos + event.delta();
+        let mut new_pos = pos + delta;
 
         // We received an event for the regular pointer, so show it now.
         self.niri.pointer_visibility = PointerVisibility::Visible;
@@ -2628,30 +2567,62 @@ impl State {
             }
         }
 
-        if self
-            .niri
-            .global_space
-            .output_under(new_pos)
-            .next()
-            .is_none()
-        {
-            // We ended up outside the outputs and need to clip the movement.
-            if let Some(output) = self.niri.global_space.output_under(pos).next() {
-                // The pointer was previously on some output. Clip the movement against its
-                // boundaries.
-                let geom = self.niri.global_space.output_geometry(output).unwrap();
-                new_pos.x = new_pos
-                    .x
-                    .clamp(geom.loc.x as f64, (geom.loc.x + geom.size.w - 1) as f64);
-                new_pos.y = new_pos
-                    .y
-                    .clamp(geom.loc.y as f64, (geom.loc.y + geom.size.h - 1) as f64);
-            } else {
-                // The pointer was not on any output in the first place. Find one for it.
-                // Let's do the simple thing and just put it on the first output.
-                let output = self.niri.global_space.outputs().next().unwrap();
-                let geom = self.niri.global_space.output_geometry(output).unwrap();
-                new_pos = center(geom).to_f64();
+        match self.niri.global_space.output_under(new_pos).next() {
+            None => {
+                // We ended up outside the outputs and need to clip the movement.
+                if let Some(output) = self.niri.global_space.output_under(pos).next() {
+                    // The pointer was previously on some output. Clip the movement against its
+                    // boundaries.
+                    let geom = self.niri.global_space.output_geometry(output).unwrap();
+                    new_pos.x = new_pos
+                        .x
+                        .clamp(geom.loc.x as f64, (geom.loc.x + geom.size.w - 1) as f64);
+                    new_pos.y = new_pos
+                        .y
+                        .clamp(geom.loc.y as f64, (geom.loc.y + geom.size.h - 1) as f64);
+                } else {
+                    // The pointer was not on any output in the first place. Find one for it.
+                    // Let's do the simple thing and just put it on the first output.
+                    let output = self.niri.global_space.outputs().next().unwrap();
+                    let geom = self.niri.global_space.output_geometry(output).unwrap();
+                    new_pos = center(geom).to_f64();
+                }
+            }
+            Some(output) => {
+                if let Some(zoom_state) = output.user_data().get::<Mutex<OutputZoomState>>() {
+                    let zoom_state = zoom_state.lock().unwrap();
+                    let (zoom_factor, zoom_locked) = (zoom_state.level, zoom_state.locked);
+                    if zoom_locked {
+                        let output_geometry = self
+                            .niri
+                            .global_space
+                            .output_geometry(output)
+                            .unwrap()
+                            .to_f64();
+
+                        let focal_point = zoom_state.focal_point;
+
+                        // Calculate zoomed_geometry in GLOBAL coordinates (for clamping)
+                        let zoomed_geometry_global = {
+                            let focal_point_global = focal_point + output_geometry.loc;
+                            let mut geo = output_geometry;
+                            geo.loc -= focal_point_global;
+                            geo = geo.downscale(zoom_factor);
+                            geo.loc += focal_point_global;
+                            geo
+                        };
+
+                        // Clamp new_pos to stay within zoomed area
+                        new_pos.x = new_pos.x.clamp(
+                            zoomed_geometry_global.loc.x,
+                            zoomed_geometry_global.loc.x + zoomed_geometry_global.size.w - 1.,
+                        );
+                        new_pos.y = new_pos.y.clamp(
+                            zoomed_geometry_global.loc.y,
+                            zoomed_geometry_global.loc.y + zoomed_geometry_global.size.h - 1.,
+                        );
+                    }
+                }
             }
         }
 
@@ -2767,103 +2738,117 @@ impl State {
             }
         }
 
-        // Update cursor zoom center for EdgePushed movement (like cosmic-comp's OnEdge)
-        // When cursor exits visible zoomed area, pan by cursor delta scaled by zoom
-        for monitor in self.niri.layout.monitors_mut() {
-            let zoom = monitor.zoom_factor;
+        if let Some((output, new_pos_within_output)) = self.niri.output_under(new_pos) {
+            let output_state = output.user_data().get::<Mutex<OutputZoomState>>().unwrap();
+            let mut zoom_state = output_state.lock().unwrap();
 
-            // Skip if zoom center is frozen
-            if monitor.zoom_frozen {
-                continue;
-            }
+            let (zoom_factor, zoom_locked) = (zoom_state.level, zoom_state.locked);
 
-            if zoom <= 1.0 || monitor.zoom_movement != ZoomMovement::EdgePushed {
-                // No zoom or not in EdgePushed mode
-                // Just update zoom center to current cursor position
-                monitor.zoom_center = new_pos
-                    - self
-                        .niri
-                        .global_space
-                        .output_geometry(monitor.output())
-                        .unwrap()
-                        .loc
-                        .to_f64();
-                continue;
-            }
+            let output_geometry = self
+                .niri
+                .global_space
+                .output_geometry(output)
+                .unwrap()
+                .to_f64();
 
-            let output_geo = match self.niri.global_space.output_geometry(monitor.output()) {
-                Some(geo) => geo.to_f64(),
-                None => continue,
+            // cursor_position is in output-local coordinates
+            let cursor_position = new_pos_within_output;
+
+            let focal_point = zoom_state.focal_point;
+
+            // Calculate zoomed_geometry in LOCAL coordinates (origin at 0,0)
+            let zoomed_geometry_local = {
+                let mut geo: Rectangle<f64, Logical> = Rectangle::from_size(output_geometry.size);
+                geo.loc -= focal_point;
+                geo = geo.downscale(zoom_factor);
+                geo.loc += focal_point;
+                geo
             };
 
-            let cursor_in_monitor = new_pos - output_geo.loc.to_f64();
-            if !output_geo.contains(cursor_in_monitor.to_i32_round()) {
-                continue;
-            }
+            // Calculate zoomed_geometry in GLOBAL coordinates (for OnEdge checks)
+            let zoomed_geometry_global = {
+                let focal_point_global = focal_point + output_geometry.loc;
+                let mut geo = output_geometry;
+                geo.loc -= focal_point_global;
+                geo = geo.downscale(zoom_factor);
+                geo.loc += focal_point_global;
+                geo
+            };
 
-            let output_w = output_geo.size.w;
-            let output_h = output_geo.size.h;
+            let movement = &self.niri.config.borrow().zoom.movement_mode;
 
-            // Calculate visible area bounds matching the render formula:
-            // offset = cursor_pos * (1 - zoom)
-            // For point p, screen_pos = (p - cursor_pos) * zoom + cursor_pos
-            // visible_left: screen=0 → p = cursor_pos * (zoom-1)/zoom
-            // visible_right: screen=output_w → p = cursor_pos + (output_w - cursor_pos)/zoom
-            let focal = monitor.zoom_center;
-            let visible_left = focal.x * (zoom - 1.0) / zoom;
-            let visible_right = focal.x + (output_w - focal.x) / zoom;
-            let visible_top = focal.y * (zoom - 1.0) / zoom;
-            let visible_bottom = focal.y + (output_h - focal.y) / zoom;
-
-            // Threshold as fraction of VISIBLE area size (not output size).
-            // This ensures safe zone scales properly with zoom level.
-            let visible_w = visible_right - visible_left;
-            let visible_h = visible_bottom - visible_top;
-            let threshold_x = visible_w * monitor.zoom_threshold;
-            let threshold_y = visible_h * monitor.zoom_threshold;
-
-            // Check if cursor is outside safe zone (visible area shrunk by threshold).
-            let safe_left = visible_left + threshold_x;
-            let safe_right = visible_right - threshold_x;
-            let safe_top = visible_top + threshold_y;
-            let safe_bottom = visible_bottom - threshold_y;
-
-            let outside_left = cursor_in_monitor.x < safe_left;
-            let outside_right = cursor_in_monitor.x > safe_right;
-            let outside_top = cursor_in_monitor.y < safe_top;
-            let outside_bottom = cursor_in_monitor.y > safe_bottom;
-
-            if outside_left || outside_right || outside_top || outside_bottom {
-                // Compute focal to place cursor slightly inside safe zone edge.
-                // Add small epsilon to prevent floating-point oscillation at boundary.
-                let z = zoom;
-                let tr = monitor.zoom_threshold;
-                let zf = z / (z - 1.0);
-                let epsilon = 1.0;
-
-                let mut new_focal_x = focal.x;
-                let mut new_focal_y = focal.y;
-
-                if outside_left {
-                    let target = cursor_in_monitor.x + epsilon;
-                    new_focal_x = target * zf - output_w * tr / (z - 1.0);
-                } else if outside_right {
-                    let target = cursor_in_monitor.x - epsilon;
-                    new_focal_x = (target - output_w / z) * zf + output_w * tr / (z - 1.0);
+            match (zoom_locked, movement) {
+                (false, ZoomMovementMode::CursorFollow) => {
+                    zoom_state.focal_point = cursor_position;
                 }
+                (false, ZoomMovementMode::Centered) => {
+                    let new_zoomed_loc =
+                        cursor_position - zoomed_geometry_local.size.downscale(2.0).to_point();
 
-                if outside_top {
-                    let target = cursor_in_monitor.y + epsilon;
-                    new_focal_y = target * zf - output_h * tr / (z - 1.0);
-                } else if outside_bottom {
-                    let target = cursor_in_monitor.y - epsilon;
-                    new_focal_y = (target - output_h / z) * zf + output_h * tr / (z - 1.0);
+                    let denom_w = output_geometry.size.w - zoomed_geometry_local.size.w;
+                    let denom_h = output_geometry.size.h - zoomed_geometry_local.size.h;
+
+                    if denom_w.abs() > f64::EPSILON && denom_h.abs() > f64::EPSILON {
+                        let scale_factor_w = output_geometry.size.w / denom_w;
+                        let scale_factor_h = output_geometry.size.h / denom_h;
+
+                        let mut new_focal = Point::from((
+                            new_zoomed_loc.x * scale_factor_w,
+                            new_zoomed_loc.y * scale_factor_h,
+                        ));
+
+                        new_focal.x = new_focal
+                            .x
+                            .clamp(0.0, output_geometry.size.w - f64::EPSILON);
+                        new_focal.y = new_focal
+                            .y
+                            .clamp(0.0, output_geometry.size.h - f64::EPSILON);
+
+                        zoom_state.focal_point = new_focal;
+                    }
                 }
+                (false, ZoomMovementMode::OnEdge) => {
+                    let original_rect = Rectangle::new(pos, (16.0, 16.0).into());
 
-                new_focal_x = new_focal_x.clamp(0.0, output_w);
-                new_focal_y = new_focal_y.clamp(0.0, output_h);
+                    if !zoomed_geometry_global.overlaps_or_touches(original_rect) {
+                        // Cursor jumped far away — pan the viewport towards the recenter target
+                        let new_zoomed_loc =
+                            cursor_position - zoomed_geometry_local.size.downscale(2.0).to_point();
 
-                monitor.zoom_center = Point::from((new_focal_x, new_focal_y));
+                        let denom_w = output_geometry.size.w - zoomed_geometry_local.size.w;
+                        let denom_h = output_geometry.size.h - zoomed_geometry_local.size.h;
+
+                        if denom_w.abs() > f64::EPSILON && denom_h.abs() > f64::EPSILON {
+                            let scale_factor_w = output_geometry.size.w / denom_w;
+                            let scale_factor_h = output_geometry.size.h / denom_h;
+
+                            let mut new_focal = Point::from((
+                                new_zoomed_loc.x * scale_factor_w,
+                                new_zoomed_loc.y * scale_factor_h,
+                            ));
+
+                            new_focal.x = new_focal
+                                .x
+                                .clamp(0.0, output_geometry.size.w - f64::EPSILON);
+                            new_focal.y = new_focal
+                                .y
+                                .clamp(0.0, output_geometry.size.h - f64::EPSILON);
+
+                            zoom_state.focal_point = new_focal;
+                        }
+                    } else if !zoomed_geometry_global.contains(new_pos) {
+                        let delta = new_pos - pos;
+                        let mut new_focal = focal_point + delta.upscale(zoom_factor);
+                        new_focal.x = new_focal
+                            .x
+                            .clamp(0.0, output_geometry.size.w - f64::EPSILON);
+                        new_focal.y = new_focal
+                            .y
+                            .clamp(0.0, output_geometry.size.h - f64::EPSILON);
+                        zoom_state.focal_point = new_focal;
+                    }
+                }
+                (true, _) => { /* do nothing, focal point is locked */ }
             }
         }
 
@@ -2887,6 +2872,7 @@ impl State {
         }) else {
             return;
         };
+        let pos = self.clamp_position_to_zoom(pos);
 
         let serial = SERIAL_COUNTER.next_serial();
 
@@ -3748,6 +3734,7 @@ impl State {
         let Some(pos) = self.compute_tablet_position(&event) else {
             return;
         };
+        let pos = self.clamp_position_to_zoom(pos);
 
         if let Some(output) = self.niri.screenshot_ui.selection_output() {
             let geom = self.niri.global_space.output_geometry(output).unwrap();
@@ -4292,6 +4279,49 @@ impl State {
         self.compute_absolute_location(evt, self.niri.output_for_touch())
     }
 
+    /// Clamp a position to the zoomed viewport when zoom is locked.
+    ///
+    /// This ensures that touch events do not go outside the zoomed area.
+    fn clamp_position_to_zoom(&self, pos: Point<f64, Logical>) -> Point<f64, Logical> {
+        if let Some((output, _)) = self.niri.output_under(pos) {
+            if let Some(mutex) = output.user_data().get::<Mutex<OutputZoomState>>() {
+                if let Ok(zoom_state) = mutex.lock() {
+                    let (zoom_factor, zoom_locked) = (zoom_state.level, zoom_state.locked);
+                    if zoom_locked && zoom_factor > 1.0 {
+                        let output_geometry = self
+                            .niri
+                            .global_space
+                            .output_geometry(&output)
+                            .unwrap()
+                            .to_f64();
+                        let focal_point = zoom_state.focal_point;
+
+                        let zoomed_geometry_global = {
+                            let focal_point_global = focal_point + output_geometry.loc;
+                            let mut geo = output_geometry;
+                            geo.loc -= focal_point_global;
+                            geo = geo.downscale(zoom_factor);
+                            geo.loc += focal_point_global;
+                            geo
+                        };
+
+                        let mut clamped = pos;
+                        clamped.x = clamped.x.clamp(
+                            zoomed_geometry_global.loc.x,
+                            zoomed_geometry_global.loc.x + zoomed_geometry_global.size.w - 1.,
+                        );
+                        clamped.y = clamped.y.clamp(
+                            zoomed_geometry_global.loc.y,
+                            zoomed_geometry_global.loc.y + zoomed_geometry_global.size.h - 1.,
+                        );
+                        return clamped;
+                    }
+                }
+            }
+        }
+        pos
+    }
+
     fn on_touch_down<I: InputBackend>(&mut self, evt: I::TouchDownEvent) {
         let Some(handle) = self.niri.seat.get_touch() else {
             return;
@@ -4299,6 +4329,7 @@ impl State {
         let Some(pos) = self.compute_touch_location(&evt) else {
             return;
         };
+        let pos = self.clamp_position_to_zoom(pos);
         let slot = evt.slot();
 
         let serial = SERIAL_COUNTER.next_serial();
@@ -4454,6 +4485,7 @@ impl State {
         let Some(pos) = self.compute_touch_location(&evt) else {
             return;
         };
+        let pos = self.clamp_position_to_zoom(pos);
         let slot = evt.slot();
 
         if let Some(output) = self.niri.screenshot_ui.selection_output().cloned() {

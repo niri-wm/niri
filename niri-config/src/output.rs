@@ -8,7 +8,6 @@ use knuffel::Decode;
 use niri_ipc::{ConfiguredMode, HSyncPolarity, Transform, VSyncPolarity};
 
 use crate::gestures::HotCorners;
-use crate::utils::{Flag, MergeWith};
 use crate::{Color, FloatOrInt, LayoutPart};
 
 #[derive(Debug, Default, Clone, PartialEq)]
@@ -48,35 +47,6 @@ pub struct Modeline {
     pub vsync_polarity: niri_ipc::VSyncPolarity,
 }
 
-#[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]
-pub struct Zoom {
-    #[knuffel(child, unwrap(argument))]
-    pub factor: Option<super::FloatOrInt<1, 100>>,
-    #[knuffel(child, unwrap(argument, str))]
-    pub movement: Option<niri_ipc::ZoomMovement>,
-    #[knuffel(child, unwrap(argument))]
-    pub threshold: Option<f64>,
-    #[knuffel(child)]
-    pub frozen: Option<Flag>,
-}
-
-impl MergeWith<Zoom> for Zoom {
-    fn merge_with(&mut self, part: &Zoom) {
-        if part.factor.is_some() {
-            self.factor = part.factor;
-        }
-        if part.movement.is_some() {
-            self.movement = part.movement;
-        }
-        if part.threshold.is_some() {
-            self.threshold = part.threshold;
-        }
-        if part.frozen.is_some() {
-            self.frozen = part.frozen;
-        }
-    }
-}
-
 #[derive(knuffel::Decode, Debug, Clone, PartialEq)]
 pub struct Output {
     #[knuffel(child)]
@@ -106,8 +76,6 @@ pub struct Output {
     pub hot_corners: Option<HotCorners>,
     #[knuffel(child)]
     pub layout: Option<LayoutPart>,
-    #[knuffel(child)]
-    pub zoom: Option<Zoom>,
 }
 
 impl Output {
@@ -140,7 +108,6 @@ impl Default for Output {
             backdrop_color: None,
             hot_corners: None,
             layout: None,
-            zoom: None,
         }
     }
 }

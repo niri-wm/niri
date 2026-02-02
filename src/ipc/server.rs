@@ -1,5 +1,5 @@
 use std::cell::RefCell;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::ffi::OsStr;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
@@ -18,7 +18,7 @@ use niri_config::OutputName;
 use niri_ipc::state::{EventStreamState, EventStreamStatePart as _};
 use niri_ipc::{
     Action, Event, KeyboardLayouts, OutputConfigChanged, Overview, Reply, Request, Response,
-    Timestamp, WindowLayout, Workspace, ZoomState,
+    Timestamp, WindowLayout, Workspace,
 };
 use smithay::desktop::layer_map_for_output;
 use smithay::input::pointer::{
@@ -33,6 +33,7 @@ use smithay::wayland::shell::wlr_layer::{KeyboardInteractivity, Layer};
 use crate::backend::IpcOutputMap;
 use crate::input::pick_window_grab::PickWindowGrab;
 use crate::layout::workspace::WorkspaceId;
+use crate::layout::OutputZoomState;
 use crate::niri::State;
 use crate::utils::{version, with_toplevel_role};
 use crate::window::Mapped;
@@ -458,33 +459,28 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
         Request::ZoomState => {
             let (tx, rx) = async_channel::bounded(1);
             ctx.event_loop.insert_idle(move |state| {
-                let result = if let Some(output) = state.niri.layout.active_output().cloned() {
-                    if let Some(monitor) = state.niri.layout.monitor_for_output(&output) {
-                        Ok((
-                            output.name().to_owned(),
-                            ZoomState {
-                                factor: monitor.zoom_factor,
-                                enabled: monitor.zoom_enabled,
-                                movement: monitor.zoom_movement,
-                                threshold: monitor.zoom_threshold,
-                                frozen: monitor.zoom_frozen,
+                let zooms = state
+                    .niri
+                    .layout
+                    .outputs()
+                    .fold(HashMap::new(), |mut acc, output| {
+                        let zoom = output.user_data().get::<Mutex<OutputZoomState>>().unwrap();
+                        let zoom = zoom.lock().unwrap();
+
+                        acc.insert(
+                            output.name().clone(),
+                            niri_ipc::Zoom {
+                                is_locked: zoom.locked,
+                                level: zoom.level,
                             },
-                        ))
-                    } else {
-                        Err("no monitor for active output".to_owned())
-                    }
-                } else {
-                    Err("no active output".to_owned())
-                };
-                let _ = tx.send_blocking(result);
+                        );
+                        acc
+                    });
+                let _ = tx.send_blocking(zooms);
             });
             let result = rx.recv().await;
-            let (output, zoom_state) =
-                result.map_err(|_| String::from("error getting zoom state info"))??;
-            Response::ZoomStateChange {
-                output,
-                state: zoom_state,
-            }
+            let zooms = result.map_err(|_| String::from("error getting zoom states"))?;
+            Response::ZoomState(zooms)
         }
     };
 
@@ -962,20 +958,6 @@ impl State {
         let mut state = server.event_stream_state.borrow_mut();
 
         let event = Event::ScreenshotCaptured { path };
-        state.apply(event.clone());
-        server.send_event(event);
-    }
-
-    pub fn ipc_send_zoom_state_change(&mut self, output: &str, zoom_state: niri_ipc::ZoomState) {
-        let Some(server) = &self.niri.ipc_server else {
-            return;
-        };
-        let mut state = server.event_stream_state.borrow_mut();
-
-        let event = Event::ZoomStateChange {
-            output: output.to_owned(),
-            state: zoom_state,
-        };
         state.apply(event.clone());
         server.send_event(event);
     }

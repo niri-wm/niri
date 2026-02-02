@@ -19,6 +19,7 @@ use smithay::utils::Size;
 use smithay::wayland::presentation::Refresh;
 
 use super::{IpcOutputMap, OutputId, RenderResult};
+use crate::layout::OutputZoomState;
 use crate::niri::{Niri, RedrawState};
 use crate::render_helpers::{resources, shaders};
 use crate::utils::{get_monotonic_time, logical_output};
@@ -89,6 +90,19 @@ impl Headless {
             serial: Some(serial),
         });
 
+        output.user_data().insert_if_missing(|| {
+            // Convert physical mode size to logical coordinates for focal point.
+            let mode_size = output.current_mode().unwrap().size;
+            let scale = output.current_scale().fractional_scale();
+            let logical_size = mode_size.to_f64().to_logical(scale);
+            Mutex::new(OutputZoomState {
+                level: 1.0,
+                // Initialize the focal point to the center of the output in logical coordinates.
+                focal_point: smithay::utils::Point::new(logical_size.w / 2.0, logical_size.h / 2.0),
+                locked: false,
+            })
+        });
+
         let physical_properties = output.physical_properties();
         self.ipc_outputs.lock().unwrap().insert(
             OutputId::next(),
@@ -109,11 +123,6 @@ impl Headless {
                 vrr_supported: false,
                 vrr_enabled: false,
                 logical: Some(logical_output(&output)),
-                zoom_enabled: false,
-                zoom_factor: 1.0,
-                zoom_movement: niri_ipc::ZoomMovement::default(),
-                zoom_threshold: 0.15,
-                zoom_frozen: false,
             },
         );
 
@@ -159,22 +168,6 @@ impl Headless {
 
     pub fn import_dmabuf(&mut self, _dmabuf: &Dmabuf) -> bool {
         unimplemented!()
-    }
-
-    pub fn refresh_ipc_outputs(&self, niri: &Niri) {
-        let mut ipc_outputs = self.ipc_outputs.lock().unwrap();
-        for ipc_output in ipc_outputs.values_mut() {
-            let output = niri
-                .global_space
-                .outputs()
-                .find(|o| o.name() == ipc_output.name);
-            if let Some(mon) = output.and_then(|o| niri.layout.monitor_for_output(o)) {
-                ipc_output.zoom_factor = mon.zoom_factor;
-                ipc_output.zoom_movement = mon.zoom_movement;
-                ipc_output.zoom_threshold = mon.zoom_threshold;
-                ipc_output.zoom_frozen = mon.zoom_frozen;
-            }
-        }
     }
 
     pub fn ipc_outputs(&self) -> Arc<Mutex<IpcOutputMap>> {

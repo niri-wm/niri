@@ -109,7 +109,7 @@ pub enum Msg {
     OverviewState,
     /// List screencasts.
     Casts,
-    /// Print the zoom state on the focused output.
+    /// List zoom state of outputs.
     ZoomState,
 }
 

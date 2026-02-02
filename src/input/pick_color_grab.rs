@@ -50,9 +50,9 @@ impl PickColorGrab {
                 let size = Size::<i32, Physical>::from((1, 1));
 
                 // Use render_for_color_pick instead of regular render with RenderTarget::Output.
-                // This ensures color picking works correctly when cursor zoom is enabled by
-                // rendering the pre-zoom framebuffer, which captures the actual screen content
-                // at the pixel level rather than the zoomed transformation.
+                // This ensures color picking works correctly when  zoom is enabled by rendering the
+                // pre-zoom framebuffer, which captures the actual screen content at the pixel level
+                // rather than the zoomed transformation.
                 let elements = data.niri.render_for_color_pick(renderer, &output);
 
                 let mapping = match render_and_download(

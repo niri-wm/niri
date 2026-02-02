@@ -389,29 +389,11 @@ pub enum Action {
     MruSetScope(MruScope),
     #[knuffel(skip)]
     MruCycleScope,
-    #[knuffel(skip)]
-    ToggleZoom {
-        output: Option<String>,
-    },
-    #[knuffel(skip)]
-    ToggleZoomFreeze {
-        output: Option<String>,
-    },
-    #[knuffel(skip)]
-    SetZoomFactor {
-        factor: String,
-        output: Option<String>,
-    },
-    #[knuffel(skip)]
-    SetZoomMovement {
-        movement: niri_ipc::ZoomMovement,
-        output: Option<String>,
-    },
-    #[knuffel(skip)]
-    SetZoomThreshold {
-        threshold: f64,
-        output: Option<String>,
-    },
+    SetZoomLevel(
+        #[knuffel(argument, str)] String,
+        #[knuffel(argument)] Option<String>,
+    ),
+    ToggleZoomLock(#[knuffel(argument)] Option<String>),
 }
 
 impl From<niri_ipc::Action> for Action {
@@ -722,17 +704,8 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::ToggleWindowUrgent { id } => Self::ToggleWindowUrgent(id),
             niri_ipc::Action::SetWindowUrgent { id } => Self::SetWindowUrgent(id),
             niri_ipc::Action::UnsetWindowUrgent { id } => Self::UnsetWindowUrgent(id),
-            niri_ipc::Action::ToggleZoom { output } => Self::ToggleZoom { output },
-            niri_ipc::Action::ToggleZoomFreeze { output } => Self::ToggleZoomFreeze { output },
-            niri_ipc::Action::SetZoomFactor { factor, output } => {
-                Self::SetZoomFactor { factor, output }
-            }
-            niri_ipc::Action::SetZoomMovement { movement, output } => {
-                Self::SetZoomMovement { movement, output }
-            }
-            niri_ipc::Action::SetZoomThreshold { threshold, output } => {
-                Self::SetZoomThreshold { threshold, output }
-            }
+            niri_ipc::Action::SetZoomLevel { level, output } => Self::SetZoomLevel(level, output),
+            niri_ipc::Action::ToggleZoomLock { output } => Self::ToggleZoomLock(output),
             niri_ipc::Action::LoadConfigFile {} => Self::LoadConfigFile,
         }
     }
