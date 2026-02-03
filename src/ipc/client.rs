@@ -468,6 +468,9 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
                     Event::WindowUrgencyChanged { id, urgent } => {
                         println!("Window {id}: urgency changed to {urgent}");
                     }
+                    Event::WindowPinnedChanged { id, pinned } => {
+                        println!("Window {id}: pinned changed to {pinned}");
+                    }
                     Event::WindowLayoutsChanged { changes } => {
                         println!("Window layouts changed: {changes:?}");
                     }
@@ -672,7 +675,8 @@ fn print_output(output: Output) -> anyhow::Result<()> {
 fn print_window(window: &Window) {
     let focused = if window.is_focused { " (focused)" } else { "" };
     let urgent = if window.is_urgent { " (urgent)" } else { "" };
-    println!("Window ID {}:{focused}{urgent}", window.id);
+    let pinned = if window.is_pinned { " (pinned)" } else { "" };
+    println!("Window ID {}:{focused}{urgent}{pinned}", window.id);
 
     if let Some(title) = &window.title {
         println!("  Title: \"{title}\"");

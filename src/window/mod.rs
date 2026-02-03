@@ -73,6 +73,9 @@ pub struct ResolvedWindowRules {
     /// Whether the window should open focused.
     pub open_focused: Option<bool>,
 
+    /// Whether the window should open pinned.
+    pub open_pinned: Option<bool>,
+
     /// Extra bound on the minimum window width.
     pub min_width: Option<u16>,
     /// Extra bound on the minimum window height.
@@ -165,6 +168,13 @@ impl<'a> WindowRef<'a> {
         }
     }
 
+    pub fn is_pinned(self) -> bool {
+        match self {
+            WindowRef::Unmapped(_) => false,
+            WindowRef::Mapped(mapped) => mapped.is_pinned(),
+        }
+    }
+
     pub fn is_window_cast_target(self) -> bool {
         match self {
             WindowRef::Unmapped(_) => false,
@@ -249,6 +259,10 @@ impl ResolvedWindowRules {
 
                 if let Some(x) = rule.open_focused {
                     resolved.open_focused = Some(x);
+                }
+
+                if let Some(x) = rule.open_pinned {
+                    resolved.open_pinned = Some(x);
                 }
 
                 if let Some(x) = rule.min_width {
@@ -423,6 +437,12 @@ fn window_matches(window: WindowRef, role: &XdgToplevelSurfaceRoleAttributes, m:
 
     if let Some(is_floating) = m.is_floating {
         if window.is_floating() != is_floating {
+            return false;
+        }
+    }
+
+    if let Some(is_pinned) = m.is_pinned {
+        if window.is_pinned() != is_pinned {
             return false;
         }
     }

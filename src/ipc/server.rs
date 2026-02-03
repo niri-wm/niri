@@ -518,6 +518,7 @@ fn make_ipc_window(
         is_focused: mapped.is_focused(),
         is_floating: mapped.is_floating(),
         is_urgent: mapped.is_urgent(),
+        is_pinned: mapped.is_pinned(),
         layout,
         focus_timestamp: mapped.get_focus_timestamp().map(Timestamp::from),
     })
@@ -742,6 +743,11 @@ impl State {
             let urgent = mapped.is_urgent();
             if urgent != ipc_win.is_urgent {
                 events.push(Event::WindowUrgencyChanged { id, urgent })
+            }
+
+            let pinned = mapped.is_pinned();
+            if pinned != ipc_win.is_pinned {
+                events.push(Event::WindowPinnedChanged { id, pinned })
             }
         });
 

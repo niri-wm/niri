@@ -20,6 +20,7 @@ use super::workspace::{
 use super::{compute_overview_zoom, ActivateWindow, HitType, LayoutElement, Options};
 use crate::animation::{Animation, Clock};
 use crate::input::swipe_tracker::SwipeTracker;
+use crate::layout::{RemovedTile, SizeFrac};
 use crate::niri_render_elements;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::shadow::ShadowRenderElement;
@@ -75,6 +76,8 @@ pub struct Monitor<W: LayoutElement> {
     insert_hint_element: InsertHintElement,
     /// Location to render the insert hint element.
     insert_hint_render_loc: Option<InsertHintRenderLoc>,
+    /// Pending pinned windows to be moved to the new workspace after animation.
+    pending_pinned_windows: Vec<(RemovedTile<W>, bool)>,
     /// Whether the overview is open.
     pub(super) overview_open: bool,
     /// Progress of the overview zoom animation, 1 is fully in overview.
@@ -338,6 +341,7 @@ impl<W: LayoutElement> Monitor<W> {
             insert_hint: None,
             insert_hint_element: InsertHintElement::new(options.layout.insert_hint),
             insert_hint_render_loc: None,
+            pending_pinned_windows: Vec::new(),
             overview_open: false,
             overview_progress: None,
             workspace_switch: None,
@@ -985,6 +989,7 @@ impl<W: LayoutElement> Monitor<W> {
             _ => self.active_workspace_idx.saturating_sub(1),
         };
 
+        self.move_pinned_windows(new_idx);
         self.activate_workspace(new_idx);
     }
 
@@ -999,6 +1004,7 @@ impl<W: LayoutElement> Monitor<W> {
             _ => min(self.active_workspace_idx + 1, self.workspaces.len() - 1),
         };
 
+        self.move_pinned_windows(new_idx);
         self.activate_workspace(new_idx);
     }
 
@@ -1008,7 +1014,10 @@ impl<W: LayoutElement> Monitor<W> {
     }
 
     pub fn switch_workspace(&mut self, idx: usize) {
-        self.activate_workspace(min(idx, self.workspaces.len() - 1));
+        let idx = min(idx, self.workspaces.len() - 1);
+
+        self.move_pinned_windows(idx);
+        self.activate_workspace(idx);
     }
 
     pub fn switch_workspace_auto_back_and_forth(&mut self, idx: usize) {
@@ -1038,6 +1047,7 @@ impl<W: LayoutElement> Monitor<W> {
             Some(WorkspaceSwitch::Animation(anim)) => {
                 if anim.is_done() {
                     self.workspace_switch = None;
+                    self.finish_pinned_windows_move();
                     self.clean_up_workspaces();
                 }
             }
@@ -1339,6 +1349,51 @@ impl<W: LayoutElement> Monitor<W> {
         self.workspace_switch = None;
 
         self.clean_up_workspaces();
+    }
+
+    fn finish_pinned_windows_move(&mut self) {
+        let pending_pinned_windows = core::mem::take(&mut self.pending_pinned_windows);
+
+        for (removed, activate) in pending_pinned_windows {
+            self.add_tile(
+                removed.tile,
+                MonitorAddWindowTarget::Workspace {
+                    id: self.workspaces[self.active_workspace_idx].id(),
+                    column_idx: None,
+                },
+                if activate {
+                    ActivateWindow::Yes
+                } else {
+                    ActivateWindow::No
+                },
+                true,
+                removed.width,
+                removed.is_full_width,
+                removed.is_floating,
+            );
+        }
+    }
+
+    fn move_pinned_windows(&mut self, new_idx: usize) {
+        // No change in workspace
+        if self.active_workspace_idx == new_idx {
+            return;
+        }
+        // Ongoing workspace switch
+        if self.workspace_switch.is_some() {
+            return;
+        }
+
+        let active_window_id = self.active_window().map(|w| w.id().clone());
+        let pinned_windows = self.active_workspace().pinned_windows();
+
+        for window in pinned_windows {
+            let removed = self
+                .active_workspace()
+                .remove_tile(&window, Transaction::new());
+            self.pending_pinned_windows
+                .push((removed, active_window_id == Some(window)));
+        }
     }
 
     /// Returns the geometry of the active tile relative to and clamped to the output.
@@ -1719,6 +1774,48 @@ impl<W: LayoutElement> Monitor<W> {
                 Relocate::Relative,
             )
         };
+
+        if !self.overview_open {
+            for (tile, activate) in self.pending_pinned_windows.iter() {
+                let geo = Rectangle::from_size(self.view_size);
+                macro_rules! push {
+                    () => {{
+                        &mut |elem| {
+                            let elem =
+                                crate::layout::floating::FloatingSpaceRenderElement::from(elem);
+                            let elem = WorkspaceRenderElement::from(elem);
+                            let elem = CropRenderElement::from_element(elem, scale, crop_bounds);
+                            if let Some(elem) = elem {
+                                let elem = MonitorInnerRenderElement::from(elem);
+                                push(scale_relocate(geo, elem));
+                            }
+                        }
+                    }};
+                }
+
+                // For the active tile, draw the focus ring.
+                let focus_ring = focus_ring && *activate;
+
+                fn scale_by_working_area(
+                    area: Rectangle<f64, Logical>,
+                    pos: Point<f64, SizeFrac>,
+                ) -> Point<f64, Logical> {
+                    let mut logical_pos = Point::from((pos.x, pos.y));
+                    logical_pos.x *= area.size.w;
+                    logical_pos.y *= area.size.h;
+                    logical_pos += area.loc;
+                    logical_pos
+                }
+
+                tile.tile.render(
+                    renderer,
+                    scale_by_working_area(self.working_area, tile.tile.floating_pos.unwrap()),
+                    focus_ring,
+                    target,
+                    push!(),
+                );
+            }
+        }
 
         for (ws, geo) in self.workspaces_with_render_geo() {
             // Macro instead of closure because ws and insert hint have different elem types.

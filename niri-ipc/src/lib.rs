@@ -932,6 +932,14 @@ pub enum Action {
         #[cfg_attr(feature = "clap", arg(long))]
         id: u64,
     },
+    /// Toggle pinned status of a window.
+    ToggleWindowPinned {
+        /// Id of the window to toggle pinned.
+        ///
+        /// If `None`, uses the focused window.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: Option<u64>,
+    },
     /// Reload the config file.
     ///
     /// Can be useful for scripts changing the config file, to avoid waiting the small duration for
@@ -1318,6 +1326,11 @@ pub struct Window {
     pub is_floating: bool,
     /// Whether this window requests your attention.
     pub is_urgent: bool,
+    /// Whether this window is pinned.
+    ///
+    /// If the window is pinned and floating on workspace switch, then it remains fixed to the
+    /// monitor.
+    pub is_pinned: bool,
     /// Position- and size-related properties of the window.
     pub layout: WindowLayout,
     /// Timestamp when the window was most recently focused.
@@ -1642,6 +1655,13 @@ pub enum Event {
         id: u64,
         /// The new urgency state of the window.
         urgent: bool,
+    },
+    /// Window pinned changed.
+    WindowPinnedChanged {
+        /// Id of the window.
+        id: u64,
+        /// The new pinned state of the window.
+        pinned: bool,
     },
     /// The layout of one or more windows has changed.
     WindowLayoutsChanged {

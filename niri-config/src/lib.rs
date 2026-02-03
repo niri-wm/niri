@@ -837,7 +837,7 @@ mod tests {
                 window-open { off; }
 
                 window-close {
-                    curve "cubic-bezier" 0.05 0.7 0.1 1  
+                    curve "cubic-bezier" 0.05 0.7 0.1 1
                 }
 
                 recent-windows-close {
@@ -867,6 +867,7 @@ mod tests {
                 open-fullscreen false
                 open-floating false
                 open-focused true
+                open-pinned false
                 default-window-height { fixed 500; }
                 default-column-display "tabbed"
                 default-floating-position x=100 y=-200 relative-to="bottom-left"
@@ -1697,6 +1698,7 @@ mod tests {
                             is_focused: None,
                             is_active_in_column: None,
                             is_floating: None,
+                            is_pinned: None,
                             is_window_cast_target: None,
                             is_urgent: None,
                             at_startup: None,
@@ -1716,6 +1718,7 @@ mod tests {
                             is_focused: None,
                             is_active_in_column: None,
                             is_floating: None,
+                            is_pinned: None,
                             is_window_cast_target: None,
                             is_urgent: None,
                             at_startup: None,
@@ -1731,6 +1734,7 @@ mod tests {
                             ),
                             is_active_in_column: None,
                             is_floating: None,
+                            is_pinned: None,
                             is_window_cast_target: None,
                             is_urgent: None,
                             at_startup: None,
@@ -1762,6 +1766,9 @@ mod tests {
                     ),
                     open_focused: Some(
                         true,
+                    ),
+                    open_pinned: Some(
+                        false,
                     ),
                     min_width: None,
                     min_height: None,

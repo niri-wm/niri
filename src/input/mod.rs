@@ -2146,6 +2146,30 @@ impl State {
                     self.niri.queue_redraw_all();
                 }
             }
+            Action::ToggleWindowPinned => {
+                if let Some(mapped) = self
+                    .niri
+                    .layout
+                    .active_workspace_mut()
+                    .and_then(|w| w.active_window_mut())
+                {
+                    mapped.set_pinned(!mapped.is_pinned());
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
+                }
+            }
+            Action::ToggleWindowPinnedById(id) => {
+                let mapped = self
+                    .niri
+                    .layout
+                    .workspaces_mut()
+                    .find_map(|ws| ws.windows_mut().find(|w| w.id().get() == id));
+                if let Some(mapped) = mapped {
+                    mapped.set_pinned(!mapped.is_pinned());
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
+                }
+            }
             Action::MoveWindowToFloating => {
                 self.niri.layout.set_window_floating(None, true);
                 // FIXME: granular

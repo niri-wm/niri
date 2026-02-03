@@ -98,6 +98,9 @@ pub struct Mapped {
     /// Whether this window is a target of a window cast.
     is_window_cast_target: bool,
 
+    /// Whether this window is pinned.
+    is_pinned: bool,
+
     /// Whether this window should ignore opacity set through window rules.
     ignore_opacity_window_rule: bool,
 
@@ -252,6 +255,7 @@ impl Mapped {
     pub fn new(window: Window, rules: ResolvedWindowRules, hook: HookId) -> Self {
         let surface = window.wl_surface().expect("no X11 support");
         let credentials = get_credentials_for_surface(&surface);
+        let open_pinned = rules.open_pinned.unwrap_or_default();
 
         let mut rv = Self {
             window,
@@ -268,6 +272,7 @@ impl Mapped {
             is_active_in_column: true,
             is_floating: false,
             is_window_cast_target: false,
+            is_pinned: open_pinned,
             ignore_opacity_window_rule: false,
             block_out_buffer: RefCell::new(SolidColorBuffer::new((0., 0.), [0., 0., 0., 1.])),
             animate_next_configure: false,
@@ -360,6 +365,10 @@ impl Mapped {
         self.is_window_cast_target
     }
 
+    pub fn is_pinned(&self) -> bool {
+        self.is_pinned
+    }
+
     pub fn toggle_ignore_opacity_window_rule(&mut self) {
         self.ignore_opacity_window_rule = !self.ignore_opacity_window_rule;
     }
@@ -380,6 +389,15 @@ impl Mapped {
         }
 
         self.is_window_cast_target = value;
+        self.need_to_recompute_rules = true;
+    }
+
+    pub fn set_pinned(&mut self, value: bool) {
+        if self.is_pinned == value {
+            return;
+        }
+
+        self.is_pinned = value;
         self.need_to_recompute_rules = true;
     }
 
@@ -882,6 +900,10 @@ impl LayoutElement for Mapped {
 
     fn is_urgent(&self) -> bool {
         self.is_urgent
+    }
+
+    fn is_pinned(&self) -> bool {
+        self.is_pinned
     }
 
     fn set_activated(&mut self, active: bool) {
