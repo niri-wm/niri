@@ -4076,7 +4076,7 @@ impl State {
 
         // Check if we're tracking a multi-finger gesture (2+ fingers).
         // If so, we should not forward events to clients.
-        let tracking_gesture = self.niri.touch_gesture_points.len() >= 2;
+        let tracking_gesture = self.niri.touch_gesture_points.len() > 2;
 
         let serial = SERIAL_COUNTER.next_serial();
 
@@ -4210,7 +4210,7 @@ impl State {
         let slot = evt.slot();
 
         // Check if we're tracking a multi-finger gesture before removing this touch point.
-        let tracking_gesture = self.niri.touch_gesture_points.len() >= 2;
+        let tracking_gesture = self.niri.touch_gesture_points.len() > 2;
 
         // Remove touch point from gesture tracking.
         self.niri.touch_gesture_points.remove(&Some(slot));
