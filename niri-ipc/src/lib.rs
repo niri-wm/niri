@@ -936,7 +936,11 @@ pub enum Action {
     ///
     /// Can be useful for scripts changing the config file, to avoid waiting the small duration for
     /// niri's config file watcher to notice the changes.
-    LoadConfigFile {},
+    LoadConfigFile {
+        /// Path of the config file to load.
+        #[cfg_attr(feature = "clap", arg(long))]
+        path: Option<String>,
+    },
 }
 
 /// Change in window or column size.

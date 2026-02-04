@@ -463,13 +463,23 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
 fn validate_action(action: &Action) -> Result<(), String> {
     if let Action::Screenshot { path, .. }
     | Action::ScreenshotScreen { path, .. }
-    | Action::ScreenshotWindow { path, .. } = action
+    | Action::ScreenshotWindow { path, .. }
+    | Action::LoadConfigFile { path } = action
     {
         if let Some(path) = path {
             // Relative paths are resolved against the niri compositor's working directory, which
             // is almost certainly not what you want.
             if !Path::new(path).is_absolute() {
                 return Err(format!("path must be absolute: {path}"));
+            }
+        }
+    }
+
+    if let Action::LoadConfigFile { path } = action {
+        if let Some(path) = path {
+            let p = Path::new(path);
+            if !p.exists() || !p.is_file() {
+                return Err(format!("file {path} does not exist"));
             }
         }
     }
