@@ -4261,89 +4261,74 @@ impl Niri {
         macro_rules! apply_zoom {
             ($elem:expr, $($variant:ident),*) => {
                 match $elem {
-                    OutputRenderElements::Pointer(pointer_elem) if !scale_with_zoom => {
-                        let pointer_geo = pointer_elem.geometry(output_scale);
-                        let pointer_pos = pointer_geo.loc;
-
-                        let offset = match cursor_physical_f64 {
-                            Some(cursor) => {
-                                let visual_x = cursor.x * zoom_factor
-                                    - focal_point_physical_f64.x * (zoom_factor - 1.0);
-                                let visual_y = cursor.y * zoom_factor
-                                    - focal_point_physical_f64.y * (zoom_factor - 1.0);
-                                Point::from((
-                                    (visual_x - pointer_pos.x as f64).round() as i32,
-                                    (visual_y - pointer_pos.y as f64).round() as i32,
-                                ))
-                            }
-                            None => Point::from((
-                                ((pointer_pos.x as f64 - focal_point_physical_f64.x)
-                                    * (zoom_factor - 1.0))
-                                    .round() as i32,
-                                ((pointer_pos.y as f64 - focal_point_physical_f64.y)
-                                    * (zoom_factor - 1.0))
-                                    .round() as i32,
-                            )),
-                        };
-
-                        CropRenderElement::from_element(
-                            RelocateRenderElement::from_element(
-                                pointer_elem,
-                                offset,
-                                Relocate::Relative
-                            ),
-                            output_scale,
-                            Rectangle::from_size(output_size)
-                        )
-                        .map(|e| OutputRenderElements::Zoomed(ZoomedRenderElements::RelocatedPointer(e)))
-                        .into()
-                    }
                     OutputRenderElements::Pointer(pointer_elem) => {
                         let pointer_geo = pointer_elem.geometry(output_scale);
                         let pointer_pos = pointer_geo.loc;
 
-                        // RescaleRenderElement places cursor at:
-                        //   rescaled = (pointer_pos - focal_i32) * zoom + focal_i32
-                        // We want cursor at:
-                        //   target = cursor_f64 * zoom - focal_f64 * (zoom - 1)
-                        // So offset = target - rescaled
-                        let offset = match cursor_physical_f64 {
-                            Some(cursor) => {
-                                let rescaled_x = (pointer_pos.x as f64 - focal_point_physical.x as f64)
-                                    * zoom_factor
-                                    + focal_point_physical.x as f64;
-                                let rescaled_y = (pointer_pos.y as f64 - focal_point_physical.y as f64)
-                                    * zoom_factor
-                                    + focal_point_physical.y as f64;
-
-                                let target_x = cursor.x * zoom_factor
-                                    - focal_point_physical_f64.x * (zoom_factor - 1.0);
-                                let target_y = cursor.y * zoom_factor
-                                    - focal_point_physical_f64.y * (zoom_factor - 1.0);
-
-                                Point::from((
-                                    (target_x - rescaled_x).round() as i32,
-                                    (target_y - rescaled_y).round() as i32,
-                                ))
-                            }
-                            None => subpixel_correction,
+                        // target = cursor * zoom - focal_f64 * (zoom - 1)
+                        let target: Point<f64, Physical> = match cursor_physical_f64 {
+                            Some(cursor) => Point::from((
+                                cursor.x * zoom_factor
+                                    - focal_point_physical_f64.x * (zoom_factor - 1.0),
+                                cursor.y * zoom_factor
+                                    - focal_point_physical_f64.y * (zoom_factor - 1.0),
+                            )),
+                            None => Point::from((
+                                pointer_pos.x as f64 * zoom_factor
+                                    - focal_point_physical_f64.x * (zoom_factor - 1.0),
+                                pointer_pos.y as f64 * zoom_factor
+                                    - focal_point_physical_f64.y * (zoom_factor - 1.0),
+                            )),
                         };
 
-                        CropRenderElement::from_element(
-                            RelocateRenderElement::from_element(
-                                RescaleRenderElement::from_element(
-                                    pointer_elem,
-                                    focal_point_physical,
-                                    zoom_factor
+                        if scale_with_zoom {
+                            // rescaled = (pointer_pos - focal_i32) * zoom + focal_i32
+                            let rescaled: Point<f64, Physical> = Point::from((
+                                (pointer_pos.x as f64 - focal_point_physical.x as f64)
+                                    * zoom_factor
+                                    + focal_point_physical.x as f64,
+                                (pointer_pos.y as f64 - focal_point_physical.y as f64)
+                                    * zoom_factor
+                                    + focal_point_physical.y as f64,
+                            ));
+                            let offset: Point<i32, Physical> = Point::from((
+                                (target.x - rescaled.x).round() as i32,
+                                (target.y - rescaled.y).round() as i32,
+                            ));
+
+                            CropRenderElement::from_element(
+                                RelocateRenderElement::from_element(
+                                    RescaleRenderElement::from_element(
+                                        pointer_elem,
+                                        focal_point_physical,
+                                        zoom_factor
+                                    ),
+                                    offset,
+                                    Relocate::Relative
                                 ),
-                                offset,
-                                Relocate::Relative
-                            ),
-                            output_scale,
-                            Rectangle::from_size(output_size)
-                        )
-                        .map(|e| OutputRenderElements::Zoomed(ZoomedRenderElements::Pointer(e)))
-                        .into()
+                                output_scale,
+                                Rectangle::from_size(output_size)
+                            )
+                            .map(|e| OutputRenderElements::Zoomed(ZoomedRenderElements::Pointer(e)))
+                            .into()
+                        } else {
+                            let offset: Point<i32, Physical> = Point::from((
+                                (target.x - pointer_pos.x as f64).round() as i32,
+                                (target.y - pointer_pos.y as f64).round() as i32,
+                            ));
+
+                            CropRenderElement::from_element(
+                                RelocateRenderElement::from_element(
+                                    pointer_elem,
+                                    offset,
+                                    Relocate::Relative
+                                ),
+                                output_scale,
+                                Rectangle::from_size(output_size)
+                            )
+                            .map(|e| OutputRenderElements::Zoomed(ZoomedRenderElements::RelocatedPointer(e)))
+                            .into()
+                        }
                     }
                     $(
                         OutputRenderElements::$variant(elem) => {
