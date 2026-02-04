@@ -2984,18 +2984,20 @@ impl Niri {
 
     /// Update the zoom focal point for the given output based on cursor position.
     ///
-    /// # Arguments
-    /// * `output` - The output whose zoom state to update
-    /// * `new_pos_global` - Current cursor position in global coordinates
-    /// * `old_pos_global` - Previous cursor position (for OnEdge mode edge-pushing).
-    ///                      Pass `None` for absolute events or zoom changes,
-    ///                      which will use Centered/CursorFollow behavior.
+    /// `old_pos_global` is the previous cursor pos (for OnEdge movement mode).
+    /// We pass `None` for absolute events or zoom changes, which will use
+    /// Centered/CursorFollow behavior.
     pub fn update_zoom_focal_point(
         &self,
         output: &Output,
-        new_pos_global: Point<f64, Logical>,
+        new_pos_global: Point<f64, Logical>, // Current cursor pos in global co-ords
         old_pos_global: Option<Point<f64, Logical>>,
     ) {
+        // Skip if screenshot UI is open
+        if self.screenshot_ui.is_open() {
+            return;
+        }
+
         let Some(mutex) = output.user_data().get::<Mutex<OutputZoomState>>() else {
             return;
         };
@@ -4278,23 +4280,6 @@ impl Niri {
                 )
             })
             .collect()
-    }
-
-    pub fn render_for_color_pick<R>(
-        &self,
-        renderer: &mut R,
-        output: &Output,
-    ) -> Vec<OutputRenderElements<R>>
-    where
-        R: NiriRenderer,
-    {
-        let mut elements = Vec::new();
-
-        self.render_inner(renderer, output, false, RenderTarget::Output, &mut |elem| {
-            elements.push(elem)
-        });
-
-        elements
     }
 
     pub fn render<R: NiriRenderer>(
