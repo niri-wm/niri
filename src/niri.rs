@@ -3048,10 +3048,8 @@ impl Niri {
                 let viewport_loc = cursor_position - viewport_size.downscale(2.0).to_point();
 
                 let scale_factor = zoom_factor / (zoom_factor - 1.0);
-                let mut new_focal = Point::from((
-                    viewport_loc.x * scale_factor,
-                    viewport_loc.y * scale_factor,
-                ));
+                let mut new_focal =
+                    Point::from((viewport_loc.x * scale_factor, viewport_loc.y * scale_factor));
 
                 new_focal.x = new_focal
                     .x
@@ -3079,10 +3077,8 @@ impl Niri {
                 let Some(old_pos) = old_pos_global else {
                     let viewport_size = output_geometry.size.downscale(zoom_factor);
                     let viewport_loc = cursor_position - viewport_size.downscale(2.0).to_point();
-                    let mut new_focal = Point::from((
-                        viewport_loc.x * zoom_factor,
-                        viewport_loc.y * zoom_factor,
-                    ));
+                    let mut new_focal =
+                        Point::from((viewport_loc.x * zoom_factor, viewport_loc.y * zoom_factor));
                     new_focal.x = new_focal
                         .x
                         .clamp(0.0, output_geometry.size.w - f64::EPSILON);
@@ -3104,10 +3100,8 @@ impl Niri {
                     // Cursor jumped far away — center viewport on cursor
                     let viewport_size = output_geometry.size.downscale(zoom_factor);
                     let viewport_loc = cursor_position - viewport_size.downscale(2.0).to_point();
-                    let mut new_focal = Point::from((
-                        viewport_loc.x * zoom_factor,
-                        viewport_loc.y * zoom_factor,
-                    ));
+                    let mut new_focal =
+                        Point::from((viewport_loc.x * zoom_factor, viewport_loc.y * zoom_factor));
                     new_focal.x = new_focal
                         .x
                         .clamp(0.0, output_geometry.size.w - f64::EPSILON);
@@ -4247,9 +4241,21 @@ impl Niri {
         let scale_with_zoom = self.config.borrow().cursor.scale_with_zoom;
 
         let focal_point_physical = zoom_focal_point.to_physical_precise_round(output_scale);
-        let focal_point_physical_f64: Point<f64, Physical> = zoom_focal_point.to_physical(output_scale);
+        let focal_point_physical_f64: Point<f64, Physical> =
+            zoom_focal_point.to_physical(output_scale);
         let cursor_physical_f64: Option<Point<f64, Physical>> =
             cursor_logical_pos.map(|p| p.to_physical(output_scale));
+
+        // Compute subpixel correction to compensate for integer rounding of focal point.
+        // RescaleRenderElement uses integer focal, causing viewport jitter at high zoom
+        // when the f64 focal oscillates around .5 boundaries. This offset corrects for
+        // the rounding error: correction = (focal_i32 - focal_f64) * (zoom - 1)
+        let subpixel_correction: Point<i32, Physical> = Point::from((
+            ((focal_point_physical.x as f64 - focal_point_physical_f64.x) * (zoom_factor - 1.0))
+                .round() as i32,
+            ((focal_point_physical.y as f64 - focal_point_physical_f64.y) * (zoom_factor - 1.0))
+                .round() as i32,
+        ));
 
         // Generate match arms for each OutputRenderElement variant.
         macro_rules! apply_zoom {
@@ -4300,9 +4306,17 @@ impl Niri {
                         OutputRenderElements::$variant(elem) => {
                             CropRenderElement::from_element(
                                 RescaleRenderElement::from_element(
-                                    elem,
-                                    focal_point_physical,
-                                    zoom_factor
+                                    RelocateRenderElement::from_element(
+                                        RescaleRenderElement::from_element(
+                                            elem,
+                                            focal_point_physical,
+                                            zoom_factor
+                                        ),
+                                        subpixel_correction,
+                                        Relocate::Relative
+                                    ),
+                                    Point::from((0, 0)),
+                                    1.0
                                 ),
                                 output_scale,
                                 Rectangle::from_size(output_size)
@@ -6484,22 +6498,22 @@ niri_render_elements! {
         // Used for the CPU-rendered panels.
         RelocatedMemoryBuffer = RelocateRenderElement<MemoryRenderBufferRenderElement<R>>,
 
-        // Zoomed elements
-        ZoomedMonitor = CropRenderElement<RescaleRenderElement<MonitorRenderElement<R>>>,
-        ZoomedRescaledTile = CropRenderElement<RescaleRenderElement<RescaleRenderElement<TileRenderElement<R>>>>,
-        ZoomedLayerSurface = CropRenderElement<RescaleRenderElement<LayerSurfaceRenderElement<R>>>,
-        ZoomedRelocatedSurface = CropRenderElement<RescaleRenderElement<
+        // Zoomed elements (wrapped with identity Rescale to distinguish types)
+        ZoomedMonitor = CropRenderElement<RescaleRenderElement<RelocateRenderElement<RescaleRenderElement<MonitorRenderElement<R>>>>>,
+        ZoomedRescaledTile = CropRenderElement<RescaleRenderElement<RelocateRenderElement<RescaleRenderElement<RescaleRenderElement<TileRenderElement<R>>>>>>,
+        ZoomedLayerSurface = CropRenderElement<RescaleRenderElement<RelocateRenderElement<RescaleRenderElement<LayerSurfaceRenderElement<R>>>>>,
+        ZoomedRelocatedSurface = CropRenderElement<RescaleRenderElement<RelocateRenderElement<RescaleRenderElement<
             CropRenderElement<RelocateRenderElement<RescaleRenderElement<
                 LayerSurfaceRenderElement<R>
-            >>
-        >>>,
-        ZoomedRelocatedColor = CropRenderElement<RescaleRenderElement<CropRenderElement<
+            >>>
+        >>>>,
+        ZoomedRelocatedColor = CropRenderElement<RescaleRenderElement<RelocateRenderElement<RescaleRenderElement<CropRenderElement<
             RelocateRenderElement<RescaleRenderElement<SolidColorRenderElement>>
-        >>>,
-        ZoomedPointer = CropRenderElement<RescaleRenderElement<PointerRenderElements<R>>>,
-        ZoomedWayland = CropRenderElement<RescaleRenderElement<WaylandSurfaceRenderElement<R>>>,
-        ZoomedSolidColor = CropRenderElement<RescaleRenderElement<SolidColorRenderElement>>,
-        ZoomedTexture = CropRenderElement<RescaleRenderElement<PrimaryGpuTextureRenderElement>>,
+        >>>>>,
+        ZoomedPointer = CropRenderElement<RescaleRenderElement<RelocateRenderElement<RescaleRenderElement<PointerRenderElements<R>>>>>,
+        ZoomedWayland = CropRenderElement<RescaleRenderElement<RelocateRenderElement<RescaleRenderElement<WaylandSurfaceRenderElement<R>>>>>,
+        ZoomedSolidColor = CropRenderElement<RescaleRenderElement<RelocateRenderElement<RescaleRenderElement<SolidColorRenderElement>>>>,
+        ZoomedTexture = CropRenderElement<RescaleRenderElement<RelocateRenderElement<RescaleRenderElement<PrimaryGpuTextureRenderElement>>>>,
         RelocatedPointer = CropRenderElement<RelocateRenderElement<PointerRenderElements<R>>>,
     }
 }
