@@ -329,9 +329,17 @@ pub struct Layout<W: LayoutElement> {
 
 #[derive(Debug, Clone)]
 pub struct OutputZoomState {
+    /// Zoom level.
     pub level: f64,
+    /// Focal point in output-local logical coordinates.
     pub focal_point: Point<f64, Logical>,
+    /// Whether focal point is locked.
     pub locked: bool,
+    /// Cursor position used to compute focal_point, in output-local logical coords.
+    ///
+    /// When Some, render computes visual position as: focal + (cursor - focal) * zoom.
+    /// When None, render uses pointer element position for the calculation.
+    pub cursor_logical_pos: Option<Point<f64, Logical>>,
 }
 
 #[derive(Debug)]

@@ -100,6 +100,7 @@ impl Headless {
                 // Initialize the focal point to the center of the output in logical coordinates.
                 focal_point: smithay::utils::Point::new(logical_size.w / 2.0, logical_size.h / 2.0),
                 locked: false,
+                cursor_logical_pos: None,
             })
         });
 
