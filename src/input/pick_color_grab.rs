@@ -1,3 +1,5 @@
+use std::sync::Mutex;
+
 use niri_ipc::PickedColor;
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::input::ButtonState;
@@ -12,8 +14,9 @@ use smithay::input::pointer::{
 use smithay::input::SeatHandler;
 use smithay::utils::{Logical, Physical, Point, Scale, Size, Transform};
 
+use crate::layout::OutputZoomState;
 use crate::niri::State;
-use crate::render_helpers::render_and_download;
+use crate::render_helpers::{render_and_download, RenderTarget};
 
 pub struct PickColorGrab {
     start_data: PointerGrabStartData<State>,
@@ -39,6 +42,18 @@ impl PickColorGrab {
         let (output, pos_within_output) = data.niri.output_under(location)?;
         let output = output.clone();
 
+        let pos_within_output = if let Some(zoom_state) = output
+            .user_data()
+            .get::<Mutex<OutputZoomState>>()
+            .and_then(|m| m.lock().ok())
+        {
+            let zoom_factor = zoom_state.level;
+            let focal_point = zoom_state.focal_point;
+            focal_point + (pos_within_output - focal_point).upscale(Scale::from(zoom_factor))
+        } else {
+            pos_within_output
+        };
+
         data.backend
             .with_primary_renderer(|renderer| {
                 data.niri.update_render_elements(Some(&output));
@@ -49,11 +64,9 @@ impl PickColorGrab {
                 let pos = pos_within_output.to_physical_precise_floor(scale);
                 let size = Size::<i32, Physical>::from((1, 1));
 
-                // Use render_for_color_pick instead of regular render with RenderTarget::Output.
-                // This ensures color picking works correctly when  zoom is enabled by rendering the
-                // pre-zoom framebuffer, which captures the actual screen content at the pixel level
-                // rather than the zoomed transformation.
-                let elements = data.niri.render_for_color_pick(renderer, &output);
+                let elements = data
+                    .niri
+                    .render(renderer, &output, false, RenderTarget::Output);
 
                 let mapping = match render_and_download(
                     renderer,
