@@ -167,7 +167,7 @@ pub enum Response {
     OverviewState(Overview),
     /// Information about screencasts.
     Casts(Vec<Cast>),
-    /// Zoom state information.
+    /// Map from output name to zoom state.
     ZoomState(HashMap<String, Zoom>),
 }
 
