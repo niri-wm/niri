@@ -3005,14 +3005,7 @@ impl Niri {
             return;
         };
 
-        // Skip if zoom is not active or locked
-        if zoom_state.level <= 1.0 || zoom_state.locked {
-            return;
-        }
-
-        let zoom_factor = zoom_state.level;
-        let focal_point = zoom_state.focal_point;
-
+        // Get output geometry (needed for all paths below)
         let Some(output_geometry) = self.global_space.output_geometry(output) else {
             return;
         };
@@ -3020,6 +3013,21 @@ impl Niri {
 
         // cursor_position is in output-local coordinates
         let cursor_position = new_pos_global - output_geometry.loc;
+
+        // If zoom is not active, clear cursor_logical_pos so rendering uses pointer position
+        if zoom_state.level <= 1.0 {
+            zoom_state.cursor_logical_pos = None;
+            return;
+        }
+
+        // If locked, update cursor position for rendering but don't change focal point
+        if zoom_state.locked {
+            zoom_state.cursor_logical_pos = Some(cursor_position);
+            return;
+        }
+
+        let zoom_factor = zoom_state.level;
+        let focal_point = zoom_state.focal_point;
 
         // Calculate zoomed_geometry in LOCAL coordinates (origin at 0,0)
         let zoomed_geometry_local = {
