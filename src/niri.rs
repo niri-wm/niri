@@ -4289,7 +4289,7 @@ impl Niri {
                             )),
                         };
 
-                        if scale_with_zoom {
+                        let (offset, zoom_factor) = if scale_with_zoom {
                             // rescaled = (pointer_pos - focal_i32) * zoom + focal_i32
                             let rescaled: Point<f64, Physical> = Point::from((
                                 (pointer_pos.x as f64 - focal_point_physical.x as f64)
@@ -4303,40 +4303,30 @@ impl Niri {
                                 (target.x - rescaled.x).round() as i32,
                                 (target.y - rescaled.y).round() as i32,
                             ));
-
-                            CropRenderElement::from_element(
-                                RelocateRenderElement::from_element(
-                                    RescaleRenderElement::from_element(
-                                        pointer_elem,
-                                        focal_point_physical,
-                                        zoom_factor
-                                    ),
-                                    offset,
-                                    Relocate::Relative
-                                ),
-                                output_scale,
-                                Rectangle::from_size(output_size)
-                            )
-                            .map(|e| OutputRenderElements::Zoomed(ZoomedRenderElements::Pointer(e)))
-                            .into()
+                            (offset, zoom_factor)
                         } else {
                             let offset: Point<i32, Physical> = Point::from((
                                 (target.x - pointer_pos.x as f64).round() as i32,
                                 (target.y - pointer_pos.y as f64).round() as i32,
                             ));
+                            (offset, 1.0)
+                        };
 
-                            CropRenderElement::from_element(
-                                RelocateRenderElement::from_element(
+                        CropRenderElement::from_element(
+                            RelocateRenderElement::from_element(
+                                RescaleRenderElement::from_element(
                                     pointer_elem,
-                                    offset,
-                                    Relocate::Relative
+                                    focal_point_physical,
+                                    zoom_factor
                                 ),
-                                output_scale,
-                                Rectangle::from_size(output_size)
-                            )
-                            .map(|e| OutputRenderElements::Zoomed(ZoomedRenderElements::RelocatedPointer(e)))
-                            .into()
-                        }
+                                offset,
+                                Relocate::Relative
+                            ),
+                            output_scale,
+                            Rectangle::from_size(output_size)
+                        )
+                        .map(|e| OutputRenderElements::Zoomed(ZoomedRenderElements::Pointer(e)))
+                        .into()
                     }
                     $(
                         OutputRenderElements::$variant(elem) => {
@@ -6523,8 +6513,6 @@ niri_render_elements! {
         Wayland = ZoomWrapper<WaylandSurfaceRenderElement<R>>,
         SolidColor = ZoomWrapper<SolidColorRenderElement>,
         Texture = ZoomWrapper<PrimaryGpuTextureRenderElement>,
-        // Special case: pointer without zoom scaling (just repositioned)
-        RelocatedPointer = CropRenderElement<RelocateRenderElement<PointerRenderElements<R>>>,
     }
 }
 
