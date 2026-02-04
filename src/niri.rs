@@ -3035,7 +3035,7 @@ impl Niri {
         match movement {
             ZoomMovementMode::CursorFollow => {
                 zoom_state.focal_point = cursor_position;
-                zoom_state.cursor_logical_pos = None;
+                zoom_state.cursor_logical_pos = Some(cursor_position);
             }
             ZoomMovementMode::Centered => {
                 // For cursor to appear at viewport center, we need:
@@ -3090,7 +3090,7 @@ impl Niri {
                         .y
                         .clamp(0.0, output_geometry.size.h - f64::EPSILON);
                     zoom_state.focal_point = new_focal;
-                    zoom_state.cursor_logical_pos = None;
+                    zoom_state.cursor_logical_pos = Some(cursor_position);
                     return;
                 };
 
@@ -3115,17 +3115,10 @@ impl Niri {
                         .y
                         .clamp(0.0, output_geometry.size.h - f64::EPSILON);
                     zoom_state.focal_point = new_focal;
+                    zoom_state.cursor_logical_pos = Some(cursor_position);
                 } else if !zoomed_geometry_global.contains(new_pos_global) {
                     // Cursor pushed past viewport edge - compute exact focal point
                     // that places cursor at the viewport edge.
-                    //
-                    // The relationship between focal point and viewport is:
-                    //   viewport_loc = focal * (zoom-1)/zoom
-                    //   viewport_size = output_size / zoom
-                    //
-                    // To place cursor exactly at an edge, we solve for focal:
-                    //   focal = cursor * zoom / (zoom - 1)  (for left/top edge)
-                    //   focal = (cursor - output_size/zoom) * zoom / (zoom - 1)  (for right/bottom)
                     let scale = zoom_factor / (zoom_factor - 1.0);
                     let viewport_size = output_geometry.size.downscale(zoom_factor);
                     let mut new_focal = focal_point;
@@ -3160,8 +3153,32 @@ impl Niri {
                         .y
                         .clamp(0.0, output_geometry.size.h - f64::EPSILON);
                     zoom_state.focal_point = new_focal;
+
+                    // Compute the new viewport with updated focal, then clamp cursor
+                    // to stay 1px inside. This matches input clamping behavior and
+                    // keeps the cursor visible at edges.
+                    let new_vp_local = {
+                        let mut geo: Rectangle<f64, Logical> =
+                            Rectangle::from_size(output_geometry.size);
+                        geo.loc -= new_focal;
+                        geo = geo.downscale(zoom_factor);
+                        geo.loc += new_focal;
+                        geo
+                    };
+                    let clamped_cursor = Point::from((
+                        cursor_position.x.clamp(
+                            new_vp_local.loc.x,
+                            new_vp_local.loc.x + new_vp_local.size.w - 1.0,
+                        ),
+                        cursor_position.y.clamp(
+                            new_vp_local.loc.y,
+                            new_vp_local.loc.y + new_vp_local.size.h - 1.0,
+                        ),
+                    ));
+                    zoom_state.cursor_logical_pos = Some(clamped_cursor);
+                } else {
+                    zoom_state.cursor_logical_pos = Some(cursor_position);
                 }
-                zoom_state.cursor_logical_pos = None;
             }
         }
     }
