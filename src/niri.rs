@@ -4265,10 +4265,6 @@ impl Niri {
                         let pointer_geo = pointer_elem.geometry(output_scale);
                         let pointer_pos = pointer_geo.loc;
 
-                        // If cursor_logical_pos is Some, compute visual position using stored cursor.
-                        // visual_pos = cursor * zoom - focal * (zoom - 1)
-                        // offset = visual_pos - pointer_pos
-                        // Otherwise use standard formula: (pos - focal) * (zoom - 1).
                         let offset = match cursor_physical_f64 {
                             Some(cursor) => {
                                 let visual_x = cursor.x * zoom_factor
@@ -4299,33 +4295,75 @@ impl Niri {
                             output_scale,
                             Rectangle::from_size(output_size)
                         )
-                        .map(Into::into)
+                        .map(|e| OutputRenderElements::Zoomed(ZoomedRenderElements::RelocatedPointer(e)))
+                        .into()
+                    }
+                    OutputRenderElements::Pointer(pointer_elem) => {
+                        let pointer_geo = pointer_elem.geometry(output_scale);
+                        let pointer_pos = pointer_geo.loc;
+
+                        // RescaleRenderElement places cursor at:
+                        //   rescaled = (pointer_pos - focal_i32) * zoom + focal_i32
+                        // We want cursor at:
+                        //   target = cursor_f64 * zoom - focal_f64 * (zoom - 1)
+                        // So offset = target - rescaled
+                        let offset = match cursor_physical_f64 {
+                            Some(cursor) => {
+                                let rescaled_x = (pointer_pos.x as f64 - focal_point_physical.x as f64)
+                                    * zoom_factor
+                                    + focal_point_physical.x as f64;
+                                let rescaled_y = (pointer_pos.y as f64 - focal_point_physical.y as f64)
+                                    * zoom_factor
+                                    + focal_point_physical.y as f64;
+
+                                let target_x = cursor.x * zoom_factor
+                                    - focal_point_physical_f64.x * (zoom_factor - 1.0);
+                                let target_y = cursor.y * zoom_factor
+                                    - focal_point_physical_f64.y * (zoom_factor - 1.0);
+
+                                Point::from((
+                                    (target_x - rescaled_x).round() as i32,
+                                    (target_y - rescaled_y).round() as i32,
+                                ))
+                            }
+                            None => subpixel_correction,
+                        };
+
+                        CropRenderElement::from_element(
+                            RelocateRenderElement::from_element(
+                                RescaleRenderElement::from_element(
+                                    pointer_elem,
+                                    focal_point_physical,
+                                    zoom_factor
+                                ),
+                                offset,
+                                Relocate::Relative
+                            ),
+                            output_scale,
+                            Rectangle::from_size(output_size)
+                        )
+                        .map(|e| OutputRenderElements::Zoomed(ZoomedRenderElements::Pointer(e)))
                         .into()
                     }
                     $(
                         OutputRenderElements::$variant(elem) => {
                             CropRenderElement::from_element(
-                                RescaleRenderElement::from_element(
-                                    RelocateRenderElement::from_element(
-                                        RescaleRenderElement::from_element(
-                                            elem,
-                                            focal_point_physical,
-                                            zoom_factor
-                                        ),
-                                        subpixel_correction,
-                                        Relocate::Relative
+                                RelocateRenderElement::from_element(
+                                    RescaleRenderElement::from_element(
+                                        elem,
+                                        focal_point_physical,
+                                        zoom_factor
                                     ),
-                                    Point::from((0, 0)),
-                                    1.0
+                                    subpixel_correction,
+                                    Relocate::Relative
                                 ),
                                 output_scale,
                                 Rectangle::from_size(output_size)
                             )
-                            .map(Into::into)
+                            .map(|e| OutputRenderElements::Zoomed(ZoomedRenderElements::$variant(e)))
                             .into()
                         }
                     )*
-                    // Other elements pass through unchanged
                     _ => Some($elem),
                 }
             }
@@ -4339,7 +4377,6 @@ impl Niri {
                     Monitor,
                     RescaledTile,
                     LayerSurface,
-                    Pointer,
                     Wayland,
                     SolidColor,
                     Texture,
@@ -6477,17 +6514,34 @@ niri_render_elements! {
     }
 }
 
+// Define a type alias for the common zoom wrapper: Crop(Relocate(Rescale(T)))
+type ZoomWrapper<T> = CropRenderElement<RelocateRenderElement<RescaleRenderElement<T>>>;
+
+// Separate enum for all zoomed elements - this avoids type conflicts with
+// OutputRenderElements since zoomed types are wrapped in a different enum
+niri_render_elements! {
+    ZoomedRenderElements<R> => {
+        Monitor = ZoomWrapper<MonitorRenderElement<R>>,
+        RescaledTile = ZoomWrapper<RescaleRenderElement<TileRenderElement<R>>>,
+        LayerSurface = ZoomWrapper<LayerSurfaceRenderElement<R>>,
+        RelocatedLayerSurface = ZoomWrapper<ZoomWrapper<LayerSurfaceRenderElement<R>>>,
+        RelocatedColor = ZoomWrapper<ZoomWrapper<SolidColorRenderElement>>,
+        Pointer = ZoomWrapper<PointerRenderElements<R>>,
+        Wayland = ZoomWrapper<WaylandSurfaceRenderElement<R>>,
+        SolidColor = ZoomWrapper<SolidColorRenderElement>,
+        Texture = ZoomWrapper<PrimaryGpuTextureRenderElement>,
+        // Special case: pointer without zoom scaling (just repositioned)
+        RelocatedPointer = CropRenderElement<RelocateRenderElement<PointerRenderElements<R>>>,
+    }
+}
+
 niri_render_elements! {
     OutputRenderElements<R> => {
         Monitor = MonitorRenderElement<R>,
         RescaledTile = RescaleRenderElement<TileRenderElement<R>>,
         LayerSurface = LayerSurfaceRenderElement<R>,
-        RelocatedLayerSurface = CropRenderElement<RelocateRenderElement<RescaleRenderElement<
-            LayerSurfaceRenderElement<R>
-        >>>,
-        RelocatedColor = CropRenderElement<RelocateRenderElement<RescaleRenderElement<
-            SolidColorRenderElement
-        >>>,
+        RelocatedLayerSurface = ZoomWrapper<LayerSurfaceRenderElement<R>>,
+        RelocatedColor = ZoomWrapper<SolidColorRenderElement>,
         Pointer = PointerRenderElements<R>,
         Wayland = WaylandSurfaceRenderElement<R>,
         SolidColor = SolidColorRenderElement,
@@ -6497,23 +6551,7 @@ niri_render_elements! {
         Texture = PrimaryGpuTextureRenderElement,
         // Used for the CPU-rendered panels.
         RelocatedMemoryBuffer = RelocateRenderElement<MemoryRenderBufferRenderElement<R>>,
-
-        // Zoomed elements (wrapped with identity Rescale to distinguish types)
-        ZoomedMonitor = CropRenderElement<RescaleRenderElement<RelocateRenderElement<RescaleRenderElement<MonitorRenderElement<R>>>>>,
-        ZoomedRescaledTile = CropRenderElement<RescaleRenderElement<RelocateRenderElement<RescaleRenderElement<RescaleRenderElement<TileRenderElement<R>>>>>>,
-        ZoomedLayerSurface = CropRenderElement<RescaleRenderElement<RelocateRenderElement<RescaleRenderElement<LayerSurfaceRenderElement<R>>>>>,
-        ZoomedRelocatedSurface = CropRenderElement<RescaleRenderElement<RelocateRenderElement<RescaleRenderElement<
-            CropRenderElement<RelocateRenderElement<RescaleRenderElement<
-                LayerSurfaceRenderElement<R>
-            >>>
-        >>>>,
-        ZoomedRelocatedColor = CropRenderElement<RescaleRenderElement<RelocateRenderElement<RescaleRenderElement<CropRenderElement<
-            RelocateRenderElement<RescaleRenderElement<SolidColorRenderElement>>
-        >>>>>,
-        ZoomedPointer = CropRenderElement<RescaleRenderElement<RelocateRenderElement<RescaleRenderElement<PointerRenderElements<R>>>>>,
-        ZoomedWayland = CropRenderElement<RescaleRenderElement<RelocateRenderElement<RescaleRenderElement<WaylandSurfaceRenderElement<R>>>>>,
-        ZoomedSolidColor = CropRenderElement<RescaleRenderElement<RelocateRenderElement<RescaleRenderElement<SolidColorRenderElement>>>>,
-        ZoomedTexture = CropRenderElement<RescaleRenderElement<RelocateRenderElement<RescaleRenderElement<PrimaryGpuTextureRenderElement>>>>,
-        RelocatedPointer = CropRenderElement<RelocateRenderElement<PointerRenderElements<R>>>,
+        // All zoomed elements wrapped in a single variant
+        Zoomed = ZoomedRenderElements<R>,
     }
 }
