@@ -3035,32 +3035,33 @@ impl Niri {
         match movement {
             ZoomMovementMode::CursorFollow => {
                 zoom_state.focal_point = cursor_position;
+                zoom_state.cursor_logical_pos = None;
             }
             ZoomMovementMode::Centered => {
-                let new_zoomed_loc =
-                    cursor_position - zoomed_geometry_local.size.downscale(2.0).to_point();
+                // For cursor to appear at viewport center, we need:
+                //   output_size/2 = cursor * zoom - focal * (zoom - 1)
+                // Solving: focal = (cursor * zoom - output_size/2) / (zoom - 1)
+                //
+                // Equivalently: focal = viewport_loc * zoom / (zoom - 1)
+                // where viewport_loc = cursor - viewport_size/2
+                let viewport_size = output_geometry.size.downscale(zoom_factor);
+                let viewport_loc = cursor_position - viewport_size.downscale(2.0).to_point();
 
-                let denom_w = output_geometry.size.w - zoomed_geometry_local.size.w;
-                let denom_h = output_geometry.size.h - zoomed_geometry_local.size.h;
+                let scale_factor = zoom_factor / (zoom_factor - 1.0);
+                let mut new_focal = Point::from((
+                    viewport_loc.x * scale_factor,
+                    viewport_loc.y * scale_factor,
+                ));
 
-                if denom_w.abs() > f64::EPSILON && denom_h.abs() > f64::EPSILON {
-                    let scale_factor_w = output_geometry.size.w / denom_w;
-                    let scale_factor_h = output_geometry.size.h / denom_h;
+                new_focal.x = new_focal
+                    .x
+                    .clamp(0.0, output_geometry.size.w - f64::EPSILON);
+                new_focal.y = new_focal
+                    .y
+                    .clamp(0.0, output_geometry.size.h - f64::EPSILON);
 
-                    let mut new_focal = Point::from((
-                        new_zoomed_loc.x * scale_factor_w,
-                        new_zoomed_loc.y * scale_factor_h,
-                    ));
-
-                    new_focal.x = new_focal
-                        .x
-                        .clamp(0.0, output_geometry.size.w - f64::EPSILON);
-                    new_focal.y = new_focal
-                        .y
-                        .clamp(0.0, output_geometry.size.h - f64::EPSILON);
-
-                    zoom_state.focal_point = new_focal;
-                }
+                zoom_state.focal_point = new_focal;
+                zoom_state.cursor_logical_pos = Some(cursor_position);
             }
             ZoomMovementMode::OnEdge => {
                 // Calculate zoomed_geometry in GLOBAL coordinates (for OnEdge checks)
@@ -3076,65 +3077,82 @@ impl Niri {
                 // OnEdge requires old_pos for proper edge-pushing behavior.
                 // If not available (absolute events, zoom changes), fall back to Centered.
                 let Some(old_pos) = old_pos_global else {
-                    // Fall back to Centered behavior
-                    let new_zoomed_loc =
-                        cursor_position - zoomed_geometry_local.size.downscale(2.0).to_point();
-
-                    let denom_w = output_geometry.size.w - zoomed_geometry_local.size.w;
-                    let denom_h = output_geometry.size.h - zoomed_geometry_local.size.h;
-
-                    if denom_w.abs() > f64::EPSILON && denom_h.abs() > f64::EPSILON {
-                        let scale_factor_w = output_geometry.size.w / denom_w;
-                        let scale_factor_h = output_geometry.size.h / denom_h;
-
-                        let mut new_focal = Point::from((
-                            new_zoomed_loc.x * scale_factor_w,
-                            new_zoomed_loc.y * scale_factor_h,
-                        ));
-
-                        new_focal.x = new_focal
-                            .x
-                            .clamp(0.0, output_geometry.size.w - f64::EPSILON);
-                        new_focal.y = new_focal
-                            .y
-                            .clamp(0.0, output_geometry.size.h - f64::EPSILON);
-
-                        zoom_state.focal_point = new_focal;
-                    }
+                    let viewport_size = output_geometry.size.downscale(zoom_factor);
+                    let viewport_loc = cursor_position - viewport_size.downscale(2.0).to_point();
+                    let mut new_focal = Point::from((
+                        viewport_loc.x * zoom_factor,
+                        viewport_loc.y * zoom_factor,
+                    ));
+                    new_focal.x = new_focal
+                        .x
+                        .clamp(0.0, output_geometry.size.w - f64::EPSILON);
+                    new_focal.y = new_focal
+                        .y
+                        .clamp(0.0, output_geometry.size.h - f64::EPSILON);
+                    zoom_state.focal_point = new_focal;
+                    zoom_state.cursor_logical_pos = None;
                     return;
                 };
 
-                let original_rect = Rectangle::new(old_pos, (16.0, 16.0).into());
+                let jump_detect_size: Size<f64, Logical> = (16.0, 16.0).into();
+                let original_rect = Rectangle::new(
+                    old_pos - jump_detect_size.downscale(2.0).to_point(),
+                    jump_detect_size,
+                );
 
                 if !zoomed_geometry_global.overlaps_or_touches(original_rect) {
-                    // Cursor jumped far away — pan the viewport towards the recenter target
-                    let new_zoomed_loc =
-                        cursor_position - zoomed_geometry_local.size.downscale(2.0).to_point();
-
-                    let denom_w = output_geometry.size.w - zoomed_geometry_local.size.w;
-                    let denom_h = output_geometry.size.h - zoomed_geometry_local.size.h;
-
-                    if denom_w.abs() > f64::EPSILON && denom_h.abs() > f64::EPSILON {
-                        let scale_factor_w = output_geometry.size.w / denom_w;
-                        let scale_factor_h = output_geometry.size.h / denom_h;
-
-                        let mut new_focal = Point::from((
-                            new_zoomed_loc.x * scale_factor_w,
-                            new_zoomed_loc.y * scale_factor_h,
-                        ));
-
-                        new_focal.x = new_focal
-                            .x
-                            .clamp(0.0, output_geometry.size.w - f64::EPSILON);
-                        new_focal.y = new_focal
-                            .y
-                            .clamp(0.0, output_geometry.size.h - f64::EPSILON);
-
-                        zoom_state.focal_point = new_focal;
-                    }
+                    // Cursor jumped far away — center viewport on cursor
+                    let viewport_size = output_geometry.size.downscale(zoom_factor);
+                    let viewport_loc = cursor_position - viewport_size.downscale(2.0).to_point();
+                    let mut new_focal = Point::from((
+                        viewport_loc.x * zoom_factor,
+                        viewport_loc.y * zoom_factor,
+                    ));
+                    new_focal.x = new_focal
+                        .x
+                        .clamp(0.0, output_geometry.size.w - f64::EPSILON);
+                    new_focal.y = new_focal
+                        .y
+                        .clamp(0.0, output_geometry.size.h - f64::EPSILON);
+                    zoom_state.focal_point = new_focal;
                 } else if !zoomed_geometry_global.contains(new_pos_global) {
-                    let delta = new_pos_global - old_pos;
-                    let mut new_focal = focal_point + delta.upscale(zoom_factor);
+                    // Cursor pushed past viewport edge - compute exact focal point
+                    // that places cursor at the viewport edge.
+                    //
+                    // The relationship between focal point and viewport is:
+                    //   viewport_loc = focal * (zoom-1)/zoom
+                    //   viewport_size = output_size / zoom
+                    //
+                    // To place cursor exactly at an edge, we solve for focal:
+                    //   focal = cursor * zoom / (zoom - 1)  (for left/top edge)
+                    //   focal = (cursor - output_size/zoom) * zoom / (zoom - 1)  (for right/bottom)
+                    let scale = zoom_factor / (zoom_factor - 1.0);
+                    let viewport_size = output_geometry.size.downscale(zoom_factor);
+                    let mut new_focal = focal_point;
+
+                    // Check which edge(s) the cursor crossed and compute focal point
+                    // Use local coordinates (cursor_position is already local)
+                    let vp_left = zoomed_geometry_local.loc.x;
+                    let vp_right = vp_left + zoomed_geometry_local.size.w;
+                    let vp_top = zoomed_geometry_local.loc.y;
+                    let vp_bottom = vp_top + zoomed_geometry_local.size.h;
+
+                    if cursor_position.x < vp_left {
+                        // Cursor past left edge: focal = cursor * scale
+                        new_focal.x = cursor_position.x * scale;
+                    } else if cursor_position.x > vp_right {
+                        // Cursor past right edge: focal = (cursor - viewport_width) * scale
+                        new_focal.x = (cursor_position.x - viewport_size.w) * scale;
+                    }
+
+                    if cursor_position.y < vp_top {
+                        // Cursor past top edge
+                        new_focal.y = cursor_position.y * scale;
+                    } else if cursor_position.y > vp_bottom {
+                        // Cursor past bottom edge
+                        new_focal.y = (cursor_position.y - viewport_size.h) * scale;
+                    }
+
                     new_focal.x = new_focal
                         .x
                         .clamp(0.0, output_geometry.size.w - f64::EPSILON);
@@ -3143,6 +3161,7 @@ impl Niri {
                         .clamp(0.0, output_geometry.size.h - f64::EPSILON);
                     zoom_state.focal_point = new_focal;
                 }
+                zoom_state.cursor_logical_pos = None;
             }
         }
     }
@@ -4206,29 +4225,47 @@ impl Niri {
         let output_size = output_geo.size.to_physical_precise_round(output_scale);
         let zoom_factor = zoom_state.level;
         let zoom_focal_point = zoom_state.focal_point;
+        let cursor_logical_pos = zoom_state.cursor_logical_pos;
 
         let scale_with_zoom = self.config.borrow().cursor.scale_with_zoom;
+
         let focal_point_physical = zoom_focal_point.to_physical_precise_round(output_scale);
+        let focal_point_physical_f64: Point<f64, Physical> = zoom_focal_point.to_physical(output_scale);
+        let cursor_physical_f64: Option<Point<f64, Physical>> =
+            cursor_logical_pos.map(|p| p.to_physical(output_scale));
 
         // Generate match arms for each OutputRenderElement variant.
         macro_rules! apply_zoom {
             ($elem:expr, $($variant:ident),*) => {
                 match $elem {
                     OutputRenderElements::Pointer(pointer_elem) if !scale_with_zoom => {
-                        // When scale_with_zoom is false, relocate the pointer to match the
-                        // zoomed content position. The pointer's logical position maps to:
-                        // focal + (pos - focal) * zoom, so the relocation offset is:
-                        // (pos - focal) * (zoom - 1)
                         let pointer_geo = pointer_elem.geometry(output_scale);
                         let pointer_pos = pointer_geo.loc;
-                        let offset = Point::from((
-                            ((pointer_pos.x - focal_point_physical.x) as f64
-                                * (zoom_factor - 1.0))
-                                .round() as i32,
-                            ((pointer_pos.y - focal_point_physical.y) as f64
-                                * (zoom_factor - 1.0))
-                                .round() as i32,
-                        ));
+
+                        // If cursor_logical_pos is Some, compute visual position using stored cursor.
+                        // visual_pos = cursor * zoom - focal * (zoom - 1)
+                        // offset = visual_pos - pointer_pos
+                        // Otherwise use standard formula: (pos - focal) * (zoom - 1).
+                        let offset = match cursor_physical_f64 {
+                            Some(cursor) => {
+                                let visual_x = cursor.x * zoom_factor
+                                    - focal_point_physical_f64.x * (zoom_factor - 1.0);
+                                let visual_y = cursor.y * zoom_factor
+                                    - focal_point_physical_f64.y * (zoom_factor - 1.0);
+                                Point::from((
+                                    (visual_x - pointer_pos.x as f64).round() as i32,
+                                    (visual_y - pointer_pos.y as f64).round() as i32,
+                                ))
+                            }
+                            None => Point::from((
+                                ((pointer_pos.x as f64 - focal_point_physical_f64.x)
+                                    * (zoom_factor - 1.0))
+                                    .round() as i32,
+                                ((pointer_pos.y as f64 - focal_point_physical_f64.y)
+                                    * (zoom_factor - 1.0))
+                                    .round() as i32,
+                            )),
+                        };
 
                         CropRenderElement::from_element(
                             RelocateRenderElement::from_element(
