@@ -114,6 +114,7 @@ pub enum Action {
     #[knuffel(skip)]
     ConfirmScreenshot {
         write_to_disk: bool,
+        copy_path: bool,
     },
     #[knuffel(skip)]
     CancelScreenshot,
