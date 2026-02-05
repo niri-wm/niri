@@ -12,7 +12,7 @@ void main() {
             color = vec4(0.0);
         } else {
             // Apply corner rounding inside geometry.
-            color = color * niri_rounding_alpha(coords_curr_geo.xy * size_curr_geo.xy, size_curr_geo.xy);
+            color = color * niri_rounding_alpha(coords_curr_geo.xy * size_curr_geo.xy, size_curr_geo.xy, niri_corner_radius);
         }
     }
 

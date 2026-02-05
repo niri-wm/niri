@@ -72,30 +72,7 @@ float roundedBoxShadow(vec2 lower, vec2 upper, vec2 point, float sigma, float co
   return value;
 }
 
-float rounding_alpha(vec2 coords, vec2 size, vec4 corner_radius) {
-    vec2 center;
-    float radius;
-
-    if (coords.x < corner_radius.x && coords.y < corner_radius.x) {
-        radius = corner_radius.x;
-        center = vec2(radius, radius);
-    } else if (size.x - corner_radius.y < coords.x && coords.y < corner_radius.y) {
-        radius = corner_radius.y;
-        center = vec2(size.x - radius, radius);
-    } else if (size.x - corner_radius.z < coords.x && size.y - corner_radius.z < coords.y) {
-        radius = corner_radius.z;
-        center = vec2(size.x - radius, size.y - radius);
-    } else if (coords.x < corner_radius.w && size.y - corner_radius.w < coords.y) {
-        radius = corner_radius.w;
-        center = vec2(radius, size.y - radius);
-    } else {
-        return 1.0;
-    }
-
-    float dist = distance(coords, center);
-    float half_px = 0.5 / niri_scale;
-    return 1.0 - smoothstep(radius - half_px, radius + half_px, dist);
-}
+float niri_rounding_alpha(vec2 coords, vec2 size, vec4 corner_radius);
 
 void main() {
     vec3 coords_geo = input_to_geo * vec3(niri_v_coords, 1.0);
@@ -106,7 +83,7 @@ void main() {
     float shadow_value;
     if (sigma < 0.1) {
         // With low enough sigma just draw a rounded rectangle.
-        shadow_value = rounding_alpha(coords_geo.xy, geo_size, corner_radius);
+        shadow_value = niri_rounding_alpha(coords_geo.xy, geo_size, corner_radius);
     } else {
         shadow_value = roundedBoxShadow(
             vec2(0.0, 0.0),
@@ -126,7 +103,7 @@ void main() {
     if (window_geo_size != vec2(0.0, 0.0)) {
         if (0.0 <= coords_window_geo.x && coords_window_geo.x <= window_geo_size.x
                 && 0.0 <= coords_window_geo.y && coords_window_geo.y <= window_geo_size.y) {
-            float alpha = rounding_alpha(coords_window_geo.xy, window_geo_size, window_corner_radius);
+            float alpha = niri_rounding_alpha(coords_window_geo.xy, window_geo_size, window_corner_radius);
             color = color * (1.0 - alpha);
         }
     }
