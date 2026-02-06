@@ -498,7 +498,7 @@ impl CompositorHandler for State {
             .root_surface
             .retain(|k, v| k != surface && v != surface);
 
-        self.niri.dmabuf_pre_commit_hook.remove(surface);
+        self.remove_default_dmabuf_pre_commit_hook(surface);
     }
 }
 
