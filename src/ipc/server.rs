@@ -475,12 +475,10 @@ fn validate_action(action: &Action) -> Result<(), String> {
         }
     }
 
-    if let Action::LoadConfigFile { path } = action {
-        if let Some(path) = path {
-            let p = Path::new(path);
-            if !p.exists() || !p.is_file() {
-                return Err(format!("file {path} does not exist"));
-            }
+    if let Action::LoadConfigFile { path: Some(path) } = action {
+        let p = Path::new(path);
+        if !p.is_file() {
+            return Err(format!("path does not point to a file: {path}"));
         }
     }
 
