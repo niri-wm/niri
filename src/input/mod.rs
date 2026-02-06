@@ -2417,7 +2417,7 @@ impl State {
                 if let Some(output) = target_output {
                     let zoom_state_guard =
                         output.user_data().get::<Mutex<OutputZoomState>>().unwrap();
-                    if let Some(mut zoom_state) = zoom_state_guard.lock().ok() {
+                    if let Ok(mut zoom_state) = zoom_state_guard.lock() {
                         let factor_str = level.trim();
                         let is_relative =
                             factor_str.starts_with('+') || factor_str.starts_with('-');
@@ -4204,7 +4204,7 @@ impl State {
                         let output_geometry = self
                             .niri
                             .global_space
-                            .output_geometry(&output)
+                            .output_geometry(output)
                             .unwrap()
                             .to_f64();
                         let focal_point = zoom_state.focal_point;

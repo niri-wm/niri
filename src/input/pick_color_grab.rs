@@ -42,14 +42,20 @@ impl PickColorGrab {
         let (output, pos_within_output) = data.niri.output_under(location)?;
         let output = output.clone();
 
+        // When zoom is active, the cursor may be rendered at a different position than
+        // handle.current_location() reports (due to clamping in OnEdge mode or other adjustments).
+        // Use cursor_logical_pos from zoom state if available, as that's where the cursor
+        // is actually rendered.
         let pos_within_output = if let Some(zoom_state) = output
             .user_data()
             .get::<Mutex<OutputZoomState>>()
             .and_then(|m| m.lock().ok())
         {
-            let zoom_factor = zoom_state.level;
-            let focal_point = zoom_state.focal_point;
-            focal_point + (pos_within_output - focal_point).upscale(Scale::from(zoom_factor))
+            if zoom_state.level > 1.0 {
+                zoom_state.cursor_logical_pos.unwrap_or(pos_within_output)
+            } else {
+                pos_within_output
+            }
         } else {
             pos_within_output
         };
@@ -64,9 +70,17 @@ impl PickColorGrab {
                 let pos = pos_within_output.to_physical_precise_floor(scale);
                 let size = Size::<i32, Physical>::from((1, 1));
 
-                let elements = data
-                    .niri
-                    .render(renderer, &output, false, RenderTarget::Output);
+                // Use un-zoomed elements and sample at logical position.
+                // This works because the cursor at logical position L is visually on top of
+                // content at logical position L (zoom transforms both the same way).
+                let mut elements = Vec::new();
+                data.niri.render_inner(
+                    renderer,
+                    &output,
+                    false,
+                    RenderTarget::Output,
+                    &mut |elem| elements.push(elem),
+                );
 
                 let mapping = match render_and_download(
                     renderer,

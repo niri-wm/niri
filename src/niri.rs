@@ -2982,6 +2982,41 @@ impl Niri {
         Some((output, pos_within_output))
     }
 
+    /// Returns the effective cursor position for hit-testing, accounting for zoom.
+    ///
+    /// When zoom is active, the cursor may be rendered at a different position than
+    /// `pointer.current_location()` reports (e.g., due to clamping in OnEdge mode).
+    /// This function returns `cursor_logical_pos` from the zoom state when available,
+    /// ensuring hit-testing matches where the cursor is visually rendered.
+    pub fn effective_cursor_pos(&self, pos: Point<f64, Logical>) -> Point<f64, Logical> {
+        let Some((output, _pos_within_output)) = self.output_under(pos) else {
+            return pos;
+        };
+
+        let Some(mutex) = output.user_data().get::<Mutex<OutputZoomState>>() else {
+            return pos;
+        };
+
+        let Ok(zoom_state) = mutex.lock() else {
+            return pos;
+        };
+
+        if zoom_state.level <= 1.0 {
+            return pos;
+        }
+
+        let output_pos = self
+            .global_space
+            .output_geometry(output)
+            .unwrap()
+            .loc
+            .to_f64();
+        zoom_state
+            .cursor_logical_pos
+            .map(|p| p + output_pos)
+            .unwrap_or(pos)
+    }
+
     /// Update the zoom focal point for the given output based on cursor position.
     ///
     /// `old_pos_global` is the previous cursor pos (for OnEdge movement mode).
@@ -3375,6 +3410,8 @@ impl Niri {
             return None;
         }
 
+        let pos = self.effective_cursor_pos(pos);
+
         let (output, pos_within_output) = self.output_under(pos)?;
 
         if self.is_sticky_obscured_under(output, pos_within_output) {
@@ -3413,6 +3450,8 @@ impl Niri {
     /// This function does not take pointer or touch grabs into account.
     pub fn contents_under(&self, pos: Point<f64, Logical>) -> PointContents {
         let mut rv = PointContents::default();
+
+        let pos = self.effective_cursor_pos(pos);
 
         let Some((output, pos_within_output)) = self.output_under(pos) else {
             return rv;
@@ -3826,6 +3865,23 @@ impl Niri {
             .unwrap_or_else(|| self.seat.get_pointer().unwrap().current_location());
         let pointer_pos = pointer_pos - output_pos.to_f64();
 
+        // When zoom is active, use cursor_logical_pos for rendering if available.
+        // This ensures the cursor is rendered at the correct position when the
+        // logical cursor position differs from the pointer position (e.g., OnEdge clamping).
+        let pointer_pos = if let Some(zoom_state) = output
+            .user_data()
+            .get::<Mutex<OutputZoomState>>()
+            .and_then(|m| m.lock().ok())
+        {
+            if zoom_state.level > 1.0 {
+                zoom_state.cursor_logical_pos.unwrap_or(pointer_pos)
+            } else {
+                pointer_pos
+            }
+        } else {
+            pointer_pos
+        };
+
         // Get the render cursor to draw.
         let cursor_scale = output_scale.integer_scale();
         let render_cursor = self.cursor_manager.get_render_cursor(cursor_scale);
@@ -4233,12 +4289,8 @@ impl Niri {
         &self,
         elements: Vec<OutputRenderElements<R>>,
         output: &Output,
+        zoom_state: &OutputZoomState,
     ) -> Vec<OutputRenderElements<R>> {
-        let zoom_state = match output.user_data().get::<Mutex<OutputZoomState>>() {
-            Some(guard) => guard.lock().unwrap(),
-            None => return elements,
-        };
-
         let output_scale = Scale::from(output.current_scale().fractional_scale());
         let output_geo = self.global_space.output_geometry(output).unwrap();
         let output_size = output_geo.size.to_physical_precise_round(output_scale);
@@ -4273,21 +4325,12 @@ impl Niri {
                         let pointer_geo = pointer_elem.geometry(output_scale);
                         let pointer_pos = pointer_geo.loc;
 
-                        // target = cursor * zoom - focal_f64 * (zoom - 1)
-                        let target: Point<f64, Physical> = match cursor_physical_f64 {
-                            Some(cursor) => Point::from((
-                                cursor.x * zoom_factor
-                                    - focal_point_physical_f64.x * (zoom_factor - 1.0),
-                                cursor.y * zoom_factor
-                                    - focal_point_physical_f64.y * (zoom_factor - 1.0),
-                            )),
-                            None => Point::from((
-                                pointer_pos.x as f64 * zoom_factor
-                                    - focal_point_physical_f64.x * (zoom_factor - 1.0),
-                                pointer_pos.y as f64 * zoom_factor
-                                    - focal_point_physical_f64.y * (zoom_factor - 1.0),
-                            )),
-                        };
+                        let target: Point<f64, Physical> = Point::from((
+                            pointer_pos.x as f64 * zoom_factor
+                                - focal_point_physical_f64.x * (zoom_factor - 1.0),
+                            pointer_pos.y as f64 * zoom_factor
+                                - focal_point_physical_f64.y * (zoom_factor - 1.0),
+                        ));
 
                         let (offset, zoom_factor) = if scale_with_zoom {
                             // rescaled = (pointer_pos - focal_i32) * zoom + focal_i32
@@ -4305,9 +4348,20 @@ impl Niri {
                             ));
                             (offset, zoom_factor)
                         } else {
+                            let hotspot_correction: Point<f64, Physical> =
+                                if let Some(cursor) = cursor_physical_f64 {
+                                    Point::from((
+                                        (cursor.x - pointer_pos.x as f64) * (zoom_factor - 1.0),
+                                        (cursor.y - pointer_pos.y as f64) * (zoom_factor - 1.0),
+                                    ))
+                                } else {
+                                    Point::from((0.0, 0.0))
+                                };
                             let offset: Point<i32, Physical> = Point::from((
-                                (target.x - pointer_pos.x as f64).round() as i32,
-                                (target.y - pointer_pos.y as f64).round() as i32,
+                                (target.x - pointer_pos.x as f64 + hotspot_correction.x).round()
+                                    as i32,
+                                (target.y - pointer_pos.y as f64 + hotspot_correction.y).round()
+                                    as i32,
                             ));
                             (offset, 1.0)
                         };
@@ -4384,7 +4438,14 @@ impl Niri {
         });
 
         // Apply zoom to the render elements when needed.
-        elements = self.zoom_render_elements(elements, output);
+        if let Some(zoom_state) = output
+            .user_data()
+            .get::<Mutex<OutputZoomState>>()
+            .and_then(|m| m.lock().ok())
+            .filter(|state| state.level > 1.0)
+        {
+            elements = self.zoom_render_elements(elements, output, &zoom_state);
+        }
 
         elements
     }
