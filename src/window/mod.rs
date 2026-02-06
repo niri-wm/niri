@@ -1,4 +1,5 @@
 use std::cmp::{max, min};
+use std::collections::HashMap;
 
 use niri_config::utils::MergeWith as _;
 use niri_config::window_rule::{Match, WindowRule};
@@ -169,6 +170,13 @@ impl<'a> WindowRef<'a> {
         match self {
             WindowRef::Unmapped(_) => false,
             WindowRef::Mapped(mapped) => mapped.is_window_cast_target(),
+        }
+    }
+
+    pub fn labels(self) -> Option<&'a HashMap<String, Option<String>>> {
+        match self {
+            WindowRef::Unmapped(_) => None,
+            WindowRef::Mapped(mapped) => mapped.labels(),
         }
     }
 }
