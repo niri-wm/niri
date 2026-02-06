@@ -464,8 +464,14 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
                     .layout
                     .outputs()
                     .fold(HashMap::new(), |mut acc, output| {
-                        let zoom = output.user_data().get::<Mutex<OutputZoomState>>().unwrap();
-                        let zoom = zoom.lock().unwrap();
+                        let Some(zoom) =
+                            output.user_data().get::<Mutex<OutputZoomState>>()
+                        else {
+                            return acc;
+                        };
+                        let Ok(zoom) = zoom.lock() else {
+                            return acc;
+                        };
 
                         acc.insert(
                             output.name().clone(),

@@ -115,12 +115,6 @@ pub const ZOOM_GESTURE_RUBBER_BAND: RubberBand = RubberBand {
 /// Pinch gesture sensitivity multiplier
 pub const ZOOM_PINCH_SENSITIVITY: f64 = 1.0;
 
-/// Convert Wayland pinch scale (absolute since begin) to log-space delta.
-/// Call with current scale and previous log_scale, returns the delta to push to tracker.
-pub fn pinch_scale_to_log_delta(current_scale: f64, last_log_scale: f64) -> f64 {
-    current_scale.ln() - last_log_scale
-}
-
 /// Convert log-space position to zoom level.
 /// start_level * exp(log_pos) gives the new zoom level.
 pub fn log_pos_to_zoom_level(start_level: f64, log_pos: f64) -> f64 {
@@ -376,6 +370,22 @@ pub struct OutputZoomState {
     pub progress: Option<ZoomProgress>,
 }
 
+impl OutputZoomState {
+    /// Create a new zoom state centered on the given output.
+    pub fn new_for_output(output: &Output) -> Self {
+        let mode_size = output.current_mode().map_or((0, 0).into(), |m| m.size);
+        let scale = output.current_scale().fractional_scale();
+        let logical_size = mode_size.to_f64().to_logical(scale);
+        Self {
+            base_level: 1.0,
+            base_focal: Point::from((logical_size.w / 2.0, logical_size.h / 2.0)),
+            locked: false,
+            progress: None,
+            cursor_logical_pos: None,
+        }
+    }
+}
+
 impl Default for OutputZoomState {
     fn default() -> Self {
         Self {
@@ -417,7 +427,8 @@ pub struct ZoomGesture {
     pub gesture_type: ZoomGestureType,
     /// Last log-scale value for computing log-space deltas from Wayland pinch events.
     /// Wayland provides absolute scale since gesture begin; we convert to log-space deltas.
-    pub last_log_scale: f64,
+    /// `None` means the first update hasn't been received yet.
+    pub last_log_scale: Option<f64>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -451,6 +462,7 @@ pub struct Options {
     pub animations: niri_config::Animations,
     pub gestures: niri_config::Gestures,
     pub overview: niri_config::Overview,
+    pub max_zoom: f64,
     // Debug flags.
     pub disable_resize_throttling: bool,
     pub disable_transactions: bool,
@@ -711,6 +723,7 @@ impl Options {
             animations: config.animations.clone(),
             gestures: config.gestures,
             overview: config.overview,
+            max_zoom: config.zoom.max_zoom.clamp(1.0, 100.0),
             disable_resize_throttling: config.debug.disable_resize_throttling,
             disable_transactions: config.debug.disable_transactions,
             deactivate_unfocused_windows: config.debug.deactivate_unfocused_windows,
@@ -2823,15 +2836,15 @@ impl<W: LayoutElement> Layout<W> {
                     if let Some(zoom_state_mutex) =
                         mon.output.user_data().get::<Mutex<OutputZoomState>>()
                     {
-                        let mut zoom_state = zoom_state_mutex.lock().unwrap();
-
-                        if let Some(progress) = &zoom_state.progress {
-                            if progress.is_done() {
-                                let final_level = progress.level();
-                                let final_focal = progress.focal_point();
-                                zoom_state.base_level = final_level;
-                                zoom_state.base_focal = final_focal;
-                                zoom_state.progress = None;
+                        if let Ok(mut zoom_state) = zoom_state_mutex.lock() {
+                            if let Some(progress) = &zoom_state.progress {
+                                if progress.is_done() {
+                                    let final_level = progress.level();
+                                    let final_focal = progress.focal_point();
+                                    zoom_state.base_level = final_level;
+                                    zoom_state.base_focal = final_focal;
+                                    zoom_state.progress = None;
+                                }
                             }
                         }
                     }
@@ -2884,13 +2897,14 @@ impl<W: LayoutElement> Layout<W> {
             }
 
             if let Some(zoom_state_mutex) = mon.output.user_data().get::<Mutex<OutputZoomState>>() {
-                let zoom_state = zoom_state_mutex.lock().unwrap();
-                if zoom_state
-                    .progress
-                    .as_ref()
-                    .is_some_and(|p| p.is_animation())
-                {
-                    return true;
+                if let Ok(zoom_state) = zoom_state_mutex.lock() {
+                    if zoom_state
+                        .progress
+                        .as_ref()
+                        .is_some_and(|p| p.is_animation())
+                    {
+                        return true;
+                    }
                 }
             }
         }
@@ -3935,7 +3949,7 @@ impl<W: LayoutElement> Layout<W> {
             current_level,
             current_focal,
             gesture_type: ZoomGestureType::Pinch { scale_delta: 0.0 },
-            last_log_scale: f64::NAN,
+            last_log_scale: None,
         };
         state.progress = Some(ZoomProgress::Gesture(gesture));
     }
@@ -3959,21 +3973,22 @@ impl<W: LayoutElement> Layout<W> {
         };
 
         let current_log_scale = scale.ln();
-        let log_delta = if gesture.last_log_scale.is_nan() {
-            // First update: just capture the scale, no delta
-            gesture.last_log_scale = current_log_scale;
-            0.0
-        } else {
-            let delta = (current_log_scale - gesture.last_log_scale) * sensitivity;
-            gesture.last_log_scale = current_log_scale;
+        let log_delta = if let Some(last) = gesture.last_log_scale {
+            let delta = (current_log_scale - last) * sensitivity;
+            gesture.last_log_scale = Some(current_log_scale);
             delta
+        } else {
+            // First update: just capture the scale, no delta
+            gesture.last_log_scale = Some(current_log_scale);
+            0.0
         };
 
         gesture.tracker.push(log_delta, timestamp);
 
         let log_pos = gesture.tracker.pos();
         let raw_level = log_pos_to_zoom_level(gesture.start_level, log_pos);
-        let new_level = clamp_zoom_level_with_rubber_band(raw_level, 1.0, 10.0);
+        let max_zoom = self.options.max_zoom;
+        let new_level = clamp_zoom_level_with_rubber_band(raw_level, 1.0, max_zoom);
 
         if (gesture.current_level - new_level).abs() < 0.0001 {
             return Some(false);
@@ -4021,7 +4036,8 @@ impl<W: LayoutElement> Layout<W> {
         let projected_log_pos = gesture.tracker.projected_end_pos();
 
         let raw_target = log_pos_to_zoom_level(gesture.start_level, projected_log_pos);
-        let mut target_level = raw_target.clamp(1.0, 10.0);
+        let max_zoom = self.options.max_zoom;
+        let mut target_level = raw_target.clamp(1.0, max_zoom);
 
         if (target_level - 1.0).abs() < 0.05 {
             target_level = 1.0;
@@ -4030,7 +4046,7 @@ impl<W: LayoutElement> Layout<W> {
         let current_raw = log_pos_to_zoom_level(gesture.start_level, current_log_pos);
         velocity *= ZOOM_GESTURE_RUBBER_BAND.clamp_derivative(
             1.0_f64.ln(),
-            10.0_f64.ln(),
+            max_zoom.ln(),
             current_raw.ln(),
         );
 

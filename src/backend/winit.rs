@@ -70,20 +70,9 @@ impl Winit {
             serial: None,
         });
 
-        output.user_data().insert_if_missing(|| {
-            // Convert physical mode size to logical coordinates for focal point.
-            let mode_size = mode.size;
-            let scale = output.current_scale().fractional_scale();
-            let logical_size = mode_size.to_f64().to_logical(scale);
-            Mutex::new(OutputZoomState {
-                base_level: 1.0,
-                // Initialize the focal point to the center of the output in logical coordinates.
-                base_focal: smithay::utils::Point::new(logical_size.w / 2.0, logical_size.h / 2.0),
-                locked: false,
-                progress: None,
-                cursor_logical_pos: None,
-            })
-        });
+        output
+            .user_data()
+            .insert_if_missing(|| Mutex::new(OutputZoomState::new_for_output(&output)));
 
         let physical_properties = output.physical_properties();
         let ipc_outputs = Arc::new(Mutex::new(HashMap::from([(

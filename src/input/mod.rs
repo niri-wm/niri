@@ -45,13 +45,10 @@ use touch_overview_grab::TouchOverviewGrab;
 use self::move_grab::MoveGrab;
 use self::resize_grab::ResizeGrab;
 use self::spatial_movement_grab::SpatialMovementGrab;
-use crate::animation::Animation;
 #[cfg(feature = "dbus")]
 use crate::dbus::freedesktop_a11y::KbMonBlock;
 use crate::layout::scrolling::ScrollDirection;
-use crate::layout::{
-    ActivateWindow, LayoutElement as _, OutputZoomState, ZoomAnimation, ZoomProgress,
-};
+use crate::layout::{ActivateWindow, LayoutElement as _, OutputZoomState};
 use crate::niri::{CastTarget, PointerVisibility, State};
 use crate::protocols::virtual_keyboard::VirtualKeyboard;
 use crate::ui::mru::{WindowMru, WindowMruUi};
@@ -2418,15 +2415,18 @@ impl State {
                     None => self.niri.layout.active_output().cloned(),
                 };
                 if let Some(output) = target_output {
-                    if let Some(mut zoom_state) = output
-                        .user_data()
-                        .get::<Mutex<OutputZoomState>>()
-                        .and_then(|m| m.lock().ok())
-                    {
+                    let target_level = {
+                        let Some(zoom_state) = output
+                            .user_data()
+                            .get::<Mutex<OutputZoomState>>()
+                            .and_then(|m| m.lock().ok())
+                        else {
+                            return;
+                        };
                         let factor_str = level.trim();
                         let is_relative =
                             factor_str.starts_with('+') || factor_str.starts_with('-');
-                        let target_level = match factor_str.parse::<f64>() {
+                        match factor_str.parse::<f64>() {
                             Ok(f) if !is_relative => f.max(1.0),
                             Ok(delta) => {
                                 let increment_type = &self.niri.config.borrow().zoom.increment_type;
@@ -2436,42 +2436,17 @@ impl State {
                                         (zoom_state.base_level.ln() + delta).exp()
                                     }
                                 };
-                                new_level.clamp(1.0, 100.0)
+                                let max_zoom = self.niri.config.borrow().zoom.max_zoom;
+                                new_level.clamp(1.0, max_zoom)
                             }
                             Err(_) => return,
-                        };
-
-                        let current_level = zoom_state
-                            .progress
-                            .as_ref()
-                            .map_or(zoom_state.base_level, |p| p.level());
-
-                        if (target_level - current_level).abs() < 0.001 {
-                            return;
                         }
+                    };
 
-                        let anim = Animation::new(
-                            self.niri.layout.clock().clone(),
-                            current_level,
-                            target_level,
-                            0.0,
-                            self.niri.config.borrow().animations.zoom_level_change.0,
-                        );
-
-                        zoom_state.progress = Some(ZoomProgress::Animation(ZoomAnimation {
-                            level_anim: anim,
-                            focal_anim: None,
-                            target_level,
-                            target_focal: zoom_state.base_focal,
-                            start_focal: zoom_state.base_focal,
-                        }));
-
-                        zoom_state.base_level = target_level;
-                    }
-                    let cursor_pos = self.niri.tablet_cursor_location.unwrap_or_else(|| {
-                        self.niri.seat.get_pointer().unwrap().current_location()
-                    });
-                    self.niri.update_zoom_focal_point(&output, cursor_pos, None);
+                    let clock = self.niri.layout.clock().clone();
+                    let anim_config = self.niri.config.borrow().animations.zoom_level_change.0;
+                    self.niri
+                        .set_zoom_level(&output, target_level, &clock, anim_config);
                     self.niri.queue_redraw(&output);
                 }
             }
@@ -2650,7 +2625,9 @@ impl State {
             }
             Some(output) => {
                 if let Some(zoom_state) = output.user_data().get::<Mutex<OutputZoomState>>() {
-                    let zoom_state = zoom_state.lock().unwrap();
+                    let Ok(zoom_state) = zoom_state.lock() else {
+                        return;
+                    };
                     let (zoom_factor, zoom_locked) = (zoom_state.base_level, zoom_state.locked);
                     if zoom_locked {
                         let output_geometry = self
@@ -4163,25 +4140,18 @@ impl State {
         }
 
         if let Some(output) = self.niri.output_under_cursor() {
-            let in_zoom_gesture = output
-                .user_data()
-                .get::<Mutex<OutputZoomState>>()
-                .and_then(|m| m.lock().ok())
-                .is_some_and(|state| matches!(&state.progress, Some(ZoomProgress::Gesture(_))));
+            let sensitivity = self.niri.config.borrow().zoom.pinch_sensitivity
+                * output.current_scale().fractional_scale();
 
-            if in_zoom_gesture {
-                let sensitivity = self.niri.config.borrow().zoom.pinch_sensitivity
-                    * output.current_scale().fractional_scale();
+            let timestamp = Duration::from_millis(event.time_msec() as u64);
+            let scale = event.scale();
 
-                let timestamp = Duration::from_millis(event.time_msec() as u64);
-                let scale = event.scale();
-
-                let _ =
-                    self.niri
-                        .layout
-                        .zoom_gesture_update(&output, scale, sensitivity, timestamp);
-
-                // Always redraw during gesture for smooth animation
+            // Returns Some if a zoom gesture was active (avoids check-then-act race).
+            if let Some(_changed) =
+                self.niri
+                    .layout
+                    .zoom_gesture_update(&output, scale, sensitivity, timestamp)
+            {
                 self.niri.queue_redraw(&output);
                 return;
             }
@@ -4207,17 +4177,9 @@ impl State {
         }
 
         if let Some(output) = self.niri.output_under_cursor() {
-            let in_zoom_gesture = output
-                .user_data()
-                .get::<Mutex<OutputZoomState>>()
-                .and_then(|m| m.lock().ok())
-                .is_some_and(|state| matches!(&state.progress, Some(ZoomProgress::Gesture(_))));
-
-            if in_zoom_gesture {
-                let cancelled = event.cancelled();
-                if self.niri.layout.zoom_gesture_end(&output, cancelled) {
-                    self.niri.queue_redraw(&output);
-                }
+            let cancelled = event.cancelled();
+            if self.niri.layout.zoom_gesture_end(&output, cancelled) {
+                self.niri.queue_redraw(&output);
                 return;
             }
         }

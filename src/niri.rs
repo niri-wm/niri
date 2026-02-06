@@ -111,7 +111,7 @@ use smithay::wayland::xdg_foreign::XdgForeignState;
 
 #[cfg(feature = "dbus")]
 use crate::a11y::A11y;
-use crate::animation::Clock;
+use crate::animation::{Animation, Clock};
 use crate::backend::tty::SurfaceDmabufFeedback;
 use crate::backend::{Backend, Headless, RenderResult, Tty, Winit};
 use crate::cursor::{CursorManager, CursorTextureCache, RenderCursor, XCursor};
@@ -139,7 +139,7 @@ use crate::layout::tile::TileRenderElement;
 use crate::layout::workspace::{Workspace, WorkspaceId};
 use crate::layout::{
     HitType, Layout, LayoutElement as _, LayoutElementRenderElement, MonitorRenderElement,
-    OutputZoomState,
+    OutputZoomState, ZoomAnimation, ZoomProgress,
 };
 use crate::niri_render_elements;
 use crate::protocols::ext_workspace::{self, ExtWorkspaceManagerState};
@@ -3026,6 +3026,127 @@ impl Niri {
             .cursor_logical_pos
             .map(|p| p + output_pos)
             .unwrap_or(pos)
+    }
+
+    /// Compute the focal point that centers the viewport on the cursor for the
+    /// given zoom level and movement mode. Used when setting zoom level via
+    /// keybind/IPC where the viewport should track the cursor.
+    ///
+    /// For `OnEdge` mode without an old position, falls back to `Centered`.
+    pub fn compute_focal_for_cursor(
+        cursor_local: Point<f64, Logical>,
+        zoom_level: f64,
+        output_size: Size<f64, Logical>,
+        movement_mode: &ZoomMovementMode,
+    ) -> Point<f64, Logical> {
+        if zoom_level <= 1.0 {
+            return cursor_local;
+        }
+
+        match movement_mode {
+            ZoomMovementMode::CursorFollow => cursor_local,
+            ZoomMovementMode::Centered | ZoomMovementMode::OnEdge => {
+                let viewport_size = output_size.downscale(zoom_level);
+                let viewport_loc = cursor_local - viewport_size.downscale(2.0).to_point();
+                let scale_factor = zoom_level / (zoom_level - 1.0);
+                let mut focal =
+                    Point::from((viewport_loc.x * scale_factor, viewport_loc.y * scale_factor));
+                focal.x = focal.x.clamp(0.0, output_size.w - f64::EPSILON);
+                focal.y = focal.y.clamp(0.0, output_size.h - f64::EPSILON);
+                focal
+            }
+        }
+    }
+
+    /// Set the zoom level for the given output, computing the correct focal point
+    /// and creating an animation — all within a single mutex acquisition to avoid
+    /// the race where the animation targets a stale focal.
+    pub fn set_zoom_level(
+        &self,
+        output: &Output,
+        target_level: f64,
+        clock: &Clock,
+        anim_config: niri_config::Animation,
+    ) -> bool {
+        let Some(mutex) = output.user_data().get::<Mutex<OutputZoomState>>() else {
+            return false;
+        };
+        let Ok(mut zoom_state) = mutex.lock() else {
+            return false;
+        };
+
+        let current_level = zoom_state
+            .progress
+            .as_ref()
+            .map_or(zoom_state.base_level, |p| p.level());
+
+        if (target_level - current_level).abs() < 0.001 {
+            return false;
+        }
+
+        let cursor_pos_global = self.tablet_cursor_location.unwrap_or_else(|| {
+            self.seat.get_pointer().unwrap().current_location()
+        });
+        let output_geometry = self
+            .global_space
+            .output_geometry(output)
+            .map(|g| g.to_f64());
+
+        let target_focal = if zoom_state.locked || target_level <= 1.0 {
+            zoom_state.base_focal
+        } else if let Some(geo) = output_geometry {
+            let cursor_local = cursor_pos_global - geo.loc;
+            let movement_mode = &self.config.borrow().zoom.movement_mode;
+            Self::compute_focal_for_cursor(cursor_local, target_level, geo.size, movement_mode)
+        } else {
+            zoom_state.base_focal
+        };
+
+        let current_focal = zoom_state
+            .progress
+            .as_ref()
+            .map_or(zoom_state.base_focal, |p| p.focal_point());
+
+        let focal_anim =
+            if (current_focal.x - target_focal.x).abs() > 0.5
+                || (current_focal.y - target_focal.y).abs() > 0.5
+            {
+                Some(Animation::new(
+                    clock.clone(),
+                    0.0, // lerp 0..1
+                    1.0,
+                    0.0,
+                    anim_config.clone(),
+                ))
+            } else {
+                None
+            };
+
+        let level_anim = Animation::new(
+            clock.clone(),
+            current_level,
+            target_level,
+            0.0,
+            anim_config,
+        );
+
+        zoom_state.progress = Some(ZoomProgress::Animation(ZoomAnimation {
+            level_anim,
+            focal_anim,
+            target_level,
+            target_focal,
+            start_focal: current_focal,
+        }));
+
+        zoom_state.base_level = target_level;
+        zoom_state.base_focal = target_focal;
+
+        if let Some(geo) = output_geometry {
+            let cursor_local = cursor_pos_global - geo.loc;
+            zoom_state.cursor_logical_pos = Some(cursor_local);
+        }
+
+        true
     }
 
     /// Update the zoom focal point for the given output based on cursor position.
