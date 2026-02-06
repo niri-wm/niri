@@ -37,6 +37,7 @@ window-rule {
     match is-window-cast-target=true
     match is-urgent=true
     match at-startup=true
+    match window-label="private" with-value="yes" with-no-value=true
 
     // Properties that apply once upon window opening.
     default-column-width { proportion 0.75; }
@@ -177,7 +178,7 @@ You can find the title and the app ID of a window by running `niri msg pick-wind
 
 > [!TIP]
 > Another way to find the window title and app ID is to configure the `wlr/taskbar` module in [Waybar](https://github.com/Alexays/Waybar) to include them in the tooltip:
-> 
+>
 > ```json
 > "wlr/taskbar": {
 >     "tooltip-format": "{title} | {app_id}",
@@ -315,6 +316,47 @@ This is useful for properties like `open-on-output` which you may want to apply 
 window-rule {
     match at-startup=true
     open-on-output "HDMI-A-1"
+}
+```
+
+#### `window-label`
+
+<sup>Since: 26.x</sup>
+
+Matches the windows by their assigned label by a regex on the label name. Each window can have multiple labels. Label has a name and optionally also a value.
+You can read about the supported regular expression syntax [here](https://docs.rs/regex/latest/regex/#syntax).
+
+The following properties can further limit the match by examining the value of the label that matches the `window-label`:
+
+* `with-value` - only matches if the label also has a matching value. This is also a regex.
+* `with-no-value` - only matches the label if it has no value.
+
+```kdl
+// Change the border for windows that are labeled "important"
+window-rule {
+  match window-label="important"
+
+  border {
+    active-color "#ee0000"
+    inactive-color "#ee5555"
+  }
+}
+
+binds {
+  Mod+F5 { toggle-label-on-focused-window "important"; }
+}
+```
+
+```kdl
+// Hide the windows labeled nsfw from screen cast
+window-rule {
+  match window-label="role" with-value="nsfw"
+
+  block-out-from "screencast"
+}
+
+binds {
+  Mod+F12 { set-label-on-focused-window "role" value="nsfw"; }
 }
 ```
 
@@ -627,9 +669,10 @@ Can be `normal` or `tabbed`.
 
 This is used any time a window goes into its own column.
 For example:
-- Opening a new window.
-- Expelling a window into its own column.
-- Moving a window from the floating layout to the tiling layout.
+
+* Opening a new window.
+* Expelling a window into its own column.
+* Moving a window from the floating layout to the tiling layout.
 
 ```kdl
 // Make Evince windows open as tabbed columns.
@@ -905,7 +948,7 @@ window-rule {
 
 <video controls src="https://github.com/user-attachments/assets/3f4cb1a4-40b2-4766-98b7-eec014c19509">
 
-https://github.com/user-attachments/assets/3f4cb1a4-40b2-4766-98b7-eec014c19509
+<https://github.com/user-attachments/assets/3f4cb1a4-40b2-4766-98b7-eec014c19509>
 
 </video>
 
