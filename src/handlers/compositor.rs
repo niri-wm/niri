@@ -517,6 +517,11 @@ delegate_shm!(State);
 
 impl State {
     pub fn add_default_dmabuf_pre_commit_hook(&mut self, surface: &WlSurface) {
+        if !surface.is_alive() {
+            error!("tried to add dmabuf pre-commit hook for a dead surface");
+            return;
+        }
+
         let hook = add_pre_commit_hook::<Self, _>(surface, move |state, _dh, surface| {
             let maybe_dmabuf = with_states(surface, |surface_data| {
                 surface_data
