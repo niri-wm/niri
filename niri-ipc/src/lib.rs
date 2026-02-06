@@ -1334,6 +1334,9 @@ pub struct Window {
     ///
     /// The timestamp comes from the monotonic clock.
     pub focus_timestamp: Option<Timestamp>,
+
+    ///Window labels
+    pub labels: Option<HashMap<String, Option<String>>>,
 }
 
 /// A moment in time.

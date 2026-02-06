@@ -1,4 +1,5 @@
 use std::cell::{Cell, Ref, RefCell};
+use std::collections::HashMap;
 use std::time::Duration;
 
 use niri_config::{Color, CornerRadius, GradientInterpolation, WindowRule};
@@ -188,6 +189,9 @@ pub struct Mapped {
 
     /// Most recent monotonic time when the window had the focus.
     focus_timestamp: Option<Duration>,
+
+    /// The labels assigned to the window
+    labels: Option<HashMap<String, Option<String>>>,
 }
 
 niri_render_elements! {
@@ -285,6 +289,7 @@ impl Mapped {
             is_pending_maximized: false,
             uncommitted_maximized: Vec::new(),
             focus_timestamp: None,
+            labels: None,
         };
 
         rv.is_maximized = rv.sizing_mode().is_maximized();
@@ -582,6 +587,36 @@ impl Mapped {
 
     pub fn is_urgent(&self) -> bool {
         self.is_urgent
+    }
+
+    pub fn set_label(&mut self, name: String, value: Option<String>) {
+        let mut labels = self.labels.take().unwrap_or_else(HashMap::new);
+        let old = labels.insert(name, value.clone());
+
+        let changed = old.map(|v| v != value).unwrap_or(true);
+
+        self.labels = Some(labels);
+        self.need_to_recompute_rules |= changed;
+    }
+
+    pub fn unset_label(&mut self, name: String) {
+        let old = self.labels.as_mut().and_then(|ls| ls.remove(&name));
+        self.need_to_recompute_rules |= old.is_some();
+    }
+
+    pub fn toggle_label(&mut self, name: String) {
+        let mut labels = self.labels.take().unwrap_or_else(HashMap::new);
+
+        if labels.remove(&name).is_none() {
+            labels.insert(name, None);
+        }
+
+        self.labels = Some(labels);
+        self.need_to_recompute_rules = true;
+    }
+
+    pub fn labels(&self) -> Option<&HashMap<String, Option<String>>> {
+        self.labels.as_ref()
     }
 }
 
