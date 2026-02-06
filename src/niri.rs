@@ -4032,13 +4032,13 @@ impl Niri {
         include_pointer: bool,
     ) -> Vec<OutputRenderElements<R>> {
         let mut elements = Vec::new();
-        self.render_inner(ctx, output, include_pointer, &mut |elem| {
+        self.render(ctx, output, include_pointer, &mut |elem| {
             elements.push(elem)
         });
         elements
     }
 
-    pub fn render_inner<R: NiriRenderer>(
+    pub fn render<R: NiriRenderer>(
         &self,
         mut ctx: RenderCtx<R>,
         output: &Output,

@@ -579,7 +579,7 @@ impl Niri {
                     renderer,
                     target: RenderTarget::Screencast,
                 };
-                self.render_inner(ctx, output, false, &mut |elem| elements.push(elem.into()));
+                self.render(ctx, output, false, &mut |elem| elements.push(elem.into()));
 
                 let mut pointer_pos = Point::default();
                 if self.pointer_visibility.is_visible() {
