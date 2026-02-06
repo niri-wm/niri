@@ -4025,7 +4025,7 @@ impl Niri {
         }
     }
 
-    pub fn render<R: NiriRenderer>(
+    pub fn render_to_vec<R: NiriRenderer>(
         &self,
         ctx: RenderCtx<R>,
         output: &Output,
@@ -4929,7 +4929,7 @@ impl Niri {
                             renderer,
                             target: RenderTarget::ScreenCapture,
                         };
-                        self.render(ctx, output, true)
+                        self.render_to_vec(ctx, output, true)
                     });
                     // FIXME: skip elements if not including pointers
                     let render_result = Self::render_for_screencopy_internal(
@@ -4996,7 +4996,7 @@ impl Niri {
             renderer,
             target: RenderTarget::ScreenCapture,
         };
-        let elements = self.render(ctx, output, screencopy.overlay_cursor());
+        let elements = self.render_to_vec(ctx, output, screencopy.overlay_cursor());
 
         let Some(damage_tracker) = self.screencopy_state.damage_tracker(manager) else {
             error!("screencopy queue must not be deleted as long as frames exist");
@@ -5121,7 +5121,7 @@ impl Niri {
             ];
             let screenshot = targets.map(|target| {
                 let ctx = RenderCtx { renderer, target };
-                let elements = self.render(ctx, &output, false);
+                let elements = self.render_to_vec(ctx, &output, false);
                 let elements = elements.iter().rev();
 
                 let res = render_to_texture(
@@ -5202,7 +5202,7 @@ impl Niri {
             renderer,
             target: RenderTarget::ScreenCapture,
         };
-        let elements = self.render(ctx, output, include_pointer);
+        let elements = self.render_to_vec(ctx, output, include_pointer);
         let elements = elements.iter().rev();
         let pixels = render_to_vec(
             renderer,
@@ -5420,7 +5420,7 @@ impl Niri {
             renderer,
             target: RenderTarget::ScreenCapture,
         };
-        let elements = self.render(ctx, &output, include_pointer);
+        let elements = self.render_to_vec(ctx, &output, include_pointer);
         let elements = elements.iter().rev();
         let pixels = render_to_vec(
             renderer,
@@ -5894,7 +5894,7 @@ impl Niri {
                 ];
                 let textures = targets.map(|target| {
                     let ctx = RenderCtx { renderer, target };
-                    let elements = self.render(ctx, &output, false);
+                    let elements = self.render_to_vec(ctx, &output, false);
                     let elements = elements.iter().rev();
 
                     let res = render_to_texture(

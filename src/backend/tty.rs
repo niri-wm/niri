@@ -1843,7 +1843,7 @@ impl Tty {
             renderer: &mut renderer,
             target: RenderTarget::Output,
         };
-        let mut elements = niri.render(ctx, output, true);
+        let mut elements = niri.render_to_vec(ctx, output, true);
 
         // Visualize the damage, if enabled.
         if niri.debug_draw_damage {
