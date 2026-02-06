@@ -41,6 +41,7 @@ use monitor::{InsertHint, InsertPosition, InsertWorkspace, MonitorAddWindowTarge
 use niri_config::utils::MergeWith as _;
 use niri_config::{
     Config, CornerRadius, LayoutPart, PresetSize, Workspace as WorkspaceConfig, WorkspaceReference,
+    ZoomMovementMode,
 };
 use niri_ipc::{ColumnDisplay, PositionChange, SizeChange, WindowLayout};
 use scrolling::{Column, ColumnWidth};
@@ -415,6 +416,11 @@ pub struct ZoomAnimation {
     pub target_level: f64,
     pub target_focal: Point<f64, Logical>,
     pub start_focal: Point<f64, Logical>,
+    /// Cursor position and output size for per-frame focal computation that
+    /// keeps the cursor inside the viewport throughout the animation.
+    pub cursor_pos: Option<Point<f64, Logical>>,
+    pub output_size: Option<Size<f64, Logical>>,
+    pub movement_mode: Option<ZoomMovementMode>,
 }
 
 #[derive(Debug, Clone)]
@@ -429,6 +435,9 @@ pub struct ZoomGesture {
     /// Wayland provides absolute scale since gesture begin; we convert to log-space deltas.
     /// `None` means the first update hasn't been received yet.
     pub last_log_scale: Option<f64>,
+    pub cursor_pos: Option<Point<f64, Logical>>,
+    pub output_size: Option<Size<f64, Logical>>,
+    pub movement_mode: Option<ZoomMovementMode>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -436,6 +445,33 @@ pub enum ZoomGestureType {
     Pinch { scale_delta: f64 },
     Scroll { delta_y: f64 },
     FocalPan { delta_x: f64, delta_y: f64 },
+}
+
+/// Compute the focal point that centers the viewport on the cursor for the
+/// given zoom level and movement mode.
+pub fn compute_focal_for_cursor(
+    cursor_local: Point<f64, Logical>,
+    zoom_level: f64,
+    output_size: Size<f64, Logical>,
+    movement_mode: &ZoomMovementMode,
+) -> Point<f64, Logical> {
+    if zoom_level <= 1.0 {
+        return cursor_local;
+    }
+
+    match movement_mode {
+        ZoomMovementMode::CursorFollow => cursor_local,
+        ZoomMovementMode::Centered | ZoomMovementMode::OnEdge => {
+            let viewport_size = output_size.downscale(zoom_level);
+            let viewport_loc = cursor_local - viewport_size.downscale(2.0).to_point();
+            let scale_factor = zoom_level / (zoom_level - 1.0);
+            let mut focal =
+                Point::from((viewport_loc.x * scale_factor, viewport_loc.y * scale_factor));
+            focal.x = focal.x.clamp(0.0, output_size.w - f64::EPSILON);
+            focal.y = focal.y.clamp(0.0, output_size.h - f64::EPSILON);
+            focal
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -769,7 +805,28 @@ impl ZoomProgress {
     pub fn focal_point(&self) -> Point<f64, Logical> {
         match self {
             ZoomProgress::Animation(anim) => {
-                if let Some(focal_anim) = &anim.focal_anim {
+                // When cursor_pos is available, compute the focal dynamically from
+                // the current zoom level so the cursor stays inside the viewport
+                // throughout the entire animation (not just at start/end).
+                if let (Some(cursor), Some(size), Some(mode)) =
+                    (anim.cursor_pos, anim.output_size, &anim.movement_mode)
+                {
+                    let current_level = anim.level_anim.value();
+                    let curve_focal = compute_focal_for_cursor(cursor, current_level, size, mode);
+
+                    // Blend from start_focal toward the curve-computed focal using
+                    // focal_anim progress, so the transition is smooth when starting
+                    // from a mismatched focal position.
+                    if let Some(focal_anim) = &anim.focal_anim {
+                        let t = focal_anim.value();
+                        Point::from((
+                            anim.start_focal.x + t * (curve_focal.x - anim.start_focal.x),
+                            anim.start_focal.y + t * (curve_focal.y - anim.start_focal.y),
+                        ))
+                    } else {
+                        curve_focal
+                    }
+                } else if let Some(focal_anim) = &anim.focal_anim {
                     let t = focal_anim.value();
                     Point::from((
                         anim.start_focal.x + t * (anim.target_focal.x - anim.start_focal.x),
@@ -3925,7 +3982,13 @@ impl<W: LayoutElement> Layout<W> {
         true
     }
 
-    pub fn zoom_gesture_begin(&mut self, output: &Output) {
+    pub fn zoom_gesture_begin(
+        &mut self,
+        output: &Output,
+        cursor_local: Option<Point<f64, Logical>>,
+        output_size: Option<Size<f64, Logical>>,
+        movement_mode: Option<ZoomMovementMode>,
+    ) {
         let Some(zoom_state) = output.user_data().get::<Mutex<OutputZoomState>>() else {
             return;
         };
@@ -3950,6 +4013,9 @@ impl<W: LayoutElement> Layout<W> {
             current_focal,
             gesture_type: ZoomGestureType::Pinch { scale_delta: 0.0 },
             last_log_scale: None,
+            cursor_pos: cursor_local,
+            output_size,
+            movement_mode,
         };
         state.progress = Some(ZoomProgress::Gesture(gesture));
     }
@@ -3996,6 +4062,14 @@ impl<W: LayoutElement> Layout<W> {
 
         gesture.current_level = new_level;
 
+        if let (Some(cursor), Some(size), Some(mode)) = (
+            gesture.cursor_pos,
+            gesture.output_size,
+            &gesture.movement_mode,
+        ) {
+            gesture.current_focal = compute_focal_for_cursor(cursor, new_level, size, mode);
+        }
+
         Some(true)
     }
 
@@ -4012,6 +4086,16 @@ impl<W: LayoutElement> Layout<W> {
         };
 
         if cancelled {
+            let cancel_target_focal = if let (Some(cursor), Some(size), Some(mode)) = (
+                gesture.cursor_pos,
+                gesture.output_size,
+                &gesture.movement_mode,
+            ) {
+                compute_focal_for_cursor(cursor, gesture.start_level, size, mode)
+            } else {
+                gesture.start_focal
+            };
+
             state.progress = Some(ZoomProgress::Animation(ZoomAnimation {
                 level_anim: Animation::new(
                     self.clock.clone(),
@@ -4022,8 +4106,11 @@ impl<W: LayoutElement> Layout<W> {
                 ),
                 focal_anim: None,
                 target_level: gesture.start_level,
-                target_focal: gesture.start_focal,
+                target_focal: cancel_target_focal,
                 start_focal: gesture.current_focal,
+                cursor_pos: gesture.cursor_pos,
+                output_size: gesture.output_size,
+                movement_mode: gesture.movement_mode.clone(),
             }));
             return true;
         }
@@ -4052,8 +4139,20 @@ impl<W: LayoutElement> Layout<W> {
 
         let level_velocity = gesture.current_level * velocity;
 
+        // Compute the focal at the target level so base_focal and target_focal
+        // reflect where the animation is heading, not where the gesture was.
+        let target_focal = if let (Some(cursor), Some(size), Some(mode)) = (
+            gesture.cursor_pos,
+            gesture.output_size,
+            &gesture.movement_mode,
+        ) {
+            compute_focal_for_cursor(cursor, target_level, size, mode)
+        } else {
+            gesture.current_focal
+        };
+
         state.base_level = target_level;
-        state.base_focal = gesture.current_focal;
+        state.base_focal = target_focal;
 
         state.progress = Some(ZoomProgress::Animation(ZoomAnimation {
             level_anim: Animation::new(
@@ -4065,8 +4164,11 @@ impl<W: LayoutElement> Layout<W> {
             ),
             focal_anim: None,
             target_level,
-            target_focal: gesture.current_focal,
+            target_focal,
             start_focal: gesture.current_focal,
+            cursor_pos: gesture.cursor_pos,
+            output_size: gesture.output_size,
+            movement_mode: gesture.movement_mode,
         }));
 
         true

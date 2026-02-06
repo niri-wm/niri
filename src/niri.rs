@@ -139,7 +139,7 @@ use crate::layout::tile::TileRenderElement;
 use crate::layout::workspace::{Workspace, WorkspaceId};
 use crate::layout::{
     HitType, Layout, LayoutElement as _, LayoutElementRenderElement, MonitorRenderElement,
-    OutputZoomState, ZoomAnimation, ZoomProgress,
+    OutputZoomState, ZoomAnimation, ZoomProgress, compute_focal_for_cursor,
 };
 use crate::niri_render_elements;
 use crate::protocols::ext_workspace::{self, ExtWorkspaceManagerState};
@@ -3028,36 +3028,6 @@ impl Niri {
             .unwrap_or(pos)
     }
 
-    /// Compute the focal point that centers the viewport on the cursor for the
-    /// given zoom level and movement mode. Used when setting zoom level via
-    /// keybind/IPC where the viewport should track the cursor.
-    ///
-    /// For `OnEdge` mode without an old position, falls back to `Centered`.
-    pub fn compute_focal_for_cursor(
-        cursor_local: Point<f64, Logical>,
-        zoom_level: f64,
-        output_size: Size<f64, Logical>,
-        movement_mode: &ZoomMovementMode,
-    ) -> Point<f64, Logical> {
-        if zoom_level <= 1.0 {
-            return cursor_local;
-        }
-
-        match movement_mode {
-            ZoomMovementMode::CursorFollow => cursor_local,
-            ZoomMovementMode::Centered | ZoomMovementMode::OnEdge => {
-                let viewport_size = output_size.downscale(zoom_level);
-                let viewport_loc = cursor_local - viewport_size.downscale(2.0).to_point();
-                let scale_factor = zoom_level / (zoom_level - 1.0);
-                let mut focal =
-                    Point::from((viewport_loc.x * scale_factor, viewport_loc.y * scale_factor));
-                focal.x = focal.x.clamp(0.0, output_size.w - f64::EPSILON);
-                focal.y = focal.y.clamp(0.0, output_size.h - f64::EPSILON);
-                focal
-            }
-        }
-    }
-
     /// Set the zoom level for the given output, computing the correct focal point
     /// and creating an animation — all within a single mutex acquisition to avoid
     /// the race where the animation targets a stale focal.
@@ -3092,12 +3062,14 @@ impl Niri {
             .output_geometry(output)
             .map(|g| g.to_f64());
 
+        let movement_mode = self.config.borrow().zoom.movement_mode.clone();
+        let cursor_local = output_geometry.map(|geo| cursor_pos_global - geo.loc);
+        let output_size = output_geometry.map(|geo| geo.size);
+
         let target_focal = if zoom_state.locked || target_level <= 1.0 {
             zoom_state.base_focal
-        } else if let Some(geo) = output_geometry {
-            let cursor_local = cursor_pos_global - geo.loc;
-            let movement_mode = &self.config.borrow().zoom.movement_mode;
-            Self::compute_focal_for_cursor(cursor_local, target_level, geo.size, movement_mode)
+        } else if let (Some(cursor), Some(size)) = (cursor_local, output_size) {
+            compute_focal_for_cursor(cursor, target_level, size, &movement_mode)
         } else {
             zoom_state.base_focal
         };
@@ -3130,20 +3102,30 @@ impl Niri {
             anim_config,
         );
 
+        let anim_cursor = if zoom_state.locked { None } else { cursor_local };
+        let anim_output_size = if zoom_state.locked { None } else { output_size };
+        let anim_mode = if zoom_state.locked {
+            None
+        } else {
+            Some(movement_mode)
+        };
+
         zoom_state.progress = Some(ZoomProgress::Animation(ZoomAnimation {
             level_anim,
             focal_anim,
             target_level,
             target_focal,
             start_focal: current_focal,
+            cursor_pos: anim_cursor,
+            output_size: anim_output_size,
+            movement_mode: anim_mode,
         }));
 
         zoom_state.base_level = target_level;
         zoom_state.base_focal = target_focal;
 
-        if let Some(geo) = output_geometry {
-            let cursor_local = cursor_pos_global - geo.loc;
-            zoom_state.cursor_logical_pos = Some(cursor_local);
+        if let Some(cursor) = cursor_local {
+            zoom_state.cursor_logical_pos = Some(cursor);
         }
 
         true
@@ -3157,10 +3139,9 @@ impl Niri {
     pub fn update_zoom_focal_point(
         &self,
         output: &Output,
-        new_pos_global: Point<f64, Logical>, // Current cursor pos in global co-ords
+        new_pos_global: Point<f64, Logical>,
         old_pos_global: Option<Point<f64, Logical>>,
     ) {
-        // Skip if screenshot UI is open
         if self.screenshot_ui.is_open() {
             return;
         }
@@ -3172,16 +3153,13 @@ impl Niri {
             return;
         };
 
-        // Get output geometry (needed for all paths below)
         let Some(output_geometry) = self.global_space.output_geometry(output) else {
             return;
         };
         let output_geometry = output_geometry.to_f64();
 
-        // cursor_position is in output-local coordinates
         let cursor_position = new_pos_global - output_geometry.loc;
 
-        // If locked, update cursor position for rendering but don't change focal point
         if zoom_state.locked {
             zoom_state.cursor_logical_pos = Some(cursor_position);
             return;
@@ -3189,164 +3167,165 @@ impl Niri {
 
         let zoom_factor = zoom_state.base_level;
         let focal_point = zoom_state.base_focal;
+        let movement = &self.config.borrow().zoom.movement_mode;
 
-        // Calculate zoomed_geometry in LOCAL coordinates (origin at 0,0)
-        let zoomed_geometry_local = {
-            let mut geo: Rectangle<f64, Logical> = Rectangle::from_size(output_geometry.size);
-            geo.loc -= focal_point;
+        let (new_focal, display_cursor) = match movement {
+            ZoomMovementMode::CursorFollow => (Some(cursor_position), cursor_position),
+
+            ZoomMovementMode::Centered => {
+                let focal = compute_focal_for_cursor(
+                    cursor_position,
+                    zoom_factor,
+                    output_geometry.size,
+                    movement,
+                );
+                (Some(focal), cursor_position)
+            }
+
+            ZoomMovementMode::OnEdge => {
+                self.compute_on_edge_focal(
+                    cursor_position,
+                    new_pos_global,
+                    old_pos_global,
+                    output,
+                    output_geometry,
+                    focal_point,
+                    zoom_factor,
+                )
+            }
+        };
+
+        if let Some(focal) = new_focal {
+            zoom_state.base_focal = focal;
+        }
+        zoom_state.cursor_logical_pos = Some(display_cursor);
+    }
+
+    /// Compute focal point and display cursor for OnEdge movement mode.
+    ///
+    /// Returns `(new_focal, display_cursor)` where `new_focal` is `None`
+    /// when the cursor remains inside the current viewport.
+    fn compute_on_edge_focal(
+        &self,
+        cursor_local: Point<f64, Logical>,
+        cursor_global: Point<f64, Logical>,
+        old_pos_global: Option<Point<f64, Logical>>,
+        output: &Output,
+        output_geometry: Rectangle<f64, Logical>,
+        current_focal: Point<f64, Logical>,
+        zoom_factor: f64,
+    ) -> (Option<Point<f64, Logical>>, Point<f64, Logical>) {
+        let Some(old_pos) = old_pos_global else {
+            let focal = compute_focal_for_cursor(
+                cursor_local,
+                zoom_factor,
+                output_geometry.size,
+                &ZoomMovementMode::Centered,
+            );
+            return (Some(focal), cursor_local);
+        };
+
+        let zoomed_geometry_global = {
+            let focal_global = current_focal + output_geometry.loc;
+            let mut geo = output_geometry;
+            geo.loc -= focal_global;
             geo = geo.downscale(zoom_factor);
-            geo.loc += focal_point;
+            geo.loc += focal_global;
             geo
         };
 
-        let movement = &self.config.borrow().zoom.movement_mode;
+        let jump_threshold =
+            (16.0 * output.current_scale().fractional_scale()) / zoom_factor;
+        let jump_detect_size: Size<f64, Logical> = (jump_threshold, jump_threshold).into();
+        let original_rect = Rectangle::new(
+            old_pos - jump_detect_size.downscale(2.0).to_point(),
+            jump_detect_size,
+        );
 
-        match movement {
-            ZoomMovementMode::CursorFollow => {
-                zoom_state.base_focal = cursor_position;
-                zoom_state.cursor_logical_pos = Some(cursor_position);
-            }
-            ZoomMovementMode::Centered => {
-                // For cursor to appear at viewport center, we need:
-                //   output_size/2 = cursor * zoom - focal * (zoom - 1)
-                // Solving: focal = (cursor * zoom - output_size/2) / (zoom - 1)
-                //
-                // Equivalently: focal = viewport_loc * zoom / (zoom - 1)
-                // where viewport_loc = cursor - viewport_size/2
-                let viewport_size = output_geometry.size.downscale(zoom_factor);
-                let viewport_loc = cursor_position - viewport_size.downscale(2.0).to_point();
-
-                let scale_factor = zoom_factor / (zoom_factor - 1.0);
-                let mut new_focal =
-                    Point::from((viewport_loc.x * scale_factor, viewport_loc.y * scale_factor));
-
-                new_focal.x = new_focal
-                    .x
-                    .clamp(0.0, output_geometry.size.w - f64::EPSILON);
-                new_focal.y = new_focal
-                    .y
-                    .clamp(0.0, output_geometry.size.h - f64::EPSILON);
-
-                zoom_state.base_focal = new_focal;
-                zoom_state.cursor_logical_pos = Some(cursor_position);
-            }
-            ZoomMovementMode::OnEdge => {
-                // Calculate zoomed_geometry in GLOBAL coordinates (for OnEdge checks)
-                let zoomed_geometry_global = {
-                    let focal_point_global = focal_point + output_geometry.loc;
-                    let mut geo = output_geometry;
-                    geo.loc -= focal_point_global;
-                    geo = geo.downscale(zoom_factor);
-                    geo.loc += focal_point_global;
-                    geo
-                };
-
-                // OnEdge requires old_pos for proper edge-pushing behavior.
-                // If not available (absolute events, zoom changes), fall back to Centered.
-                let Some(old_pos) = old_pos_global else {
-                    let viewport_size = output_geometry.size.downscale(zoom_factor);
-                    let viewport_loc = cursor_position - viewport_size.downscale(2.0).to_point();
-                    let mut new_focal =
-                        Point::from((viewport_loc.x * zoom_factor, viewport_loc.y * zoom_factor));
-                    new_focal.x = new_focal
-                        .x
-                        .clamp(0.0, output_geometry.size.w - f64::EPSILON);
-                    new_focal.y = new_focal
-                        .y
-                        .clamp(0.0, output_geometry.size.h - f64::EPSILON);
-                    zoom_state.base_focal = new_focal;
-                    zoom_state.cursor_logical_pos = Some(cursor_position);
-                    return;
-                };
-
-                // Also account for zoom_level fractional scaling in jump detection
-                let jump_threshold =
-                    (16.0 * output.current_scale().fractional_scale()) / zoom_factor;
-                let jump_detect_size: Size<f64, Logical> = (jump_threshold, jump_threshold).into();
-                let original_rect = Rectangle::new(
-                    old_pos - jump_detect_size.downscale(2.0).to_point(),
-                    jump_detect_size,
-                );
-
-                if !zoomed_geometry_global.overlaps_or_touches(original_rect) {
-                    // Cursor jumped far away — center viewport on cursor
-                    let viewport_size = output_geometry.size.downscale(zoom_factor);
-                    let viewport_loc = cursor_position - viewport_size.downscale(2.0).to_point();
-                    let mut new_focal =
-                        Point::from((viewport_loc.x * zoom_factor, viewport_loc.y * zoom_factor));
-                    new_focal.x = new_focal
-                        .x
-                        .clamp(0.0, output_geometry.size.w - f64::EPSILON);
-                    new_focal.y = new_focal
-                        .y
-                        .clamp(0.0, output_geometry.size.h - f64::EPSILON);
-                    zoom_state.base_focal = new_focal;
-                    zoom_state.cursor_logical_pos = Some(cursor_position);
-                } else if !zoomed_geometry_global.contains(new_pos_global) {
-                    // Cursor pushed past viewport edge - compute exact focal point
-                    // that places cursor at the viewport edge.
-                    let scale = zoom_factor / (zoom_factor - 1.0);
-                    let viewport_size = output_geometry.size.downscale(zoom_factor);
-                    let mut new_focal = focal_point;
-
-                    // Check which edge(s) the cursor crossed and compute focal point
-                    // Use local coordinates (cursor_position is already local)
-                    let vp_left = zoomed_geometry_local.loc.x;
-                    let vp_right = vp_left + zoomed_geometry_local.size.w;
-                    let vp_top = zoomed_geometry_local.loc.y;
-                    let vp_bottom = vp_top + zoomed_geometry_local.size.h;
-
-                    if cursor_position.x < vp_left {
-                        // Cursor past left edge: focal = cursor * scale
-                        new_focal.x = cursor_position.x * scale;
-                    } else if cursor_position.x > vp_right {
-                        // Cursor past right edge: focal = (cursor - viewport_width) * scale
-                        new_focal.x = (cursor_position.x - viewport_size.w) * scale;
-                    }
-
-                    if cursor_position.y < vp_top {
-                        // Cursor past top edge
-                        new_focal.y = cursor_position.y * scale;
-                    } else if cursor_position.y > vp_bottom {
-                        // Cursor past bottom edge
-                        new_focal.y = (cursor_position.y - viewport_size.h) * scale;
-                    }
-
-                    new_focal.x = new_focal
-                        .x
-                        .clamp(0.0, output_geometry.size.w - f64::EPSILON);
-                    new_focal.y = new_focal
-                        .y
-                        .clamp(0.0, output_geometry.size.h - f64::EPSILON);
-                    zoom_state.base_focal = new_focal;
-
-                    // Compute the new viewport with updated focal, then clamp cursor
-                    // to stay 1px inside. This matches input clamping behavior and
-                    // keeps the cursor visible at edges.
-                    let new_vp_local = {
-                        let mut geo: Rectangle<f64, Logical> =
-                            Rectangle::from_size(output_geometry.size);
-                        geo.loc -= new_focal;
-                        geo = geo.downscale(zoom_factor);
-                        geo.loc += new_focal;
-                        geo
-                    };
-                    let clamped_cursor = Point::from((
-                        cursor_position.x.clamp(
-                            new_vp_local.loc.x,
-                            new_vp_local.loc.x + new_vp_local.size.w - 1.0,
-                        ),
-                        cursor_position.y.clamp(
-                            new_vp_local.loc.y,
-                            new_vp_local.loc.y + new_vp_local.size.h - 1.0,
-                        ),
-                    ));
-                    zoom_state.cursor_logical_pos = Some(clamped_cursor);
-                } else {
-                    zoom_state.cursor_logical_pos = Some(cursor_position);
-                }
-            }
+        if !zoomed_geometry_global.overlaps_or_touches(original_rect) {
+            let focal = compute_focal_for_cursor(
+                cursor_local,
+                zoom_factor,
+                output_geometry.size,
+                &ZoomMovementMode::Centered,
+            );
+            return (Some(focal), cursor_local);
         }
+
+        if !zoomed_geometry_global.contains(cursor_global) {
+            let (focal, clamped_cursor) = self.compute_edge_push_focal(
+                cursor_local,
+                current_focal,
+                output_geometry.size,
+                zoom_factor,
+            );
+            return (Some(focal), clamped_cursor);
+        }
+
+        (None, cursor_local)
+    }
+
+    /// Compute the focal point when the cursor pushes past a viewport edge,
+    /// and clamp the display cursor to remain 1px inside the new viewport.
+    fn compute_edge_push_focal(
+        &self,
+        cursor_local: Point<f64, Logical>,
+        current_focal: Point<f64, Logical>,
+        output_size: Size<f64, Logical>,
+        zoom_factor: f64,
+    ) -> (Point<f64, Logical>, Point<f64, Logical>) {
+        let scale = zoom_factor / (zoom_factor - 1.0);
+        let viewport_size = output_size.downscale(zoom_factor);
+
+        let zoomed_geometry_local = {
+            let mut geo: Rectangle<f64, Logical> = Rectangle::from_size(output_size);
+            geo.loc -= current_focal;
+            geo = geo.downscale(zoom_factor);
+            geo.loc += current_focal;
+            geo
+        };
+
+        let vp_left = zoomed_geometry_local.loc.x;
+        let vp_right = vp_left + zoomed_geometry_local.size.w;
+        let vp_top = zoomed_geometry_local.loc.y;
+        let vp_bottom = vp_top + zoomed_geometry_local.size.h;
+
+        let mut new_focal = current_focal;
+
+        if cursor_local.x < vp_left {
+            new_focal.x = cursor_local.x * scale;
+        } else if cursor_local.x > vp_right {
+            new_focal.x = (cursor_local.x - viewport_size.w) * scale;
+        }
+
+        if cursor_local.y < vp_top {
+            new_focal.y = cursor_local.y * scale;
+        } else if cursor_local.y > vp_bottom {
+            new_focal.y = (cursor_local.y - viewport_size.h) * scale;
+        }
+
+        new_focal.x = new_focal.x.clamp(0.0, output_size.w - f64::EPSILON);
+        new_focal.y = new_focal.y.clamp(0.0, output_size.h - f64::EPSILON);
+
+        let new_vp_local = {
+            let mut geo: Rectangle<f64, Logical> = Rectangle::from_size(output_size);
+            geo.loc -= new_focal;
+            geo = geo.downscale(zoom_factor);
+            geo.loc += new_focal;
+            geo
+        };
+        let clamped_cursor = Point::from((
+            cursor_local.x.clamp(
+                new_vp_local.loc.x,
+                new_vp_local.loc.x + new_vp_local.size.w - 1.0,
+            ),
+            cursor_local.y.clamp(
+                new_vp_local.loc.y,
+                new_vp_local.loc.y + new_vp_local.size.h - 1.0,
+            ),
+        ));
+
+        (new_focal, clamped_cursor)
     }
 
     fn is_inside_hot_corner(&self, output: &Output, pos: Point<f64, Logical>) -> bool {

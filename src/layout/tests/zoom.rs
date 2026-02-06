@@ -35,6 +35,9 @@ fn zoom_progress_level_accessor() {
         target_level: 3.0,
         target_focal: Point::from((0.0, 0.0)),
         start_focal: Point::from((0.0, 0.0)),
+        cursor_pos: None,
+        output_size: None,
+        movement_mode: None,
     });
     // Animation just started, should be near 1.0
     let level = anim_progress.level();
@@ -65,6 +68,9 @@ fn zoom_progress_focal_point_accessor() {
         target_level: 2.0,
         target_focal: Point::from((50.0, 100.0)),
         start_focal: Point::from((0.0, 0.0)),
+        cursor_pos: None,
+        output_size: None,
+        movement_mode: None,
     });
     // Without focal animation, should return target_focal
     let focal = anim_progress.focal_point();
@@ -82,6 +88,9 @@ fn zoom_progress_is_animation() {
         target_level: 2.0,
         target_focal: Point::from((0.0, 0.0)),
         start_focal: Point::from((0.0, 0.0)),
+        cursor_pos: None,
+        output_size: None,
+        movement_mode: None,
     });
     assert!(anim.is_animation());
     assert!(!anim.is_gesture());
@@ -112,6 +121,9 @@ fn zoom_progress_is_done() {
         target_level: 2.0,
         target_focal: Point::from((0.0, 0.0)),
         start_focal: Point::from((0.0, 0.0)),
+        cursor_pos: None,
+        output_size: None,
+        movement_mode: None,
     });
     assert!(!anim.is_done());
 }
@@ -139,6 +151,9 @@ fn zoom_animation_completion() {
         target_level: 2.0,
         target_focal: Point::from((0.0, 0.0)),
         start_focal: Point::from((0.0, 0.0)),
+        cursor_pos: None,
+        output_size: None,
+        movement_mode: None,
     });
 
     // Should not be done at start

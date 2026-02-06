@@ -4117,7 +4117,21 @@ impl State {
                 let has_zoom_state = output.user_data().get::<Mutex<OutputZoomState>>().is_some();
 
                 if has_zoom_state {
-                    self.niri.layout.zoom_gesture_begin(&output);
+                    let cursor_global = self.niri.seat.get_pointer().unwrap().current_location();
+                    let output_geo = self
+                        .niri
+                        .global_space
+                        .output_geometry(&output)
+                        .map(|g| g.to_f64());
+                    let cursor_local = output_geo.map(|g| cursor_global - g.loc);
+                    let output_size = output_geo.map(|g| g.size);
+                    let movement_mode = Some(self.niri.config.borrow().zoom.movement_mode.clone());
+                    self.niri.layout.zoom_gesture_begin(
+                        &output,
+                        cursor_local,
+                        output_size,
+                        movement_mode,
+                    );
                     return;
                 }
             }
