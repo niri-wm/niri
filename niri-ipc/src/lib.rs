@@ -943,6 +943,62 @@ pub enum Action {
         #[cfg_attr(feature = "clap", arg(long))]
         path: Option<String>,
     },
+    /// Sets a label on a window
+    SetWindowLabel {
+        /// Id of the window.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: u64,
+
+        /// the name of the label
+        #[cfg_attr(feature = "clap", arg(long))]
+        name: String,
+
+        /// the value of the label
+        #[cfg_attr(feature = "clap", arg(long))]
+        value: Option<String>,
+    },
+    /// Unsets a label on a window
+    UnsetWindowLabel {
+        /// Id of the window.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: u64,
+
+        /// the name of the label
+        #[cfg_attr(feature = "clap", arg(long))]
+        name: String,
+    },
+    /// Set a label on the currently focused window
+    SetLabelOnFocusedWindow {
+        /// the name of the label
+        #[cfg_attr(feature = "clap", arg(long))]
+        name: String,
+
+        /// the value of the label
+        #[cfg_attr(feature = "clap", arg(long))]
+        value: Option<String>,
+    },
+    /// Unsets a label on the currenlty focused window
+    UnsetLabelOnFocusedWindow {
+        /// the name of the label
+        #[cfg_attr(feature = "clap", arg(long))]
+        name: String,
+    },
+    /// Toggles an unvalued label on a window
+    ToggleWindowLabel {
+        /// Id of the window.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: u64,
+
+        /// the name of the label
+        #[cfg_attr(feature = "clap", arg(long))]
+        name: String,
+    },
+    /// Toggles an unvalued label on the focused window
+    ToggleLabelOnFocusedWindow {
+        /// the name of the label
+        #[cfg_attr(feature = "clap", arg(long))]
+        name: String,
+    },
 }
 
 /// Change in window or column size.

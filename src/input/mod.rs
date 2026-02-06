@@ -2407,6 +2407,72 @@ impl State {
                     self.niri.queue_redraw_mru_output();
                 }
             }
+            Action::SetWindowLabel(id, name, value) => {
+                let window = self
+                    .niri
+                    .layout
+                    .workspaces_mut()
+                    .find_map(|ws| ws.windows_mut().find(|w| w.id().get() == id));
+                if let Some(window) = window {
+                    window.set_label(name, value);
+                    self.niri.queue_redraw_all();
+                }
+            }
+            Action::UnsetWindowLabel(id, name) => {
+                let window = self
+                    .niri
+                    .layout
+                    .workspaces_mut()
+                    .find_map(|ws| ws.windows_mut().find(|w| w.id().get() == id));
+                if let Some(window) = window {
+                    window.unset_label(name);
+                    self.niri.queue_redraw_all();
+                }
+            }
+            Action::SetLabelOnFocusedWindow(name, value) => {
+                let window = self
+                    .niri
+                    .layout
+                    .active_workspace_mut()
+                    .and_then(|ws| ws.active_window_mut());
+                if let Some(window) = window {
+                    window.set_label(name, value);
+                    self.niri.queue_redraw_all();
+                }
+            }
+            Action::UnsetLabelOnFocusedWindow(name) => {
+                let window = self
+                    .niri
+                    .layout
+                    .active_workspace_mut()
+                    .and_then(|ws| ws.active_window_mut());
+                if let Some(window) = window {
+                    window.unset_label(name);
+                    self.niri.queue_redraw_all();
+                }
+            }
+            Action::ToggleWindowLabel(id, name) => {
+                let window = self
+                    .niri
+                    .layout
+                    .workspaces_mut()
+                    .find_map(|ws| ws.windows_mut().find(|w| w.id().get() == id));
+                if let Some(window) = window {
+                    window.toggle_label(name);
+                    self.niri.queue_redraw_all();
+                }
+            }
+            Action::ToggleLabelOnFocusedWindow(name) => {
+                let window = self
+                    .niri
+                    .layout
+                    .active_workspace_mut()
+                    .and_then(|ws| ws.active_window_mut());
+                if let Some(window) = window {
+                    window.toggle_label(name);
+                    self.niri.queue_redraw_all();
+                }
+            }
         }
     }
 
