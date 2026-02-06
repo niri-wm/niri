@@ -389,6 +389,18 @@ pub enum Action {
     MruSetScope(MruScope),
     #[knuffel(skip)]
     MruCycleScope,
+    #[knuffel(skip)]
+    SetWindowLabel(u64, String, Option<String>),
+    #[knuffel(skip)]
+    UnsetWindowLabel(u64, String),
+    SetLabelOnFocusedWindow(
+        #[knuffel(argument)] String,
+        #[knuffel(property(name = "value"))] Option<String>,
+    ),
+    UnsetLabelOnFocusedWindow(#[knuffel(argument)] String),
+    #[knuffel(skip)]
+    ToggleWindowLabel(u64, String),
+    ToggleLabelOnFocusedWindow(#[knuffel(argument)] String),
 }
 
 impl From<niri_ipc::Action> for Action {
@@ -700,6 +712,20 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::SetWindowUrgent { id } => Self::SetWindowUrgent(id),
             niri_ipc::Action::UnsetWindowUrgent { id } => Self::UnsetWindowUrgent(id),
             niri_ipc::Action::LoadConfigFile { path } => Self::LoadConfigFile(path),
+            niri_ipc::Action::SetWindowLabel { id, name, value } => {
+                Self::SetWindowLabel(id, name, value)
+            }
+            niri_ipc::Action::UnsetWindowLabel { id, name } => Self::UnsetWindowLabel(id, name),
+            niri_ipc::Action::SetLabelOnFocusedWindow { name, value } => {
+                Self::SetLabelOnFocusedWindow(name, value)
+            }
+            niri_ipc::Action::UnsetLabelOnFocusedWindow { name } => {
+                Self::UnsetLabelOnFocusedWindow(name)
+            }
+            niri_ipc::Action::ToggleWindowLabel { id, name } => Self::ToggleWindowLabel(id, name),
+            niri_ipc::Action::ToggleLabelOnFocusedWindow { name } => {
+                Self::ToggleLabelOnFocusedWindow(name)
+            }
         }
     }
 }
