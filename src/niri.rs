@@ -1474,6 +1474,9 @@ impl State {
             self.niri.cursor_texture_cache.clear();
         }
 
+        // We need to check zoom movement mode change, but defer the action until after drop.
+        let zoom_movement_mode_changed = config.zoom.movement_mode != old_config.zoom.movement_mode;
+
         // We need &mut self to reload the xkb config, so just store it here.
         if config.input.keyboard.xkb != old_config.input.keyboard.xkb {
             reload_xkb = Some(config.input.keyboard.xkb.clone());
@@ -1602,6 +1605,14 @@ impl State {
 
         // Release the borrow.
         drop(old_config);
+
+        if zoom_movement_mode_changed {
+            let global_pointer_pos = self.niri.seat.get_pointer().unwrap().current_location();
+            if let Some((output, pos_within_output)) = self.niri.output_under(global_pointer_pos) {
+                self.niri
+                    .update_zoom_focal_point(output, pos_within_output, None);
+            }
+        }
 
         // Now with a &mut self we can reload the xkb config.
         if let Some(mut xkb) = reload_xkb {
@@ -3049,12 +3060,6 @@ impl Niri {
         // cursor_position is in output-local coordinates
         let cursor_position = new_pos_global - output_geometry.loc;
 
-        // If zoom is not active, clear cursor_logical_pos so rendering uses pointer position
-        if zoom_state.level <= 1.0 {
-            zoom_state.cursor_logical_pos = None;
-            return;
-        }
-
         // If locked, update cursor position for rendering but don't change focal point
         if zoom_state.locked {
             zoom_state.cursor_logical_pos = Some(cursor_position);
@@ -3133,7 +3138,10 @@ impl Niri {
                     return;
                 };
 
-                let jump_detect_size: Size<f64, Logical> = (16.0, 16.0).into();
+                // Also account for zoom_level fractional scaling in jump detection
+                let jump_threshold =
+                    (16.0 * output.current_scale().fractional_scale()) / zoom_factor;
+                let jump_detect_size: Size<f64, Logical> = (jump_threshold, jump_threshold).into();
                 let original_rect = Rectangle::new(
                     old_pos - jump_detect_size.downscale(2.0).to_point(),
                     jump_detect_size,

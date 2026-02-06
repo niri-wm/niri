@@ -2415,9 +2415,11 @@ impl State {
                     None => self.niri.layout.active_output().cloned(),
                 };
                 if let Some(output) = target_output {
-                    let zoom_state_guard =
-                        output.user_data().get::<Mutex<OutputZoomState>>().unwrap();
-                    if let Ok(mut zoom_state) = zoom_state_guard.lock() {
+                    if let Some(mut zoom_state) = output
+                        .user_data()
+                        .get::<Mutex<OutputZoomState>>()
+                        .and_then(|m| m.lock().ok())
+                    {
                         let factor_str = level.trim();
                         let is_relative =
                             factor_str.starts_with('+') || factor_str.starts_with('-');
@@ -2451,9 +2453,13 @@ impl State {
                     None => self.niri.layout.active_output().cloned(),
                 };
                 if let Some(output) = target_output {
-                    let zoom_state = output.user_data().get::<Mutex<OutputZoomState>>().unwrap();
-                    let mut zoom_state = zoom_state.lock().unwrap();
-                    zoom_state.locked = !zoom_state.locked;
+                    if let Some(mut zoom_state) = output
+                        .user_data()
+                        .get::<Mutex<OutputZoomState>>()
+                        .and_then(|m| m.lock().ok())
+                    {
+                        zoom_state.locked = !zoom_state.locked;
+                    }
                 }
             }
         }
@@ -2629,11 +2635,13 @@ impl State {
                         // Clamp new_pos to stay within zoomed area
                         new_pos.x = new_pos.x.clamp(
                             zoomed_geometry_global.loc.x,
-                            zoomed_geometry_global.loc.x + zoomed_geometry_global.size.w - 1.,
+                            zoomed_geometry_global.loc.x + zoomed_geometry_global.size.w
+                                - f64::EPSILON,
                         );
                         new_pos.y = new_pos.y.clamp(
                             zoomed_geometry_global.loc.y,
-                            zoomed_geometry_global.loc.y + zoomed_geometry_global.size.h - 1.,
+                            zoomed_geometry_global.loc.y + zoomed_geometry_global.size.h
+                                - f64::EPSILON,
                         );
                     }
                 }
@@ -4221,11 +4229,13 @@ impl State {
                         let mut clamped = pos;
                         clamped.x = clamped.x.clamp(
                             zoomed_geometry_global.loc.x,
-                            zoomed_geometry_global.loc.x + zoomed_geometry_global.size.w - 1.,
+                            zoomed_geometry_global.loc.x + zoomed_geometry_global.size.w
+                                - f64::EPSILON,
                         );
                         clamped.y = clamped.y.clamp(
                             zoomed_geometry_global.loc.y,
-                            zoomed_geometry_global.loc.y + zoomed_geometry_global.size.h - 1.,
+                            zoomed_geometry_global.loc.y + zoomed_geometry_global.size.h
+                                - f64::EPSILON,
                         );
                         return clamped;
                     }
