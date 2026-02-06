@@ -368,7 +368,7 @@ pub enum Action {
     #[knuffel(skip)]
     UnsetWindowUrgent(u64),
     #[knuffel(skip)]
-    LoadConfigFile,
+    LoadConfigFile(#[knuffel(argument)] Option<String>),
     #[knuffel(skip)]
     MruAdvance {
         direction: MruDirection,
@@ -706,7 +706,7 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::UnsetWindowUrgent { id } => Self::UnsetWindowUrgent(id),
             niri_ipc::Action::SetZoomLevel { level, output } => Self::SetZoomLevel(level, output),
             niri_ipc::Action::ToggleZoomLock { output } => Self::ToggleZoomLock(output),
-            niri_ipc::Action::LoadConfigFile {} => Self::LoadConfigFile,
+            niri_ipc::Action::LoadConfigFile { path } => Self::LoadConfigFile(path),
         }
     }
 }
