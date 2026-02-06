@@ -34,6 +34,7 @@
 use std::collections::HashMap;
 use std::mem;
 use std::rc::Rc;
+use std::sync::Mutex;
 use std::time::Duration;
 
 use monitor::{InsertHint, InsertPosition, InsertWorkspace, MonitorAddWindowTarget};
@@ -104,6 +105,37 @@ const OVERVIEW_GESTURE_RUBBER_BAND: RubberBand = RubberBand {
     stiffness: 0.5,
     limit: 0.05,
 };
+
+/// Zoom rubber-banding constants (matching OVERVIEW_GESTURE_RUBBER_BAND pattern)
+pub const ZOOM_GESTURE_RUBBER_BAND: RubberBand = RubberBand {
+    limit: 0.5,     // Allow 50% "over-pull" beyond min/max zoom bounds
+    stiffness: 0.3, // Spring stiffness for elastic resistance
+};
+
+/// Pinch gesture sensitivity multiplier
+pub const ZOOM_PINCH_SENSITIVITY: f64 = 1.0;
+
+/// Convert Wayland pinch scale (absolute since begin) to log-space delta.
+/// Call with current scale and previous log_scale, returns the delta to push to tracker.
+pub fn pinch_scale_to_log_delta(current_scale: f64, last_log_scale: f64) -> f64 {
+    current_scale.ln() - last_log_scale
+}
+
+/// Convert log-space position to zoom level.
+/// start_level * exp(log_pos) gives the new zoom level.
+pub fn log_pos_to_zoom_level(start_level: f64, log_pos: f64) -> f64 {
+    start_level * log_pos.exp()
+}
+
+/// Compute clamped zoom level with rubber-banding in log-space.
+/// min_level and max_level define the zoom bounds (typically 1.0 and some max like 10.0).
+pub fn clamp_zoom_level_with_rubber_band(level: f64, min_level: f64, max_level: f64) -> f64 {
+    let log_level = level.ln();
+    let log_min = min_level.ln();
+    let log_max = max_level.ln();
+    let clamped_log = ZOOM_GESTURE_RUBBER_BAND.clamp(log_min, log_max, log_level);
+    clamped_log.exp()
+}
 
 /// Size-relative units.
 pub struct SizeFrac;
@@ -340,6 +372,59 @@ pub struct OutputZoomState {
     /// When Some, render computes visual position as: focal + (cursor - focal) * zoom.
     /// When None, render uses pointer element position for the calculation.
     pub cursor_logical_pos: Option<Point<f64, Logical>>,
+    /// Ongoing zoom progress.
+    pub progress: Option<ZoomProgress>,
+}
+
+impl Default for OutputZoomState {
+    fn default() -> Self {
+        Self {
+            base_level: 1.0,
+            base_focal: Point::from((0.0, 0.0)),
+            locked: false,
+            progress: None,
+            cursor_logical_pos: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum ZoomProgress {
+    Animation(ZoomAnimation),
+    Gesture(ZoomGesture),
+    Static {
+        level: f64,
+        focal_point: Point<f64, Logical>,
+    },
+}
+
+#[derive(Debug, Clone)]
+pub struct ZoomAnimation {
+    pub level_anim: Animation,
+    pub focal_anim: Option<Animation>,
+    pub target_level: f64,
+    pub target_focal: Point<f64, Logical>,
+    pub start_focal: Point<f64, Logical>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ZoomGesture {
+    pub tracker: SwipeTracker,
+    pub start_level: f64,
+    pub start_focal: Point<f64, Logical>,
+    pub current_level: f64,
+    pub current_focal: Point<f64, Logical>,
+    pub gesture_type: ZoomGestureType,
+    /// Last log-scale value for computing log-space deltas from Wayland pinch events.
+    /// Wayland provides absolute scale since gesture begin; we convert to log-space deltas.
+    pub last_log_scale: f64,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum ZoomGestureType {
+    Pinch { scale_delta: f64 },
+    Scroll { delta_y: f64 },
+    FocalPan { delta_x: f64, delta_y: f64 },
 }
 
 #[derive(Debug)]
@@ -659,6 +744,50 @@ impl OverviewProgress {
     }
 }
 
+impl ZoomProgress {
+    pub fn level(&self) -> f64 {
+        match self {
+            ZoomProgress::Animation(anim) => anim.level_anim.value(),
+            ZoomProgress::Gesture(gesture) => gesture.current_level,
+            ZoomProgress::Static { level, .. } => *level,
+        }
+    }
+
+    pub fn focal_point(&self) -> Point<f64, Logical> {
+        match self {
+            ZoomProgress::Animation(anim) => {
+                if let Some(focal_anim) = &anim.focal_anim {
+                    let t = focal_anim.value();
+                    Point::from((
+                        anim.start_focal.x + t * (anim.target_focal.x - anim.start_focal.x),
+                        anim.start_focal.y + t * (anim.target_focal.y - anim.start_focal.y),
+                    ))
+                } else {
+                    anim.target_focal
+                }
+            }
+            ZoomProgress::Gesture(gesture) => gesture.current_focal,
+            ZoomProgress::Static { focal_point, .. } => *focal_point,
+        }
+    }
+
+    pub fn is_animation(&self) -> bool {
+        matches!(self, ZoomProgress::Animation(_))
+    }
+
+    pub fn is_gesture(&self) -> bool {
+        matches!(self, ZoomProgress::Gesture(_))
+    }
+
+    pub fn is_done(&self) -> bool {
+        match self {
+            ZoomProgress::Animation(anim) => anim.level_anim.is_done(),
+            ZoomProgress::Gesture(_) => false,
+            ZoomProgress::Static { .. } => true,
+        }
+    }
+}
+
 impl<W: LayoutElement> Layout<W> {
     pub fn new(clock: Clock, config: &Config) -> Self {
         Self::with_options_and_workspaces(clock, config, Options::from_config(config))
@@ -677,6 +806,10 @@ impl<W: LayoutElement> Layout<W> {
             overview_progress: None,
             options: Rc::new(options),
         }
+    }
+
+    pub fn clock(&self) -> &Clock {
+        &self.clock
     }
 
     fn with_options_and_workspaces(clock: Clock, config: &Config, options: Options) -> Self {
@@ -2686,6 +2819,22 @@ impl<W: LayoutElement> Layout<W> {
                 for mon in monitors {
                     mon.set_overview_progress(self.overview_progress.as_ref());
                     mon.advance_animations();
+
+                    if let Some(zoom_state_mutex) =
+                        mon.output.user_data().get::<Mutex<OutputZoomState>>()
+                    {
+                        let mut zoom_state = zoom_state_mutex.lock().unwrap();
+
+                        if let Some(progress) = &zoom_state.progress {
+                            if progress.is_done() {
+                                let final_level = progress.level();
+                                let final_focal = progress.focal_point();
+                                zoom_state.base_level = final_level;
+                                zoom_state.base_focal = final_focal;
+                                zoom_state.progress = None;
+                            }
+                        }
+                    }
                 }
             }
             MonitorSet::NoOutputs { workspaces, .. } => {
@@ -2732,6 +2881,17 @@ impl<W: LayoutElement> Layout<W> {
 
             if mon.are_animations_ongoing() {
                 return true;
+            }
+
+            if let Some(zoom_state_mutex) = mon.output.user_data().get::<Mutex<OutputZoomState>>() {
+                let zoom_state = zoom_state_mutex.lock().unwrap();
+                if zoom_state
+                    .progress
+                    .as_ref()
+                    .is_some_and(|p| p.is_animation())
+                {
+                    return true;
+                }
             }
         }
 
@@ -3747,6 +3907,151 @@ impl<W: LayoutElement> Layout<W> {
         )));
 
         self.set_monitors_overview_state();
+
+        true
+    }
+
+    pub fn zoom_gesture_begin(&mut self, output: &Output) {
+        let Some(zoom_state) = output.user_data().get::<Mutex<OutputZoomState>>() else {
+            return;
+        };
+        let Ok(mut state) = zoom_state.lock() else {
+            return;
+        };
+
+        let current_level = state
+            .progress
+            .as_ref()
+            .map_or(state.base_level, |p| p.level());
+        let current_focal = state
+            .progress
+            .as_ref()
+            .map_or(state.base_focal, |p| p.focal_point());
+
+        let gesture = ZoomGesture {
+            tracker: SwipeTracker::new(),
+            start_level: current_level,
+            start_focal: current_focal,
+            current_level,
+            current_focal,
+            gesture_type: ZoomGestureType::Pinch { scale_delta: 0.0 },
+            last_log_scale: f64::NAN,
+        };
+        state.progress = Some(ZoomProgress::Gesture(gesture));
+    }
+
+    pub fn zoom_gesture_update(
+        &mut self,
+        output: &Output,
+        scale: f64,
+        sensitivity: f64,
+        timestamp: Duration,
+    ) -> Option<bool> {
+        let Some(zoom_state) = output.user_data().get::<Mutex<OutputZoomState>>() else {
+            return None;
+        };
+        let Ok(mut state) = zoom_state.lock() else {
+            return None;
+        };
+
+        let Some(ZoomProgress::Gesture(gesture)) = &mut state.progress else {
+            return None;
+        };
+
+        let current_log_scale = scale.ln();
+        let log_delta = if gesture.last_log_scale.is_nan() {
+            // First update: just capture the scale, no delta
+            gesture.last_log_scale = current_log_scale;
+            0.0
+        } else {
+            let delta = (current_log_scale - gesture.last_log_scale) * sensitivity;
+            gesture.last_log_scale = current_log_scale;
+            delta
+        };
+
+        gesture.tracker.push(log_delta, timestamp);
+
+        let log_pos = gesture.tracker.pos();
+        let raw_level = log_pos_to_zoom_level(gesture.start_level, log_pos);
+        let new_level = clamp_zoom_level_with_rubber_band(raw_level, 1.0, 10.0);
+
+        if (gesture.current_level - new_level).abs() < 0.0001 {
+            return Some(false);
+        }
+
+        gesture.current_level = new_level;
+
+        Some(true)
+    }
+
+    pub fn zoom_gesture_end(&mut self, output: &Output, cancelled: bool) -> bool {
+        let Some(zoom_state) = output.user_data().get::<Mutex<OutputZoomState>>() else {
+            return false;
+        };
+        let Ok(mut state) = zoom_state.lock() else {
+            return false;
+        };
+
+        let Some(ZoomProgress::Gesture(mut gesture)) = state.progress.take() else {
+            return false;
+        };
+
+        if cancelled {
+            state.progress = Some(ZoomProgress::Animation(ZoomAnimation {
+                level_anim: Animation::new(
+                    self.clock.clone(),
+                    gesture.current_level,
+                    gesture.start_level,
+                    0.0,
+                    self.options.animations.zoom_level_change.0,
+                ),
+                focal_anim: None,
+                target_level: gesture.start_level,
+                target_focal: gesture.start_focal,
+                start_focal: gesture.current_focal,
+            }));
+            return true;
+        }
+
+        let now = self.clock.now_unadjusted();
+        gesture.tracker.push(0., now);
+
+        let mut velocity = gesture.tracker.velocity();
+        let current_log_pos = gesture.tracker.pos();
+        let projected_log_pos = gesture.tracker.projected_end_pos();
+
+        let raw_target = log_pos_to_zoom_level(gesture.start_level, projected_log_pos);
+        let mut target_level = raw_target.clamp(1.0, 10.0);
+
+        if (target_level - 1.0).abs() < 0.05 {
+            target_level = 1.0;
+        }
+
+        let current_raw = log_pos_to_zoom_level(gesture.start_level, current_log_pos);
+        velocity *= ZOOM_GESTURE_RUBBER_BAND.clamp_derivative(
+            1.0_f64.ln(),
+            10.0_f64.ln(),
+            current_raw.ln(),
+        );
+
+        let level_velocity = gesture.current_level * velocity;
+
+        state.base_level = target_level;
+        state.base_focal = gesture.current_focal;
+
+        state.progress = Some(ZoomProgress::Animation(ZoomAnimation {
+            level_anim: Animation::new(
+                self.clock.clone(),
+                gesture.current_level,
+                target_level,
+                level_velocity,
+                self.options.animations.zoom_level_change.0,
+            ),
+            focal_anim: None,
+            target_level,
+            target_focal: gesture.current_focal,
+            start_focal: gesture.current_focal,
+        }));
 
         true
     }

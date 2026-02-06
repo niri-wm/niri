@@ -33,6 +33,7 @@ pub enum ZoomIncrementType {
 pub struct Zoom {
     pub movement_mode: ZoomMovementMode,
     pub increment_type: ZoomIncrementType,
+    pub pinch_sensitivity: f64,
 }
 
 impl Default for Zoom {
@@ -40,6 +41,7 @@ impl Default for Zoom {
         Self {
             movement_mode: ZoomMovementMode::CursorFollow,
             increment_type: ZoomIncrementType::Linear,
+            pinch_sensitivity: 1.0,
         }
     }
 }
@@ -50,11 +52,18 @@ pub struct ZoomPart {
     pub movement_mode: Option<ZoomMovementMode>,
     #[knuffel(child, unwrap(argument))]
     pub increment_type: Option<ZoomIncrementType>,
+    #[knuffel(child, unwrap(argument))]
+    pub pinch_sensitivity: Option<f64>,
 }
 
 impl MergeWith<ZoomPart> for Zoom {
     fn merge_with(&mut self, part: &ZoomPart) {
-        merge_clone!((self, part), movement_mode, increment_type);
+        merge_clone!(
+            (self, part),
+            movement_mode,
+            increment_type,
+            pinch_sensitivity
+        );
     }
 }
 

@@ -45,10 +45,13 @@ use touch_overview_grab::TouchOverviewGrab;
 use self::move_grab::MoveGrab;
 use self::resize_grab::ResizeGrab;
 use self::spatial_movement_grab::SpatialMovementGrab;
+use crate::animation::Animation;
 #[cfg(feature = "dbus")]
 use crate::dbus::freedesktop_a11y::KbMonBlock;
 use crate::layout::scrolling::ScrollDirection;
-use crate::layout::{ActivateWindow, LayoutElement as _, OutputZoomState};
+use crate::layout::{
+    ActivateWindow, LayoutElement as _, OutputZoomState, ZoomAnimation, ZoomProgress,
+};
 use crate::niri::{CastTarget, PointerVisibility, State};
 use crate::protocols::virtual_keyboard::VirtualKeyboard;
 use crate::ui::mru::{WindowMru, WindowMruUi};
@@ -2423,10 +2426,8 @@ impl State {
                         let factor_str = level.trim();
                         let is_relative =
                             factor_str.starts_with('+') || factor_str.starts_with('-');
-                        match factor_str.parse::<f64>() {
-                            Ok(f) if !is_relative => {
-                                zoom_state.base_level = f.max(1.0);
-                            }
+                        let target_level = match factor_str.parse::<f64>() {
+                            Ok(f) if !is_relative => f.max(1.0),
                             Ok(delta) => {
                                 let increment_type = &self.niri.config.borrow().zoom.increment_type;
                                 let new_level = match increment_type {
@@ -2435,10 +2436,37 @@ impl State {
                                         (zoom_state.base_level.ln() + delta).exp()
                                     }
                                 };
-                                zoom_state.base_level = new_level.clamp(1.0, 100.0);
+                                new_level.clamp(1.0, 100.0)
                             }
-                            Err(_) => {}
+                            Err(_) => return,
+                        };
+
+                        let current_level = zoom_state
+                            .progress
+                            .as_ref()
+                            .map_or(zoom_state.base_level, |p| p.level());
+
+                        if (target_level - current_level).abs() < 0.001 {
+                            return;
                         }
+
+                        let anim = Animation::new(
+                            self.niri.layout.clock().clone(),
+                            current_level,
+                            target_level,
+                            0.0,
+                            self.niri.config.borrow().animations.zoom_level_change.0,
+                        );
+
+                        zoom_state.progress = Some(ZoomProgress::Animation(ZoomAnimation {
+                            level_anim: anim,
+                            focal_anim: None,
+                            target_level,
+                            target_focal: zoom_state.base_focal,
+                            start_focal: zoom_state.base_focal,
+                        }));
+
+                        zoom_state.base_level = target_level;
                     }
                     let cursor_pos = self.niri.tablet_cursor_location.unwrap_or_else(|| {
                         self.niri.seat.get_pointer().unwrap().current_location()
@@ -2458,6 +2486,12 @@ impl State {
                         .get::<Mutex<OutputZoomState>>()
                         .and_then(|m| m.lock().ok())
                     {
+                        let current_focal = zoom_state
+                            .progress
+                            .as_ref()
+                            .map_or(zoom_state.base_focal, |p| p.focal_point());
+
+                        zoom_state.base_focal = current_focal;
                         zoom_state.locked = !zoom_state.locked;
                     }
                 }
@@ -2487,7 +2521,13 @@ impl State {
                 .user_data()
                 .get::<Mutex<OutputZoomState>>()
                 .and_then(|m| m.lock().ok())
-                .map(|z| if z.base_level > 1.0 { 1.0 / z.base_level } else { 1.0 })
+                .map(|z| {
+                    if z.base_level > 1.0 {
+                        1.0 / z.base_level
+                    } else {
+                        1.0
+                    }
+                })
                 .unwrap_or(1.0)
         } else {
             1.0
@@ -4092,6 +4132,18 @@ impl State {
             pointer.frame(self);
         }
 
+        if event.fingers() == 2 {
+            if let Some(output) = self.niri.output_under_cursor() {
+                // Always intercept 2-finger pinch for zoom control when zoom state exists.
+                // This allows pinch-to-zoom from unzoomed state (base_level == 1.0).
+                let has_zoom_state = output.user_data().get::<Mutex<OutputZoomState>>().is_some();
+
+                if has_zoom_state {
+                    self.niri.layout.zoom_gesture_begin(&output);
+                    return;
+                }
+            }
+        }
         pointer.gesture_pinch_begin(
             self,
             &GesturePinchBeginEvent {
@@ -4107,6 +4159,29 @@ impl State {
 
         if self.update_pointer_contents() {
             pointer.frame(self);
+        }
+
+        if let Some(output) = self.niri.output_under_cursor() {
+            let in_zoom_gesture = output
+                .user_data()
+                .get::<Mutex<OutputZoomState>>()
+                .and_then(|m| m.lock().ok())
+                .is_some_and(|state| matches!(&state.progress, Some(ZoomProgress::Gesture(_))));
+
+            if in_zoom_gesture {
+                let sensitivity = self.niri.config.borrow().zoom.pinch_sensitivity;
+                let timestamp = Duration::from_millis(event.time_msec() as u64);
+                let scale = event.scale();
+
+                let _ =
+                    self.niri
+                        .layout
+                        .zoom_gesture_update(&output, scale, sensitivity, timestamp);
+
+                // Always redraw during gesture for smooth animation
+                self.niri.queue_redraw(&output);
+                return;
+            }
         }
 
         pointer.gesture_pinch_update(
@@ -4126,6 +4201,22 @@ impl State {
 
         if self.update_pointer_contents() {
             pointer.frame(self);
+        }
+
+        if let Some(output) = self.niri.output_under_cursor() {
+            let in_zoom_gesture = output
+                .user_data()
+                .get::<Mutex<OutputZoomState>>()
+                .and_then(|m| m.lock().ok())
+                .is_some_and(|state| matches!(&state.progress, Some(ZoomProgress::Gesture(_))));
+
+            if in_zoom_gesture {
+                let cancelled = event.cancelled();
+                if self.niri.layout.zoom_gesture_end(&output, cancelled) {
+                    self.niri.queue_redraw(&output);
+                }
+                return;
+            }
         }
 
         pointer.gesture_pinch_end(

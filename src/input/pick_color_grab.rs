@@ -42,7 +42,6 @@ impl PickColorGrab {
         let (output, pos_within_output) = data.niri.output_under(location)?;
         let output = output.clone();
 
-        // When zoom is active, the cursor may be rendered at a different position than
         // handle.current_location() reports (due to clamping in OnEdge mode or other adjustments).
         // Use cursor_logical_pos from zoom state if available, as that's where the cursor
         // is actually rendered.
