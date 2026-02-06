@@ -528,6 +528,7 @@ fn make_ipc_window(
         is_urgent: mapped.is_urgent(),
         layout,
         focus_timestamp: mapped.get_focus_timestamp().map(Timestamp::from),
+        labels: mapped.labels().cloned(),
     })
 }
 
