@@ -16,7 +16,7 @@ use smithay::utils::{Logical, Physical, Point, Scale, Size, Transform};
 
 use crate::layout::OutputZoomState;
 use crate::niri::State;
-use crate::render_helpers::{render_and_download, RenderTarget};
+use crate::render_helpers::render_and_download;
 
 pub struct PickColorGrab {
     start_data: PointerGrabStartData<State>,
@@ -70,16 +70,7 @@ impl PickColorGrab {
                 let size = Size::<i32, Physical>::from((1, 1));
 
                 // Use un-zoomed elements and sample at logical position.
-                // This works because the cursor at logical position L is visually on top of
-                // content at logical position L (zoom transforms both the same way).
-                let mut elements = Vec::new();
-                data.niri.render_inner(
-                    renderer,
-                    &output,
-                    false,
-                    RenderTarget::Output,
-                    &mut |elem| elements.push(elem),
-                );
+                let elements = data.niri.render_for_color_pick(renderer, &output);
 
                 let mapping = match render_and_download(
                     renderer,
