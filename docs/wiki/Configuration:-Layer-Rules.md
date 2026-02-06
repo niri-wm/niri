@@ -18,6 +18,7 @@ layer-rule {
 
     // Properties that apply continuously.
     opacity 0.5
+    saturation 0.5
     block-out-from "screencast"
     // block-out-from "screen-capture"
 
@@ -143,6 +144,22 @@ layer-rule {
     match namespace="^launcher$"
 
     opacity 0.95
+}
+```
+
+#### `saturation`
+
+Set the saturation of the surface.
+`0.0` is fully desaturated (grayscale), `1.0` is the original color.
+
+Like opacity, saturation is applied to every child of the layer-shell surface individually.
+
+```kdl
+// Make waybar grayscale.
+layer-rule {
+    match namespace="waybar"
+
+    saturation 0.0
 }
 ```
 

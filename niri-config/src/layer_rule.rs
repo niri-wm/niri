@@ -12,6 +12,8 @@ pub struct LayerRule {
     #[knuffel(child, unwrap(argument))]
     pub opacity: Option<f32>,
     #[knuffel(child, unwrap(argument))]
+    pub saturation: Option<f32>,
+    #[knuffel(child, unwrap(argument))]
     pub block_out_from: Option<BlockOutFrom>,
     #[knuffel(child, default)]
     pub shadow: ShadowRule,

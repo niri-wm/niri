@@ -13,6 +13,7 @@ use crate::layout::shadow::Shadow;
 use crate::niri_render_elements;
 use crate::render_helpers::background_effect::BackgroundEffectElement;
 use crate::render_helpers::renderer::NiriRenderer;
+use crate::render_helpers::saturated_surface::SaturatedSurfaceRenderElement;
 use crate::render_helpers::shadow::ShadowRenderElement;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
 use crate::render_helpers::surface::push_elements_from_surface_tree;
@@ -58,6 +59,7 @@ pub struct MappedLayer {
 niri_render_elements! {
     LayerSurfaceRenderElement<R> => {
         Wayland = WaylandSurfaceRenderElement<R>,
+        SaturatedSurface = SaturatedSurfaceRenderElement<R>,
         SolidColor = SolidColorRenderElement,
         Shadow = ShadowRenderElement,
         BackgroundEffect = BackgroundEffectElement,
@@ -194,6 +196,7 @@ impl MappedLayer {
     ) {
         let scale = Scale::from(self.scale);
         let alpha = self.rules.opacity.unwrap_or(1.).clamp(0., 1.);
+        let saturation = self.rules.saturation.unwrap_or(1.).clamp(0., 1.);
 
         let bob_offset = self.bob_offset();
         let location = location + bob_offset;
@@ -218,6 +221,7 @@ impl MappedLayer {
             // Layer surfaces don't have extra geometry like windows.
             let buf_pos = location;
 
+            let sat_shader = SaturatedSurfaceRenderElement::shader(ctx.renderer).cloned();
             push_elements_from_surface_tree(
                 ctx.renderer,
                 surface,
@@ -225,7 +229,17 @@ impl MappedLayer {
                 scale,
                 alpha,
                 Kind::ScanoutCandidate,
-                &mut |elem| push(elem.into()),
+                &mut |elem| {
+                    if saturation < 1.0 {
+                        if let Some(shader) = sat_shader.clone() {
+                            push(
+                                SaturatedSurfaceRenderElement::new(elem, shader, saturation).into(),
+                            );
+                            return;
+                        }
+                    }
+                    push(elem.into());
+                },
             );
         }
 
@@ -269,11 +283,13 @@ impl MappedLayer {
 
         let scale = Scale::from(self.scale);
         let alpha = self.rules.opacity.unwrap_or(1.).clamp(0., 1.);
+        let saturation = self.rules.saturation.unwrap_or(1.).clamp(0., 1.);
 
         let bob_offset = self.bob_offset();
         let location = location + bob_offset;
         let xray_pos = xray_pos.offset(bob_offset);
 
+        let sat_shader = SaturatedSurfaceRenderElement::shader(ctx.renderer).cloned();
         let surface = self.surface.wl_surface();
         for (popup, offset) in PopupManager::popups_for_surface(surface) {
             let popup_rules = match popup {
@@ -294,7 +310,17 @@ impl MappedLayer {
                 scale,
                 alpha,
                 Kind::ScanoutCandidate,
-                &mut |elem| push(elem.into()),
+                &mut |elem| {
+                    if saturation < 1.0 {
+                        if let Some(shader) = sat_shader.clone() {
+                            push(
+                                SaturatedSurfaceRenderElement::new(elem, shader, saturation).into(),
+                            );
+                            return;
+                        }
+                    }
+                    push(elem.into());
+                },
             );
 
             let geometry = Rectangle::new(location + offset.to_f64(), popup_geo.size.to_f64());

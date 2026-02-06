@@ -52,6 +52,7 @@ window-rule {
     // Properties that apply continuously.
     draw-border-with-background false
     opacity 0.5
+    saturation 0.5
     block-out-from "screencast"
     // block-out-from "screen-capture"
     variable-refresh-rate true
@@ -614,6 +615,22 @@ window-rule {
     match is-active=false
 
     opacity 0.95
+}
+```
+
+#### `saturation`
+
+Set the saturation of the window.
+`0.0` is fully desaturated (grayscale), `1.0` is the original color.
+
+Like opacity, saturation is applied to every surface of the window individually, so subsurfaces and pop-up menus are desaturated independently.
+
+```kdl
+// Make inactive windows grayscale.
+window-rule {
+    match is-active=false
+
+    saturation 0.0
 }
 ```
 

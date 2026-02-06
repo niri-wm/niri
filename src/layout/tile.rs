@@ -25,6 +25,7 @@ use crate::render_helpers::damage::ExtraDamage;
 use crate::render_helpers::offscreen::{OffscreenBuffer, OffscreenRenderElement};
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::resize::ResizeRenderElement;
+use crate::render_helpers::saturated_surface::SaturatedSurfaceRenderElement;
 use crate::render_helpers::shadow::ShadowRenderElement;
 use crate::render_helpers::snapshot::RenderSnapshot;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
@@ -130,6 +131,7 @@ niri_render_elements! {
         Border = BorderRenderElement,
         Shadow = ShadowRenderElement,
         ClippedSurface = ClippedSurfaceRenderElement<R>,
+        SaturatedSurface = SaturatedSurfaceRenderElement<R>,
         Offscreen = OffscreenRenderElement,
         ExtraDamage = ExtraDamage,
         BackgroundEffect = BackgroundEffectElement,
@@ -1045,6 +1047,13 @@ impl<W: LayoutElement> Tile<W> {
             alpha * (1. - p) + 1. * p
         };
 
+        let win_saturation = {
+            let sat = self.window.rules().saturation.unwrap_or(1.).clamp(0., 1.);
+            // Interpolate towards saturation = 1. at fullscreen.
+            let p = fullscreen_progress as f32;
+            sat * (1. - p) + 1. * p
+        };
+
         // This is here rather than in render_offset() because render_offset() is currently assumed
         // by the code to be temporary. So, for example, interactive move will try to "grab" the
         // tile at its current render offset and reset the render offset to zero by cancelling the
@@ -1075,13 +1084,25 @@ impl<W: LayoutElement> Tile<W> {
             .scaled_by(1. - expanded_progress as f32);
 
         // Popups go on top, whether it's resize or not.
+        let sat_shader = SaturatedSurfaceRenderElement::shader(ctx.renderer).cloned();
         self.window.render_popups(
             ctx.r(),
             window_render_loc,
             scale,
             win_alpha,
             xray_pos,
-            &mut |elem| push(elem.into()),
+            &mut |elem| match elem {
+                LayoutElementRenderElement::Wayland(elem) if win_saturation < 1.0 => {
+                    if let Some(shader) = sat_shader.clone() {
+                        push(
+                            SaturatedSurfaceRenderElement::new(elem, shader, win_saturation).into(),
+                        );
+                    } else {
+                        push(LayoutElementRenderElement::Wayland(elem).into());
+                    }
+                }
+                other => push(other.into()),
+            },
         );
 
         // If we're resizing, try to render a shader, or a fallback.
@@ -1170,6 +1191,7 @@ impl<W: LayoutElement> Tile<W> {
             let radius = radius.fit_to(window_size.w as f32, window_size.h as f32);
 
             let clip_shader = ClippedSurfaceRenderElement::shader(ctx.renderer).cloned();
+            let sat_shader2 = SaturatedSurfaceRenderElement::shader(ctx.renderer).cloned();
             let clip = |elem| match elem {
                 LayoutElementRenderElement::Wayland(elem) => {
                     // If we should clip to geometry, render a clipped window.
@@ -1182,9 +1204,22 @@ impl<W: LayoutElement> Tile<W> {
                                     geo,
                                     shader.clone(),
                                     radius,
+                                    win_saturation,
                                 )
                                 .into();
                             }
+                        }
+                    }
+
+                    // If saturation is reduced, wrap in a saturated surface element.
+                    if win_saturation < 1.0 {
+                        if let Some(shader) = sat_shader2.clone() {
+                            return SaturatedSurfaceRenderElement::new(
+                                elem,
+                                shader,
+                                win_saturation,
+                            )
+                            .into();
                         }
                     }
 
