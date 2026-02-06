@@ -138,8 +138,8 @@ use crate::layer::MappedLayer;
 use crate::layout::tile::TileRenderElement;
 use crate::layout::workspace::{Workspace, WorkspaceId};
 use crate::layout::{
-    HitType, Layout, LayoutElement as _, LayoutElementRenderElement, MonitorRenderElement,
-    OutputZoomState, ZoomAnimation, ZoomProgress, compute_focal_for_cursor,
+    compute_focal_for_cursor, HitType, Layout, LayoutElement as _, LayoutElementRenderElement,
+    MonitorRenderElement, OutputZoomState, ZoomAnimation, ZoomProgress,
 };
 use crate::niri_render_elements;
 use crate::protocols::ext_workspace::{self, ExtWorkspaceManagerState};
@@ -3054,9 +3054,9 @@ impl Niri {
             return false;
         }
 
-        let cursor_pos_global = self.tablet_cursor_location.unwrap_or_else(|| {
-            self.seat.get_pointer().unwrap().current_location()
-        });
+        let cursor_pos_global = self
+            .tablet_cursor_location
+            .unwrap_or_else(|| self.seat.get_pointer().unwrap().current_location());
         let output_geometry = self
             .global_space
             .output_geometry(output)
@@ -3079,30 +3079,28 @@ impl Niri {
             .as_ref()
             .map_or(zoom_state.base_focal, |p| p.focal_point());
 
-        let focal_anim =
-            if (current_focal.x - target_focal.x).abs() > 0.5
-                || (current_focal.y - target_focal.y).abs() > 0.5
-            {
-                Some(Animation::new(
-                    clock.clone(),
-                    0.0, // lerp 0..1
-                    1.0,
-                    0.0,
-                    anim_config.clone(),
-                ))
-            } else {
-                None
-            };
+        let focal_anim = if (current_focal.x - target_focal.x).abs() > 0.5
+            || (current_focal.y - target_focal.y).abs() > 0.5
+        {
+            Some(Animation::new(
+                clock.clone(),
+                0.0, // lerp 0..1
+                1.0,
+                0.0,
+                anim_config.clone(),
+            ))
+        } else {
+            None
+        };
 
-        let level_anim = Animation::new(
-            clock.clone(),
-            current_level,
-            target_level,
-            0.0,
-            anim_config,
-        );
+        let level_anim =
+            Animation::new(clock.clone(), current_level, target_level, 0.0, anim_config);
 
-        let anim_cursor = if zoom_state.locked { None } else { cursor_local };
+        let anim_cursor = if zoom_state.locked {
+            None
+        } else {
+            cursor_local
+        };
         let anim_output_size = if zoom_state.locked { None } else { output_size };
         let anim_mode = if zoom_state.locked {
             None
@@ -3182,17 +3180,15 @@ impl Niri {
                 (Some(focal), cursor_position)
             }
 
-            ZoomMovementMode::OnEdge => {
-                self.compute_on_edge_focal(
-                    cursor_position,
-                    new_pos_global,
-                    old_pos_global,
-                    output,
-                    output_geometry,
-                    focal_point,
-                    zoom_factor,
-                )
-            }
+            ZoomMovementMode::OnEdge => self.compute_on_edge_focal(
+                cursor_position,
+                new_pos_global,
+                old_pos_global,
+                output,
+                output_geometry,
+                focal_point,
+                zoom_factor,
+            ),
         };
 
         if let Some(focal) = new_focal {
@@ -3234,8 +3230,7 @@ impl Niri {
             geo
         };
 
-        let jump_threshold =
-            (16.0 * output.current_scale().fractional_scale()) / zoom_factor;
+        let jump_threshold = (16.0 * output.current_scale().fractional_scale()) / zoom_factor;
         let jump_detect_size: Size<f64, Logical> = (jump_threshold, jump_threshold).into();
         let original_rect = Rectangle::new(
             old_pos - jump_detect_size.downscale(2.0).to_point(),

@@ -1618,6 +1618,42 @@ mod tests {
                         ),
                     },
                 ),
+                zoom_level_change: ZoomLevelChangeAnim(
+                    Animation {
+                        off: false,
+                        kind: Spring(
+                            SpringParams {
+                                damping_ratio: 1.0,
+                                stiffness: 1200,
+                                epsilon: 0.0001,
+                            },
+                        ),
+                    },
+                ),
+                zoom_focal_pan: ZoomFocalPanAnim(
+                    Animation {
+                        off: false,
+                        kind: Spring(
+                            SpringParams {
+                                damping_ratio: 1.0,
+                                stiffness: 800,
+                                epsilon: 0.0001,
+                            },
+                        ),
+                    },
+                ),
+                zoom_cursor_follow: ZoomCursorFollowAnim(
+                    Animation {
+                        off: false,
+                        kind: Spring(
+                            SpringParams {
+                                damping_ratio: 1.0,
+                                stiffness: 1200,
+                                epsilon: 0.0001,
+                            },
+                        ),
+                    },
+                ),
             },
             gestures: Gestures {
                 dnd_edge_view_scroll: DndEdgeViewScroll {
@@ -2329,6 +2365,8 @@ mod tests {
             zoom: Zoom {
                 movement_mode: CursorFollow,
                 increment_type: Linear,
+                pinch_sensitivity: 1.0,
+                max_zoom: 10.0,
             },
         }
         "#);

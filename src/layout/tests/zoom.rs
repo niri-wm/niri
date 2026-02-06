@@ -1,10 +1,12 @@
 //! Tests for zoom animation state machine.
 
-use crate::animation::{Animation, Clock};
-use crate::layout::{OutputZoomState, ZoomAnimation, ZoomProgress};
+use std::time::Duration;
+
 use niri_config::animations::{Kind, SpringParams};
 use smithay::utils::Point;
-use std::time::Duration;
+
+use crate::animation::{Animation, Clock};
+use crate::layout::{OutputZoomState, ZoomAnimation, ZoomProgress};
 
 fn test_animation_config() -> niri_config::Animation {
     niri_config::Animation {

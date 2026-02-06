@@ -1348,9 +1348,9 @@ impl Tty {
             .insert_if_missing(|| TtyOutputState { node, crtc });
         output.user_data().insert_if_missing(|| output_name.clone());
 
-        output.user_data().insert_if_missing(|| {
-            Mutex::new(OutputZoomState::new_for_output(&output))
-        });
+        output
+            .user_data()
+            .insert_if_missing(|| Mutex::new(OutputZoomState::new_for_output(&output)));
 
         if let Some(x) = orientation {
             output.user_data().insert_if_missing(|| PanelOrientation(x));
