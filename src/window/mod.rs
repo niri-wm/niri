@@ -441,5 +441,33 @@ fn window_matches(window: WindowRef, role: &XdgToplevelSurfaceRoleAttributes, m:
         }
     }
 
+    if let Some(window_label_re) = &m.window_label {
+        let matching_entry_value = window
+            .labels()
+            .and_then(|ls| ls.iter().find(|(k, _)| window_label_re.0.is_match(k)))
+            .map(|(_, v)| v.as_ref());
+
+        if let Some(value) = matching_entry_value {
+            // there is a label with the matching key, let's look at the value, if needed
+            if let Some(value_re) = &m.with_value {
+                match value {
+                    Some(val) => {
+                        if !value_re.0.is_match(val) {
+                            return false;
+                        }
+                    }
+                    None => return false,
+                }
+            } else if let Some(true) = &m.with_no_value {
+                if value.is_some() {
+                    return false;
+                }
+            }
+        } else {
+            // there was no label with a matching key
+            return false;
+        }
+    }
+
     true
 }
