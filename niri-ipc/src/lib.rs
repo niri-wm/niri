@@ -119,6 +119,11 @@ pub enum Request {
     OverviewState,
     /// Request information about screencasts.
     Casts,
+    /// Request window labels
+    WindowLabels {
+        /// Window id
+        id: u64,
+    },
 }
 
 /// Reply from niri to client.
@@ -165,6 +170,8 @@ pub enum Response {
     OverviewState(Overview),
     /// Information about screencasts.
     Casts(Vec<Cast>),
+    /// Information about the window labels
+    WindowLabels(Option<HashMap<String, Option<String>>>),
 }
 
 /// Overview information.
