@@ -49,6 +49,7 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
         Msg::RequestError => Request::ReturnError,
         Msg::OverviewState => Request::OverviewState,
         Msg::Casts => Request::Casts,
+        Msg::WindowLabels { id } => Request::WindowLabels { id: *id },
     };
 
     let mut socket = Socket::connect().context("error connecting to the niri socket")?;
@@ -547,6 +548,32 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
             casts.sort_by_key(|c| (c.session_id, c.stream_id));
             for cast in casts {
                 print_cast(&cast);
+                println!();
+            }
+        }
+        Msg::WindowLabels { .. } => {
+            let Response::WindowLabels(labels) = response else {
+                bail!("unexpected response: expected WindowLabels, got {response:?}");
+            };
+
+            if json {
+                let labels = serde_json::to_string(&labels).context("error formatting response")?;
+                println!("{labels}");
+                return Ok(());
+            }
+
+            if labels.is_none() {
+                println!("no labels present");
+                return Ok(());
+            }
+
+            let mut labels: Vec<(String, Option<String>)> =
+                labels.map(|mut ls| ls.drain().collect()).unwrap_or(vec![]);
+            labels.sort_by(|a, b| a.0.cmp(&b.0));
+
+            let empty = "<no-value>".to_string();
+            for (k, v) in labels {
+                println!("{}: {}", k, v.as_ref().unwrap_or(&empty));
                 println!();
             }
         }
