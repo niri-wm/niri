@@ -5048,6 +5048,7 @@ impl<W: LayoutElement> Layout<W> {
     ) {
         if self.update_render_elements_time != self.clock.now() {
             error!("clock moved between updating render elements and rendering");
+            return;
         }
 
         let Some(InteractiveMoveState::Moving(move_)) = &self.interactive_move else {

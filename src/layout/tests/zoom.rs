@@ -39,7 +39,7 @@ fn zoom_progress_level_accessor() {
     // Animation just started, should be near 1.0
     let level = anim_progress.level();
     assert!(
-        level >= 1.0 && level < 1.5,
+        (1.0..1.5).contains(&level),
         "level should be near start: {}",
         level
     );
@@ -133,7 +133,7 @@ fn zoom_animation_completion() {
     // Create an animation from 1.0 to 2.0
     let level_anim = Animation::new(clock.clone(), 1.0, 2.0, 0.0, test_animation_config());
 
-    let mut progress = ZoomProgress::Animation(ZoomAnimation {
+    let progress = ZoomProgress::Animation(ZoomAnimation {
         level_anim,
         focal_anim: None,
         target_level: 2.0,
@@ -145,7 +145,7 @@ fn zoom_animation_completion() {
     assert!(!progress.is_done());
     let level = progress.level();
     assert!(
-        level >= 1.0 && level < 1.1,
+        (1.0..1.1).contains(&level),
         "Should be near start: {}",
         level
     );

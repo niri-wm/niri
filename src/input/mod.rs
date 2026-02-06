@@ -4132,7 +4132,8 @@ impl State {
             pointer.frame(self);
         }
 
-        if event.fingers() == 2 {
+        // Only start pinch zoom gesture if session is not locked and exactly 2 fingers are used.
+        if !(self.niri.is_locked()) && event.fingers() == 2 {
             if let Some(output) = self.niri.output_under_cursor() {
                 // Always intercept 2-finger pinch for zoom control when zoom state exists.
                 // This allows pinch-to-zoom from unzoomed state (base_level == 1.0).
@@ -4169,7 +4170,9 @@ impl State {
                 .is_some_and(|state| matches!(&state.progress, Some(ZoomProgress::Gesture(_))));
 
             if in_zoom_gesture {
-                let sensitivity = self.niri.config.borrow().zoom.pinch_sensitivity;
+                let sensitivity = self.niri.config.borrow().zoom.pinch_sensitivity
+                    * output.current_scale().fractional_scale();
+
                 let timestamp = Duration::from_millis(event.time_msec() as u64);
                 let scale = event.scale();
 
