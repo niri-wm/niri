@@ -736,6 +736,16 @@ fn print_window(window: &Window) {
         fmt_rounded(window_offset_in_tile.0),
         fmt_rounded(window_offset_in_tile.1)
     );
+
+    if let Some(labels) = &window.labels {
+        if !labels.is_empty() {
+            let empty = "<no-value>".to_string();
+            println!("  Labels:");
+            for (n, v) in labels {
+                println!("    {}: {}", n, v.as_ref().unwrap_or(&empty));
+            }
+        }
+    }
 }
 
 fn print_cast(cast: &Cast) {
