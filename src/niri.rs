@@ -1563,6 +1563,48 @@ impl State {
             shaders_changed = true;
         }
 
+        // Collect all unique color-filter sources from window and layer rules.
+        {
+            let mut color_filter_sources: Vec<&str> = Vec::new();
+            for rule in &config.window_rules {
+                if let Some(src) = rule.color_filter.as_deref() {
+                    if !color_filter_sources.contains(&src) {
+                        color_filter_sources.push(src);
+                    }
+                }
+            }
+            for rule in &config.layer_rules {
+                if let Some(src) = rule.color_filter.as_deref() {
+                    if !color_filter_sources.contains(&src) {
+                        color_filter_sources.push(src);
+                    }
+                }
+            }
+
+            let mut old_sources: Vec<&str> = Vec::new();
+            for rule in &old_config.window_rules {
+                if let Some(src) = rule.color_filter.as_deref() {
+                    if !old_sources.contains(&src) {
+                        old_sources.push(src);
+                    }
+                }
+            }
+            for rule in &old_config.layer_rules {
+                if let Some(src) = rule.color_filter.as_deref() {
+                    if !old_sources.contains(&src) {
+                        old_sources.push(src);
+                    }
+                }
+            }
+
+            if color_filter_sources != old_sources {
+                self.backend.with_primary_renderer(|renderer| {
+                    shaders::set_color_filter_programs(renderer, &color_filter_sources);
+                });
+                shaders_changed = true;
+            }
+        }
+
         if config.cursor.hide_after_inactive_ms != old_config.cursor.hide_after_inactive_ms {
             cursor_inactivity_timeout_changed = true;
         }

@@ -5,7 +5,7 @@ use niri_config::utils::MergeWith as _;
 use niri_config::{Color, CornerRadius, GradientInterpolation};
 use niri_ipc::WindowLayout;
 use smithay::backend::renderer::element::{Element, Kind};
-use smithay::backend::renderer::gles::GlesRenderer;
+use smithay::backend::renderer::gles::{GlesRenderer, Uniform};
 use smithay::utils::{Logical, Point, Rectangle, Scale, Size};
 
 use super::focus_ring::{FocusRing, FocusRingRenderElement};
@@ -24,7 +24,8 @@ use crate::render_helpers::damage::ExtraDamage;
 use crate::render_helpers::offscreen::{OffscreenBuffer, OffscreenRenderElement};
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::resize::ResizeRenderElement;
-use crate::render_helpers::saturated_surface::SaturatedSurfaceRenderElement;
+use crate::render_helpers::color_filter::ColorFilterRenderElement;
+use crate::render_helpers::shaders::Shaders;
 use crate::render_helpers::shadow::ShadowRenderElement;
 use crate::render_helpers::snapshot::RenderSnapshot;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
@@ -129,7 +130,7 @@ niri_render_elements! {
         Border = BorderRenderElement,
         Shadow = ShadowRenderElement,
         ClippedSurface = ClippedSurfaceRenderElement<R>,
-        SaturatedSurface = SaturatedSurfaceRenderElement<R>,
+        ColorFilter = ColorFilterRenderElement<R>,
         Offscreen = OffscreenRenderElement,
         ExtraDamage = ExtraDamage,
     }
@@ -1067,7 +1068,10 @@ impl<W: LayoutElement> Tile<W> {
             .scaled_by(1. - expanded_progress as f32);
 
         // Popups go on top, whether it's resize or not.
-        let sat_shader = SaturatedSurfaceRenderElement::shader(renderer).cloned();
+        let win_color_filter = rules.color_filter.as_deref().and_then(|src| {
+            Shaders::get(renderer).get_color_filter(src)
+        });
+        let sat_shader = ColorFilterRenderElement::saturation_shader(renderer).cloned();
         self.window.render_popups(
             renderer,
             window_render_loc,
@@ -1075,10 +1079,17 @@ impl<W: LayoutElement> Tile<W> {
             win_alpha,
             target,
             &mut |elem| match elem {
-                LayoutElementRenderElement::Wayland(elem) if win_saturation < 1.0 => {
-                    if let Some(shader) = sat_shader.clone() {
+                LayoutElementRenderElement::Wayland(elem)
+                    if win_color_filter.is_some() || win_saturation < 1.0 =>
+                {
+                    if let Some(shader) = win_color_filter.clone().or_else(|| sat_shader.clone()) {
+                        let uniforms = if win_color_filter.is_some() {
+                            vec![]
+                        } else {
+                            vec![Uniform::new("niri_saturation", win_saturation)]
+                        };
                         push(
-                            SaturatedSurfaceRenderElement::new(elem, shader, win_saturation).into(),
+                            ColorFilterRenderElement::new(elem, shader, uniforms).into(),
                         );
                     } else {
                         push(LayoutElementRenderElement::Wayland(elem).into());
@@ -1175,33 +1186,45 @@ impl<W: LayoutElement> Tile<W> {
             let radius = radius.fit_to(window_size.w as f32, window_size.h as f32);
 
             let clip_shader = ClippedSurfaceRenderElement::shader(renderer).cloned();
-            let sat_shader2 = SaturatedSurfaceRenderElement::shader(renderer).cloned();
+            let win_color_filter2 = win_color_filter.clone();
+            let sat_shader2 = sat_shader.clone();
             let clip = |elem| match elem {
                 LayoutElementRenderElement::Wayland(elem) => {
                     // If we should clip to geometry, render a clipped window.
                     if clip_to_geometry {
                         if let Some(shader) = clip_shader.clone() {
                             if ClippedSurfaceRenderElement::will_clip(&elem, scale, geo, radius) {
+                                // Custom color-filter does not apply through the clipped
+                                // path; use saturation=1.0 when a custom filter is set.
+                                let clip_saturation = if win_color_filter2.is_some() {
+                                    1.0
+                                } else {
+                                    win_saturation
+                                };
                                 return ClippedSurfaceRenderElement::new(
                                     elem,
                                     scale,
                                     geo,
                                     shader.clone(),
                                     radius,
-                                    win_saturation,
+                                    clip_saturation,
                                 )
                                 .into();
                             }
                         }
                     }
 
-                    // If saturation is reduced, wrap in a saturated surface element.
+                    // If a custom color filter is set, use it (replaces saturation).
+                    // Otherwise if saturation is reduced, use the built-in saturation shader.
+                    if let Some(shader) = win_color_filter2.clone() {
+                        return ColorFilterRenderElement::new(elem, shader, vec![]).into();
+                    }
                     if win_saturation < 1.0 {
                         if let Some(shader) = sat_shader2.clone() {
-                            return SaturatedSurfaceRenderElement::new(
+                            return ColorFilterRenderElement::new(
                                 elem,
                                 shader,
-                                win_saturation,
+                                vec![Uniform::new("niri_saturation", win_saturation)],
                             )
                             .into();
                         }

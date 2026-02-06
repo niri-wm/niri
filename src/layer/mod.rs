@@ -15,6 +15,9 @@ pub struct ResolvedLayerRules {
     /// Saturation level for this layer surface (0.0 = grayscale, 1.0 = normal).
     pub saturation: Option<f32>,
 
+    /// Custom color filter GLSL source for this layer surface.
+    pub color_filter: Option<String>,
+
     /// Whether to block out this layer surface from certain render targets.
     pub block_out_from: Option<BlockOutFrom>,
 
@@ -61,6 +64,9 @@ impl ResolvedLayerRules {
             }
             if let Some(x) = rule.saturation {
                 resolved.saturation = Some(x);
+            }
+            if let Some(x) = rule.color_filter.as_deref() {
+                resolved.color_filter = Some(x.to_owned());
             }
             if let Some(x) = rule.block_out_from {
                 resolved.block_out_from = Some(x);

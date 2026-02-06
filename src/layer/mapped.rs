@@ -2,6 +2,7 @@ use niri_config::utils::MergeWith as _;
 use niri_config::{Config, LayerRule};
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::element::Kind;
+use smithay::backend::renderer::gles::Uniform;
 use smithay::desktop::{LayerSurface, PopupManager};
 use smithay::utils::{Logical, Point, Scale, Size};
 use smithay::wayland::shell::wlr_layer::{ExclusiveZone, Layer};
@@ -10,8 +11,9 @@ use super::ResolvedLayerRules;
 use crate::animation::Clock;
 use crate::layout::shadow::Shadow;
 use crate::niri_render_elements;
+use crate::render_helpers::color_filter::ColorFilterRenderElement;
 use crate::render_helpers::renderer::NiriRenderer;
-use crate::render_helpers::saturated_surface::SaturatedSurfaceRenderElement;
+use crate::render_helpers::shaders::Shaders;
 use crate::render_helpers::shadow::ShadowRenderElement;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
 use crate::render_helpers::surface::push_elements_from_surface_tree;
@@ -45,7 +47,7 @@ pub struct MappedLayer {
 niri_render_elements! {
     LayerSurfaceRenderElement<R> => {
         Wayland = WaylandSurfaceRenderElement<R>,
-        SaturatedSurface = SaturatedSurfaceRenderElement<R>,
+        ColorFilter = ColorFilterRenderElement<R>,
         SolidColor = SolidColorRenderElement,
         Shadow = ShadowRenderElement,
     }
@@ -185,7 +187,10 @@ impl MappedLayer {
             // Layer surfaces don't have extra geometry like windows.
             let buf_pos = location;
 
-            let sat_shader = SaturatedSurfaceRenderElement::shader(renderer).cloned();
+            let color_filter_shader = self.rules.color_filter.as_deref().and_then(|src| {
+                Shaders::get(renderer).get_color_filter(src)
+            });
+            let sat_shader = ColorFilterRenderElement::saturation_shader(renderer).cloned();
             let surface = self.surface.wl_surface();
             push_elements_from_surface_tree(
                 renderer,
@@ -195,10 +200,19 @@ impl MappedLayer {
                 alpha,
                 Kind::ScanoutCandidate,
                 &mut |elem| {
+                    if let Some(shader) = color_filter_shader.clone() {
+                        push(ColorFilterRenderElement::new(elem, shader, vec![]).into());
+                        return;
+                    }
                     if saturation < 1.0 {
                         if let Some(shader) = sat_shader.clone() {
                             push(
-                                SaturatedSurfaceRenderElement::new(elem, shader, saturation).into(),
+                                ColorFilterRenderElement::new(
+                                    elem,
+                                    shader,
+                                    vec![Uniform::new("niri_saturation", saturation)],
+                                )
+                                .into(),
                             );
                             return;
                         }
@@ -232,7 +246,10 @@ impl MappedLayer {
         // Layer surfaces don't have extra geometry like windows.
         let buf_pos = location;
 
-        let sat_shader = SaturatedSurfaceRenderElement::shader(renderer).cloned();
+        let color_filter_shader = self.rules.color_filter.as_deref().and_then(|src| {
+            Shaders::get(renderer).get_color_filter(src)
+        });
+        let sat_shader = ColorFilterRenderElement::saturation_shader(renderer).cloned();
         let surface = self.surface.wl_surface();
         for (popup, popup_offset) in PopupManager::popups_for_surface(surface) {
             // Layer surfaces don't have extra geometry like windows.
@@ -246,10 +263,19 @@ impl MappedLayer {
                 alpha,
                 Kind::ScanoutCandidate,
                 &mut |elem| {
+                    if let Some(shader) = color_filter_shader.clone() {
+                        push(ColorFilterRenderElement::new(elem, shader, vec![]).into());
+                        return;
+                    }
                     if saturation < 1.0 {
                         if let Some(shader) = sat_shader.clone() {
                             push(
-                                SaturatedSurfaceRenderElement::new(elem, shader, saturation).into(),
+                                ColorFilterRenderElement::new(
+                                    elem,
+                                    shader,
+                                    vec![Uniform::new("niri_saturation", saturation)],
+                                )
+                                .into(),
                             );
                             return;
                         }

@@ -56,6 +56,8 @@ pub struct WindowRule {
     pub opacity: Option<f32>,
     #[knuffel(child, unwrap(argument))]
     pub saturation: Option<f32>,
+    #[knuffel(child, unwrap(argument))]
+    pub color_filter: Option<String>,
     #[knuffel(child)]
     pub geometry_corner_radius: Option<CornerRadius>,
     #[knuffel(child, unwrap(argument))]

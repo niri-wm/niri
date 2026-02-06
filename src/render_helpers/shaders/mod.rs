@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::collections::HashMap;
 
 use glam::Mat3;
 use smithay::backend::renderer::gles::{
@@ -19,6 +20,7 @@ pub struct Shaders {
     pub custom_resize: RefCell<Option<ShaderProgram>>,
     pub custom_close: RefCell<Option<ShaderProgram>>,
     pub custom_open: RefCell<Option<ShaderProgram>>,
+    pub custom_color_filters: RefCell<HashMap<String, GlesTexProgram>>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -129,6 +131,7 @@ impl Shaders {
             custom_resize: RefCell::new(None),
             custom_close: RefCell::new(None),
             custom_open: RefCell::new(None),
+            custom_color_filters: RefCell::new(HashMap::new()),
         }
     }
 
@@ -164,6 +167,10 @@ impl Shaders {
         program: Option<ShaderProgram>,
     ) -> Option<ShaderProgram> {
         self.custom_open.replace(program)
+    }
+
+    pub fn get_color_filter(&self, src: &str) -> Option<GlesTexProgram> {
+        self.custom_color_filters.borrow().get(src).cloned()
     }
 
     pub fn program(&self, program: ProgramType) -> Option<ShaderProgram> {
@@ -319,6 +326,55 @@ pub fn set_custom_open_program(renderer: &mut GlesRenderer, src: Option<&str>) {
         if let Err(err) = prev.destroy(renderer) {
             warn!("error destroying previous custom open shader: {err:?}");
         }
+    }
+}
+
+fn compile_color_filter_program(
+    renderer: &mut GlesRenderer,
+    src: &str,
+) -> Result<GlesTexProgram, GlesError> {
+    let mut program = include_str!("color_filter_prelude.frag").to_string();
+    program.push_str(src);
+    program.push_str(include_str!("color_filter_epilogue.frag"));
+
+    renderer.compile_custom_texture_shader(&program, &[])
+}
+
+pub fn set_color_filter_programs(renderer: &mut GlesRenderer, sources: &[&str]) {
+    // First, figure out which sources need compilation (not yet in the cache).
+    let to_compile: Vec<String> = {
+        let shaders = Shaders::get(renderer);
+        let filters = shaders.custom_color_filters.borrow();
+        sources
+            .iter()
+            .filter(|src| !filters.contains_key(**src))
+            .map(|src| src.to_string())
+            .collect()
+    };
+
+    // Compile new programs while we have exclusive access to renderer.
+    let mut compiled = Vec::new();
+    for src in &to_compile {
+        match compile_color_filter_program(renderer, src) {
+            Ok(program) => {
+                compiled.push((src.clone(), program));
+            }
+            Err(err) => {
+                warn!("error compiling custom color filter shader: {err:?}");
+            }
+        }
+    }
+
+    // Now update the cache.
+    let shaders = Shaders::get(renderer);
+    let mut filters = shaders.custom_color_filters.borrow_mut();
+
+    // Remove programs whose source is no longer in the config.
+    filters.retain(|src, _| sources.contains(&src.as_str()));
+
+    // Insert newly compiled programs.
+    for (src, program) in compiled {
+        filters.insert(src, program);
     }
 }
 

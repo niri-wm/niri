@@ -102,6 +102,9 @@ pub struct ResolvedWindowRules {
     /// Saturation level for this window (0.0 = grayscale, 1.0 = normal).
     pub saturation: Option<f32>,
 
+    /// Custom color filter GLSL source for this window.
+    pub color_filter: Option<String>,
+
     /// Corner radius to assume this window has.
     pub geometry_corner_radius: Option<CornerRadius>,
 
@@ -280,6 +283,9 @@ impl ResolvedWindowRules {
                 }
                 if let Some(x) = rule.saturation {
                     resolved.saturation = Some(x);
+                }
+                if let Some(x) = rule.color_filter.as_deref() {
+                    resolved.color_filter = Some(x.to_owned());
                 }
                 if let Some(x) = rule.geometry_corner_radius {
                     resolved.geometry_corner_radius = Some(x);

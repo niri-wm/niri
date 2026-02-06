@@ -158,6 +158,17 @@ impl Winit {
         if let Some(src) = config.animations.window_open.custom_shader.as_deref() {
             shaders::set_custom_open_program(renderer, Some(src));
         }
+        {
+            let sources: Vec<&str> = config
+                .window_rules
+                .iter()
+                .filter_map(|r| r.color_filter.as_deref())
+                .chain(config.layer_rules.iter().filter_map(|r| r.color_filter.as_deref()))
+                .collect();
+            if !sources.is_empty() {
+                shaders::set_color_filter_programs(renderer, &sources);
+            }
+        }
         drop(config);
 
         niri.update_shaders();
