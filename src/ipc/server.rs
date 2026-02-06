@@ -471,7 +471,7 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
                             output.name().clone(),
                             niri_ipc::Zoom {
                                 is_locked: zoom.locked,
-                                level: zoom.level,
+                                level: zoom.base_level,
                             },
                         );
                         acc

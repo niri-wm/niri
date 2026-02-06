@@ -3012,7 +3012,7 @@ impl Niri {
             return pos;
         };
 
-        if zoom_state.level <= 1.0 {
+        if zoom_state.base_level <= 1.0 {
             return pos;
         }
 
@@ -3066,8 +3066,8 @@ impl Niri {
             return;
         }
 
-        let zoom_factor = zoom_state.level;
-        let focal_point = zoom_state.focal_point;
+        let zoom_factor = zoom_state.base_level;
+        let focal_point = zoom_state.base_focal;
 
         // Calculate zoomed_geometry in LOCAL coordinates (origin at 0,0)
         let zoomed_geometry_local = {
@@ -3082,7 +3082,7 @@ impl Niri {
 
         match movement {
             ZoomMovementMode::CursorFollow => {
-                zoom_state.focal_point = cursor_position;
+                zoom_state.base_focal = cursor_position;
                 zoom_state.cursor_logical_pos = Some(cursor_position);
             }
             ZoomMovementMode::Centered => {
@@ -3106,7 +3106,7 @@ impl Niri {
                     .y
                     .clamp(0.0, output_geometry.size.h - f64::EPSILON);
 
-                zoom_state.focal_point = new_focal;
+                zoom_state.base_focal = new_focal;
                 zoom_state.cursor_logical_pos = Some(cursor_position);
             }
             ZoomMovementMode::OnEdge => {
@@ -3133,7 +3133,7 @@ impl Niri {
                     new_focal.y = new_focal
                         .y
                         .clamp(0.0, output_geometry.size.h - f64::EPSILON);
-                    zoom_state.focal_point = new_focal;
+                    zoom_state.base_focal = new_focal;
                     zoom_state.cursor_logical_pos = Some(cursor_position);
                     return;
                 };
@@ -3159,7 +3159,7 @@ impl Niri {
                     new_focal.y = new_focal
                         .y
                         .clamp(0.0, output_geometry.size.h - f64::EPSILON);
-                    zoom_state.focal_point = new_focal;
+                    zoom_state.base_focal = new_focal;
                     zoom_state.cursor_logical_pos = Some(cursor_position);
                 } else if !zoomed_geometry_global.contains(new_pos_global) {
                     // Cursor pushed past viewport edge - compute exact focal point
@@ -3197,7 +3197,7 @@ impl Niri {
                     new_focal.y = new_focal
                         .y
                         .clamp(0.0, output_geometry.size.h - f64::EPSILON);
-                    zoom_state.focal_point = new_focal;
+                    zoom_state.base_focal = new_focal;
 
                     // Compute the new viewport with updated focal, then clamp cursor
                     // to stay 1px inside. This matches input clamping behavior and
@@ -3881,7 +3881,7 @@ impl Niri {
             .get::<Mutex<OutputZoomState>>()
             .and_then(|m| m.lock().ok())
         {
-            if zoom_state.level > 1.0 {
+            if zoom_state.base_level > 1.0 {
                 zoom_state.cursor_logical_pos.unwrap_or(pointer_pos)
             } else {
                 pointer_pos
@@ -4302,8 +4302,8 @@ impl Niri {
         let output_scale = Scale::from(output.current_scale().fractional_scale());
         let output_geo = self.global_space.output_geometry(output).unwrap();
         let output_size = output_geo.size.to_physical_precise_round(output_scale);
-        let zoom_factor = zoom_state.level;
-        let zoom_focal_point = zoom_state.focal_point;
+        let zoom_factor = zoom_state.base_level;
+        let zoom_focal_point = zoom_state.base_focal;
         let cursor_logical_pos = zoom_state.cursor_logical_pos;
 
         let scale_with_zoom = self.config.borrow().cursor.scale_with_zoom;
@@ -4450,7 +4450,7 @@ impl Niri {
             .user_data()
             .get::<Mutex<OutputZoomState>>()
             .and_then(|m| m.lock().ok())
-            .filter(|state| state.level > 1.0)
+            .filter(|state| state.base_level > 1.0)
         {
             elements = self.zoom_render_elements(elements, output, &zoom_state);
         }

@@ -51,7 +51,7 @@ impl PickColorGrab {
             .get::<Mutex<OutputZoomState>>()
             .and_then(|m| m.lock().ok())
         {
-            if zoom_state.level > 1.0 {
+            if zoom_state.base_level > 1.0 {
                 zoom_state.cursor_logical_pos.unwrap_or(pos_within_output)
             } else {
                 pos_within_output

@@ -2425,17 +2425,17 @@ impl State {
                             factor_str.starts_with('+') || factor_str.starts_with('-');
                         match factor_str.parse::<f64>() {
                             Ok(f) if !is_relative => {
-                                zoom_state.level = f.max(1.0);
+                                zoom_state.base_level = f.max(1.0);
                             }
                             Ok(delta) => {
                                 let increment_type = &self.niri.config.borrow().zoom.increment_type;
                                 let new_level = match increment_type {
-                                    ZoomIncrementType::Linear => zoom_state.level + delta,
+                                    ZoomIncrementType::Linear => zoom_state.base_level + delta,
                                     ZoomIncrementType::Exponential => {
-                                        (zoom_state.level.ln() + delta).exp()
+                                        (zoom_state.base_level.ln() + delta).exp()
                                     }
                                 };
-                                zoom_state.level = new_level.clamp(1.0, 100.0);
+                                zoom_state.base_level = new_level.clamp(1.0, 100.0);
                             }
                             Err(_) => {}
                         }
@@ -2487,7 +2487,7 @@ impl State {
                 .user_data()
                 .get::<Mutex<OutputZoomState>>()
                 .and_then(|m| m.lock().ok())
-                .map(|z| if z.level > 1.0 { 1.0 / z.level } else { 1.0 })
+                .map(|z| if z.base_level > 1.0 { 1.0 / z.base_level } else { 1.0 })
                 .unwrap_or(1.0)
         } else {
             1.0
@@ -2611,7 +2611,7 @@ impl State {
             Some(output) => {
                 if let Some(zoom_state) = output.user_data().get::<Mutex<OutputZoomState>>() {
                     let zoom_state = zoom_state.lock().unwrap();
-                    let (zoom_factor, zoom_locked) = (zoom_state.level, zoom_state.locked);
+                    let (zoom_factor, zoom_locked) = (zoom_state.base_level, zoom_state.locked);
                     if zoom_locked {
                         let output_geometry = self
                             .niri
@@ -2620,7 +2620,7 @@ impl State {
                             .unwrap()
                             .to_f64();
 
-                        let focal_point = zoom_state.focal_point;
+                        let focal_point = zoom_state.base_focal;
 
                         // Calculate zoomed_geometry in GLOBAL coordinates (for clamping)
                         let zoomed_geometry_global = {
@@ -4207,7 +4207,7 @@ impl State {
         if let Some((output, _)) = self.niri.output_under(pos) {
             if let Some(mutex) = output.user_data().get::<Mutex<OutputZoomState>>() {
                 if let Ok(zoom_state) = mutex.lock() {
-                    let (zoom_factor, zoom_locked) = (zoom_state.level, zoom_state.locked);
+                    let (zoom_factor, zoom_locked) = (zoom_state.base_level, zoom_state.locked);
                     if zoom_locked && zoom_factor > 1.0 {
                         let output_geometry = self
                             .niri
@@ -4215,7 +4215,7 @@ impl State {
                             .output_geometry(output)
                             .unwrap()
                             .to_f64();
-                        let focal_point = zoom_state.focal_point;
+                        let focal_point = zoom_state.base_focal;
 
                         let zoomed_geometry_global = {
                             let focal_point_global = focal_point + output_geometry.loc;

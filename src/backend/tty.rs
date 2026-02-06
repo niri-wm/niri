@@ -1354,9 +1354,9 @@ impl Tty {
             let scale = output.current_scale().fractional_scale();
             let logical_size = mode_size.to_f64().to_logical(scale);
             Mutex::new(OutputZoomState {
-                level: 1.0,
+                base_level: 1.0,
                 // Initialize the focal point to the center of the output in logical coordinates.
-                focal_point: smithay::utils::Point::new(logical_size.w / 2.0, logical_size.h / 2.0),
+                base_focal: smithay::utils::Point::new(logical_size.w / 2.0, logical_size.h / 2.0),
                 locked: false,
                 cursor_logical_pos: None,
             })
@@ -1859,7 +1859,7 @@ impl Tty {
         let zoom_factor = output
             .user_data()
             .get::<Mutex<OutputZoomState>>()
-            .and_then(|state| state.lock().ok().map(|s| s.level))
+            .and_then(|state| state.lock().ok().map(|s| s.base_level))
             .unwrap_or(1.0);
 
         // Apply filter temporarily before rendering
@@ -1889,7 +1889,7 @@ impl Tty {
             let zoom_factor = output
                 .user_data()
                 .get::<Mutex<OutputZoomState>>()
-                .and_then(|z| z.lock().ok().map(|z| z.level))
+                .and_then(|z| z.lock().ok().map(|z| z.base_level))
                 .unwrap_or(1.0);
 
             let primary_scanout_flag = if debug.restrict_primary_scanout_to_matching_format {

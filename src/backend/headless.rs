@@ -96,9 +96,9 @@ impl Headless {
             let scale = output.current_scale().fractional_scale();
             let logical_size = mode_size.to_f64().to_logical(scale);
             Mutex::new(OutputZoomState {
-                level: 1.0,
+                base_level: 1.0,
                 // Initialize the focal point to the center of the output in logical coordinates.
-                focal_point: smithay::utils::Point::new(logical_size.w / 2.0, logical_size.h / 2.0),
+                base_focal: smithay::utils::Point::new(logical_size.w / 2.0, logical_size.h / 2.0),
                 locked: false,
                 cursor_logical_pos: None,
             })
