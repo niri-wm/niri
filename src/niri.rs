@@ -4390,8 +4390,17 @@ impl Niri {
         &self,
         elements: Vec<OutputRenderElements<R>>,
         output: &Output,
-        zoom_state: &OutputZoomState,
     ) -> Vec<OutputRenderElements<R>> {
+        // Apply zoom to the render elements when needed.
+        let zoom_state = match output
+            .user_data()
+            .get::<Mutex<OutputZoomState>>()
+            .and_then(|m| m.lock().ok())
+        {
+            Some(state) => state,
+            None => return elements,
+        };
+
         let output_scale = Scale::from(output.current_scale().fractional_scale());
         let output_geo = self.global_space.output_geometry(output).unwrap();
         let output_size = output_geo.size.to_physical_precise_round(output_scale);
@@ -4541,15 +4550,7 @@ impl Niri {
             elements.push(elem)
         });
 
-        // Apply zoom to the render elements when needed.
-        if let Some(zoom_state) = output
-            .user_data()
-            .get::<Mutex<OutputZoomState>>()
-            .and_then(|m| m.lock().ok())
-            .filter(|state| state.base_level > 1.0 || state.progress.is_some())
-        {
-            elements = self.zoom_render_elements(elements, output, &zoom_state);
-        }
+        elements = self.zoom_render_elements(elements, output);
 
         elements
     }
