@@ -109,8 +109,8 @@ const OVERVIEW_GESTURE_RUBBER_BAND: RubberBand = RubberBand {
 
 /// Zoom rubber-banding constants (matching OVERVIEW_GESTURE_RUBBER_BAND pattern)
 pub const ZOOM_GESTURE_RUBBER_BAND: RubberBand = RubberBand {
-    limit: 0.5,     // Allow 50% "over-pull" beyond min/max zoom bounds
-    stiffness: 0.3, // Spring stiffness for elastic resistance
+    stiffness: 0.5,
+    limit: 0.05,
 };
 
 /// Pinch gesture sensitivity multiplier
@@ -796,7 +796,13 @@ impl OverviewProgress {
 impl ZoomProgress {
     pub fn level(&self) -> f64 {
         match self {
-            ZoomProgress::Animation(anim) => anim.level_anim.value(),
+            ZoomProgress::Animation(anim) => {
+                if anim.level_anim.is_done() {
+                    anim.target_level
+                } else {
+                    anim.level_anim.value()
+                }
+            }
             ZoomProgress::Gesture(gesture) => gesture.current_level,
             ZoomProgress::Static { level, .. } => *level,
         }
@@ -805,6 +811,10 @@ impl ZoomProgress {
     pub fn focal_point(&self) -> Point<f64, Logical> {
         match self {
             ZoomProgress::Animation(anim) => {
+                if anim.level_anim.is_done() {
+                    return anim.target_focal;
+                }
+
                 // When cursor_pos is available, compute the focal dynamically from
                 // the current zoom level so the cursor stays inside the viewport
                 // throughout the entire animation (not just at start/end).
