@@ -77,6 +77,9 @@ const SUPPORTED_COLOR_FORMATS: [Fourcc; 4] = [
     Fourcc::Abgr8888,
 ];
 
+const MAX_RESCAN_RETRIES: u8 = 3;
+const RESCAN_DELAY: Duration = Duration::from_secs(2);
+
 pub struct Tty {
     config: Rc<RefCell<Config>>,
     session: LibSeatSession,
@@ -147,6 +150,12 @@ pub struct OutputDevice {
     pub drm_lease_state: Option<DrmLeaseState>,
     non_desktop_connectors: HashSet<(connector::Handle, crtc::Handle)>,
     active_leases: Vec<DrmLease>,
+
+    // Delayed re-scan for connectors that were detected as connected but had no
+    // modes yet (EDID not read). Bounded to MAX_RESCAN_RETRIES to prevent
+    // infinite rescheduling.
+    rescan_timer_token: Option<RegistrationToken>,
+    rescan_retry_count: u8,
 }
 
 // A connected, but not necessarily enabled, crtc.
@@ -905,6 +914,8 @@ impl Tty {
             drm_lease_state,
             active_leases: Vec::new(),
             non_desktop_connectors: HashSet::new(),
+            rescan_timer_token: None,
+            rescan_retry_count: 0,
         };
         assert!(self.devices.insert(node, device).is_none());
 
@@ -1075,6 +1086,66 @@ impl Tty {
         // It will also call refresh_ipc_outputs(), which will catch the disconnected connectors
         // above.
         self.on_output_config_changed(niri);
+
+        self.schedule_rescan_if_needed(node, niri);
+    }
+
+    fn schedule_rescan_if_needed(&mut self, node: DrmNode, niri: &mut Niri) {
+        let Some(device) = self.devices.get_mut(&node) else {
+            return;
+        };
+
+        if device.rescan_retry_count >= MAX_RESCAN_RETRIES {
+            debug!(
+                "reached max rescan retries ({MAX_RESCAN_RETRIES}) for {node}, \
+                 not scheduling another"
+            );
+            return;
+        }
+
+        let has_unactivated = device.drm_scanner.crtcs().any(|(conn, crtc)| {
+            conn.state() == connector::State::Connected
+                && !device.surfaces.contains_key(&crtc)
+                && !device
+                    .non_desktop_connectors
+                    .contains(&(conn.handle(), crtc))
+        });
+
+        if !has_unactivated {
+            device.rescan_retry_count = 0;
+            if let Some(token) = device.rescan_timer_token.take() {
+                niri.event_loop.remove(token);
+            }
+            return;
+        }
+
+        if let Some(token) = device.rescan_timer_token.take() {
+            niri.event_loop.remove(token);
+        }
+
+        device.rescan_retry_count = device.rescan_retry_count.saturating_add(1);
+        let attempt = device.rescan_retry_count;
+        let device_id = node.dev_id();
+
+        debug!(
+            "connected connectors not yet activated on {node}; \
+             scheduling rescan attempt {attempt}/{MAX_RESCAN_RETRIES} in {RESCAN_DELAY:?}"
+        );
+
+        let token = niri
+            .event_loop
+            .insert_source(Timer::from_duration(RESCAN_DELAY), move |_, _, state| {
+                debug!("rescan timer fired for device {device_id} (attempt {attempt})");
+                state
+                    .backend
+                    .tty()
+                    .device_changed(device_id, &mut state.niri, false);
+                TimeoutAction::Drop
+            })
+            .unwrap();
+
+        let device = self.devices.get_mut(&node).unwrap();
+        device.rescan_timer_token = Some(token);
     }
 
     fn device_removed(&mut self, device_id: dev_t, niri: &mut Niri) {
@@ -1094,6 +1165,10 @@ impl Tty {
             warn!("unknown device");
             return;
         };
+
+        if let Some(token) = device.rescan_timer_token.take() {
+            niri.event_loop.remove(token);
+        }
 
         let crtcs: Vec<_> = device
             .drm_scanner
@@ -1500,6 +1575,8 @@ impl Tty {
         assert!(res.is_none(), "crtc must not have already existed");
 
         niri.add_output(output.clone(), Some(refresh_interval(mode)), vrr_enabled);
+
+        device.rescan_retry_count = 0;
 
         if niri.monitors_active {
             // Redraw the new monitor.
