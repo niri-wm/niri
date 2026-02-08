@@ -2444,9 +2444,8 @@ impl State {
                     };
 
                     let clock = self.niri.layout.clock().clone();
-                    let anim_config = self.niri.config.borrow().animations.zoom_level_change.0;
                     self.niri
-                        .set_zoom_level(&output, target_level, &clock, anim_config);
+                        .update_zoom_base_level(&output, target_level, &clock);
                     self.niri.queue_redraw(&output);
                 }
             }
@@ -2624,10 +2623,11 @@ impl State {
                 }
             }
             Some(output) => {
-                if let Some(zoom_state) = output.user_data().get::<Mutex<OutputZoomState>>() {
-                    let Ok(zoom_state) = zoom_state.lock() else {
-                        return;
-                    };
+                if let Some(zoom_state) = output
+                    .user_data()
+                    .get::<Mutex<OutputZoomState>>()
+                    .and_then(|m| m.lock().ok())
+                {
                     let (zoom_factor, zoom_locked) = (zoom_state.base_level, zoom_state.locked);
                     if zoom_locked {
                         let output_geometry = self
@@ -2778,8 +2778,7 @@ impl State {
         }
 
         if let Some((output, _)) = self.niri.output_under(new_pos) {
-            self.niri
-                .update_zoom_focal_point(output, new_pos, Some(pos));
+            self.niri.update_zoom_base_focal(output, new_pos, Some(pos));
         }
 
         // Redraw to update the cursor position.
@@ -2882,7 +2881,7 @@ impl State {
         }
 
         if let Some((output, _)) = self.niri.output_under(pos) {
-            self.niri.update_zoom_focal_point(output, pos, None);
+            self.niri.update_zoom_base_focal(output, pos, None);
         }
 
         // Redraw to update the cursor position.
@@ -3731,7 +3730,7 @@ impl State {
         }
 
         if let Some((output, _)) = self.niri.output_under(pos) {
-            self.niri.update_zoom_focal_point(output, pos, None);
+            self.niri.update_zoom_base_focal(output, pos, None);
         }
 
         // Redraw to update the cursor position.
@@ -4192,7 +4191,12 @@ impl State {
 
         if let Some(output) = self.niri.output_under_cursor() {
             let cancelled = event.cancelled();
-            if self.niri.layout.zoom_gesture_end(&output, cancelled) {
+            if self
+                .niri
+                .layout
+                .zoom_gesture_end(&output, cancelled)
+                .unwrap_or(false)
+            {
                 self.niri.queue_redraw(&output);
                 return;
             }
@@ -4275,40 +4279,40 @@ impl State {
     /// This ensures that touch events do not go outside the zoomed area.
     fn clamp_position_to_zoom(&self, pos: Point<f64, Logical>) -> Point<f64, Logical> {
         if let Some((output, _)) = self.niri.output_under(pos) {
-            if let Some(mutex) = output.user_data().get::<Mutex<OutputZoomState>>() {
-                if let Ok(zoom_state) = mutex.lock() {
-                    let (zoom_factor, zoom_locked) = (zoom_state.base_level, zoom_state.locked);
-                    if zoom_locked && zoom_factor > 1.0 {
-                        let output_geometry = self
-                            .niri
-                            .global_space
-                            .output_geometry(output)
-                            .unwrap()
-                            .to_f64();
-                        let focal_point = zoom_state.base_focal;
+            if let Some(zoom_state) = output
+                .user_data()
+                .get::<Mutex<OutputZoomState>>()
+                .and_then(|m| m.lock().ok())
+            {
+                let (zoom_factor, zoom_locked) = (zoom_state.base_level, zoom_state.locked);
+                if zoom_locked && zoom_factor > 1.0 {
+                    let output_geometry = self
+                        .niri
+                        .global_space
+                        .output_geometry(output)
+                        .unwrap()
+                        .to_f64();
+                    let focal_point = zoom_state.base_focal;
 
-                        let zoomed_geometry_global = {
-                            let focal_point_global = focal_point + output_geometry.loc;
-                            let mut geo = output_geometry;
-                            geo.loc -= focal_point_global;
-                            geo = geo.downscale(zoom_factor);
-                            geo.loc += focal_point_global;
-                            geo
-                        };
+                    let zoomed_geometry_global = {
+                        let focal_point_global = focal_point + output_geometry.loc;
+                        let mut geo = output_geometry;
+                        geo.loc -= focal_point_global;
+                        geo = geo.downscale(zoom_factor);
+                        geo.loc += focal_point_global;
+                        geo
+                    };
 
-                        let mut clamped = pos;
-                        clamped.x = clamped.x.clamp(
-                            zoomed_geometry_global.loc.x,
-                            zoomed_geometry_global.loc.x + zoomed_geometry_global.size.w
-                                - f64::EPSILON,
-                        );
-                        clamped.y = clamped.y.clamp(
-                            zoomed_geometry_global.loc.y,
-                            zoomed_geometry_global.loc.y + zoomed_geometry_global.size.h
-                                - f64::EPSILON,
-                        );
-                        return clamped;
-                    }
+                    let mut clamped = pos;
+                    clamped.x = clamped.x.clamp(
+                        zoomed_geometry_global.loc.x,
+                        zoomed_geometry_global.loc.x + zoomed_geometry_global.size.w - f64::EPSILON,
+                    );
+                    clamped.y = clamped.y.clamp(
+                        zoomed_geometry_global.loc.y,
+                        zoomed_geometry_global.loc.y + zoomed_geometry_global.size.h - f64::EPSILON,
+                    );
+                    return clamped;
                 }
             }
         }

@@ -2900,18 +2900,19 @@ impl<W: LayoutElement> Layout<W> {
                     mon.set_overview_progress(self.overview_progress.as_ref());
                     mon.advance_animations();
 
-                    if let Some(zoom_state_mutex) =
-                        mon.output.user_data().get::<Mutex<OutputZoomState>>()
+                    if let Some(mut zoom_state) = mon
+                        .output
+                        .user_data()
+                        .get::<Mutex<OutputZoomState>>()
+                        .and_then(|mutex| mutex.lock().ok())
                     {
-                        if let Ok(mut zoom_state) = zoom_state_mutex.lock() {
-                            if let Some(progress) = &zoom_state.progress {
-                                if progress.is_done() {
-                                    let final_level = progress.level();
-                                    let final_focal = progress.focal_point();
-                                    zoom_state.base_level = final_level;
-                                    zoom_state.base_focal = final_focal;
-                                    zoom_state.progress = None;
-                                }
+                        if let Some(progress) = &zoom_state.progress {
+                            if progress.is_done() {
+                                let final_level = progress.level();
+                                let final_focal = progress.focal_point();
+                                zoom_state.base_level = final_level;
+                                zoom_state.base_focal = final_focal;
+                                zoom_state.progress = None;
                             }
                         }
                     }
@@ -2963,15 +2964,18 @@ impl<W: LayoutElement> Layout<W> {
                 return true;
             }
 
-            if let Some(zoom_state_mutex) = mon.output.user_data().get::<Mutex<OutputZoomState>>() {
-                if let Ok(zoom_state) = zoom_state_mutex.lock() {
-                    if zoom_state
-                        .progress
-                        .as_ref()
-                        .is_some_and(|p| p.is_animation())
-                    {
-                        return true;
-                    }
+            if let Some(zoom_state) = mon
+                .output
+                .user_data()
+                .get::<Mutex<OutputZoomState>>()
+                .and_then(|mutex| mutex.lock().ok())
+            {
+                if zoom_state
+                    .progress
+                    .as_ref()
+                    .is_some_and(|p| p.is_animation())
+                {
+                    return true;
                 }
             }
         }
@@ -3999,11 +4003,13 @@ impl<W: LayoutElement> Layout<W> {
         output_size: Option<Size<f64, Logical>>,
         movement_mode: Option<ZoomMovementMode>,
     ) {
-        let Some(zoom_state) = output.user_data().get::<Mutex<OutputZoomState>>() else {
-            return;
-        };
-        let Ok(mut state) = zoom_state.lock() else {
-            return;
+        let mut state = match output
+            .user_data()
+            .get::<Mutex<OutputZoomState>>()
+            .and_then(|guard| guard.lock().ok())
+        {
+            Some(state) => state,
+            None => return,
         };
 
         let current_level = state
@@ -4037,12 +4043,10 @@ impl<W: LayoutElement> Layout<W> {
         sensitivity: f64,
         timestamp: Duration,
     ) -> Option<bool> {
-        let Some(zoom_state) = output.user_data().get::<Mutex<OutputZoomState>>() else {
-            return None;
-        };
-        let Ok(mut state) = zoom_state.lock() else {
-            return None;
-        };
+        let mut state = output
+            .user_data()
+            .get::<Mutex<OutputZoomState>>()
+            .and_then(|guard| guard.lock().ok())?;
 
         let Some(ZoomProgress::Gesture(gesture)) = &mut state.progress else {
             return None;
@@ -4083,16 +4087,14 @@ impl<W: LayoutElement> Layout<W> {
         Some(true)
     }
 
-    pub fn zoom_gesture_end(&mut self, output: &Output, cancelled: bool) -> bool {
-        let Some(zoom_state) = output.user_data().get::<Mutex<OutputZoomState>>() else {
-            return false;
-        };
-        let Ok(mut state) = zoom_state.lock() else {
-            return false;
-        };
+    pub fn zoom_gesture_end(&mut self, output: &Output, cancelled: bool) -> Option<bool> {
+        let mut state = output
+            .user_data()
+            .get::<Mutex<OutputZoomState>>()
+            .and_then(|guard| guard.lock().ok())?;
 
         let Some(ZoomProgress::Gesture(mut gesture)) = state.progress.take() else {
-            return false;
+            return None;
         };
 
         if cancelled {
@@ -4122,32 +4124,20 @@ impl<W: LayoutElement> Layout<W> {
                 output_size: gesture.output_size,
                 movement_mode: gesture.movement_mode.clone(),
             }));
-            return true;
+            return Some(true);
         }
 
         let now = self.clock.now_unadjusted();
         gesture.tracker.push(0., now);
 
-        let mut velocity = gesture.tracker.velocity();
         let current_log_pos = gesture.tracker.pos();
-        let projected_log_pos = gesture.tracker.projected_end_pos();
-
-        let raw_target = log_pos_to_zoom_level(gesture.start_level, projected_log_pos);
+        let raw_target = log_pos_to_zoom_level(gesture.start_level, current_log_pos);
         let max_zoom = self.options.max_zoom;
         let mut target_level = raw_target.clamp(1.0, max_zoom);
 
         if (target_level - 1.0).abs() < 0.05 {
             target_level = 1.0;
         }
-
-        let current_raw = log_pos_to_zoom_level(gesture.start_level, current_log_pos);
-        velocity *= ZOOM_GESTURE_RUBBER_BAND.clamp_derivative(
-            1.0_f64.ln(),
-            max_zoom.ln(),
-            current_raw.ln(),
-        );
-
-        let level_velocity = gesture.current_level * velocity;
 
         // Compute the focal at the target level so base_focal and target_focal
         // reflect where the animation is heading, not where the gesture was.
@@ -4169,7 +4159,7 @@ impl<W: LayoutElement> Layout<W> {
                 self.clock.clone(),
                 gesture.current_level,
                 target_level,
-                level_velocity,
+                0.0,
                 self.options.animations.zoom_level_change.0,
             ),
             focal_anim: None,
@@ -4181,7 +4171,7 @@ impl<W: LayoutElement> Layout<W> {
             movement_mode: gesture.movement_mode,
         }));
 
-        true
+        Some(true)
     }
 
     pub fn interactive_move_begin(

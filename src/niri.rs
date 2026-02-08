@@ -1610,7 +1610,7 @@ impl State {
             let global_pointer_pos = self.niri.seat.get_pointer().unwrap().current_location();
             if let Some((output, pos_within_output)) = self.niri.output_under(global_pointer_pos) {
                 self.niri
-                    .update_zoom_focal_point(output, pos_within_output, None);
+                    .update_zoom_base_focal(output, pos_within_output, None);
             }
         }
 
@@ -3004,12 +3004,14 @@ impl Niri {
             return pos;
         };
 
-        let Some(mutex) = output.user_data().get::<Mutex<OutputZoomState>>() else {
-            return pos;
-        };
-
-        let Ok(zoom_state) = mutex.lock() else {
-            return pos;
+        let zoom_state = match output
+            .user_data()
+            .get::<Mutex<OutputZoomState>>()
+            .and_then(|m| m.lock().ok())
+            .map(|s| if s.base_level <= 1.0 { None } else { Some(s) })
+        {
+            Some(Some(state)) => state,
+            _ => return pos,
         };
 
         if zoom_state.base_level <= 1.0 {
@@ -3022,6 +3024,7 @@ impl Niri {
             .unwrap()
             .loc
             .to_f64();
+
         zoom_state
             .cursor_logical_pos
             .map(|p| p + output_pos)
@@ -3031,17 +3034,12 @@ impl Niri {
     /// Set the zoom level for the given output, computing the correct focal point
     /// and creating an animation — all within a single mutex acquisition to avoid
     /// the race where the animation targets a stale focal.
-    pub fn set_zoom_level(
-        &self,
-        output: &Output,
-        target_level: f64,
-        clock: &Clock,
-        anim_config: niri_config::Animation,
-    ) {
-        let Some(mutex) = output.user_data().get::<Mutex<OutputZoomState>>() else {
-            return;
-        };
-        let Ok(mut zoom_state) = mutex.lock() else {
+    pub fn update_zoom_base_level(&self, output: &Output, target_level: f64, clock: &Clock) {
+        let Some(mut zoom_state) = output
+            .user_data()
+            .get::<Mutex<OutputZoomState>>()
+            .and_then(|m| m.lock().ok())
+        else {
             return;
         };
 
@@ -3079,6 +3077,7 @@ impl Niri {
             .as_ref()
             .map_or(zoom_state.base_focal, |p| p.focal_point());
 
+        let anim_config = self.config.borrow().animations.zoom_level_change.0;
         let focal_anim = if (current_focal.x - target_focal.x).abs() > 0.5
             || (current_focal.y - target_focal.y).abs() > 0.5
         {
@@ -3132,7 +3131,7 @@ impl Niri {
     /// `old_pos_global` is the previous cursor pos (for OnEdge movement mode).
     /// We pass `None` for absolute events or zoom changes, which will use
     /// Centered/CursorFollow behavior.
-    pub fn update_zoom_focal_point(
+    pub fn update_zoom_base_focal(
         &self,
         output: &Output,
         new_pos_global: Point<f64, Logical>,
@@ -3142,10 +3141,11 @@ impl Niri {
             return;
         }
 
-        let Some(mutex) = output.user_data().get::<Mutex<OutputZoomState>>() else {
-            return;
-        };
-        let Ok(mut zoom_state) = mutex.lock() else {
+        let Some(mut zoom_state) = output
+            .user_data()
+            .get::<Mutex<OutputZoomState>>()
+            .and_then(|m| m.lock().ok())
+        else {
             return;
         };
 
@@ -3183,7 +3183,6 @@ impl Niri {
                 new_pos_global,
                 old_pos_global,
                 output,
-                output_geometry,
                 focal_point,
                 zoom_factor,
             ),
@@ -3205,10 +3204,10 @@ impl Niri {
         cursor_global: Point<f64, Logical>,
         old_pos_global: Option<Point<f64, Logical>>,
         output: &Output,
-        output_geometry: Rectangle<f64, Logical>,
         current_focal: Point<f64, Logical>,
         zoom_factor: f64,
     ) -> (Option<Point<f64, Logical>>, Point<f64, Logical>) {
+        let output_geometry = self.global_space.output_geometry(output).unwrap().to_f64();
         let Some(old_pos) = old_pos_global else {
             let focal = compute_focal_for_cursor(
                 cursor_local,
