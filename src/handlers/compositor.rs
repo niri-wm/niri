@@ -566,10 +566,12 @@ impl State {
     }
 
     pub fn remove_default_dmabuf_pre_commit_hook(&mut self, surface: &WlSurface) {
+        // In case a client disconnects the hook might not be active at the time
+        // the surface is destroyed because it was previously mapped.
+        // This can happen because implicit resource destruction is done with
+        // undefined order, so the surface might get destroyed before a toplevel.
         if let Some(hook) = self.niri.dmabuf_pre_commit_hook.remove(surface) {
             remove_pre_commit_hook(surface, hook);
-        } else {
-            error!("tried to remove dmabuf pre-commit hook but there was none");
         }
     }
 }

@@ -863,7 +863,14 @@ impl XdgShellHandler for State {
 
         self.niri.window_mru_ui.remove_window(id);
         self.niri.layout.remove_window(&window, transaction.clone());
-        self.add_default_dmabuf_pre_commit_hook(surface.wl_surface());
+        let surface = surface.wl_surface();
+        // This check is necessary because implicit resource destruction is done with
+        // undefined order, so the surface might get destroyed before a toplevel.
+        if surface.is_alive() {
+            // Re-add the default dmabuf pre commit hook in case the surface
+            // role is re-used.
+            self.add_default_dmabuf_pre_commit_hook(surface);
+        }
 
         // If this is the only instance, then this transaction will complete immediately, so no
         // need to set the timer.
