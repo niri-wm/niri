@@ -32,7 +32,9 @@ use smithay::backend::libinput::{LibinputInputBackend, LibinputSessionInterface}
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::renderer::multigpu::gbm::GbmGlesBackend;
 use smithay::backend::renderer::multigpu::{GpuManager, MultiFrame, MultiRenderer};
-use smithay::backend::renderer::{DebugFlags, ImportDma, ImportEgl, RendererSuper};
+use smithay::backend::renderer::{
+    DebugFlags, ImportDma, ImportEgl, Renderer, RendererSuper, TextureFilter,
+};
 use smithay::backend::session::libseat::LibSeatSession;
 use smithay::backend::session::{Event as SessionEvent, Session};
 use smithay::backend::udev::{self, UdevBackend, UdevEvent};
@@ -64,6 +66,7 @@ use wayland_protocols::wp::presentation_time::server::wp_presentation_feedback;
 use super::{IpcOutputMap, RenderResult};
 use crate::backend::OutputId;
 use crate::frame_clock::FrameClock;
+use crate::layout::OutputZoomState;
 use crate::niri::{Niri, RedrawState, State};
 use crate::render_helpers::debug::draw_damage;
 use crate::render_helpers::renderer::AsGlesRenderer;
@@ -1344,6 +1347,11 @@ impl Tty {
             .user_data()
             .insert_if_missing(|| TtyOutputState { node, crtc });
         output.user_data().insert_if_missing(|| output_name.clone());
+
+        output
+            .user_data()
+            .insert_if_missing(|| Mutex::new(OutputZoomState::new_for_output(&output)));
+
         if let Some(x) = orientation {
             output.user_data().insert_if_missing(|| PanelOrientation(x));
         }
@@ -1838,6 +1846,22 @@ impl Tty {
             }
         };
 
+        let zoom_factor = output
+            .user_data()
+            .get::<Mutex<OutputZoomState>>()
+            .and_then(|s| s.lock().ok().map(|z| z.base_level))
+            .unwrap_or(1.0);
+
+        // Apply filter temporarily before rendering
+        // Set filter based on this output's zoom level
+        let filter = match zoom_factor {
+            z if z < 2.0 => TextureFilter::Linear,
+            _ => TextureFilter::Nearest,
+        };
+
+        let _ = renderer.upscale_filter(filter);
+        let _ = renderer.downscale_filter(filter);
+
         // Render the elements.
         let mut elements =
             niri.render::<TtyRenderer>(&mut renderer, output, true, RenderTarget::Output);
@@ -1852,6 +1876,11 @@ impl Tty {
         // system.
         let flags = {
             let debug = &self.config.borrow().debug;
+            let zoom_factor = output
+                .user_data()
+                .get::<Mutex<OutputZoomState>>()
+                .and_then(|s| s.lock().ok().map(|z| z.base_level))
+                .unwrap_or(1.0);
 
             let primary_scanout_flag = if debug.restrict_primary_scanout_to_matching_format {
                 FrameFlags::ALLOW_PRIMARY_PLANE_SCANOUT
@@ -1875,6 +1904,11 @@ impl Tty {
                 if output_state.frame_clock.vrr() {
                     flags.insert(FrameFlags::SKIP_CURSOR_ONLY_UPDATES);
                 }
+            }
+            // Remove overlay plane scanout for high zoom factors as they tend to look bad.
+            if zoom_factor > 2.5 {
+                flags.remove(primary_scanout_flag);
+                flags.remove(FrameFlags::ALLOW_OVERLAY_PLANE_SCANOUT);
             }
 
             flags

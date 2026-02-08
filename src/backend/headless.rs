@@ -19,6 +19,7 @@ use smithay::utils::Size;
 use smithay::wayland::presentation::Refresh;
 
 use super::{IpcOutputMap, OutputId, RenderResult};
+use crate::layout::OutputZoomState;
 use crate::niri::{Niri, RedrawState};
 use crate::render_helpers::{resources, shaders};
 use crate::utils::{get_monotonic_time, logical_output};
@@ -88,6 +89,10 @@ impl Headless {
             model: Some(model),
             serial: Some(serial),
         });
+
+        output
+            .user_data()
+            .insert_if_missing(|| Mutex::new(OutputZoomState::new_for_output(&output)));
 
         let physical_properties = output.physical_properties();
         self.ipc_outputs.lock().unwrap().insert(

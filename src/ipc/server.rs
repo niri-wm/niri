@@ -1,5 +1,5 @@
 use std::cell::RefCell;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::ffi::OsStr;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
@@ -33,6 +33,7 @@ use smithay::wayland::shell::wlr_layer::{KeyboardInteractivity, Layer};
 use crate::backend::IpcOutputMap;
 use crate::input::pick_window_grab::PickWindowGrab;
 use crate::layout::workspace::WorkspaceId;
+use crate::layout::OutputZoomState;
 use crate::niri::State;
 use crate::utils::{version, with_toplevel_role};
 use crate::window::Mapped;
@@ -454,6 +455,37 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
             let state = ctx.event_stream_state.borrow();
             let casts = state.casts.casts.values().cloned().collect();
             Response::Casts(casts)
+        }
+        Request::ZoomState => {
+            let (tx, rx) = async_channel::bounded(1);
+            ctx.event_loop.insert_idle(move |state| {
+                let zooms = state
+                    .niri
+                    .layout
+                    .outputs()
+                    .fold(HashMap::new(), |mut acc, output| {
+                        let Some(zoom) = output
+                            .user_data()
+                            .get::<Mutex<OutputZoomState>>()
+                            .and_then(|mutex| mutex.lock().ok())
+                        else {
+                            return acc;
+                        };
+
+                        acc.insert(
+                            output.name().clone(),
+                            niri_ipc::Zoom {
+                                is_locked: zoom.locked,
+                                level: zoom.base_level,
+                            },
+                        );
+                        acc
+                    });
+                let _ = tx.send_blocking(zooms);
+            });
+            let result = rx.recv().await;
+            let zooms = result.map_err(|_| String::from("error getting zoom states"))?;
+            Response::ZoomState(zooms)
         }
     };
 

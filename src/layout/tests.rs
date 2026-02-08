@@ -15,6 +15,7 @@ use super::*;
 
 mod animations;
 mod fullscreen;
+mod zoom;
 
 impl<W: LayoutElement> Default for Layout<W> {
     fn default() -> Self {

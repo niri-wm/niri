@@ -8,7 +8,7 @@ use niri_config::{Config, OutputName};
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::gles::GlesRenderer;
-use smithay::backend::renderer::{DebugFlags, ImportDma, ImportEgl, Renderer};
+use smithay::backend::renderer::{DebugFlags, ImportDma, ImportEgl, Renderer, TextureFilter};
 use smithay::backend::winit::{self, WinitEvent, WinitGraphicsBackend};
 use smithay::output::{Mode, Output, PhysicalProperties, Subpixel};
 use smithay::reexports::calloop::LoopHandle;
@@ -18,6 +18,7 @@ use smithay::reexports::winit::window::Window;
 use smithay::wayland::presentation::Refresh;
 
 use super::{IpcOutputMap, OutputId, RenderResult};
+use crate::layout::OutputZoomState;
 use crate::niri::{Niri, RedrawState, State};
 use crate::render_helpers::debug::draw_damage;
 use crate::render_helpers::{resources, shaders, RenderTarget};
@@ -68,6 +69,10 @@ impl Winit {
             model: Some("Winit".to_string()),
             serial: None,
         });
+
+        output
+            .user_data()
+            .insert_if_missing(|| Mutex::new(OutputZoomState::new_for_output(&output)));
 
         let physical_properties = output.physical_properties();
         let ipc_outputs = Arc::new(Mutex::new(HashMap::from([(
@@ -179,13 +184,26 @@ impl Winit {
     pub fn render(&mut self, niri: &mut Niri, output: &Output) -> RenderResult {
         let _span = tracy_client::span!("Winit::render");
 
+        let zoom_factor = output
+            .user_data()
+            .get::<Mutex<OutputZoomState>>()
+            .and_then(|s| s.lock().ok().map(|z| z.base_level))
+            .unwrap_or(1.0);
+
+        // Apply filter temporarily before rendering
+        // based on this output's zoom level
+        let filter = match zoom_factor {
+            z if z < 2.0 => TextureFilter::Linear,
+            _ => TextureFilter::Nearest,
+        };
+
+        let renderer = self.backend.renderer();
+        let _ = renderer.upscale_filter(filter);
+        let _ = renderer.downscale_filter(filter);
+
         // Render the elements.
-        let mut elements = niri.render::<GlesRenderer>(
-            self.backend.renderer(),
-            output,
-            true,
-            RenderTarget::Output,
-        );
+        let mut elements =
+            niri.render::<GlesRenderer>(renderer, output, true, RenderTarget::Output);
 
         // Visualize the damage, if enabled.
         if niri.debug_draw_damage {

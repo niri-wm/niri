@@ -19,6 +19,9 @@ pub struct Animations {
     pub screenshot_ui_open: ScreenshotUiOpenAnim,
     pub overview_open_close: OverviewOpenCloseAnim,
     pub recent_windows_close: RecentWindowsCloseAnim,
+    pub zoom_level_change: ZoomLevelChangeAnim,
+    pub zoom_focal_pan: ZoomFocalPanAnim,
+    pub zoom_cursor_follow: ZoomCursorFollowAnim,
 }
 
 impl Default for Animations {
@@ -37,6 +40,9 @@ impl Default for Animations {
             screenshot_ui_open: Default::default(),
             overview_open_close: Default::default(),
             recent_windows_close: Default::default(),
+            zoom_level_change: Default::default(),
+            zoom_focal_pan: Default::default(),
+            zoom_cursor_follow: Default::default(),
         }
     }
 }
@@ -71,6 +77,12 @@ pub struct AnimationsPart {
     pub overview_open_close: Option<OverviewOpenCloseAnim>,
     #[knuffel(child)]
     pub recent_windows_close: Option<RecentWindowsCloseAnim>,
+    #[knuffel(child)]
+    pub zoom_level_change: Option<ZoomLevelChangeAnim>,
+    #[knuffel(child)]
+    pub zoom_focal_pan: Option<ZoomFocalPanAnim>,
+    #[knuffel(child)]
+    pub zoom_cursor_follow: Option<ZoomCursorFollowAnim>,
 }
 
 impl MergeWith<AnimationsPart> for Animations {
@@ -97,6 +109,9 @@ impl MergeWith<AnimationsPart> for Animations {
             screenshot_ui_open,
             overview_open_close,
             recent_windows_close,
+            zoom_level_change,
+            zoom_focal_pan,
+            zoom_cursor_follow,
         );
     }
 }
@@ -326,6 +341,54 @@ impl Default for RecentWindowsCloseAnim {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ZoomLevelChangeAnim(pub Animation);
+
+impl Default for ZoomLevelChangeAnim {
+    fn default() -> Self {
+        Self(Animation {
+            off: false,
+            kind: Kind::Spring(SpringParams {
+                damping_ratio: 1.,
+                stiffness: 1200,
+                epsilon: 0.0001,
+            }),
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ZoomFocalPanAnim(pub Animation);
+
+impl Default for ZoomFocalPanAnim {
+    fn default() -> Self {
+        Self(Animation {
+            off: false,
+            kind: Kind::Spring(SpringParams {
+                damping_ratio: 1.,
+                stiffness: 800,
+                epsilon: 0.0001,
+            }),
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ZoomCursorFollowAnim(pub Animation);
+
+impl Default for ZoomCursorFollowAnim {
+    fn default() -> Self {
+        Self(Animation {
+            off: false,
+            kind: Kind::Spring(SpringParams {
+                damping_ratio: 1.,
+                stiffness: 1200,
+                epsilon: 0.0001,
+            }),
+        })
+    }
+}
+
 impl<S> knuffel::Decode<S> for WorkspaceSwitchAnim
 where
     S: knuffel::traits::ErrorSpan,
@@ -510,6 +573,51 @@ where
 }
 
 impl<S> knuffel::Decode<S> for RecentWindowsCloseAnim
+where
+    S: knuffel::traits::ErrorSpan,
+{
+    fn decode_node(
+        node: &knuffel::ast::SpannedNode<S>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) -> Result<Self, DecodeError<S>> {
+        let default = Self::default().0;
+        Ok(Self(Animation::decode_node(node, ctx, default, |_, _| {
+            Ok(false)
+        })?))
+    }
+}
+
+impl<S> knuffel::Decode<S> for ZoomLevelChangeAnim
+where
+    S: knuffel::traits::ErrorSpan,
+{
+    fn decode_node(
+        node: &knuffel::ast::SpannedNode<S>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) -> Result<Self, DecodeError<S>> {
+        let default = Self::default().0;
+        Ok(Self(Animation::decode_node(node, ctx, default, |_, _| {
+            Ok(false)
+        })?))
+    }
+}
+
+impl<S> knuffel::Decode<S> for ZoomFocalPanAnim
+where
+    S: knuffel::traits::ErrorSpan,
+{
+    fn decode_node(
+        node: &knuffel::ast::SpannedNode<S>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) -> Result<Self, DecodeError<S>> {
+        let default = Self::default().0;
+        Ok(Self(Animation::decode_node(node, ctx, default, |_, _| {
+            Ok(false)
+        })?))
+    }
+}
+
+impl<S> knuffel::Decode<S> for ZoomCursorFollowAnim
 where
     S: knuffel::traits::ErrorSpan,
 {
