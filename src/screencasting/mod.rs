@@ -575,7 +575,6 @@ impl Niri {
             }
 
             if cursor_data.is_none() {
-                // FIXME: support debug draw opaque regions.
                 self.render_inner(
                     renderer,
                     output,
