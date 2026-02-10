@@ -1551,8 +1551,15 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         if self.active_column_idx == 0 {
             return false;
         }
-        self.activate_column(self.active_column_idx - 1);
-        true
+        return self.activate_column_retain_tile_pos(self.active_column_idx - 1);
+    }
+
+    fn activate_column_retain_tile_pos(&mut self, new_active_column_idx: usize) -> bool {
+        let prev_tile_idx = self.columns[self.active_column_idx].active_tile_idx;
+        self.activate_column(new_active_column_idx);
+        let tiles_len = self.columns[self.active_column_idx].tiles.len();
+        return self.columns[self.active_column_idx]
+            .activate_idx(min(prev_tile_idx, tiles_len - 1));
     }
 
     pub fn focus_right(&mut self) -> bool {
@@ -1560,8 +1567,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             return false;
         }
 
-        self.activate_column(self.active_column_idx + 1);
-        true
+        return self.activate_column_retain_tile_pos(self.active_column_idx + 1);
     }
 
     pub fn focus_column_first(&mut self) {
