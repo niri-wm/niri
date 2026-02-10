@@ -863,12 +863,13 @@ impl XdgShellHandler for State {
 
         self.niri.window_mru_ui.remove_window(id);
         self.niri.layout.remove_window(&window, transaction.clone());
+
         let surface = surface.wl_surface();
         // This check is necessary because implicit resource destruction is done with
-        // undefined order, so the surface might get destroyed before a toplevel.
+        // undefined order, so the surface might get destroyed before toplevel_destroyed() is
+        // called. In this case, adding the default pre-commit hook here would leak it, since the
+        // place that removes it is WlSurface::destroyed(), which had already been called by now.
         if surface.is_alive() {
-            // Re-add the default dmabuf pre commit hook in case the surface
-            // role is re-used.
             self.add_default_dmabuf_pre_commit_hook(surface);
         }
 
