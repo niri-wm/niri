@@ -2,7 +2,7 @@
 
 In this section you can configure input devices like keyboard and mouse, and some input-related options.
 
-There's a section for each device type: `keyboard`, `touchpad`, `mouse`, `trackpoint`, `tablet`, `touch`.
+There's a section for each device type: `keyboard`, `touchpad`, `mouse`, `trackpoint`, `trackball`, `tablet`, `touch`.
 Settings in those sections will apply to every device of that type.
 Currently, there's no way to configure specific devices individually (but that is planned).
 
