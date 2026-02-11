@@ -40,5 +40,5 @@ def _badge_for_version(preposition: str, version: str):
         # we might fail to make real links to release notes on other cases too, but for now this is the one i've found
         return f"<span class=\"badge\">{preposition}: {version}</span>"
     else:
-        path = f"https://github.com/YaLTeR/niri/releases/tag/v{version}"
+        path = f"https://github.com/niri-wm/niri/releases/tag/v{version}"
         return f"<span class=\"badge\">[{preposition}: {version}]({path})</span>"

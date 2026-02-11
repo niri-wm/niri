@@ -47,7 +47,7 @@ Set them as automatically-installed optional dependencies, if possible.
 Working hardware acceleration is required for running niri.
 - Some notification daemon like `mako`, generally required for apps to work correctly.
 
-Finally, you may want to auto-install some of the applications bound in niri's [default configuration file](https://github.com/YaLTeR/niri/blob/main/resources/default-config.kdl) (search for `spawn`), such as `alacritty` and `fuzzel`.
+Finally, you may want to auto-install some of the applications bound in niri's [default configuration file](https://github.com/niri-wm/niri/blob/main/resources/default-config.kdl) (search for `spawn`), such as `alacritty` and `fuzzel`.
 
 ### Running tests
 
