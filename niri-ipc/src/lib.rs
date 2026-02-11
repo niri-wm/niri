@@ -129,8 +129,51 @@ pub enum Request {
 /// * If the request does not need any particular response, it will be
 ///   `Reply::Ok(Response::Handled)`. Kind of like an `Ok(())`.
 /// * Otherwise, it will be `Reply::Ok(response)` with one of the other [`Response`] variants.
-pub type Reply = Result<Response, String>;
+pub type Reply = Result<Response, ReplyError>;
 
+macro_rules! error {
+    ($($name: ident $string:literal),+ $(,)?) => {
+        /// Reply error
+        #[derive(Deserialize, Serialize)]
+        #[serde(untagged)]
+        #[non_exhaustive]
+        pub enum ReplyError {
+            $(
+                #[doc = $string]
+                $name,
+            )+
+            /// Other error
+            Other(String),
+        }
+        impl<T: Into<String>> From<T> for ReplyError {
+            fn from(e: T) -> Self {
+                Self::Other(e.into())
+            }
+        }
+        impl std::fmt::Display for ReplyError {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                match self {
+                    $(Self::$name => write!(f, $string),)+
+                    ReplyError::Other(other) => write!(f, "{other}"),
+                }
+            }
+        }
+        impl std::fmt::Debug for ReplyError {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                std::fmt::Display::fmt(self, f)
+            }
+        }
+        impl std::error::Error for ReplyError {}
+    };
+}
+error!(
+    Example "example compositor error",
+    Layer "error getting layers info",
+    KeyboardLayours "keyboard layouts should be set at startup",
+    PickedWindow "error getting picked window info",
+    PickColor "error getting picked window info",
+    FocusedOutput "error getting active output info",
+);
 /// Successful response from niri to client.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
@@ -1949,14 +1992,14 @@ impl FromStr for ScaleToSet {
 macro_rules! ensure {
     ($cond:expr, $fmt:literal $($arg:tt)* ) => {
         if !$cond {
-            return Err(format!($fmt $($arg)*));
+            return Err(ReplyError::from(format!($fmt $($arg)*)));
         }
     };
 }
 
 impl OutputAction {
     /// Validates some required constraints on the modeline and custom mode.
-    pub fn validate(&self) -> Result<(), String> {
+    pub fn validate(&self) -> Result<(), ReplyError> {
         match self {
             OutputAction::Modeline {
                 hdisplay,
@@ -2013,11 +2056,15 @@ impl OutputAction {
                 mode: ConfiguredMode { refresh, .. },
             } => {
                 if refresh.is_none() {
-                    return Err("refresh rate is required for custom modes".to_string());
+                    return Err(ReplyError::from(
+                        "refresh rate is required for custom modes",
+                    ));
                 }
                 if let Some(refresh) = refresh {
                     if *refresh <= 0. {
-                        return Err(format!("custom mode refresh rate {refresh} must be > 0"));
+                        return Err(ReplyError::from(format!(
+                            "custom mode refresh rate {refresh} must be > 0"
+                        )));
                     }
                 }
                 Ok(())
