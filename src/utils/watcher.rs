@@ -14,7 +14,7 @@ use crate::niri::State;
 const POLLING_INTERVAL: Duration = Duration::from_millis(500);
 
 pub struct Watcher {
-    load_config: mpsc::Sender<()>,
+    load_config: mpsc::Sender<Option<String>>,
 }
 
 struct WatcherInner {
@@ -67,7 +67,15 @@ impl Watcher {
 
                 loop {
                     let mut should_load = match load_config_rx.recv_timeout(POLLING_INTERVAL) {
-                        Ok(()) => true,
+                        Ok(path) => {
+                            if let Some(path) = path {
+                                inner = WatcherInner::new(
+                                    ConfigPath::Explicit(PathBuf::from(path)),
+                                    Vec::new(),
+                                );
+                            }
+                            true
+                        }
                         Err(mpsc::RecvTimeoutError::Disconnected) => break,
                         Err(mpsc::RecvTimeoutError::Timeout) => false,
                     };
@@ -105,8 +113,8 @@ impl Watcher {
         Self { load_config }
     }
 
-    pub fn load_config(&self) {
-        let _ = self.load_config.send(());
+    pub fn load_config(&self, path: Option<String>) {
+        let _ = self.load_config.send(path);
     }
 }
 
