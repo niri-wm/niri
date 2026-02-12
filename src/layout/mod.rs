@@ -2863,6 +2863,10 @@ impl<W: LayoutElement> Layout<W> {
                                 zoom_state.level = final_level;
                                 zoom_state.focal = final_focal;
                                 zoom_state.transitioning = false;
+                                if final_level <= 1.0 {
+                                    zoom_state.zoomed_surfaces.clear();
+                                    zoom_state.last_scale_update_level = None;
+                                }
                             }
                             mon.zoom_progress = None;
                         } else if let Some(mut zoom_state) = mon.output.zoom_state() {

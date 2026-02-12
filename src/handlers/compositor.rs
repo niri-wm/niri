@@ -312,6 +312,12 @@ impl CompositorHandler for State {
                     let unmapped = Unmapped::new(window);
                     self.niri.unmapped_windows.insert(surface.clone(), unmapped);
 
+                    if let Some(ref output) = output {
+                        if let Some(mut zoom_state) = output.zoom_state() {
+                            zoom_state.zoomed_surfaces.remove(surface);
+                        }
+                    }
+
                     if let Some(output) = output {
                         self.niri.queue_redraw(&output);
                         self.niri.queue_redraw_mru_output();
@@ -501,6 +507,13 @@ impl CompositorHandler for State {
             .retain(|k, v| k != surface && v != surface);
 
         self.niri.dmabuf_pre_commit_hook.remove(surface);
+
+        // Clean up zoomed_surfaces entries for this surface.
+        for output in self.niri.global_space.outputs() {
+            if let Some(mut zoom_state) = output.zoom_state() {
+                zoom_state.zoomed_surfaces.remove(surface);
+            }
+        }
     }
 }
 
