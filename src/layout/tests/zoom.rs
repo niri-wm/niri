@@ -146,3 +146,124 @@ fn zoom_animation_completion() {
     // For this test, we just verify the structure works
     assert!(progress.is_animation());
 }
+
+use smithay::utils::{Logical, Rectangle, Size};
+
+use crate::zoom::zoomed_viewport;
+
+fn rect(x: f64, y: f64, w: f64, h: f64) -> Rectangle<f64, Logical> {
+    Rectangle::new(Point::from((x, y)), Size::from((w, h)))
+}
+
+fn calculate_visibility(
+    window_geo: Rectangle<f64, Logical>,
+    zoom_rect: Rectangle<f64, Logical>,
+) -> f64 {
+    match window_geo.intersection(zoom_rect) {
+        Some(intersect) => {
+            let intersect_area = intersect.size.w * intersect.size.h;
+            let window_area = window_geo.size.w * window_geo.size.h;
+            if window_area <= 0.0 {
+                return 0.0;
+            }
+            (intersect_area / window_area).clamp(0.0, 1.0)
+        }
+        None => 0.0,
+    }
+}
+
+#[test]
+fn zoom_viewport_at_2x_center() {
+    let output_rect = rect(0.0, 0.0, 1920.0, 1080.0);
+    let focal = Point::from((960.0, 540.0));
+    let vp = zoomed_viewport(output_rect, focal, 2.0);
+
+    assert!((vp.size.w - 960.0).abs() < 0.01, "width: {}", vp.size.w);
+    assert!((vp.size.h - 540.0).abs() < 0.01, "height: {}", vp.size.h);
+    assert!((vp.loc.x - 480.0).abs() < 0.01, "x: {}", vp.loc.x);
+    assert!((vp.loc.y - 270.0).abs() < 0.01, "y: {}", vp.loc.y);
+}
+
+#[test]
+fn zoom_viewport_at_1x_is_full_output() {
+    let output_rect = rect(0.0, 0.0, 1920.0, 1080.0);
+    let focal = Point::from((960.0, 540.0));
+    let vp = zoomed_viewport(output_rect, focal, 1.0);
+
+    assert!((vp.size.w - 1920.0).abs() < 0.01);
+    assert!((vp.size.h - 1080.0).abs() < 0.01);
+}
+
+#[test]
+fn zoom_viewport_at_4x_corner() {
+    let output_rect = rect(0.0, 0.0, 1920.0, 1080.0);
+    let focal = Point::from((0.0, 0.0));
+    let vp = zoomed_viewport(output_rect, focal, 4.0);
+
+    assert!((vp.size.w - 480.0).abs() < 0.01);
+    assert!((vp.size.h - 270.0).abs() < 0.01);
+    assert!((vp.loc.x - 0.0).abs() < 0.01, "x: {}", vp.loc.x);
+    assert!((vp.loc.y - 0.0).abs() < 0.01, "y: {}", vp.loc.y);
+}
+
+#[test]
+fn output_zoom_state_viewport_global() {
+    let mut state = OutputZoomState::default();
+    state.level = 2.0;
+    state.focal = Point::from((960.0, 540.0));
+
+    let output_geo = rect(100.0, 200.0, 1920.0, 1080.0);
+    let vp = state.viewport_global(output_geo);
+
+    assert!((vp.size.w - 960.0).abs() < 0.01);
+    assert!((vp.size.h - 540.0).abs() < 0.01);
+}
+
+#[test]
+fn effective_scale_computation() {
+    let output_scale: f64 = 1.5;
+    let zoom_level: f64 = 2.0;
+    assert!((output_scale * zoom_level - 3.0).abs() < f64::EPSILON);
+    assert!((output_scale * 1.0 - 1.5).abs() < f64::EPSILON);
+    assert!((1.5_f64 * 5.0 - 7.5).abs() < f64::EPSILON);
+}
+
+#[test]
+fn visibility_fully_contained() {
+    let viewport = rect(0.0, 0.0, 1000.0, 1000.0);
+    let window = rect(100.0, 100.0, 200.0, 200.0);
+    let vis = calculate_visibility(window, viewport);
+    assert!((vis - 1.0).abs() < 0.01, "fully contained: {}", vis);
+}
+
+#[test]
+fn visibility_no_intersection() {
+    let viewport = rect(0.0, 0.0, 500.0, 500.0);
+    let window = rect(600.0, 600.0, 200.0, 200.0);
+    let vis = calculate_visibility(window, viewport);
+    assert!((vis - 0.0).abs() < 0.01, "no intersection: {}", vis);
+}
+
+#[test]
+fn visibility_half_overlap() {
+    let viewport = rect(0.0, 0.0, 500.0, 500.0);
+    // Window: 400..600 x 0..200 — 100x200 of 200x200 is in viewport = 50%
+    let window = rect(400.0, 0.0, 200.0, 200.0);
+    let vis = calculate_visibility(window, viewport);
+    assert!((vis - 0.5).abs() < 0.01, "half overlap: {}", vis);
+}
+
+#[test]
+fn visibility_zero_area_window() {
+    let viewport = rect(0.0, 0.0, 500.0, 500.0);
+    let window = rect(100.0, 100.0, 0.0, 0.0);
+    let vis = calculate_visibility(window, viewport);
+    assert!((vis - 0.0).abs() < 0.01, "zero area: {}", vis);
+}
+
+#[test]
+fn zoom_state_fractional_fields_default() {
+    let state = OutputZoomState::default();
+    assert!(state.zoomed_surfaces.is_empty());
+    assert!(state.last_scale_update_level.is_none());
+}

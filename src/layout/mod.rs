@@ -216,6 +216,8 @@ pub trait LayoutElement {
     fn min_size(&self) -> Size<i32, Logical>;
     fn max_size(&self) -> Size<i32, Logical>;
     fn is_wl_surface(&self, wl_surface: &WlSurface) -> bool;
+    /// Returns the toplevel WlSurface for this element, if available.
+    fn wl_surface(&self) -> Option<WlSurface>;
     fn has_ssd(&self) -> bool;
     fn set_preferred_scale_transform(&self, scale: output::Scale, transform: Transform);
     fn output_enter(&self, output: &Output);
@@ -357,6 +359,8 @@ pub struct Options {
     pub gestures: niri_config::Gestures,
     pub overview: niri_config::Overview,
     pub max_zoom: f64,
+    pub use_fractional_scale: bool,
+    pub max_fractional_scale: f64,
     // Debug flags.
     pub disable_resize_throttling: bool,
     pub disable_transactions: bool,
@@ -618,6 +622,8 @@ impl Options {
             gestures: config.gestures,
             overview: config.overview,
             max_zoom: config.zoom.max_zoom.clamp(1.0, 100.0),
+            use_fractional_scale: config.zoom.use_fractional_scale,
+            max_fractional_scale: config.zoom.max_fractional_scale.clamp(1.0, 20.0),
             disable_resize_throttling: config.debug.disable_resize_throttling,
             disable_transactions: config.debug.disable_transactions,
             deactivate_unfocused_windows: config.debug.deactivate_unfocused_windows,
@@ -4013,7 +4019,81 @@ impl<W: LayoutElement> Layout<W> {
         true
     }
 
-    pub fn compute_zoomed_surfaces(output: &Output, zoom_state: &mut OutputZoomState) {
+    /// Compute zoom viewport in output-local logical coords: size/zoom centered on focal.
+    fn compute_zoom_viewport(
+        output: &Output,
+        zoom_state: &OutputZoomState,
+    ) -> Rectangle<f64, Logical> {
+        let output_rect = Rectangle::new(Point::from((0.0, 0.0)), output_size(output).to_f64());
+        crate::zoom::zoomed_viewport(output_rect, zoom_state.focal, zoom_state.level)
+    }
+
+    /// Ratio of `window_geo` area intersecting `zoom_rect` to total window area (0.0–1.0).
+    fn calculate_visibility(
+        window_geo: Rectangle<f64, Logical>,
+        zoom_rect: Rectangle<f64, Logical>,
+    ) -> f64 {
+        let intersection = window_geo.intersection(zoom_rect);
+        match intersection {
+            Some(intersect) => {
+                let intersect_area = intersect.size.w * intersect.size.h;
+                let window_area = window_geo.size.w * window_geo.size.h;
+                if window_area <= 0.0 {
+                    return 0.0;
+                }
+                (intersect_area / window_area).clamp(0.0, 1.0)
+            }
+            None => 0.0,
+        }
+    }
+
+    pub fn compute_zoomed_surfaces(&self, output: &Output, zoom_state: &mut OutputZoomState) {
+        zoom_state.zoomed_surfaces.clear();
+
+        if zoom_state.level <= 1.0 {
+            return;
+        }
+
+        let zoom_rect = Self::compute_zoom_viewport(output, zoom_state);
+
+        let MonitorSet::Normal { monitors, .. } = &self.monitor_set else {
+            return;
+        };
+        let Some(mon) = monitors.iter().find(|m| &m.output == output) else {
+            return;
+        };
+
+        let ws = &mon.workspaces[mon.active_workspace_idx()];
+        for (tile, pos, _visible) in ws.tiles_with_render_positions() {
+            let win = tile.window();
+            let size = win.size().to_f64();
+            let window_geo = Rectangle::new(pos, size);
+            let visibility = Self::calculate_visibility(window_geo, zoom_rect);
+            if visibility > 0.0 {
+                if let Some(surface) = win.wl_surface() {
+                    zoom_state.zoomed_surfaces.insert(surface, zoom_state.level);
+                }
+            }
+        }
+
+        if let Some(InteractiveMoveState::Moving(move_data)) = &self.interactive_move {
+            if move_data.output == *output {
+                let win = move_data.tile.window();
+                let win_size = win.size().to_f64();
+                let (rx, ry) = move_data.pointer_ratio_within_window;
+                let pos = Point::from((
+                    move_data.pointer_pos_within_output.x - win_size.w * rx,
+                    move_data.pointer_pos_within_output.y - win_size.h * ry,
+                ));
+                let window_geo = Rectangle::new(pos, win_size);
+                let visibility = Self::calculate_visibility(window_geo, zoom_rect);
+                if visibility > 0.0 {
+                    if let Some(surface) = win.wl_surface() {
+                        zoom_state.zoomed_surfaces.insert(surface, zoom_state.level);
+                    }
+                }
+            }
+        }
     }
 
     /// Set the zoom level for the given output, computing the correct focal point

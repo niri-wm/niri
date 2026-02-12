@@ -825,6 +825,10 @@ impl LayoutElement for Mapped {
         self.toplevel().wl_surface() == wl_surface
     }
 
+    fn wl_surface(&self) -> Option<WlSurface> {
+        Some(self.toplevel().wl_surface().clone())
+    }
+
     fn set_preferred_scale_transform(&self, scale: output::Scale, transform: Transform) {
         self.window.with_surfaces(|surface, data| {
             send_scale_transform(surface, data, scale, transform, None);

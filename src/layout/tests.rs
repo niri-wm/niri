@@ -198,6 +198,10 @@ impl LayoutElement for TestWindow {
         false
     }
 
+    fn wl_surface(&self) -> Option<WlSurface> {
+        None
+    }
+
     fn set_preferred_scale_transform(&self, _scale: output::Scale, _transform: Transform) {}
 
     fn has_ssd(&self) -> bool {

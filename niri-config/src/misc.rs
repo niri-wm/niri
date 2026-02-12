@@ -35,6 +35,8 @@ pub struct Zoom {
     pub increment_type: ZoomIncrementType,
     pub pinch_sensitivity: f64,
     pub max_zoom: f64,
+    pub use_fractional_scale: bool,
+    pub max_fractional_scale: f64,
 }
 
 impl Default for Zoom {
@@ -44,6 +46,8 @@ impl Default for Zoom {
             increment_type: ZoomIncrementType::Linear,
             pinch_sensitivity: 1.0,
             max_zoom: 10.0,
+            use_fractional_scale: true,
+            max_fractional_scale: 5.0,
         }
     }
 }
@@ -58,6 +62,10 @@ pub struct ZoomPart {
     pub pinch_sensitivity: Option<f64>,
     #[knuffel(child, unwrap(argument))]
     pub max_zoom: Option<f64>,
+    #[knuffel(child)]
+    pub use_fractional_scale: Option<Flag>,
+    #[knuffel(child, unwrap(argument))]
+    pub max_fractional_scale: Option<f64>,
 }
 
 impl MergeWith<ZoomPart> for Zoom {
@@ -67,8 +75,10 @@ impl MergeWith<ZoomPart> for Zoom {
             movement_mode,
             increment_type,
             pinch_sensitivity,
-            max_zoom
+            max_zoom,
+            max_fractional_scale
         );
+        merge!((self, part), use_fractional_scale);
     }
 }
 
