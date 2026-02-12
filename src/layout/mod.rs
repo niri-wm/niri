@@ -2879,6 +2879,18 @@ impl<W: LayoutElement> Layout<W> {
                 }
             }
         }
+
+        if self.options.use_fractional_scale {
+            if let MonitorSet::Normal { monitors, .. } = &self.monitor_set {
+                for mon in monitors {
+                    if let Some(mut zoom_state) = mon.output.zoom_state() {
+                        if zoom_state.level > 1.0 {
+                            self.compute_zoomed_surfaces(&mon.output, &mut zoom_state);
+                        }
+                    }
+                }
+            }
+        }
     }
 
     pub fn are_animations_ongoing(&self, output: Option<&Output>) -> bool {
