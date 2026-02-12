@@ -4227,11 +4227,6 @@ impl<W: LayoutElement> Layout<W> {
 
         let target_focal = gesture.compute_focal_or(target_level, gesture.current_focal);
 
-        if let Some(mut zoom_state) = mon.output.zoom_state() {
-            zoom_state.level = target_level;
-            zoom_state.focal = target_focal;
-        }
-
         mon.zoom_progress = Some(ZoomAnimation::new(
             mon.clock.clone(),
             gesture.current_level,
