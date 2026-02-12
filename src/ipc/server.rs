@@ -33,10 +33,10 @@ use smithay::wayland::shell::wlr_layer::{KeyboardInteractivity, Layer};
 use crate::backend::IpcOutputMap;
 use crate::input::pick_window_grab::PickWindowGrab;
 use crate::layout::workspace::WorkspaceId;
-use crate::layout::OutputZoomState;
 use crate::niri::State;
 use crate::utils::{version, with_toplevel_role};
 use crate::window::Mapped;
+use crate::zoom::OutputZoomExt;
 
 // If an event stream client fails to read events fast enough that we accumulate more than this
 // number in our buffer, we drop that event stream client.
@@ -464,21 +464,15 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
                     .layout
                     .outputs()
                     .fold(HashMap::new(), |mut acc, output| {
-                        let Some(zoom) = output
-                            .user_data()
-                            .get::<Mutex<OutputZoomState>>()
-                            .and_then(|mutex| mutex.lock().ok())
-                        else {
-                            return acc;
-                        };
-
-                        acc.insert(
-                            output.name().clone(),
-                            niri_ipc::Zoom {
-                                is_locked: zoom.locked,
-                                level: zoom.base_level,
-                            },
-                        );
+                        if let Some(zoom) = output.zoom_state() {
+                            acc.insert(
+                                output.name().clone(),
+                                niri_ipc::Zoom {
+                                    is_locked: zoom.locked,
+                                    level: zoom.level,
+                                },
+                            );
+                        }
                         acc
                     });
                 let _ = tx.send_blocking(zooms);

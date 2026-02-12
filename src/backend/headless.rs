@@ -19,10 +19,10 @@ use smithay::utils::Size;
 use smithay::wayland::presentation::Refresh;
 
 use super::{IpcOutputMap, OutputId, RenderResult};
-use crate::layout::OutputZoomState;
 use crate::niri::{Niri, RedrawState};
 use crate::render_helpers::{resources, shaders};
 use crate::utils::{get_monotonic_time, logical_output};
+use crate::zoom::OutputZoomState;
 
 pub struct Headless {
     renderer: Option<GlesRenderer>,

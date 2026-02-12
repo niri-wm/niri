@@ -1,5 +1,3 @@
-use std::sync::Mutex;
-
 use niri_ipc::PickedColor;
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::input::ButtonState;
@@ -14,9 +12,9 @@ use smithay::input::pointer::{
 use smithay::input::SeatHandler;
 use smithay::utils::{Logical, Physical, Point, Scale, Size, Transform};
 
-use crate::layout::OutputZoomState;
 use crate::niri::State;
-use crate::render_helpers::render_and_download;
+use crate::render_helpers::{render_and_download, RenderTarget};
+use crate::zoom::OutputZoomExt;
 
 pub struct PickColorGrab {
     start_data: PointerGrabStartData<State>,
@@ -45,12 +43,8 @@ impl PickColorGrab {
         // handle.current_location() reports (due to clamping in OnEdge mode or other adjustments).
         // Use cursor_logical_pos from zoom state if available, as that's where the cursor
         // is actually rendered.
-        let pos_within_output = if let Some(zoom_state) = output
-            .user_data()
-            .get::<Mutex<OutputZoomState>>()
-            .and_then(|m| m.lock().ok())
-        {
-            if zoom_state.base_level > 1.0 {
+        let pos_within_output = if let Some(zoom_state) = output.zoom_state() {
+            if zoom_state.is_active() {
                 zoom_state.cursor_logical_pos.unwrap_or(pos_within_output)
             } else {
                 pos_within_output
@@ -70,7 +64,14 @@ impl PickColorGrab {
                 let size = Size::<i32, Physical>::from((1, 1));
 
                 // Use un-zoomed elements and sample at logical position.
-                let elements = data.niri.render_for_color_pick(renderer, &output);
+                let mut elements = Vec::new();
+                data.niri.render_inner(
+                    renderer,
+                    &output,
+                    false,
+                    RenderTarget::Output,
+                    &mut |elem| elements.push(elem),
+                );
 
                 let mapping = match render_and_download(
                     renderer,
