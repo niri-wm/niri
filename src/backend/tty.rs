@@ -66,12 +66,12 @@ use wayland_protocols::wp::presentation_time::server::wp_presentation_feedback;
 use super::{IpcOutputMap, RenderResult};
 use crate::backend::OutputId;
 use crate::frame_clock::FrameClock;
-use crate::layout::OutputZoomState;
 use crate::niri::{Niri, RedrawState, State};
 use crate::render_helpers::debug::draw_damage;
 use crate::render_helpers::renderer::AsGlesRenderer;
 use crate::render_helpers::{resources, shaders, RenderTarget};
 use crate::utils::{get_monotonic_time, is_laptop_panel, logical_output, PanelOrientation};
+use crate::zoom::{OutputZoomExt, OutputZoomState};
 
 const SUPPORTED_COLOR_FORMATS: [Fourcc; 4] = [
     Fourcc::Xrgb8888,
@@ -1846,11 +1846,7 @@ impl Tty {
             }
         };
 
-        let zoom_factor = output
-            .user_data()
-            .get::<Mutex<OutputZoomState>>()
-            .and_then(|s| s.lock().ok().map(|z| z.base_level))
-            .unwrap_or(1.0);
+        let zoom_factor = output.zoom_state().map(|z| z.level).unwrap_or(1.0);
 
         // Apply filter temporarily before rendering
         // Set filter based on this output's zoom level
@@ -1876,11 +1872,6 @@ impl Tty {
         // system.
         let flags = {
             let debug = &self.config.borrow().debug;
-            let zoom_factor = output
-                .user_data()
-                .get::<Mutex<OutputZoomState>>()
-                .and_then(|s| s.lock().ok().map(|z| z.base_level))
-                .unwrap_or(1.0);
 
             let primary_scanout_flag = if debug.restrict_primary_scanout_to_matching_format {
                 FrameFlags::ALLOW_PRIMARY_PLANE_SCANOUT

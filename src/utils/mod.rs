@@ -42,7 +42,6 @@ pub mod transaction;
 pub mod vblank_throttle;
 pub mod watcher;
 pub mod xwayland;
-pub mod zoom;
 
 pub static IS_SYSTEMD_SERVICE: AtomicBool = AtomicBool::new(false);
 

@@ -18,11 +18,11 @@ use smithay::reexports::winit::window::Window;
 use smithay::wayland::presentation::Refresh;
 
 use super::{IpcOutputMap, OutputId, RenderResult};
-use crate::layout::OutputZoomState;
 use crate::niri::{Niri, RedrawState, State};
 use crate::render_helpers::debug::draw_damage;
 use crate::render_helpers::{resources, shaders, RenderTarget};
 use crate::utils::{get_monotonic_time, logical_output};
+use crate::zoom::{OutputZoomExt, OutputZoomState};
 
 pub struct Winit {
     config: Rc<RefCell<Config>>,
@@ -184,11 +184,7 @@ impl Winit {
     pub fn render(&mut self, niri: &mut Niri, output: &Output) -> RenderResult {
         let _span = tracy_client::span!("Winit::render");
 
-        let zoom_factor = output
-            .user_data()
-            .get::<Mutex<OutputZoomState>>()
-            .and_then(|s| s.lock().ok().map(|z| z.base_level))
-            .unwrap_or(1.0);
+        let zoom_factor = output.zoom_state().map(|z| z.level).unwrap_or(1.0);
 
         // Apply filter temporarily before rendering
         // based on this output's zoom level

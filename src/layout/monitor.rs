@@ -17,7 +17,7 @@ use super::workspace::{
     compute_working_area, OutputId, Workspace, WorkspaceAddWindowTarget, WorkspaceId,
     WorkspaceRenderElement,
 };
-use super::{compute_overview_zoom, ActivateWindow, HitType, LayoutElement, Options};
+use super::{compute_overview_zoom, ActivateWindow, HitType, LayoutElement, Options, ZoomProgress};
 use crate::animation::{Animation, Clock};
 use crate::input::swipe_tracker::SwipeTracker;
 use crate::niri_render_elements;
@@ -87,6 +87,8 @@ pub struct Monitor<W: LayoutElement> {
     pub(super) options: Rc<Options>,
     /// Layout config overrides for this monitor.
     layout_config: Option<niri_config::LayoutPart>,
+    /// In-progress zoom animation or gesture for this monitor.
+    pub(super) zoom_progress: Option<ZoomProgress>,
 }
 
 #[derive(Debug)]
@@ -345,6 +347,7 @@ impl<W: LayoutElement> Monitor<W> {
             base_options,
             options,
             layout_config,
+            zoom_progress: None,
         }
     }
 
