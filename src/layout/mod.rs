@@ -462,6 +462,19 @@ pub struct RemovedTile<W: LayoutElement> {
     is_sticky: bool,
 }
 
+#[derive(Debug, Clone)]
+pub(super) enum StickyRestorePosition {
+    Floating,
+    Tiling { column_idx: usize, tile_idx: usize },
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct StickyRestoreInfo<WindowId> {
+    workspace_id: WorkspaceId,
+    position: StickyRestorePosition,
+    next_to: Option<WindowId>,
+}
+
 /// Whether to activate a newly added window.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum ActivateWindow {
@@ -3388,27 +3401,95 @@ impl<W: LayoutElement> Layout<W> {
             };
             removed.tile.stop_move_animations();
 
-            let ws_id = monitors[mon_idx].workspaces[monitors[mon_idx].active_workspace_idx].id();
-            monitors[mon_idx].add_tile(
-                removed.tile,
-                MonitorAddWindowTarget::Workspace {
-                    id: ws_id,
-                    column_idx: None,
-                },
-                if activate {
-                    ActivateWindow::Yes
-                } else {
-                    ActivateWindow::No
-                },
-                true,
-                removed.width,
-                removed.is_full_width,
-                true,
-            );
+            let restore_info = removed.tile.sticky_restore_info.take();
+            let (target_mon_idx, target_ws_idx) = restore_info
+                .as_ref()
+                .and_then(|info| {
+                    monitors
+                        .iter()
+                        .enumerate()
+                        .find_map(|(candidate_mon_idx, mon)| {
+                            mon.workspaces
+                                .iter()
+                                .position(|ws| ws.id() == info.workspace_id)
+                                .map(|candidate_ws_idx| (candidate_mon_idx, candidate_ws_idx))
+                        })
+                })
+                .unwrap_or((mon_idx, monitors[mon_idx].active_workspace_idx));
+
+            let target_ws_id = monitors[target_mon_idx].workspaces[target_ws_idx].id();
+            let activate_window = if activate {
+                ActivateWindow::Yes
+            } else {
+                ActivateWindow::No
+            };
+
+            let restore_position = restore_info.as_ref().map(|info| info.position.clone());
+            let restore_next_to = restore_info.as_ref().and_then(|info| info.next_to.clone());
+
+            match restore_position {
+                Some(StickyRestorePosition::Tiling {
+                    column_idx,
+                    tile_idx,
+                }) => {
+                    let target_col_len = monitors[target_mon_idx].workspaces[target_ws_idx]
+                        .tiling_column_len(column_idx);
+
+                    if let Some(col_len) = target_col_len {
+                        monitors[target_mon_idx].add_tile_to_column(
+                            target_ws_idx,
+                            column_idx,
+                            Some(tile_idx.min(col_len)),
+                            removed.tile,
+                            activate,
+                            true,
+                        );
+                    } else if let Some(next_to) = restore_next_to.as_ref().filter(|next_to| {
+                        monitors[target_mon_idx].workspaces[target_ws_idx].has_window(next_to)
+                    }) {
+                        monitors[target_mon_idx].add_tile(
+                            removed.tile,
+                            MonitorAddWindowTarget::NextTo(next_to),
+                            activate_window,
+                            true,
+                            removed.width,
+                            removed.is_full_width,
+                            false,
+                        );
+                    } else {
+                        monitors[target_mon_idx].add_tile(
+                            removed.tile,
+                            MonitorAddWindowTarget::Workspace {
+                                id: target_ws_id,
+                                column_idx: Some(column_idx),
+                            },
+                            activate_window,
+                            true,
+                            removed.width,
+                            removed.is_full_width,
+                            false,
+                        );
+                    }
+                }
+                _ => {
+                    monitors[target_mon_idx].add_tile(
+                        removed.tile,
+                        MonitorAddWindowTarget::Workspace {
+                            id: target_ws_id,
+                            column_idx: None,
+                        },
+                        activate_window,
+                        true,
+                        removed.width,
+                        removed.is_full_width,
+                        true,
+                    );
+                }
+            }
 
             if activate {
-                monitors[mon_idx].focus_workspace();
-                *active_monitor_idx = mon_idx;
+                monitors[target_mon_idx].focus_workspace();
+                *active_monitor_idx = target_mon_idx;
             }
 
             return;
@@ -3429,12 +3510,21 @@ impl<W: LayoutElement> Layout<W> {
             .is_some_and(|win| win.id() == &target_id);
 
         let ws = &mut mon.workspaces[ws_idx];
+        let restore_info =
+            ws.sticky_restore_info_for_window(&target_id)
+                .unwrap_or(StickyRestoreInfo {
+                    workspace_id: ws.id(),
+                    position: StickyRestorePosition::Floating,
+                    next_to: None,
+                });
+
         if !ws.is_floating(&target_id) {
             ws.set_window_floating(Some(&target_id), true);
         }
 
         let mut removed = ws.remove_tile(&target_id, Transaction::new());
         removed.tile.stop_move_animations();
+        removed.tile.sticky_restore_info = Some(restore_info);
 
         mon.add_sticky_tile(removed.tile, target_is_active);
 

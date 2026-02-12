@@ -1708,15 +1708,13 @@ impl<W: LayoutElement> Monitor<W> {
             pos_within_output - geo.loc
         };
 
-        if ws.is_floating_visible() {
-            if let Some((win, hit)) = self.sticky.window_under(pos_within_workspace) {
-                let hit = if in_overview {
-                    hit.to_activate()
-                } else {
-                    hit.offset_win_pos(geo.loc)
-                };
-                return Some((win, hit));
-            }
+        if let Some((win, hit)) = self.sticky.window_under(pos_within_workspace) {
+            let hit = if in_overview {
+                hit.to_activate()
+            } else {
+                hit.offset_win_pos(geo.loc)
+            };
+            return Some((win, hit));
         }
 
         if in_overview {
@@ -1737,10 +1735,8 @@ impl<W: LayoutElement> Monitor<W> {
 
         let (ws, geo) = self.workspace_under(pos_within_output)?;
         let pos_within_workspace = pos_within_output - geo.loc;
-        if ws.is_floating_visible() {
-            if let Some(edges) = self.sticky.resize_edges_under(pos_within_workspace) {
-                return Some(edges);
-            }
+        if let Some(edges) = self.sticky.resize_edges_under(pos_within_workspace) {
+            return Some(edges);
         }
         ws.resize_edges_under(pos_within_workspace)
     }
@@ -1896,7 +1892,9 @@ impl<W: LayoutElement> Monitor<W> {
                 }};
             }
 
-            if ws.is_floating_visible() && !self.sticky.is_empty() {
+            // Monitor elements are pushed in top-to-bottom order, so sticky must be pushed before
+            // workspace content to stay above fullscreen/tiling windows.
+            if !self.sticky.is_empty() {
                 let view_rect = Rectangle::from_size(self.view_size);
                 let sticky_focus_ring = focus_ring && self.active_space == ActiveSpace::Sticky;
                 self.sticky
