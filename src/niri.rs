@@ -4284,7 +4284,7 @@ impl Niri {
     ) -> Vec<OutputRenderElements<R>> {
         // Apply zoom to the render elements when needed.
         let zoom_state = match output.zoom_state() {
-            Some(state) => state,
+            Some(state) => state.clone(),
             None => return elements,
         };
 

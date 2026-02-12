@@ -1896,11 +1896,6 @@ impl Tty {
                     flags.insert(FrameFlags::SKIP_CURSOR_ONLY_UPDATES);
                 }
             }
-            // Remove overlay plane scanout for high zoom factors as they tend to look bad.
-            if zoom_factor > 2.5 {
-                flags.remove(primary_scanout_flag);
-                flags.remove(FrameFlags::ALLOW_OVERLAY_PLANE_SCANOUT);
-            }
 
             flags
         };
