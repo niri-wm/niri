@@ -1148,11 +1148,27 @@ impl<W: LayoutElement> Workspace<W> {
         self.scrolling.set_column_display(display);
     }
 
+    pub fn align_column_left(&mut self) {
+        if self.floating_is_active.get() {
+            // TODO: Implement align window left
+        } else {
+            self.scrolling.align_column_left();
+        }
+    }
+
     pub fn center_column(&mut self) {
         if self.floating_is_active.get() {
             self.floating.center_window(None);
         } else {
             self.scrolling.center_column();
+        }
+    }
+
+    pub fn align_column_right(&mut self) {
+        if self.floating_is_active.get() {
+            // TODO: Implement align window right
+        } else {
+            self.scrolling.align_column_right();
         }
     }
 

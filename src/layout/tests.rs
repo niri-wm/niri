@@ -505,7 +505,9 @@ enum Op {
     SwapWindowInDirection(#[proptest(strategy = "arbitrary_scroll_direction()")] ScrollDirection),
     ToggleColumnTabbedDisplay,
     SetColumnDisplay(#[proptest(strategy = "arbitrary_column_display()")] ColumnDisplay),
+    AlignColumnLeft,
     CenterColumn,
+    AlignColumnRight,
     CenterWindow {
         #[proptest(strategy = "proptest::option::of(1..=5usize)")]
         id: Option<usize>,
@@ -1167,7 +1169,9 @@ impl Op {
             Op::SwapWindowInDirection(direction) => layout.swap_window_in_direction(direction),
             Op::ToggleColumnTabbedDisplay => layout.toggle_column_tabbed_display(),
             Op::SetColumnDisplay(display) => layout.set_column_display(display),
+            Op::AlignColumnLeft => layout.align_column_left(),
             Op::CenterColumn => layout.center_column(),
+            Op::AlignColumnRight => layout.align_column_left(),
             Op::CenterWindow { id } => {
                 let id = id.filter(|id| layout.has_window(id));
                 layout.center_window(id.as_ref());
@@ -1716,7 +1720,9 @@ fn operations_dont_panic() {
         Op::MoveColumnRightOrToMonitorRight(1),
         Op::ConsumeWindowIntoColumn,
         Op::ExpelWindowFromColumn,
+        Op::AlignColumnLeft,
         Op::CenterColumn,
+        Op::AlignColumnRight,
         Op::FocusWorkspaceDown,
         Op::FocusWorkspaceUp,
         Op::FocusWorkspace(1),
@@ -1890,7 +1896,9 @@ fn operations_from_starting_state_dont_panic() {
         Op::MoveColumnRightOrToMonitorRight(1),
         Op::ConsumeWindowIntoColumn,
         Op::ExpelWindowFromColumn,
+        Op::AlignColumnRight,
         Op::CenterColumn,
+        Op::AlignColumnLeft,
         Op::FocusWorkspaceDown,
         Op::FocusWorkspaceUp,
         Op::FocusWorkspace(1),
