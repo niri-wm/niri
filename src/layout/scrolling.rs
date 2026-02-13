@@ -4902,6 +4902,29 @@ impl<W: LayoutElement> Column<W> {
             }
         };
 
+        let min_width = self
+            .tiles
+            .iter()
+            .map(Tile::min_size_nonfullscreen)
+            .map(|size| size.w.max(1.))
+            .reduce(|a, b| a.max(b))
+            .unwrap_or(1.);
+        let max_width = self
+            .tiles
+            .iter()
+            .map(Tile::max_size_nonfullscreen)
+            .filter_map(|size| {
+                let w = size.w.max(0.);
+                (w > 0.).then_some(w)
+            })
+            .reduce(|a, b| a.min(b))
+            .unwrap_or(f64::INFINITY);
+        let max_width = f64::max(max_width, min_width);
+
+        let width = self.resolve_column_width(width);
+        let width = width.clamp(min_width, max_width);
+        let width = ColumnWidth::Fixed(width);
+
         self.width = width;
         self.preset_width_idx = None;
         self.is_full_width = false;
