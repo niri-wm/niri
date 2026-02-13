@@ -30,6 +30,10 @@ pub struct Winit {
     backend: WinitGraphicsBackend<GlesRenderer>,
     damage_tracker: OutputDamageTracker,
     ipc_outputs: Arc<Mutex<IpcOutputMap>>,
+    /// Last zoom level seen during render, used to detect zoom changes and
+    /// recreate the damage tracker when fractional scale zoom alters the
+    /// effective surface scales.
+    last_zoom_level: f64,
 }
 
 impl Winit {
@@ -141,6 +145,7 @@ impl Winit {
             backend,
             damage_tracker,
             ipc_outputs,
+            last_zoom_level: 1.0,
         })
     }
 
@@ -186,8 +191,18 @@ impl Winit {
 
         let zoom_factor = output.zoom_state().map(|z| z.level).unwrap_or(1.0);
 
-        // Apply filter temporarily before rendering
-        // based on this output's zoom level
+        // When zoom level changes with fractional scale enabled, recreate the
+        // damage tracker to force a full repaint. This prevents stale cached
+        // damage regions from the previous zoom level persisting when surfaces
+        // re-render at different buffer scales.
+        if (zoom_factor - self.last_zoom_level).abs() > f64::EPSILON {
+            let use_fractional_scale = niri.config.borrow().zoom.use_fractional_scale;
+            if use_fractional_scale {
+                self.damage_tracker = OutputDamageTracker::from_output(output);
+            }
+            self.last_zoom_level = zoom_factor;
+        }
+
         let filter = match zoom_factor {
             z if z < 2.0 => TextureFilter::Linear,
             _ => TextureFilter::Nearest,
