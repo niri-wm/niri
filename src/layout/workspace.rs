@@ -516,7 +516,8 @@ impl<W: LayoutElement> Workspace<W> {
 
     fn enter_output_for_window(&self, window: &W) {
         if let Some(output) = &self.output {
-            window.set_preferred_scale_transform(self.scale, self.transform);
+            let zoom_state = output.zoom_state().map(|s| s.clone());
+            window.set_preferred_scale_transform(self.scale, self.transform, zoom_state);
             window.output_enter(output);
         }
     }
@@ -577,8 +578,16 @@ impl<W: LayoutElement> Workspace<W> {
         self.background_buffer.resize(size);
 
         if scale_transform_changed {
+            let zoom_state = self
+                .output
+                .as_ref()
+                .and_then(|o| o.zoom_state().map(|s| s.clone()));
             for window in self.windows() {
-                window.set_preferred_scale_transform(self.scale, self.transform);
+                window.set_preferred_scale_transform(
+                    self.scale,
+                    self.transform,
+                    zoom_state.clone(),
+                );
             }
         }
     }
