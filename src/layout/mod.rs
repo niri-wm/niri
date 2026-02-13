@@ -70,13 +70,14 @@ use crate::rubber_band::RubberBand;
 use crate::utils::transaction::{Transaction, TransactionBlocker};
 use crate::utils::{
     ensure_min_max_size_maybe_zero, output_matches_name, output_size,
-    round_logical_in_physical_max1, ResizeEdge,
+    round_logical_in_physical_max1, send_scale_transform, ResizeEdge,
 };
 use crate::window::ResolvedWindowRules;
 pub use crate::zoom::{
     clamp_zoom_level_with_rubber_band, compute_focal_for_cursor, log_pos_to_zoom_level,
     OutputZoomExt, OutputZoomState, SCALE_CHANGE_THRESHOLD, ZOOM_GESTURE_RUBBER_BAND,
 };
+use smithay::wayland::compositor::with_states;
 
 pub mod closing_window;
 pub mod floating;
@@ -219,7 +220,12 @@ pub trait LayoutElement {
     /// Returns the toplevel WlSurface for this element, if available.
     fn wl_surface(&self) -> Option<WlSurface>;
     fn has_ssd(&self) -> bool;
-    fn set_preferred_scale_transform(&self, scale: output::Scale, transform: Transform);
+    fn set_preferred_scale_transform(
+        &self,
+        scale: output::Scale,
+        transform: Transform,
+        zoom_state: Option<OutputZoomState>,
+    );
     fn output_enter(&self, output: &Output);
     fn output_leave(&self, output: &Output);
     fn set_offscreen_data(&self, data: Option<OffscreenData>);
@@ -2864,6 +2870,16 @@ impl<W: LayoutElement> Layout<W> {
                                 zoom_state.focal = final_focal;
                                 zoom_state.transitioning = false;
                                 if final_level <= 1.0 {
+                                    // Reset scales to original (non-zoomed) values before clearing.
+                                    let scale = mon.output.current_scale();
+                                    let transform = mon.output.current_transform();
+                                    for (surface, _) in &zoom_state.zoomed_surfaces {
+                                        with_states(surface, |data| {
+                                            send_scale_transform(
+                                                surface, data, scale, transform, None,
+                                            );
+                                        });
+                                    }
                                     zoom_state.zoomed_surfaces.clear();
                                     zoom_state.last_scale_update_level = None;
                                 }
@@ -2901,6 +2917,23 @@ impl<W: LayoutElement> Layout<W> {
                         if zoom_state.level > 1.0 && Self::should_update_scales(&zoom_state) {
                             self.compute_zoomed_surfaces(&mon.output, &mut zoom_state);
                             zoom_state.last_scale_update_level = Some(zoom_state.level);
+
+                            // Send elevated preferred_scale to all zoomed surfaces.
+                            // This is the critical step that actually tells applications
+                            // to render at higher resolution during zoom.
+                            let scale = mon.output.current_scale();
+                            let transform = mon.output.current_transform();
+                            for (surface, _) in &zoom_state.zoomed_surfaces {
+                                with_states(surface, |data| {
+                                    send_scale_transform(
+                                        surface,
+                                        data,
+                                        scale,
+                                        transform,
+                                        Some(zoom_state.clone()),
+                                    );
+                                });
+                            }
                         }
                     }
                 }
@@ -4086,12 +4119,12 @@ impl<W: LayoutElement> Layout<W> {
     /// All visible surfaces get the current zoom level as their surface_zoom factor,
     /// regardless of whether they support `wp_fractional_scale_v1`. This is correct because:
     ///
-    /// - **Fractional-scale-aware apps** (GTK4, Qt6): Receive elevated `preferred_scale`
-    ///   via `send_scale_transform` and re-render at higher resolution → crisper zoom.
+    /// - **Fractional-scale-aware apps** (GTK4, Qt6): Receive elevated `preferred_scale` via
+    ///   `send_scale_transform` and re-render at higher resolution → crisper zoom.
     /// - **Legacy/XWayland apps**: Receive elevated `preferred_scale` but ignore it.
-    ///   `with_fractional_scale` is a no-op if the surface hasn't bound the protocol.
-    ///   They render at their default scale → compositor upscales via zoom → correct
-    ///   but not crisper (same as pre-feature behavior).
+    ///   `with_fractional_scale` is a no-op if the surface hasn't bound the protocol. They render
+    ///   at their default scale → compositor upscales via zoom → correct but not crisper (same as
+    ///   pre-feature behavior).
     ///
     /// No special-casing needed — the protocol handles non-supporting surfaces gracefully.
     pub fn compute_zoomed_surfaces(&self, output: &Output, zoom_state: &mut OutputZoomState) {
@@ -4554,9 +4587,11 @@ impl<W: LayoutElement> Layout<W> {
                 tile.stop_move_animations();
                 tile.interactive_move_offset = Point::from((0., 0.));
                 tile.window().output_enter(&output);
+                let zoom_state = output.zoom_state().map(|s| s.clone());
                 tile.window().set_preferred_scale_transform(
                     output.current_scale(),
                     output.current_transform(),
+                    zoom_state,
                 );
 
                 let view_size = output_size(&output);
@@ -4629,9 +4664,11 @@ impl<W: LayoutElement> Layout<W> {
                 if output != move_.output {
                     move_.tile.window().output_leave(&move_.output);
                     move_.tile.window().output_enter(&output);
+                    let zoom_state = output.zoom_state().map(|s| s.clone());
                     move_.tile.window().set_preferred_scale_transform(
                         output.current_scale(),
                         output.current_transform(),
+                        zoom_state,
                     );
                     move_.output = output.clone();
                     self.focus_output(&output);
