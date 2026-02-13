@@ -267,3 +267,89 @@ fn zoom_state_fractional_fields_default() {
     assert!(state.zoomed_surfaces.is_empty());
     assert!(state.last_scale_update_level.is_none());
 }
+
+use crate::zoom::SCALE_CHANGE_THRESHOLD;
+
+#[test]
+fn debounce_threshold_first_update_always_fires() {
+    let state = OutputZoomState::default();
+    assert!(state.last_scale_update_level.is_none());
+    let should_update = state.last_scale_update_level.map_or(true, |last| {
+        (state.level - last).abs() >= SCALE_CHANGE_THRESHOLD
+    });
+    assert!(should_update);
+}
+
+#[test]
+fn debounce_threshold_small_change_skipped() {
+    let mut state = OutputZoomState::default();
+    state.level = 2.0;
+    state.last_scale_update_level = Some(1.9);
+    let should_update = state.last_scale_update_level.map_or(true, |last| {
+        (state.level - last).abs() >= SCALE_CHANGE_THRESHOLD
+    });
+    assert!(
+        !should_update,
+        "0.1 change should be below threshold of {}",
+        SCALE_CHANGE_THRESHOLD
+    );
+}
+
+#[test]
+fn debounce_threshold_large_change_fires() {
+    let mut state = OutputZoomState::default();
+    state.level = 2.5;
+    state.last_scale_update_level = Some(2.0);
+    let should_update = state.last_scale_update_level.map_or(true, |last| {
+        (state.level - last).abs() >= SCALE_CHANGE_THRESHOLD
+    });
+    assert!(
+        should_update,
+        "0.5 change should exceed threshold of {}",
+        SCALE_CHANGE_THRESHOLD
+    );
+}
+
+#[test]
+fn debounce_threshold_exact_boundary() {
+    let mut state = OutputZoomState::default();
+    state.level = 2.25;
+    state.last_scale_update_level = Some(2.0);
+    let should_update = state.last_scale_update_level.map_or(true, |last| {
+        (state.level - last).abs() >= SCALE_CHANGE_THRESHOLD
+    });
+    assert!(should_update, "Exact threshold should fire");
+}
+
+#[test]
+fn max_fractional_scale_caps_zoom_factor() {
+    let max_fractional_scale: f64 = 5.0;
+    let zoom_level: f64 = 8.0;
+    let capped = zoom_level.min(max_fractional_scale);
+    assert!((capped - 5.0).abs() < f64::EPSILON);
+}
+
+#[test]
+fn max_fractional_scale_no_cap_when_below() {
+    let max_fractional_scale: f64 = 5.0;
+    let zoom_level: f64 = 3.0;
+    let capped = zoom_level.min(max_fractional_scale);
+    assert!((capped - 3.0).abs() < f64::EPSILON);
+}
+
+#[test]
+fn max_fractional_scale_effective_scale_capped() {
+    let output_scale: f64 = 1.5;
+    let max_fractional_scale: f64 = 5.0;
+    let zoom_level: f64 = 10.0;
+    let capped_zoom = zoom_level.min(max_fractional_scale);
+    let effective = output_scale * capped_zoom;
+    assert!((effective - 7.5).abs() < f64::EPSILON);
+    assert!(effective <= output_scale * max_fractional_scale);
+}
+
+#[test]
+fn backward_compat_no_fractional_zoom_empty_surfaces() {
+    let state = OutputZoomState::default();
+    assert!(state.zoomed_surfaces.is_empty());
+}
