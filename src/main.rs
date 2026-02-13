@@ -1,6 +1,7 @@
 #[macro_use]
 extern crate tracing;
 
+use std::ffi::OsString;
 use std::fmt::Write as _;
 use std::fs::File;
 use std::io::{self, Write};
@@ -90,7 +91,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         // Set the current desktop for xdg-desktop-portal.
-        env::set_var("XDG_CURRENT_DESKTOP", "niri");
+        env::set_var("XDG_CURRENT_DESKTOP", xdg_current_desktop(cli.xdg_current_desktop));
+
         // Ensure the session type is set to Wayland for xdg-autostart and Qt apps.
         env::set_var("XDG_SESSION_TYPE", "wayland");
     }
@@ -368,4 +370,9 @@ fn notify_fd() -> anyhow::Result<()> {
     let mut notif = unsafe { File::from_raw_fd(fd) };
     notif.write_all(b"READY=1\n")?;
     Ok(())
+}
+
+fn xdg_current_desktop(cli_value: Option<OsString>) -> OsString {
+    cli_value.or(env::var_os("NIRI_XDG_CURRENT_DESKTOP"))
+        .unwrap_or_else(|| OsString::from("niri"))
 }
