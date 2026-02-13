@@ -108,6 +108,24 @@ impl OutputZoomState {
             self.cursor_hotspot = Some(hotspot);
         }
     }
+
+    /// Returns the zoom factor at which a surface was told to render via elevated
+    /// preferred_scale. If the surface is not in `zoomed_surfaces` (i.e., it did not
+    /// receive elevated scale), returns 1.0 — meaning it needs full compositor zoom.
+    pub fn get_surface_zoom_factor(&self, surface: &WlSurface) -> f64 {
+        self.zoomed_surfaces.get(surface).copied().unwrap_or(1.0)
+    }
+
+    /// Returns the rescale factor to apply during zoom rendering for a given surface.
+    ///
+    /// `rescale = zoom_factor / surface_zoom`:
+    /// - If a surface rendered at 2.0× and zoom is 2.0×, rescale is 1.0 (no compositor
+    ///   upscale needed — the surface already has the pixels).
+    /// - If a surface didn't respond to elevated scale (1.0), rescale is the full
+    ///   `zoom_factor`.
+    pub fn get_rescale_factor(&self, surface: &WlSurface, zoom_factor: f64) -> f64 {
+        zoom_factor / self.get_surface_zoom_factor(surface)
+    }
 }
 
 impl Default for OutputZoomState {
