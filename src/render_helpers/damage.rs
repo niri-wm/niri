@@ -1,7 +1,7 @@
 use smithay::backend::renderer::element::{Element, Id, RenderElement};
 use smithay::backend::renderer::utils::CommitCounter;
 use smithay::backend::renderer::Renderer;
-use smithay::utils::{Buffer, Logical, Physical, Point, Rectangle, Scale, Size};
+use smithay::utils::{Buffer, Logical, Physical, Rectangle, Scale, Size};
 
 #[derive(Debug, Clone)]
 pub struct ExtraDamage {
@@ -19,22 +19,14 @@ impl ExtraDamage {
         }
     }
 
-    pub fn set_size(&mut self, size: Size<f64, Logical>) {
-        if self.geometry.size == size {
-            return;
-        }
-
-        self.geometry.size = size;
-        self.commit.increment();
-    }
-
     pub fn damage_all(&mut self) {
         self.commit.increment();
     }
 
-    pub fn with_location(mut self, location: Point<f64, Logical>) -> Self {
-        self.geometry.loc = location;
-        self
+    pub fn render(&self, geometry: Rectangle<f64, Logical>) -> Self {
+        let mut this = self.clone();
+        this.geometry = geometry;
+        this
     }
 }
 
