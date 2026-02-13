@@ -269,6 +269,9 @@ pub fn send_scale_transform(
     }
 
     send_surface_state(surface, data, scale.integer_scale(), transform);
+    // If the surface hasn't bound wp_fractional_scale_v1 (e.g., XWayland, legacy apps),
+    // with_fractional_scale is a no-op — the surface never receives elevated preferred_scale
+    // and renders at its default scale. Compositor zoom handles the rest (FS-17).
     with_fractional_scale(data, |fractional| {
         fractional.set_preferred_scale(effective_scale);
     });

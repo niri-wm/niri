@@ -2890,6 +2890,10 @@ impl<W: LayoutElement> Layout<W> {
         // - Zoom stabilization: final animation frame forces full output repaint
         // - Winit: damage tracker recreated on zoom level change (backend/winit.rs)
         // - TTY: DrmCompositor.render_frame detects element changes automatically
+        // When use_fractional_scale is false, this block is skipped entirely.
+        // zoomed_surfaces remains empty, send_scale_transform sends unmodified
+        // output scale, and zoom_render_elements uses uniform zoom_factor.
+        // This produces identical behavior to pre-feature zoom (FS-22).
         if self.options.use_fractional_scale {
             if let MonitorSet::Normal { monitors, .. } = &self.monitor_set {
                 for mon in monitors {
@@ -4077,6 +4081,19 @@ impl<W: LayoutElement> Layout<W> {
         }
     }
 
+    /// Compute which surfaces are within the zoom viewport and populate `zoomed_surfaces`.
+    ///
+    /// All visible surfaces get the current zoom level as their surface_zoom factor,
+    /// regardless of whether they support `wp_fractional_scale_v1`. This is correct because:
+    ///
+    /// - **Fractional-scale-aware apps** (GTK4, Qt6): Receive elevated `preferred_scale`
+    ///   via `send_scale_transform` and re-render at higher resolution → crisper zoom.
+    /// - **Legacy/XWayland apps**: Receive elevated `preferred_scale` but ignore it.
+    ///   `with_fractional_scale` is a no-op if the surface hasn't bound the protocol.
+    ///   They render at their default scale → compositor upscales via zoom → correct
+    ///   but not crisper (same as pre-feature behavior).
+    ///
+    /// No special-casing needed — the protocol handles non-supporting surfaces gracefully.
     pub fn compute_zoomed_surfaces(&self, output: &Output, zoom_state: &mut OutputZoomState) {
         zoom_state.zoomed_surfaces.clear();
 
@@ -4085,6 +4102,7 @@ impl<W: LayoutElement> Layout<W> {
         }
 
         let zoom_rect = Self::compute_zoom_viewport(output, zoom_state);
+        let capped_zoom = zoom_state.level.min(self.options.max_fractional_scale);
 
         let MonitorSet::Normal { monitors, .. } = &self.monitor_set else {
             return;
@@ -4101,7 +4119,7 @@ impl<W: LayoutElement> Layout<W> {
             let visibility = Self::calculate_visibility(window_geo, zoom_rect);
             if visibility > 0.0 {
                 if let Some(surface) = win.wl_surface() {
-                    zoom_state.zoomed_surfaces.insert(surface, zoom_state.level);
+                    zoom_state.zoomed_surfaces.insert(surface, capped_zoom);
                 }
             }
         }
@@ -4119,7 +4137,7 @@ impl<W: LayoutElement> Layout<W> {
                 let visibility = Self::calculate_visibility(window_geo, zoom_rect);
                 if visibility > 0.0 {
                     if let Some(surface) = win.wl_surface() {
-                        zoom_state.zoomed_surfaces.insert(surface, zoom_state.level);
+                        zoom_state.zoomed_surfaces.insert(surface, capped_zoom);
                     }
                 }
             }
