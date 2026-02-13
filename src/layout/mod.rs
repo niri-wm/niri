@@ -75,7 +75,7 @@ use crate::utils::{
 use crate::window::ResolvedWindowRules;
 pub use crate::zoom::{
     clamp_zoom_level_with_rubber_band, compute_focal_for_cursor, log_pos_to_zoom_level,
-    OutputZoomExt, OutputZoomState, ZOOM_GESTURE_RUBBER_BAND,
+    OutputZoomExt, OutputZoomState, SCALE_CHANGE_THRESHOLD, ZOOM_GESTURE_RUBBER_BAND,
 };
 
 pub mod closing_window;
@@ -2894,8 +2894,9 @@ impl<W: LayoutElement> Layout<W> {
             if let MonitorSet::Normal { monitors, .. } = &self.monitor_set {
                 for mon in monitors {
                     if let Some(mut zoom_state) = mon.output.zoom_state() {
-                        if zoom_state.level > 1.0 {
+                        if zoom_state.level > 1.0 && Self::should_update_scales(&zoom_state) {
                             self.compute_zoomed_surfaces(&mon.output, &mut zoom_state);
+                            zoom_state.last_scale_update_level = Some(zoom_state.level);
                         }
                     }
                 }
@@ -4066,6 +4067,13 @@ impl<W: LayoutElement> Layout<W> {
                 (intersect_area / window_area).clamp(0.0, 1.0)
             }
             None => 0.0,
+        }
+    }
+
+    fn should_update_scales(zoom_state: &OutputZoomState) -> bool {
+        match zoom_state.last_scale_update_level {
+            None => true,
+            Some(last) => (zoom_state.level - last).abs() >= SCALE_CHANGE_THRESHOLD,
         }
     }
 

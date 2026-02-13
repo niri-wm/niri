@@ -8,6 +8,10 @@ use smithay::utils::{Logical, Physical, Point, Rectangle, Size};
 
 use crate::rubber_band::RubberBand;
 
+/// Minimum zoom level change before re-sending surface scales.
+/// Prevents excessive protocol traffic during continuous zoom gestures.
+pub const SCALE_CHANGE_THRESHOLD: f64 = 0.25;
+
 /// Zoom rubber-banding constants (matching OVERVIEW_GESTURE_RUBBER_BAND pattern)
 pub const ZOOM_GESTURE_RUBBER_BAND: RubberBand = RubberBand {
     stiffness: 0.5,
