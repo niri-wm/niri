@@ -119,10 +119,9 @@ impl OutputZoomState {
     /// Returns the rescale factor to apply during zoom rendering for a given surface.
     ///
     /// `rescale = zoom_factor / surface_zoom`:
-    /// - If a surface rendered at 2.0× and zoom is 2.0×, rescale is 1.0 (no compositor
-    ///   upscale needed — the surface already has the pixels).
-    /// - If a surface didn't respond to elevated scale (1.0), rescale is the full
-    ///   `zoom_factor`.
+    /// - If a surface rendered at 2.0× and zoom is 2.0×, rescale is 1.0 (no compositor upscale
+    ///   needed — the surface already has the pixels).
+    /// - If a surface didn't respond to elevated scale (1.0), rescale is the full `zoom_factor`.
     pub fn get_rescale_factor(&self, surface: &WlSurface, zoom_factor: f64) -> f64 {
         zoom_factor / self.get_surface_zoom_factor(surface)
     }

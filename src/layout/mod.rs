@@ -2884,6 +2884,12 @@ impl<W: LayoutElement> Layout<W> {
             }
         }
 
+        // Fractional scale zoom damage tracking:
+        // - During zoom transitions: advance_animations triggers continuous redraws
+        // - When surfaces re-render at new scale: Smithay's commit damage handles it
+        // - Zoom stabilization: final animation frame forces full output repaint
+        // - Winit: damage tracker recreated on zoom level change (backend/winit.rs)
+        // - TTY: DrmCompositor.render_frame detects element changes automatically
         if self.options.use_fractional_scale {
             if let MonitorSet::Normal { monitors, .. } = &self.monitor_set {
                 for mon in monitors {
