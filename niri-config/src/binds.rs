@@ -51,6 +51,7 @@ pub enum Trigger {
     TouchpadScrollUp,
     TouchpadScrollLeft,
     TouchpadScrollRight,
+    TabletPadButton(u32),
 }
 
 bitflags! {
@@ -1012,6 +1013,12 @@ impl FromStr for Key {
             Trigger::TouchpadScrollLeft
         } else if key.eq_ignore_ascii_case("TouchpadScrollRight") {
             Trigger::TouchpadScrollRight
+        } else if key.starts_with("TabletPadButton") {
+            let button_str = key.strip_prefix("TabletPadButton").unwrap();
+            match button_str.parse::<u32>() {
+                Ok(button) => Trigger::TabletPadButton(button),
+                Err(_) => return Err(miette!("invalid tablet pad button: {}", button_str)),
+            }
         } else {
             let mut keysym = keysym_from_name(key, KEYSYM_CASE_INSENSITIVE);
             // The keyboard event handling code can receive either
@@ -1109,6 +1116,45 @@ mod tests {
             Key {
                 trigger: Trigger::Keysym(Keysym::a),
                 modifiers: Modifiers::ISO_LEVEL5_SHIFT
+            },
+        );
+    }
+
+    #[test]
+    fn parse_tablet_pad_buttons() {
+        assert_eq!(
+            "TabletPadButton0".parse::<Key>().unwrap(),
+            Key {
+                trigger: Trigger::TabletPadButton(0),
+                modifiers: Modifiers::empty()
+            },
+        );
+        assert_eq!(
+            "TabletPadButton5".parse::<Key>().unwrap(),
+            Key {
+                trigger: Trigger::TabletPadButton(5),
+                modifiers: Modifiers::empty()
+            },
+        );
+        assert_eq!(
+            "Mod+TabletPadButton1".parse::<Key>().unwrap(),
+            Key {
+                trigger: Trigger::TabletPadButton(1),
+                modifiers: Modifiers::COMPOSITOR
+            },
+        );
+        assert_eq!(
+            "Ctrl+Shift+TabletPadButton10".parse::<Key>().unwrap(),
+            Key {
+                trigger: Trigger::TabletPadButton(10),
+                modifiers: Modifiers::CTRL | Modifiers::SHIFT
+            },
+        );
+        assert_eq!(
+            "Ctrl+Z".parse::<Key>().unwrap(),
+            Key {
+                trigger: Trigger::Keysym(Keysym::z),
+                modifiers: Modifiers::CTRL
             },
         );
     }
