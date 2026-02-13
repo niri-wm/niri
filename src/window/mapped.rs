@@ -829,9 +829,14 @@ impl LayoutElement for Mapped {
         Some(self.toplevel().wl_surface().clone())
     }
 
-    fn set_preferred_scale_transform(&self, scale: output::Scale, transform: Transform) {
+    fn set_preferred_scale_transform(
+        &self,
+        scale: output::Scale,
+        transform: Transform,
+        zoom_state: Option<crate::zoom::OutputZoomState>,
+    ) {
         self.window.with_surfaces(|surface, data| {
-            send_scale_transform(surface, data, scale, transform, None);
+            send_scale_transform(surface, data, scale, transform, zoom_state.clone());
         });
     }
 
