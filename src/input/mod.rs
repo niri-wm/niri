@@ -3286,8 +3286,8 @@ impl State {
         let horizontal_amount = event.amount(Axis::Horizontal);
         let vertical_amount = event.amount(Axis::Vertical);
 
-        // Handle touchpad scroll bindings.
-        if source == AxisSource::Finger {
+        // Handle touchpad and continuous scroll bindings.
+        if source == AxisSource::Finger || source == AxisSource::Continuous {
             let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
             let modifiers = modifiers_from_state(mods);
 
