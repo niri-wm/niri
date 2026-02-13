@@ -403,7 +403,6 @@ impl<W: LayoutElement> Tile<W> {
             .unwrap_or_default()
             .fit_to(window_size.w as f32, window_size.h as f32);
         self.rounded_corner_damage.set_corner_radius(radius);
-        self.rounded_corner_damage.set_size(window_size);
     }
 
     pub fn advance_animations(&mut self) {
@@ -1200,8 +1199,8 @@ impl<W: LayoutElement> Tile<W> {
             };
 
             if clip_to_geometry && clip_shader.is_some() {
-                let damage = self.rounded_corner_damage.element();
-                push(damage.with_location(window_render_loc).into());
+                let damage = self.rounded_corner_damage.render(geo);
+                push(damage.into());
             }
 
             self.window
