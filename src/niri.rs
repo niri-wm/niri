@@ -4309,11 +4309,19 @@ impl Niri {
 
         let scale_with_zoom = self.config.borrow().cursor.scale_with_zoom;
 
-        let focal_point_physical = zoom_focal_point.to_physical_precise_round(output_scale);
         let focal_point_physical_f64: Point<f64, Physical> =
             zoom_focal_point.to_physical(output_scale);
         let cursor_physical_f64: Option<Point<f64, Physical>> =
             cursor_logical_pos.map(|p| p.to_physical(output_scale));
+
+        // Global viewport offset: a single f64→i32 round of the focal displacement.
+        // Using origin=(0,0) in RescaleRenderElement avoids the double-rounding that
+        // caused viewport jitter when focal_f64 crossed .5 boundaries during zoom
+        // level transitions.
+        let viewport_offset: Point<i32, Physical> = Point::from((
+            -(focal_point_physical_f64.x * (zoom_factor - 1.0)).round() as i32,
+            -(focal_point_physical_f64.y * (zoom_factor - 1.0)).round() as i32,
+        ));
 
         // Generate match arms for each OutputRenderElement variant.
         macro_rules! apply_zoom {
@@ -4396,25 +4404,14 @@ impl Niri {
                     }
                     $(
                         OutputRenderElements::$variant(elem) => {
-                            // Compute subpixel correction to compensate for integer rounding of focal point.
-                            // RescaleRenderElement uses integer focal, causing viewport jitter at high zoom
-                            // when the f64 focal oscillates around .5 boundaries. This offset corrects for
-                            // the rounding error: correction = (focal_i32 - focal_f64) * (zoom - 1)
-                            let subpixel_correction: Point<i32, Physical> = Point::from((
-                                ((focal_point_physical.x as f64 - focal_point_physical_f64.x) * (zoom_factor - 1.0))
-                                    .round() as i32,
-                                ((focal_point_physical.y as f64 - focal_point_physical_f64.y) * (zoom_factor - 1.0))
-                                    .round() as i32,
-                            ));
-
                             CropRenderElement::from_element(
                                 RelocateRenderElement::from_element(
                                     RescaleRenderElement::from_element(
                                         elem,
-                                        focal_point_physical,
+                                        Point::from((0, 0)),
                                         zoom_factor
                                     ),
-                                    subpixel_correction,
+                                    viewport_offset,
                                     Relocate::Relative
                                 ),
                                 output_scale,

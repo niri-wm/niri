@@ -3259,10 +3259,31 @@ impl<W: LayoutElement> Layout<W> {
             move_.tile.update_config(view_size, scale, Rc::new(options));
         }
 
+        // Check if use_fractional_scale was disabled and reset surface scales immediately.
+        let fractional_disabled =
+            self.options.use_fractional_scale && !options.use_fractional_scale;
+
         match &mut self.monitor_set {
             MonitorSet::Normal { monitors, .. } => {
                 for mon in monitors {
                     mon.update_config(options.clone());
+
+                    // Reset scales to output default when fractional scale is disabled.
+                    if fractional_disabled {
+                        if let Some(mut zoom_state) = mon.output.zoom_state() {
+                            if !zoom_state.zoomed_surfaces.is_empty() {
+                                let scale = mon.output.current_scale();
+                                let transform = mon.output.current_transform();
+                                for (surface, _) in &zoom_state.zoomed_surfaces {
+                                    with_states(surface, |data| {
+                                        send_scale_transform(surface, data, scale, transform, None);
+                                    });
+                                }
+                                zoom_state.zoomed_surfaces.clear();
+                                zoom_state.last_scale_update_level = None;
+                            }
+                        }
+                    }
                 }
             }
             MonitorSet::NoOutputs { workspaces } => {
