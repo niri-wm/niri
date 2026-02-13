@@ -939,6 +939,8 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                 col.animate_move_from(offset);
             }
         }
+
+        self.auto_center_if_needed();
     }
 
     pub fn add_tile_right_of(
@@ -1020,6 +1022,8 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             self.activate_column_with_anim_config(idx, anim_config);
             self.activate_prev_column_on_removal = prev_offset;
         }
+
+        self.auto_center_if_needed();
     }
 
     pub fn remove_active_tile(&mut self, transaction: Transaction) -> Option<RemovedTile<W>> {
@@ -1147,6 +1151,8 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             }
         }
 
+        self.auto_center_if_needed();
+
         tile
     }
 
@@ -1240,6 +1246,8 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                 view_config,
             );
         }
+
+        self.auto_center_if_needed();
 
         column
     }
@@ -1711,6 +1719,8 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         }
 
         self.activate_column_with_anim_config(new_idx, self.options.animations.window_movement.0);
+
+        self.auto_center_if_needed();
     }
 
     pub fn move_left(&mut self) -> bool {
@@ -2290,6 +2300,97 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         self.animate_view_offset_to_column(None, self.active_column_idx, None);
     }
 
+    fn should_auto_center(&self) -> bool {
+        if self.columns.is_empty() {
+            return false;
+        }
+
+        // Don't interfere with always-centered or single-column centering modes.
+        if self.is_centering_focused_column() {
+            return false;
+        }
+
+        let working_w = self.working_area.size.w;
+        let gap = self.options.layout.gaps;
+
+        let total_width: f64 = self
+            .columns
+            .iter()
+            .map(|col| {
+                let width = if col.is_full_width {
+                    ColumnWidth::Proportion(1.)
+                } else {
+                    col.width
+                };
+                col.resolve_column_width(width) + gap
+            })
+            .sum::<f64>()
+            - gap;
+
+        total_width <= working_w
+    }
+
+    pub fn auto_center_if_needed(&mut self) {
+        if !self.options.layout.auto_center_when_space_available {
+            return;
+        }
+
+        if !self.should_auto_center() {
+            return;
+        }
+
+        let working_x = self.working_area.loc.x;
+        let working_w = self.working_area.size.w;
+        let gap = self.options.layout.gaps;
+
+        let expected_data: Vec<ColumnData> = self
+            .columns
+            .iter()
+            .map(|col| ColumnData {
+                width: col.expected_width(),
+            })
+            .collect();
+
+        let mut width_taken = 0.;
+        let mut leftmost_col_x = None;
+        let mut expected_active_col_x = None;
+
+        let col_xs = self.column_xs(expected_data.iter().copied());
+        for (idx, col_x) in col_xs.take(self.columns.len()).enumerate() {
+            leftmost_col_x.get_or_insert(col_x);
+
+            let width = expected_data[idx].width;
+
+            if idx == self.active_column_idx {
+                expected_active_col_x = Some(col_x);
+            }
+
+            width_taken += width + gap;
+        }
+
+        if expected_active_col_x.is_none() {
+            return;
+        }
+
+        let col = &mut self.columns[self.active_column_idx];
+        cancel_resize_for_column(&mut self.interactive_resize, col);
+
+        let free_space = working_w - width_taken + gap;
+        let centered_view_x = leftmost_col_x.unwrap() - free_space / 2. - working_x;
+
+        let current_active_col_x = self.column_x(self.active_column_idx);
+        let view_offset = centered_view_x - current_active_col_x;
+
+        let config = self.options.animations.horizontal_view_movement.0;
+        self.view_offset = ViewOffset::Animation(Animation::new(
+            self.clock.clone(),
+            self.view_offset.current(),
+            view_offset,
+            0.,
+            config,
+        ));
+    }
+
     pub fn view_pos(&self) -> f64 {
         self.column_x(self.active_column_idx) + self.view_offset.current()
     }
@@ -2590,6 +2691,8 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         col.toggle_width(None, forwards);
 
         cancel_resize_for_column(&mut self.interactive_resize, col);
+
+        self.auto_center_if_needed();
     }
 
     pub fn toggle_full_width(&mut self) {
@@ -2601,6 +2704,8 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         col.toggle_full_width();
 
         cancel_resize_for_column(&mut self.interactive_resize, col);
+
+        self.auto_center_if_needed();
     }
 
     pub fn set_window_width(&mut self, window: Option<&W::Id>, change: SizeChange) {
@@ -2625,6 +2730,8 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         col.set_column_width(change, tile_idx, true);
 
         cancel_resize_for_column(&mut self.interactive_resize, col);
+
+        self.auto_center_if_needed();
     }
 
     pub fn set_window_height(&mut self, window: Option<&W::Id>, change: SizeChange) {
@@ -4722,6 +4829,59 @@ impl<W: LayoutElement> Column<W> {
         }
 
         tiles_width
+    }
+
+    fn expected_width(&self) -> f64 {
+        let width = if self.is_full_width {
+            ColumnWidth::Proportion(1.)
+        } else {
+            self.width
+        };
+        let min_size: Vec<_> = self
+            .tiles
+            .iter()
+            .map(Tile::min_size_nonfullscreen)
+            .map(|mut size| {
+                size.w = size.w.max(1.);
+                size
+            })
+            .collect();
+        let max_size: Vec<_> = self
+            .tiles
+            .iter()
+            .map(Tile::max_size_nonfullscreen)
+            .collect();
+
+        let min_width = min_size
+            .iter()
+            .map(|size| NotNan::new(size.w).unwrap())
+            .max()
+            .map(NotNan::into_inner)
+            .unwrap();
+        let max_width = max_size
+            .iter()
+            .filter_map(|size| {
+                let w = size.w;
+                if w == 0. {
+                    None
+                } else {
+                    Some(NotNan::new(w).unwrap())
+                }
+            })
+            .min()
+            .map(NotNan::into_inner)
+            .unwrap_or(f64::from(i32::MAX));
+        let max_width = f64::max(max_width, min_width);
+
+        let mut width = self.resolve_column_width(width);
+        width = f64::max(f64::min(width, max_width), min_width);
+
+        if self.display_mode == ColumnDisplay::Tabbed && self.sizing_mode().is_normal() {
+            let extra_size = self.tab_indicator.extra_size(self.tiles.len(), self.scale);
+            width += extra_size.w;
+        }
+
+        width
     }
 
     fn focus_index(&mut self, index: u8) {
