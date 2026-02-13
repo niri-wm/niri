@@ -4299,6 +4299,14 @@ impl Niri {
 
         let (zoom_factor, zoom_focal_point) = (zoom_state.level, zoom_state.focal);
 
+        // Fractional scale zoom: surfaces in zoomed_surfaces rendered at elevated scale.
+        // Smithay normalizes buffer_scale → logical size, so these surfaces appear at
+        // correct logical size with more pixel density. The zoom rescale then magnifies
+        // the denser content, resulting in crisper zoomed output without changing the
+        // rescale factor. Per-element rescale adjustment (zoom_factor / surface_zoom)
+        // would be needed if rendering bypassed buffer normalization.
+        let _zoomed_surfaces = &zoom_state.zoomed_surfaces;
+
         let scale_with_zoom = self.config.borrow().cursor.scale_with_zoom;
 
         let focal_point_physical = zoom_focal_point.to_physical_precise_round(output_scale);
