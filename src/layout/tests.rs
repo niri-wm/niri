@@ -202,7 +202,13 @@ impl LayoutElement for TestWindow {
         None
     }
 
-    fn set_preferred_scale_transform(&self, _scale: output::Scale, _transform: Transform) {}
+    fn set_preferred_scale_transform(
+        &self,
+        _scale: output::Scale,
+        _transform: Transform,
+        _zoom_state: Option<OutputZoomState>,
+    ) {
+    }
 
     fn has_ssd(&self) -> bool {
         false
