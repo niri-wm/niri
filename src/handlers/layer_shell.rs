@@ -13,6 +13,7 @@ use smithay::wayland::shell::xdg::PopupSurface;
 use crate::layer::{MappedLayer, ResolvedLayerRules};
 use crate::niri::State;
 use crate::utils::{is_mapped, output_size, send_scale_transform};
+use crate::zoom::OutputZoomExt;
 
 impl WlrLayerShellHandler for State {
     fn shell_state(&mut self) -> &mut WlrLayerShellState {
@@ -185,8 +186,9 @@ impl State {
                 if !initial_configure_sent {
                     let scale = output.current_scale();
                     let transform = output.current_transform();
+                    let zoom_state = output.zoom_state().map(|s| s.clone());
                     with_states(surface, |data| {
-                        send_scale_transform(surface, data, scale, transform);
+                        send_scale_transform(surface, data, scale, transform, zoom_state);
                     });
 
                     layer.layer_surface().send_configure();

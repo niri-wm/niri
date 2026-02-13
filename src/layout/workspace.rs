@@ -25,7 +25,7 @@ use super::shadow::Shadow;
 use super::tile::{Tile, TileRenderSnapshot};
 use super::{
     ActivateWindow, HitType, InsertPosition, InteractiveResizeData, LayoutElement, Options,
-    RemovedTile, SizeFrac,
+    OutputZoomExt, RemovedTile, SizeFrac,
 };
 use crate::animation::Clock;
 use crate::niri_render_elements;
@@ -853,7 +853,12 @@ impl<W: LayoutElement> Workspace<W> {
         rules: &ResolvedWindowRules,
     ) {
         window.with_surfaces(|surface, data| {
-            send_scale_transform(surface, data, self.scale, self.transform);
+            let zoom_state = if let Some(output) = &self.output {
+                output.zoom_state().map(|s| s.clone())
+            } else {
+                None
+            };
+            send_scale_transform(surface, data, self.scale, self.transform, zoom_state);
         });
 
         let toplevel = window.toplevel().expect("no x11 support");

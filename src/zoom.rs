@@ -1,7 +1,9 @@
+use std::collections::HashMap;
 use std::sync::{Mutex, MutexGuard};
 
 use niri_config::ZoomMovementMode;
 use smithay::output::Output;
+use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Physical, Point, Rectangle, Size};
 
 use crate::rubber_band::RubberBand;
@@ -53,6 +55,10 @@ pub struct OutputZoomState {
     /// Cursor hotspot in physical pixels. This is the offset from the cursor element's top-left to
     /// the hotspot point. Used for precise cursor positioning during zoom to avoid jitter.
     pub cursor_hotspot: Option<Point<i32, Physical>>,
+    /// Surfaces currently in zoomed viewport
+    pub zoomed_surfaces: HashMap<WlSurface, f64>, // Surface -> zoom level
+    /// Last zoom level at which surface scales were sent (for debouncing)
+    pub last_scale_update_level: Option<f64>,
 }
 
 impl OutputZoomState {
@@ -68,6 +74,8 @@ impl OutputZoomState {
             transitioning: false,
             cursor_logical_pos: None,
             cursor_hotspot: None,
+            zoomed_surfaces: HashMap::new(),
+            last_scale_update_level: None,
         }
     }
 
@@ -111,6 +119,8 @@ impl Default for OutputZoomState {
             transitioning: false,
             cursor_logical_pos: None,
             cursor_hotspot: None,
+            zoomed_surfaces: HashMap::new(),
+            last_scale_update_level: None,
         }
     }
 }

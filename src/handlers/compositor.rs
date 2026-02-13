@@ -25,6 +25,7 @@ use crate::niri::{CastTarget, ClientState, LockState, State};
 use crate::utils::transaction::Transaction;
 use crate::utils::{is_mapped, send_scale_transform};
 use crate::window::{InitialConfigureState, Mapped, ResolvedWindowRules, Unmapped};
+use crate::zoom::OutputZoomExt;
 
 impl CompositorHandler for State {
     fn compositor_state(&mut self) -> &mut CompositorState {
@@ -44,8 +45,9 @@ impl CompositorHandler for State {
         if let Some(output) = self.niri.output_for_root(&root) {
             let scale = output.current_scale();
             let transform = output.current_transform();
+            let zoom_state = output.zoom_state().map(|s| s.clone());
             with_states(surface, |data| {
-                send_scale_transform(surface, data, scale, transform);
+                send_scale_transform(surface, data, scale, transform, zoom_state);
             });
         }
     }

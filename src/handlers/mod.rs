@@ -89,6 +89,7 @@ use crate::protocols::virtual_pointer::{
     VirtualPointerMotionEvent,
 };
 use crate::utils::{output_size, send_scale_transform};
+use crate::zoom::OutputZoomExt;
 use crate::{
     delegate_ext_workspace, delegate_foreign_toplevel, delegate_gamma_control,
     delegate_mutter_x11_interop, delegate_output_management, delegate_screencopy,
@@ -225,8 +226,9 @@ impl InputMethodHandler for State {
             let scale = output.current_scale();
             let transform = output.current_transform();
             let wl_surface = popup.wl_surface();
+            let zoom_state = output.zoom_state().map(|s| s.clone());
             with_states(wl_surface, |data| {
-                send_scale_transform(wl_surface, data, scale, transform);
+                send_scale_transform(wl_surface, data, scale, transform, zoom_state);
             });
         }
 
@@ -478,8 +480,9 @@ pub fn configure_lock_surface(surface: &LockSurface, output: &Output) {
     let scale = output.current_scale();
     let transform = output.current_transform();
     let wl_surface = surface.wl_surface();
+    let zoom_state = output.zoom_state().map(|z| z.clone());
     with_states(wl_surface, |data| {
-        send_scale_transform(wl_surface, data, scale, transform);
+        send_scale_transform(wl_surface, data, scale, transform, zoom_state);
     });
     surface.send_configure();
 }

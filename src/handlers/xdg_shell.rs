@@ -48,6 +48,7 @@ use crate::utils::{
     get_monotonic_time, output_matches_name, send_scale_transform, update_tiled_state, ResizeEdge,
 };
 use crate::window::{InitialConfigureState, ResolvedWindowRules, Unmapped, WindowRef};
+use crate::zoom::OutputZoomExt;
 
 impl XdgShellHandler for State {
     fn xdg_shell_state(&mut self) -> &mut XdgShellState {
@@ -1203,8 +1204,9 @@ impl State {
                         {
                             let scale = output.current_scale();
                             let transform = output.current_transform();
+                            let zoom_state = output.zoom_state().map(|s| s.clone());
                             with_states(surface, |data| {
-                                send_scale_transform(surface, data, scale, transform);
+                                send_scale_transform(surface, data, scale, transform, zoom_state);
                             });
                         }
                         popup.send_configure().expect("initial configure failed");

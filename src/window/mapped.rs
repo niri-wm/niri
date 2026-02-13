@@ -827,7 +827,7 @@ impl LayoutElement for Mapped {
 
     fn set_preferred_scale_transform(&self, scale: output::Scale, transform: Transform) {
         self.window.with_surfaces(|surface, data| {
-            send_scale_transform(surface, data, scale, transform);
+            send_scale_transform(surface, data, scale, transform, None);
         });
     }
 

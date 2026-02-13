@@ -2938,7 +2938,8 @@ impl Niri {
             let mut layer_map = layer_map_for_output(output);
             for layer in layer_map.layers() {
                 layer.with_surfaces(|surface, data| {
-                    send_scale_transform(surface, data, scale, transform);
+                    let zoom_state = output.zoom_state().map(|s| s.clone());
+                    send_scale_transform(surface, data, scale, transform, zoom_state);
                 });
 
                 if let Some(mapped) = self.mapped_layer_surfaces.get_mut(layer) {
@@ -3141,7 +3142,7 @@ impl Niri {
 
                 // Edge push: when cursor leaves viewport, pan viewport to follow.
                 if !zoomed_geometry_global.contains(new_pos_global) {
-                    let scale = zoom_factor / (zoom_factor - 1.0);
+                    let scale = zoom_factor / (zoom_factor - 1.0).max(f64::EPSILON);
                     let viewport_size = output_geometry.size.downscale(zoom_factor);
 
                     let zoomed_geometry_local = {
@@ -4076,6 +4077,7 @@ impl Niri {
                         data,
                         output::Scale::Fractional(cursor_scale),
                         cursor_transform,
+                        None,
                     )
                 });
                 if let Some((surface, _)) = dnd {
@@ -4085,6 +4087,7 @@ impl Niri {
                             data,
                             output::Scale::Fractional(dnd_scale),
                             dnd_transform,
+                            None,
                         );
                     });
                 }
@@ -4139,6 +4142,7 @@ impl Niri {
                         data,
                         output::Scale::Fractional(dnd_scale),
                         dnd_transform,
+                        None,
                     );
                 });
             }
