@@ -74,8 +74,9 @@ use crate::utils::{
 };
 use crate::window::ResolvedWindowRules;
 pub use crate::zoom::{
-    clamp_zoom_level_with_rubber_band, compute_focal_for_cursor, log_pos_to_zoom_level,
-    OutputZoomExt, OutputZoomState, SCALE_CHANGE_THRESHOLD, ZOOM_GESTURE_RUBBER_BAND,
+    calculate_visibility, clamp_zoom_level_with_rubber_band, compute_focal_for_cursor,
+    log_pos_to_zoom_level, should_update_scales, zoomed_viewport, OutputZoomExt, OutputZoomState,
+    SCALE_CHANGE_THRESHOLD, ZOOM_GESTURE_RUBBER_BAND,
 };
 use smithay::wayland::compositor::with_states;
 
@@ -2914,7 +2915,7 @@ impl<W: LayoutElement> Layout<W> {
             if let MonitorSet::Normal { monitors, .. } = &self.monitor_set {
                 for mon in monitors {
                     if let Some(mut zoom_state) = mon.output.zoom_state() {
-                        if zoom_state.level > 1.0 && Self::should_update_scales(&zoom_state) {
+                        if zoom_state.level > 1.0 && should_update_scales(&zoom_state) {
                             self.compute_zoomed_surfaces(&mon.output, &mut zoom_state);
                             zoom_state.last_scale_update_level = Some(zoom_state.level);
 
@@ -2923,7 +2924,7 @@ impl<W: LayoutElement> Layout<W> {
                             // to render at higher resolution during zoom.
                             let scale = mon.output.current_scale();
                             let transform = mon.output.current_transform();
-                            for (surface, _) in &zoom_state.zoomed_surfaces {
+                            for surface in zoom_state.zoomed_surfaces.keys() {
                                 with_states(surface, |data| {
                                     send_scale_transform(
                                         surface,
@@ -4106,48 +4107,10 @@ impl<W: LayoutElement> Layout<W> {
         zoom_state: &OutputZoomState,
     ) -> Rectangle<f64, Logical> {
         let output_rect = Rectangle::new(Point::from((0.0, 0.0)), output_size(output).to_f64());
-        crate::zoom::zoomed_viewport(output_rect, zoom_state.focal, zoom_state.level)
-    }
-
-    /// Ratio of `window_geo` area intersecting `zoom_rect` to total window area (0.0–1.0).
-    fn calculate_visibility(
-        window_geo: Rectangle<f64, Logical>,
-        zoom_rect: Rectangle<f64, Logical>,
-    ) -> f64 {
-        let intersection = window_geo.intersection(zoom_rect);
-        match intersection {
-            Some(intersect) => {
-                let intersect_area = intersect.size.w * intersect.size.h;
-                let window_area = window_geo.size.w * window_geo.size.h;
-                if window_area <= 0.0 {
-                    return 0.0;
-                }
-                (intersect_area / window_area).clamp(0.0, 1.0)
-            }
-            None => 0.0,
-        }
-    }
-
-    fn should_update_scales(zoom_state: &OutputZoomState) -> bool {
-        match zoom_state.last_scale_update_level {
-            None => true,
-            Some(last) => (zoom_state.level - last).abs() >= SCALE_CHANGE_THRESHOLD,
-        }
+        zoomed_viewport(output_rect, zoom_state.focal, zoom_state.level)
     }
 
     /// Compute which surfaces are within the zoom viewport and populate `zoomed_surfaces`.
-    ///
-    /// All visible surfaces get the current zoom level as their surface_zoom factor,
-    /// regardless of whether they support `wp_fractional_scale_v1`. This is correct because:
-    ///
-    /// - **Fractional-scale-aware apps** (GTK4, Qt6): Receive elevated `preferred_scale` via
-    ///   `send_scale_transform` and re-render at higher resolution → crisper zoom.
-    /// - **Legacy/XWayland apps**: Receive elevated `preferred_scale` but ignore it.
-    ///   `with_fractional_scale` is a no-op if the surface hasn't bound the protocol. They render
-    ///   at their default scale → compositor upscales via zoom → correct but not crisper (same as
-    ///   pre-feature behavior).
-    ///
-    /// No special-casing needed — the protocol handles non-supporting surfaces gracefully.
     pub fn compute_zoomed_surfaces(&self, output: &Output, zoom_state: &mut OutputZoomState) {
         zoom_state.zoomed_surfaces.clear();
 
@@ -4170,7 +4133,7 @@ impl<W: LayoutElement> Layout<W> {
             let win = tile.window();
             let size = win.size().to_f64();
             let window_geo = Rectangle::new(pos, size);
-            let visibility = Self::calculate_visibility(window_geo, zoom_rect);
+            let visibility = calculate_visibility(window_geo, zoom_rect);
             if visibility > 0.0 {
                 if let Some(surface) = win.wl_surface() {
                     zoom_state.zoomed_surfaces.insert(surface, capped_zoom);
@@ -4188,7 +4151,7 @@ impl<W: LayoutElement> Layout<W> {
                     move_data.pointer_pos_within_output.y - win_size.h * ry,
                 ));
                 let window_geo = Rectangle::new(pos, win_size);
-                let visibility = Self::calculate_visibility(window_geo, zoom_rect);
+                let visibility = calculate_visibility(window_geo, zoom_rect);
                 if visibility > 0.0 {
                     if let Some(surface) = win.wl_surface() {
                         zoom_state.zoomed_surfaces.insert(surface, capped_zoom);
