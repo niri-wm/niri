@@ -272,10 +272,6 @@ impl<'render> RenderElement<TtyRenderer<'render>>
 }
 
 impl RoundedCornerDamage {
-    pub fn set_size(&mut self, size: Size<f64, Logical>) {
-        self.damage.set_size(size);
-    }
-
     pub fn set_corner_radius(&mut self, corner_radius: CornerRadius) {
         if self.corner_radius == corner_radius {
             return;
@@ -286,7 +282,7 @@ impl RoundedCornerDamage {
         self.damage.damage_all();
     }
 
-    pub fn element(&self) -> ExtraDamage {
-        self.damage.clone()
+    pub fn render(&self, geometry: Rectangle<f64, Logical>) -> ExtraDamage {
+        self.damage.render(geometry)
     }
 }
