@@ -48,6 +48,7 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
         Msg::EventStream => Request::EventStream,
         Msg::RequestError => Request::ReturnError,
         Msg::OverviewState => Request::OverviewState,
+        Msg::WorkspacesWithHidden => Request::WorkspacesWithHidden,
         Msg::Casts => Request::Casts,
     };
 
@@ -339,6 +340,54 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
                 println!("The change will apply when it is connected.");
             }
         }
+        Msg::WorkspacesWithHidden => {
+            let Response::Workspaces(mut response) = response else {
+                bail!("unexpected response: expected Workspaces, got {response:?}");
+            };
+
+            if json {
+                let response =
+                    serde_json::to_string(&response).context("error formatting response")?;
+                println!("{response}");
+                return Ok(());
+            }
+
+            if response.is_empty() {
+                println!("No workspaces.");
+                return Ok(());
+            }
+
+            response.sort_by_key(|ws| ws.idx);
+            response.sort_by(|a, b| a.output.cmp(&b.output));
+
+            let mut current_output = if let Some(output) = response[0].output.as_deref() {
+                println!("Output \"{output}\":");
+                Some(output)
+            } else {
+                println!("No output:");
+                None
+            };
+
+            for ws in &response {
+                if ws.output.as_deref() != current_output {
+                    let output = ws.output.as_deref().context(
+                        "invalid response: workspace with no output \
+                         following a workspace with an output",
+                    )?;
+                    current_output = Some(output);
+                    println!("\nOutput \"{output}\":");
+                }
+
+                let is_active = if ws.is_active { " * " } else { "   " };
+                let idx = ws.idx;
+                let name = if let Some(name) = ws.name.as_deref() {
+                    format!(" \"{name}\"")
+                } else {
+                    String::new()
+                };
+                println!("{is_active}{idx}{name}");
+            }
+        }
         Msg::Workspaces => {
             let Response::Workspaces(mut response) = response else {
                 bail!("unexpected response: expected Workspaces, got {response:?}");
@@ -368,6 +417,9 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
             };
 
             for ws in &response {
+                if ws.is_hidden {
+                    continue;
+                }
                 if ws.output.as_deref() != current_output {
                     let output = ws.output.as_deref().context(
                         "invalid response: workspace with no output \

@@ -208,6 +208,8 @@ impl CompositorHandler for State {
                     } else {
                         AddWindowTarget::Auto
                     };
+                    // Force-unhide workspace when opening via window-rule with open_on_workspace.
+                    let force_unhide_workspace = workspace_id.is_some();
                     let output = self.niri.layout.add_window(
                         mapped,
                         target,
@@ -216,6 +218,7 @@ impl CompositorHandler for State {
                         is_full_width,
                         is_floating,
                         activate,
+                        force_unhide_workspace,
                     );
                     let output = output.cloned();
 
