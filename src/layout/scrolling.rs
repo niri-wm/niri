@@ -4,7 +4,7 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use niri_config::utils::MergeWith as _;
-use niri_config::{CenterFocusedColumn, PresetSize, Struts};
+use niri_config::{Anchor, CenterFocusedColumn, PresetSize, Struts};
 use niri_ipc::{ColumnDisplay, SizeChange, WindowLayout};
 use ordered_float::NotNan;
 use smithay::backend::renderer::gles::GlesRenderer;
@@ -972,7 +972,10 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             if was_empty {
                 0
             } else {
-                self.active_column_idx + 1
+                match self.options.layout.anchor {
+                    Anchor::Left => self.active_column_idx + 1,
+                    Anchor::Right => 0,
+                }
             }
         });
 
@@ -986,39 +989,86 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         self.data.insert(idx, ColumnData::new(&column));
         self.columns.insert(idx, column);
 
+        // Adjust active_column_idx if a column was inserted before or at it.
+        // This must be done before the activation logic so that activate_column_with_anim_config
+        // can correctly detect whether we're activating a different column.
         if !was_empty && idx <= self.active_column_idx {
             self.active_column_idx += 1;
-        }
-
-        // Animate movement of other columns.
-        let offset = self.column_x(idx + 1) - self.column_x(idx);
-        let config = anim_config.unwrap_or(self.options.animations.window_movement.0);
-        if self.active_column_idx <= idx {
-            for col in &mut self.columns[idx + 1..] {
-                col.animate_move_from_with_config(-offset, config);
-            }
-        } else {
-            for col in &mut self.columns[..idx] {
-                col.animate_move_from_with_config(offset, config);
-            }
+            // When the active column index shifts, clear view_offset_to_restore since it's no
+            // longer valid for the new active column index.
+            self.view_offset_to_restore = None;
         }
 
         if activate {
-            // If this is the first window on an empty workspace, remove the effect of whatever
-            // view_offset was left over and skip the animation.
             if was_empty {
-                self.view_offset = ViewOffset::Static(0.);
-                self.view_offset =
-                    ViewOffset::Static(self.compute_new_view_offset_for_column(None, idx, None));
+                // For the first window on an empty workspace.
+                if matches!(self.options.layout.anchor, Anchor::Right) {
+                    // Right anchor: Set view_offset to -anchor_offset so columns appear from the
+                    // right.
+                    self.view_offset = ViewOffset::Static(-self.anchor_offset());
+                    self.active_column_idx = idx;
+                } else {
+                    // Left anchor: Use standard logic which applies padding.
+                    self.view_offset = ViewOffset::Static(0.);
+                    self.view_offset = ViewOffset::Static(
+                        self.compute_new_view_offset_for_column(None, idx, None),
+                    );
+                    self.active_column_idx = idx;
+                }
+            } else if matches!(self.options.layout.anchor, Anchor::Right) {
+                // For right anchor, show as many columns as possible from the right.
+                let working_width = self.working_area.size.w;
+                let total_width = self.total_columns_width();
+
+                let target_view_pos = if total_width <= working_width {
+                    // All columns fit - align rightmost column to the right edge
+                    let rightmost_idx = self.columns.len() - 1;
+                    let rightmost_col_x = self.column_x(rightmost_idx);
+                    let rightmost_col_width = self.data[rightmost_idx].width;
+                    rightmost_col_x + rightmost_col_width - working_width
+                } else {
+                    // Overflow - left-align the newest (leftmost) column
+                    self.column_x(0)
+                };
+
+                self.view_offset = ViewOffset::Static(target_view_pos - self.column_x(idx));
+                // Clear view_offset_to_restore when changing active column.
+                self.view_offset_to_restore = None;
+                self.active_column_idx = idx;
+            } else {
+                // Left anchor - use standard activation logic
+                // Note: active_column_idx may have been incremented above if idx <= active_column_idx.
+                // In that case, we're inserting at or to the left of what was the active column.
+                // The original check was `idx == self.active_column_idx + 1` before the increment,
+                // which becomes `idx == self.active_column_idx - 1` after the increment.
+                let prev_offset = (self.active_column_idx > 0 && idx == self.active_column_idx - 1)
+                    .then(|| self.view_offset.stationary());
+
+                let anim_config =
+                    anim_config.unwrap_or(self.options.animations.horizontal_view_movement.0);
+                self.activate_column_with_anim_config(idx, anim_config);
+                self.activate_prev_column_on_removal = prev_offset;
             }
+        }
 
-            let prev_offset = (!was_empty && idx == self.active_column_idx + 1)
-                .then(|| self.view_offset.stationary());
+        // Animate movement of other columns.
+        // Skip animation for right anchor when inserting at index 0, since columns don't move
+        // relative to each other - only the anchor_offset changes, which is handled by the
+        // view_offset adjustment.
+        let should_animate = !(matches!(self.options.layout.anchor, Anchor::Right) && idx == 0);
 
-            let anim_config =
-                anim_config.unwrap_or(self.options.animations.horizontal_view_movement.0);
-            self.activate_column_with_anim_config(idx, anim_config);
-            self.activate_prev_column_on_removal = prev_offset;
+        if should_animate {
+            let offset = self.column_x(idx + 1) - self.column_x(idx);
+            let config = anim_config.unwrap_or(self.options.animations.window_movement.0);
+            if self.active_column_idx <= idx {
+                for col in &mut self.columns[idx + 1..] {
+                    col.animate_move_from_with_config(-offset, config);
+                }
+            } else {
+                for col in &mut self.columns[..idx] {
+                    col.animate_move_from_with_config(offset, config);
+                }
+            }
         }
     }
 
@@ -2298,11 +2348,33 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         self.column_x(self.active_column_idx) + self.view_offset.target()
     }
 
+    // Calculate the total width of all columns including gaps
+    fn total_columns_width(&self) -> f64 {
+        let gaps = self.options.layout.gaps;
+        let cols_width: f64 = self.data.iter().map(|d| d.width).sum();
+        let gaps_width = gaps * (self.columns.len().saturating_sub(1)) as f64;
+        cols_width + gaps_width
+    }
+
+    // Calculate the X offset for right-anchor mode
+    fn anchor_offset(&self) -> f64 {
+        match self.options.layout.anchor {
+            Anchor::Right => {
+                let total_width = self.total_columns_width();
+                let working_width = self.working_area.size.w;
+                let working_left = self.working_area.loc.x;
+                (working_width - total_width).max(0.) + working_left
+            }
+            Anchor::Left => 0.,
+        }
+    }
+
     // HACK: pass a self.data iterator in manually as a workaround for the lack of method partial
     // borrowing. Note that this method's return value does not borrow the entire &Self!
     fn column_xs(&self, data: impl Iterator<Item = ColumnData>) -> impl Iterator<Item = f64> {
         let gaps = self.options.layout.gaps;
-        let mut x = 0.;
+        let anchor_offset = self.anchor_offset();
+        let mut x = anchor_offset;
 
         // Chain with a dummy value to be able to get one past all columns' X.
         let dummy = ColumnData { width: 0. };
