@@ -70,6 +70,11 @@ use backend_ext::{NiriInputBackend as InputBackend, NiriInputDevice as _};
 
 pub const DOUBLE_CLICK_TIME: Duration = Duration::from_millis(400);
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct DeviceData {
+    pub name: String,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TabletData {
     pub aspect_ratio: f64,
@@ -199,7 +204,9 @@ impl State {
 
         match event {
             InputEvent::DeviceAdded { device } => {
-                self.niri.devices.insert(device.clone());
+                let name = device.name().to_string();
+                let data = DeviceData { name };
+                self.niri.devices.insert(device.clone(), data);
 
                 if device.has_capability(input::DeviceCapability::TabletTool) {
                     match device.size() {
@@ -293,27 +300,32 @@ impl State {
     where
         I::Device: 'static,
     {
-        let device_output = event.device().output(self);
+        let device = event.device();
+        let device_output = device.output(self);
         let device_output = device_output.as_ref();
-        let (target_geo, keep_ratio, px, transform) =
-            if let Some(output) = device_output.or_else(|| self.niri.output_for_tablet()) {
-                (
-                    self.niri.global_space.output_geometry(output).unwrap(),
-                    true,
-                    1. / output.current_scale().fractional_scale(),
-                    output.current_transform(),
-                )
-            } else {
-                let geo = self.global_bounding_rectangle()?;
+        let data = (&device as &dyn Any)
+            .downcast_ref::<input::Device>()
+            .and_then(|device| self.niri.devices.get(device));
+        let (target_geo, keep_ratio, px, transform) = if let Some(output) =
+            device_output.or_else(|| self.niri.output_for_tablet(data.map(|d| d.name.as_ref())))
+        {
+            (
+                self.niri.global_space.output_geometry(output).unwrap(),
+                true,
+                1. / output.current_scale().fractional_scale(),
+                output.current_transform(),
+            )
+        } else {
+            let geo = self.global_bounding_rectangle()?;
 
-                // FIXME: this 1 px size should ideally somehow be computed for the rightmost output
-                // corresponding to the position on the right when clamping.
-                let output = self.niri.global_space.outputs().next().unwrap();
-                let scale = output.current_scale().fractional_scale();
+            // FIXME: this 1 px size should ideally somehow be computed for the rightmost output
+            // corresponding to the position on the right when clamping.
+            let output = self.niri.global_space.outputs().next().unwrap();
+            let scale = output.current_scale().fractional_scale();
 
-                // Do not keep ratio for the unified mode as this is what OpenTabletDriver expects.
-                (geo, false, 1. / scale, Transform::Normal)
-            };
+            // Do not keep ratio for the unified mode as this is what OpenTabletDriver expects.
+            (geo, false, 1. / scale, Transform::Normal)
+        };
 
         let mut pos = {
             let size = transform.invert().transform_size(target_geo.size);
@@ -4076,11 +4088,23 @@ impl State {
     fn compute_touch_location<I: InputBackend>(
         &self,
         evt: &impl AbsolutePositionEvent<I>,
-    ) -> Option<Point<f64, Logical>> {
-        self.compute_absolute_location(evt, self.niri.output_for_touch())
+    ) -> Option<Point<f64, Logical>>
+    where
+        I::Device: 'static,
+    {
+        let data = (&evt.device() as &dyn Any)
+            .downcast_ref::<input::Device>()
+            .and_then(|device| self.niri.devices.get(device));
+        self.compute_absolute_location(
+            evt,
+            self.niri.output_for_touch(data.map(|d| d.name.as_str())),
+        )
     }
 
-    fn on_touch_down<I: InputBackend>(&mut self, evt: I::TouchDownEvent) {
+    fn on_touch_down<I: InputBackend>(&mut self, evt: I::TouchDownEvent)
+    where
+        I::Device: 'static,
+    {
         let Some(handle) = self.niri.seat.get_touch() else {
             return;
         };
@@ -4235,7 +4259,10 @@ impl State {
             },
         )
     }
-    fn on_touch_motion<I: InputBackend>(&mut self, evt: I::TouchMotionEvent) {
+    fn on_touch_motion<I: InputBackend>(&mut self, evt: I::TouchMotionEvent)
+    where
+        I::Device: 'static,
+    {
         let Some(handle) = self.niri.seat.get_touch() else {
             return;
         };
@@ -4926,7 +4953,7 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
 
     let is_tablet = device.has_capability(input::DeviceCapability::TabletTool);
     if is_tablet {
-        let c = &config.tablet;
+        let c = config.tablets.find(Some(device.name()));
         let _ = device.config_send_events_set_mode(if c.off {
             input::SendEventsMode::DISABLED
         } else {
@@ -4952,7 +4979,7 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
 
     let is_touch = device.has_capability(input::DeviceCapability::Touch);
     if is_touch {
-        let c = &config.touch;
+        let c = config.touch_screens.find(Some(device.name()));
         let _ = device.config_send_events_set_mode(if c.off {
             input::SendEventsMode::DISABLED
         } else {

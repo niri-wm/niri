@@ -128,7 +128,7 @@ impl SeatHandler for State {
         let keyboards = self
             .niri
             .devices
-            .iter()
+            .keys()
             .filter(|device| device.has_capability(input::DeviceCapability::Keyboard))
             .cloned();
 
