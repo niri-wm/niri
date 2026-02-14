@@ -2761,10 +2761,18 @@ impl State {
             }
         }
 
-        if let Some((output, _)) = self.niri.output_under(new_pos) {
-            let output = output.clone();
+        // Handle cursor and focal center movement across outputs with different zoom levels or
+        // locked zoom.
+        let old_output = self.niri.global_space.output_under(pos).next().cloned();
+        let new_output = self.niri.output_under(new_pos).map(|(o, _)| o.clone());
+        if let (Some(new_out), Some(old_out)) = (new_output, old_output) {
             self.niri
-                .update_zoom_base_focal(&output, new_pos, Some(pos));
+                .update_zoom_base_focal(&new_out, new_pos, Some(pos));
+            if old_out != new_out {
+                if let Some(mut zoom_state) = old_out.zoom_state() {
+                    zoom_state.cursor_logical_pos = None;
+                }
+            }
         }
 
         // Redraw to update the cursor position.
