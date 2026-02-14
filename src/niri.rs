@@ -144,6 +144,7 @@ use crate::niri_render_elements;
 use crate::protocols::ext_workspace::{self, ExtWorkspaceManagerState};
 use crate::protocols::foreign_toplevel::{self, ForeignToplevelManagerState};
 use crate::protocols::gamma_control::GammaControlManagerState;
+use crate::protocols::hyprland_lock_notify::HyprlandLockNotifyManagerState;
 use crate::protocols::mutter_x11_interop::MutterX11InteropManagerState;
 use crate::protocols::output_management::OutputManagementManagerState;
 use crate::protocols::screencopy::{Screencopy, ScreencopyBuffer, ScreencopyManagerState};
@@ -305,6 +306,7 @@ pub struct Niri {
     pub gamma_control_manager_state: GammaControlManagerState,
     pub activation_state: XdgActivationState,
     pub mutter_x11_interop_state: MutterX11InteropManagerState,
+    pub hyprland_lock_notify_state: HyprlandLockNotifyManagerState,
 
     // This will not work as is outside of tests, so it is gated with #[cfg(test)] for now. In
     // particular, shaders will need to learn about the single pixel buffer. Also, it must be
@@ -2307,6 +2309,8 @@ impl Niri {
 
         let mutter_x11_interop_state =
             MutterX11InteropManagerState::new::<State, _>(&display_handle, move |_| true);
+        let hyprland_lock_notify_state =
+            HyprlandLockNotifyManagerState::new::<State>(&display_handle);
 
         #[cfg(test)]
         let single_pixel_buffer_state = SinglePixelBufferState::new::<State>(&display_handle);
@@ -2500,6 +2504,7 @@ impl Niri {
             gamma_control_manager_state,
             activation_state,
             mutter_x11_interop_state,
+            hyprland_lock_notify_state,
             #[cfg(test)]
             single_pixel_buffer_state,
 
@@ -2876,6 +2881,7 @@ impl Niri {
                     let lock = confirmation.ext_session_lock().clone();
                     confirmation.lock();
                     self.lock_state = LockState::Locked(lock);
+                    self.hyprland_lock_notify_state.send_locked();
                 } else {
                     // Still waiting.
                     self.lock_state = LockState::Locking(confirmation);
@@ -5576,6 +5582,7 @@ impl Niri {
                     let lock = confirmation.ext_session_lock().clone();
                     confirmation.lock();
                     self.lock_state = LockState::Locked(lock);
+                    self.hyprland_lock_notify_state.send_locked();
                 } else {
                     // There are outputs which we need to redraw before locking.
                     self.lock_state = LockState::Locking(confirmation);
@@ -5593,6 +5600,7 @@ impl Niri {
         info!("unlocking session");
 
         let prev = mem::take(&mut self.lock_state);
+        self.hyprland_lock_notify_state.send_unlocked();
         if let LockState::WaitingForSurfaces { deadline_token, .. } = prev {
             self.event_loop.remove(deadline_token);
         }

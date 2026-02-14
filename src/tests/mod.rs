@@ -2,6 +2,7 @@ use fixture::Fixture;
 
 mod client;
 mod fixture;
+mod hyprland_lock_notify;
 mod server;
 
 mod animations;
