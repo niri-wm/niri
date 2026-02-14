@@ -1667,7 +1667,11 @@ impl State {
                 self.niri.queue_redraw_all();
             }
             Action::MaximizeColumn => {
-                self.niri.layout.toggle_full_width();
+                if self.niri.screenshot_ui.is_open() {
+                    self.niri.screenshot_ui.select_entire_output();
+                } else {
+                    self.niri.layout.toggle_full_width();
+                }
             }
             Action::MaximizeWindowToEdges => {
                 let focus = self.niri.layout.focus().map(|m| m.window.clone());
@@ -4651,6 +4655,7 @@ fn allowed_during_screenshot(action: &Action) -> bool {
             | Action::SetWindowWidth(_)
             | Action::SetWindowHeight(_)
             | Action::SetColumnWidth(_)
+            | Action::MaximizeColumn
     )
 }
 
