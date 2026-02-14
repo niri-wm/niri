@@ -107,7 +107,7 @@
           buildNoDefaultFeatures = true;
 
           # ever since this commit:
-          # https://github.com/YaLTeR/niri/commit/771ea1e81557ffe7af9cbdbec161601575b64d81
+          # https://github.com/niri-wm/niri/commit/771ea1e81557ffe7af9cbdbec161601575b64d81
           # niri now runs an actual instance of the real compositor (with a mock backend) during tests
           # and thus creates a real socket file in the runtime dir.
           # this is fine for our build, we just need to make sure it has a directory to write to.
@@ -157,7 +157,7 @@
 
           meta = {
             description = "Scrollable-tiling Wayland compositor";
-            homepage = "https://github.com/YaLTeR/niri";
+            homepage = "https://github.com/niri-wm/niri";
             license = lib.licenses.gpl3Only;
             mainProgram = "niri";
             platforms = lib.platforms.linux;

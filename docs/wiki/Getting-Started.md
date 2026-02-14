@@ -34,7 +34,7 @@ Check the DankMaterialShell's [compositor setup page](https://danklinux.com/docs
 ## Slower and more considered start
 
 The easiest way to get niri is to install one of the distribution packages.
-Here are some of them: [Fedora COPR](https://copr.fedorainfracloud.org/coprs/yalter/niri/) and [nightly COPR](https://copr.fedorainfracloud.org/coprs/yalter/niri-git/) (which I maintain myself), [NixOS Flake](https://github.com/sodiboo/niri-flake), and some more from repology below, including a [pacstall package](https://pacstall.dev/packages/niri/) for Debian-based distros.
+Here are some of them: [Fedora COPR](https://copr.fedorainfracloud.org/coprs/niri-wm/niri/) and [nightly COPR](https://copr.fedorainfracloud.org/coprs/niri-wm/niri-git/) (which I maintain myself), [NixOS Flake](https://github.com/sodiboo/niri-flake), and some more from repology below, including a [pacstall package](https://pacstall.dev/packages/niri/) for Debian-based distros.
 See the [Building](#building) section if you'd like to compile niri yourself and the [Packaging niri](./Packaging-niri.md) page if you want to package niri.
 
 [![Packaging status](https://repology.org/badge/vertical-allrepos/niri.svg)](https://repology.org/project/niri/versions)
