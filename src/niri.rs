@@ -15,7 +15,7 @@ use anyhow::{bail, ensure, Context};
 use calloop::futures::Scheduler;
 use niri_config::debug::PreviewRender;
 use niri_config::{
-    Config, FloatOrInt, Key, Modifiers, OutputName, TrackLayout, WarpMouseToFocusMode,
+    Config, FloatOrInt, InhibitIdle, Key, Modifiers, OutputName, TrackLayout, WarpMouseToFocusMode,
     WorkspaceReference, Xkb,
 };
 use smithay::backend::allocator::Fourcc;
@@ -3923,7 +3923,17 @@ impl Niri {
                 with_states(surface, |states| {
                     surface_primary_scanout_output(surface, states).is_some()
                 })
-            });
+            })
+            || self
+                .layout
+                .windows()
+                .into_iter()
+                .any(|a| match a.1.rules().inhibit_idle {
+                    Some(InhibitIdle::Always) => true,
+                    Some(InhibitIdle::Fullscreen) => a.1.sizing_mode().is_fullscreen(),
+                    None => false,
+                });
+
         self.idle_notifier_state.set_is_inhibited(is_inhibited);
     }
 
