@@ -4427,16 +4427,13 @@ impl Niri {
         // However, this should probably be restricted to sending frame callbacks to more surfaces,
         // to err on the safe side.
         self.send_frame_callbacks(output);
+        #[cfg(feature = "xdp-gnome-screencast")]
+        self.send_frame_callbacks_for_cast(output);
         backend.with_primary_renderer(|renderer| {
             #[cfg(feature = "xdp-gnome-screencast")]
             {
                 // Render and send to PipeWire screencast streams.
                 self.render_for_screen_cast(renderer, output, target_presentation_time);
-
-                // FIXME: when a window is hidden, it should probably still receive frame callbacks
-                // and get rendered for screen cast. This is currently
-                // unimplemented, but happens to work by chance, since output
-                // redrawing is more eager than it should be.
                 self.render_windows_for_screen_cast(renderer, output, target_presentation_time);
             }
 
@@ -4854,6 +4851,39 @@ impl Niri {
                 FRAME_CALLBACK_THROTTLE,
                 |_, _| None,
             );
+        }
+    }
+
+    #[cfg(feature = "xdp-gnome-screencast")]
+    fn send_frame_callbacks_for_cast(&self, output: &Output) {
+        use smithay::wayland::seat::WaylandFocus;
+
+        let _span = tracy_client::span!("Niri::send_frame_callbacks_for_cast");
+        let frame_callback_time = get_monotonic_time();
+
+        for mapped in self.layout.windows_for_output(output) {
+            for cast in &self.casts {
+                if !cast.is_active.get() {
+                    continue;
+                }
+                let CastTarget::Window { id } = cast.target else {
+                    continue;
+                };
+                if mapped.id().get() != id {
+                    continue;
+                };
+                let Some(surface) = mapped.window.wl_surface() else {
+                    continue;
+                };
+
+                send_frames_surface_tree(
+                    surface.as_ref(),
+                    output,
+                    frame_callback_time,
+                    FRAME_CALLBACK_THROTTLE,
+                    |_, _| Some(output.clone()),
+                );
+            }
         }
     }
 
