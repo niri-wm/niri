@@ -128,12 +128,15 @@ impl State {
             }
         } else {
             // Power on monitors if they were off.
-            if should_activate_monitors(&event) {
+            if self.should_activate_monitors(&event) {
                 self.niri.activate_monitors(&mut self.backend);
 
                 // Notify the idle-notifier of activity only if we're also powering on the
                 // monitors.
                 self.niri.notify_activity();
+
+                // Prevent waking input from passing through
+                return;
             }
         }
 
@@ -237,6 +240,29 @@ impl State {
                 self.niri.devices.remove(device);
             }
             _ => (),
+        }
+    }
+
+    fn should_activate_monitors<I: InputBackend>(&mut self, event: &InputEvent<I>) -> bool {
+        let config = self.niri.config.borrow();
+
+        match event {
+            InputEvent::Keyboard { event } if event.state() == KeyState::Pressed => true,
+            InputEvent::PointerButton { event } if event.state() == ButtonState::Pressed => true,
+            InputEvent::PointerMotion { .. }
+            | InputEvent::PointerMotionAbsolute { .. }
+            | InputEvent::PointerAxis { .. } => config.input.mouse.wake_monitor_on_movement,
+            InputEvent::GestureSwipeBegin { .. }
+            | InputEvent::GesturePinchBegin { .. }
+            | InputEvent::GestureHoldBegin { .. }
+            | InputEvent::TouchDown { .. }
+            | InputEvent::TouchMotion { .. }
+            | InputEvent::TabletToolAxis { .. }
+            | InputEvent::TabletToolProximity { .. }
+            | InputEvent::TabletToolTip { .. }
+            | InputEvent::TabletToolButton { .. } => true,
+            // Ignore events like device additions and removals, key releases, gesture ends.
+            _ => false,
         }
     }
 
@@ -4530,27 +4556,6 @@ fn modifiers_from_state(mods: ModifiersState) -> Modifiers {
         modifiers |= Modifiers::ISO_LEVEL5_SHIFT;
     }
     modifiers
-}
-
-fn should_activate_monitors<I: InputBackend>(event: &InputEvent<I>) -> bool {
-    match event {
-        InputEvent::Keyboard { event } if event.state() == KeyState::Pressed => true,
-        InputEvent::PointerButton { event } if event.state() == ButtonState::Pressed => true,
-        InputEvent::PointerMotion { .. }
-        | InputEvent::PointerMotionAbsolute { .. }
-        | InputEvent::PointerAxis { .. }
-        | InputEvent::GestureSwipeBegin { .. }
-        | InputEvent::GesturePinchBegin { .. }
-        | InputEvent::GestureHoldBegin { .. }
-        | InputEvent::TouchDown { .. }
-        | InputEvent::TouchMotion { .. }
-        | InputEvent::TabletToolAxis { .. }
-        | InputEvent::TabletToolProximity { .. }
-        | InputEvent::TabletToolTip { .. }
-        | InputEvent::TabletToolButton { .. } => true,
-        // Ignore events like device additions and removals, key releases, gesture ends.
-        _ => false,
-    }
 }
 
 fn should_hide_hotkey_overlay<I: InputBackend>(event: &InputEvent<I>) -> bool {
