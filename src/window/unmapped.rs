@@ -1,10 +1,15 @@
+use std::sync::atomic::Ordering;
+
 use niri_config::PresetSize;
 use smithay::desktop::Window;
 use smithay::output::Output;
+use smithay::reexports::wayland_server::Resource;
+use smithay::wayland::seat::WaylandFocus;
 use smithay::wayland::shell::xdg::ToplevelSurface;
 use smithay::wayland::xdg_activation::XdgActivationTokenData;
 
 use super::ResolvedWindowRules;
+use crate::niri::ClientState;
 
 #[derive(Debug)]
 pub struct Unmapped {
@@ -96,5 +101,19 @@ impl Unmapped {
 
     pub fn toplevel(&self) -> &ToplevelSurface {
         self.window.toplevel().expect("no X11 support")
+    }
+
+    pub fn is_xwayland(&self) -> bool {
+        let Some(surface) = self.window.wl_surface() else {
+            return false;
+        };
+        let Some(client) = surface.client() else {
+            return false;
+        };
+        client
+            .get_data::<ClientState>()
+            .unwrap()
+            .is_xwayland
+            .load(Ordering::SeqCst)
     }
 }

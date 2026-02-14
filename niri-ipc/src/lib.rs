@@ -1324,6 +1324,8 @@ pub struct Window {
     pub is_floating: bool,
     /// Whether this window requests your attention.
     pub is_urgent: bool,
+    /// Whether this window is running under Xwayland.
+    pub is_xwayland: bool,
     /// Position- and size-related properties of the window.
     pub layout: WindowLayout,
     /// Timestamp when the window was most recently focused.

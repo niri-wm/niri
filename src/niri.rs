@@ -2588,10 +2588,27 @@ impl Niri {
             primary_selection_disabled: config.clipboard.disable_primary,
             restricted,
             credentials_unknown,
+            is_xwayland: AtomicBool::new(false),
         });
 
-        if let Err(err) = self.display_handle.insert_client(client, data) {
-            warn!("error inserting client: {err}");
+        match self.display_handle.insert_client(client, data) {
+            Ok(c) => {
+                if !credentials_unknown {
+                    let credentials = c.get_credentials(&self.display_handle).unwrap();
+                    if self
+                        .satellite
+                        .as_ref()
+                        .map_or(None, |s| s.pid())
+                        .is_some_and(|pid| u32::try_from(credentials.pid).is_ok_and(|p| p == pid))
+                    {
+                        c.get_data::<ClientState>()
+                            .unwrap()
+                            .is_xwayland
+                            .store(true, Ordering::SeqCst);
+                    }
+                }
+            }
+            Err(err) => warn!("error inserting client: {err}"),
         }
     }
 
@@ -6114,6 +6131,7 @@ pub struct ClientState {
     pub restricted: bool,
     /// We cannot retrieve this client's socket credentials.
     pub credentials_unknown: bool,
+    pub is_xwayland: AtomicBool,
 }
 
 impl ClientData for ClientState {

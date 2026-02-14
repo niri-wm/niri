@@ -36,6 +36,7 @@ window-rule {
     match is-floating=true
     match is-window-cast-target=true
     match is-urgent=true
+    match is-xwayland=true
     match at-startup=true
 
     // Properties that apply once upon window opening.
@@ -300,6 +301,17 @@ window-rule {
     match is-urgent=true
 }
 ```
+
+#### `is-xwayland`
+
+<sup>Since: next release</sup>
+
+Can be `true` or `false`.
+Matches windows that is running under Xwayland.
+
+> [!NOTE]
+> This matcher requires you to use Niri's built-in [`xwayland-satellite` integration](./Xwayland.md).
+> If you launches `xwayland-satellite` yourself or with `spawn-at-startup`, this matcher will not work.
 
 #### `at-startup`
 

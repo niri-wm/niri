@@ -691,6 +691,11 @@ fn print_window(window: &Window) {
         if window.is_floating { "yes" } else { "no" }
     );
 
+    println!(
+        "  Is Xwayland: {}",
+        if window.is_xwayland { "yes" } else { "no" }
+    );
+
     if let Some(pid) = window.pid {
         println!("  PID: {pid}");
     } else {
