@@ -14,6 +14,7 @@ use _server_decoration::server::org_kde_kwin_server_decoration_manager::Mode as 
 use anyhow::{bail, ensure, Context};
 use calloop::futures::Scheduler;
 use niri_config::debug::PreviewRender;
+use niri_config::utils::MergeWith as _;
 use niri_config::{
     Config, FloatOrInt, Key, Modifiers, OutputName, TrackLayout, WarpMouseToFocusMode,
     WorkspaceReference, Xkb,
@@ -120,6 +121,8 @@ use crate::dbus::freedesktop_locale1::Locale1ToNiri;
 #[cfg(feature = "dbus")]
 use crate::dbus::freedesktop_login1::Login1ToNiri;
 #[cfg(feature = "dbus")]
+use crate::dbus::freedesktop_portal_settings::PortalSettingsToNiri;
+#[cfg(feature = "dbus")]
 use crate::dbus::gnome_shell_introspect::{self, IntrospectToNiri, NiriToIntrospect};
 #[cfg(feature = "dbus")]
 use crate::dbus::gnome_shell_screenshot::{NiriToScreenshot, ScreenshotToNiri};
@@ -188,6 +191,11 @@ const FRAME_CALLBACK_THROTTLE: Option<Duration> = Some(Duration::from_millis(995
 
 pub struct Niri {
     pub config: Rc<RefCell<Config>>,
+
+    pub portal_appearance: niri_config::AppearanceSettings,
+    pub portal_base_layout: niri_config::Layout,
+    pub portal_base_overview: niri_config::Overview,
+    pub portal_base_animations: niri_config::Animations,
 
     /// Output config from the config file.
     ///
@@ -1424,6 +1432,27 @@ impl State {
 
         self.niri.config_error_notification.hide();
 
+        self.niri.portal_base_layout = config.layout.clone();
+        self.niri.portal_base_overview = config.overview;
+        self.niri.portal_base_animations = config.animations.clone();
+
+        // Merge appearance rules into the config.
+        for rule in &config.appearance_rules {
+            if !rule.matches(self.niri.portal_appearance) {
+                continue;
+            }
+
+            if let Some(part) = &rule.layout {
+                config.layout.merge_with(part);
+            }
+            if let Some(part) = &rule.overview {
+                config.overview.merge_with(part);
+            }
+            if let Some(part) = &rule.animations {
+                config.animations.merge_with(part);
+            }
+        }
+
         // Find & orphan removed named workspaces.
         let mut removed_workspaces: Vec<String> = vec![];
         for ws in &self.niri.config.borrow().workspaces {
@@ -2163,6 +2192,100 @@ impl State {
         self.set_xkb_config(xkb.to_xkb_config());
         self.ipc_keyboard_layouts_changed();
     }
+
+    #[cfg(feature = "dbus")]
+    pub fn on_portal_settings_msg(&mut self, msg: PortalSettingsToNiri) {
+        let PortalSettingsToNiri::AppearanceChanged(appearance) = msg;
+
+        trace!("portal appearance settings changed: {appearance:?}");
+        if self.niri.portal_appearance == appearance {
+            return;
+        }
+
+        self.niri.portal_appearance = appearance;
+
+        let mut new_layout = self.niri.portal_base_layout.clone();
+        let mut new_overview = self.niri.portal_base_overview;
+        let mut new_animations = self.niri.portal_base_animations.clone();
+
+        {
+            let config = self.niri.config.borrow();
+            for rule in &config.appearance_rules {
+                if !rule.matches(self.niri.portal_appearance) {
+                    continue;
+                }
+
+                if let Some(part) = &rule.layout {
+                    new_layout.merge_with(part);
+                }
+                if let Some(part) = &rule.overview {
+                    new_overview.merge_with(part);
+                }
+                if let Some(part) = &rule.animations {
+                    new_animations.merge_with(part);
+                }
+            }
+        }
+
+        let (any_changed, overview_backdrop_changed) = {
+            let mut config = self.niri.config.borrow_mut();
+            let mut any_changed = false;
+            let overview_backdrop_changed =
+                config.overview.backdrop_color != new_overview.backdrop_color;
+
+            if config.layout != new_layout {
+                config.layout = new_layout;
+                any_changed = true;
+            }
+            if config.overview != new_overview {
+                config.overview = new_overview;
+                any_changed = true;
+            }
+            if config.animations != new_animations {
+                config.animations = new_animations;
+                any_changed = true;
+            }
+
+            (any_changed, overview_backdrop_changed)
+        };
+
+        if !any_changed {
+            return;
+        }
+
+        let config = self.niri.config.borrow();
+
+        let rate = 1.0 / config.animations.slowdown.max(0.001);
+        self.niri.clock.set_rate(rate);
+        self.niri
+            .clock
+            .set_complete_instantly(config.animations.off);
+
+        self.niri.layout.update_config(&config);
+
+        if overview_backdrop_changed {
+            for output in self.niri.global_space.outputs() {
+                let name = output.user_data().get::<OutputName>().unwrap();
+                let output_config = config.outputs.find(name);
+
+                let mut backdrop_color = output_config
+                    .and_then(|c| c.backdrop_color)
+                    .unwrap_or(config.overview.backdrop_color)
+                    .to_array_unpremul();
+                backdrop_color[3] = 1.;
+                let backdrop_color = Color32F::from(backdrop_color);
+
+                if let Some(state) = self.niri.output_state.get_mut(output) {
+                    if state.backdrop_buffer.color() != backdrop_color {
+                        state.backdrop_buffer.set_color(backdrop_color);
+                    }
+                }
+            }
+        }
+
+        drop(config);
+        self.niri.queue_redraw_all();
+    }
 }
 
 impl Niri {
@@ -2423,9 +2546,18 @@ impl Niri {
             )
             .unwrap();
 
+        let portal_appearance = niri_config::AppearanceSettings::default();
+        let portal_base_layout = config_.layout.clone();
+        let portal_base_overview = config_.overview;
+        let portal_base_animations = config_.animations.clone();
+
         drop(config_);
         let mut niri = Self {
             config,
+            portal_appearance,
+            portal_base_layout,
+            portal_base_overview,
+            portal_base_animations,
             config_file_output_config,
             config_file_watcher: None,
 

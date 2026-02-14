@@ -6,6 +6,7 @@ use crate::niri::State;
 pub mod freedesktop_a11y;
 pub mod freedesktop_locale1;
 pub mod freedesktop_login1;
+pub mod freedesktop_portal_settings;
 pub mod freedesktop_screensaver;
 pub mod gnome_shell_introspect;
 pub mod gnome_shell_screenshot;
@@ -38,6 +39,7 @@ pub struct DBusServers {
     pub conn_screen_cast: Option<Connection>,
     pub conn_login1: Option<Connection>,
     pub conn_locale1: Option<Connection>,
+    pub conn_portal_settings: Option<Connection>,
     pub conn_keyboard_monitor: Option<Connection>,
 }
 
@@ -167,6 +169,22 @@ impl DBusServers {
             }
             Err(err) => {
                 warn!("error starting locale1 watcher: {err:?}");
+            }
+        }
+
+        let (to_niri, from_portal_settings) = calloop::channel::channel();
+        niri.event_loop
+            .insert_source(from_portal_settings, move |event, _, state| match event {
+                calloop::channel::Event::Msg(msg) => state.on_portal_settings_msg(msg),
+                calloop::channel::Event::Closed => (),
+            })
+            .unwrap();
+        match freedesktop_portal_settings::start(to_niri) {
+            Ok(conn) => {
+                dbus.conn_portal_settings = Some(conn);
+            }
+            Err(err) => {
+                warn!("error starting portal settings watcher: {err:?}");
             }
         }
 

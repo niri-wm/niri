@@ -30,6 +30,7 @@ pub mod macros;
 
 pub mod animations;
 pub mod appearance;
+pub mod appearance_rule;
 pub mod binds;
 pub mod debug;
 pub mod error;
@@ -46,6 +47,7 @@ pub mod workspace;
 
 pub use crate::animations::{Animation, Animations};
 pub use crate::appearance::*;
+pub use crate::appearance_rule::{AppearanceRule, AppearanceSettings, ColorScheme, Contrast};
 pub use crate::binds::*;
 pub use crate::debug::Debug;
 pub use crate::error::{ConfigIncludeError, ConfigParseResult};
@@ -82,6 +84,7 @@ pub struct Config {
     pub overview: Overview,
     pub environment: Environment,
     pub xwayland_satellite: XwaylandSatellite,
+    pub appearance_rules: Vec<AppearanceRule>,
     pub window_rules: Vec<WindowRule>,
     pub layer_rules: Vec<LayerRule>,
     pub binds: Binds,
@@ -159,6 +162,7 @@ where
                 "output"
                     | "spawn-at-startup"
                     | "spawn-sh-at-startup"
+                    | "appearance-rule"
                     | "window-rule"
                     | "layer-rule"
                     | "workspace"
@@ -207,6 +211,7 @@ where
                 }
                 "spawn-at-startup" => m_push!(spawn_at_startup),
                 "spawn-sh-at-startup" => m_push!(spawn_sh_at_startup),
+                "appearance-rule" => m_push!(appearance_rules),
                 "window-rule" => m_push!(window_rules),
                 "layer-rule" => m_push!(layer_rules),
                 "workspace" => m_push!(workspaces),
@@ -1681,6 +1686,7 @@ mod tests {
                 off: false,
                 path: "xwayland-satellite",
             },
+            appearance_rules: [],
             window_rules: [
                 WindowRule {
                     matches: [
