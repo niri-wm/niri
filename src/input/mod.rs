@@ -449,9 +449,19 @@ impl State {
             time,
             |this, mods, keysym| {
                 let key_code = event.key_code();
-                let modified = keysym.modified_sym();
-                let raw = keysym.raw_latin_sym_or_raw_current_sym();
+                let keysym_binded = this.niri.config.borrow().input.bind_to_keysyms;
+
                 let modifiers = modifiers_from_state(*mods);
+                let modified = keysym.modified_sym();
+
+                let raw = if keysym_binded {
+                    keysym.raw_latin_sym_or_raw_current_sym()
+                } else {
+                    let xkb = keysym.xkb().lock().unwrap();
+                    xkb.raw_syms_for_key_in_layout(key_code, Layout(0))
+                        .first()
+                        .cloned()
+                };
 
                 // After updating XKB state from accessibility-grabbed keys, return right away and
                 // don't handle them.
@@ -2815,7 +2825,7 @@ impl State {
                     let config = self.niri.config.borrow();
                     let bindings =
                         make_binds_iter(&config, &mut self.niri.window_mru_ui, modifiers);
-                    find_configured_bind(bindings, mod_key, trigger, mods)
+                    find_configured_bind(bindings, mod_key, Keycode::new(0), trigger, mods)
                 }) {
                     self.niri.suppressed_buttons.insert(button_code);
                     self.handle_bind(bind.clone());
@@ -3169,12 +3179,14 @@ impl State {
                             let bind_left = find_configured_bind(
                                 bindings.clone(),
                                 mod_key,
+                                Keycode::new(0),
                                 Trigger::WheelScrollLeft,
                                 mods,
                             );
                             let bind_right = find_configured_bind(
                                 bindings,
                                 mod_key,
+                                Keycode::new(0),
                                 Trigger::WheelScrollRight,
                                 mods,
                             );
@@ -3256,11 +3268,17 @@ impl State {
                         let bind_up = find_configured_bind(
                             bindings.clone(),
                             mod_key,
+                            Keycode::new(0),
                             Trigger::WheelScrollUp,
                             mods,
                         );
-                        let bind_down =
-                            find_configured_bind(bindings, mod_key, Trigger::WheelScrollDown, mods);
+                        let bind_down = find_configured_bind(
+                            bindings,
+                            mod_key,
+                            Keycode::new(0),
+                            Trigger::WheelScrollDown,
+                            mods,
+                        );
                         (bind_up, bind_down)
                     };
 
@@ -3401,11 +3419,17 @@ impl State {
                     let bind_left = find_configured_bind(
                         bindings.clone(),
                         mod_key,
+                        Keycode::new(0),
                         Trigger::TouchpadScrollLeft,
                         mods,
                     );
-                    let bind_right =
-                        find_configured_bind(bindings, mod_key, Trigger::TouchpadScrollRight, mods);
+                    let bind_right = find_configured_bind(
+                        bindings,
+                        mod_key,
+                        Keycode::new(0),
+                        Trigger::TouchpadScrollRight,
+                        mods,
+                    );
                     drop(config);
 
                     if let Some(right) = bind_right {
@@ -3431,11 +3455,17 @@ impl State {
                     let bind_up = find_configured_bind(
                         bindings.clone(),
                         mod_key,
+                        Keycode::new(0),
                         Trigger::TouchpadScrollUp,
                         mods,
                     );
-                    let bind_down =
-                        find_configured_bind(bindings, mod_key, Trigger::TouchpadScrollDown, mods);
+                    let bind_down = find_configured_bind(
+                        bindings,
+                        mod_key,
+                        Keycode::new(0),
+                        Trigger::TouchpadScrollDown,
+                        mods,
+                    );
                     drop(config);
 
                     if let Some(down) = bind_down {
@@ -4351,6 +4381,7 @@ fn should_intercept_key<'a>(
     let mut final_bind = find_bind(
         bindings,
         mod_key,
+        key_code,
         modified,
         raw,
         mods,
@@ -4415,6 +4446,7 @@ fn should_intercept_key<'a>(
 fn find_bind<'a>(
     bindings: impl IntoIterator<Item = &'a Bind>,
     mod_key: ModKey,
+    key_code: Keycode,
     modified: Keysym,
     raw: Option<Keysym>,
     mods: ModifiersState,
@@ -4455,12 +4487,13 @@ fn find_bind<'a>(
     }
 
     let trigger = Trigger::Keysym(raw?);
-    find_configured_bind(bindings, mod_key, trigger, mods)
+    find_configured_bind(bindings, mod_key, key_code, trigger, mods)
 }
 
 fn find_configured_bind<'a>(
     bindings: impl IntoIterator<Item = &'a Bind>,
     mod_key: ModKey,
+    key_code: Keycode,
     trigger: Trigger,
     mods: ModifiersState,
 ) -> Option<Bind> {
@@ -4473,7 +4506,7 @@ fn find_configured_bind<'a>(
     }
 
     for bind in bindings {
-        if bind.key.trigger != trigger {
+        if bind.key.trigger != Trigger::Keycode(key_code) && bind.key.trigger != trigger {
             continue;
         }
 
@@ -5344,6 +5377,7 @@ mod tests {
             find_configured_bind(
                 &bindings.0,
                 ModKey::Super,
+                Keycode::new(0),
                 Trigger::Keysym(Keysym::q),
                 ModifiersState {
                     logo: true,
@@ -5357,6 +5391,7 @@ mod tests {
             find_configured_bind(
                 &bindings.0,
                 ModKey::Super,
+                Keycode::new(0),
                 Trigger::Keysym(Keysym::q),
                 ModifiersState::default(),
             ),
@@ -5367,6 +5402,7 @@ mod tests {
             find_configured_bind(
                 &bindings.0,
                 ModKey::Super,
+                Keycode::new(0),
                 Trigger::Keysym(Keysym::h),
                 ModifiersState {
                     logo: true,
@@ -5380,6 +5416,7 @@ mod tests {
             find_configured_bind(
                 &bindings.0,
                 ModKey::Super,
+                Keycode::new(0),
                 Trigger::Keysym(Keysym::h),
                 ModifiersState::default(),
             ),
@@ -5390,6 +5427,7 @@ mod tests {
             find_configured_bind(
                 &bindings.0,
                 ModKey::Super,
+                Keycode::new(0),
                 Trigger::Keysym(Keysym::j),
                 ModifiersState {
                     logo: true,
@@ -5402,6 +5440,7 @@ mod tests {
             find_configured_bind(
                 &bindings.0,
                 ModKey::Super,
+                Keycode::new(0),
                 Trigger::Keysym(Keysym::j),
                 ModifiersState::default(),
             )
@@ -5413,6 +5452,7 @@ mod tests {
             find_configured_bind(
                 &bindings.0,
                 ModKey::Super,
+                Keycode::new(0),
                 Trigger::Keysym(Keysym::k),
                 ModifiersState {
                     logo: true,
@@ -5426,6 +5466,7 @@ mod tests {
             find_configured_bind(
                 &bindings.0,
                 ModKey::Super,
+                Keycode::new(0),
                 Trigger::Keysym(Keysym::k),
                 ModifiersState::default(),
             ),
@@ -5436,6 +5477,7 @@ mod tests {
             find_configured_bind(
                 &bindings.0,
                 ModKey::Super,
+                Keycode::new(0),
                 Trigger::Keysym(Keysym::l),
                 ModifiersState {
                     logo: true,
@@ -5450,6 +5492,7 @@ mod tests {
             find_configured_bind(
                 &bindings.0,
                 ModKey::Super,
+                Keycode::new(0),
                 Trigger::Keysym(Keysym::l),
                 ModifiersState {
                     logo: true,
@@ -5457,6 +5500,95 @@ mod tests {
                 },
             ),
             None,
+        );
+    }
+
+    #[test]
+    fn keycode_handling() {
+        let bindings = Binds(vec![
+            Bind {
+                key: Key {
+                    trigger: Trigger::Keysym(Keysym::q),
+                    modifiers: Modifiers::SUPER,
+                },
+                action: Action::CloseWindow,
+                repeat: false,
+                cooldown: None,
+                allow_when_locked: false,
+                allow_inhibiting: false,
+                hotkey_overlay_title: None,
+            },
+            Bind {
+                key: Key {
+                    trigger: Trigger::Keycode(Keycode::new(32)),
+                    modifiers: Modifiers::SUPER,
+                },
+                action: Action::FocusColumnLeft,
+                repeat: true,
+                cooldown: None,
+                allow_when_locked: false,
+                allow_inhibiting: true,
+                hotkey_overlay_title: None,
+            },
+        ]);
+
+        assert_eq!(
+            find_configured_bind(
+                &bindings.0,
+                ModKey::Super,
+                Keycode::new(32),
+                Trigger::Keysym(Keysym::h),
+                ModifiersState {
+                    logo: true,
+                    ..Default::default()
+                }
+            )
+            .as_ref(),
+            Some(&bindings.0[1])
+        );
+
+        assert_eq!(
+            find_configured_bind(
+                &bindings.0,
+                ModKey::Super,
+                Keycode::new(31),
+                Trigger::Keysym(Keysym::h),
+                ModifiersState {
+                    logo: true,
+                    ..Default::default()
+                }
+            ),
+            None,
+        );
+
+        assert_eq!(
+            find_configured_bind(
+                &bindings.0,
+                ModKey::Super,
+                Keycode::new(31),
+                Trigger::Keysym(Keysym::q),
+                ModifiersState {
+                    logo: true,
+                    ..Default::default()
+                }
+            )
+            .as_ref(),
+            Some(&bindings.0[0]),
+        );
+
+        assert_eq!(
+            find_configured_bind(
+                &bindings.0,
+                ModKey::Super,
+                Keycode::new(32),
+                Trigger::Keysym(Keysym::q),
+                ModifiersState {
+                    logo: true,
+                    ..Default::default()
+                }
+            )
+            .as_ref(),
+            Some(&bindings.0[0]),
         );
     }
 }
