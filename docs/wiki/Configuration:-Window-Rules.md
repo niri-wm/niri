@@ -37,6 +37,7 @@ window-rule {
     match is-window-cast-target=true
     match is-urgent=true
     match at-startup=true
+    match window-label="private" label-value="yes" with-no-value=true
 
     // Properties that apply once upon window opening.
     default-column-width { proportion 0.75; }
@@ -315,6 +316,47 @@ This is useful for properties like `open-on-output` which you may want to apply 
 window-rule {
     match at-startup=true
     open-on-output "HDMI-A-1"
+}
+```
+
+#### `window-label`
+
+<sup>Since: 26.x</sup>
+
+Matches the windows by their assigned label by a regex on the label name. Each window can have multiple labels. Label has a name and optionally also a value.
+You can read about the supported regular expression syntax [here](https://docs.rs/regex/latest/regex/#syntax).
+
+The following properties can further limit the match by examining the value of the label that matches the `window-label`:
+
+* `with-value` - only matches if the label also has a matching value. This is also a regex.
+* `with-no-value` - only matches the label if it has no value.
+
+```kdl
+// Change the border for windows that are labeled "important"
+window-rule {
+  match window-label="important"
+
+  border {
+    active-color "#ee0000"
+    inactive-color "#ee5555"
+  }
+}
+
+binds {
+  Mod+F5 { toggle-label-on-focused-window "important"; }
+}
+```
+
+```kdl
+// Hide the windows labeled nsfw from screen cast
+window-rule {
+  match window-label="role" with-value="nsfw"
+
+  block-out-from "screencast"
+}
+
+binds {
+  Mod+F12 { set-label-on-focused-window "role" value="nsfw"; }
 }
 ```
 

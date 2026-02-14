@@ -119,6 +119,11 @@ pub enum Request {
     OverviewState,
     /// Request information about screencasts.
     Casts,
+    /// Request window labels
+    WindowLabels {
+        /// Window id
+        id: u64,
+    },
 }
 
 /// Reply from niri to client.
@@ -165,6 +170,8 @@ pub enum Response {
     OverviewState(Overview),
     /// Information about screencasts.
     Casts(Vec<Cast>),
+    /// Information about the window labels
+    WindowLabels(Option<HashMap<String, Option<String>>>),
 }
 
 /// Overview information.
@@ -943,6 +950,62 @@ pub enum Action {
         #[cfg_attr(feature = "clap", arg(long))]
         path: Option<String>,
     },
+    /// Sets a label on a window
+    SetWindowLabel {
+        /// Id of the window.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: u64,
+
+        /// the name of the label
+        #[cfg_attr(feature = "clap", arg(long))]
+        name: String,
+
+        /// the value of the label
+        #[cfg_attr(feature = "clap", arg(long))]
+        value: Option<String>,
+    },
+    /// Unsets a label on a window
+    UnsetWindowLabel {
+        /// Id of the window.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: u64,
+
+        /// the name of the label
+        #[cfg_attr(feature = "clap", arg(long))]
+        name: String,
+    },
+    /// Set a label on the currently focused window
+    SetLabelOnFocusedWindow {
+        /// the name of the label
+        #[cfg_attr(feature = "clap", arg(long))]
+        name: String,
+
+        /// the value of the label
+        #[cfg_attr(feature = "clap", arg(long))]
+        value: Option<String>,
+    },
+    /// Unsets a label on the currenlty focused window
+    UnsetLabelOnFocusedWindow {
+        /// the name of the label
+        #[cfg_attr(feature = "clap", arg(long))]
+        name: String,
+    },
+    /// Toggles an unvalued label on a window
+    ToggleWindowLabel {
+        /// Id of the window.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: u64,
+
+        /// the name of the label
+        #[cfg_attr(feature = "clap", arg(long))]
+        name: String,
+    },
+    /// Toggles an unvalued label on the focused window
+    ToggleLabelOnFocusedWindow {
+        /// the name of the label
+        #[cfg_attr(feature = "clap", arg(long))]
+        name: String,
+    },
 }
 
 /// Change in window or column size.
@@ -1334,6 +1397,9 @@ pub struct Window {
     ///
     /// The timestamp comes from the monotonic clock.
     pub focus_timestamp: Option<Timestamp>,
+
+    ///Window labels
+    pub labels: Option<HashMap<String, Option<String>>>,
 }
 
 /// A moment in time.
