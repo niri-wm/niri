@@ -2003,7 +2003,7 @@ impl State {
         self.niri.queue_redraw_all();
     }
 
-    pub fn confirm_screenshot(&mut self, write_to_disk: bool) {
+    pub fn confirm_screenshot(&mut self, write_to_disk: bool, copy_path: bool) {
         let ScreenshotUi::Open { path, .. } = &mut self.niri.screenshot_ui else {
             return;
         };
@@ -2012,7 +2012,10 @@ impl State {
         self.backend.with_primary_renderer(|renderer| {
             match self.niri.screenshot_ui.capture(renderer) {
                 Ok((size, pixels)) => {
-                    if let Err(err) = self.niri.save_screenshot(size, pixels, write_to_disk, path) {
+                    if let Err(err) =
+                        self.niri
+                            .save_screenshot(size, pixels, write_to_disk, copy_path, path)
+                    {
                         warn!("error saving screenshot: {err:?}");
                     }
                 }
@@ -5219,7 +5222,7 @@ impl Niri {
             elements,
         )?;
 
-        self.save_screenshot(size, pixels, write_to_disk, path)
+        self.save_screenshot(size, pixels, write_to_disk, false, path)
             .context("error saving screenshot")
     }
 
@@ -5282,7 +5285,7 @@ impl Niri {
             elements,
         )?;
 
-        self.save_screenshot(geo.size, pixels, write_to_disk, path)
+        self.save_screenshot(geo.size, pixels, write_to_disk, false, path)
             .context("error saving screenshot")
     }
 
@@ -5291,6 +5294,7 @@ impl Niri {
         size: Size<i32, Physical>,
         pixels: Vec<u8>,
         write_to_disk: bool,
+        copy_path: bool,
         path_arg: Option<String>,
     ) -> anyhow::Result<()> {
         let path = write_to_disk
@@ -5308,17 +5312,17 @@ impl Niri {
             })
             .flatten();
 
-        // Prepare to set the encoded image as our clipboard selection. This must be done from the
-        // main thread.
-        let (tx, rx) = calloop::channel::sync_channel::<Arc<[u8]>>(1);
+        // Prepare to set the clipboard selection. This must be done from the main thread.
+        // The channel sends (mime_types, data).
+        let (tx, rx) = calloop::channel::sync_channel::<(Vec<String>, Arc<[u8]>)>(1);
         self.event_loop
             .insert_source(rx, move |event, _, state| match event {
-                calloop::channel::Event::Msg(buf) => {
+                calloop::channel::Event::Msg((mime_types, buf)) => {
                     set_data_device_selection(
                         &state.niri.display_handle,
                         &state.niri.seat,
-                        vec![String::from("image/png")],
-                        buf.clone(),
+                        mime_types,
+                        buf,
                     );
                 }
                 calloop::channel::Event::Closed => (),
@@ -5347,7 +5351,11 @@ impl Niri {
             }
 
             let buf: Arc<[u8]> = Arc::from(buf.into_boxed_slice());
-            let _ = tx.send(buf.clone());
+
+            // If not copying path, copy the image to clipboard now.
+            if !copy_path {
+                let _ = tx.send((vec![String::from("image/png")], buf.clone()));
+            }
 
             let mut image_path = None;
 
@@ -5375,6 +5383,22 @@ impl Niri {
                 }
             } else {
                 debug!("not saving screenshot to disk");
+            }
+
+            // If copying path, copy it to clipboard now that we know the path.
+            if copy_path {
+                if let Some(path) = &image_path {
+                    if let Some(path_str) = path.to_str() {
+                        let path_bytes: Arc<[u8]> = Arc::from(path_str.as_bytes());
+                        let _ = tx.send((
+                            vec![
+                                String::from("text/plain;charset=utf-8"),
+                                String::from("text/plain"),
+                            ],
+                            path_bytes,
+                        ));
+                    }
+                }
             }
 
             #[cfg(feature = "dbus")]
