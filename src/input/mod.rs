@@ -2411,7 +2411,7 @@ impl State {
     }
 
     fn on_pointer_motion<I: InputBackend>(&mut self, event: I::PointerMotionEvent) {
-        let was_inside_hot_corner = self.niri.pointer_inside_hot_corner;
+        // let was_inside_hot_corner = self.niri.pointer_inside_hot_corner;
         // Any of the early returns here mean that the pointer is not inside the hot corner.
         self.niri.pointer_inside_hot_corner = false;
 
@@ -2631,15 +2631,97 @@ impl State {
         // contents_under() will return no surface when the hot corner should trigger, so
         // pointer.motion() will set the current focus to None.
         if under.hot_corner && pointer.current_focus().is_none() {
-            if !was_inside_hot_corner
-                && pointer
-                    .with_grab(|_, grab| grab_allows_hot_corner(grab))
-                    .unwrap_or(true)
+            // info!("{}", self.niri.hot_corner_event_stream);
+            // Main pressure constants
+            let dividend = 1.;
+            let pressure_cap = 10;
+            let target = 150;
+            let timeout = 1000000;
+
+            let threshold = event.time() - timeout;
+
+            if
+            /*(!was_inside_hot_corner
+            && pointer
+                .with_grab(|_, grab| grab_allows_hot_corner(grab))
+                .unwrap_or(true)
+            && (self.niri.hot_corner_pressure.0 >= pressure_cap
+                || self.niri.hot_corner_pressure.1 >= pressure_cap))
+            || */
+            pointer
+                .with_grab(|_, grab| grab_allows_hot_corner(grab))
+                .unwrap_or(true)
+                && (self.niri.hot_corner_pressure.0 > target
+                    || self.niri.hot_corner_pressure.1 > target)
             {
                 self.niri.layout.toggle_overview();
+                // set to minimum after trigger to avoid re-triggers without exiting
+                self.niri.hot_corner_pressure = (i32::MIN, i32::MIN);
+                info!("TRIGGERED");
             }
+
+            // Trim event stream
+            let mut first_new_event = 0;
+            for event_item in self.niri.hot_corner_event_stream.iter() {
+                if event_item.0 >= threshold {
+                    break;
+                }
+                info!("cull");
+
+                match self.niri.hot_corner_pressure.0.checked_sub(event_item.1 .0) {
+                    Some(x) => self.niri.hot_corner_pressure.0 = x,
+                    None => self.niri.hot_corner_pressure.0 = 0,
+                }
+                match self.niri.hot_corner_pressure.1.checked_sub(event_item.1 .1) {
+                    Some(y) => self.niri.hot_corner_pressure.1 = y,
+                    None => self.niri.hot_corner_pressure.0 = 0,
+                }
+                first_new_event += 1;
+            }
+            self.niri.hot_corner_event_stream = self
+                .niri
+                .hot_corner_event_stream
+                .drain(first_new_event..)
+                .collect();
+
+            // TODO: Only works for bottom-left right now
+
+            // get current input
+            let mut vec = (
+                (-event.delta().x / dividend) as i32,
+                (event.delta().y / dividend) as i32,
+            );
+
+            // Clear lesser cardinal input
+            if vec.0 >= vec.1 {
+                vec.1 = 0;
+            } else {
+                vec.0 = 0;
+            }
+
+            //TODO: Check addition for overflow
+            if vec.0 < pressure_cap && vec.1 < pressure_cap {
+                self.niri.hot_corner_pressure.0 += vec.0;
+                self.niri.hot_corner_pressure.1 += vec.1;
+            } else if vec.0 >= pressure_cap {
+                self.niri.hot_corner_pressure.0 += pressure_cap;
+                vec.0 = pressure_cap;
+                info!("Max horizontal pressure velocity reached");
+            } else if vec.1 >= pressure_cap {
+                self.niri.hot_corner_pressure.1 += pressure_cap;
+                vec.1 = pressure_cap;
+                info!("Max vertical pressure velocity reached");
+            }
+
+            // Append to event stream
+            self.niri.hot_corner_event_stream.push((event.time(), vec));
+
             self.niri.pointer_inside_hot_corner = true;
+        } else {
+            self.niri.hot_corner_pressure = (0, 0);
+            self.niri.hot_corner_event_stream = Vec::default();
         }
+        // info!("{}", self.niri.hot_corner_pressure);
 
         // Activate a new confinement if necessary.
         self.niri.maybe_activate_pointer_constraint();
