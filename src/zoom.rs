@@ -196,14 +196,6 @@ pub fn compute_focal_for_cursor(
     }
 }
 
-/// Check if surface scales should be updated based on zoom level change.
-pub fn should_update_scales(zoom_state: &OutputZoomState) -> bool {
-    match zoom_state.last_scale_update_level {
-        None => true,
-        Some(last) => (zoom_state.level - last).abs() >= SCALE_CHANGE_THRESHOLD,
-    }
-}
-
 /// Compute the ratio of window area intersecting the zoom viewport (0.0–1.0).
 pub fn calculate_visibility(
     window_geo: Rectangle<f64, Logical>,

@@ -47,9 +47,11 @@ use scrolling::{Column, ColumnWidth};
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::element::utils::RescaleRenderElement;
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
+use smithay::desktop::layer_map_for_output;
 use smithay::output::{self, Output};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Serial, Size, Transform};
+use smithay::wayland::shell::wlr_layer::Layer;
 use tile::{Tile, TileRenderElement};
 use workspace::{WorkspaceAddWindowTarget, WorkspaceId};
 
@@ -75,7 +77,7 @@ use crate::utils::{
 use crate::window::ResolvedWindowRules;
 pub use crate::zoom::{
     calculate_visibility, clamp_zoom_level_with_rubber_band, compute_focal_for_cursor,
-    log_pos_to_zoom_level, should_update_scales, zoomed_viewport, OutputZoomExt, OutputZoomState,
+    log_pos_to_zoom_level, zoomed_viewport, OutputZoomExt, OutputZoomState,
     SCALE_CHANGE_THRESHOLD, ZOOM_GESTURE_RUBBER_BAND,
 };
 use smithay::wayland::compositor::with_states;
@@ -2874,7 +2876,7 @@ impl<W: LayoutElement> Layout<W> {
                                     // Reset scales to original (non-zoomed) values before clearing.
                                     let scale = mon.output.current_scale();
                                     let transform = mon.output.current_transform();
-                                    for (surface, _) in &zoom_state.zoomed_surfaces {
+                                    for surface in zoom_state.zoomed_surfaces.keys() {
                                         with_states(surface, |data| {
                                             send_scale_transform(
                                                 surface, data, scale, transform, None,
@@ -2915,7 +2917,7 @@ impl<W: LayoutElement> Layout<W> {
             if let MonitorSet::Normal { monitors, .. } = &self.monitor_set {
                 for mon in monitors {
                     if let Some(mut zoom_state) = mon.output.zoom_state() {
-                        if zoom_state.level > 1.0 && should_update_scales(&zoom_state) {
+                        if zoom_state.level > 1.0 {
                             self.compute_zoomed_surfaces(&mon.output, &mut zoom_state);
                             zoom_state.last_scale_update_level = Some(zoom_state.level);
 
@@ -4157,6 +4159,22 @@ impl<W: LayoutElement> Layout<W> {
                         zoom_state.zoomed_surfaces.insert(surface, capped_zoom);
                     }
                 }
+            }
+        }
+
+        let layer_map = layer_map_for_output(output);
+        for layer in layer_map.layers() {
+            if layer.layer() == Layer::Background {
+                continue;
+            }
+            let Some(geo) = layer_map.layer_geometry(layer) else {
+                continue;
+            };
+            let layer_rect = Rectangle::new(geo.loc.to_f64(), geo.size.to_f64());
+            if calculate_visibility(layer_rect, zoom_rect) > 0.0 {
+                zoom_state
+                    .zoomed_surfaces
+                    .insert(layer.wl_surface().clone(), capped_zoom);
             }
         }
     }

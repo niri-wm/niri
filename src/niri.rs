@@ -4232,43 +4232,6 @@ impl Niri {
         let _span = tracy_client::span!("Niri::advance_animations");
 
         self.layout.advance_animations();
-
-        // Add layer surfaces to zoomed_surfaces so they receive elevated scales during zoom.
-        if self.config.borrow().zoom.use_fractional_scale {
-            for output in self.global_space.outputs() {
-                if let Some(mut zoom_state) = output.zoom_state() {
-                    if zoom_state.level > 1.0 {
-                        let zoom_rect = zoomed_viewport(
-                            Rectangle::new(
-                                Point::from((0.0, 0.0)),
-                                crate::utils::output_size(output).to_f64(),
-                            ),
-                            zoom_state.focal,
-                            zoom_state.level,
-                        );
-
-                        let layer_map = layer_map_for_output(output);
-                        let capped_zoom = zoom_state
-                            .level
-                            .min(self.config.borrow().zoom.max_fractional_scale);
-
-                        for layer in layer_map.layers() {
-                            let Some(geo) = layer_map.layer_geometry(layer) else {
-                                continue;
-                            };
-                            let layer_rect = Rectangle::new(geo.loc.to_f64(), geo.size.to_f64());
-
-                            if crate::zoom::calculate_visibility(layer_rect, zoom_rect) > 0.0 {
-                                zoom_state
-                                    .zoomed_surfaces
-                                    .insert(layer.wl_surface().clone(), capped_zoom);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
         self.config_error_notification.advance_animations();
         self.exit_confirm_dialog.advance_animations();
         self.screenshot_ui.advance_animations();
