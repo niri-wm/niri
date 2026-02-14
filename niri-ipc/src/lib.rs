@@ -1020,6 +1020,8 @@ pub enum OutputAction {
     Off,
     /// Turn on the output.
     On,
+    /// Toggle the output on or off.
+    Toggle,
     /// Set the output mode.
     Mode {
         /// Mode to set, or "auto" for automatic selection.
