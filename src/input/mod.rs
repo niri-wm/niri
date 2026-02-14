@@ -2284,6 +2284,63 @@ impl State {
                     self.niri.queue_redraw_all();
                 }
             }
+            Action::OverviewZoomCycle(reverse) => {
+                if !self.niri.layout.is_overview_open() {
+                    return;
+                }
+
+                let config = self.niri.config.borrow();
+                let presets = match &config.overview.zoom_presets {
+                    Some(p) if !p.is_empty() => p.clone(),
+                    _ => return,
+                };
+                let anim_config = config.animations.overview_zoom.0;
+                drop(config);
+
+                for monitor in self.niri.layout.monitors_mut() {
+                    monitor.cycle_overview_zoom(&presets, reverse, anim_config);
+                }
+
+                self.niri.queue_redraw_all();
+            }
+            Action::OverviewZoomIn => {
+                if !self.niri.layout.is_overview_open() {
+                    return;
+                }
+
+                let config = self.niri.config.borrow();
+                let presets = match &config.overview.zoom_presets {
+                    Some(p) if !p.is_empty() => p.clone(),
+                    _ => return,
+                };
+                let anim_config = config.animations.overview_zoom.0;
+                drop(config);
+
+                for monitor in self.niri.layout.monitors_mut() {
+                    monitor.overview_zoom_in(&presets, anim_config);
+                }
+
+                self.niri.queue_redraw_all();
+            }
+            Action::OverviewZoomOut => {
+                if !self.niri.layout.is_overview_open() {
+                    return;
+                }
+
+                let config = self.niri.config.borrow();
+                let presets = match &config.overview.zoom_presets {
+                    Some(p) if !p.is_empty() => p.clone(),
+                    _ => return,
+                };
+                let anim_config = config.animations.overview_zoom.0;
+                drop(config);
+
+                for monitor in self.niri.layout.monitors_mut() {
+                    monitor.overview_zoom_out(&presets, anim_config);
+                }
+
+                self.niri.queue_redraw_all();
+            }
             Action::ToggleWindowUrgent(id) => {
                 let window = self
                     .niri

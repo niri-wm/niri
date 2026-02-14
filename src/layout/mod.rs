@@ -610,7 +610,7 @@ impl Options {
             layout: config.layout.clone(),
             animations: config.animations.clone(),
             gestures: config.gestures,
-            overview: config.overview,
+            overview: config.overview.clone(),
             disable_resize_throttling: config.debug.disable_resize_throttling,
             disable_transactions: config.debug.disable_transactions,
             deactivate_unfocused_windows: config.debug.deactivate_unfocused_windows,
@@ -2321,7 +2321,12 @@ impl<W: LayoutElement> Layout<W> {
 
     pub fn overview_zoom(&self) -> f64 {
         let progress = self.overview_progress.as_ref().map(|p| p.value());
-        compute_overview_zoom(&self.options, progress)
+        // Use runtime zoom from active monitor, falling back to config default
+        let target_zoom = self
+            .active_monitor_ref()
+            .map(|m| m.overview_zoom_target())
+            .unwrap_or(self.options.overview.zoom);
+        compute_overview_zoom(target_zoom, progress)
     }
 
     #[cfg(test)]
@@ -4542,6 +4547,14 @@ impl<W: LayoutElement> Layout<W> {
     pub fn toggle_overview(&mut self) {
         self.overview_open = !self.overview_open;
 
+        // Reset zoom to config default when closing overview.
+        if !self.overview_open {
+            let default_zoom = self.options.overview.zoom;
+            for monitor in self.monitors_mut() {
+                monitor.reset_overview_zoom(default_zoom);
+            }
+        }
+
         let from = self.overview_progress.take().map_or(0., |p| p.value());
         let to = if self.overview_open { 1. } else { 0. };
 
@@ -4923,9 +4936,9 @@ impl<W: LayoutElement> Default for MonitorSet<W> {
     }
 }
 
-fn compute_overview_zoom(options: &Options, overview_progress: Option<f64>) -> f64 {
+fn compute_overview_zoom(target_zoom: f64, overview_progress: Option<f64>) -> f64 {
     // Clamp to some sane values.
-    let zoom = options.overview.zoom.clamp(0.0001, 0.75);
+    let zoom = target_zoom.clamp(0.0001, 0.75);
 
     if let Some(p) = overview_progress {
         (1. - p * (1. - zoom)).max(0.0001)
