@@ -1,7 +1,7 @@
 use std::cell::{Cell, Ref, RefCell};
 use std::time::Duration;
 
-use niri_config::{Color, CornerRadius, GradientInterpolation, WindowRule};
+use niri_config::{Color, CornerRadius, GradientInterpolation, OutputName, WindowRule};
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::element::Kind;
 use smithay::backend::renderer::gles::GlesRenderer;
@@ -298,10 +298,16 @@ impl Mapped {
     }
 
     /// Recomputes the resolved window rules and returns whether they changed.
-    pub fn recompute_window_rules(&mut self, rules: &[WindowRule], is_at_startup: bool) -> bool {
+    pub fn recompute_window_rules(
+        &mut self,
+        rules: &[WindowRule],
+        is_at_startup: bool,
+        output: Option<&OutputName>,
+    ) -> bool {
         self.need_to_recompute_rules = false;
 
-        let new_rules = ResolvedWindowRules::compute(rules, WindowRef::Mapped(self), is_at_startup);
+        let new_rules =
+            ResolvedWindowRules::compute(rules, WindowRef::Mapped(self), is_at_startup, output);
         if new_rules == self.rules {
             return false;
         }
@@ -320,12 +326,13 @@ impl Mapped {
         &mut self,
         rules: &[WindowRule],
         is_at_startup: bool,
+        output: Option<&OutputName>,
     ) -> bool {
         if !self.need_to_recompute_rules {
             return false;
         }
 
-        self.recompute_window_rules(rules, is_at_startup)
+        self.recompute_window_rules(rules, is_at_startup, output)
     }
 
     pub fn set_needs_configure(&mut self) {
