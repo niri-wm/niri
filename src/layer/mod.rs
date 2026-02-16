@@ -3,6 +3,7 @@ use niri_config::utils::MergeWith as _;
 use niri_config::{BlockOutFrom, CornerRadius, ShadowRule};
 use smithay::desktop::LayerSurface;
 
+pub mod layer_animation;
 pub mod mapped;
 pub use mapped::MappedLayer;
 

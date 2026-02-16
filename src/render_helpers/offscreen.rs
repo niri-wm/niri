@@ -212,6 +212,10 @@ impl OffscreenRenderElement {
         &self.texture
     }
 
+    pub fn renderer_context_id(&self) -> &ContextId<GlesTexture> {
+        &self.renderer_context_id
+    }
+
     pub fn offset(&self) -> Point<f64, Logical> {
         self.offset
     }

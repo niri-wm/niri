@@ -239,6 +239,11 @@ pub struct Niri {
     /// Extra data for mapped layer surfaces.
     pub mapped_layer_surfaces: HashMap<LayerSurface, MappedLayer>,
 
+    /// Layer surfaces that are closing and animating out.
+    /// Stored separately from mapped_layer_surfaces so they can render
+    /// even after being unmapped from Smithay's layer_map.
+    pub closing_layers: Vec<(LayerSurface, MappedLayer)>,
+
     // Cached root surface for every surface, so that we can access it in destroyed() where the
     // normal get_parent() is cleared out.
     pub root_surface: HashMap<WlSurface, WlSurface>,
@@ -2446,6 +2451,7 @@ impl Niri {
             unmapped_windows: HashMap::new(),
             unmapped_layer_surfaces: HashSet::new(),
             mapped_layer_surfaces: HashMap::new(),
+            closing_layers: Vec::new(),
             root_surface: HashMap::new(),
             dmabuf_pre_commit_hook: HashMap::new(),
             blocker_cleared_tx,
@@ -3981,6 +3987,23 @@ impl Niri {
         self.screenshot_ui.advance_animations();
         self.window_mru_ui.advance_animations();
 
+        // Advance layer surface animations and clean up closed layers.
+        for mapped in self.mapped_layer_surfaces.values_mut() {
+            mapped.advance_animations();
+        }
+        self.mapped_layer_surfaces.retain(|_, mapped| !mapped.should_remove());
+
+        let mut i = 0;
+        while i < self.closing_layers.len() {
+            let (_, mapped) = &mut self.closing_layers[i];
+            mapped.advance_animations();
+            if mapped.is_close_animation_done() {
+                self.closing_layers.remove(i);
+            } else {
+                i += 1;
+            }
+        }
+
         for state in self.output_state.values_mut() {
             if let Some(transition) = &mut state.screen_transition {
                 if transition.is_done() {
@@ -4194,6 +4217,26 @@ impl Niri {
             }};
         }
 
+        for (_, mapped) in &self.closing_layers {
+            if let Some(geo) = mapped.closing_geometry() {
+                if !mapped.render_with_animation(
+                    renderer,
+                    geo.loc.to_f64(),
+                    Scale::from(mapped.scale()),
+                    target,
+                    geo.size.to_f64(),
+                    &mut |elem| push(elem.into()),
+                ) {
+                    mapped.render_normal(
+                        renderer,
+                        geo.loc.to_f64(),
+                        target,
+                        &mut |elem| push(elem.into()),
+                    );
+                }
+            }
+        }
+
         // The overlay layer elements go next.
         push_popups_from_layer!(Layer::Overlay);
         push_normal_from_layer!(Layer::Overlay);
@@ -4297,6 +4340,18 @@ impl Niri {
         push: &mut dyn FnMut(LayerSurfaceRenderElement<R>),
     ) {
         for (mapped, geo) in self.layers_in_render_order(layer_map, layer, for_backdrop) {
+            if mapped.are_animations_ongoing() {
+                if mapped.render_with_animation(
+                    renderer,
+                    geo.loc.to_f64(),
+                    Scale::from(mapped.scale()),
+                    target,
+                    geo.size.to_f64(),
+                    push,
+                ) {
+                    continue;
+                }
+            }
             mapped.render_normal(renderer, geo.loc.to_f64(), target, push);
         }
     }
@@ -4354,6 +4409,16 @@ impl Niri {
                     .layers()
                     .filter_map(|surface| self.mapped_layer_surfaces.get(surface))
                     .any(|mapped| mapped.are_animations_ongoing());
+            }
+
+            // Also check closing layers (layers with close animations that are no longer in the map).
+            if !state.unfinished_animations_remain {
+                for (_, mapped) in &self.closing_layers {
+                    if mapped.are_animations_ongoing() {
+                        state.unfinished_animations_remain = true;
+                        break;
+                    }
+                }
             }
 
             // Render.

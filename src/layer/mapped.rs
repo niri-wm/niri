@@ -1,12 +1,18 @@
+use std::cell::RefCell;
+
 use niri_config::utils::MergeWith as _;
 use niri_config::{Config, LayerRule};
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::element::Kind;
+use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::desktop::{LayerSurface, PopupManager};
-use smithay::utils::{Logical, Point, Scale, Size};
+use smithay::utils::{Logical, Point, Rectangle, Scale, Size};
 use smithay::wayland::shell::wlr_layer::{ExclusiveZone, Layer};
 
+use super::layer_animation::LayerAnimation;
+use super::layer_animation::LayerAnimationRenderElement;
 use super::ResolvedLayerRules;
+use crate::animation::Animation as AnimationTrait;
 use crate::animation::Clock;
 use crate::layout::shadow::Shadow;
 use crate::niri_render_elements;
@@ -39,6 +45,18 @@ pub struct MappedLayer {
 
     /// Clock for driving animations.
     clock: Clock,
+
+    /// Open animation state.
+    open_animation: Option<LayerAnimation>,
+
+    /// Close animation state.
+    close_animation: Option<LayerAnimation>,
+
+    closing_geometry: Option<Rectangle<i32, Logical>>,
+
+    close_snapshot: RefCell<Option<Vec<WaylandSurfaceRenderElement<GlesRenderer>>>>,
+
+    is_closing: bool,
 }
 
 niri_render_elements! {
@@ -46,6 +64,7 @@ niri_render_elements! {
         Wayland = WaylandSurfaceRenderElement<R>,
         SolidColor = SolidColorRenderElement,
         Shadow = ShadowRenderElement,
+        Animation = LayerAnimationRenderElement,
     }
 }
 
@@ -71,6 +90,11 @@ impl MappedLayer {
             scale,
             shadow: Shadow::new(shadow_config),
             clock,
+            open_animation: None,
+            close_animation: None,
+            closing_geometry: None,
+            close_snapshot: RefCell::new(None),
+            is_closing: false,
         }
     }
 
@@ -106,7 +130,95 @@ impl MappedLayer {
     }
 
     pub fn are_animations_ongoing(&self) -> bool {
-        self.rules.baba_is_float
+        self.open_animation.is_some() || self.close_animation.is_some() || self.rules.baba_is_float
+    }
+
+    pub fn start_open_animation(&mut self, config: &niri_config::Animations) {
+        self.open_animation = Some(LayerAnimation::new_open(AnimationTrait::new(
+            self.clock.clone(),
+            0.,
+            1.,
+            0.,
+            config.layer_open.anim.clone(),
+        )));
+    }
+
+    pub fn start_close_animation(&mut self, config: &niri_config::Animations) {
+        self.close_animation = Some(LayerAnimation::new_close(AnimationTrait::new(
+            self.clock.clone(),
+            1.,
+            0.,
+            0.,
+            config.layer_close.anim.clone(),
+        )));
+    }
+
+    pub fn capture_close_snapshot(&self, renderer: &mut GlesRenderer) {
+        if self.close_snapshot.borrow().is_some() {
+            return;
+        }
+
+        let _span = tracy_client::span!("MappedLayer::capture_close_snapshot");
+
+        let scale = Scale::from(self.scale);
+        let alpha = self.rules.opacity.unwrap_or(1.).clamp(0., 1.) as f32;
+        let location = Point::from((0., 0.));
+        let buf_pos = location + self.bob_offset();
+
+        let mut elements: Vec<WaylandSurfaceRenderElement<GlesRenderer>> = Vec::new();
+        let surface = self.surface.wl_surface();
+        push_elements_from_surface_tree(
+            renderer,
+            surface,
+            buf_pos.to_physical_precise_round(scale),
+            scale,
+            alpha,
+            Kind::ScanoutCandidate,
+            &mut |elem| elements.push(elem),
+        );
+
+        *self.close_snapshot.borrow_mut() = Some(elements);
+    }
+
+    pub fn set_closing(&mut self, closing: bool) {
+        self.is_closing = closing;
+    }
+
+    pub fn set_closing_geometry(&mut self, geo: Rectangle<i32, Logical>) {
+        self.closing_geometry = Some(geo);
+    }
+
+    pub fn closing_geometry(&self) -> Option<Rectangle<i32, Logical>> {
+        self.closing_geometry
+    }
+
+    pub fn clear_close_animation(&mut self) {
+        self.close_animation = None;
+        self.is_closing = false;
+        self.closing_geometry = None;
+        *self.close_snapshot.borrow_mut() = None;
+    }
+
+    pub fn should_remove(&self) -> bool {
+        self.is_closing && self.close_animation.is_none()
+    }
+
+    pub fn is_close_animation_done(&self) -> bool {
+        self.close_animation.is_none()
+    }
+
+    pub fn advance_animations(&mut self) {
+        if let Some(open) = &mut self.open_animation {
+            if open.is_done() {
+                self.open_animation = None;
+            }
+        }
+
+        if let Some(close) = &mut self.close_animation {
+            if close.is_done() {
+                self.close_animation = None;
+            }
+        }
     }
 
     pub fn surface(&self) -> &LayerSurface {
@@ -115,6 +227,10 @@ impl MappedLayer {
 
     pub fn rules(&self) -> &ResolvedLayerRules {
         &self.rules
+    }
+
+    pub fn scale(&self) -> f64 {
+        self.scale
     }
 
     /// Recomputes the resolved layer rules and returns whether they changed.
@@ -192,6 +308,19 @@ impl MappedLayer {
                 Kind::ScanoutCandidate,
                 &mut |elem| push(elem.into()),
             );
+
+            let mut snapshot = Vec::new();
+            let gles_renderer = renderer.as_gles_renderer();
+            push_elements_from_surface_tree(
+                gles_renderer,
+                surface,
+                buf_pos.to_physical_precise_round(scale),
+                scale,
+                alpha as f32,
+                Kind::ScanoutCandidate,
+                &mut |elem| snapshot.push(elem),
+            );
+            *self.close_snapshot.borrow_mut() = Some(snapshot);
         }
 
         let location = location.to_physical_precise_round(scale).to_logical(scale);
@@ -231,6 +360,99 @@ impl MappedLayer {
                 Kind::ScanoutCandidate,
                 &mut |elem| push(elem.into()),
             );
+        }
+    }
+
+    /// Render with animation if an open or close animation is ongoing.
+    ///
+    /// Returns true if animation was rendered, false to indicate fallback to normal rendering needed.
+    pub fn render_with_animation<R: NiriRenderer>(
+        &self,
+        renderer: &mut R,
+        location: Point<f64, Logical>,
+        scale: Scale<f64>,
+        target: RenderTarget,
+        geo_size: Size<f64, Logical>,
+        push: &mut dyn FnMut(LayerSurfaceRenderElement<R>),
+    ) -> bool {
+        let animation = self
+            .open_animation
+            .as_ref()
+            .or(self.close_animation.as_ref());
+
+        let Some(animation) = animation else {
+            return false;
+        };
+
+        let alpha = self.rules.opacity.unwrap_or(1.).clamp(0., 1.) as f32;
+        let location = location + self.bob_offset();
+
+        // Blocked out layers fall back to normal rendering
+        if target.should_block_out(self.rules.block_out_from) {
+            return false;
+        }
+
+        let gles_renderer = renderer.as_gles_renderer();
+
+        let mut live_elements: Vec<WaylandSurfaceRenderElement<GlesRenderer>> = Vec::new();
+
+        if self.close_animation.is_some() {
+            if self.close_snapshot.borrow().is_none() {
+                self.capture_close_snapshot(gles_renderer);
+            }
+
+            let snapshot = self.close_snapshot.borrow();
+            if let Some(snapshot) = snapshot.as_ref() {
+                match animation.render(
+                    gles_renderer,
+                    snapshot.as_slice(),
+                    geo_size,
+                    location,
+                    scale,
+                    alpha,
+                ) {
+                    Ok((elem, _data)) => {
+                        push(elem.into());
+                        return true;
+                    }
+                    Err(err) => {
+                        warn!("error rendering layer close animation: {:?}", err);
+                        return false;
+                    }
+                }
+            } else {
+                return false;
+            }
+        }
+
+        let buf_pos = location;
+        let surface = self.surface.wl_surface();
+        push_elements_from_surface_tree(
+            gles_renderer,
+            surface,
+            buf_pos.to_physical_precise_round(scale),
+            scale,
+            alpha,
+            Kind::ScanoutCandidate,
+            &mut |e| live_elements.push(e),
+        );
+
+        match animation.render(
+            gles_renderer,
+            &live_elements,
+            geo_size,
+            location,
+            scale,
+            alpha,
+        ) {
+            Ok((elem, _data)) => {
+                push(elem.into());
+                true
+            }
+            Err(err) => {
+                warn!("error rendering layer animation: {:?}", err);
+                false
+            }
         }
     }
 }
