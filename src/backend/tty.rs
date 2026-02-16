@@ -649,7 +649,7 @@ impl Tty {
                     let device = self.devices.get_mut(&node).unwrap();
 
                     // Someone on an old device hit what seems to be a driver bug without this:
-                    // https://github.com/YaLTeR/niri/issues/3048
+                    // https://github.com/niri-wm/niri/issues/3048
                     let force_disable = self
                         .config
                         .borrow()
@@ -1677,8 +1677,8 @@ impl Tty {
                 // This is an error!() because it shouldn't happen, but on some systems it somehow
                 // does. Kernel sending rogue vblank events?
                 //
-                // https://github.com/YaLTeR/niri/issues/556
-                // https://github.com/YaLTeR/niri/issues/615
+                // https://github.com/niri-wm/niri/issues/556
+                // https://github.com/niri-wm/niri/issues/615
                 error!(
                     "unexpected redraw state for output {name} (should be WaitingForVBlank); \
                      can happen when resuming from sleep or powering on monitors: {state:?}"

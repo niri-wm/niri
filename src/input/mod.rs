@@ -2318,9 +2318,9 @@ impl State {
                 }
                 self.niri.queue_redraw_all();
             }
-            Action::LoadConfigFile => {
+            Action::LoadConfigFile(path) => {
                 if let Some(watcher) = &self.niri.config_file_watcher {
-                    watcher.load_config();
+                    watcher.load_config(path);
                 }
             }
             Action::MruConfirm => {

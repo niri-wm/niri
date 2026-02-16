@@ -11,7 +11,7 @@ description = "A scrollable-tiling Wayland compositor"
 authors = ["Ivan Molodetskikh <yalterz@gmail.com>"]
 license = "GPL-3.0-or-later"
 edition = "2021"
-repository = "https://github.com/YaLTeR/niri"
+repository = "https://github.com/niri-wm/niri"
 rust-version = "1.85"
 
 [workspace.dependencies]
