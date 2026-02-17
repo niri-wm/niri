@@ -1273,104 +1273,105 @@ impl Cast {
     ) -> bool {
         let mut inner = self.inner.borrow_mut();
 
-        let CastState::Ready {
+        if let CastState::Ready {
             damage_tracker,
             cursor_damage_tracker,
             last_cursor_location,
             ..
-        } = &mut inner.state
+        } = &mut inner.state {
+            let damage_tracker = damage_tracker
+                .get_or_insert_with(|| OutputDamageTracker::new(size, scale, Transform::Normal));
+            let cursor_damage_tracker = cursor_damage_tracker.get_or_insert_with(|| {
+                OutputDamageTracker::new(
+                    Size::from((CURSOR_WIDTH as _, CURSOR_HEIGHT as _)),
+                    scale,
+                    Transform::Normal,
+                )
+            });
+
+            // Size change will drop the damage tracker, but scale change won't, so check it here.
+            let OutputModeSource::Static { scale: t_scale, .. } = damage_tracker.mode() else {
+                unreachable!();
+            };
+            if *t_scale != scale {
+                *damage_tracker = OutputDamageTracker::new(size, scale, Transform::Normal);
+                *cursor_damage_tracker = OutputDamageTracker::new(
+                    Size::from((CURSOR_WIDTH as _, CURSOR_HEIGHT as _)),
+                    scale,
+                    Transform::Normal,
+                );
+            }
+
+            let (damage, _states) = damage_tracker.damage_output(1, elements).unwrap();
+
+            let mut has_cursor_update = false;
+            let mut redraw_cursor = false;
+            if self.cursor_mode != CursorMode::Hidden {
+                let (damage, _states) = cursor_damage_tracker
+                    .damage_output(1, &cursor_data.relocated)
+                    .unwrap();
+                redraw_cursor = damage.is_some();
+                has_cursor_update =
+                    redraw_cursor || *last_cursor_location != Some(cursor_data.location);
+            }
+
+            if damage.is_none() && !has_cursor_update {
+                trace!("no damage, skipping frame");
+                return false;
+            }
+            *last_cursor_location = Some(cursor_data.location);
+            drop(inner);
+
+            let Some(pw_buffer) = self.dequeue_available_buffer() else {
+                warn!("no available buffer in pw stream, skipping frame");
+                return false;
+            };
+            let buffer = pw_buffer.as_ptr();
+
+            unsafe {
+                let spa_buffer = (*buffer).buffer;
+
+                let mut pointer_elements = None;
+                if self.cursor_mode == CursorMode::Metadata {
+                    add_cursor_metadata(renderer, spa_buffer, cursor_data, redraw_cursor);
+                } else if self.cursor_mode != CursorMode::Hidden {
+                    // Embed the cursor into the main render.
+                    pointer_elements = Some(cursor_data.original.iter());
+                }
+                let pointer_elements = pointer_elements.into_iter().flatten();
+                let elements = pointer_elements.chain(elements);
+
+                // FIXME: would be good to skip rendering the full frame if only the pointer changed.
+                // Unfortunately, I think the OBS PipeWire code needs to be updated first to cleanly
+                // allow for that codepath.
+                let fd = (*(*spa_buffer).datas).fd;
+                let dmabuf = self.inner.borrow().dmabufs[&fd].clone();
+
+                match render_to_dmabuf(
+                    renderer,
+                    dmabuf,
+                    size,
+                    scale,
+                    Transform::Normal,
+                    elements.rev(),
+                ) {
+                    Ok(sync_point) => {
+                        mark_buffer_as_good(pw_buffer, &mut self.sequence_counter);
+                        trace!("queueing buffer with seq={}", self.sequence_counter);
+                        self.queue_after_sync(pw_buffer, sync_point);
+                        true
+                    }
+                    Err(err) => {
+                        warn!("error rendering to dmabuf: {err:?}");
+                        return_unused_buffer(&self.stream, pw_buffer);
+                        false
+                    }
+                }
+            }
+        }
         else {
             error!("cast must be in Ready state to render");
             return false;
-        };
-        let damage_tracker = damage_tracker
-            .get_or_insert_with(|| OutputDamageTracker::new(size, scale, Transform::Normal));
-        let cursor_damage_tracker = cursor_damage_tracker.get_or_insert_with(|| {
-            OutputDamageTracker::new(
-                Size::from((CURSOR_WIDTH as _, CURSOR_HEIGHT as _)),
-                scale,
-                Transform::Normal,
-            )
-        });
-
-        // Size change will drop the damage tracker, but scale change won't, so check it here.
-        let OutputModeSource::Static { scale: t_scale, .. } = damage_tracker.mode() else {
-            unreachable!();
-        };
-        if *t_scale != scale {
-            *damage_tracker = OutputDamageTracker::new(size, scale, Transform::Normal);
-            *cursor_damage_tracker = OutputDamageTracker::new(
-                Size::from((CURSOR_WIDTH as _, CURSOR_HEIGHT as _)),
-                scale,
-                Transform::Normal,
-            );
-        }
-
-        let (damage, _states) = damage_tracker.damage_output(1, elements).unwrap();
-
-        let mut has_cursor_update = false;
-        let mut redraw_cursor = false;
-        if self.cursor_mode != CursorMode::Hidden {
-            let (damage, _states) = cursor_damage_tracker
-                .damage_output(1, &cursor_data.relocated)
-                .unwrap();
-            redraw_cursor = damage.is_some();
-            has_cursor_update =
-                redraw_cursor || *last_cursor_location != Some(cursor_data.location);
-        }
-
-        if damage.is_none() && !has_cursor_update {
-            trace!("no damage, skipping frame");
-            return false;
-        }
-        *last_cursor_location = Some(cursor_data.location);
-        drop(inner);
-
-        let Some(pw_buffer) = self.dequeue_available_buffer() else {
-            warn!("no available buffer in pw stream, skipping frame");
-            return false;
-        };
-        let buffer = pw_buffer.as_ptr();
-
-        unsafe {
-            let spa_buffer = (*buffer).buffer;
-
-            let mut pointer_elements = None;
-            if self.cursor_mode == CursorMode::Metadata {
-                add_cursor_metadata(renderer, spa_buffer, cursor_data, redraw_cursor);
-            } else if self.cursor_mode != CursorMode::Hidden {
-                // Embed the cursor into the main render.
-                pointer_elements = Some(cursor_data.original.iter());
-            }
-            let pointer_elements = pointer_elements.into_iter().flatten();
-            let elements = pointer_elements.chain(elements);
-
-            // FIXME: would be good to skip rendering the full frame if only the pointer changed.
-            // Unfortunately, I think the OBS PipeWire code needs to be updated first to cleanly
-            // allow for that codepath.
-            let fd = (*(*spa_buffer).datas).fd;
-            let dmabuf = self.inner.borrow().dmabufs[&fd].clone();
-
-            match render_to_dmabuf(
-                renderer,
-                dmabuf,
-                size,
-                scale,
-                Transform::Normal,
-                elements.rev(),
-            ) {
-                Ok(sync_point) => {
-                    mark_buffer_as_good(pw_buffer, &mut self.sequence_counter);
-                    trace!("queueing buffer with seq={}", self.sequence_counter);
-                    self.queue_after_sync(pw_buffer, sync_point);
-                    true
-                }
-                Err(err) => {
-                    warn!("error rendering to dmabuf: {err:?}");
-                    return_unused_buffer(&self.stream, pw_buffer);
-                    false
-                }
-            }
         }
     }
 
