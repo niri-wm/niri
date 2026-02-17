@@ -331,11 +331,6 @@ pub struct Niri {
     /// Most recent XKB settings from org.freedesktop.locale1.
     pub xkb_from_locale1: Option<Xkb>,
 
-    /// Whether to reset the keymap on the next physical keyboard event.
-    ///
-    /// Set to true when handling virtual keyboard events which override the keymap.
-    pub reset_keymap: bool,
-
     pub cursor_manager: CursorManager,
     pub cursor_texture_cache: CursorTextureCache,
     pub cursor_shape_manager_state: CursorShapeManagerState,
@@ -2510,7 +2505,6 @@ impl Niri {
             is_fdo_idle_inhibited: Arc::new(AtomicBool::new(false)),
             keyboard_shortcuts_inhibiting_surfaces: HashMap::new(),
             xkb_from_locale1: None,
-            reset_keymap: false,
             cursor_manager,
             cursor_texture_cache: Default::default(),
             cursor_shape_manager_state,
