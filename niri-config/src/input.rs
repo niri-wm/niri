@@ -15,8 +15,8 @@ pub struct Input {
     pub mouse: Mouse,
     pub trackpoint: Trackpoint,
     pub trackball: Trackball,
-    pub tablet: Tablet,
-    pub touch: Touch,
+    pub tablets: Tablets,
+    pub touch_screens: TouchScreens,
     pub disable_power_key_handling: bool,
     pub warp_mouse_to_focus: Option<WarpMouseToFocus>,
     pub focus_follows_mouse: Option<FocusFollowsMouse>,
@@ -37,10 +37,10 @@ pub struct InputPart {
     pub trackpoint: Option<Trackpoint>,
     #[knuffel(child)]
     pub trackball: Option<Trackball>,
-    #[knuffel(child)]
-    pub tablet: Option<Tablet>,
-    #[knuffel(child)]
-    pub touch: Option<Touch>,
+    #[knuffel(children(name = "tablet"))]
+    pub tablets: Tablets,
+    #[knuffel(children(name = "touch"))]
+    pub touch_screens: TouchScreens,
     #[knuffel(child)]
     pub disable_power_key_handling: Option<Flag>,
     #[knuffel(child)]
@@ -64,15 +64,7 @@ impl MergeWith<InputPart> for Input {
             workspace_auto_back_and_forth,
         );
 
-        merge_clone!(
-            (self, part),
-            touchpad,
-            mouse,
-            trackpoint,
-            trackball,
-            tablet,
-            touch,
-        );
+        merge_clone!((self, part), touchpad, mouse, trackpoint, trackball);
 
         merge_clone_opt!(
             (self, part),
@@ -81,6 +73,11 @@ impl MergeWith<InputPart> for Input {
             mod_key,
             mod_key_nested,
         );
+
+        self.tablets.0.extend(part.tablets.0.iter().cloned());
+        self.touch_screens
+            .0
+            .extend(part.touch_screens.0.iter().cloned());
     }
 }
 
@@ -355,8 +352,10 @@ impl From<TapButtonMap> for input::TapButtonMap {
     }
 }
 
-#[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]
+#[derive(knuffel::Decode, Debug, Clone, PartialEq)]
 pub struct Tablet {
+    #[knuffel(argument)]
+    pub name: Option<String>,
     #[knuffel(child)]
     pub off: bool,
     #[knuffel(child, unwrap(arguments))]
@@ -367,14 +366,87 @@ pub struct Tablet {
     pub left_handed: bool,
 }
 
-#[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]
+const DEFAULT_TABLET: Tablet = Tablet {
+    name: None,
+    off: false,
+    calibration_matrix: None,
+    map_to_output: None,
+    left_handed: false,
+};
+impl Default for Tablet {
+    fn default() -> Self {
+        DEFAULT_TABLET
+    }
+}
+
+#[derive(Debug, Default, PartialEq)]
+pub struct Tablets(pub Vec<Tablet>);
+
+impl FromIterator<Tablet> for Tablets {
+    fn from_iter<T: IntoIterator<Item = Tablet>>(iter: T) -> Self {
+        Self(Vec::from_iter(iter))
+    }
+}
+
+impl Tablets {
+    pub fn find<'a>(&'a self, name: Option<&str>) -> &'a Tablet {
+        name.and_then(|name| {
+            self.0.iter().find(|t| {
+                t.name
+                    .as_deref()
+                    .is_some_and(|n| n.eq_ignore_ascii_case(name))
+            })
+        })
+        .or_else(|| self.0.iter().find(|t| t.name.is_none()))
+        .unwrap_or(&DEFAULT_TABLET)
+    }
+}
+
+#[derive(knuffel::Decode, Debug, Clone, PartialEq)]
 pub struct Touch {
+    #[knuffel(argument)]
+    pub name: Option<String>,
     #[knuffel(child)]
     pub off: bool,
     #[knuffel(child, unwrap(arguments))]
     pub calibration_matrix: Option<Vec<f32>>,
     #[knuffel(child, unwrap(argument))]
     pub map_to_output: Option<String>,
+}
+
+const DEFAULT_TOUCH: Touch = Touch {
+    name: None,
+    off: false,
+    calibration_matrix: None,
+    map_to_output: None,
+};
+impl Default for Touch {
+    fn default() -> Self {
+        DEFAULT_TOUCH
+    }
+}
+
+#[derive(Debug, Default, PartialEq)]
+pub struct TouchScreens(pub Vec<Touch>);
+
+impl FromIterator<Touch> for TouchScreens {
+    fn from_iter<T: IntoIterator<Item = Touch>>(iter: T) -> Self {
+        Self(Vec::from_iter(iter))
+    }
+}
+
+impl TouchScreens {
+    pub fn find<'a>(&'a self, name: Option<&str>) -> &'a Touch {
+        name.and_then(|name| {
+            self.0.iter().find(|t| {
+                t.name
+                    .as_deref()
+                    .is_some_and(|n| n.eq_ignore_ascii_case(name))
+            })
+        })
+        .or_else(|| self.0.iter().find(|t| t.name.is_none()))
+        .unwrap_or(&DEFAULT_TOUCH)
+    }
 }
 
 #[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
@@ -700,6 +772,90 @@ mod tests {
                 ),
                 vertical: None,
             },
+        )
+        "#);
+    }
+
+    #[test]
+    fn parse_tablets_name() {
+        // Test no name and name provided
+        let parsed = do_parse(
+            r#"
+            tablet {
+                map-to-output "eDP-1"
+            }
+
+            tablet "ELAN9009:00 04F3:2F2A Stylus" {
+                map-to-output "DP-1"
+            }
+            "#,
+        );
+
+        assert_debug_snapshot!(parsed.tablets, @r#"
+        Tablets(
+            [
+                Tablet {
+                    name: None,
+                    off: false,
+                    calibration_matrix: None,
+                    map_to_output: Some(
+                        "eDP-1",
+                    ),
+                    left_handed: false,
+                },
+                Tablet {
+                    name: Some(
+                        "ELAN9009:00 04F3:2F2A Stylus",
+                    ),
+                    off: false,
+                    calibration_matrix: None,
+                    map_to_output: Some(
+                        "DP-1",
+                    ),
+                    left_handed: false,
+                },
+            ],
+        )
+        "#);
+    }
+
+    #[test]
+    fn parse_touch_screens_name() {
+        // Test no name and name provided
+        let parsed = do_parse(
+            r#"
+            touch {
+                map-to-output "eDP-1"
+            }
+
+            touch "ELAN9009:00 04F3:2F2A" {
+                map-to-output "DP-1"
+            }
+            "#,
+        );
+
+        assert_debug_snapshot!(parsed.touch_screens, @r#"
+        TouchScreens(
+            [
+                Touch {
+                    name: None,
+                    off: false,
+                    calibration_matrix: None,
+                    map_to_output: Some(
+                        "eDP-1",
+                    ),
+                },
+                Touch {
+                    name: Some(
+                        "ELAN9009:00 04F3:2F2A",
+                    ),
+                    off: false,
+                    calibration_matrix: None,
+                    map_to_output: Some(
+                        "DP-1",
+                    ),
+                },
+            ],
         )
         "#);
     }
