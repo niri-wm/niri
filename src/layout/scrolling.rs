@@ -408,6 +408,20 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         }
     }
 
+    pub fn tiles_with_geometry(&self) -> impl Iterator<Item = (&Tile<W>, Rectangle<f64, Logical>)> {
+        let view_pos = self.view_pos();
+        self.column_xs(self.data.iter().copied())
+            .zip(self.columns.iter())
+            .flat_map(move |(col_x, col)| {
+                let col_off = Point::from((col_x - view_pos, 0.));
+                col.tiles().map(move |(tile, tile_off)| {
+                    let pos = col_off + tile_off;
+                    let size = tile.tile_size();
+                    (tile, Rectangle::new(pos, size))
+                })
+            })
+    }
+
     pub fn tiles(&self) -> impl Iterator<Item = &Tile<W>> + '_ {
         self.columns.iter().flat_map(|col| col.tiles.iter())
     }
