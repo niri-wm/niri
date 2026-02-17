@@ -1,0 +1,2012 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+        <link rel="canonical" href="https://niri-wm.github.io/niri/Configuration%3A-Key-Bindings.html">
+      
+      
+        <link rel="prev" href="Configuration%3A-Outputs.html">
+      
+      
+        <link rel="next" href="Configuration%3A-Switch-Events.html">
+      
+      
+      <link rel="icon" href="_assets/icons/logo.svg">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.6.15">
+    
+    
+      
+        <title>Key Bindings - niri</title>
+      
+    
+    
+      <link rel="stylesheet" href="assets/stylesheets/main.342714a4.min.css">
+      
+        
+        <link rel="stylesheet" href="assets/stylesheets/palette.06af60db.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="_assets/stylesheets/niri.css">
+    
+    <script>__md_scope=new URL(".",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#overview" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="." title="niri" class="md-header__button md-logo" aria-label="niri" data-md-component="logo">
+      
+  <img src="_assets/icons/logo.svg" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            niri
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Key Bindings
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m14.3 16-.7-2h-3.2l-.7 2H7.8L11 7h2l3.2 9zM20 8.69V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12zm-9.15 3.96h2.3L12 9z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_2" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="indigo"  aria-label="Switch to system preference"  type="radio" name="__palette" id="__palette_2">
+    
+      <label class="md-header__button md-icon" title="Switch to system preference" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/niri-wm/niri" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M439.55 236.05 244 40.45a28.87 28.87 0 0 0-40.81 0l-40.66 40.63 51.52 51.52c27.06-9.14 52.68 16.77 43.39 43.68l49.66 49.66c34.23-11.8 61.18 31 35.47 56.69-26.49 26.49-70.21-2.87-56-37.34L240.22 199v121.85c25.3 12.54 22.26 41.85 9.08 55a34.34 34.34 0 0 1-48.55 0c-17.57-17.6-11.07-46.91 11.25-56v-123c-20.8-8.51-24.6-30.74-18.64-45L142.57 101 8.45 235.14a28.86 28.86 0 0 0 0 40.81l195.61 195.6a28.86 28.86 0 0 0 40.8 0l194.69-194.69a28.86 28.86 0 0 0 0-40.81"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="." title="niri" class="md-nav__button md-logo" aria-label="niri" data-md-component="logo">
+      
+  <img src="_assets/icons/logo.svg" alt="logo">
+
+    </a>
+    niri
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/niri-wm/niri" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M439.55 236.05 244 40.45a28.87 28.87 0 0 0-40.81 0l-40.66 40.63 51.52 51.52c27.06-9.14 52.68 16.77 43.39 43.68l49.66 49.66c34.23-11.8 61.18 31 35.47 56.69-26.49 26.49-70.21-2.87-56-37.34L240.22 199v121.85c25.3 12.54 22.26 41.85 9.08 55a34.34 34.34 0 0 1-48.55 0c-17.57-17.6-11.07-46.91 11.25-56v-123c-20.8-8.51-24.6-30.74-18.64-45L142.57 101 8.45 235.14a28.86 28.86 0 0 0 0 40.81l195.61 195.6a28.86 28.86 0 0 0 40.8 0l194.69-194.69a28.86 28.86 0 0 0 0-40.81"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1" >
+        
+          
+          <label class="md-nav__link" for="__nav_1" id="__nav_1_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    Usage
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_1">
+            <span class="md-nav__icon md-icon"></span>
+            Usage
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Getting-Started.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Getting Started
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Example-systemd-Setup.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Example systemd Setup
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Important-Software.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Important Software
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Workspaces.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Workspaces
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Floating-Windows.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Floating Windows
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Tabs.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Tabs
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Overview.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Overview
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Screencasting.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Screencasting
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Layer%E2%80%90Shell-Components.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Layer‐Shell Components
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="IPC.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    IPC, niri msg
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Application-Issues.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Application-Specific Issues
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Nvidia.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Nvidia
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Xwayland.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Xwayland
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Gestures.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Gestures
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Fullscreen-and-Maximize.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Fullscreen and Maximize
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Packaging-niri.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Packaging niri
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Integrating-niri.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Integrating niri
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Accessibility.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Accessibility
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Name-and-Logo.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Name and Logo
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="FAQ.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    FAQ
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    Configuration
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            Configuration
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Configuration%3A-Introduction.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Introduction
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Configuration%3A-Input.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Input
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Configuration%3A-Outputs.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Outputs
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    Key Bindings
+    
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="Configuration%3A-Key-Bindings.html" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    Key Bindings
+    
+  </span>
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      Overview
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#scroll-bindings" class="md-nav__link">
+    <span class="md-ellipsis">
+      Scroll Bindings
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#mouse-click-bindings" class="md-nav__link">
+    <span class="md-ellipsis">
+      Mouse Click Bindings
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#custom-hotkey-overlay-titles" class="md-nav__link">
+    <span class="md-ellipsis">
+      Custom Hotkey Overlay Titles
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#actions" class="md-nav__link">
+    <span class="md-ellipsis">
+      Actions
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Actions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#spawn" class="md-nav__link">
+    <span class="md-ellipsis">
+      spawn
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#spawn-sh" class="md-nav__link">
+    <span class="md-ellipsis">
+      spawn-sh
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#quit" class="md-nav__link">
+    <span class="md-ellipsis">
+      quit
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#do-screen-transition" class="md-nav__link">
+    <span class="md-ellipsis">
+      do-screen-transition
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#toggle-window-rule-opacity" class="md-nav__link">
+    <span class="md-ellipsis">
+      toggle-window-rule-opacity
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#screenshot-screenshot-screen-screenshot-window" class="md-nav__link">
+    <span class="md-ellipsis">
+      screenshot, screenshot-screen, screenshot-window
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#toggle-keyboard-shortcuts-inhibit" class="md-nav__link">
+    <span class="md-ellipsis">
+      toggle-keyboard-shortcuts-inhibit
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Configuration%3A-Switch-Events.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Switch Events
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Configuration%3A-Layout.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Layout
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Configuration%3A-Named-Workspaces.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Named Workspaces
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Configuration%3A-Miscellaneous.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Miscellaneous
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Configuration%3A-Window-Rules.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Window Rules
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Configuration%3A-Layer-Rules.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Layer Rules
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Configuration%3A-Animations.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Animations
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Configuration%3A-Gestures.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Gestures
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Configuration%3A-Recent-Windows.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Recent Windows
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Configuration%3A-Debug-Options.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Debug Options
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Configuration%3A-Include.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Include
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    Development
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            Development
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Development%3A-Design-Principles.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Design Principles
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Development%3A-Developing-niri.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Developing niri
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Development%3A-Documenting-niri.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Documenting niri
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Development%3A-Fractional-Layout.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Fractional Layout
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Development%3A-Redraw-Loop.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Redraw Loop
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Development%3A-Animation-Timing.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Animation Timing
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      Overview
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#scroll-bindings" class="md-nav__link">
+    <span class="md-ellipsis">
+      Scroll Bindings
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#mouse-click-bindings" class="md-nav__link">
+    <span class="md-ellipsis">
+      Mouse Click Bindings
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#custom-hotkey-overlay-titles" class="md-nav__link">
+    <span class="md-ellipsis">
+      Custom Hotkey Overlay Titles
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#actions" class="md-nav__link">
+    <span class="md-ellipsis">
+      Actions
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Actions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#spawn" class="md-nav__link">
+    <span class="md-ellipsis">
+      spawn
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#spawn-sh" class="md-nav__link">
+    <span class="md-ellipsis">
+      spawn-sh
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#quit" class="md-nav__link">
+    <span class="md-ellipsis">
+      quit
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#do-screen-transition" class="md-nav__link">
+    <span class="md-ellipsis">
+      do-screen-transition
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#toggle-window-rule-opacity" class="md-nav__link">
+    <span class="md-ellipsis">
+      toggle-window-rule-opacity
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#screenshot-screenshot-screen-screenshot-window" class="md-nav__link">
+    <span class="md-ellipsis">
+      screenshot, screenshot-screen, screenshot-window
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#toggle-keyboard-shortcuts-inhibit" class="md-nav__link">
+    <span class="md-ellipsis">
+      toggle-keyboard-shortcuts-inhibit
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/niri-wm/niri/edit/main/docs/wiki/Configuration:-Key-Bindings.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+  <h1>Key Bindings</h1>
+
+<h3 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">#</a></h3>
+<p>Key bindings are declared in the <code>binds {}</code> section of the config.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>This is one of the few sections that <em>does not</em> get automatically filled with defaults if you omit it, so make sure to copy it from the default config.</p>
+</div>
+<p>Each bind is a hotkey followed by one action enclosed in curly brackets.
+For example:</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nl">binds</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nl">    Mod+Left</span><span class="w"> </span><span class="o">{</span><span class="nl"> focus-column-left</span><span class="o">;</span><span class="w"> </span><span class="o">}</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="nl">    Super+Alt+L</span><span class="w"> </span><span class="o">{</span><span class="nl"> spawn</span><span class="w"> </span><span class="s">&quot;swaylock&quot;</span><span class="o">;</span><span class="w"> </span><span class="o">}</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="o">}</span>
+</span></code></pre></div>
+<p>The hotkey consists of modifiers separated by <code>+</code> signs, followed by an XKB key name in the end.</p>
+<p>Valid modifiers are:</p>
+<ul>
+<li><code>Ctrl</code> or <code>Control</code>;</li>
+<li><code>Shift</code>;</li>
+<li><code>Alt</code>;</li>
+<li><code>Super</code> or <code>Win</code>;</li>
+<li><code>ISO_Level3_Shift</code> or <code>Mod5</code>—this is the AltGr key on certain layouts;</li>
+<li><code>ISO_Level5_Shift</code>: can be used with an xkb lv5 option like <code>lv5:caps_switch</code>;</li>
+<li><code>Mod</code>.</li>
+</ul>
+<p><code>Mod</code> is a special modifier that is equal to <code>Super</code> when running niri on a TTY, and to <code>Alt</code> when running niri as a nested winit window.
+This way, you can test niri in a window without causing too many conflicts with the host compositor's key bindings.
+For this reason, most of the default keys use the <code>Mod</code> modifier.</p>
+<p><span class="badge"><a href="https://github.com/niri-wm/niri/releases/tag/v25.05">Since: 25.05</a></span> You can customize the <code>Mod</code> key <a href="Configuration%3A-Input.html#mod-key-mod-key-nested">in the <code>input</code> section of the config</a>.</p>
+<div class="admonition tip">
+<p class="admonition-title">Tip</p>
+<p>To find an XKB name for a particular key, you may use a program like <a href="https://git.sr.ht/~sircmpwn/wev"><code>wev</code></a>.</p>
+<p>Open it from a terminal and press the key that you want to detect.
+In the terminal, you will see output like this:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>[14:     wl_keyboard] key: serial: 757775; time: 44940343; key: 113; state: 1 (pressed)
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>                      sym: Left         (65361), utf8: &#39;&#39;
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>[14:     wl_keyboard] key: serial: 757776; time: 44940432; key: 113; state: 0 (released)
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>                      sym: Left         (65361), utf8: &#39;&#39;
+</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>[14:     wl_keyboard] key: serial: 757777; time: 44940753; key: 114; state: 1 (pressed)
+</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>                      sym: Right        (65363), utf8: &#39;&#39;
+</span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>[14:     wl_keyboard] key: serial: 757778; time: 44940846; key: 114; state: 0 (released)
+</span><span id="__span-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>                      sym: Right        (65363), utf8: &#39;&#39;
+</span></code></pre></div>
+<p>Here, look at <code>sym: Left</code> and <code>sym: Right</code>: these are the key names.
+I was pressing the left and the right arrow in this example.</p>
+<p>Keep in mind that binding shifted keys requires spelling out Shift and the unshifted version of the key, according to your XKB layout.
+For example, on the US QWERTY layout, <kbd>&lt;</kbd> is on <kbd>Shift</kbd> + <kbd>,</kbd>, so to bind it, you spell out something like <code>Mod+Shift+Comma</code>.</p>
+<p>As another example, if you've configured the French <a href="https://en.wikipedia.org/wiki/B%C3%89PO">BÉPO</a> XKB layout, your <kbd>&lt;</kbd> is on <kbd>AltGr</kbd> + <kbd>«</kbd>.
+<kbd>AltGr</kbd> is <code>ISO_Level3_Shift</code>, or equivalently <code>Mod5</code>, so to bind it, you spell out something like <code>Mod+Mod5+guillemotleft</code>.</p>
+<p>When resolving latin keys, niri will search for the <em>first</em> configured XKB layout that has the latin key.
+So for example with US QWERTY and RU layouts configured, US QWERTY will be used for latin binds.</p>
+</div>
+<p><span class="badge"><a href="https://github.com/niri-wm/niri/releases/tag/v0.1.8">Since: 0.1.8</a></span> Binds will repeat by default (i.e. holding down a bind will make it trigger repeatedly).
+You can disable that for specific binds with <code>repeat=false</code>:</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nl">binds</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nl">    Mod+T</span><span class="w"> </span><span class="na">repeat=</span><span class="s">false</span><span class="w"> </span><span class="o">{</span><span class="nl"> spawn</span><span class="w"> </span><span class="s">&quot;alacritty&quot;</span><span class="o">;</span><span class="w"> </span><span class="o">}</span>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="o">}</span>
+</span></code></pre></div>
+<p>Binds can also have a cooldown, which will rate-limit the bind and prevent it from repeatedly triggering too quickly.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nl">binds</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="nl">    Mod+T</span><span class="w"> </span><span class="na">cooldown-ms=</span><span class="m m-Decimal">500</span><span class="w"> </span><span class="o">{</span><span class="nl"> spawn</span><span class="w"> </span><span class="s">&quot;alacritty&quot;</span><span class="o">;</span><span class="w"> </span><span class="o">}</span>
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="o">}</span>
+</span></code></pre></div>
+<p>This is mostly useful for the scroll bindings.</p>
+<h3 id="scroll-bindings">Scroll Bindings<a class="headerlink" href="#scroll-bindings" title="Permanent link">#</a></h3>
+<p>You can bind mouse wheel scroll ticks using the following syntax.
+These binds will change direction based on the <code>natural-scroll</code> setting.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nl">binds</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="nl">    Mod+WheelScrollDown</span><span class="w"> </span><span class="na">cooldown-ms=</span><span class="m m-Decimal">150</span><span class="w"> </span><span class="o">{</span><span class="nl"> focus-workspace-down</span><span class="o">;</span><span class="w"> </span><span class="o">}</span>
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="nl">    Mod+WheelScrollUp</span><span class="w">   </span><span class="na">cooldown-ms=</span><span class="m m-Decimal">150</span><span class="w"> </span><span class="o">{</span><span class="nl"> focus-workspace-up</span><span class="o">;</span><span class="w"> </span><span class="o">}</span>
+</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="nl">    Mod+WheelScrollRight</span><span class="w">                </span><span class="o">{</span><span class="nl"> focus-column-right</span><span class="o">;</span><span class="w"> </span><span class="o">}</span>
+</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="nl">    Mod+WheelScrollLeft</span><span class="w">                 </span><span class="o">{</span><span class="nl"> focus-column-left</span><span class="o">;</span><span class="w"> </span><span class="o">}</span>
+</span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="o">}</span>
+</span></code></pre></div>
+<p>Similarly, you can bind touchpad scroll "ticks".
+Touchpad scrolling is continuous, so for these binds it is split into discrete intervals based on distance travelled.</p>
+<p>These binds are also affected by touchpad's <code>natural-scroll</code>, so these example binds are "inverted", since niri has <code>natural-scroll</code> enabled for touchpads by default.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nl">binds</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="nl">    Mod+TouchpadScrollDown</span><span class="w"> </span><span class="o">{</span><span class="nl"> spawn</span><span class="w"> </span><span class="s">&quot;wpctl&quot;</span><span class="w"> </span><span class="s">&quot;set-volume&quot;</span><span class="w"> </span><span class="s">&quot;@DEFAULT_AUDIO_SINK@&quot;</span><span class="w"> </span><span class="s">&quot;0.02+&quot;</span><span class="o">;</span><span class="w"> </span><span class="o">}</span>
+</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="nl">    Mod+TouchpadScrollUp</span><span class="w">   </span><span class="o">{</span><span class="nl"> spawn</span><span class="w"> </span><span class="s">&quot;wpctl&quot;</span><span class="w"> </span><span class="s">&quot;set-volume&quot;</span><span class="w"> </span><span class="s">&quot;@DEFAULT_AUDIO_SINK@&quot;</span><span class="w"> </span><span class="s">&quot;0.02-&quot;</span><span class="o">;</span><span class="w"> </span><span class="o">}</span>
+</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="o">}</span>
+</span></code></pre></div>
+<p>Both mouse wheel and touchpad scroll binds will prevent applications from receiving any scroll events when their modifiers are held down.
+For example, if you have a <code>Mod+WheelScrollDown</code> bind, then while holding <code>Mod</code>, all mouse wheel scrolling will be consumed by niri.</p>
+<h3 id="mouse-click-bindings">Mouse Click Bindings<a class="headerlink" href="#mouse-click-bindings" title="Permanent link">#</a></h3>
+<p><span class="badge"><a href="https://github.com/niri-wm/niri/releases/tag/v25.01">Since: 25.01</a></span></p>
+<p>You can bind mouse clicks using the following syntax.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="nl">binds</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="nl">    Mod+MouseLeft</span><span class="w">    </span><span class="o">{</span><span class="nl"> close-window</span><span class="o">;</span><span class="w"> </span><span class="o">}</span>
+</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="nl">    Mod+MouseRight</span><span class="w">   </span><span class="o">{</span><span class="nl"> close-window</span><span class="o">;</span><span class="w"> </span><span class="o">}</span>
+</span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="nl">    Mod+MouseMiddle</span><span class="w">  </span><span class="o">{</span><span class="nl"> close-window</span><span class="o">;</span><span class="w"> </span><span class="o">}</span>
+</span><span id="__span-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="nl">    Mod+MouseForward</span><span class="w"> </span><span class="o">{</span><span class="nl"> close-window</span><span class="o">;</span><span class="w"> </span><span class="o">}</span>
+</span><span id="__span-6-6"><a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="nl">    Mod+MouseBack</span><span class="w">    </span><span class="o">{</span><span class="nl"> close-window</span><span class="o">;</span><span class="w"> </span><span class="o">}</span>
+</span><span id="__span-6-7"><a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="o">}</span>
+</span></code></pre></div>
+<p>Mouse clicks operate on the window that was focused at the time of the click, not the window you're clicking.</p>
+<p>Note that binding <code>Mod+MouseLeft</code> or <code>Mod+MouseRight</code> will override the corresponding gesture (moving or resizing the window).</p>
+<h3 id="custom-hotkey-overlay-titles">Custom Hotkey Overlay Titles<a class="headerlink" href="#custom-hotkey-overlay-titles" title="Permanent link">#</a></h3>
+<p><span class="badge"><a href="https://github.com/niri-wm/niri/releases/tag/v25.02">Since: 25.02</a></span></p>
+<p>The hotkey overlay (the Important Hotkeys dialog) shows a hardcoded list of binds.
+You can customize this list using the <code>hotkey-overlay-title</code> property.</p>
+<p>To add a bind to the hotkey overlay, set the property to the title that you want to show:
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="nl">binds</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="nl">    Mod+Shift+S</span><span class="w"> </span><span class="na">hotkey-overlay-title=</span><span class="s">&quot;Toggle Dark/Light Style&quot;</span><span class="w"> </span><span class="o">{</span><span class="nl"> spawn</span><span class="w"> </span><span class="s">&quot;some-script.sh&quot;</span><span class="o">;</span><span class="w"> </span><span class="o">}</span>
+</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="o">}</span>
+</span></code></pre></div></p>
+<p>Binds with custom titles are listed after the hardcoded binds and before non-customized Spawn binds.</p>
+<p>To remove a hardcoded bind from the hotkey overlay, set the property to null:
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="nl">binds</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="nl">    Mod+Q</span><span class="w"> </span><span class="na">hotkey-overlay-title=</span><span class="s">null</span><span class="w"> </span><span class="o">{</span><span class="nl"> close-window</span><span class="o">;</span><span class="w"> </span><span class="o">}</span>
+</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="o">}</span>
+</span></code></pre></div></p>
+<div class="admonition tip">
+<p class="admonition-title">Tip</p>
+<p>When multiple key combinations are bound to the same action:
+- If any of the binds has a custom hotkey overlay title, niri will show that bind.
+- Otherwise, if any of the binds has a null title, niri will hide the bind.
+- Otherwise, niri will show the first key combination.</p>
+</div>
+<p>Custom titles support <a href="https://docs.gtk.org/Pango/pango_markup.html">Pango markup</a>:</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="nl">binds</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="nl">    Mod+Shift+S</span><span class="w"> </span><span class="na">hotkey-overlay-title=</span><span class="s">&quot;&lt;b&gt;Toggle&lt;/b&gt; &lt;span foreground=&#39;red&#39;&gt;Dark&lt;/span&gt;/Light Style&quot;</span><span class="w"> </span><span class="o">{</span><span class="nl"> spawn</span><span class="w"> </span><span class="s">&quot;some-script.sh&quot;</span><span class="o">;</span><span class="w"> </span><span class="o">}</span>
+</span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="o">}</span>
+</span></code></pre></div>
+<p><img alt="Custom markup example." src="https://github.com/user-attachments/assets/2a2ba914-bfa7-4dfa-bb5e-49839034765d" /></p>
+<h3 id="actions">Actions<a class="headerlink" href="#actions" title="Permanent link">#</a></h3>
+<p>Every action that you can bind is also available for programmatic invocation via <code>niri msg action</code>.
+Run <code>niri msg action</code> to get a full list of actions along with their short descriptions.</p>
+<p>Here are a few actions that benefit from more explanation.</p>
+<h4 id="spawn"><code>spawn</code><a class="headerlink" href="#spawn" title="Permanent link">#</a></h4>
+<p>Run a program.</p>
+<p><code>spawn</code> accepts a path to the program binary as the first argument, followed by arguments to the program.
+For example:</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="nl">binds</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="w">    </span><span class="c1">// Run alacritty.</span>
+</span><span id="__span-10-3"><a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="nl">    Mod+T</span><span class="w"> </span><span class="o">{</span><span class="nl"> spawn</span><span class="w"> </span><span class="s">&quot;alacritty&quot;</span><span class="o">;</span><span class="w"> </span><span class="o">}</span>
+</span><span id="__span-10-4"><a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a>
+</span><span id="__span-10-5"><a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a><span class="w">    </span><span class="c1">// Run `wpctl set-volume @DEFAULT_AUDIO_SINK@ 0.1+`.</span>
+</span><span id="__span-10-6"><a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a><span class="nl">    XF86AudioRaiseVolume</span><span class="w"> </span><span class="o">{</span><span class="nl"> spawn</span><span class="w"> </span><span class="s">&quot;wpctl&quot;</span><span class="w"> </span><span class="s">&quot;set-volume&quot;</span><span class="w"> </span><span class="s">&quot;@DEFAULT_AUDIO_SINK@&quot;</span><span class="w"> </span><span class="s">&quot;0.1+&quot;</span><span class="o">;</span><span class="w"> </span><span class="o">}</span>
+</span><span id="__span-10-7"><a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a><span class="o">}</span>
+</span></code></pre></div>
+<div class="admonition tip">
+<p class="admonition-title">Tip</p>
+<p><span class="badge"><a href="https://github.com/niri-wm/niri/releases/tag/v0.1.5">Since: 0.1.5</a></span></p>
+<p>Spawn bindings have a special <code>allow-when-locked=true</code> property that makes them work even while the session is locked:</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="nl">binds</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-11-2"><a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="w">    </span><span class="c1">// This mute bind will work even when the session is locked.</span>
+</span><span id="__span-11-3"><a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="nl">    XF86AudioMute</span><span class="w"> </span><span class="na">allow-when-locked=</span><span class="s">true</span><span class="w"> </span><span class="o">{</span><span class="nl"> spawn</span><span class="w"> </span><span class="s">&quot;wpctl&quot;</span><span class="w"> </span><span class="s">&quot;set-mute&quot;</span><span class="w"> </span><span class="s">&quot;@DEFAULT_AUDIO_SINK@&quot;</span><span class="w"> </span><span class="s">&quot;toggle&quot;</span><span class="o">;</span><span class="w"> </span><span class="o">}</span>
+</span><span id="__span-11-4"><a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="o">}</span>
+</span></code></pre></div>
+</div>
+<p>For <code>spawn</code>, niri <em>does not</em> use a shell to run commands, which means that you need to manually separate arguments.
+See <a href="#spawn-sh"><code>spawn-sh</code></a> below for an action that uses a shell.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="nl">binds</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-12-2"><a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="w">    </span><span class="c1">// Correct: every argument is in its own quotes.</span>
+</span><span id="__span-12-3"><a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a><span class="nl">    Mod+T</span><span class="w"> </span><span class="o">{</span><span class="nl"> spawn</span><span class="w"> </span><span class="s">&quot;alacritty&quot;</span><span class="w"> </span><span class="s">&quot;-e&quot;</span><span class="w"> </span><span class="s">&quot;/usr/bin/fish&quot;</span><span class="o">;</span><span class="w"> </span><span class="o">}</span>
+</span><span id="__span-12-4"><a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a>
+</span><span id="__span-12-5"><a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a><span class="w">    </span><span class="c1">// Wrong: will interpret the whole `alacritty -e /usr/bin/fish` string as the binary path.</span>
+</span><span id="__span-12-6"><a id="__codelineno-12-6" name="__codelineno-12-6" href="#__codelineno-12-6"></a><span class="nl">    Mod+D</span><span class="w"> </span><span class="o">{</span><span class="nl"> spawn</span><span class="w"> </span><span class="s">&quot;alacritty -e /usr/bin/fish&quot;</span><span class="o">;</span><span class="w"> </span><span class="o">}</span>
+</span><span id="__span-12-7"><a id="__codelineno-12-7" name="__codelineno-12-7" href="#__codelineno-12-7"></a>
+</span><span id="__span-12-8"><a id="__codelineno-12-8" name="__codelineno-12-8" href="#__codelineno-12-8"></a><span class="w">    </span><span class="c1">// Wrong: will pass `-e /usr/bin/fish` as one argument, which alacritty won&#39;t understand.</span>
+</span><span id="__span-12-9"><a id="__codelineno-12-9" name="__codelineno-12-9" href="#__codelineno-12-9"></a><span class="nl">    Mod+Q</span><span class="w"> </span><span class="o">{</span><span class="nl"> spawn</span><span class="w"> </span><span class="s">&quot;alacritty&quot;</span><span class="w"> </span><span class="s">&quot;-e /usr/bin/fish&quot;</span><span class="o">;</span><span class="w"> </span><span class="o">}</span>
+</span><span id="__span-12-10"><a id="__codelineno-12-10" name="__codelineno-12-10" href="#__codelineno-12-10"></a><span class="o">}</span>
+</span></code></pre></div>
+<p>This also means that you cannot expand environment variables or <code>~</code>.
+If you need this, you can run the command through a shell manually.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="nl">binds</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-13-2"><a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a><span class="w">    </span><span class="c1">// Wrong: no shell expansion here. These strings will be passed literally to the program.</span>
+</span><span id="__span-13-3"><a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a><span class="nl">    Mod+T</span><span class="w"> </span><span class="o">{</span><span class="nl"> spawn</span><span class="w"> </span><span class="s">&quot;grim&quot;</span><span class="w"> </span><span class="s">&quot;-o&quot;</span><span class="w"> </span><span class="s">&quot;$MAIN_OUTPUT&quot;</span><span class="w"> </span><span class="s">&quot;~/screenshot.png&quot;</span><span class="o">;</span><span class="w"> </span><span class="o">}</span>
+</span><span id="__span-13-4"><a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a>
+</span><span id="__span-13-5"><a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a><span class="w">    </span><span class="c1">// Correct: run this through a shell manually so that it can expand the arguments.</span>
+</span><span id="__span-13-6"><a id="__codelineno-13-6" name="__codelineno-13-6" href="#__codelineno-13-6"></a><span class="w">    </span><span class="c1">// Note that the entire command is passed as a SINGLE argument,</span>
+</span><span id="__span-13-7"><a id="__codelineno-13-7" name="__codelineno-13-7" href="#__codelineno-13-7"></a><span class="w">    </span><span class="c1">// because shell will do its own argument splitting by whitespace.</span>
+</span><span id="__span-13-8"><a id="__codelineno-13-8" name="__codelineno-13-8" href="#__codelineno-13-8"></a><span class="nl">    Mod+D</span><span class="w"> </span><span class="o">{</span><span class="nl"> spawn</span><span class="w"> </span><span class="s">&quot;sh&quot;</span><span class="w"> </span><span class="s">&quot;-c&quot;</span><span class="w"> </span><span class="s">&quot;grim -o $MAIN_OUTPUT ~/screenshot.png&quot;</span><span class="o">;</span><span class="w"> </span><span class="o">}</span>
+</span><span id="__span-13-9"><a id="__codelineno-13-9" name="__codelineno-13-9" href="#__codelineno-13-9"></a>
+</span><span id="__span-13-10"><a id="__codelineno-13-10" name="__codelineno-13-10" href="#__codelineno-13-10"></a><span class="w">    </span><span class="c1">// You can also use a shell to run multiple commands,</span>
+</span><span id="__span-13-11"><a id="__codelineno-13-11" name="__codelineno-13-11" href="#__codelineno-13-11"></a><span class="w">    </span><span class="c1">// use pipes, process substitution, and so on.</span>
+</span><span id="__span-13-12"><a id="__codelineno-13-12" name="__codelineno-13-12" href="#__codelineno-13-12"></a><span class="nl">    Mod+Q</span><span class="w"> </span><span class="o">{</span><span class="nl"> spawn</span><span class="w"> </span><span class="s">&quot;sh&quot;</span><span class="w"> </span><span class="s">&quot;-c&quot;</span><span class="w"> </span><span class="s">&quot;notify-send clipboard </span><span class="se">\&quot;</span><span class="s">$(wl-paste)</span><span class="se">\&quot;</span><span class="s">&quot;</span><span class="o">;</span><span class="w"> </span><span class="o">}</span>
+</span><span id="__span-13-13"><a id="__codelineno-13-13" name="__codelineno-13-13" href="#__codelineno-13-13"></a><span class="o">}</span>
+</span></code></pre></div>
+<p>As a special case, niri will expand <code>~</code> to the home directory <em>only</em> at the beginning of the program name.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-14-1"><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="nl">binds</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-14-2"><a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a><span class="w">    </span><span class="c1">// This will work: one ~ at the very beginning.</span>
+</span><span id="__span-14-3"><a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a><span class="nl">    Mod+T</span><span class="w"> </span><span class="o">{</span><span class="nl"> spawn</span><span class="w"> </span><span class="s">&quot;~/scripts/do-something.sh&quot;</span><span class="o">;</span><span class="w"> </span><span class="o">}</span>
+</span><span id="__span-14-4"><a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a><span class="o">}</span>
+</span></code></pre></div>
+<h4 id="spawn-sh"><code>spawn-sh</code><a class="headerlink" href="#spawn-sh" title="Permanent link">#</a></h4>
+<p><span class="badge"><a href="https://github.com/niri-wm/niri/releases/tag/v25.08">Since: 25.08</a></span></p>
+<p>Run a command through the shell.</p>
+<p>The argument is a single string that is passed verbatim to <code>sh</code>.
+You can use shell variables, pipelines, <code>~</code> expansion, and everything else as expected.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-15-1"><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="nl">binds</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-15-2"><a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a><span class="w">    </span><span class="c1">// Works with spawn-sh: all arguments in the same string.</span>
+</span><span id="__span-15-3"><a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a><span class="nl">    Mod+D</span><span class="w"> </span><span class="o">{</span><span class="nl"> spawn-sh</span><span class="w"> </span><span class="s">&quot;alacritty -e /usr/bin/fish&quot;</span><span class="o">;</span><span class="w"> </span><span class="o">}</span>
+</span><span id="__span-15-4"><a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a>
+</span><span id="__span-15-5"><a id="__codelineno-15-5" name="__codelineno-15-5" href="#__codelineno-15-5"></a><span class="w">    </span><span class="c1">// Works with spawn-sh: shell variable ($MAIN_OUTPUT), ~ expansion.</span>
+</span><span id="__span-15-6"><a id="__codelineno-15-6" name="__codelineno-15-6" href="#__codelineno-15-6"></a><span class="nl">    Mod+T</span><span class="w"> </span><span class="o">{</span><span class="nl"> spawn-sh</span><span class="w"> </span><span class="s">&quot;grim -o $MAIN_OUTPUT ~/screenshot.png&quot;</span><span class="o">;</span><span class="w"> </span><span class="o">}</span>
+</span><span id="__span-15-7"><a id="__codelineno-15-7" name="__codelineno-15-7" href="#__codelineno-15-7"></a>
+</span><span id="__span-15-8"><a id="__codelineno-15-8" name="__codelineno-15-8" href="#__codelineno-15-8"></a><span class="w">    </span><span class="c1">// Works with spawn-sh: process substitution.</span>
+</span><span id="__span-15-9"><a id="__codelineno-15-9" name="__codelineno-15-9" href="#__codelineno-15-9"></a><span class="nl">    Mod+Q</span><span class="w"> </span><span class="o">{</span><span class="nl"> spawn-sh</span><span class="w"> </span><span class="s">&quot;notify-send clipboard </span><span class="se">\&quot;</span><span class="s">$(wl-paste)</span><span class="se">\&quot;</span><span class="s">&quot;</span><span class="o">;</span><span class="w"> </span><span class="o">}</span>
+</span><span id="__span-15-10"><a id="__codelineno-15-10" name="__codelineno-15-10" href="#__codelineno-15-10"></a>
+</span><span id="__span-15-11"><a id="__codelineno-15-11" name="__codelineno-15-11" href="#__codelineno-15-11"></a><span class="w">    </span><span class="c1">// Works with spawn-sh: multiple commands.</span>
+</span><span id="__span-15-12"><a id="__codelineno-15-12" name="__codelineno-15-12" href="#__codelineno-15-12"></a><span class="nl">    Super+Alt+S</span><span class="w"> </span><span class="o">{</span><span class="nl"> spawn-sh</span><span class="w"> </span><span class="s">&quot;pkill orca || exec orca&quot;</span><span class="o">;</span><span class="w"> </span><span class="o">}</span>
+</span><span id="__span-15-13"><a id="__codelineno-15-13" name="__codelineno-15-13" href="#__codelineno-15-13"></a><span class="o">}</span>
+</span></code></pre></div>
+<p><code>spawn-sh "some command"</code> is equivalent to <code>spawn "sh" "-c" "some command"</code>—it's just a less confusing shorthand.
+Keep in mind that going through the shell incurs a tiny performance penalty compared to directly <code>spawn</code>ing some binary.</p>
+<p>Using <code>sh</code> is hardcoded, consistent with other compositors.
+If you want a different shell, write it out using <code>spawn</code>, e.g. <code>spawn "fish" "-c" "some fish command"</code>.</p>
+<h4 id="quit"><code>quit</code><a class="headerlink" href="#quit" title="Permanent link">#</a></h4>
+<p>Exit niri after showing a confirmation dialog to avoid accidentally triggering it.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-16-1"><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="nl">binds</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-16-2"><a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a><span class="nl">    Mod+Shift+E</span><span class="w"> </span><span class="o">{</span><span class="nl"> quit</span><span class="o">;</span><span class="w"> </span><span class="o">}</span>
+</span><span id="__span-16-3"><a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a><span class="o">}</span>
+</span></code></pre></div>
+<p>If you want to skip the confirmation dialog, set the flag like so:</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-17-1"><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a><span class="nl">binds</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-17-2"><a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a><span class="nl">    Mod+Shift+E</span><span class="w"> </span><span class="o">{</span><span class="nl"> quit</span><span class="w"> </span><span class="na">skip-confirmation=</span><span class="s">true</span><span class="o">;</span><span class="w"> </span><span class="o">}</span>
+</span><span id="__span-17-3"><a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a><span class="o">}</span>
+</span></code></pre></div>
+<h4 id="do-screen-transition"><code>do-screen-transition</code><a class="headerlink" href="#do-screen-transition" title="Permanent link">#</a></h4>
+<p><span class="badge"><a href="https://github.com/niri-wm/niri/releases/tag/v0.1.6">Since: 0.1.6</a></span></p>
+<p>Freeze the screen for a brief moment then crossfade to the new contents.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-18-1"><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a><span class="nl">binds</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-18-2"><a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a><span class="nl">    Mod+Return</span><span class="w"> </span><span class="o">{</span><span class="nl"> do-screen-transition</span><span class="o">;</span><span class="w"> </span><span class="o">}</span>
+</span><span id="__span-18-3"><a id="__codelineno-18-3" name="__codelineno-18-3" href="#__codelineno-18-3"></a><span class="o">}</span>
+</span></code></pre></div>
+<p>This action is mainly useful to trigger from scripts changing the system theme or style (between light and dark for example).
+It makes transitions like this, where windows change their style one by one, look smooth and synchronized.</p>
+<p>For example, using the GNOME color scheme setting:</p>
+<div class="language-shell highlight"><pre><span></span><code><span id="__span-19-1"><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a>niri<span class="w"> </span>msg<span class="w"> </span>action<span class="w"> </span><span class="k">do</span>-screen-transition
+</span><span id="__span-19-2"><a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a>dconf<span class="w"> </span>write<span class="w"> </span>/org/gnome/desktop/interface/color-scheme<span class="w"> </span><span class="s2">&quot;\&quot;prefer-dark\&quot;&quot;</span>
+</span></code></pre></div>
+<p>By default, the screen is frozen for 250 ms to give windows time to redraw, before the crossfade.
+You can set this delay like this:</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-20-1"><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a><span class="nl">binds</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-20-2"><a id="__codelineno-20-2" name="__codelineno-20-2" href="#__codelineno-20-2"></a><span class="nl">    Mod+Return</span><span class="w"> </span><span class="o">{</span><span class="nl"> do-screen-transition</span><span class="w"> </span><span class="na">delay-ms=</span><span class="m m-Decimal">100</span><span class="o">;</span><span class="w"> </span><span class="o">}</span>
+</span><span id="__span-20-3"><a id="__codelineno-20-3" name="__codelineno-20-3" href="#__codelineno-20-3"></a><span class="o">}</span>
+</span></code></pre></div>
+<p>Or, in scripts:</p>
+<div class="language-shell highlight"><pre><span></span><code><span id="__span-21-1"><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a>niri<span class="w"> </span>msg<span class="w"> </span>action<span class="w"> </span><span class="k">do</span>-screen-transition<span class="w"> </span>--delay-ms<span class="w"> </span><span class="m">100</span>
+</span></code></pre></div>
+<h4 id="toggle-window-rule-opacity"><code>toggle-window-rule-opacity</code><a class="headerlink" href="#toggle-window-rule-opacity" title="Permanent link">#</a></h4>
+<p><span class="badge"><a href="https://github.com/niri-wm/niri/releases/tag/v25.02">Since: 25.02</a></span></p>
+<p>Toggle the opacity window rule of the focused window.
+This only has an effect if the window's opacity window rule is already set to semitransparent.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-22-1"><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a><span class="nl">binds</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-22-2"><a id="__codelineno-22-2" name="__codelineno-22-2" href="#__codelineno-22-2"></a><span class="nl">    Mod+O</span><span class="w"> </span><span class="o">{</span><span class="nl"> toggle-window-rule-opacity</span><span class="o">;</span><span class="w"> </span><span class="o">}</span>
+</span><span id="__span-22-3"><a id="__codelineno-22-3" name="__codelineno-22-3" href="#__codelineno-22-3"></a><span class="o">}</span>
+</span></code></pre></div>
+<h4 id="screenshot-screenshot-screen-screenshot-window"><code>screenshot</code>, <code>screenshot-screen</code>, <code>screenshot-window</code><a class="headerlink" href="#screenshot-screenshot-screen-screenshot-window" title="Permanent link">#</a></h4>
+<p>Actions for taking screenshots.</p>
+<ul>
+<li><code>screenshot</code>: opens the built-in interactive screenshot UI.</li>
+<li><code>screenshot-screen</code>, <code>screenshot-window</code>: takes a screenshot of the focused screen or window respectively.</li>
+</ul>
+<p>The screenshot is both stored to the clipboard and saved to disk, according to the <a href="Configuration%3A-Miscellaneous.html#screenshot-path"><code>screenshot-path</code> option</a>.</p>
+<p><span class="badge"><a href="https://github.com/niri-wm/niri/releases/tag/v25.02">Since: 25.02</a></span> You can disable saving to disk for a specific bind with the <code>write-to-disk=false</code> property:</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-23-1"><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a><span class="nl">binds</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-23-2"><a id="__codelineno-23-2" name="__codelineno-23-2" href="#__codelineno-23-2"></a><span class="nl">    Ctrl+Print</span><span class="w"> </span><span class="o">{</span><span class="nl"> screenshot-screen</span><span class="w"> </span><span class="na">write-to-disk=</span><span class="s">false</span><span class="o">;</span><span class="w"> </span><span class="o">}</span>
+</span><span id="__span-23-3"><a id="__codelineno-23-3" name="__codelineno-23-3" href="#__codelineno-23-3"></a><span class="nl">    Alt+Print</span><span class="w"> </span><span class="o">{</span><span class="nl"> screenshot-window</span><span class="w"> </span><span class="na">write-to-disk=</span><span class="s">false</span><span class="o">;</span><span class="w"> </span><span class="o">}</span>
+</span><span id="__span-23-4"><a id="__codelineno-23-4" name="__codelineno-23-4" href="#__codelineno-23-4"></a><span class="o">}</span>
+</span></code></pre></div>
+<p>In the interactive screenshot UI, pressing <kbd>Ctrl</kbd><kbd>C</kbd> will copy the screenshot to the clipboard without writing it to disk.</p>
+<p><span class="badge"><a href="https://github.com/niri-wm/niri/releases/tag/v25.05">Since: 25.05</a></span> You can hide the mouse pointer in screenshots with the <code>show-pointer=false</code> property:</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-24-1"><a id="__codelineno-24-1" name="__codelineno-24-1" href="#__codelineno-24-1"></a><span class="nl">binds</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-24-2"><a id="__codelineno-24-2" name="__codelineno-24-2" href="#__codelineno-24-2"></a><span class="w">    </span><span class="c1">// The pointer will be hidden by default</span>
+</span><span id="__span-24-3"><a id="__codelineno-24-3" name="__codelineno-24-3" href="#__codelineno-24-3"></a><span class="w">    </span><span class="c1">// (you can still show it by pressing P).</span>
+</span><span id="__span-24-4"><a id="__codelineno-24-4" name="__codelineno-24-4" href="#__codelineno-24-4"></a><span class="nl">    Print</span><span class="w"> </span><span class="o">{</span><span class="nl"> screenshot</span><span class="w"> </span><span class="na">show-pointer=</span><span class="s">false</span><span class="o">;</span><span class="w"> </span><span class="o">}</span>
+</span><span id="__span-24-5"><a id="__codelineno-24-5" name="__codelineno-24-5" href="#__codelineno-24-5"></a>
+</span><span id="__span-24-6"><a id="__codelineno-24-6" name="__codelineno-24-6" href="#__codelineno-24-6"></a><span class="w">    </span><span class="c1">// The pointer will be hidden on the screenshot.</span>
+</span><span id="__span-24-7"><a id="__codelineno-24-7" name="__codelineno-24-7" href="#__codelineno-24-7"></a><span class="nl">    Ctrl+Print</span><span class="w"> </span><span class="o">{</span><span class="nl"> screenshot-screen</span><span class="w"> </span><span class="na">show-pointer=</span><span class="s">false</span><span class="o">;</span><span class="w"> </span><span class="o">}</span>
+</span><span id="__span-24-8"><a id="__codelineno-24-8" name="__codelineno-24-8" href="#__codelineno-24-8"></a><span class="o">}</span>
+</span></code></pre></div>
+<p><span class="badge">Since: next release</span> You can show the mouse pointer on window screenshots with the <code>show-pointer=true</code> property.
+The pointer will be included only if the window is currently receiving pointer input (usually this means the pointer is on top of the window).</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-25-1"><a id="__codelineno-25-1" name="__codelineno-25-1" href="#__codelineno-25-1"></a><span class="nl">binds</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-25-2"><a id="__codelineno-25-2" name="__codelineno-25-2" href="#__codelineno-25-2"></a><span class="w">    </span><span class="c1">// The pointer will be visible on the screenshot</span>
+</span><span id="__span-25-3"><a id="__codelineno-25-3" name="__codelineno-25-3" href="#__codelineno-25-3"></a><span class="w">    </span><span class="c1">// if it&#39;s on top of the window.</span>
+</span><span id="__span-25-4"><a id="__codelineno-25-4" name="__codelineno-25-4" href="#__codelineno-25-4"></a><span class="nl">    Alt+Print</span><span class="w"> </span><span class="o">{</span><span class="nl"> screenshot-window</span><span class="w"> </span><span class="na">show-pointer=</span><span class="s">true</span><span class="o">;</span><span class="w"> </span><span class="o">}</span>
+</span><span id="__span-25-5"><a id="__codelineno-25-5" name="__codelineno-25-5" href="#__codelineno-25-5"></a><span class="o">}</span>
+</span></code></pre></div>
+<h4 id="toggle-keyboard-shortcuts-inhibit"><code>toggle-keyboard-shortcuts-inhibit</code><a class="headerlink" href="#toggle-keyboard-shortcuts-inhibit" title="Permanent link">#</a></h4>
+<p><span class="badge"><a href="https://github.com/niri-wm/niri/releases/tag/v25.02">Since: 25.02</a></span></p>
+<p>Applications such as remote-desktop clients and software KVM switches may request that niri stops processing its keyboard shortcuts so that they may, for example, forward the key presses as-is to a remote machine.
+<code>toggle-keyboard-shortcuts-inhibit</code> is an escape hatch that toggles the inhibitor.
+It's a good idea to bind it, so a buggy application can't hold your session hostage.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-26-1"><a id="__codelineno-26-1" name="__codelineno-26-1" href="#__codelineno-26-1"></a><span class="nl">binds</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-26-2"><a id="__codelineno-26-2" name="__codelineno-26-2" href="#__codelineno-26-2"></a><span class="nl">    Mod+Escape</span><span class="w"> </span><span class="o">{</span><span class="nl"> toggle-keyboard-shortcuts-inhibit</span><span class="o">;</span><span class="w"> </span><span class="o">}</span>
+</span><span id="__span-26-3"><a id="__codelineno-26-3" name="__codelineno-26-3" href="#__codelineno-26-3"></a><span class="o">}</span>
+</span></code></pre></div>
+<p>You can also make certain binds ignore inhibiting with the <code>allow-inhibiting=false</code> property.
+They will always be handled by niri and never passed to the window.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-27-1"><a id="__codelineno-27-1" name="__codelineno-27-1" href="#__codelineno-27-1"></a><span class="nl">binds</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-27-2"><a id="__codelineno-27-2" name="__codelineno-27-2" href="#__codelineno-27-2"></a><span class="w">    </span><span class="c1">// This bind will always work, even when using a virtual machine.</span>
+</span><span id="__span-27-3"><a id="__codelineno-27-3" name="__codelineno-27-3" href="#__codelineno-27-3"></a><span class="nl">    Super+Alt+L</span><span class="w"> </span><span class="na">allow-inhibiting=</span><span class="s">false</span><span class="w"> </span><span class="o">{</span><span class="nl"> spawn</span><span class="w"> </span><span class="s">&quot;swaylock&quot;</span><span class="o">;</span><span class="w"> </span><span class="o">}</span>
+</span><span id="__span-27-4"><a id="__codelineno-27-4" name="__codelineno-27-4" href="#__codelineno-27-4"></a><span class="o">}</span>
+</span></code></pre></div>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      <script id="__config" type="application/json">{"base": ".", "features": ["navigation.instant", "search.suggest", "content.code.copy", "content.action.edit"], "search": "assets/javascripts/workers/search.d50fe291.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="assets/javascripts/bundle.56ea9cef.min.js"></script>
+      
+    
+  </body>
+</html>
