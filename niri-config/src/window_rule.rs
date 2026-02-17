@@ -117,4 +117,13 @@ pub enum RelativeTo {
     Bottom,
     Left,
     Right,
+    ActiveWindowCenter,
+    ActiveWindowTopLeft,
+    ActiveWindowTopRight,
+    ActiveWindowBottomLeft,
+    ActiveWindowBottomRight,
+    ActiveWindowTop,
+    ActiveWindowBottom,
+    ActiveWindowLeft,
+    ActiveWindowRight,
 }
