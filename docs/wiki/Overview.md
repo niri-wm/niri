@@ -54,6 +54,28 @@ overview {
 }
 ```
 
+### Dynamic Zoom
+
+You can dynamically adjust the zoom level while in the overview by cycling through preset values.
+This lets you zoom in to focus on specific workspaces, or zoom out to get a broader view.
+
+Zoom changes are animated smoothly and reset to the config default when the overview closes.
+You can configure the animation in the [`animations` section](./Configuration:-Animations.md#overview-zoom).
+
+```kdl
+overview {
+    zoom 0.5
+
+    // Optional: preset levels for cycling
+    zoom-presets 0.5 0.25 0.1
+}
+
+binds {
+    // Cycle through zoom presets
+    Mod+Z { overview-zoom-cycle; }
+}
+```
+
 To change the color behind the workspaces, use the `backdrop-color` setting:
 
 ```kdl
