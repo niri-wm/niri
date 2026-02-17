@@ -1512,6 +1512,16 @@ impl State {
                     self.niri.queue_redraw_all();
                 }
             }
+            Action::SwitchWorkspace(reference) => {
+                if let Some((Some(output), index)) =
+                    self.niri.find_output_and_workspace_index(reference)
+                {
+                    self.niri.layout.switch_workspace_on_output(&output, index);
+                    self.maybe_warp_cursor_to_focus();
+                    self.niri.layer_shell_on_demand_focus = None;
+                    self.niri.queue_redraw(&output);
+                }
+            }
             Action::FocusWorkspacePrevious => {
                 self.niri.layout.switch_workspace_previous();
                 self.maybe_warp_cursor_to_focus();
