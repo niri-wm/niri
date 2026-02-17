@@ -6,7 +6,7 @@ use niri_config::animations::{Kind, SpringParams};
 use smithay::utils::Point;
 
 use crate::animation::Clock;
-use crate::layout::ZoomAnimation;
+use crate::layout::{ZoomFocalAnimation, ZoomLevelAnimation, ZoomLevelProgress};
 use crate::zoom::OutputZoomState;
 
 fn test_animation_config() -> niri_config::Animation {
@@ -21,23 +21,12 @@ fn test_animation_config() -> niri_config::Animation {
 }
 
 #[test]
-fn zoom_progress_level_accessor() {
-    // Test Animation variant
+fn zoom_level_animation_value() {
     let clock = Clock::with_time(Duration::ZERO);
-    let anim_progress = ZoomAnimation::new(
-        clock.clone(),
-        1.0,
-        3.0,
-        test_animation_config(),
-        Point::from((0.0, 0.0)),
-        Point::from((0.0, 0.0)),
-        None,
-        None,
-        None,
-        None,
-    );
+    let anim = ZoomLevelAnimation::new(clock.clone(), 1.0, 3.0, test_animation_config());
+
     // Animation just started, should be near 1.0
-    let level = anim_progress.level();
+    let level = anim.value();
     assert!(
         (1.0..1.5).contains(&level),
         "level should be near start: {}",
@@ -46,63 +35,47 @@ fn zoom_progress_level_accessor() {
 }
 
 #[test]
-fn zoom_progress_focal_point_accessor() {
-    // Test Animation without focal animation
+fn zoom_focal_animation_value() {
     let clock = Clock::with_time(Duration::ZERO);
-    let anim_progress = ZoomAnimation::new(
+    let anim = ZoomFocalAnimation::new(
         clock.clone(),
-        1.0,
-        2.0,
-        test_animation_config(),
         Point::from((0.0, 0.0)),
         Point::from((50.0, 100.0)),
-        None,
-        None,
-        None,
-        None,
+        test_animation_config(),
     );
-    // Without focal animation, should return target_focal
-    let focal = anim_progress.focal_point();
-    assert_eq!(focal.x, 50.0);
-    assert_eq!(focal.y, 100.0);
+
+    // Animation just started, should be near start
+    let focal = anim.value();
+    assert!(focal.x < 10.0, "focal x should be near start: {}", focal.x);
+    assert!(focal.y < 20.0, "focal y should be near start: {}", focal.y);
 }
 
 #[test]
-fn zoom_progress_is_animation() {
+fn zoom_level_progress_animation_variant() {
     let clock = Clock::with_time(Duration::ZERO);
-    let anim = ZoomAnimation::new(
-        clock.clone(),
-        1.0,
-        2.0,
-        test_animation_config(),
-        Point::from((0.0, 0.0)),
-        Point::from((0.0, 0.0)),
-        None,
-        None,
-        None,
-        None,
+    let level_anim = ZoomLevelAnimation::new(clock.clone(), 1.0, 2.0, test_animation_config());
+    let progress = ZoomLevelProgress::Animation(level_anim);
+
+    assert!(progress.is_animation());
+    assert!(!progress.is_gesture());
+    assert!(!progress.is_done());
+
+    let level = progress.level();
+    assert!(
+        (1.0..1.5).contains(&level),
+        "level should be near start: {}",
+        level
     );
-    assert!(anim.is_animation());
-    assert!(!anim.is_gesture());
 }
 
 #[test]
-fn zoom_progress_is_done() {
-    // Animation should not be done immediately
+fn zoom_level_progress_is_done() {
     let clock = Clock::with_time(Duration::ZERO);
-    let anim = ZoomAnimation::new(
-        clock.clone(),
-        1.0,
-        2.0,
-        test_animation_config(),
-        Point::from((0.0, 0.0)),
-        Point::from((0.0, 0.0)),
-        None,
-        None,
-        None,
-        None,
-    );
-    assert!(!anim.is_done());
+    let level_anim = ZoomLevelAnimation::new(clock.clone(), 1.0, 2.0, test_animation_config());
+    let progress = ZoomLevelProgress::Animation(level_anim);
+
+    // Should not be done at start
+    assert!(!progress.is_done());
 }
 
 #[test]
@@ -116,33 +89,15 @@ fn output_zoom_state_default() {
 }
 
 #[test]
-fn zoom_animation_completion() {
+fn zoom_focal_animation_is_done() {
     let clock = Clock::with_time(Duration::ZERO);
-
-    // Create an animation from 1.0 to 2.0
-    let progress = ZoomAnimation::new(
+    let anim = ZoomFocalAnimation::new(
         clock.clone(),
-        1.0,
-        2.0,
+        Point::from((0.0, 0.0)),
+        Point::from((100.0, 100.0)),
         test_animation_config(),
-        Point::from((0.0, 0.0)),
-        Point::from((0.0, 0.0)),
-        None,
-        None,
-        None,
-        None,
     );
 
     // Should not be done at start
-    assert!(!progress.is_done());
-    let level = progress.level();
-    assert!(
-        (1.0..1.1).contains(&level),
-        "Should be near start: {}",
-        level
-    );
-
-    // Simulate time advancing (using a spring animation, this would take some time)
-    // For this test, we just verify the structure works
-    assert!(progress.is_animation());
+    assert!(!anim.is_done());
 }
