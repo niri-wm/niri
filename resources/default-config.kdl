@@ -398,6 +398,14 @@ binds {
     // or do a four-finger swipe up on a touchpad.
     Mod+O repeat=false { toggle-overview; }
 
+    // If you want to bind Mod to an action you can set
+    // release=true, which makes binds run on release instead of press.
+    // Mod release=true { toggle-overview; }
+
+    // If you really, truly want to bind Mod on press you need to list it
+    // as a modifier as well, since it will be active at that point.
+    // Mod+Mod { center-visible-columns; }
+
     Mod+Q repeat=false { close-window; }
 
     Mod+Left  { focus-column-left; }

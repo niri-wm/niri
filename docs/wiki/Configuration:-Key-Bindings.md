@@ -15,7 +15,7 @@ binds {
 }
 ```
 
-The hotkey consists of modifiers separated by `+` signs, followed by an XKB key name in the end.
+The parts of a hotkey definition are separated by '+' and consist of zero or more modifiers followed by a trigger key. This can be either an XKB key name or (<sup>Since: next release</sup>) `Mod`.
 
 Valid modifiers are:
 
@@ -80,6 +80,29 @@ binds {
 ```
 
 This is mostly useful for the scroll bindings.
+
+### Release bindings
+
+<sup>Since: next release</sup>
+
+Binds can be set to trigger on release instead of on the initial key press. This is mostly useful when you want to bind a modifier key to an action, as it avoids unwanted triggering when you're trying to use other binds involving that modifier.
+
+```kdl
+binds {
+    Mod release=true { toggle-overview; }
+}
+```
+
+These will normally only trigger if no other keys were released and no keys or mouse buttons were pressed after the bound key was pressed. If you want one to always trigger you should also set `allow-invalidation=false`.
+
+Note that the modifier state is updated before binds are evaluated, so if you want to configure a modifier key as both a normal bind and a release bind the entries are slightly different.
+
+```kdl
+binds {
+    Alt+Ctrl+Control_L repeat=false { spawn "wpctl" "set-mute" "@DEFAULT_AUDIO_SOURCE@" "0"; }
+    Alt+Control_L release=true allow-invalidation=false { spawn "wpctl" "set-mute" "@DEFAULT_AUDIO_SOURCE@" "1"; }
+}
+```
 
 ### Scroll Bindings
 

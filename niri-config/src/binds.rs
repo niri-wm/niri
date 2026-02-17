@@ -23,9 +23,11 @@ pub struct Bind {
     pub key: Key,
     pub action: Action,
     pub repeat: bool,
+    pub release: bool,
     pub cooldown: Option<Duration>,
     pub allow_when_locked: bool,
     pub allow_inhibiting: bool,
+    pub allow_invalidation: bool,
     pub hotkey_overlay_title: Option<Option<String>>,
 }
 
@@ -38,6 +40,7 @@ pub struct Key {
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub enum Trigger {
     Keysym(Keysym),
+    KeyCompositor,
     MouseLeft,
     MouseRight,
     MouseMiddle,
@@ -770,6 +773,7 @@ where
         expect_only_children(node, ctx);
 
         let mut seen_keys = HashSet::new();
+        let mut seen_keys_release = HashSet::new();
 
         let mut binds = Vec::new();
 
@@ -779,34 +783,44 @@ where
                     ctx.emit_error(e);
                 }
                 Ok(bind) => {
-                    if seen_keys.insert(bind.key) {
+                    // ideally, these errors should point to the previous instance of the keybind
+                    //
+                    // i (sodiboo) have tried to implement this in various ways:
+                    // miette!(), #[derive(Diagnostic)]
+                    // DecodeError::Custom, DecodeError::Conversion
+                    // nothing seems to work, and i suspect it's not possible.
+                    //
+                    // DecodeError is fairly restrictive.
+                    // even DecodeError::Custom just wraps a std::error::Error
+                    // and this erases all rich information from miette. (why???)
+                    //
+                    // why does knuffel do this?
+                    // from what i can tell, it doesn't even use DecodeError for much.
+                    // it only ever converts them to a Report anyways!
+                    // https://github.com/tailhook/knuffel/blob/c44c6b0c0f31ea6d1174d5d2ed41064922ea44ca/src/wrappers.rs#L55-L58
+                    //
+                    // besides like, allowing downstream users (such as us!)
+                    // to match on parse failure, i don't understand why
+                    // it doesn't just use a generic error type
+                    //
+                    // even the matching isn't consistent,
+                    // because errors can also be omitted as ctx.emit_error.
+                    // why does *that one* especially, require a DecodeError?
+                    //
+                    // anyways if you can make it format nicely, definitely do fix this
+                    if bind.release {
+                        if seen_keys_release.insert(bind.key) {
+                            binds.push(bind);
+                        } else {
+                            ctx.emit_error(DecodeError::unexpected(
+                                &child.node_name,
+                                "keybind",
+                                "duplicate release keybind",
+                            ));
+                        }
+                    } else if seen_keys.insert(bind.key) {
                         binds.push(bind);
                     } else {
-                        // ideally, this error should point to the previous instance of this keybind
-                        //
-                        // i (sodiboo) have tried to implement this in various ways:
-                        // miette!(), #[derive(Diagnostic)]
-                        // DecodeError::Custom, DecodeError::Conversion
-                        // nothing seems to work, and i suspect it's not possible.
-                        //
-                        // DecodeError is fairly restrictive.
-                        // even DecodeError::Custom just wraps a std::error::Error
-                        // and this erases all rich information from miette. (why???)
-                        //
-                        // why does knuffel do this?
-                        // from what i can tell, it doesn't even use DecodeError for much.
-                        // it only ever converts them to a Report anyways!
-                        // https://github.com/tailhook/knuffel/blob/c44c6b0c0f31ea6d1174d5d2ed41064922ea44ca/src/wrappers.rs#L55-L58
-                        //
-                        // besides like, allowing downstream users (such as us!)
-                        // to match on parse failure, i don't understand why
-                        // it doesn't just use a generic error type
-                        //
-                        // even the matching isn't consistent,
-                        // because errors can also be omitted as ctx.emit_error.
-                        // why does *that one* especially, require a DecodeError?
-                        //
-                        // anyways if you can make it format nicely, definitely do fix this
                         ctx.emit_error(DecodeError::unexpected(
                             &child.node_name,
                             "keybind",
@@ -851,15 +865,20 @@ where
             .map_err(|e| DecodeError::conversion(&node.node_name, e.wrap_err("invalid keybind")))?;
 
         let mut repeat = true;
+        let mut release = false;
         let mut cooldown = None;
         let mut allow_when_locked = false;
         let mut allow_when_locked_node = None;
         let mut allow_inhibiting = true;
+        let mut allow_invalidation = true;
         let mut hotkey_overlay_title = None;
         for (name, val) in &node.properties {
             match &***name {
                 "repeat" => {
                     repeat = knuffel::traits::DecodeScalar::decode(val, ctx)?;
+                }
+                "release" => {
+                    release = knuffel::traits::DecodeScalar::decode(val, ctx)?;
                 }
                 "cooldown-ms" => {
                     cooldown = Some(Duration::from_millis(
@@ -872,6 +891,9 @@ where
                 }
                 "allow-inhibiting" => {
                     allow_inhibiting = knuffel::traits::DecodeScalar::decode(val, ctx)?;
+                }
+                "allow-invalidation" => {
+                    allow_invalidation = knuffel::traits::DecodeScalar::decode(val, ctx)?;
                 }
                 "hotkey-overlay-title" => {
                     hotkey_overlay_title = Some(knuffel::traits::DecodeScalar::decode(val, ctx)?);
@@ -895,9 +917,11 @@ where
             key,
             action: Action::Spawn(vec![]),
             repeat: true,
+            release: false,
             cooldown: None,
             allow_when_locked: false,
             allow_inhibiting: true,
+            allow_invalidation: true,
             hotkey_overlay_title: None,
         };
 
@@ -931,9 +955,11 @@ where
                         key,
                         action,
                         repeat,
+                        release,
                         cooldown,
                         allow_when_locked,
                         allow_inhibiting,
+                        allow_invalidation,
                         hotkey_overlay_title,
                     })
                 }
@@ -1012,6 +1038,8 @@ impl FromStr for Key {
             Trigger::TouchpadScrollLeft
         } else if key.eq_ignore_ascii_case("TouchpadScrollRight") {
             Trigger::TouchpadScrollRight
+        } else if key.eq_ignore_ascii_case("Mod") {
+            Trigger::KeyCompositor
         } else {
             let mut keysym = keysym_from_name(key, KEYSYM_CASE_INSENSITIVE);
             // The keyboard event handling code can receive either
@@ -1109,6 +1137,33 @@ mod tests {
             Key {
                 trigger: Trigger::Keysym(Keysym::a),
                 modifiers: Modifiers::ISO_LEVEL5_SHIFT
+            },
+        );
+    }
+
+    #[test]
+    fn parse_mod() {
+        assert_eq!(
+            "Mod".parse::<Key>().unwrap(),
+            Key {
+                trigger: Trigger::KeyCompositor,
+                modifiers: Modifiers::empty(),
+            },
+        );
+
+        assert_eq!(
+            "Ctrl+Mod".parse::<Key>().unwrap(),
+            Key {
+                trigger: Trigger::KeyCompositor,
+                modifiers: Modifiers::CTRL,
+            },
+        );
+
+        assert_eq!(
+            "Mod+Control_L".parse::<Key>().unwrap(),
+            Key {
+                trigger: Trigger::Keysym(Keysym::Control_L),
+                modifiers: Modifiers::COMPOSITOR,
             },
         );
     }
