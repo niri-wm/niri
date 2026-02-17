@@ -2998,6 +2998,31 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                 // Round to physical pixels.
                 let tile_pos = tile_pos.to_physical_precise_round(scale).to_logical(scale);
 
+                // Prefer hits within the activation region so CSD shadows can't steal
+                // hits from adjacent tiles (e.g. peeking columns in strut zones).
+                if let Some(rv) =
+                    HitType::hit_tile_within_activation_region(tile, tile_pos, pos)
+                {
+                    return Some(rv);
+                }
+            }
+        }
+
+        // Fall back to CSD input regions extending beyond tile bounds (shadows, resize
+        // handles, GTK 3 subsurface popups) so normal pointer input still reaches them.
+        for (col, col_x) in self.columns_in_render_order() {
+            let col_off = Point::from((col_x, 0.));
+            let col_render_off = col.render_offset();
+
+            for (tile, tile_off, visible) in col.tiles_in_render_order() {
+                if !visible {
+                    continue;
+                }
+
+                let tile_pos =
+                    view_off + col_off + col_render_off + tile_off + tile.render_offset();
+                let tile_pos = tile_pos.to_physical_precise_round(scale).to_logical(scale);
+
                 if let Some(rv) = HitType::hit_tile(tile, tile_pos, pos) {
                     return Some(rv);
                 }

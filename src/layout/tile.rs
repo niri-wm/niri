@@ -867,6 +867,27 @@ impl<W: LayoutElement> Tile<W> {
         activation_region.contains(point)
     }
 
+    /// Like `hit()`, but only returns a result if the point is within the tile's activation
+    /// region (i.e. within tile bounds). This prevents CSD input regions (shadows, resize handles)
+    /// from claiming hits outside the tile.
+    pub fn hit_within_activation_region(&self, point: Point<f64, Logical>) -> Option<HitType> {
+        let offset = self.bob_offset();
+        let point = point - offset;
+
+        if self.is_in_activation_region(point) {
+            if self.is_in_input_region(point) {
+                let win_pos = self.buf_loc() + offset;
+                Some(HitType::Input { win_pos })
+            } else {
+                Some(HitType::Activate {
+                    is_tab_indicator: false,
+                })
+            }
+        } else {
+            None
+        }
+    }
+
     pub fn hit(&self, point: Point<f64, Logical>) -> Option<HitType> {
         let offset = self.bob_offset();
         let point = point - offset;
