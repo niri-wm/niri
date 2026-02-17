@@ -208,6 +208,17 @@ impl CompositorHandler for State {
                     } else {
                         AddWindowTarget::Auto
                     };
+
+                    // Check if the window rule has a hidden workspace it's being mapped to
+                    // If it does, we should not activate it.
+                    let target_workspace_name = mapped.rules().open_on_workspace.clone();
+                    let target_is_hidden = target_workspace_name.is_some_and(|name| {
+                        self.niri
+                            .layout
+                            .find_workspace_by_name(&name)
+                            .is_some_and(|(_, workspace)| workspace.hidden)
+                    });
+
                     let output = self.niri.layout.add_window(
                         mapped,
                         target,
@@ -215,7 +226,12 @@ impl CompositorHandler for State {
                         height,
                         is_full_width,
                         is_floating,
-                        activate,
+                        if target_is_hidden {
+                            ActivateWindow::No
+                        } else {
+                            activate
+                        },
+                        false,
                     );
                     let output = output.cloned();
 
