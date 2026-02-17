@@ -126,6 +126,14 @@ impl Headless {
         self.renderer.as_mut().map(f)
     }
 
+    pub fn with_output_renderer<T>(
+        &mut self,
+        _output: &Output,
+        f: impl FnOnce(&mut GlesRenderer) -> T,
+    ) -> Option<T> {
+        self.with_primary_renderer(f)
+    }
+
     pub fn render(&mut self, niri: &mut Niri, output: &Output) -> RenderResult {
         let states = RenderElementStates::default();
         let mut presentation_feedbacks = niri.take_presentation_feedbacks(output, &states);

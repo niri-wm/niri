@@ -242,7 +242,9 @@ pub struct Niri {
     /// Layer surfaces that are closing and animating out.
     /// Stored separately from mapped_layer_surfaces so they can render
     /// even after being unmapped from Smithay's layer_map.
-    pub closing_layers: Vec<(LayerSurface, MappedLayer)>,
+    ///
+    /// The output is stored to ensure rendering happens with the same renderer context.
+    pub closing_layers: Vec<(Output, LayerSurface, MappedLayer)>,
 
     // Cached root surface for every surface, so that we can access it in destroyed() where the
     // normal get_parent() is cleared out.
@@ -1553,7 +1555,7 @@ impl State {
         {
             let src = config.animations.window_close.custom_shader.as_deref();
             self.backend.with_primary_renderer(|renderer| {
-                shaders::set_custom_close_program(renderer, src);
+                shaders::set_custom_window_close_program(renderer, src);
             });
             shaders_changed = true;
         }
@@ -1563,7 +1565,27 @@ impl State {
         {
             let src = config.animations.window_open.custom_shader.as_deref();
             self.backend.with_primary_renderer(|renderer| {
-                shaders::set_custom_open_program(renderer, src);
+                shaders::set_custom_window_open_program(renderer, src);
+            });
+            shaders_changed = true;
+        }
+
+        if config.animations.layer_close.custom_shader
+            != old_config.animations.layer_close.custom_shader
+        {
+            let src = config.animations.layer_close.custom_shader.as_deref();
+            self.backend.with_primary_renderer(|renderer| {
+                shaders::set_custom_layer_close_program(renderer, src);
+            });
+            shaders_changed = true;
+        }
+
+        if config.animations.layer_open.custom_shader
+            != old_config.animations.layer_open.custom_shader
+        {
+            let src = config.animations.layer_open.custom_shader.as_deref();
+            self.backend.with_primary_renderer(|renderer| {
+                shaders::set_custom_layer_open_program(renderer, src);
             });
             shaders_changed = true;
         }
@@ -3988,14 +4010,15 @@ impl Niri {
         self.window_mru_ui.advance_animations();
 
         // Advance layer surface animations and clean up closed layers.
-        for mapped in self.mapped_layer_surfaces.values_mut() {
+        self.mapped_layer_surfaces.values_mut().for_each(|mapped| {
             mapped.advance_animations();
-        }
-        self.mapped_layer_surfaces.retain(|_, mapped| !mapped.should_remove());
+        });
+        self.mapped_layer_surfaces
+            .retain(|_, mapped| !mapped.should_remove());
 
         let mut i = 0;
         while i < self.closing_layers.len() {
-            let (_, mapped) = &mut self.closing_layers[i];
+            let (_, _, mapped) = &mut self.closing_layers[i];
             mapped.advance_animations();
             if mapped.is_close_animation_done() {
                 self.closing_layers.remove(i);
@@ -4034,6 +4057,7 @@ impl Niri {
                         continue;
                     };
 
+                    mapped.set_last_geometry(geo);
                     mapped.update_render_elements(geo.size.to_f64());
                 }
             }
@@ -4217,7 +4241,11 @@ impl Niri {
             }};
         }
 
-        for (_, mapped) in &self.closing_layers {
+        for (layer_output, _, mapped) in &self.closing_layers {
+            if layer_output != output {
+                continue;
+            }
+
             if let Some(geo) = mapped.closing_geometry() {
                 if !mapped.render_with_animation(
                     renderer,
@@ -4227,12 +4255,9 @@ impl Niri {
                     geo.size.to_f64(),
                     &mut |elem| push(elem.into()),
                 ) {
-                    mapped.render_normal(
-                        renderer,
-                        geo.loc.to_f64(),
-                        target,
-                        &mut |elem| push(elem.into()),
-                    );
+                    mapped.render_normal(renderer, geo.loc.to_f64(), target, &mut |elem| {
+                        push(elem.into())
+                    });
                 }
             }
         }
@@ -4408,13 +4433,18 @@ impl Niri {
                 state.unfinished_animations_remain |= layer_map_for_output(output)
                     .layers()
                     .filter_map(|surface| self.mapped_layer_surfaces.get(surface))
-                    .any(|mapped| mapped.are_animations_ongoing());
+                    .any(|mapped| mapped.needs_redraw());
             }
 
-            // Also check closing layers (layers with close animations that are no longer in the map).
+            // Also check closing layers (layers with close animations that are no longer in the
+            // map).
             if !state.unfinished_animations_remain {
-                for (_, mapped) in &self.closing_layers {
-                    if mapped.are_animations_ongoing() {
+                for (layer_output, _, mapped) in &self.closing_layers {
+                    if layer_output != output {
+                        continue;
+                    }
+
+                    if mapped.is_close_animation_ongoing() {
                         state.unfinished_animations_remain = true;
                         break;
                     }

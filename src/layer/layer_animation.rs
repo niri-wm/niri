@@ -157,6 +157,14 @@ impl LayerAnimation {
             let offset = elem.offset();
             let texture = elem.texture();
             let texture_size = elem.logical_size();
+            // Close animations render a frozen offscreen snapshot after unmap.
+            // Use snapshot-space geometry so shader transforms stay valid even if mapped geometry
+            // is stale or no longer matches the snapshot bounds.
+            let (geo_loc_for_shader, geo_size_for_shader) = if self.is_open {
+                (location, geo_size)
+            } else {
+                (location + offset, texture_size)
+            };
 
             let mut area = Rectangle::new(location + offset, texture_size);
 
@@ -171,8 +179,8 @@ impl LayerAnimation {
             let area_loc = Vec2::new(area.loc.x as f32, area.loc.y as f32);
             let area_size = Vec2::new(area.size.w as f32, area.size.h as f32);
 
-            let geo_loc = Vec2::new(location.x as f32, location.y as f32);
-            let geo_size_vec = Vec2::new(geo_size.w as f32, geo_size.h as f32);
+            let geo_loc = Vec2::new(geo_loc_for_shader.x as f32, geo_loc_for_shader.y as f32);
+            let geo_size_vec = Vec2::new(geo_size_for_shader.w as f32, geo_size_for_shader.h as f32);
 
             let input_to_geo = Mat3::from_scale(area_size / geo_size_vec)
                 * Mat3::from_translation((area_loc - geo_loc) / area_size);
@@ -184,18 +192,12 @@ impl LayerAnimation {
             let geo_to_tex = Mat3::from_translation(-tex_loc / tex_size)
                 * Mat3::from_scale(geo_size_vec / tex_size);
 
-            let effective_alpha = if self.is_open {
-                clamped_progress as f32 * alpha
-            } else {
-                (1. - clamped_progress as f32) * alpha
-            };
-
             let elem = ShaderRenderElement::new(
                 program_type,
                 area.size,
                 None,
                 scale.x as f32,
-                effective_alpha,
+                alpha,
                 Rc::new([
                     mat3_uniform("niri_input_to_geo", input_to_geo),
                     Uniform::new("niri_geo_size", geo_size_vec.to_array()),

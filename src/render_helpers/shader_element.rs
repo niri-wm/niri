@@ -307,6 +307,21 @@ impl RenderElement<GlesRenderer> for ShaderRenderElement {
         };
         let mut resources = resources.borrow_mut();
 
+        let full_damage;
+        let damage = if damage.is_empty()
+            && matches!(
+                self.program,
+                ProgramType::WindowClose
+                    | ProgramType::WindowOpen
+                    | ProgramType::LayerClose
+                    | ProgramType::LayerOpen
+            ) {
+            full_damage = [Rectangle::from_size(dest.size)];
+            &full_damage[..]
+        } else {
+            damage
+        };
+
         let supports_instancing = frame.capabilities().contains(&Capability::Instancing);
 
         // prepare the vertices

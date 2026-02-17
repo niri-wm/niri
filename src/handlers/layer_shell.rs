@@ -50,24 +50,41 @@ impl WlrLayerShellHandler for State {
         let wl_surface = surface.wl_surface();
         self.niri.unmapped_layer_surfaces.remove(wl_surface);
 
-        let output = if let Some((output, _map, layer)) = self.niri.layout.outputs().find_map(|o| {
+        let output = if let Some((output, layer)) = self.niri.layout.outputs().find_map(|o| {
             let map = layer_map_for_output(o);
             let layer = map
                 .layers()
                 .find(|&layer| layer.layer_surface() == &surface)
                 .cloned();
-            layer.map(|layer| (o.clone(), map, layer))
+            layer.map(|layer| (o.clone(), layer))
         }) {
             if let Some(mut mapped) = self.niri.mapped_layer_surfaces.remove(&layer) {
+                if self
+                    .backend
+                    .with_output_renderer(&output, |renderer| {
+                        mapped.capture_close_snapshot(renderer)
+                    })
+                    .is_none()
+                {
+                    self.backend.with_primary_renderer(|renderer| {
+                        mapped.capture_close_snapshot(renderer);
+                    });
+                }
+
                 let config = self.niri.config.borrow();
                 // Get geometry BEFORE removing from map (needed for close animation rendering)
                 let mut map = layer_map_for_output(&output);
-                if let Some(geo) = map.layer_geometry(&layer) {
+                if let Some(geo) = map
+                    .layer_geometry(&layer)
+                    .or_else(|| mapped.last_geometry())
+                {
                     mapped.set_closing_geometry(geo);
                 }
                 mapped.start_close_animation(&config.animations);
                 mapped.set_closing(true);
-                self.niri.closing_layers.push((layer.clone(), mapped));
+                self.niri
+                    .closing_layers
+                    .push((output.clone(), layer.clone(), mapped));
                 // Remove from Smithay layer map to prevent stale reference
                 let _ = map.unmap_layer(&layer);
             }
@@ -131,9 +148,9 @@ impl State {
                 .niri
                 .closing_layers
                 .iter()
-                .position(|(s, _)| s == layer)
+                .position(|(_, s, _)| s == layer)
             {
-                let (_, mut mapped) = self.niri.closing_layers.remove(idx);
+                let (_, _, mut mapped) = self.niri.closing_layers.remove(idx);
                 mapped.clear_close_animation();
                 mapped.start_open_animation(&config.animations);
                 self.niri
@@ -192,17 +209,28 @@ impl State {
         } else {
             // The surface is unmapped.
             if let Some(mut mapped) = self.niri.mapped_layer_surfaces.remove(layer) {
-                let geo = map.layer_geometry(layer);
+                let geo = map.layer_geometry(layer).or_else(|| mapped.last_geometry());
+                if self
+                    .backend
+                    .with_output_renderer(&output, |renderer| {
+                        mapped.capture_close_snapshot(renderer)
+                    })
+                    .is_none()
+                {
+                    self.backend.with_primary_renderer(|renderer| {
+                        mapped.capture_close_snapshot(renderer);
+                    });
+                }
+
                 let config = self.niri.config.borrow();
                 mapped.start_close_animation(&config.animations);
                 mapped.set_closing(true);
                 if let Some(geo) = geo {
                     mapped.set_closing_geometry(geo);
                 }
-                let layer_clone = layer.clone();
-                self.niri.closing_layers.push((layer_clone.clone(), mapped));
-                // Remove from Smithay layer map to prevent stale reference
-                let _ = map.unmap_layer(&layer_clone);
+                self.niri
+                    .closing_layers
+                    .push((output.clone(), layer.clone(), mapped));
                 self.niri.unmapped_layer_surfaces.insert(surface.clone());
             } else {
                 // An unmapped surface remains unmapped. If we haven't sent an initial configure
