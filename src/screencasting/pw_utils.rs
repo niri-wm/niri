@@ -7,9 +7,10 @@ use std::os::fd::{AsFd, AsRawFd, BorrowedFd};
 use std::ptr::NonNull;
 use std::rc::Rc;
 use std::time::Duration;
-use std::{mem, slice};
+use std::{mem, ptr, slice};
 
 use anyhow::Context as _;
+use anyhow::ensure;
 use calloop::timer::{TimeoutAction, Timer};
 use calloop::RegistrationToken;
 use pipewire::context::ContextRc;
@@ -46,6 +47,7 @@ use smithay::output::{Output, OutputModeSource};
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::{Interest, LoopHandle, Mode, PostAction};
 use smithay::reexports::gbm::Modifier;
+use smithay::reexports::rustix;
 use smithay::utils::{Logical, Physical, Point, Scale, Size, Transform};
 use zbus::object_server::SignalEmitter;
 
@@ -1277,6 +1279,8 @@ impl Cast {
             damage_tracker,
             cursor_damage_tracker,
             last_cursor_location,
+            extra_negotiation_result,
+            alpha,
             ..
         } = &mut inner.state {
             let damage_tracker = damage_tracker
@@ -1288,6 +1292,8 @@ impl Cast {
                     Transform::Normal,
                 )
             });
+            let extra_negotiation_result = extra_negotiation_result.clone();
+            let alpha = alpha.clone();
 
             // Size change will drop the damage tracker, but scale change won't, so check it here.
             let OutputModeSource::Static { scale: t_scale, .. } = damage_tracker.mode() else {
@@ -1328,46 +1334,100 @@ impl Cast {
             };
             let buffer = pw_buffer.as_ptr();
 
-            unsafe {
-                let spa_buffer = (*buffer).buffer;
+            match extra_negotiation_result {
+                Some(_) => {
+                    unsafe {
+                        let spa_buffer = (*buffer).buffer;
 
-                let mut pointer_elements = None;
-                if self.cursor_mode == CursorMode::Metadata {
-                    add_cursor_metadata(renderer, spa_buffer, cursor_data, redraw_cursor);
-                } else if self.cursor_mode != CursorMode::Hidden {
-                    // Embed the cursor into the main render.
-                    pointer_elements = Some(cursor_data.original.iter());
+                        let mut pointer_elements = None;
+                        if self.cursor_mode == CursorMode::Metadata {
+                            add_cursor_metadata(renderer, spa_buffer, cursor_data, redraw_cursor);
+                        } else if self.cursor_mode != CursorMode::Hidden {
+                            // Embed the cursor into the main render.
+                            pointer_elements = Some(cursor_data.original.iter());
+                        }
+                        let pointer_elements = pointer_elements.into_iter().flatten();
+                        let elements = pointer_elements.chain(elements);
+
+                        // FIXME: would be good to skip rendering the full frame if only the pointer changed.
+                        // Unfortunately, I think the OBS PipeWire code needs to be updated first to cleanly
+                        // allow for that codepath.
+                        let fd = (*(*spa_buffer).datas).fd;
+                        let dmabuf = self.inner.borrow().dmabufs[&fd].clone();
+
+                        match render_to_dmabuf(
+                            renderer,
+                            dmabuf,
+                            size,
+                            scale,
+                            Transform::Normal,
+                            elements.rev(),
+                        ) {
+                            Ok(sync_point) => {
+                                mark_buffer_as_good(pw_buffer, &mut self.sequence_counter);
+                                trace!("queueing buffer with seq={}", self.sequence_counter);
+                                self.queue_after_sync(pw_buffer, sync_point);
+                                true
+                            }
+                            Err(err) => {
+                                warn!("error rendering to dmabuf: {err:?}");
+                                return_unused_buffer(&self.stream, pw_buffer);
+                                false
+                            }
+                        }
+                    }
                 }
-                let pointer_elements = pointer_elements.into_iter().flatten();
-                let elements = pointer_elements.chain(elements);
+                None => {
+                    unsafe {
+                        let spa_buffer = (*buffer).buffer;
 
-                // FIXME: would be good to skip rendering the full frame if only the pointer changed.
-                // Unfortunately, I think the OBS PipeWire code needs to be updated first to cleanly
-                // allow for that codepath.
-                let fd = (*(*spa_buffer).datas).fd;
-                let dmabuf = self.inner.borrow().dmabufs[&fd].clone();
+                        let mut pointer_elements = None;
+                        if self.cursor_mode == CursorMode::Metadata {
+                            add_cursor_metadata(renderer, spa_buffer, cursor_data, redraw_cursor);
+                        } else if self.cursor_mode != CursorMode::Hidden {
+                            // Embed the cursor into the main render.
+                            pointer_elements = Some(cursor_data.original.iter());
+                        }
+                        let pointer_elements = pointer_elements.into_iter().flatten();
+                        let elements = pointer_elements.chain(elements);
 
-                match render_to_dmabuf(
-                    renderer,
-                    dmabuf,
-                    size,
-                    scale,
-                    Transform::Normal,
-                    elements.rev(),
-                ) {
-                    Ok(sync_point) => {
-                        mark_buffer_as_good(pw_buffer, &mut self.sequence_counter);
-                        trace!("queueing buffer with seq={}", self.sequence_counter);
-                        self.queue_after_sync(pw_buffer, sync_point);
-                        true
-                    }
-                    Err(err) => {
-                        warn!("error rendering to dmabuf: {err:?}");
-                        return_unused_buffer(&self.stream, pw_buffer);
-                        false
-                    }
+                        // FIXME: would be good to skip rendering the full frame if only the pointer changed.
+                        // Unfortunately, I think the OBS PipeWire code needs to be updated first to cleanly
+                        // allow for that codepath.
+                        let fd = (*(*spa_buffer).datas).fd;
+                        let shmbuf = self.inner.borrow().shmbufs[&fd].clone();
+
+                        let fourcc = if alpha {
+                            Fourcc::Argb8888
+                        } else {
+                            Fourcc::Xrgb8888
+                        };
+
+
+                        match render_to_shmbuf(
+                            renderer,
+                            &shmbuf,
+                            size,
+                            scale,
+                            Transform::Normal,
+                            fourcc,
+                            elements.rev(),
+                        ) {
+                            Ok(()) => {
+                                mark_buffer_as_good(pw_buffer, &mut self.sequence_counter);
+                                trace!("queueing buffer with seq={}", self.sequence_counter);
+                                true
+                            }
+                            Err(err) => {
+                                warn!("error rendering to shmbuf: {err:?}");
+                                return_unused_buffer(&self.stream, pw_buffer);
+                                false
+                            }
+                        }
+                     }
                 }
             }
+
         }
         else {
             error!("cast must be in Ready state to render");
@@ -1597,6 +1657,45 @@ unsafe fn mark_buffer_as_good(pw_buffer: NonNull<pw_buffer>, sequence: &mut u64)
 unsafe fn find_meta_header(buffer: *mut spa_buffer) -> Option<NonNull<spa_meta_header>> {
     let p = spa_buffer_find_meta_data(buffer, SPA_META_Header, size_of::<spa_meta_header>()).cast();
     NonNull::new(p)
+}
+
+fn render_to_shmbuf(
+    renderer: &mut GlesRenderer,
+    buffer: &Shmbuf,
+    size: Size<i32, Physical>,
+    scale: Scale<f64>,
+    transform: Transform,
+    fourcc: Fourcc,
+    elements: impl Iterator<Item = impl RenderElement<GlesRenderer>>,
+) -> anyhow::Result<()> {
+    let expected_size =
+        size.w as usize * size.h as usize * SHM_BYTES_PER_PIXEL as usize;
+    ensure!(buffer.size == expected_size, "invalid buffer size");
+    let mapping = render_and_download(
+        renderer,
+        size,
+        scale,
+        transform,
+        fourcc,
+        elements,
+    )?;
+    let bytes = renderer
+        .map_texture(&mapping)
+        .context("error mapping texture")?;
+
+    unsafe {
+        let buf =  rustix::mm::mmap(
+            std::ptr::null_mut(),
+            buffer.size as usize,
+            rustix::mm::ProtFlags::READ | rustix::mm::ProtFlags::WRITE,
+            rustix::mm::MapFlags::SHARED,
+            buffer.fd.clone(),
+            0,
+        )?;
+        ptr::copy_nonoverlapping(bytes.as_ptr(), buf.cast(), buffer.size);
+        let _ = rustix::mm::munmap(buf, buffer.size).unwrap();
+    }
+    Ok(())
 }
 
 unsafe fn add_invisible_cursor(spa_buffer: *mut spa_buffer) {
