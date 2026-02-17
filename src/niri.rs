@@ -3946,7 +3946,12 @@ impl Niri {
         let mut windows = vec![];
         let mut outputs = HashSet::new();
         self.layout.with_windows_mut(|mapped, output| {
-            if mapped.recompute_window_rules_if_needed(window_rules, self.is_at_startup) {
+            let output_name = output.and_then(|o| o.user_data().get::<OutputName>().cloned());
+            if mapped.recompute_window_rules_if_needed(
+                window_rules,
+                self.is_at_startup,
+                output_name.as_ref(),
+            ) {
                 windows.push(mapped.window.clone());
 
                 if let Some(output) = output {
@@ -5959,10 +5964,17 @@ impl Niri {
             let window_rules = &self.config.borrow().window_rules;
 
             for unmapped in self.unmapped_windows.values_mut() {
+                let output_name = match &unmapped.state {
+                    InitialConfigureState::Configured { output, .. } => output
+                        .as_ref()
+                        .and_then(|o| o.user_data().get::<OutputName>().cloned()),
+                    _ => None,
+                };
                 let new_rules = ResolvedWindowRules::compute(
                     window_rules,
                     WindowRef::Unmapped(unmapped),
                     self.is_at_startup,
+                    output_name.as_ref(),
                 );
                 if let InitialConfigureState::Configured { rules, .. } = &mut unmapped.state {
                     *rules = new_rules;
@@ -5970,8 +5982,13 @@ impl Niri {
             }
 
             let mut windows = vec![];
-            self.layout.with_windows_mut(|mapped, _| {
-                if mapped.recompute_window_rules(window_rules, self.is_at_startup) {
+            self.layout.with_windows_mut(|mapped, output| {
+                let output_name = output.and_then(|o| o.user_data().get::<OutputName>().cloned());
+                if mapped.recompute_window_rules(
+                    window_rules,
+                    self.is_at_startup,
+                    output_name.as_ref(),
+                ) {
                     windows.push(mapped.window.clone());
                 }
             });

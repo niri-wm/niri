@@ -37,6 +37,7 @@ window-rule {
     match is-window-cast-target=true
     match is-urgent=true
     match at-startup=true
+    match on-output="HDMI-A-1"
 
     // Properties that apply once upon window opening.
     default-column-width { proportion 0.75; }
@@ -314,6 +315,45 @@ This is useful for properties like `open-on-output` which you may want to apply 
 // Open windows on the HDMI-A-1 monitor at niri startup, but not afterwards.
 window-rule {
     match at-startup=true
+    open-on-output "HDMI-A-1"
+}
+```
+
+#### `on-output`
+
+<sup>Since: next</sup>
+
+Matches windows based on the output (monitor) they will open on or are currently on.
+
+The value is a string that matches by connector name (e.g. `"DP-1"`, `"HDMI-A-1"`) or by make/model/serial (e.g. `"Goldstar LG ULTRAWIDE 123456789"`), same as in `output` configuration blocks.
+
+For example, you can open Firefox maximized on a laptop display but at 50% width on an external monitor.
+
+```kdl
+// On a large monitor, open Firefox at 50% width.
+window-rule {
+    match app-id="firefox" on-output="HDMI-A-1"
+    default-column-width { proportion 0.5; }
+}
+
+// On a laptop display, open Firefox maximized.
+window-rule {
+    match app-id="firefox"
+    exclude on-output="HDMI-A-1"
+    open-maximized true
+}
+```
+
+> [!NOTE]
+> When a window first opens, `on-output` matches against the output where the window *will* open (determined by `open-on-output`, parent window, or the focused monitor).
+> Properties like `open-on-output` and `open-on-workspace` are evaluated *before* `on-output` matching, so they are not affected by `on-output`.
+
+> [!NOTE]
+> Using `open-on-output` or `open-on-workspace` in a rule with an `on-output` matcher is not allowed, since it would create a circular dependency.
+
+```kdl,must-fail
+window-rule {
+    match on-output="DP-1"
     open-on-output "HDMI-A-1"
 }
 ```
