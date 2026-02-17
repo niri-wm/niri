@@ -30,9 +30,10 @@ tracy-client = { version = "0.18.4", default-features = false }
 
 [workspace.dependencies.smithay]
 # version = "0.4.1"
-git = "https://github.com/Smithay/smithay.git"
+git = "https://github.com/coleleavitt/smithay.git"
 # path = "../smithay"
 default-features = false
+branch = "feat/TabletPadButtonEvent"
 
 [workspace.dependencies.smithay-drm-extras]
 # version = "0.1.0"

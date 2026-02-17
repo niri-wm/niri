@@ -15,8 +15,8 @@ use smithay::backend::input::{
     GestureBeginEvent, GestureEndEvent, GesturePinchUpdateEvent as _, GestureSwipeUpdateEvent as _,
     InputEvent, KeyState, KeyboardKeyEvent, Keycode, MouseButton, PointerAxisEvent,
     PointerButtonEvent, PointerMotionEvent, ProximityState, Switch, SwitchState, SwitchToggleEvent,
-    TabletToolButtonEvent, TabletToolEvent, TabletToolProximityEvent, TabletToolTipEvent,
-    TabletToolTipState, TouchEvent,
+    TabletPadButtonEvent, TabletToolButtonEvent, TabletToolEvent, TabletToolProximityEvent,
+    TabletToolTipEvent, TabletToolTipState, TouchEvent,
 };
 use smithay::backend::libinput::LibinputInputBackend;
 use smithay::input::dnd::DnDGrab;
@@ -161,6 +161,7 @@ impl State {
             TabletToolTip { event } => self.on_tablet_tool_tip::<I>(event),
             TabletToolProximity { event } => self.on_tablet_tool_proximity::<I>(event),
             TabletToolButton { event } => self.on_tablet_tool_button::<I>(event),
+            TabletPadButton { event } => self.on_tablet_pad_button::<I>(event),
             GestureSwipeBegin { event } => self.on_gesture_swipe_begin::<I>(event),
             GestureSwipeUpdate { event } => self.on_gesture_swipe_update::<I>(event),
             GestureSwipeEnd { event } => self.on_gesture_swipe_end::<I>(event),
@@ -3760,6 +3761,36 @@ impl State {
                 SERIAL_COUNTER.next_serial(),
                 event.time_msec(),
             );
+        }
+    }
+
+    fn on_tablet_pad_button<I: InputBackend>(&mut self, event: I::TabletPadButtonEvent) {
+        let pressed = event.state() == ButtonState::Pressed;
+        let button_number = event.button();
+
+        if !pressed {
+            return;
+        }
+
+        let mod_key = self.backend.mod_key(&self.niri.config.borrow());
+        let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
+        let _modifiers = modifiers_from_state(mods);
+
+        let bind = {
+            let config = self.niri.config.borrow();
+            let bindings = &config.binds;
+            find_configured_bind(
+                bindings,
+                mod_key,
+                Trigger::TabletPadButton(button_number),
+                mods,
+            )
+        };
+
+        if let Some(bind) = bind {
+            self.handle_bind(bind.clone());
+        } else {
+            debug!("Tablet pad button {} pressed (no binding)", button_number);
         }
     }
 
