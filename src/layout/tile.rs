@@ -13,7 +13,7 @@ use super::opening_window::{OpenAnimation, OpeningWindowRenderElement};
 use super::shadow::Shadow;
 use super::{
     HitType, LayoutElement, LayoutElementRenderElement, LayoutElementRenderSnapshot, Options,
-    SizeFrac, RESIZE_ANIMATION_THRESHOLD,
+    SizeFrac, StickyRestoreInfo, RESIZE_ANIMATION_THRESHOLD,
 };
 use crate::animation::{Animation, Clock};
 use crate::layout::SizingMode;
@@ -59,6 +59,9 @@ pub struct Tile<W: LayoutElement> {
 
     /// Whether the tile should float upon unfullscreening.
     pub(super) restore_to_floating: bool,
+
+    /// Placement used when restoring a sticky window back to regular workspace layout.
+    pub(super) sticky_restore_info: Option<StickyRestoreInfo<W::Id>>,
 
     /// The size that the window should assume when going floating.
     ///
@@ -193,6 +196,7 @@ impl<W: LayoutElement> Tile<W> {
             sizing_mode,
             fullscreen_backdrop: SolidColorBuffer::new((0., 0.), [0., 0., 0., 1.]),
             restore_to_floating: false,
+            sticky_restore_info: None,
             floating_window_size: None,
             floating_pos: None,
             floating_preset_width_idx: None,

@@ -657,3 +657,68 @@ fn removing_only_fullscreen_tile_updates_view_offset() {
     // FIXME: currently, removing a tile doesn't cause the view offset to update.
     assert_snapshot!(layout.active_workspace().unwrap().scrolling().view_pos(), @"0");
 }
+
+#[test]
+fn sticky_window_is_hit_above_fullscreen() {
+    let ops = [
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::FullscreenWindow(1),
+        Op::Communicate(1),
+        Op::CompleteAnimations,
+    ];
+
+    let mut layout = check_ops(ops);
+    let window = TestWindow::new(TestWindowParams::new(2));
+    layout.add_window(
+        window,
+        AddWindowTarget::Auto,
+        None,
+        None,
+        false,
+        false,
+        true,
+        ActivateWindow::Yes,
+    );
+    layout.verify_invariants();
+
+    let MonitorSet::Normal {
+        monitors,
+        active_monitor_idx,
+        ..
+    } = &layout.monitor_set
+    else {
+        unreachable!()
+    };
+
+    let mon = &monitors[*active_monitor_idx];
+    let ws = &mon.workspaces[mon.active_workspace_idx];
+    assert!(
+        ws.is_active_pending_fullscreen(),
+        "workspace should still be in fullscreen mode"
+    );
+    assert!(
+        mon.render_above_top_layer(),
+        "monitor should render active fullscreen above top layer"
+    );
+
+    let (_, ws_geo) = mon
+        .workspaces_with_render_geo()
+        .find(|(candidate, _)| candidate.id() == ws.id())
+        .unwrap();
+    let (tile, tile_pos) = mon
+        .sticky
+        .tiles_with_render_positions()
+        .find(|(tile, _)| *tile.window().id() == 2)
+        .unwrap();
+    let tile_size = tile.tile_size();
+    let center = ws_geo.loc + tile_pos + Point::from((tile_size.w / 2., tile_size.h / 2.));
+
+    let output = mon.output.clone();
+    let (win, _hit) = layout
+        .window_under(&output, center)
+        .expect("sticky window should be hit above fullscreen");
+    assert_eq!(*win.id(), 2);
+}

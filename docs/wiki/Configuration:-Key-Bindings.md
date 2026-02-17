@@ -349,6 +349,19 @@ binds {
 }
 ```
 
+#### `toggle-window-sticky`
+
+<sup>Since: 25.11</sup>
+
+Toggle whether a window is sticky across all workspaces on the current output.
+Sticky windows are floating windows.
+
+```kdl
+binds {
+    Mod+S { toggle-window-sticky; }
+}
+```
+
 #### `screenshot`, `screenshot-screen`, `screenshot-window`
 
 Actions for taking screenshots.

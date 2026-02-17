@@ -13,7 +13,7 @@ use super::scrolling::ColumnWidth;
 use super::tile::{Tile, TileRenderElement, TileRenderSnapshot};
 use super::workspace::{InteractiveResize, ResolvedSize};
 use super::{
-    ConfigureIntent, InteractiveResizeData, LayoutElement, Options, RemovedTile, SizeFrac,
+    ConfigureIntent, HitType, InteractiveResizeData, LayoutElement, Options, RemovedTile, SizeFrac,
 };
 use crate::animation::{Animation, Clock};
 use crate::niri_render_elements;
@@ -280,6 +280,10 @@ impl<W: LayoutElement> FloatingSpace<W> {
         self.tiles.iter()
     }
 
+    pub fn into_tiles(self) -> Vec<Tile<W>> {
+        self.tiles
+    }
+
     pub fn tiles_mut(&mut self) -> impl Iterator<Item = &mut Tile<W>> + '_ {
         self.tiles.iter_mut()
     }
@@ -306,6 +310,37 @@ impl<W: LayoutElement> FloatingSpace<W> {
             let pos = pos.to_physical_precise_round(scale).to_logical(scale);
             (tile, pos)
         })
+    }
+
+    pub fn window_under(&self, pos: Point<f64, Logical>) -> Option<(&W, HitType)> {
+        self.tiles_with_render_positions()
+            .find_map(|(tile, tile_pos)| HitType::hit_tile(tile, tile_pos, pos))
+    }
+
+    pub fn resize_edges_under(&self, pos: Point<f64, Logical>) -> Option<ResizeEdge> {
+        self.tiles_with_render_positions()
+            .find_map(|(tile, tile_pos)| {
+                let pos_within_tile = pos - tile_pos;
+
+                if tile.hit(pos_within_tile).is_some() {
+                    let size = tile.tile_size().to_f64();
+
+                    let mut edges = ResizeEdge::empty();
+                    if pos_within_tile.x < size.w / 3. {
+                        edges |= ResizeEdge::LEFT;
+                    } else if 2. * size.w / 3. < pos_within_tile.x {
+                        edges |= ResizeEdge::RIGHT;
+                    }
+                    if pos_within_tile.y < size.h / 3. {
+                        edges |= ResizeEdge::TOP;
+                    } else if 2. * size.h / 3. < pos_within_tile.y {
+                        edges |= ResizeEdge::BOTTOM;
+                    }
+                    return Some(edges);
+                }
+
+                None
+            })
     }
 
     pub fn tiles_with_render_positions_mut(
@@ -505,6 +540,18 @@ impl<W: LayoutElement> FloatingSpace<W> {
         self.remove_tile_by_idx(idx)
     }
 
+    pub fn store_unmap_snapshot_if_empty(&mut self, renderer: &mut GlesRenderer, id: &W::Id) {
+        if let Some(tile) = self.tiles.iter_mut().find(|tile| tile.window().id() == id) {
+            tile.store_unmap_snapshot_if_empty(renderer);
+        }
+    }
+
+    pub fn clear_unmap_snapshot(&mut self, id: &W::Id) {
+        if let Some(tile) = self.tiles.iter_mut().find(|tile| tile.window().id() == id) {
+            let _ = tile.take_unmap_snapshot();
+        }
+    }
+
     fn remove_tile_by_idx(&mut self, idx: usize) -> RemovedTile<W> {
         let mut tile = self.tiles.remove(idx);
         let data = self.data.remove(idx);
@@ -536,6 +583,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
             width,
             is_full_width: false,
             is_floating: true,
+            is_sticky: false,
         }
     }
 
@@ -1158,13 +1206,14 @@ impl<W: LayoutElement> FloatingSpace<W> {
         self.interactive_resize = None;
     }
 
-    pub fn refresh(&mut self, is_active: bool, is_focused: bool) {
+    pub fn refresh(&mut self, is_active: bool, is_focused: bool, is_sticky: bool) {
         let active = self.active_window_id.clone();
         for tile in &mut self.tiles {
             let win = tile.window_mut();
 
             win.set_active_in_column(true);
             win.set_floating(true);
+            win.set_sticky(is_sticky);
 
             let mut is_active = is_active && Some(win.id()) == active.as_ref();
             if self.options.deactivate_unfocused_windows {
