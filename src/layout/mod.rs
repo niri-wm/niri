@@ -533,6 +533,27 @@ impl SizingMode {
     }
 }
 
+impl From<u8> for SizingMode {
+    fn from(value: u8) -> Self {
+        match value {
+            0 => Self::Normal,
+            1 => Self::Maximized,
+            2 => Self::Fullscreen,
+            _ => Self::Normal,
+        }
+    }
+}
+
+impl From<SizingMode> for u8 {
+    fn from(value: SizingMode) -> Self {
+        match value {
+            SizingMode::Normal => 0,
+            SizingMode::Maximized => 1,
+            SizingMode::Fullscreen => 2,
+        }
+    }
+}
+
 impl<W: LayoutElement> InteractiveMoveState<W> {
     fn moving(&self) -> Option<&InteractiveMoveData<W>> {
         match self {
