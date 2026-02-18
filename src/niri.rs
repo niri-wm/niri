@@ -4050,6 +4050,7 @@ impl Niri {
             }
         }
 
+        let state = self.output_state.get(output).unwrap();
         let output_scale = Scale::from(output.current_scale().fractional_scale());
 
         let push = if self.debug_draw_opaque_regions {
@@ -4068,7 +4069,6 @@ impl Niri {
 
         // Next, the screen transition texture.
         {
-            let state = self.output_state.get(output).unwrap();
             if let Some(transition) = &state.screen_transition {
                 push(transition.render(ctx.target).into());
             }
@@ -4085,7 +4085,6 @@ impl Niri {
 
         // If the session is locked, draw the lock surface.
         if self.is_locked() {
-            let state = self.output_state.get(output).unwrap();
             if let Some(surface) = state.lock_surface.as_ref() {
                 push_elements_from_surface_tree(
                     ctx.renderer,
@@ -4113,7 +4112,6 @@ impl Niri {
         }
 
         // Prepare the background elements.
-        let state = self.output_state.get(output).unwrap();
         let backdrop = SolidColorRenderElement::from_buffer(
             &state.backdrop_buffer,
             (0., 0.),
