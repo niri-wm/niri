@@ -53,6 +53,7 @@ impl PickColorGrab {
                     renderer,
                     // This is an interactive operation so we can render without blocking out.
                     target: RenderTarget::Output,
+                    xray: None,
                 };
                 let elements = data.niri.render_to_vec(ctx, &output, false);
 

@@ -77,6 +77,7 @@ impl OffscreenBuffer {
         let _span = tracy_client::span!("OffscreenBuffer::render");
 
         let geo = encompassing_geo(scale, elements.iter());
+        // TODO: check for zero size.
         let elements = Vec::from_iter(elements.iter().map(|ele| {
             RelocateRenderElement::from_element(ele, geo.loc.upscale(-1), Relocate::Relative)
         }));
@@ -157,13 +158,10 @@ impl OffscreenBuffer {
 
         let res = {
             let mut target = renderer.bind(&mut inner.texture)?;
-            inner.damage.render_output(
-                renderer,
-                &mut target,
-                1,
-                &elements,
-                Color32F::TRANSPARENT,
-            )?
+            inner
+                .damage
+                .render_output(renderer, &mut target, 1, &elements, Color32F::TRANSPARENT)
+                .context("error rendering")?
         };
 
         // Add the resulting damage to the outer tracker.
