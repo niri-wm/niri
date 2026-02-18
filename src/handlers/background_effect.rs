@@ -2,7 +2,7 @@ use std::sync::{Arc, Mutex};
 
 use smithay::delegate_background_effect;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::utils::{Logical, Rectangle};
+use smithay::utils::{Logical, Point, Rectangle, Size};
 use smithay::wayland::background_effect::{
     self, BackgroundEffectSurfaceCachedState, ExtBackgroundEffectHandler,
 };
@@ -10,7 +10,9 @@ use smithay::wayland::compositor::{
     add_post_commit_hook, with_states, RegionAttributes, SurfaceData,
 };
 
+use crate::delegate_kde_blur;
 use crate::niri::State;
+use crate::protocols::kde_blur::{KdeBlurHandler, KdeBlurRegion, KdeBlurSurfaceCachedState};
 use crate::utils::region::region_to_non_overlapping_rects;
 
 /// Per-surface cache for processed blur region (non-overlapping rects).
@@ -59,6 +61,7 @@ fn recompute_blur_region(states: &SurfaceData, inner: &mut CachedBlurRegionInner
     };
     let rects = Arc::make_mut(rects);
 
+    // Prefer ext-background-effect.
     if cached.has::<BackgroundEffectSurfaceCachedState>() {
         let mut guard = cached.get::<BackgroundEffectSurfaceCachedState>();
         if let Some(region) = &guard.current().blur_region {
@@ -69,6 +72,29 @@ fn recompute_blur_region(states: &SurfaceData, inner: &mut CachedBlurRegionInner
         return;
     }
 
+    if cached.has::<KdeBlurSurfaceCachedState>() {
+        let mut guard = cached.get::<KdeBlurSurfaceCachedState>();
+        match &guard.current().blur_region {
+            Some(KdeBlurRegion::WholeSurface) => {
+                // Store a single "infinite" rect that gets naturally clipped.
+                let infinite = Rectangle::new(
+                    Point::new(-i32::MAX / 2, -i32::MAX / 2),
+                    Size::new(i32::MAX, i32::MAX),
+                );
+                rects.clear();
+                rects.push(infinite);
+            }
+            Some(KdeBlurRegion::Region(region)) => {
+                region_to_non_overlapping_rects(region, rects);
+            }
+            None => {
+                inner.rects = None;
+            }
+        }
+        return;
+    }
+
+    // Neither is present.
     inner.rects = None;
 }
 
@@ -119,3 +145,14 @@ impl ExtBackgroundEffectHandler for State {
     }
 }
 delegate_background_effect!(State);
+
+impl KdeBlurHandler for State {
+    fn set_blur_region(&mut self, wl_surface: WlSurface) {
+        mark_blur_region_pending_dirty(&wl_surface);
+    }
+
+    fn unset_blur_region(&mut self, wl_surface: WlSurface) {
+        mark_blur_region_pending_dirty(&wl_surface);
+    }
+}
+delegate_kde_blur!(State);
