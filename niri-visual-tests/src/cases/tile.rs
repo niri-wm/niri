@@ -124,10 +124,12 @@ impl TestCase for Tile {
         let ctx = RenderCtx {
             renderer,
             target: RenderTarget::Output,
+            xray: None,
         };
-        self.tile.render(ctx, location, true, &mut |elem| {
-            rv.push(Box::new(elem) as _)
-        });
+        self.tile
+            .render(ctx, location, location, 1., true, &mut |elem| {
+                rv.push(Box::new(elem) as _)
+            });
         rv
     }
 }

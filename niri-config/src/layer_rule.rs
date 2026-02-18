@@ -1,4 +1,4 @@
-use crate::appearance::{BlockOutFrom, CornerRadius, ShadowRule};
+use crate::appearance::{BackgroundEffectRule, BlockOutFrom, CornerRadius, ShadowRule};
 use crate::utils::RegexEq;
 
 #[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]
@@ -20,6 +20,8 @@ pub struct LayerRule {
     pub place_within_backdrop: Option<bool>,
     #[knuffel(child, unwrap(argument))]
     pub baba_is_float: Option<bool>,
+    #[knuffel(child, default)]
+    pub background_effect: BackgroundEffectRule,
 }
 
 #[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]

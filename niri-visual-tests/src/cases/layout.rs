@@ -273,6 +273,7 @@ impl TestCase for Layout {
         let ctx = RenderCtx {
             renderer,
             target: RenderTarget::Output,
+            xray: None,
         };
         self.layout
             .monitor_for_output(&self.output)
