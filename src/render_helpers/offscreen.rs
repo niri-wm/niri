@@ -157,13 +157,10 @@ impl OffscreenBuffer {
 
         let res = {
             let mut target = renderer.bind(&mut inner.texture)?;
-            inner.damage.render_output(
-                renderer,
-                &mut target,
-                1,
-                &elements,
-                Color32F::TRANSPARENT,
-            )?
+            inner
+                .damage
+                .render_output(renderer, &mut target, 1, &elements, Color32F::TRANSPARENT)
+                .context("error rendering")?
         };
 
         // Add the resulting damage to the outer tracker.
