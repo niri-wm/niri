@@ -15,6 +15,7 @@ output "eDP-1" {
     variable-refresh-rate // on-demand=true
     focus-at-startup
     backdrop-color "#001100"
+    bpc 10
 
     hot-corners {
         // off
@@ -276,6 +277,21 @@ The alpha channel for this color will be ignored.
 ```kdl
 output "HDMI-A-1" {
     backdrop-color "#001100"
+}
+```
+
+### `bpc`
+
+<sup>Since: next release</sup>
+
+Set the maximum bits per channel (BPC) for this output.
+This is not needed for most outputs unless encountering bandwidth or lower-than-expected colour depth issues.
+
+Valid values are `8`, `10`.
+
+```kdl
+output "HDMI-A-1" {
+    bpc 10
 }
 ```
 
