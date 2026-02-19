@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::env;
 use std::fs::File;
@@ -15,6 +15,8 @@ use smithay::wayland::compositor::with_states;
 use xcursor::parser::{parse_xcursor, Image};
 use xcursor::CursorTheme;
 
+const MAX_CURSOR_PIXELS: i32 = 256;
+
 /// Some default looking `left_ptr` icon.
 static FALLBACK_CURSOR_DATA: &[u8] = include_bytes!("../resources/cursor.rgba");
 
@@ -25,6 +27,7 @@ pub struct CursorManager {
     size: u8,
     current_cursor: CursorImageStatus,
     named_cursor_cache: RefCell<XCursorCache>,
+    dynamic_size_multiplier: Cell<f32>,
 }
 
 impl CursorManager {
@@ -36,6 +39,7 @@ impl CursorManager {
         Self {
             theme,
             size,
+            dynamic_size_multiplier: Cell::new(1.0),
             current_cursor: CursorImageStatus::default_named(),
             named_cursor_cache: Default::default(),
         }
@@ -80,16 +84,19 @@ impl CursorManager {
     }
 
     fn get_render_cursor_named(&self, icon: CursorIcon, scale: i32) -> RenderCursor {
+        let pixel_size = self.effective_cursor_pixel_size(scale);
         self.get_cursor_with_name(icon, scale)
             .map(|cursor| RenderCursor::Named {
                 icon,
                 scale,
                 cursor,
+                pixel_size,
             })
             .unwrap_or_else(|| RenderCursor::Named {
                 icon: Default::default(),
                 scale,
                 cursor: self.get_default_cursor(scale),
+                pixel_size,
             })
     }
 
@@ -104,19 +111,42 @@ impl CursorManager {
         }
     }
 
-    /// Get named cursor for the given `icon` and `scale`.
+    /// Set the common dynamic multiplier for cursor sizes.
+    pub fn set_size_multiplier(&mut self, m: f32) {
+        let m = m.clamp(1.0, 3.0);
+        if (self.dynamic_size_multiplier.get() - m).abs() > 0.001 {
+            self.dynamic_size_multiplier.set(m);
+            self.named_cursor_cache.get_mut().clear();
+        }
+    }
+
+    pub fn size_multiplier(&self) -> f32 {
+        self.dynamic_size_multiplier.get()
+    }
+
+    /// Compute the effective pixel size for the cursor given an output integer `scale`.
+    pub fn effective_cursor_pixel_size(&self, scale: i32) -> i32 {
+        let base_size = self.size as f32;
+        let mult = self.dynamic_size_multiplier.get();
+        let mut size = ((base_size * (scale as f32) * mult).round() as i32).max(1);
+        if size > MAX_CURSOR_PIXELS {
+            size = MAX_CURSOR_PIXELS;
+        }
+        size
+    }
+
     pub fn get_cursor_with_name(&self, icon: CursorIcon, scale: i32) -> Option<Rc<XCursor>> {
+        let pixel_size = self.effective_cursor_pixel_size(scale);
         self.named_cursor_cache
             .borrow_mut()
-            .entry((icon, scale))
-            .or_insert_with_key(|(icon, scale)| {
-                let size = self.size as i32 * scale;
-                let mut cursor = Self::load_xcursor(&self.theme, icon.name(), size);
+            .entry((icon, pixel_size))
+            .or_insert_with_key(|(icon, size)| {
+                let mut cursor = Self::load_xcursor(&self.theme, icon.name(), *size);
 
                 // Check alternative names to account for non-compliant themes.
                 if cursor.is_err() {
                     for name in icon.alt_names() {
-                        cursor = Self::load_xcursor(&self.theme, name, size);
+                        cursor = Self::load_xcursor(&self.theme, name, *size);
                         if cursor.is_ok() {
                             break;
                         }
@@ -222,10 +252,12 @@ pub enum RenderCursor {
         icon: CursorIcon,
         scale: i32,
         cursor: Rc<XCursor>,
+        pixel_size: i32,
     },
 }
 
-type TextureCache = HashMap<(CursorIcon, i32), Vec<MemoryRenderBuffer>>;
+/// Key is: (CursorIcon, pixel_size, output_integer_scale)
+type TextureCache = HashMap<(CursorIcon, i32, i32), Vec<MemoryRenderBuffer>>;
 
 #[derive(Default)]
 pub struct CursorTextureCache {
@@ -240,13 +272,14 @@ impl CursorTextureCache {
     pub fn get(
         &self,
         icon: CursorIcon,
-        scale: i32,
+        pixel_size: i32,
+        output_scale: i32,
         cursor: &XCursor,
         idx: usize,
     ) -> MemoryRenderBuffer {
         self.cache
             .borrow_mut()
-            .entry((icon, scale))
+            .entry((icon, pixel_size, output_scale))
             .or_insert_with(|| {
                 cursor
                     .frames()
@@ -256,7 +289,7 @@ impl CursorTextureCache {
                             &frame.pixels_rgba,
                             Fourcc::Argb8888,
                             (frame.width as i32, frame.height as i32),
-                            scale,
+                            output_scale,
                             Transform::Normal,
                             None,
                         )
