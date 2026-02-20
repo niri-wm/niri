@@ -1,11 +1,12 @@
 use std::ffi::OsStr;
 use std::os::unix::process::CommandExt;
 use std::path::Path;
-use std::process::{Child, Command, Stdio};
+use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::RwLock;
 use std::{io, thread};
 
+use async_process::Child;
 use atomic::Atomic;
 use libc::{getrlimit, rlim_t, rlimit, setrlimit, RLIMIT_NOFILE};
 use niri_config::Environment;
@@ -62,25 +63,39 @@ pub fn restore_nofile_rlimit() {
     unsafe { setrlimit(RLIMIT_NOFILE, &rlim) };
 }
 
-/// Spawns the command to run independently of the compositor.
-pub fn spawn<T: AsRef<OsStr> + Send + 'static>(command: Vec<T>, token: Option<XdgActivationToken>) {
-    let _span = tracy_client::span!();
+type Message = (Vec<String>, Option<XdgActivationToken>);
+static SPAWNING_CHANNEL: std::sync::LazyLock<async_channel::Sender<Message>> =
+    std::sync::LazyLock::new(|| {
+        let (sender, receiver) = async_channel::unbounded::<Message>();
+        thread::Builder::new()
+            .name("Command Spawner".to_owned())
+            .spawn(move || {
+                let ex = async_executor::LocalExecutor::new();
+                async_io::block_on(ex.run(async {
+                    while let Ok((command, token)) = receiver.recv().await {
+                        let Some((command, args)) = command.split_first() else {
+                            continue;
+                        };
+                        if let Some(child) = spawn_sync(command, args, token) {
+                            // async_process will reap this process for us.
+                            drop(child);
+                        }
+                    }
+                }));
+            })
+            .unwrap();
+        sender
+    });
 
+/// Spawns the command to run independently of the compositor.
+pub fn spawn(command: Vec<String>, token: Option<XdgActivationToken>) {
+    let _span = tracy_client::span!();
     if command.is_empty() {
         return;
     }
-
-    // Spawning and waiting takes some milliseconds, so do it in a thread.
-    let res = thread::Builder::new()
-        .name("Command Spawner".to_owned())
-        .spawn(move || {
-            let (command, args) = command.split_first().unwrap();
-            spawn_sync(command, args, token);
-        });
-
-    if let Err(err) = res {
-        warn!("error spawning a thread to spawn the command: {err:?}");
-    }
+    if let Err(err) = SPAWNING_CHANNEL.send_blocking((command, token)) {
+        warn!("error sending command to the spawning thread: {err:?}");
+    };
 }
 
 /// Spawns the command through the shell.
@@ -97,7 +112,7 @@ fn spawn_sync(
     command: impl AsRef<OsStr>,
     args: impl IntoIterator<Item = impl AsRef<OsStr>>,
     token: Option<XdgActivationToken>,
-) {
+) -> Option<Child> {
     let _span = tracy_client::span!();
 
     let mut command = command.as_ref();
@@ -156,40 +171,18 @@ fn spawn_sync(
 
     unsafe { process.pre_exec(crate::utils::signals::unblock_all) };
 
-    let Some(mut child) = do_spawn(command, process) else {
-        return;
-    };
-
-    match child.wait() {
-        Ok(status) => {
-            if !status.success() {
-                warn!("child did not exit successfully: {status:?}");
-            }
-        }
-        Err(err) => {
-            warn!("error waiting for child: {err:?}");
-        }
-    }
+    do_spawn(command, process)
 }
 
 #[cfg(not(feature = "systemd"))]
 fn do_spawn(command: &OsStr, mut process: Command) -> Option<Child> {
     unsafe {
-        // Double-fork to avoid having to waitpid the child.
-        process.pre_exec(move || {
-            match libc::fork() {
-                -1 => return Err(io::Error::last_os_error()),
-                0 => (),
-                _ => libc::_exit(0),
-            }
-
+        process.pre_exec(|| {
             restore_nofile_rlimit();
-
             Ok(())
         });
     }
-
-    let child = match process.spawn() {
+    let child = match async_process::Command::from(process).spawn() {
         Ok(child) => child,
         Err(err) => {
             warn!("error spawning {command:?}: {err:?}");
@@ -208,7 +201,7 @@ mod systemd {
     use std::os::fd::{AsFd, AsRawFd, FromRawFd, OwnedFd};
 
     use smithay::reexports::rustix;
-    use smithay::reexports::rustix::io::{close, read, retry_on_intr, write};
+    use smithay::reexports::rustix::io::{close, read, retry_on_intr};
     use smithay::reexports::rustix::pipe::{pipe_with, PipeFlags};
 
     use super::*;
@@ -245,22 +238,8 @@ mod systemd {
         // at just the right time, the transient unit will be created but empty, so it will
         // linger around forever.
         //
-        // To prevent this, we'll use our double-fork (done for a separate reason) to help. In our
-        // intermediate child we will send back the grandchild PID, and in niri we will create a
-        // transient scope with both our intermediate child and the grandchild PIDs set. Only then
-        // we will signal our intermediate child to exit. This way, even if the grandchild
-        // exits quickly, a non-empty scope will be created (with just our intermediate
-        // child), then cleaned up when our intermediate child exits.
-
-        // Make a pipe to receive the grandchild PID.
-
-        let (pipe_pid_read, pipe_pid_write) = pipe_with(PipeFlags::CLOEXEC)
-            .map_err(|err| {
-                warn!("error creating a pipe to transfer child PID: {err:?}");
-            })
-            .ok()
-            .unzip();
-        // Make a pipe to wait in the intermediate child.
+        // To prevent this, we'll hold off on exec until the scope is allocated with the following
+        // pipe.
         let (pipe_wait_read, pipe_wait_write) = pipe_with(PipeFlags::CLOEXEC)
             .map_err(|err| {
                 warn!("error creating a pipe for child to wait on: {err:?}");
@@ -271,68 +250,42 @@ mod systemd {
         unsafe {
             // The fds will be duplicated after a fork and closed on exec or exit automatically. Get
             // the raw fd inside so that it's not closed any extra times.
-            let mut pipe_pid_read_fd = pipe_pid_read.as_ref().map(|fd| fd.as_raw_fd());
-            let mut pipe_pid_write_fd = pipe_pid_write.as_ref().map(|fd| fd.as_raw_fd());
             let mut pipe_wait_read_fd = pipe_wait_read.as_ref().map(|fd| fd.as_raw_fd());
             let mut pipe_wait_write_fd = pipe_wait_write.as_ref().map(|fd| fd.as_raw_fd());
 
-            // Double-fork to avoid having to waitpid the child.
             process.pre_exec(move || {
                 // Close FDs that we don't need. Especially important for the write ones to unblock
                 // the readers.
-                if let Some(fd) = pipe_pid_read_fd.take() {
-                    close(fd);
-                }
                 if let Some(fd) = pipe_wait_write_fd.take() {
                     close(fd);
                 }
-
-                // Convert the FDs to OwnedFd, which will close them in all of our fork paths.
-                let pipe_pid_write = pipe_pid_write_fd.take().map(|fd| OwnedFd::from_raw_fd(fd));
-                let pipe_wait_read = pipe_wait_read_fd.take().map(|fd| OwnedFd::from_raw_fd(fd));
-
-                match libc::fork() {
-                    -1 => return Err(io::Error::last_os_error()),
-                    0 => (),
-                    grandchild_pid => {
-                        // Send back the PID.
-                        if let Some(pipe) = pipe_pid_write {
-                            let _ = write_all(pipe, &grandchild_pid.to_ne_bytes());
-                        }
-
-                        // Wait until the parent signals us to exit.
-                        if let Some(pipe) = pipe_wait_read {
-                            // We're going to exit afterwards. Close all other FDs to allow
-                            // Command::spawn() to return in the parent process.
-                            #[cfg(not(target_os = "openbsd"))]
-                            {
-                                let raw = pipe.as_raw_fd() as u32;
-                                let _ = close_range(0, raw - 1, 0);
-                                let _ = close_range(raw + 1, !0, 0);
-                            }
-                            #[cfg(target_os = "openbsd")]
-                            {
-                                let raw = pipe.as_raw_fd();
-                                for fd in 0..raw {
-                                    close(fd);
-                                }
-                                closefrom(raw + 1);
-                            }
-
-                            let _ = read_all(pipe, &mut [0]);
-                        }
-
-                        libc::_exit(0)
+                if let Some(pipe_wait_read) =
+                    pipe_wait_read_fd.take().map(|fd| OwnedFd::from_raw_fd(fd))
+                {
+                    // Close all other FDs to allow Command::spawn() to return in the parent
+                    // process.
+                    #[cfg(not(target_os = "openbsd"))]
+                    {
+                        let raw = pipe_wait_read.as_raw_fd() as u32;
+                        let _ = close_range(3, raw - 1, 0);
+                        let _ = close_range(raw + 1, !0, 0);
                     }
+                    #[cfg(target_os = "openbsd")]
+                    {
+                        let raw = pipe_wait_read.as_raw_fd();
+                        for fd in 3..raw {
+                            close(fd);
+                        }
+                        closefrom(raw + 1);
+                    }
+                    let _ = read_all(&pipe_wait_read, &mut [0]);
                 }
-
                 restore_nofile_rlimit();
-
                 Ok(())
             });
         }
 
-        let child = match process.spawn() {
+        let child = match async_process::Command::from(process).spawn() {
             Ok(child) => child,
             Err(err) => {
                 warn!("error spawning {command:?}: {err:?}");
@@ -340,49 +293,18 @@ mod systemd {
             }
         };
 
-        drop(pipe_pid_write);
         drop(pipe_wait_read);
 
-        // Wait for the grandchild PID.
-        if let Some(pipe) = pipe_pid_read {
-            let mut buf = [0; 4];
-            match read_all(pipe, &mut buf) {
-                Ok(()) => {
-                    let pid = i32::from_ne_bytes(buf);
-                    trace!("spawned PID: {pid}");
-
-                    // Start a systemd scope for the grandchild.
-                    if let Err(err) = start_systemd_scope(command, child.id(), pid as u32) {
-                        trace!("error starting systemd scope for spawned command: {err:?}");
-                    }
-                }
-                Err(err) => {
-                    warn!("error reading child PID: {err:?}");
-                }
-            }
+        // Start a systemd scope for the child.
+        if let Err(err) = start_systemd_scope(command, child.id()) {
+            trace!("error starting systemd scope for spawned command: {err:?}");
         }
 
-        // Signal the intermediate child to exit now that we're done trying to creating a systemd
-        // scope.
-        trace!("signaling child to exit");
+        // Signal the child to continue with the exec.
+        trace!("signaling child to exec");
         drop(pipe_wait_write);
 
         Some(child)
-    }
-
-    fn write_all(fd: impl AsFd, buf: &[u8]) -> rustix::io::Result<()> {
-        let mut written = 0;
-        loop {
-            let n = retry_on_intr(|| write(&fd, &buf[written..]))?;
-            if n == 0 {
-                return Err(rustix::io::Errno::CANCELED);
-            }
-
-            written += n;
-            if written == buf.len() {
-                return Ok(());
-            }
-        }
     }
 
     fn read_all(fd: impl AsFd, buf: &mut [u8]) -> rustix::io::Result<()> {
@@ -404,11 +326,7 @@ mod systemd {
     ///
     /// This separates the pid from the compositor scope, which for example prevents the OOM killer
     /// from bringing down the compositor together with a misbehaving client.
-    fn start_systemd_scope(
-        name: &OsStr,
-        intermediate_pid: u32,
-        child_pid: u32,
-    ) -> anyhow::Result<()> {
+    fn start_systemd_scope(name: &OsStr, child_pid: u32) -> anyhow::Result<()> {
         use std::fmt::Write as _;
         use std::os::unix::ffi::OsStrExt;
         use std::sync::OnceLock;
@@ -461,7 +379,7 @@ mod systemd {
             .receive_signal("JobRemoved")
             .context("error creating a signal iterator")?;
 
-        let pids: &[_] = &[intermediate_pid, child_pid];
+        let pids: &[_] = &[child_pid];
         let properties: &[_] = &[
             ("PIDs", Value::new(pids)),
             ("CollectMode", Value::new("inactive-or-failed")),
@@ -479,7 +397,7 @@ mod systemd {
                 body.deserialize().context("error parsing signal")?;
 
             if body.1 == job {
-                // Our transient unit had started, we're good to exit the intermediate child.
+                // Our transient unit had started, we're good to proceed to exec.
                 break;
             }
         }
