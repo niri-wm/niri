@@ -47,6 +47,9 @@ pub struct MappedLayer {
     /// Open animation state.
     open_animation: Option<OpeningAnimation>,
 
+    /// Whether the open animation has been started at least once.
+    open_animation_started: bool,
+
     last_geometry: Option<Rectangle<i32, Logical>>,
 
     /// Closing layer animation.
@@ -97,6 +100,7 @@ impl MappedLayer {
             shadow: Shadow::new(shadow_config),
             clock,
             open_animation: None,
+            open_animation_started: false,
             last_geometry: None,
             closing_layer: None,
             cached_close_elements: None,
@@ -150,6 +154,9 @@ impl MappedLayer {
     }
 
     pub fn start_open_animation(&mut self, config: &niri_config::Animations) {
+        if self.open_animation_started {
+            return;
+        }
         self.open_animation = Some(OpeningAnimation::new(AnimationTrait::new(
             self.clock.clone(),
             0.,
@@ -157,6 +164,7 @@ impl MappedLayer {
             0.,
             config.layer_open.anim,
         )));
+        self.open_animation_started = true;
     }
 
     pub fn start_close_animation(&mut self, _config: &niri_config::Animations) {

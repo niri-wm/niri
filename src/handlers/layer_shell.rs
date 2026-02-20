@@ -182,11 +182,8 @@ impl State {
                 // Layer is already mapped - cache elements for close animation
                 // This ensures we have valid elements even if destroy happens without unmap
                 if let Some(mapped) = self.niri.mapped_layer_surfaces.get_mut(layer) {
-                    // Start open animation on first commit with content
-                    if !mapped.are_animations_ongoing() || !mapped.rules().baba_is_float {
-                        let config = self.niri.config.borrow();
-                        mapped.start_open_animation(&config.animations);
-                    }
+                    // Start open animation on first commit with content (no-op if already started)
+                    mapped.start_open_animation(&config.animations);
 
                     let geo = map.layer_geometry(layer);
                     let scale = Scale::from(mapped.scale());
