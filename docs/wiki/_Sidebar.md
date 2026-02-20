@@ -23,6 +23,7 @@
 ## Configuration
 * [Introduction](./Configuration:-Introduction.md)
 * [Input](./Configuration:-Input.md)
+* [Azerty](./Configuration:-Azerty.md)
 * [Outputs](./Configuration:-Outputs.md)
 * [Key Bindings](./Configuration:-Key-Bindings.md)
 * [Switch Events](./Configuration:-Switch-Events.md)

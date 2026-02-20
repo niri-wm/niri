@@ -388,46 +388,5 @@ input {
 ### AZERTY
 When using Niri with an AZERTY keyboard layout, the default workspace keybinds (or any keybinds using numbers) will not work as intended.
 
-#### Summary
-To fix the above issue, you can replace the following numbers with the key name next to it.
+Please refer to [the Azerty configuration page](./Configuration:-Azerty.md)
 
-1. ampersand
-2. eacute
-3. quotedbl
-4. apostrophe
-5. parenleft
-6. section
-7. egrave
-8. exclam
-9. ccedilla
-
-#### Default bindings translated to Azerty
-```kdl
-binds {
-    // ...
-
-    Mod+ampersand { focus-workspace 1; }
-    Mod+eacute { focus-workspace 2; }
-    Mod+quotedbl { focus-workspace 3; }
-    Mod+apostrophe { focus-workspace 4; }
-    Mod+parenleft { focus-workspace 5; }
-    Mod+section { focus-workspace 6; }
-    Mod+egrave { focus-workspace 7; }
-    Mod+exclam { focus-workspace 8; }
-    Mod+ccedilla { focus-workspace 9; }
-    Mod+Ctrl+ampersand { move-column-to-workspace 1; }
-    Mod+Ctrl+eacute { move-column-to-workspace 2; }
-    Mod+Ctrl+quotedbl { move-column-to-workspace 3; }
-    Mod+Ctrl+apostrophe { move-column-to-workspace 4; }
-    Mod+Ctrl+parenleft { move-column-to-workspace 5; }
-    Mod+Ctrl+section { move-column-to-workspace 6; }
-    Mod+Ctrl+egrave { move-column-to-workspace 7; }
-    Mod+Ctrl+exclam { move-column-to-workspace 8; }
-    Mod+Ctrl+ccedilla { move-column-to-workspace 9; }
-
-    // Alternatively, there are commands to move just a single window:
-    // Mod+Ctrl+ampersand { move-window-to-workspace 1; }
-
-    // ...
-}
-```
