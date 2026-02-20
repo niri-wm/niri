@@ -4013,13 +4013,11 @@ impl Niri {
         self.mapped_layer_surfaces.values_mut().for_each(|mapped| {
             mapped.advance_animations();
         });
-        self.mapped_layer_surfaces
-            .retain(|_, mapped| !mapped.should_remove());
 
         let mut i = 0;
         while i < self.closing_layers.len() {
             let (_, _, mapped) = &mut self.closing_layers[i];
-            mapped.advance_animations();
+            mapped.advance_and_cleanup_animations();
             if mapped.is_close_animation_done() {
                 self.closing_layers.remove(i);
             } else {
@@ -4249,10 +4247,10 @@ impl Niri {
             if let Some(geo) = mapped.closing_geometry() {
                 if !mapped.render_with_animation(
                     renderer,
-                    geo.loc.to_f64(),
+                    Point::from((0., 0.)),
                     Scale::from(mapped.scale()),
                     target,
-                    geo.size.to_f64(),
+                    output_size(output).to_f64(),
                     &mut |elem| push(elem.into()),
                 ) {
                     mapped.render_normal(renderer, geo.loc.to_f64(), target, &mut |elem| {
@@ -4365,17 +4363,17 @@ impl Niri {
         push: &mut dyn FnMut(LayerSurfaceRenderElement<R>),
     ) {
         for (mapped, geo) in self.layers_in_render_order(layer_map, layer, for_backdrop) {
-            if mapped.are_animations_ongoing() {
-                if mapped.render_with_animation(
+            if mapped.are_animations_ongoing()
+                && mapped.render_with_animation(
                     renderer,
                     geo.loc.to_f64(),
                     Scale::from(mapped.scale()),
                     target,
                     geo.size.to_f64(),
                     push,
-                ) {
-                    continue;
-                }
+                )
+            {
+                continue;
             }
             mapped.render_normal(renderer, geo.loc.to_f64(), target, push);
         }

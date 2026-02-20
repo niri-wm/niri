@@ -1,17 +1,21 @@
+use smithay::backend::renderer::element::Kind;
 use smithay::delegate_layer_shell;
 use smithay::desktop::{layer_map_for_output, LayerSurface, PopupKind, WindowSurfaceType};
 use smithay::output::Output;
 use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
+use smithay::utils::{Point, Scale};
 use smithay::wayland::compositor::{get_parent, with_states};
 use smithay::wayland::shell::wlr_layer::{
     self, Layer, LayerSurface as WlrLayerSurface, LayerSurfaceData, WlrLayerShellHandler,
     WlrLayerShellState,
 };
 use smithay::wayland::shell::xdg::PopupSurface;
+use tracing::warn;
 
 use crate::layer::{MappedLayer, ResolvedLayerRules};
 use crate::niri::State;
+use crate::render_helpers::surface::push_elements_from_surface_tree;
 use crate::utils::{is_mapped, output_size, send_scale_transform};
 
 impl WlrLayerShellHandler for State {
@@ -50,6 +54,17 @@ impl WlrLayerShellHandler for State {
         let wl_surface = surface.wl_surface();
         self.niri.unmapped_layer_surfaces.remove(wl_surface);
 
+        // Check if the layer is already closing (animation started in unmap path)
+        // If so, skip - the animation is already in progress
+        let already_closing = self
+            .niri
+            .mapped_layer_surfaces
+            .values()
+            .any(|m| m.surface().layer_surface().wl_surface() == wl_surface && m.is_closing());
+        if already_closing {
+            return;
+        }
+
         let output = if let Some((output, layer)) = self.niri.layout.outputs().find_map(|o| {
             let map = layer_map_for_output(o);
             let layer = map
@@ -59,34 +74,44 @@ impl WlrLayerShellHandler for State {
             layer.map(|layer| (o.clone(), layer))
         }) {
             if let Some(mut mapped) = self.niri.mapped_layer_surfaces.remove(&layer) {
-                if self
-                    .backend
-                    .with_output_renderer(&output, |renderer| {
-                        mapped.capture_close_snapshot(renderer)
-                    })
-                    .is_none()
-                {
-                    self.backend.with_primary_renderer(|renderer| {
-                        mapped.capture_close_snapshot(renderer);
-                    });
-                }
-
-                let config = self.niri.config.borrow();
                 // Get geometry BEFORE removing from map (needed for close animation rendering)
-                let mut map = layer_map_for_output(&output);
-                if let Some(geo) = map
+                let map = layer_map_for_output(&output);
+                let geo = map
                     .layer_geometry(&layer)
-                    .or_else(|| mapped.last_geometry())
-                {
+                    .filter(|geo| geo.size.w > 0 && geo.size.h > 0)
+                    .or_else(|| mapped.last_geometry());
+                if let Some(geo) = geo {
                     mapped.set_closing_geometry(geo);
                 }
-                mapped.start_close_animation(&config.animations);
+
                 mapped.set_closing(true);
-                self.niri
-                    .closing_layers
-                    .push((output.clone(), layer.clone(), mapped));
-                // Remove from Smithay layer map to prevent stale reference
-                let _ = map.unmap_layer(&layer);
+                let config = self.niri.config.borrow();
+                mapped.start_close_animation(&config.animations);
+
+                // Try to use cached elements first (captured on last commit)
+                let mut added_to_closing = false;
+                if let Some(cached) = mapped.take_cached_close_elements() {
+                    if !cached.contents.is_empty() {
+                        self.backend.with_output_renderer(&output, |renderer| {
+                            mapped.start_closing_layer_animation(
+                                renderer,
+                                cached.contents,
+                                cached.blocked_out_contents,
+                                cached.geo_size,
+                                cached.pos,
+                            );
+                        });
+                        added_to_closing = true;
+                    }
+                }
+
+                if added_to_closing {
+                    self.niri
+                        .closing_layers
+                        .push((output.clone(), layer.clone(), mapped));
+                } else {
+                    mapped.clear_close_animation();
+                }
             }
             Some(output)
         } else {
@@ -184,6 +209,54 @@ impl State {
                 if prev.is_some() {
                     error!("MappedLayer was present for an unmapped surface");
                 }
+            } else {
+                // Layer is already mapped - cache elements for close animation
+                // This ensures we have valid elements even if destroy happens without unmap
+                if let Some(mapped) = self.niri.mapped_layer_surfaces.get_mut(layer) {
+                    let geo = map.layer_geometry(layer);
+                    let scale = Scale::from(mapped.scale());
+                    let alpha = mapped.rules().opacity.unwrap_or(1.).clamp(0., 1.);
+                    let location = geo.map(|g| g.loc).unwrap_or_default().to_f64();
+                    let geo_size = geo.map(|g| g.size.to_f64()).unwrap_or_default();
+
+                    let elements = self.backend.with_output_renderer(&output, |renderer| {
+                        let mut contents = Vec::new();
+                        let surface = mapped.surface().wl_surface();
+                        push_elements_from_surface_tree(
+                            renderer,
+                            surface,
+                            Point::from((0., 0.)).to_physical_precise_round(scale),
+                            scale,
+                            alpha,
+                            Kind::ScanoutCandidate,
+                            &mut |elem| contents.push(elem),
+                        );
+
+                        let mut blocked_out_contents = Vec::new();
+                        push_elements_from_surface_tree(
+                            renderer,
+                            surface,
+                            Point::from((0., 0.)).to_physical_precise_round(scale),
+                            scale,
+                            alpha,
+                            Kind::ScanoutCandidate,
+                            &mut |elem| blocked_out_contents.push(elem),
+                        );
+
+                        (contents, blocked_out_contents)
+                    });
+
+                    if let Some((contents, blocked_out_contents)) = elements {
+                        if !contents.is_empty() {
+                            mapped.cache_close_elements(
+                                contents,
+                                blocked_out_contents,
+                                geo_size,
+                                location,
+                            );
+                        }
+                    }
+                }
             }
 
             // Give focus to newly mapped on-demand surfaces. Some launchers like lxqt-runner rely
@@ -207,31 +280,76 @@ impl State {
                 self.niri.layer_shell_on_demand_focus = Some(layer.clone());
             }
         } else {
-            // The surface is unmapped.
+            // The surface is unmapped. Capture elements NOW (while surface still has content)
+            // and add to closing_layers for animation rendering.
             if let Some(mut mapped) = self.niri.mapped_layer_surfaces.remove(layer) {
-                let geo = map.layer_geometry(layer).or_else(|| mapped.last_geometry());
-                if self
-                    .backend
-                    .with_output_renderer(&output, |renderer| {
-                        mapped.capture_close_snapshot(renderer)
-                    })
-                    .is_none()
-                {
-                    self.backend.with_primary_renderer(|renderer| {
-                        mapped.capture_close_snapshot(renderer);
-                    });
-                }
+                let geo = map
+                    .layer_geometry(layer)
+                    .filter(|geo| geo.size.w > 0 && geo.size.h > 0)
+                    .or_else(|| mapped.last_geometry());
 
                 let config = self.niri.config.borrow();
-                mapped.start_close_animation(&config.animations);
                 mapped.set_closing(true);
+                mapped.start_close_animation(&config.animations);
                 if let Some(geo) = geo {
                     mapped.set_closing_geometry(geo);
                 }
-                self.niri
-                    .closing_layers
-                    .push((output.clone(), layer.clone(), mapped));
-                self.niri.unmapped_layer_surfaces.insert(surface.clone());
+
+                // Capture render elements NOW (at unmap time, surface still has content)
+                let scale = Scale::from(mapped.scale());
+                let alpha = mapped.rules().opacity.unwrap_or(1.).clamp(0., 1.);
+                let elements_result = self.backend.with_output_renderer(&output, |renderer| {
+                    let mut contents = Vec::new();
+                    let surface = mapped.surface().wl_surface();
+                    push_elements_from_surface_tree(
+                        renderer,
+                        surface,
+                        Point::from((0., 0.)).to_physical_precise_round(scale),
+                        scale,
+                        alpha,
+                        Kind::ScanoutCandidate,
+                        &mut |elem| contents.push(elem),
+                    );
+
+                    let mut blocked_out_contents = Vec::new();
+                    push_elements_from_surface_tree(
+                        renderer,
+                        surface,
+                        Point::from((0., 0.)).to_physical_precise_round(scale),
+                        scale,
+                        alpha,
+                        Kind::ScanoutCandidate,
+                        &mut |elem| blocked_out_contents.push(elem),
+                    );
+
+                    (contents, blocked_out_contents)
+                });
+
+                let mut added_to_closing = false;
+                if let Some((contents, blocked_out_contents)) = elements_result {
+                    if !contents.is_empty() {
+                        let geo_size = geo.map(|g| g.size.to_f64()).unwrap_or_default();
+                        let pos = geo.map(|g| g.loc.to_f64()).unwrap_or_default();
+                        self.backend.with_output_renderer(&output, |renderer| {
+                            mapped.start_closing_layer_animation(
+                                renderer,
+                                contents,
+                                blocked_out_contents,
+                                geo_size,
+                                pos,
+                            );
+                        });
+                        added_to_closing = true;
+                    }
+                }
+
+                if added_to_closing {
+                    self.niri
+                        .closing_layers
+                        .push((output.clone(), layer.clone(), mapped));
+                } else {
+                    mapped.clear_close_animation();
+                }
             } else {
                 // An unmapped surface remains unmapped. If we haven't sent an initial configure
                 // yet, we should do so.

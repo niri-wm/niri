@@ -4,23 +4,22 @@ use std::time::Duration;
 use niri_config::utils::MergeWith as _;
 use niri_config::{Config, LayerRule};
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
-use smithay::backend::renderer::element::utils::{
-    Relocate, RelocateRenderElement, RescaleRenderElement,
-};
 use smithay::backend::renderer::element::Kind;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::desktop::{LayerSurface, PopupManager};
 use smithay::utils::{Logical, Point, Rectangle, Scale, Size};
 use smithay::wayland::shell::wlr_layer::{ExclusiveZone, Layer};
 
-use super::layer_animation::{LayerAnimation, LayerAnimationRenderElement};
+use super::closing_layer::ClosingLayer;
+use super::closing_layer::ClosingLayerRenderElement;
+use super::opening_layer::{OpeningAnimation, OpeningLayerRenderElement};
 use super::ResolvedLayerRules;
 use crate::animation::{Animation as AnimationTrait, Clock};
 use crate::layout::shadow::Shadow;
 use crate::niri_render_elements;
-use crate::render_helpers::offscreen::{OffscreenBuffer, OffscreenRenderElement};
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::shadow::ShadowRenderElement;
+use crate::render_helpers::snapshot::RenderSnapshot;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
 use crate::render_helpers::surface::push_elements_from_surface_tree;
 use crate::render_helpers::RenderTarget;
@@ -50,10 +49,7 @@ pub struct MappedLayer {
     clock: Clock,
 
     /// Open animation state.
-    open_animation: Option<LayerAnimation>,
-
-    /// Close animation state.
-    close_animation: Option<LayerAnimation>,
+    open_animation: Option<OpeningAnimation>,
 
     /// Pending open animation, delayed briefly to wait for initial content.
     pending_open_animation: Option<(Duration, niri_config::Animation)>,
@@ -65,15 +61,22 @@ pub struct MappedLayer {
 
     closing_geometry: Option<Rectangle<i32, Logical>>,
 
-    /// Last live layer contents, updated while mapped.
-    close_snapshot_elements: RefCell<Vec<WaylandSurfaceRenderElement<GlesRenderer>>>,
+    /// Closing layer animation.
+    closing_layer: RefCell<Option<ClosingLayer>>,
 
-    /// Frozen close snapshot rendered to an offscreen texture.
-    close_snapshot: RefCell<Option<OffscreenRenderElement>>,
+    /// Cached render elements for close animation (captured on last commit before close).
+    cached_close_elements: RefCell<Option<CachedCloseElements>>,
 
-    close_snapshot_buffer: OffscreenBuffer,
-
+    /// Whether the layer is in the process of closing.
     is_closing: bool,
+}
+
+#[derive(Debug)]
+pub struct CachedCloseElements {
+    pub contents: Vec<WaylandSurfaceRenderElement<GlesRenderer>>,
+    pub blocked_out_contents: Vec<WaylandSurfaceRenderElement<GlesRenderer>>,
+    pub geo_size: Size<f64, Logical>,
+    pub pos: Point<f64, Logical>,
 }
 
 niri_render_elements! {
@@ -81,7 +84,8 @@ niri_render_elements! {
         Wayland = WaylandSurfaceRenderElement<R>,
         SolidColor = SolidColorRenderElement,
         Shadow = ShadowRenderElement,
-        Animation = LayerAnimationRenderElement,
+        OpeningAnimation = OpeningLayerRenderElement,
+        ClosingAnimation = ClosingLayerRenderElement,
     }
 }
 
@@ -108,14 +112,12 @@ impl MappedLayer {
             shadow: Shadow::new(shadow_config),
             clock,
             open_animation: None,
-            close_animation: None,
             pending_open_animation: None,
             pending_close_animation: None,
             last_geometry: None,
             closing_geometry: None,
-            close_snapshot_elements: RefCell::new(Vec::new()),
-            close_snapshot: RefCell::new(None),
-            close_snapshot_buffer: OffscreenBuffer::default(),
+            closing_layer: RefCell::new(None),
+            cached_close_elements: RefCell::new(None),
             is_closing: false,
         }
     }
@@ -153,7 +155,6 @@ impl MappedLayer {
 
     pub fn are_animations_ongoing(&self) -> bool {
         self.open_animation.is_some()
-            || self.close_animation.is_some()
             || self.pending_open_animation.is_some()
             || self.pending_close_animation.is_some()
     }
@@ -163,77 +164,71 @@ impl MappedLayer {
     }
 
     pub fn is_close_animation_ongoing(&self) -> bool {
-        self.close_animation.is_some() || self.pending_close_animation.is_some()
+        if let Some(closing_layer) = self.closing_layer.borrow().as_ref() {
+            return closing_layer.are_animations_ongoing();
+        }
+        false
     }
 
     pub fn start_open_animation(&mut self, config: &niri_config::Animations) {
         self.pending_close_animation = None;
-        self.close_animation = None;
-        self.pending_open_animation = Some((self.clock.now(), config.layer_open.anim.clone()));
+        self.pending_open_animation = Some((self.clock.now(), config.layer_open.anim));
     }
 
     pub fn start_close_animation(&mut self, config: &niri_config::Animations) {
         self.pending_open_animation = None;
         self.open_animation = None;
-        self.close_animation = None;
-        self.pending_close_animation = Some((self.clock.now(), config.layer_close.anim.clone()));
-    }
-
-    pub fn capture_close_snapshot(&self, renderer: &mut GlesRenderer) {
-        if self.close_snapshot.borrow().is_some() {
-            return;
-        }
-
-        let _span = tracy_client::span!("MappedLayer::capture_close_snapshot");
-
-        let scale = Scale::from(self.scale);
-        {
-            let elements = self.close_snapshot_elements.borrow();
-            if !elements.is_empty() {
-                self.freeze_close_snapshot(renderer, scale, elements.as_slice());
-                return;
-            }
-        }
-
-        let alpha = self.rules.opacity.unwrap_or(1.).clamp(0., 1.) as f32;
-        let buf_pos = Point::from((0., 0.));
-
-        let mut elements = Vec::new();
-        let surface = self.surface.wl_surface();
-        push_elements_from_surface_tree(
-            renderer,
-            surface,
-            buf_pos.to_physical_precise_round(scale),
-            scale,
-            alpha,
-            Kind::ScanoutCandidate,
-            &mut |elem| elements.push(elem),
-        );
-
-        if !elements.is_empty() {
-            self.freeze_close_snapshot(renderer, scale, elements.as_slice());
-            *self.close_snapshot_elements.borrow_mut() = elements;
-        }
-    }
-
-    fn freeze_close_snapshot(
-        &self,
-        renderer: &mut GlesRenderer,
-        scale: Scale<f64>,
-        elements: &[WaylandSurfaceRenderElement<GlesRenderer>],
-    ) {
-        match self.close_snapshot_buffer.render(renderer, scale, elements) {
-            Ok((snapshot, _, _)) => {
-                *self.close_snapshot.borrow_mut() = Some(snapshot);
-            }
-            Err(err) => {
-                warn!("error capturing layer close snapshot: {err:?}");
-            }
-        }
+        self.pending_close_animation = Some((self.clock.now(), config.layer_close.anim));
     }
 
     pub fn set_closing(&mut self, closing: bool) {
         self.is_closing = closing;
+    }
+
+    pub fn is_closing(&self) -> bool {
+        self.is_closing
+    }
+
+    /// Start the closing layer animation with snapshots captured from the renderer.
+    pub fn start_closing_layer_animation(
+        &mut self,
+        renderer: &mut GlesRenderer,
+        contents: Vec<WaylandSurfaceRenderElement<GlesRenderer>>,
+        blocked_out_contents: Vec<WaylandSurfaceRenderElement<GlesRenderer>>,
+        geo_size: Size<f64, Logical>,
+        pos: Point<f64, Logical>,
+    ) {
+        let anim = AnimationTrait::new(
+            self.clock.clone(),
+            0.,
+            1.,
+            0.,
+            self.pending_close_animation
+                .as_ref()
+                .map(|(_, a)| *a)
+                .unwrap_or(niri_config::Animation::new_off()),
+        );
+
+        let snapshot = RenderSnapshot {
+            contents,
+            blocked_out_contents,
+            block_out_from: self.rules.block_out_from,
+            size: geo_size,
+            texture: Default::default(),
+            blocked_out_texture: Default::default(),
+        };
+
+        let scale = Scale::from(self.scale);
+
+        match ClosingLayer::new(renderer, snapshot, scale, geo_size, pos, false, anim) {
+            Ok(closing) => {
+                *self.closing_layer.borrow_mut() = Some(closing);
+                self.pending_close_animation = None;
+            }
+            Err(err) => {
+                warn!("error creating closing layer animation: {:?}", err);
+            }
+        }
     }
 
     pub fn set_closing_geometry(&mut self, geo: Rectangle<i32, Logical>) {
@@ -255,11 +250,29 @@ impl MappedLayer {
 
     pub fn clear_close_animation(&mut self) {
         self.pending_close_animation = None;
-        self.close_animation = None;
         self.is_closing = false;
         self.closing_geometry = None;
-        self.close_snapshot_elements.borrow_mut().clear();
-        *self.close_snapshot.borrow_mut() = None;
+        *self.closing_layer.borrow_mut() = None;
+        *self.cached_close_elements.borrow_mut() = None;
+    }
+
+    pub fn cache_close_elements(
+        &self,
+        contents: Vec<WaylandSurfaceRenderElement<GlesRenderer>>,
+        blocked_out_contents: Vec<WaylandSurfaceRenderElement<GlesRenderer>>,
+        geo_size: Size<f64, Logical>,
+        pos: Point<f64, Logical>,
+    ) {
+        *self.cached_close_elements.borrow_mut() = Some(CachedCloseElements {
+            contents,
+            blocked_out_contents,
+            geo_size,
+            pos,
+        });
+    }
+
+    pub fn take_cached_close_elements(&self) -> Option<CachedCloseElements> {
+        self.cached_close_elements.borrow_mut().take()
     }
 
     pub fn should_remove(&self) -> bool {
@@ -267,19 +280,22 @@ impl MappedLayer {
     }
 
     pub fn is_close_animation_done(&self) -> bool {
-        !self.is_close_animation_ongoing()
+        if let Some(closing_layer) = self.closing_layer.borrow().as_ref() {
+            return !closing_layer.are_animations_ongoing();
+        }
+        false
     }
 
     pub fn advance_animations(&mut self) {
         if self.open_animation.is_none() {
             if let Some((started_at, anim)) = self.pending_open_animation.as_ref() {
                 if self.clock.now() >= *started_at + Duration::from_millis(16) {
-                    self.open_animation = Some(LayerAnimation::new_open(AnimationTrait::new(
+                    self.open_animation = Some(OpeningAnimation::new(AnimationTrait::new(
                         self.clock.clone(),
                         0.,
                         1.,
                         0.,
-                        anim.clone(),
+                        *anim,
                     )));
                     self.pending_open_animation = None;
                 }
@@ -289,27 +305,6 @@ impl MappedLayer {
         if let Some(open) = &mut self.open_animation {
             if open.is_done() {
                 self.open_animation = None;
-            }
-        }
-
-        if self.close_animation.is_none() {
-            if let Some((started_at, anim)) = self.pending_close_animation.as_ref() {
-                if self.clock.now() >= *started_at + Duration::from_millis(16) {
-                    self.close_animation = Some(LayerAnimation::new_close(AnimationTrait::new(
-                        self.clock.clone(),
-                        0.,
-                        1.,
-                        0.,
-                        anim.clone(),
-                    )));
-                    self.pending_close_animation = None;
-                }
-            }
-        }
-
-        if let Some(close) = &mut self.close_animation {
-            if close.is_done() {
-                self.close_animation = None;
             }
         }
     }
@@ -388,10 +383,9 @@ impl MappedLayer {
             );
             push(elem.into());
         } else {
-            // Layer surfaces don't have extra geometry like windows.
             let buf_pos = location;
-
             let surface = self.surface.wl_surface();
+
             push_elements_from_surface_tree(
                 renderer,
                 surface,
@@ -401,23 +395,6 @@ impl MappedLayer {
                 Kind::ScanoutCandidate,
                 &mut |elem| push(elem.into()),
             );
-
-            let mut snapshot = Vec::new();
-            let gles_renderer = renderer.as_gles_renderer();
-            let snapshot_pos = Point::from((0., 0.));
-            push_elements_from_surface_tree(
-                gles_renderer,
-                surface,
-                snapshot_pos.to_physical_precise_round(scale),
-                scale,
-                alpha as f32,
-                Kind::ScanoutCandidate,
-                &mut |elem| snapshot.push(elem),
-            );
-            if !snapshot.is_empty() {
-                *self.close_snapshot_elements.borrow_mut() = snapshot;
-                *self.close_snapshot.borrow_mut() = None;
-            }
         }
 
         let location = location.to_physical_precise_round(scale).to_logical(scale);
@@ -473,7 +450,7 @@ impl MappedLayer {
         geo_size: Size<f64, Logical>,
         push: &mut dyn FnMut(LayerSurfaceRenderElement<R>),
     ) -> bool {
-        let alpha = self.rules.opacity.unwrap_or(1.).clamp(0., 1.) as f32;
+        let alpha = self.rules.opacity.unwrap_or(1.).clamp(0., 1.);
         let location = location + self.bob_offset();
 
         // Blocked out layers fall back to normal rendering
@@ -483,96 +460,90 @@ impl MappedLayer {
 
         let gles_renderer = renderer.as_gles_renderer();
 
+        // Handle closing state
         if self.is_closing {
-            if self.close_animation.is_none() && self.pending_close_animation.is_some() {
-                if self.close_snapshot.borrow().is_none() {
-                    self.capture_close_snapshot(gles_renderer);
-                }
+            // If we have an active close animation, render it
+            if let Some(closing_layer) = self.closing_layer.borrow().as_ref() {
+                let view_rect = Rectangle::new(location, geo_size);
+                let elem = closing_layer.render(gles_renderer, view_rect, scale, target);
+                push(elem.into());
+                return true;
+            }
 
-                let snapshot = self.close_snapshot.borrow();
-                if let Some(snapshot) = snapshot.as_ref() {
-                    let elem = snapshot.clone().with_alpha(alpha);
-                    let scaled =
-                        RescaleRenderElement::from_element(elem, Point::from((0i32, 0i32)), 1.0);
-                    let elem = RelocateRenderElement::from_element(
-                        scaled,
-                        location.to_physical_precise_round(scale),
-                        Relocate::Relative,
-                    );
-                    push(LayerAnimationRenderElement::Offscreen(elem).into());
+            return false;
+        }
+
+        // Handle open animation
+        if let Some(animation) = &self.open_animation {
+            // For open animation, we need live elements
+            let mut live_elements = Vec::new();
+            let buf_pos = Point::from((0., 0.));
+            let surface = self.surface.wl_surface();
+            push_elements_from_surface_tree(
+                gles_renderer,
+                surface,
+                buf_pos.to_physical_precise_round(scale),
+                scale,
+                alpha,
+                Kind::ScanoutCandidate,
+                &mut |e| live_elements.push(e),
+            );
+
+            match animation.render(
+                gles_renderer,
+                &live_elements,
+                geo_size,
+                location,
+                scale,
+                alpha,
+            ) {
+                Ok((elem, _data)) => {
+                    push(elem.into());
                     return true;
                 }
-
-                return false;
-            }
-
-            let Some(animation) = self.close_animation.as_ref() else {
-                return false;
-            };
-
-            if self.close_snapshot.borrow().is_none() {
-                self.capture_close_snapshot(gles_renderer);
-            }
-
-            let snapshot = self.close_snapshot.borrow();
-            if let Some(snapshot) = snapshot.as_ref() {
-                match animation.render(
-                    gles_renderer,
-                    std::slice::from_ref(snapshot),
-                    geo_size,
-                    location,
-                    scale,
-                    alpha,
-                ) {
-                    Ok((elem, _data)) => {
-                        push(elem.into());
-                        return true;
-                    }
-                    Err(err) => {
-                        warn!("error rendering layer close animation: {:?}", err);
-                        return false;
-                    }
+                Err(err) => {
+                    warn!("error rendering layer open animation: {:?}", err);
+                    return false;
                 }
-            } else {
-                return false;
             }
         }
 
-        let Some(animation) = self.open_animation.as_ref() else {
-            return false;
+        false
+    }
+
+    /// Advance animations and cleanup finished ones.
+    pub fn advance_and_cleanup_animations(&mut self) {
+        // Advance close animation
+        let should_clear = if let Some(closing_layer) = self.closing_layer.borrow_mut().as_mut() {
+            closing_layer.advance_animations();
+            !closing_layer.are_animations_ongoing()
+        } else {
+            false
         };
 
-        let mut live_elements: Vec<WaylandSurfaceRenderElement<GlesRenderer>> = Vec::new();
+        if should_clear {
+            *self.closing_layer.borrow_mut() = None;
+        }
 
-        let buf_pos = Point::from((0., 0.));
-        let surface = self.surface.wl_surface();
-        push_elements_from_surface_tree(
-            gles_renderer,
-            surface,
-            buf_pos.to_physical_precise_round(scale),
-            scale,
-            alpha,
-            Kind::ScanoutCandidate,
-            &mut |e| live_elements.push(e),
-        );
-
-        // Try to render the animation even if live_elements is empty;
-        // if it fails, we'll fall back to normal rendering.
-        match animation.render(
-            gles_renderer,
-            &live_elements,
-            geo_size,
-            location,
-            scale,
-            alpha,
-        ) {
-            Ok((elem, _data)) => {
-                push(elem.into());
-                true
+        // Advance open animation
+        if self.open_animation.is_none() {
+            if let Some((started_at, anim)) = self.pending_open_animation.as_ref() {
+                if self.clock.now() >= *started_at + Duration::from_millis(16) {
+                    self.open_animation = Some(OpeningAnimation::new(AnimationTrait::new(
+                        self.clock.clone(),
+                        0.,
+                        1.,
+                        0.,
+                        *anim,
+                    )));
+                    self.pending_open_animation = None;
+                }
             }
-            Err(err) => {
-                warn!("error rendering layer animation: {:?}", err);
-                false
+        }
+
+        if let Some(open) = &mut self.open_animation {
+            if open.is_done() {
+                self.open_animation = None;
             }
         }
     }
