@@ -54,17 +54,6 @@ impl WlrLayerShellHandler for State {
         let wl_surface = surface.wl_surface();
         self.niri.unmapped_layer_surfaces.remove(wl_surface);
 
-        // Check if the layer is already closing (animation started in unmap path)
-        // If so, skip - the animation is already in progress
-        let already_closing = self
-            .niri
-            .mapped_layer_surfaces
-            .values()
-            .any(|m| m.surface().layer_surface().wl_surface() == wl_surface && m.is_closing());
-        if already_closing {
-            return;
-        }
-
         let output = if let Some((output, layer)) = self.niri.layout.outputs().find_map(|o| {
             let map = layer_map_for_output(o);
             let layer = map
@@ -75,16 +64,6 @@ impl WlrLayerShellHandler for State {
         }) {
             if let Some(mut mapped) = self.niri.mapped_layer_surfaces.remove(&layer) {
                 // Get geometry BEFORE removing from map (needed for close animation rendering)
-                let map = layer_map_for_output(&output);
-                let geo = map
-                    .layer_geometry(&layer)
-                    .filter(|geo| geo.size.w > 0 && geo.size.h > 0)
-                    .or_else(|| mapped.last_geometry());
-                if let Some(geo) = geo {
-                    mapped.set_closing_geometry(geo);
-                }
-
-                mapped.set_closing(true);
                 let config = self.niri.config.borrow();
                 mapped.start_close_animation(&config.animations);
 
@@ -92,13 +71,14 @@ impl WlrLayerShellHandler for State {
                 let mut added_to_closing = false;
                 if let Some(cached) = mapped.take_cached_close_elements() {
                     if !cached.contents.is_empty() {
-                        self.backend.with_output_renderer(&output, |renderer| {
+                        self.backend.with_primary_renderer(|renderer| {
                             mapped.start_closing_layer_animation(
                                 renderer,
                                 cached.contents,
                                 cached.blocked_out_contents,
                                 cached.geo_size,
                                 cached.pos,
+                                config.animations.layer_close.anim,
                             );
                         });
                         added_to_closing = true;
@@ -108,7 +88,7 @@ impl WlrLayerShellHandler for State {
                 if added_to_closing {
                     self.niri
                         .closing_layers
-                        .push((output.clone(), layer.clone(), mapped));
+                        .insert(layer.clone(), (output.clone(), mapped));
                 } else {
                     mapped.clear_close_animation();
                 }
@@ -169,21 +149,12 @@ impl State {
             let was_unmapped = self.niri.unmapped_layer_surfaces.remove(surface);
             let config = self.niri.config.borrow();
 
-            if let Some(idx) = self
-                .niri
-                .closing_layers
-                .iter()
-                .position(|(_, s, _)| s == layer)
-            {
-                let (_, _, mut mapped) = self.niri.closing_layers.remove(idx);
+            if let Some((_, mut mapped)) = self.niri.closing_layers.remove(layer) {
                 mapped.clear_close_animation();
                 mapped.start_open_animation(&config.animations);
                 self.niri
                     .mapped_layer_surfaces
                     .insert(layer.clone(), mapped);
-                // NOTE: For persistent launchers (like Fuzzel), if open animation
-                // timing issues persist, we may need to add a frame delay before
-                // starting the open animation to ensure content is ready.
             } else if was_unmapped {
                 let rules = &config.layer_rules;
                 let rules = ResolvedLayerRules::compute(rules, layer, self.niri.is_at_startup);
@@ -191,7 +162,7 @@ impl State {
                 let output_size = output_size(&output);
                 let scale = output.current_scale().fractional_scale();
 
-                let mut mapped = MappedLayer::new(
+                let mapped = MappedLayer::new(
                     layer.clone(),
                     rules,
                     output_size,
@@ -199,8 +170,6 @@ impl State {
                     self.niri.clock.clone(),
                     &config,
                 );
-
-                mapped.start_open_animation(&config.animations);
 
                 let prev = self
                     .niri
@@ -213,13 +182,19 @@ impl State {
                 // Layer is already mapped - cache elements for close animation
                 // This ensures we have valid elements even if destroy happens without unmap
                 if let Some(mapped) = self.niri.mapped_layer_surfaces.get_mut(layer) {
+                    // Start open animation on first commit with content
+                    if !mapped.are_animations_ongoing() {
+                        let config = self.niri.config.borrow();
+                        mapped.start_open_animation(&config.animations);
+                    }
+
                     let geo = map.layer_geometry(layer);
                     let scale = Scale::from(mapped.scale());
                     let alpha = mapped.rules().opacity.unwrap_or(1.).clamp(0., 1.);
                     let location = geo.map(|g| g.loc).unwrap_or_default().to_f64();
                     let geo_size = geo.map(|g| g.size.to_f64()).unwrap_or_default();
 
-                    let elements = self.backend.with_output_renderer(&output, |renderer| {
+                    let elements = self.backend.with_primary_renderer(|renderer| {
                         let mut contents = Vec::new();
                         let surface = mapped.surface().wl_surface();
                         push_elements_from_surface_tree(
@@ -280,7 +255,7 @@ impl State {
                 self.niri.layer_shell_on_demand_focus = Some(layer.clone());
             }
         } else {
-            // The surface is unmapped. Capture elements NOW (while surface still has content)
+            // The surface is unmapped. Capture elements now (while surface still has content)
             // and add to closing_layers for animation rendering.
             if let Some(mut mapped) = self.niri.mapped_layer_surfaces.remove(layer) {
                 let geo = map
@@ -289,16 +264,12 @@ impl State {
                     .or_else(|| mapped.last_geometry());
 
                 let config = self.niri.config.borrow();
-                mapped.set_closing(true);
                 mapped.start_close_animation(&config.animations);
-                if let Some(geo) = geo {
-                    mapped.set_closing_geometry(geo);
-                }
 
-                // Capture render elements NOW (at unmap time, surface still has content)
+                // Capture render elements here at unmap time where surface still has content
                 let scale = Scale::from(mapped.scale());
                 let alpha = mapped.rules().opacity.unwrap_or(1.).clamp(0., 1.);
-                let elements_result = self.backend.with_output_renderer(&output, |renderer| {
+                let elements_result = self.backend.with_primary_renderer(|renderer| {
                     let mut contents = Vec::new();
                     let surface = mapped.surface().wl_surface();
                     push_elements_from_surface_tree(
@@ -330,13 +301,14 @@ impl State {
                     if !contents.is_empty() {
                         let geo_size = geo.map(|g| g.size.to_f64()).unwrap_or_default();
                         let pos = geo.map(|g| g.loc.to_f64()).unwrap_or_default();
-                        self.backend.with_output_renderer(&output, |renderer| {
+                        self.backend.with_primary_renderer(|renderer| {
                             mapped.start_closing_layer_animation(
                                 renderer,
                                 contents,
                                 blocked_out_contents,
                                 geo_size,
                                 pos,
+                                config.animations.layer_close.anim,
                             );
                         });
                         added_to_closing = true;
@@ -346,7 +318,7 @@ impl State {
                 if added_to_closing {
                     self.niri
                         .closing_layers
-                        .push((output.clone(), layer.clone(), mapped));
+                        .insert(layer.clone(), (output.clone(), mapped));
                 } else {
                     mapped.clear_close_animation();
                 }

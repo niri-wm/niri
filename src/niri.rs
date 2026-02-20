@@ -244,7 +244,7 @@ pub struct Niri {
     /// even after being unmapped from Smithay's layer_map.
     ///
     /// The output is stored to ensure rendering happens with the same renderer context.
-    pub closing_layers: Vec<(Output, LayerSurface, MappedLayer)>,
+    pub closing_layers: HashMap<LayerSurface, (Output, MappedLayer)>,
 
     // Cached root surface for every surface, so that we can access it in destroyed() where the
     // normal get_parent() is cleared out.
@@ -2473,7 +2473,7 @@ impl Niri {
             unmapped_windows: HashMap::new(),
             unmapped_layer_surfaces: HashSet::new(),
             mapped_layer_surfaces: HashMap::new(),
-            closing_layers: Vec::new(),
+            closing_layers: HashMap::new(),
             root_surface: HashMap::new(),
             dmabuf_pre_commit_hook: HashMap::new(),
             blocker_cleared_tx,
@@ -4013,17 +4013,8 @@ impl Niri {
         self.mapped_layer_surfaces.values_mut().for_each(|mapped| {
             mapped.advance_animations();
         });
-
-        let mut i = 0;
-        while i < self.closing_layers.len() {
-            let (_, _, mapped) = &mut self.closing_layers[i];
-            mapped.advance_and_cleanup_animations();
-            if mapped.is_close_animation_done() {
-                self.closing_layers.remove(i);
-            } else {
-                i += 1;
-            }
-        }
+        self.closing_layers
+            .retain(|_, (_, mapped)| mapped.advance_animations());
 
         for state in self.output_state.values_mut() {
             if let Some(transition) = &mut state.screen_transition {
@@ -4239,12 +4230,14 @@ impl Niri {
             }};
         }
 
-        for (layer_output, _, mapped) in &self.closing_layers {
+        for (_, layer_pair) in self.closing_layers.iter() {
+            let layer_output = &layer_pair.0;
+            let mapped = &layer_pair.1;
             if layer_output != output {
                 continue;
             }
 
-            if let Some(geo) = mapped.closing_geometry() {
+            if let Some(closing_layer) = &mapped.closing_layer {
                 if !mapped.render_with_animation(
                     renderer,
                     Point::from((0., 0.)),
@@ -4253,7 +4246,7 @@ impl Niri {
                     output_size(output).to_f64(),
                     &mut |elem| push(elem.into()),
                 ) {
-                    mapped.render_normal(renderer, geo.loc.to_f64(), target, &mut |elem| {
+                    mapped.render_normal(renderer, closing_layer.pos(), target, &mut |elem| {
                         push(elem.into())
                     });
                 }
@@ -4437,12 +4430,12 @@ impl Niri {
             // Also check closing layers (layers with close animations that are no longer in the
             // map).
             if !state.unfinished_animations_remain {
-                for (layer_output, _, mapped) in &self.closing_layers {
-                    if layer_output != output {
+                for (_, layer_pair) in self.closing_layers.iter_mut() {
+                    if !(&layer_pair.0 == output) {
                         continue;
                     }
 
-                    if mapped.is_close_animation_ongoing() {
+                    if layer_pair.1.is_close_animation_ongoing() {
                         state.unfinished_animations_remain = true;
                         break;
                     }

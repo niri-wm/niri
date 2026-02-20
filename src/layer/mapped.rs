@@ -1,6 +1,3 @@
-use std::cell::RefCell;
-use std::time::Duration;
-
 use niri_config::utils::MergeWith as _;
 use niri_config::{Config, LayerRule};
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
@@ -10,8 +7,7 @@ use smithay::desktop::{LayerSurface, PopupManager};
 use smithay::utils::{Logical, Point, Rectangle, Scale, Size};
 use smithay::wayland::shell::wlr_layer::{ExclusiveZone, Layer};
 
-use super::closing_layer::ClosingLayer;
-use super::closing_layer::ClosingLayerRenderElement;
+use super::closing_layer::{ClosingLayer, ClosingLayerRenderElement};
 use super::opening_layer::{OpeningAnimation, OpeningLayerRenderElement};
 use super::ResolvedLayerRules;
 use crate::animation::{Animation as AnimationTrait, Clock};
@@ -51,24 +47,13 @@ pub struct MappedLayer {
     /// Open animation state.
     open_animation: Option<OpeningAnimation>,
 
-    /// Pending open animation, delayed briefly to wait for initial content.
-    pending_open_animation: Option<(Duration, niri_config::Animation)>,
-
-    /// Pending close animation, delayed briefly to keep the first frame stable.
-    pending_close_animation: Option<(Duration, niri_config::Animation)>,
-
     last_geometry: Option<Rectangle<i32, Logical>>,
 
-    closing_geometry: Option<Rectangle<i32, Logical>>,
-
     /// Closing layer animation.
-    closing_layer: RefCell<Option<ClosingLayer>>,
+    pub closing_layer: Option<ClosingLayer>,
 
     /// Cached render elements for close animation (captured on last commit before close).
-    cached_close_elements: RefCell<Option<CachedCloseElements>>,
-
-    /// Whether the layer is in the process of closing.
-    is_closing: bool,
+    cached_close_elements: Option<CachedCloseElements>,
 }
 
 #[derive(Debug)]
@@ -112,13 +97,9 @@ impl MappedLayer {
             shadow: Shadow::new(shadow_config),
             clock,
             open_animation: None,
-            pending_open_animation: None,
-            pending_close_animation: None,
             last_geometry: None,
-            closing_geometry: None,
-            closing_layer: RefCell::new(None),
-            cached_close_elements: RefCell::new(None),
-            is_closing: false,
+            closing_layer: None,
+            cached_close_elements: None,
         }
     }
 
@@ -154,39 +135,32 @@ impl MappedLayer {
     }
 
     pub fn are_animations_ongoing(&self) -> bool {
-        self.open_animation.is_some()
-            || self.pending_open_animation.is_some()
-            || self.pending_close_animation.is_some()
+        self.open_animation.is_some() || self.closing_layer.is_some()
     }
 
     pub fn needs_redraw(&self) -> bool {
         self.are_animations_ongoing() || self.rules.baba_is_float
     }
 
-    pub fn is_close_animation_ongoing(&self) -> bool {
-        if let Some(closing_layer) = self.closing_layer.borrow().as_ref() {
+    pub fn is_close_animation_ongoing(&mut self) -> bool {
+        if let Some(closing_layer) = &self.closing_layer {
             return closing_layer.are_animations_ongoing();
         }
         false
     }
 
     pub fn start_open_animation(&mut self, config: &niri_config::Animations) {
-        self.pending_close_animation = None;
-        self.pending_open_animation = Some((self.clock.now(), config.layer_open.anim));
+        self.open_animation = Some(OpeningAnimation::new(AnimationTrait::new(
+            self.clock.clone(),
+            0.,
+            1.,
+            0.,
+            config.layer_open.anim,
+        )));
     }
 
-    pub fn start_close_animation(&mut self, config: &niri_config::Animations) {
-        self.pending_open_animation = None;
+    pub fn start_close_animation(&mut self, _config: &niri_config::Animations) {
         self.open_animation = None;
-        self.pending_close_animation = Some((self.clock.now(), config.layer_close.anim));
-    }
-
-    pub fn set_closing(&mut self, closing: bool) {
-        self.is_closing = closing;
-    }
-
-    pub fn is_closing(&self) -> bool {
-        self.is_closing
     }
 
     /// Start the closing layer animation with snapshots captured from the renderer.
@@ -197,17 +171,9 @@ impl MappedLayer {
         blocked_out_contents: Vec<WaylandSurfaceRenderElement<GlesRenderer>>,
         geo_size: Size<f64, Logical>,
         pos: Point<f64, Logical>,
+        anim: niri_config::Animation,
     ) {
-        let anim = AnimationTrait::new(
-            self.clock.clone(),
-            0.,
-            1.,
-            0.,
-            self.pending_close_animation
-                .as_ref()
-                .map(|(_, a)| *a)
-                .unwrap_or(niri_config::Animation::new_off()),
-        );
+        let anim = AnimationTrait::new(self.clock.clone(), 0., 1., 0., anim);
 
         let snapshot = RenderSnapshot {
             contents,
@@ -220,20 +186,14 @@ impl MappedLayer {
 
         let scale = Scale::from(self.scale);
 
-        match ClosingLayer::new(renderer, snapshot, scale, geo_size, pos, false, anim) {
+        match ClosingLayer::new(renderer, snapshot, scale, geo_size, pos, anim) {
             Ok(closing) => {
-                *self.closing_layer.borrow_mut() = Some(closing);
-                self.pending_close_animation = None;
+                self.closing_layer = Some(closing);
             }
             Err(err) => {
                 warn!("error creating closing layer animation: {:?}", err);
             }
         }
-    }
-
-    pub fn set_closing_geometry(&mut self, geo: Rectangle<i32, Logical>) {
-        self.last_geometry = Some(geo);
-        self.closing_geometry = Some(geo);
     }
 
     pub fn set_last_geometry(&mut self, geo: Rectangle<i32, Logical>) {
@@ -244,26 +204,19 @@ impl MappedLayer {
         self.last_geometry
     }
 
-    pub fn closing_geometry(&self) -> Option<Rectangle<i32, Logical>> {
-        self.closing_geometry
-    }
-
     pub fn clear_close_animation(&mut self) {
-        self.pending_close_animation = None;
-        self.is_closing = false;
-        self.closing_geometry = None;
-        *self.closing_layer.borrow_mut() = None;
-        *self.cached_close_elements.borrow_mut() = None;
+        self.closing_layer = None;
+        self.cached_close_elements = None;
     }
 
     pub fn cache_close_elements(
-        &self,
+        &mut self,
         contents: Vec<WaylandSurfaceRenderElement<GlesRenderer>>,
         blocked_out_contents: Vec<WaylandSurfaceRenderElement<GlesRenderer>>,
         geo_size: Size<f64, Logical>,
         pos: Point<f64, Logical>,
     ) {
-        *self.cached_close_elements.borrow_mut() = Some(CachedCloseElements {
+        self.cached_close_elements = Some(CachedCloseElements {
             contents,
             blocked_out_contents,
             geo_size,
@@ -271,42 +224,38 @@ impl MappedLayer {
         });
     }
 
-    pub fn take_cached_close_elements(&self) -> Option<CachedCloseElements> {
-        self.cached_close_elements.borrow_mut().take()
-    }
-
-    pub fn should_remove(&self) -> bool {
-        self.is_closing && !self.is_close_animation_ongoing()
+    pub fn take_cached_close_elements(&mut self) -> Option<CachedCloseElements> {
+        self.cached_close_elements.take()
     }
 
     pub fn is_close_animation_done(&self) -> bool {
-        if let Some(closing_layer) = self.closing_layer.borrow().as_ref() {
+        if let Some(closing_layer) = &self.closing_layer {
             return !closing_layer.are_animations_ongoing();
         }
         false
     }
 
-    pub fn advance_animations(&mut self) {
-        if self.open_animation.is_none() {
-            if let Some((started_at, anim)) = self.pending_open_animation.as_ref() {
-                if self.clock.now() >= *started_at + Duration::from_millis(16) {
-                    self.open_animation = Some(OpeningAnimation::new(AnimationTrait::new(
-                        self.clock.clone(),
-                        0.,
-                        1.,
-                        0.,
-                        *anim,
-                    )));
-                    self.pending_open_animation = None;
-                }
-            }
-        }
-
+    pub fn advance_animations(&mut self) -> bool {
+        // Advance open animation
         if let Some(open) = &mut self.open_animation {
             if open.is_done() {
                 self.open_animation = None;
             }
         }
+
+        // Advance close animation
+        let should_clear = if let Some(closing_layer) = &mut self.closing_layer {
+            closing_layer.advance_animations();
+            !closing_layer.are_animations_ongoing()
+        } else {
+            false
+        };
+
+        if should_clear {
+            self.closing_layer = None;
+        }
+
+        self.are_animations_ongoing()
     }
 
     pub fn surface(&self) -> &LayerSurface {
@@ -461,9 +410,9 @@ impl MappedLayer {
         let gles_renderer = renderer.as_gles_renderer();
 
         // Handle closing state
-        if self.is_closing {
+        if self.closing_layer.is_some() {
             // If we have an active close animation, render it
-            if let Some(closing_layer) = self.closing_layer.borrow().as_ref() {
+            if let Some(closing_layer) = &self.closing_layer {
                 let view_rect = Rectangle::new(location, geo_size);
                 let elem = closing_layer.render(gles_renderer, view_rect, scale, target);
                 push(elem.into());
@@ -509,42 +458,5 @@ impl MappedLayer {
         }
 
         false
-    }
-
-    /// Advance animations and cleanup finished ones.
-    pub fn advance_and_cleanup_animations(&mut self) {
-        // Advance close animation
-        let should_clear = if let Some(closing_layer) = self.closing_layer.borrow_mut().as_mut() {
-            closing_layer.advance_animations();
-            !closing_layer.are_animations_ongoing()
-        } else {
-            false
-        };
-
-        if should_clear {
-            *self.closing_layer.borrow_mut() = None;
-        }
-
-        // Advance open animation
-        if self.open_animation.is_none() {
-            if let Some((started_at, anim)) = self.pending_open_animation.as_ref() {
-                if self.clock.now() >= *started_at + Duration::from_millis(16) {
-                    self.open_animation = Some(OpeningAnimation::new(AnimationTrait::new(
-                        self.clock.clone(),
-                        0.,
-                        1.,
-                        0.,
-                        *anim,
-                    )));
-                    self.pending_open_animation = None;
-                }
-            }
-        }
-
-        if let Some(open) = &mut self.open_animation {
-            if open.is_done() {
-                self.open_animation = None;
-            }
-        }
     }
 }

@@ -182,14 +182,6 @@ impl Winit {
         Some(f(self.backend.renderer()))
     }
 
-    pub fn with_output_renderer<T>(
-        &mut self,
-        _output: &Output,
-        f: impl FnOnce(&mut GlesRenderer) -> T,
-    ) -> Option<T> {
-        self.with_primary_renderer(f)
-    }
-
     pub fn render(&mut self, niri: &mut Niri, output: &Output) -> RenderResult {
         let _span = tracy_client::span!("Winit::render");
 

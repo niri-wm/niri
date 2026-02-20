@@ -1818,30 +1818,6 @@ impl Tty {
         Some(f(renderer.as_gles_renderer()))
     }
 
-    pub fn with_output_renderer<T>(
-        &mut self,
-        output: &Output,
-        f: impl FnOnce(&mut GlesRenderer) -> T,
-    ) -> Option<T> {
-        let tty_state: &TtyOutputState = output.user_data().get().unwrap();
-
-        let (render_node, format) = {
-            let device = self.devices.get(&tty_state.node)?;
-            let surface = device.surfaces.get(&tty_state.crtc)?;
-            (
-                device.render_node.unwrap_or(self.primary_render_node),
-                surface.compositor.format(),
-            )
-        };
-
-        let mut renderer = self
-            .gpu_manager
-            .renderer(&self.primary_render_node, &render_node, format)
-            .ok()?;
-
-        Some(f(renderer.as_gles_renderer()))
-    }
-
     pub fn render(
         &mut self,
         niri: &mut Niri,

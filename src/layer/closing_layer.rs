@@ -8,8 +8,7 @@ use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::element::utils::{
     Relocate, RelocateRenderElement, RescaleRenderElement,
 };
-use smithay::backend::renderer::element::Kind;
-use smithay::backend::renderer::element::RenderElement;
+use smithay::backend::renderer::element::{Kind, RenderElement};
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture, Uniform};
 use smithay::backend::renderer::Texture;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Size, Transform};
@@ -47,7 +46,7 @@ pub struct ClosingLayer {
     blocked_out_buffer_offset: Point<f64, Logical>,
 
     /// The closing animation.
-    anim_state: AnimationState,
+    anim: Animation,
 
     /// Random seed for the shader.
     random_seed: f32,
@@ -60,29 +59,6 @@ niri_render_elements! {
     }
 }
 
-#[derive(Debug)]
-enum AnimationState {
-    Waiting {
-        /// The animation will start when the layer has been fully blocked out.
-        waiting_for_block_out: bool,
-        anim: Animation,
-    },
-    Animating(Animation),
-}
-
-impl AnimationState {
-    pub fn new(blocker: bool, anim: Animation) -> Self {
-        if blocker {
-            Self::Waiting {
-                waiting_for_block_out: true,
-                anim,
-            }
-        } else {
-            Self::Animating(anim)
-        }
-    }
-}
-
 impl ClosingLayer {
     pub fn new<E: RenderElement<GlesRenderer>>(
         renderer: &mut GlesRenderer,
@@ -90,7 +66,6 @@ impl ClosingLayer {
         scale: Scale<f64>,
         geo_size: Size<f64, Logical>,
         pos: Point<f64, Logical>,
-        blocker: bool,
         anim: Animation,
     ) -> anyhow::Result<Self> {
         let _span = tracy_client::span!("ClosingLayer::new");
@@ -132,31 +107,23 @@ impl ClosingLayer {
             pos,
             buffer_offset,
             blocked_out_buffer_offset,
-            anim_state: AnimationState::new(blocker, anim),
+            anim,
             random_seed: fastrand::f32(),
         })
     }
 
-    pub fn advance_animations(&mut self) {
-        match &mut self.anim_state {
-            AnimationState::Waiting {
-                waiting_for_block_out,
-                anim,
-            } => {
-                if *waiting_for_block_out == false {
-                    let anim = anim.restarted(0., 1., 0.);
-                    self.anim_state = AnimationState::Animating(anim);
-                }
-            }
-            AnimationState::Animating(_) => (),
-        }
-    }
+    pub fn advance_animations(&mut self) {}
 
     pub fn are_animations_ongoing(&self) -> bool {
-        match &self.anim_state {
-            AnimationState::Waiting { .. } => true,
-            AnimationState::Animating(anim) => !anim.is_done(),
-        }
+        !self.anim.is_done()
+    }
+
+    pub fn geo_size(&self) -> Size<f64, Logical> {
+        self.geo_size
+    }
+
+    pub fn pos(&self) -> Point<f64, Logical> {
+        self.pos
     }
 
     pub fn render(
@@ -172,35 +139,8 @@ impl ClosingLayer {
             (&self.buffer, self.buffer_offset)
         };
 
-        let anim = match &self.anim_state {
-            AnimationState::Waiting { .. } => {
-                let elem = TextureRenderElement::from_texture_buffer(
-                    buffer.clone(),
-                    Point::from((0., 0.)),
-                    1.,
-                    None,
-                    None,
-                    Kind::Unspecified,
-                );
-
-                let elem = PrimaryGpuTextureRenderElement(elem);
-                let elem = RescaleRenderElement::from_element(elem, Point::from((0, 0)), 1.);
-
-                let mut location = self.pos + offset;
-                location.x -= view_rect.loc.x;
-                let elem = RelocateRenderElement::from_element(
-                    elem,
-                    location.to_physical_precise_round(scale),
-                    Relocate::Relative,
-                );
-
-                return elem.into();
-            }
-            AnimationState::Animating(anim) => anim,
-        };
-
-        let progress = anim.value();
-        let clamped_progress = anim.clamped_value().clamp(0., 1.);
+        let progress = self.anim.value();
+        let clamped_progress = self.anim.clamped_value().clamp(0., 1.);
 
         if Shaders::get(renderer)
             .program(ProgramType::LayerClose)

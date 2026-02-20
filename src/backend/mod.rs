@@ -83,18 +83,6 @@ impl Backend {
         }
     }
 
-    pub fn with_output_renderer<T>(
-        &mut self,
-        output: &Output,
-        f: impl FnOnce(&mut GlesRenderer) -> T,
-    ) -> Option<T> {
-        match self {
-            Backend::Tty(tty) => tty.with_output_renderer(output, f),
-            Backend::Winit(winit) => winit.with_output_renderer(output, f),
-            Backend::Headless(headless) => headless.with_output_renderer(output, f),
-        }
-    }
-
     pub fn render(
         &mut self,
         niri: &mut Niri,
