@@ -3,7 +3,7 @@ use std::os::unix::process::CommandExt;
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::RwLock;
+use std::sync::{mpsc, RwLock};
 use std::{io, thread};
 
 use atomic::Atomic;
@@ -63,24 +63,32 @@ pub fn restore_nofile_rlimit() {
 }
 
 /// Spawns the command to run independently of the compositor.
-pub fn spawn<T: AsRef<OsStr> + Send + 'static>(command: Vec<T>, token: Option<XdgActivationToken>) {
+pub fn spawn(command: Vec<String>, token: Option<XdgActivationToken>) {
     let _span = tracy_client::span!();
 
     if command.is_empty() {
         return;
     }
 
-    // Spawning and waiting takes some milliseconds, so do it in a thread.
-    let res = thread::Builder::new()
-        .name("Command Spawner".to_owned())
-        .spawn(move || {
-            let (command, args) = command.split_first().unwrap();
-            spawn_sync(command, args, token);
+    type Message = (Vec<String>, Option<XdgActivationToken>);
+    static SPAWNING_CHANNEL: std::sync::LazyLock<mpsc::SyncSender<Message>> =
+        std::sync::LazyLock::new(|| {
+            let (sender, receiver) = mpsc::sync_channel::<Message>(16);
+            thread::Builder::new()
+                .name("Command Spawner".to_owned())
+                .stack_size(96 * 1024)
+                .spawn(move || {
+                    for (command, token) in receiver.into_iter() {
+                        let (command, args) = command.split_first().unwrap();
+                        spawn_sync(command, args, token);
+                    }
+                })
+                .unwrap();
+            sender
         });
-
-    if let Err(err) = res {
-        warn!("error spawning a thread to spawn the command: {err:?}");
-    }
+    if let Err(err) = SPAWNING_CHANNEL.send((command, token)) {
+        warn!("error sending command to the spawning thread: {err:?}");
+    };
 }
 
 /// Spawns the command through the shell.
