@@ -3,7 +3,9 @@ use niri_config::utils::MergeWith as _;
 use niri_config::{BlockOutFrom, CornerRadius, ShadowRule};
 use smithay::desktop::LayerSurface;
 
+pub mod closing_layer;
 pub mod mapped;
+pub mod opening_layer;
 pub use mapped::MappedLayer;
 
 /// Rules fully resolved for a layer-shell surface.

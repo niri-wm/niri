@@ -12,7 +12,6 @@ use smithay::backend::renderer::element::{Kind, RenderElement};
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture, Uniform};
 use smithay::backend::renderer::Texture;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Size, Transform};
-use smithay::wayland::compositor::{Blocker, BlockerState};
 
 use crate::animation::Animation;
 use crate::niri_render_elements;
@@ -22,20 +21,19 @@ use crate::render_helpers::shaders::{mat3_uniform, ProgramType, Shaders};
 use crate::render_helpers::snapshot::RenderSnapshot;
 use crate::render_helpers::texture::{TextureBuffer, TextureRenderElement};
 use crate::render_helpers::{render_to_encompassing_texture, RenderTarget};
-use crate::utils::transaction::TransactionBlocker;
 
 #[derive(Debug)]
-pub struct ClosingWindow {
-    /// Contents of the window.
+pub struct ClosingLayer {
+    /// Contents of the layer.
     buffer: TextureBuffer<GlesTexture>,
 
-    /// Blocked-out contents of the window.
+    /// Blocked-out contents of the layer.
     blocked_out_buffer: TextureBuffer<GlesTexture>,
 
-    /// Where the window should be blocked out from.
+    /// Where the layer should be blocked out from.
     block_out_from: Option<BlockOutFrom>,
 
-    /// Size of the window geometry.
+    /// Size of the layer geometry.
     geo_size: Size<f64, Logical>,
 
     /// Position in the workspace.
@@ -48,53 +46,29 @@ pub struct ClosingWindow {
     blocked_out_buffer_offset: Point<f64, Logical>,
 
     /// The closing animation.
-    anim_state: AnimationState,
+    anim: Animation,
 
     /// Random seed for the shader.
     random_seed: f32,
 }
 
 niri_render_elements! {
-    ClosingWindowRenderElement => {
+    ClosingLayerRenderElement => {
         Texture = RelocateRenderElement<RescaleRenderElement<PrimaryGpuTextureRenderElement>>,
         Shader = ShaderRenderElement,
     }
 }
 
-#[derive(Debug)]
-enum AnimationState {
-    Waiting {
-        /// Blocker for a transaction before starting the animation.
-        blocker: TransactionBlocker,
-        anim: Animation,
-    },
-    Animating(Animation),
-}
-
-impl AnimationState {
-    pub fn new(blocker: TransactionBlocker, anim: Animation) -> Self {
-        if blocker.state() == BlockerState::Pending {
-            Self::Waiting { blocker, anim }
-        } else {
-            // This actually doesn't normally happen because the window is removed only after the
-            // closing animation is created. Though, it does happen with disable-transactions debug
-            // flag.
-            Self::Animating(anim)
-        }
-    }
-}
-
-impl ClosingWindow {
+impl ClosingLayer {
     pub fn new<E: RenderElement<GlesRenderer>>(
         renderer: &mut GlesRenderer,
         snapshot: RenderSnapshot<E, E>,
         scale: Scale<f64>,
         geo_size: Size<f64, Logical>,
         pos: Point<f64, Logical>,
-        blocker: TransactionBlocker,
         anim: Animation,
     ) -> anyhow::Result<Self> {
-        let _span = tracy_client::span!("ClosingWindow::new");
+        let _span = tracy_client::span!("ClosingLayer::new");
 
         let mut render_to_texture = |elements: Vec<E>| -> anyhow::Result<_> {
             let (texture, _sync_point, geo) = render_to_encompassing_texture(
@@ -104,7 +78,7 @@ impl ClosingWindow {
                 Fourcc::Abgr8888,
                 &elements,
             )
-            .context("error rendering to texture")?;
+            .context("error rendering layer to texture")?;
 
             let buffer = TextureBuffer::from_texture(
                 renderer,
@@ -133,28 +107,23 @@ impl ClosingWindow {
             pos,
             buffer_offset,
             blocked_out_buffer_offset,
-            anim_state: AnimationState::new(blocker, anim),
+            anim,
             random_seed: fastrand::f32(),
         })
     }
 
-    pub fn advance_animations(&mut self) {
-        match &mut self.anim_state {
-            AnimationState::Waiting { blocker, anim } => {
-                if blocker.state() != BlockerState::Pending {
-                    let anim = anim.restarted(0., 1., 0.);
-                    self.anim_state = AnimationState::Animating(anim);
-                }
-            }
-            AnimationState::Animating(_anim) => (),
-        }
-    }
+    pub fn advance_animations(&mut self) {}
 
     pub fn are_animations_ongoing(&self) -> bool {
-        match &self.anim_state {
-            AnimationState::Waiting { .. } => true,
-            AnimationState::Animating(anim) => !anim.is_done(),
-        }
+        !self.anim.is_done()
+    }
+
+    pub fn geo_size(&self) -> Size<f64, Logical> {
+        self.geo_size
+    }
+
+    pub fn pos(&self) -> Point<f64, Logical> {
+        self.pos
     }
 
     pub fn render(
@@ -163,52 +132,23 @@ impl ClosingWindow {
         view_rect: Rectangle<f64, Logical>,
         scale: Scale<f64>,
         target: RenderTarget,
-    ) -> ClosingWindowRenderElement {
+    ) -> ClosingLayerRenderElement {
         let (buffer, offset) = if target.should_block_out(self.block_out_from) {
             (&self.blocked_out_buffer, self.blocked_out_buffer_offset)
         } else {
             (&self.buffer, self.buffer_offset)
         };
 
-        let anim = match &self.anim_state {
-            AnimationState::Waiting { .. } => {
-                let elem = TextureRenderElement::from_texture_buffer(
-                    buffer.clone(),
-                    Point::from((0., 0.)),
-                    1.,
-                    None,
-                    None,
-                    Kind::Unspecified,
-                );
-
-                let elem = PrimaryGpuTextureRenderElement(elem);
-                let elem = RescaleRenderElement::from_element(elem, Point::from((0, 0)), 1.);
-
-                let mut location = self.pos + offset;
-                location.x -= view_rect.loc.x;
-                let elem = RelocateRenderElement::from_element(
-                    elem,
-                    location.to_physical_precise_round(scale),
-                    Relocate::Relative,
-                );
-
-                return elem.into();
-            }
-            AnimationState::Animating(anim) => anim,
-        };
-
-        let progress = anim.value();
-        let clamped_progress = anim.clamped_value().clamp(0., 1.);
+        let progress = self.anim.value();
+        let clamped_progress = self.anim.clamped_value().clamp(0., 1.);
 
         if Shaders::get(renderer)
-            .program(ProgramType::WindowClose)
+            .program(ProgramType::LayerClose)
             .is_some()
         {
             let area_loc = Vec2::new(view_rect.loc.x as f32, view_rect.loc.y as f32);
             let area_size = Vec2::new(view_rect.size.w as f32, view_rect.size.h as f32);
 
-            // Round to physical pixels relative to the view position. This is similar to what
-            // happens when rendering normal windows.
             let relative = self.pos - view_rect.loc;
             let pos = view_rect.loc + relative.to_physical_precise_round(scale).to_logical(scale);
 
@@ -228,7 +168,7 @@ impl ClosingWindow {
                 Mat3::from_translation(-tex_loc / tex_size) * Mat3::from_scale(geo_size / tex_size);
 
             return ShaderRenderElement::new(
-                ProgramType::WindowClose,
+                ProgramType::LayerClose,
                 view_rect.size,
                 None,
                 scale.x as f32,

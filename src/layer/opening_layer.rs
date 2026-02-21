@@ -18,20 +18,20 @@ use crate::render_helpers::shader_element::ShaderRenderElement;
 use crate::render_helpers::shaders::{mat3_uniform, ProgramType, Shaders};
 
 #[derive(Debug)]
-pub struct OpenAnimation {
+pub struct OpeningAnimation {
     anim: Animation,
     random_seed: f32,
     buffer: OffscreenBuffer,
 }
 
 niri_render_elements! {
-    OpeningWindowRenderElement => {
+    OpeningLayerRenderElement => {
         Offscreen = RelocateRenderElement<RescaleRenderElement<OffscreenRenderElement>>,
         Shader = ShaderRenderElement,
     }
 }
 
-impl OpenAnimation {
+impl OpeningAnimation {
     pub fn new(anim: Animation) -> Self {
         Self {
             anim,
@@ -44,8 +44,6 @@ impl OpenAnimation {
         self.anim.is_done()
     }
 
-    // We can't depend on view_rect here, because the result of window opening can be snapshot and
-    // then rendered elsewhere.
     pub fn render(
         &self,
         renderer: &mut GlesRenderer,
@@ -54,28 +52,25 @@ impl OpenAnimation {
         location: Point<f64, Logical>,
         scale: Scale<f64>,
         alpha: f32,
-    ) -> anyhow::Result<(OpeningWindowRenderElement, OffscreenData)> {
+    ) -> anyhow::Result<(OpeningLayerRenderElement, OffscreenData)> {
         let progress = self.anim.value();
         let clamped_progress = self.anim.clamped_value().clamp(0., 1.);
 
         let (elem, _sync_point, mut data) = self
             .buffer
             .render(renderer, scale, elements)
-            .context("error rendering to offscreen buffer")?;
+            .context("error rendering layer to offscreen buffer")?;
 
         if Shaders::get(renderer)
-            .program(ProgramType::WindowOpen)
+            .program(ProgramType::LayerOpen)
             .is_some()
         {
-            // OffscreenBuffer renders with Transform::Normal and the scale that we passed, so we
-            // can assume that below.
             let offset = elem.offset();
             let texture = elem.texture();
             let texture_size = elem.logical_size();
 
             let mut area = Rectangle::new(location + offset, texture_size);
 
-            // Expand the area a bit to allow for more varied effects.
             let mut target_size = area.size.upscale(1.5);
             target_size.w = f64::max(area.size.w + 1000., target_size.w);
             target_size.h = f64::max(area.size.h + 1000., target_size.h);
@@ -88,27 +83,27 @@ impl OpenAnimation {
             let area_size = Vec2::new(area.size.w as f32, area.size.h as f32);
 
             let geo_loc = Vec2::new(location.x as f32, location.y as f32);
-            let geo_size = Vec2::new(geo_size.w as f32, geo_size.h as f32);
+            let geo_size_vec = Vec2::new(geo_size.w as f32, geo_size.h as f32);
 
-            let input_to_geo = Mat3::from_scale(area_size / geo_size)
+            let input_to_geo = Mat3::from_scale(area_size / geo_size_vec)
                 * Mat3::from_translation((area_loc - geo_loc) / area_size);
 
             let tex_scale = Vec2::new(scale.x as f32, scale.y as f32);
             let tex_loc = Vec2::new(offset.x as f32, offset.y as f32);
             let tex_size = Vec2::new(texture.width() as f32, texture.height() as f32) / tex_scale;
 
-            let geo_to_tex =
-                Mat3::from_translation(-tex_loc / tex_size) * Mat3::from_scale(geo_size / tex_size);
+            let geo_to_tex = Mat3::from_translation(-tex_loc / tex_size)
+                * Mat3::from_scale(geo_size_vec / tex_size);
 
             let elem = ShaderRenderElement::new(
-                ProgramType::WindowOpen,
+                ProgramType::LayerOpen,
                 area.size,
                 None,
                 scale.x as f32,
                 alpha,
                 Rc::new([
                     mat3_uniform("niri_input_to_geo", input_to_geo),
-                    Uniform::new("niri_geo_size", geo_size.to_array()),
+                    Uniform::new("niri_geo_size", geo_size_vec.to_array()),
                     mat3_uniform("niri_geo_to_tex", geo_to_tex),
                     Uniform::new("niri_progress", progress as f32),
                     Uniform::new("niri_clamped_progress", clamped_progress as f32),
@@ -119,7 +114,6 @@ impl OpenAnimation {
             )
             .with_location(area.loc);
 
-            // We're drawing the shader, not the offscreen itself.
             data.id = elem.id().clone();
 
             return Ok((elem.into(), data));
@@ -140,6 +134,6 @@ impl OpenAnimation {
             Relocate::Relative,
         );
 
-        Ok((elem.into(), data))
+        Ok((OpeningLayerRenderElement::Offscreen(elem), data))
     }
 }

@@ -821,10 +821,16 @@ impl Tty {
                 shaders::set_custom_resize_program(gles_renderer, Some(src));
             }
             if let Some(src) = config.animations.window_close.custom_shader.as_deref() {
-                shaders::set_custom_close_program(gles_renderer, Some(src));
+                shaders::set_custom_window_close_program(gles_renderer, Some(src));
             }
             if let Some(src) = config.animations.window_open.custom_shader.as_deref() {
-                shaders::set_custom_open_program(gles_renderer, Some(src));
+                shaders::set_custom_window_open_program(gles_renderer, Some(src));
+            }
+            if let Some(src) = config.animations.layer_close.custom_shader.as_deref() {
+                shaders::set_custom_layer_close_program(gles_renderer, Some(src));
+            }
+            if let Some(src) = config.animations.layer_open.custom_shader.as_deref() {
+                shaders::set_custom_layer_open_program(gles_renderer, Some(src));
             }
             drop(config);
 
@@ -1790,6 +1796,21 @@ impl Tty {
         &mut self,
         f: impl FnOnce(&mut GlesRenderer) -> T,
     ) -> Option<T> {
+        if let Some((render_node, format)) = self.devices.values().find_map(|device| {
+            let render_node = device.render_node.unwrap_or(self.primary_render_node);
+            device
+                .surfaces
+                .values()
+                .next()
+                .map(|surface| (render_node, surface.compositor.format()))
+        }) {
+            let mut renderer = self
+                .gpu_manager
+                .renderer(&self.primary_render_node, &render_node, format)
+                .ok()?;
+            return Some(f(renderer.as_gles_renderer()));
+        }
+
         let mut renderer = self
             .gpu_manager
             .single_renderer(&self.primary_render_node)
