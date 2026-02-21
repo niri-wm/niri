@@ -1,6 +1,6 @@
 use std::ptr;
 
-use anyhow::{ensure, Context};
+use anyhow::{ensure, Context as _};
 use niri_config::BlockOutFrom;
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::allocator::{Buffer, Fourcc};
@@ -17,11 +17,17 @@ use solid_color::{SolidColorBuffer, SolidColorRenderElement};
 
 use self::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use self::texture::{TextureBuffer, TextureRenderElement};
+use crate::render_helpers::renderer::AsGlesRenderer;
+use crate::render_helpers::xray::Xray;
 
+pub mod background_effect;
+pub mod blur;
 pub mod border;
 pub mod clipped_surface;
 pub mod damage;
 pub mod debug;
+pub mod effect_buffer;
+pub mod framebuffer_effect;
 pub mod gradient_fade_texture;
 pub mod memory;
 pub mod offscreen;
@@ -37,12 +43,44 @@ pub mod snapshot;
 pub mod solid_color;
 pub mod surface;
 pub mod texture;
+pub mod xray;
+
+/// A rendering context.
+///
+/// Bundles together things needed by most rendering code.
+pub struct RenderCtx<'a, R> {
+    pub renderer: &'a mut R,
+    pub target: RenderTarget,
+    pub xray: Option<&'a Xray>,
+}
+
+impl<'a, R> RenderCtx<'a, R> {
+    /// Reborrows this context with a smaller lifetime.
+    #[inline]
+    pub fn r<'b>(&'b mut self) -> RenderCtx<'b, R> {
+        RenderCtx {
+            renderer: self.renderer,
+            target: self.target,
+            xray: self.xray,
+        }
+    }
+}
+
+impl<'a, R: AsGlesRenderer> RenderCtx<'a, R> {
+    pub fn as_gles<'b>(&'b mut self) -> RenderCtx<'b, GlesRenderer> {
+        RenderCtx {
+            renderer: self.renderer.as_gles_renderer(),
+            target: self.target,
+            xray: self.xray,
+        }
+    }
+}
 
 /// What we're rendering for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RenderTarget {
     /// Rendering to display on screen.
-    Output,
+    Output = 0,
     /// Rendering for a screencast.
     Screencast,
     /// Rendering for any other screen capture.
@@ -71,6 +109,8 @@ pub trait ToRenderElement {
 }
 
 impl RenderTarget {
+    pub const COUNT: usize = 3;
+
     pub fn should_block_out(self, block_out_from: Option<BlockOutFrom>) -> bool {
         match block_out_from {
             None => false,
@@ -306,6 +346,11 @@ fn render_elements(
 
         if let Some(mut damage) = output_rect.intersection(dst) {
             damage.loc -= dst.loc;
+            if element.is_framebuffer_effect() {
+                element
+                    .capture_framebuffer(&mut frame, src, dst)
+                    .context("error in capture_framebuffer()")?;
+            }
             element
                 .draw(&mut frame, src, dst, &[damage], &[])
                 .context("error drawing element")?;
