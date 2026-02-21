@@ -28,4 +28,6 @@ pub struct Match {
     pub namespace: Option<RegexEq>,
     #[knuffel(property)]
     pub at_startup: Option<bool>,
+    #[knuffel(property, str)]
+    pub layer: Option<niri_ipc::Layer>,
 }

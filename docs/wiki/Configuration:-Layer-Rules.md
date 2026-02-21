@@ -14,6 +14,7 @@ Here are all matchers and properties that a layer rule could have:
 layer-rule {
     match namespace="waybar"
     match at-startup=true
+    match layer="top"
 
     // Properties that apply continuously.
     opacity 0.5
@@ -66,6 +67,22 @@ layer-rule {
     match at-startup=true
 
     opacity 0.5
+}
+```
+
+#### `layer`
+
+<sup>Since: next release</sup>
+
+Matches surfaces on this layer-shell layer.
+Can be `"background"`, `"bottom"`, `"top"`, or `"overlay"`.
+
+```kdl
+// Make all overlay-layer surfaces FLOAT.
+layer-rule {
+    match layer="overlay"
+
+    baba-is-float true
 }
 ```
 
