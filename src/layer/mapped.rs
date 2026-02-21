@@ -4,6 +4,7 @@ use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::element::Kind;
 use smithay::desktop::{LayerSurface, PopupManager};
 use smithay::utils::{Logical, Point, Scale, Size};
+use smithay::wayland::compositor::{remove_pre_commit_hook, HookId};
 use smithay::wayland::shell::wlr_layer::{ExclusiveZone, Layer};
 
 use super::ResolvedLayerRules;
@@ -22,8 +23,16 @@ pub struct MappedLayer {
     /// The surface itself.
     surface: LayerSurface,
 
+    /// Pre-commit hook that we have on all mapped layer surfaces.
+    pre_commit_hook: HookId,
+
     /// Up-to-date rules.
     rules: ResolvedLayerRules,
+
+    /// Whether to recompute layer rules on the next commit.
+    ///
+    /// Set in the pre-commit hook when the layer changes; consumed in the commit handler.
+    recompute_rules_on_commit: bool,
 
     /// Buffer to draw instead of the surface when it should be blocked out.
     block_out_buffer: SolidColorBuffer,
@@ -52,6 +61,7 @@ niri_render_elements! {
 impl MappedLayer {
     pub fn new(
         surface: LayerSurface,
+        pre_commit_hook: HookId,
         rules: ResolvedLayerRules,
         view_size: Size<f64, Logical>,
         scale: f64,
@@ -65,7 +75,9 @@ impl MappedLayer {
 
         Self {
             surface,
+            pre_commit_hook,
             rules,
+            recompute_rules_on_commit: false,
             block_out_buffer: SolidColorBuffer::new((0., 0.), [0., 0., 0., 1.]),
             view_size,
             scale,
@@ -126,6 +138,14 @@ impl MappedLayer {
 
         self.rules = new_rules;
         true
+    }
+
+    pub fn set_recompute_rules_on_commit(&mut self) {
+        self.recompute_rules_on_commit = true;
+    }
+
+    pub fn take_recompute_rules_on_commit(&mut self) -> bool {
+        std::mem::take(&mut self.recompute_rules_on_commit)
     }
 
     pub fn place_within_backdrop(&self) -> bool {
@@ -230,5 +250,11 @@ impl MappedLayer {
                 &mut |elem| push(elem.into()),
             );
         }
+    }
+}
+
+impl Drop for MappedLayer {
+    fn drop(&mut self) {
+        remove_pre_commit_hook(self.surface.wl_surface(), self.pre_commit_hook.clone());
     }
 }
