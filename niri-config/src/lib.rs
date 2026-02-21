@@ -2419,7 +2419,11 @@ mod tests {
 
     #[test]
     fn include_tilde_expansion() {
-        let home = std::env::home_dir().unwrap();
+        let home = match std::env::home_dir() {
+            Some(h) if h.is_dir() => h,
+            _ => return,
+        };
+
         let temp_dir = unique_tmp_dir(&home, "tilde");
         let extra = temp_dir.join("extra.kdl");
         fs::write(&extra, "prefer-no-csd").unwrap();
