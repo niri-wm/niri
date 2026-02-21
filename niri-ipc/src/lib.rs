@@ -1868,6 +1868,20 @@ impl FromStr for Transform {
     }
 }
 
+impl FromStr for Layer {
+    type Err = &'static str;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "background" => Ok(Self::Background),
+            "bottom" => Ok(Self::Bottom),
+            "top" => Ok(Self::Top),
+            "overlay" => Ok(Self::Overlay),
+            _ => Err("invalid layer, can be \"background\", \"bottom\", \"top\" or \"overlay\""),
+        }
+    }
+}
+
 impl FromStr for ModeToSet {
     type Err = &'static str;
 

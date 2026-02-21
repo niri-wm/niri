@@ -1859,6 +1859,7 @@ mod tests {
                                 ),
                             ),
                             at_startup: None,
+                            layer: None,
                         },
                     ],
                     excludes: [],
