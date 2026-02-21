@@ -337,8 +337,8 @@ where
                     }
 
                     let base = ctx.get::<BasePath>().unwrap();
-                    let path = match (path.strip_prefix("~"), std::env::var_os("HOME")) {
-                        (Ok(rest), Some(home)) => PathBuf::from(home).join(rest),
+                    let path = match (path.strip_prefix("~"), std::env::home_dir()) {
+                        (Ok(rest), Some(home)) => home.join(rest),
                         _ => path,
                     };
                     let path = base.0.join(path);
@@ -2419,7 +2419,7 @@ mod tests {
 
     #[test]
     fn include_tilde_expansion() {
-        let home = PathBuf::from(std::env::var_os("HOME").unwrap());
+        let home = std::env::home_dir().unwrap();
         let temp_dir = unique_tmp_dir(&home, "tilde");
         let extra = temp_dir.join("extra.kdl");
         fs::write(&extra, "prefer-no-csd").unwrap();
