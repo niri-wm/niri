@@ -1761,9 +1761,9 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         self.columns[self.active_column_idx].move_up()
     }
 
-    pub fn consume_or_expel_window_left(&mut self, window: Option<&W::Id>) {
+    pub fn consume_or_expel_window_left(&mut self, window: Option<&W::Id>) -> bool {
         if self.columns.is_empty() {
-            return;
+            return false;
         }
 
         let (source_col_idx, source_tile_idx) = if let Some(window) = window {
@@ -1791,7 +1791,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
         if source_column.tiles.len() == 1 {
             if source_col_idx == 0 {
-                return;
+                return true;
             }
 
             // Move into adjacent column.
@@ -1867,11 +1867,13 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             offset += prev_off - new_col.tile_offset(0);
             new_col.tiles[0].animate_move_from(offset);
         }
+
+        false
     }
 
-    pub fn consume_or_expel_window_right(&mut self, window: Option<&W::Id>) {
+    pub fn consume_or_expel_window_right(&mut self, window: Option<&W::Id>) -> bool {
         if self.columns.is_empty() {
-            return;
+            return false;
         }
 
         let (source_col_idx, source_tile_idx) = if let Some(window) = window {
@@ -1902,7 +1904,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
         if source_column.tiles.len() == 1 {
             if source_col_idx + 1 == self.columns.len() {
-                return;
+                return true;
             }
 
             // Move into adjacent column.
@@ -1959,6 +1961,8 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             offset += prev_off - new_col.tile_offset(0);
             new_col.tiles[0].animate_move_from(offset);
         }
+
+        false
     }
 
     pub fn consume_into_column(&mut self) {

@@ -438,6 +438,10 @@ pub enum Action {
         #[cfg_attr(feature = "clap", arg(long))]
         id: Option<u64>,
     },
+    /// Consume or expel the focused window left, or move it to the monitor to the left.
+    ConsumeOrExpelWindowLeftOrMonitorLeft {},
+    /// Consume or expel the focused window right, or move it to the monitor to the right.
+    ConsumeOrExpelWindowRightOrMonitorRight {},
     /// Consume the window to the right into the focused column.
     ConsumeWindowIntoColumn {},
     /// Expel the bottom window from the focused column.

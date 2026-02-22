@@ -201,6 +201,8 @@ pub enum Action {
     ConsumeOrExpelWindowRight,
     #[knuffel(skip)]
     ConsumeOrExpelWindowRightById(u64),
+    ConsumeOrExpelWindowLeftOrMonitorLeft,
+    ConsumeOrExpelWindowRightOrMonitorRight,
     ConsumeWindowIntoColumn,
     ExpelWindowFromColumn,
     SwapWindowLeft,
@@ -492,6 +494,12 @@ impl From<niri_ipc::Action> for Action {
             }
             niri_ipc::Action::ConsumeOrExpelWindowRight { id: Some(id) } => {
                 Self::ConsumeOrExpelWindowRightById(id)
+            }
+            niri_ipc::Action::ConsumeOrExpelWindowLeftOrMonitorLeft {} => {
+                Self::ConsumeOrExpelWindowLeftOrMonitorLeft
+            }
+            niri_ipc::Action::ConsumeOrExpelWindowRightOrMonitorRight {} => {
+                Self::ConsumeOrExpelWindowRightOrMonitorRight
             }
             niri_ipc::Action::ConsumeWindowIntoColumn {} => Self::ConsumeWindowIntoColumn,
             niri_ipc::Action::ExpelWindowFromColumn {} => Self::ExpelWindowFromColumn,

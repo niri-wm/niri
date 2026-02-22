@@ -1887,6 +1887,44 @@ impl<W: LayoutElement> Layout<W> {
         workspace.consume_or_expel_window_right(window);
     }
 
+    pub fn consume_or_expel_window_left_or_to_output(&mut self, output: &Output) -> bool {
+        if matches!(
+            &self.interactive_move,
+            Some(InteractiveMoveState::Moving(_))
+        ) {
+            return false;
+        }
+
+        let at_edge = self
+            .active_workspace_mut()
+            .map_or(false, |ws| ws.consume_or_expel_window_left(None));
+
+        if at_edge {
+            self.move_to_output(None, output, None, ActivateWindow::Smart);
+            return true;
+        }
+        false
+    }
+
+    pub fn consume_or_expel_window_right_or_to_output(&mut self, output: &Output) -> bool {
+        if matches!(
+            &self.interactive_move,
+            Some(InteractiveMoveState::Moving(_))
+        ) {
+            return false;
+        }
+
+        let at_edge = self
+            .active_workspace_mut()
+            .map_or(false, |ws| ws.consume_or_expel_window_right(None));
+
+        if at_edge {
+            self.move_to_output(None, output, None, ActivateWindow::Smart);
+            return true;
+        }
+        false
+    }
+
     pub fn focus_left(&mut self) {
         let Some(workspace) = self.active_workspace_mut() else {
             return;

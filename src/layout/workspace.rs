@@ -1096,22 +1096,22 @@ impl<W: LayoutElement> Workspace<W> {
         }
     }
 
-    pub fn consume_or_expel_window_left(&mut self, window: Option<&W::Id>) {
+    pub fn consume_or_expel_window_left(&mut self, window: Option<&W::Id>) -> bool {
         if window.map_or(self.floating_is_active.get(), |id| {
             self.floating.has_window(id)
         }) {
-            return;
+            return false;
         }
-        self.scrolling.consume_or_expel_window_left(window);
+        self.scrolling.consume_or_expel_window_left(window)
     }
 
-    pub fn consume_or_expel_window_right(&mut self, window: Option<&W::Id>) {
+    pub fn consume_or_expel_window_right(&mut self, window: Option<&W::Id>) -> bool {
         if window.map_or(self.floating_is_active.get(), |id| {
             self.floating.has_window(id)
         }) {
-            return;
+            return false;
         }
-        self.scrolling.consume_or_expel_window_right(window);
+        self.scrolling.consume_or_expel_window_right(window)
     }
 
     pub fn consume_into_column(&mut self) {

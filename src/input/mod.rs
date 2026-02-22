@@ -1088,6 +1088,44 @@ impl State {
                     self.niri.queue_redraw_all();
                 }
             }
+            Action::ConsumeOrExpelWindowLeftOrMonitorLeft => {
+                if let Some(output) = self.niri.output_left() {
+                    if self
+                        .niri
+                        .layout
+                        .consume_or_expel_window_left_or_to_output(&output)
+                        && !self.maybe_warp_cursor_to_focus_centered()
+                    {
+                        self.move_cursor_to_output(&output);
+                    } else {
+                        self.maybe_warp_cursor_to_focus();
+                    }
+                } else {
+                    self.niri.layout.consume_or_expel_window_left(None);
+                    self.maybe_warp_cursor_to_focus();
+                }
+                // FIXME: granular
+                self.niri.queue_redraw_all();
+            }
+            Action::ConsumeOrExpelWindowRightOrMonitorRight => {
+                if let Some(output) = self.niri.output_right() {
+                    if self
+                        .niri
+                        .layout
+                        .consume_or_expel_window_right_or_to_output(&output)
+                        && !self.maybe_warp_cursor_to_focus_centered()
+                    {
+                        self.move_cursor_to_output(&output);
+                    } else {
+                        self.maybe_warp_cursor_to_focus();
+                    }
+                } else {
+                    self.niri.layout.consume_or_expel_window_right(None);
+                    self.maybe_warp_cursor_to_focus();
+                }
+                // FIXME: granular
+                self.niri.queue_redraw_all();
+            }
             Action::FocusColumnLeft => {
                 self.niri.layout.focus_left();
                 self.maybe_warp_cursor_to_focus();
