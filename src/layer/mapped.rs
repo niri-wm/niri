@@ -9,7 +9,9 @@ use smithay::wayland::shell::wlr_layer::{ExclusiveZone, Layer};
 
 use super::ResolvedLayerRules;
 use crate::animation::{Animation, Clock};
+use crate::layer::closing_layer::ClosingLayerRenderElement;
 use crate::layer::opening_layer::OpenAnimation;
+use crate::layer::opening_layer::OpeningLayerRenderElement;
 use crate::layout::shadow::Shadow;
 use crate::niri_render_elements;
 use crate::render_helpers::renderer::NiriRenderer;
@@ -58,6 +60,8 @@ niri_render_elements! {
         Wayland = WaylandSurfaceRenderElement<R>,
         SolidColor = SolidColorRenderElement,
         Shadow = ShadowRenderElement,
+        Opening = OpeningLayerRenderElement,
+        Closing = ClosingLayerRenderElement,
     }
 }
 
@@ -128,7 +132,7 @@ impl MappedLayer {
     pub fn store_unmap_snapshot(&mut self, renderer: &mut GlesRenderer) {
         let _span = tracy_client::span!("MappedLayer::store_unmap_snapshot");
         let mut contents = Vec::new();
-        self.render_normal(
+        self.render_normal_inner(
             renderer,
             Point::from((0., 0.)),
             RenderTarget::Output,
@@ -137,7 +141,7 @@ impl MappedLayer {
 
         // A bit of a hack to render blocked out as for screencast, but I think it's fine here.
         let mut blocked_out_contents = Vec::new();
-        self.render_normal(
+        self.render_normal_inner(
             renderer,
             Point::from((0., 0.)),
             RenderTarget::Screencast,
@@ -180,6 +184,10 @@ impl MappedLayer {
 
     pub fn are_animations_ongoing(&self) -> bool {
         self.rules.baba_is_float
+            || self
+                .open_animation
+                .as_ref()
+                .is_some_and(|open| !open.is_done())
     }
 
     pub fn surface(&self) -> &LayerSurface {
@@ -238,6 +246,44 @@ impl MappedLayer {
         let scale = Scale::from(self.scale);
         let alpha = self.rules.opacity.unwrap_or(1.).clamp(0., 1.);
         let location = location + self.bob_offset();
+
+        let mut pushed = false;
+        if let Some(open) = &self.open_animation {
+            let renderer = renderer.as_gles_renderer();
+            let mut elements = Vec::new();
+            self.render_normal_inner(
+                renderer,
+                Point::from((0., 0.)),
+                target,
+                &mut |elem| elements.push(elem),
+            );
+
+            let geo_size = self.surface.cached_state().size.to_f64();
+            match open.render(renderer, &elements, geo_size, location, scale, alpha) {
+                Ok((elem, _)) => {
+                    push(elem.into());
+                    pushed = true;
+                }
+                Err(err) => {
+                    warn!("error rendering layer opening animation: {err:?}");
+                }
+            }
+        }
+
+        if !pushed {
+            self.render_normal_inner(renderer, location, target, push);
+        }
+    }
+
+    fn render_normal_inner<R: NiriRenderer>(
+        &self,
+        renderer: &mut R,
+        location: Point<f64, Logical>,
+        target: RenderTarget,
+        push: &mut dyn FnMut(LayerSurfaceRenderElement<R>),
+    ) {
+        let scale = Scale::from(self.scale);
+        let alpha = self.rules.opacity.unwrap_or(1.).clamp(0., 1.);
 
         if target.should_block_out(self.rules.block_out_from) {
             // Round to physical pixels.
