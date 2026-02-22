@@ -88,7 +88,7 @@ impl ResizeRenderElement {
         // Create the shader.
         Self(
             ShaderRenderElement::new(
-                ProgramType::Resize,
+                ProgramType::WindowResize,
                 area.size,
                 None,
                 scale.x,
@@ -117,7 +117,7 @@ impl ResizeRenderElement {
 
     pub fn has_shader(renderer: &mut impl NiriRenderer) -> bool {
         Shaders::get(renderer)
-            .program(ProgramType::Resize)
+            .program(ProgramType::WindowResize)
             .is_some()
     }
 }

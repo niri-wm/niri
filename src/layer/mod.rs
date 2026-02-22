@@ -5,6 +5,9 @@ use smithay::desktop::LayerSurface;
 use smithay::wayland::shell::wlr_layer::{ExclusiveZone, Layer};
 
 pub mod mapped;
+
+pub mod closing_layer;
+pub mod opening_layer;
 pub use mapped::MappedLayer;
 
 /// Rules fully resolved for a layer-shell surface.
@@ -75,7 +78,6 @@ impl ResolvedLayerRules {
             if let Some(x) = rule.baba_is_float {
                 resolved.baba_is_float = x;
             }
-
             resolved.shadow.merge_with(&rule.shadow);
 
             resolved
