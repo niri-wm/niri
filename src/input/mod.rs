@@ -2902,107 +2902,119 @@ impl State {
                 let window = mapped.window.clone();
 
                 // Check if we need to start an interactive move.
-                if button == Some(MouseButton::Left) && !pointer.is_grabbed() {
-                    let mod_down = modifiers_from_state(mods).contains(mod_key.to_modifiers());
-                    if is_overview_open || mod_down {
-                        let location = pointer.current_location();
+                // MouseBack triggers move directly (no modifier needed),
+                // unless the window rule has passthrough-mouse-buttons.
+                let passthrough = mapped.rules().passthrough_mouse_buttons == Some(true);
+                let is_move = (button == Some(MouseButton::Left) && !pointer.is_grabbed())
+                    && (is_overview_open
+                        || modifiers_from_state(mods).contains(mod_key.to_modifiers()))
+                    || (button == Some(MouseButton::Back)
+                        && !pointer.is_grabbed()
+                        && !self.is_inhibiting_shortcuts()
+                        && !passthrough);
+                if is_move {
+                    let location = pointer.current_location();
 
+                    if !is_overview_open {
+                        self.niri.layout.activate_window(&window);
+                    }
+
+                    let start_data = PointerGrabStartData {
+                        focus: None,
+                        button: button_code,
+                        location,
+                    };
+                    let start_data = PointerOrTouchStartData::Pointer(start_data);
+                    let icon = CursorIcon::Grabbing;
+                    if let Some(grab) =
+                        MoveGrab::new(self, start_data, window.clone(), false, Some(icon))
+                    {
+                        pointer.set_grab(self, grab, serial, Focus::Clear);
+
+                        // Set the cursor to Grabbing right away for Mod+LMB since it doesn't
+                        // do any other gesture.
+                        //
+                        // In the overview, we click to activate window and close the overview,
+                        // in this case setting the cursor right away would be distracting.
                         if !is_overview_open {
-                            self.niri.layout.activate_window(&window);
-                        }
-
-                        let start_data = PointerGrabStartData {
-                            focus: None,
-                            button: button_code,
-                            location,
-                        };
-                        let start_data = PointerOrTouchStartData::Pointer(start_data);
-                        let icon = CursorIcon::Grabbing;
-                        if let Some(grab) =
-                            MoveGrab::new(self, start_data, window.clone(), false, Some(icon))
-                        {
-                            pointer.set_grab(self, grab, serial, Focus::Clear);
-
-                            // Set the cursor to Grabbing right away for Mod+LMB since it doesn't
-                            // do any other gesture.
-                            //
-                            // In the overview, we click to activate window and close the overview,
-                            // in this case setting the cursor right away would be distracting.
-                            if !is_overview_open {
-                                self.niri
-                                    .cursor_manager
-                                    .set_cursor_image(CursorImageStatus::Named(icon));
-                            }
+                            self.niri
+                                .cursor_manager
+                                .set_cursor_image(CursorImageStatus::Named(icon));
                         }
                     }
                 }
                 // Check if we need to start an interactive resize.
-                else if button == Some(MouseButton::Right) && !pointer.is_grabbed() {
-                    let mod_down = modifiers_from_state(mods).contains(mod_key.to_modifiers());
-                    if mod_down {
-                        let location = pointer.current_location();
-                        let (output, pos_within_output) = self.niri.output_under(location).unwrap();
-                        let edges = self
+                // MouseForward triggers resize directly (no modifier needed),
+                // unless the window rule has passthrough-mouse-buttons.
+                else if !pointer.is_grabbed()
+                    && ((button == Some(MouseButton::Right)
+                        && modifiers_from_state(mods).contains(mod_key.to_modifiers()))
+                        || (button == Some(MouseButton::Forward)
+                            && !self.is_inhibiting_shortcuts()
+                            && !passthrough))
+                {
+                    let location = pointer.current_location();
+                    let (output, pos_within_output) = self.niri.output_under(location).unwrap();
+                    let edges = self
+                        .niri
+                        .layout
+                        .resize_edges_under(output, pos_within_output)
+                        .unwrap_or(ResizeEdge::empty());
+
+                    if !edges.is_empty() {
+                        // See if we got a double resize-click gesture.
+                        // FIXME: deduplicate with resize_request in xdg-shell somehow.
+                        let time = get_monotonic_time();
+                        let last_cell = mapped.last_interactive_resize_start();
+                        let mut last = last_cell.get();
+                        last_cell.set(Some((time, edges)));
+
+                        // Floating windows don't have either of the double-resize-click
+                        // gestures, so just allow it to resize.
+                        if mapped.is_floating() {
+                            last = None;
+                            last_cell.set(None);
+                        }
+
+                        if let Some((last_time, last_edges)) = last {
+                            if time.saturating_sub(last_time) <= DOUBLE_CLICK_TIME {
+                                // Allow quick resize after a triple click.
+                                last_cell.set(None);
+
+                                let intersection = edges.intersection(last_edges);
+                                if intersection.intersects(ResizeEdge::LEFT_RIGHT) {
+                                    // FIXME: don't activate once we can pass specific windows
+                                    // to actions.
+                                    self.niri.layout.activate_window(&window);
+                                    self.niri.layout.toggle_full_width();
+                                }
+                                if intersection.intersects(ResizeEdge::TOP_BOTTOM) {
+                                    self.niri.layout.activate_window(&window);
+                                    self.niri.layout.reset_window_height(Some(&window));
+                                }
+                                // FIXME: granular.
+                                self.niri.queue_redraw_all();
+                                return;
+                            }
+                        }
+
+                        self.niri.layout.activate_window(&window);
+
+                        if self
                             .niri
                             .layout
-                            .resize_edges_under(output, pos_within_output)
-                            .unwrap_or(ResizeEdge::empty());
-
-                        if !edges.is_empty() {
-                            // See if we got a double resize-click gesture.
-                            // FIXME: deduplicate with resize_request in xdg-shell somehow.
-                            let time = get_monotonic_time();
-                            let last_cell = mapped.last_interactive_resize_start();
-                            let mut last = last_cell.get();
-                            last_cell.set(Some((time, edges)));
-
-                            // Floating windows don't have either of the double-resize-click
-                            // gestures, so just allow it to resize.
-                            if mapped.is_floating() {
-                                last = None;
-                                last_cell.set(None);
-                            }
-
-                            if let Some((last_time, last_edges)) = last {
-                                if time.saturating_sub(last_time) <= DOUBLE_CLICK_TIME {
-                                    // Allow quick resize after a triple click.
-                                    last_cell.set(None);
-
-                                    let intersection = edges.intersection(last_edges);
-                                    if intersection.intersects(ResizeEdge::LEFT_RIGHT) {
-                                        // FIXME: don't activate once we can pass specific windows
-                                        // to actions.
-                                        self.niri.layout.activate_window(&window);
-                                        self.niri.layout.toggle_full_width();
-                                    }
-                                    if intersection.intersects(ResizeEdge::TOP_BOTTOM) {
-                                        self.niri.layout.activate_window(&window);
-                                        self.niri.layout.reset_window_height(Some(&window));
-                                    }
-                                    // FIXME: granular.
-                                    self.niri.queue_redraw_all();
-                                    return;
-                                }
-                            }
-
-                            self.niri.layout.activate_window(&window);
-
-                            if self
-                                .niri
-                                .layout
-                                .interactive_resize_begin(window.clone(), edges)
-                            {
-                                let start_data = PointerGrabStartData {
-                                    focus: None,
-                                    button: button_code,
-                                    location,
-                                };
-                                let grab = ResizeGrab::new(start_data, window.clone());
-                                pointer.set_grab(self, grab, serial, Focus::Clear);
-                                self.niri.cursor_manager.set_cursor_image(
-                                    CursorImageStatus::Named(edges.cursor_icon()),
-                                );
-                            }
+                            .interactive_resize_begin(window.clone(), edges)
+                        {
+                            let start_data = PointerGrabStartData {
+                                focus: None,
+                                button: button_code,
+                                location,
+                            };
+                            let grab = ResizeGrab::new(start_data, window.clone());
+                            pointer.set_grab(self, grab, serial, Focus::Clear);
+                            self.niri.cursor_manager.set_cursor_image(
+                                CursorImageStatus::Named(edges.cursor_icon()),
+                            );
                         }
                     }
                 }
@@ -3030,6 +3042,7 @@ impl State {
                 // FIXME: granular.
                 self.niri.queue_redraw_all();
             }
+
         };
 
         self.update_pointer_contents();

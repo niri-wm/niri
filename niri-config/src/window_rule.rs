@@ -76,6 +76,8 @@ pub struct WindowRule {
     pub tiled_state: Option<bool>,
     #[knuffel(child, default)]
     pub background_effect: BackgroundEffectRule,
+    #[knuffel(child, unwrap(argument))]
+    pub passthrough_mouse_buttons: Option<bool>,
 }
 
 #[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]

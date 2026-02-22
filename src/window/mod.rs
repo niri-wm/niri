@@ -122,6 +122,10 @@ pub struct ResolvedWindowRules {
 
     /// Background effect configuration.
     pub background_effect: BackgroundEffect,
+
+    /// Pass through mouse side buttons (Back/Forward) instead of using them
+    /// for interactive move/resize.
+    pub passthrough_mouse_buttons: Option<bool>,
 }
 
 impl<'a> WindowRef<'a> {
@@ -303,6 +307,9 @@ impl ResolvedWindowRules {
                 resolved
                     .background_effect
                     .merge_with(&rule.background_effect);
+                if let Some(x) = rule.passthrough_mouse_buttons {
+                    resolved.passthrough_mouse_buttons = Some(x);
+                }
             }
 
             resolved.open_on_output = open_on_output.map(|x| x.to_owned());
