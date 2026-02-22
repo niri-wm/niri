@@ -246,12 +246,12 @@ fn compile_close_program(
     )
 }
 
-pub fn set_custom_close_program(renderer: &mut GlesRenderer, src: Option<&str>) {
+pub fn set_custom_window_close_program(renderer: &mut GlesRenderer, src: Option<&str>) {
     let program = if let Some(src) = src {
         match compile_close_program(renderer, src) {
             Ok(program) => Some(program),
             Err(err) => {
-                warn!("error compiling custom close shader: {err:?}");
+                warn!("error compiling custom window close shader: {err:?}");
                 return;
             }
         }
@@ -289,12 +289,12 @@ fn compile_open_program(
     )
 }
 
-pub fn set_custom_open_program(renderer: &mut GlesRenderer, src: Option<&str>) {
+pub fn set_custom_window_open_program(renderer: &mut GlesRenderer, src: Option<&str>) {
     let program = if let Some(src) = src {
         match compile_open_program(renderer, src) {
             Ok(program) => Some(program),
             Err(err) => {
-                warn!("error compiling custom open shader: {err:?}");
+                warn!("error compiling custom window open shader: {err:?}");
                 return;
             }
         }
@@ -305,6 +305,46 @@ pub fn set_custom_open_program(renderer: &mut GlesRenderer, src: Option<&str>) {
     if let Some(prev) = Shaders::get(renderer).replace_custom_open_program(program) {
         if let Err(err) = prev.destroy(renderer) {
             warn!("error destroying previous custom open shader: {err:?}");
+        }
+    }
+}
+
+pub fn set_custom_layer_open_program(renderer: &mut GlesRenderer, src: Option<&str>) {
+    let program = if let Some(src) = src {
+        match compile_open_program(renderer, src) {
+            Ok(program) => Some(program),
+            Err(err) => {
+                warn!("error compiling custom layer open shader: {err:?}");
+                return;
+            }
+        }
+    } else {
+        None
+    };
+
+    if let Some(prev) = Shaders::get(renderer).replace_custom_open_program(program) {
+        if let Err(err) = prev.destroy(renderer) {
+            warn!("error destroying previous custom layer open shader: {err:?}");
+        }
+    }
+}
+
+pub fn set_custom_layer_close_program(renderer: &mut GlesRenderer, src: Option<&str>) {
+    let program = if let Some(src) = src {
+        match compile_close_program(renderer, src) {
+            Ok(program) => Some(program),
+            Err(err) => {
+                warn!("error compiling custom layer close shader: {err:?}");
+                return;
+            }
+        }
+    } else {
+        None
+    };
+
+    if let Some(prev) = Shaders::get(renderer).replace_custom_close_program(program) {
+        if let Err(err) = prev.destroy(renderer) {
+            warn!("error destroying previous custom layer close shader: {err:?}");
         }
     }
 }

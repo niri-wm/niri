@@ -1528,6 +1528,26 @@ impl State {
             layer_rules_changed = true;
         }
 
+        if config.animations.layer_close.custom_shader
+            != old_config.animations.layer_close.custom_shader
+        {
+            let src = config.animations.layer_close.custom_shader.as_deref();
+            self.backend.with_primary_renderer(|renderer| {
+                shaders::set_custom_layer_close_program(renderer, src);
+            });
+            shaders_changed = true;
+        }
+
+        if config.animations.layer_open.custom_shader
+            != old_config.animations.layer_open.custom_shader
+        {
+            let src = config.animations.layer_open.custom_shader.as_deref();
+            self.backend.with_primary_renderer(|renderer| {
+                shaders::set_custom_layer_open_program(renderer, src);
+            });
+            shaders_changed = true;
+        }
+
         if config.animations.window_resize.custom_shader
             != old_config.animations.window_resize.custom_shader
         {
@@ -1543,7 +1563,7 @@ impl State {
         {
             let src = config.animations.window_close.custom_shader.as_deref();
             self.backend.with_primary_renderer(|renderer| {
-                shaders::set_custom_close_program(renderer, src);
+                shaders::set_custom_window_close_program(renderer, src);
             });
             shaders_changed = true;
         }
@@ -1553,7 +1573,7 @@ impl State {
         {
             let src = config.animations.window_open.custom_shader.as_deref();
             self.backend.with_primary_renderer(|renderer| {
-                shaders::set_custom_open_program(renderer, src);
+                shaders::set_custom_window_open_program(renderer, src);
             });
             shaders_changed = true;
         }
