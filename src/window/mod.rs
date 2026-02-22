@@ -126,6 +126,9 @@ pub struct ResolvedWindowRules {
     /// Pass through mouse side buttons (Back/Forward) instead of using them
     /// for interactive move/resize.
     pub passthrough_mouse_buttons: Option<bool>,
+
+    /// Inhibit keyboard shortcuts when this window is focused.
+    pub inhibit_shortcuts: Option<bool>,
 }
 
 impl<'a> WindowRef<'a> {
@@ -309,6 +312,9 @@ impl ResolvedWindowRules {
                     .merge_with(&rule.background_effect);
                 if let Some(x) = rule.passthrough_mouse_buttons {
                     resolved.passthrough_mouse_buttons = Some(x);
+                }
+                if let Some(x) = rule.inhibit_shortcuts {
+                    resolved.inhibit_shortcuts = Some(x);
                 }
             }
 

@@ -78,6 +78,8 @@ pub struct WindowRule {
     pub background_effect: BackgroundEffectRule,
     #[knuffel(child, unwrap(argument))]
     pub passthrough_mouse_buttons: Option<bool>,
+    #[knuffel(child, unwrap(argument))]
+    pub inhibit_shortcuts: Option<bool>,
 }
 
 #[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]

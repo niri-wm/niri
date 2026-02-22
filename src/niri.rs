@@ -334,6 +334,10 @@ pub struct Niri {
     pub is_fdo_idle_inhibited: Arc<AtomicBool>,
     pub keyboard_shortcuts_inhibiting_surfaces: HashMap<WlSurface, KeyboardShortcutsInhibitor>,
 
+    /// Windows where the user manually toggled off rule-based shortcut inhibition.
+    /// Cleared when the window regains keyboard focus.
+    pub rule_inhibit_disabled: HashSet<MappedId>,
+
     /// Most recent XKB settings from org.freedesktop.locale1.
     pub xkb_from_locale1: Option<Xkb>,
 
@@ -1273,6 +1277,12 @@ impl State {
             {
                 if let Some((mapped, _)) = self.niri.layout.find_window_and_output_mut(surface) {
                     mapped.set_is_focused(true);
+
+                    // Re-enable rule-based shortcut inhibition when the window regains focus
+                    // (clears any manual toggle-off the user did previously).
+                    if mapped.rules().inhibit_shortcuts == Some(true) {
+                        self.niri.rule_inhibit_disabled.remove(&mapped.id());
+                    }
 
                     // If `mapped` does not have a focus timestamp, then the window is newly
                     // created/mapped and a timestamp is unconditionally created.
@@ -2564,6 +2574,7 @@ impl Niri {
             idle_inhibiting_surfaces: HashSet::new(),
             is_fdo_idle_inhibited: Arc::new(AtomicBool::new(false)),
             keyboard_shortcuts_inhibiting_surfaces: HashMap::new(),
+            rule_inhibit_disabled: HashSet::new(),
             xkb_from_locale1: None,
             reset_keymap: false,
             cursor_manager,
