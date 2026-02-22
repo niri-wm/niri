@@ -133,6 +133,7 @@ use crate::input::{
     mods_with_wheel_binds, TabletData,
 };
 use crate::ipc::server::IpcServer;
+use crate::layer::closing_layer::ClosingLayer;
 use crate::layer::mapped::LayerSurfaceRenderElement;
 use crate::layer::MappedLayer;
 use crate::layout::tile::TileRenderElement;
@@ -239,8 +240,8 @@ pub struct Niri {
     /// Extra data for mapped layer surfaces.
     pub mapped_layer_surfaces: HashMap<LayerSurface, MappedLayer>,
 
-    /// Layers in the closing animation
-    pub closing_layers: Vec<LayerSurface>,
+    /// Layer surfaces in closing animations.
+    pub closing_layers: Vec<ClosingLayerState>,
 
     // Cached root surface for every surface, so that we can access it in destroyed() where the
     // normal get_parent() is cleared out.
@@ -416,6 +417,14 @@ pub struct Niri {
 
     #[cfg(feature = "xdp-gnome-screencast")]
     pub casting: Screencasting,
+}
+
+#[derive(Debug)]
+pub struct ClosingLayerState {
+    pub output: Output,
+    pub layer: Layer,
+    pub for_backdrop: bool,
+    pub animation: ClosingLayer,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -4004,6 +4013,13 @@ impl Niri {
         self.exit_confirm_dialog.advance_animations();
         self.screenshot_ui.advance_animations();
         self.window_mru_ui.advance_animations();
+        for mapped in self.mapped_layer_surfaces.values_mut() {
+            mapped.advance_animations();
+        }
+        self.closing_layers.retain_mut(|closing| {
+            closing.animation.advance_animations();
+            closing.animation.are_animations_ongoing()
+        });
 
         for state in self.output_state.values_mut() {
             if let Some(transition) = &mut state.screen_transition {
@@ -4205,7 +4221,9 @@ impl Niri {
         }
         macro_rules! push_normal_from_layer {
             ($layer:expr, $backdrop:expr, $push:expr) => {{
-                self.render_layer_normal(renderer, target, &layer_map, $layer, $backdrop, $push);
+                self.render_layer_normal(
+                    renderer, output, target, &layer_map, $layer, $backdrop, $push,
+                );
             }};
             ($layer:expr, true) => {{
                 push_normal_from_layer!($layer, true, &mut |elem| push(elem.into()));
@@ -4314,6 +4332,7 @@ impl Niri {
     fn render_layer_normal<R: NiriRenderer>(
         &self,
         renderer: &mut R,
+        output: &Output,
         target: RenderTarget,
         layer_map: &LayerMap,
         layer: Layer,
@@ -4322,6 +4341,23 @@ impl Niri {
     ) {
         for (mapped, geo) in self.layers_in_render_order(layer_map, layer, for_backdrop) {
             mapped.render_normal(renderer, geo.loc.to_f64(), target, push);
+        }
+
+        let scale = Scale::from(output.current_scale().fractional_scale());
+        let view_rect = Rectangle::from_size(output_size(output));
+        for closing in self.closing_layers.iter().rev() {
+            if &closing.output != output
+                || closing.layer != layer
+                || closing.for_backdrop != for_backdrop
+            {
+                continue;
+            }
+
+            let elem =
+                closing
+                    .animation
+                    .render(renderer.as_gles_renderer(), view_rect, scale, target);
+            push(elem.into());
         }
     }
 
@@ -4378,6 +4414,10 @@ impl Niri {
                     .layers()
                     .filter_map(|surface| self.mapped_layer_surfaces.get(surface))
                     .any(|mapped| mapped.are_animations_ongoing());
+                state.unfinished_animations_remain |= self
+                    .closing_layers
+                    .iter()
+                    .any(|closing| closing.output == *output);
             }
 
             // Render.

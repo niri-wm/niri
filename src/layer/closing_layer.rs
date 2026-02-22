@@ -140,7 +140,10 @@ impl ClosingLayer {
         let progress = anim.value();
         let clamped_progress = anim.clamped_value().clamp(0., 1.);
 
-        if Shaders::get(renderer).program(ProgramType::Close).is_some() {
+        if Shaders::get(renderer)
+            .program(ProgramType::LayerClose)
+            .is_some()
+        {
             let area_loc = Vec2::new(view_rect.loc.x as f32, view_rect.loc.y as f32);
             let area_size = Vec2::new(view_rect.size.w as f32, view_rect.size.h as f32);
 
@@ -165,7 +168,7 @@ impl ClosingLayer {
                 Mat3::from_translation(-tex_loc / tex_size) * Mat3::from_scale(geo_size / tex_size);
 
             return ShaderRenderElement::new(
-                ProgramType::Close,
+                ProgramType::LayerClose,
                 view_rect.size,
                 None,
                 scale.x as f32,
