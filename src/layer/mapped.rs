@@ -2,16 +2,19 @@ use niri_config::utils::MergeWith as _;
 use niri_config::{Config, LayerRule};
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::element::Kind;
+use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::desktop::{LayerSurface, PopupManager};
 use smithay::utils::{Logical, Point, Scale, Size};
 use smithay::wayland::shell::wlr_layer::{ExclusiveZone, Layer};
 
 use super::ResolvedLayerRules;
-use crate::animation::Clock;
+use crate::animation::{Animation, Clock};
+use crate::layer::opening_layer::OpenAnimation;
 use crate::layout::shadow::Shadow;
 use crate::niri_render_elements;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::shadow::ShadowRenderElement;
+use crate::render_helpers::snapshot::RenderSnapshot;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
 use crate::render_helpers::surface::push_elements_from_surface_tree;
 use crate::render_helpers::RenderTarget;
@@ -37,6 +40,15 @@ pub struct MappedLayer {
     /// Scale of the output the layer surface is on (and rounds its sizes to).
     scale: f64,
 
+    /// Whether there is an ongoing open animation that needs to be advanced and rendered.
+    pub has_pending_open_animation: bool,
+
+    /// The animation upon opening a layer.
+    open_animation: Option<OpenAnimation>,
+
+    /// The animation upon closing a layer.
+    unmap_snapshot: Option<LayerSurfaceRenderSnapshot>,
+
     /// Clock for driving animations.
     clock: Clock,
 }
@@ -48,6 +60,11 @@ niri_render_elements! {
         Shadow = ShadowRenderElement,
     }
 }
+
+pub type LayerSurfaceRenderSnapshot = RenderSnapshot<
+    LayerSurfaceRenderElement<GlesRenderer>,
+    LayerSurfaceRenderElement<GlesRenderer>,
+>;
 
 impl MappedLayer {
     pub fn new(
@@ -70,6 +87,9 @@ impl MappedLayer {
             view_size,
             scale,
             shadow: Shadow::new(shadow_config),
+            has_pending_open_animation: false,
+            open_animation: None,
+            unmap_snapshot: None,
             clock,
         }
     }
@@ -103,6 +123,59 @@ impl MappedLayer {
         // FIXME: is_active based on keyboard focus?
         self.shadow
             .update_render_elements(size, true, radius, self.scale, 1.);
+    }
+
+    pub fn store_unmap_snapshot(&mut self, renderer: &mut GlesRenderer) {
+        let _span = tracy_client::span!("MappedLayer::store_unmap_snapshot");
+        let mut contents = Vec::new();
+        self.render_normal(
+            renderer,
+            Point::from((0., 0.)),
+            RenderTarget::Output,
+            &mut |elem| contents.push(elem),
+        );
+
+        // A bit of a hack to render blocked out as for screencast, but I think it's fine here.
+        let mut blocked_out_contents = Vec::new();
+        self.render_normal(
+            renderer,
+            Point::from((0., 0.)),
+            RenderTarget::Screencast,
+            &mut |elem| blocked_out_contents.push(elem),
+        );
+
+        let size = self.surface.cached_state().size.to_f64();
+
+        self.unmap_snapshot = Some(LayerSurfaceRenderSnapshot {
+            contents,
+            blocked_out_contents,
+            block_out_from: self.rules.block_out_from,
+            size,
+            texture: Default::default(),
+            blocked_out_texture: Default::default(),
+        })
+    }
+
+    pub fn take_unmap_snapshot(&mut self) -> Option<LayerSurfaceRenderSnapshot> {
+        self.unmap_snapshot.take()
+    }
+
+    pub fn advance_animations(&mut self) {
+        if let Some(open_anim) = &self.open_animation {
+            if open_anim.is_done() {
+                self.open_animation = None;
+            }
+        }
+    }
+
+    pub fn start_open_animation(&mut self, config: &niri_config::Animations) {
+        self.open_animation = Some(OpenAnimation::new(Animation::new(
+            self.clock.clone(),
+            0.,
+            1.,
+            0.,
+            config.layer_open.anim,
+        )));
     }
 
     pub fn are_animations_ongoing(&self) -> bool {

@@ -3,6 +3,7 @@ use smithay::desktop::{layer_map_for_output, LayerSurface, PopupKind, WindowSurf
 use smithay::output::Output;
 use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
+use smithay::wayland::compositor::SurfaceAttributes;
 use smithay::wayland::compositor::{get_parent, with_states};
 use smithay::wayland::shell::wlr_layer::{
     self, Layer, LayerSurface as WlrLayerSurface, LayerSurfaceData, WlrLayerShellHandler,
@@ -126,7 +127,7 @@ impl State {
                 let output_size = output_size(&output);
                 let scale = output.current_scale().fractional_scale();
 
-                let mapped = MappedLayer::new(
+                let mut mapped = MappedLayer::new(
                     layer.clone(),
                     rules,
                     output_size,
@@ -135,12 +136,34 @@ impl State {
                     &config,
                 );
 
+                // Mark for animation when buffer arrives
+                mapped.has_pending_open_animation = true;
+
                 let prev = self
                     .niri
                     .mapped_layer_surfaces
                     .insert(layer.clone(), mapped);
                 if prev.is_some() {
                     error!("MappedLayer was present for an unmapped surface");
+                }
+            }
+            // In src/handlers/layer_shell.rs, after line 144
+            if was_unmapped && is_mapped(surface) {
+                // Check if this is the first buffer attachment
+                if with_states(surface, |states| {
+                    states
+                        .cached_state
+                        .get::<SurfaceAttributes>()
+                        .current()
+                        .buffer
+                        .is_some()
+                }) {
+                    if let Some(mapped) = self.niri.mapped_layer_surfaces.get_mut(layer) {
+                        if mapped.has_pending_open_animation {
+                            mapped.start_open_animation(&self.niri.config.borrow().animations);
+                            mapped.has_pending_open_animation = false;
+                        }
+                    }
                 }
             }
 

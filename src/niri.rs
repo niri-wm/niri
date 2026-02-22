@@ -239,6 +239,9 @@ pub struct Niri {
     /// Extra data for mapped layer surfaces.
     pub mapped_layer_surfaces: HashMap<LayerSurface, MappedLayer>,
 
+    /// Layers in the closing animation
+    pub closing_layers: Vec<LayerSurface>,
+
     // Cached root surface for every surface, so that we can access it in destroyed() where the
     // normal get_parent() is cleared out.
     pub root_surface: HashMap<WlSurface, WlSurface>,
@@ -2466,6 +2469,7 @@ impl Niri {
             unmapped_windows: HashMap::new(),
             unmapped_layer_surfaces: HashSet::new(),
             mapped_layer_surfaces: HashMap::new(),
+            closing_layers: Vec::new(),
             root_surface: HashMap::new(),
             dmabuf_pre_commit_hook: HashMap::new(),
             blocker_cleared_tx,
