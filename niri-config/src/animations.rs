@@ -97,6 +97,8 @@ impl MergeWith<AnimationsPart> for Animations {
             workspace_switch,
             window_open,
             window_close,
+            layer_open,
+            layer_close,
             horizontal_view_movement,
             window_movement,
             window_resize,
