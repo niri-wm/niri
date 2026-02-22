@@ -826,6 +826,12 @@ impl Tty {
             if let Some(src) = config.animations.window_open.custom_shader.as_deref() {
                 shaders::set_custom_window_open_program(gles_renderer, Some(src));
             }
+            if let Some(src) = config.animations.layer_close.custom_shader.as_deref() {
+                shaders::set_custom_layer_close_program(gles_renderer, Some(src));
+            }
+            if let Some(src) = config.animations.layer_open.custom_shader.as_deref() {
+                shaders::set_custom_layer_open_program(gles_renderer, Some(src));
+            }
             drop(config);
 
             niri.update_shaders();
