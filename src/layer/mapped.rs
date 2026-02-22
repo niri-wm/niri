@@ -1,23 +1,32 @@
+use std::cell::{Ref, RefCell};
+
+use niri_config::animations::LayerOpenAnim;
 use niri_config::utils::MergeWith as _;
 use niri_config::{Config, LayerRule};
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::element::Kind;
+use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::desktop::{LayerSurface, PopupKind, PopupManager};
 use smithay::utils::{Logical, Point, Rectangle, Scale, Size};
 use smithay::wayland::compositor::{remove_pre_commit_hook, HookId};
 use smithay::wayland::shell::wlr_layer::{ExclusiveZone, Layer};
 
 use super::ResolvedLayerRules;
-use crate::animation::Clock;
+use crate::animation::{Animation, Clock};
+use crate::layer::closing_layer::ClosingLayerRenderElement;
+use crate::layer::opening_layer::{OpenAnimation, OpeningLayerRenderElement};
 use crate::layout::shadow::Shadow;
 use crate::niri_render_elements;
 use crate::render_helpers::background_effect::BackgroundEffectElement;
+use crate::render_helpers::offscreen::OffscreenData;
 use crate::render_helpers::renderer::NiriRenderer;
+use crate::render_helpers::shaders::ProgramType;
 use crate::render_helpers::shadow::ShadowRenderElement;
+use crate::render_helpers::snapshot::RenderSnapshot;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
 use crate::render_helpers::surface::push_elements_from_surface_tree;
 use crate::render_helpers::xray::XrayPos;
-use crate::render_helpers::{background_effect, RenderCtx};
+use crate::render_helpers::{background_effect, encompassing_geo, RenderCtx, RenderTarget};
 use crate::utils::{baba_is_float_offset, round_logical_in_physical};
 
 #[derive(Debug)]
@@ -51,6 +60,15 @@ pub struct MappedLayer {
     /// Scale of the output the layer surface is on (and rounds its sizes to).
     scale: f64,
 
+    /// The animation upon opening a layer.
+    open_animation: Option<OpenAnimation>,
+
+    /// Offscreen state from the current frame's opening animation render.
+    offscreen_data: RefCell<Option<OffscreenData>>,
+
+    /// The animation upon closing a layer.
+    unmap_snapshot: Option<LayerSurfaceRenderSnapshot>,
+
     /// Clock for driving animations.
     clock: Clock,
 }
@@ -61,8 +79,15 @@ niri_render_elements! {
         SolidColor = SolidColorRenderElement,
         Shadow = ShadowRenderElement,
         BackgroundEffect = BackgroundEffectElement,
+        Opening = OpeningLayerRenderElement,
+        Closing = ClosingLayerRenderElement,
     }
 }
+
+pub type LayerSurfaceRenderSnapshot = RenderSnapshot<
+    LayerSurfaceRenderElement<GlesRenderer>,
+    LayerSurfaceRenderElement<GlesRenderer>,
+>;
 
 impl MappedLayer {
     pub fn new(
@@ -88,6 +113,9 @@ impl MappedLayer {
             view_size,
             scale,
             shadow: Shadow::new(shadow_config),
+            open_animation: None,
+            offscreen_data: RefCell::new(None),
+            unmap_snapshot: None,
             blur_config: config.blur,
             clock,
         }
@@ -126,8 +154,153 @@ impl MappedLayer {
             .update_render_elements(size, true, radius, self.scale, 1.);
     }
 
+    pub fn store_unmap_snapshot(&mut self, renderer: &mut GlesRenderer) {
+        let _span = tracy_client::span!("MappedLayer::store_unmap_snapshot");
+        let mut contents = Vec::new();
+        self.render_normal_inner(
+            RenderCtx {
+                renderer,
+                target: RenderTarget::Output,
+                xray: None,
+            },
+            None,
+            Point::from((0., 0.)),
+            XrayPos::default(),
+            RenderTarget::Output.should_block_out(self.rules.block_out_from),
+            &mut |elem| contents.push(elem),
+        );
+        self.render_popups(
+            RenderCtx {
+                renderer,
+                target: RenderTarget::Output,
+                xray: None,
+            },
+            None,
+            Point::from((0., 0.)),
+            XrayPos::default(),
+            &mut |elem| contents.push(elem),
+        );
+
+        let mut contents_with_blocked_out_bg = None;
+        if self.rules.block_out_from.is_some() {
+            let mut with_blocked_out_bg = Vec::new();
+            self.render_normal_inner(
+                RenderCtx {
+                    renderer,
+                    target: RenderTarget::Output,
+                    xray: None,
+                },
+                None,
+                Point::from((0., 0.)),
+                XrayPos::default(),
+                true,
+                &mut |elem| with_blocked_out_bg.push(elem),
+            );
+            self.render_popups(
+                RenderCtx {
+                    renderer,
+                    target: RenderTarget::Output,
+                    xray: None,
+                },
+                None,
+                Point::from((0., 0.)),
+                XrayPos::default(),
+                &mut |elem| with_blocked_out_bg.push(elem),
+            );
+
+            contents_with_blocked_out_bg = Some(with_blocked_out_bg);
+        }
+
+        // A bit of a hack to render blocked out as for screencast, but I think it's fine here as
+        // well.
+        let mut blocked_out_contents = Vec::new();
+        self.render_normal_inner(
+            RenderCtx {
+                renderer,
+                target: RenderTarget::Screencast,
+                xray: None,
+            },
+            None,
+            Point::from((0., 0.)),
+            XrayPos::default(),
+            RenderTarget::Screencast.should_block_out(self.rules.block_out_from),
+            &mut |elem| blocked_out_contents.push(elem),
+        );
+        self.render_popups(
+            RenderCtx {
+                renderer,
+                target: RenderTarget::Screencast,
+                xray: None,
+            },
+            None,
+            Point::from((0., 0.)),
+            XrayPos::default(),
+            &mut |elem| blocked_out_contents.push(elem),
+        );
+
+        let is_empty = contents.is_empty() && blocked_out_contents.is_empty();
+        if is_empty {
+            // Preserve the last good snapshot if this capture raced with content teardown.
+            if self.unmap_snapshot.as_ref().is_some_and(|snapshot| {
+                !snapshot.contents.is_empty() || !snapshot.blocked_out_contents.is_empty()
+            }) {
+                return;
+            }
+
+            // Keep this as missing so close-start can attempt one last capture.
+            self.unmap_snapshot = None;
+            return;
+        }
+
+        let size = self.surface.cached_state().size.to_f64();
+
+        self.unmap_snapshot = Some(LayerSurfaceRenderSnapshot {
+            contents,
+            blocked_out_contents,
+            contents_with_blocked_out_bg,
+            block_out_from: self.rules.block_out_from,
+            size,
+            texture: Default::default(),
+            texture_with_blocked_out_bg: Default::default(),
+            blocked_out_texture: Default::default(),
+        })
+    }
+
+    pub fn take_unmap_snapshot(&mut self) -> Option<LayerSurfaceRenderSnapshot> {
+        self.unmap_snapshot.take()
+    }
+
+    pub fn offscreen_data(&self) -> Ref<'_, Option<OffscreenData>> {
+        self.offscreen_data.borrow()
+    }
+
+    pub fn advance_animations(&mut self) {
+        if self
+            .open_animation
+            .as_ref()
+            .is_some_and(|open_anim| open_anim.is_done())
+        {
+            self.open_animation = None;
+        }
+    }
+
+    pub fn start_open_animation(&mut self, anim_config: &LayerOpenAnim, program: ProgramType) {
+        if self.open_animation.is_some() {
+            return;
+        }
+
+        self.open_animation = Some(OpenAnimation::new(
+            Animation::new(self.clock.clone(), 0., 1., 0., anim_config.anim),
+            program,
+        ));
+    }
+
     pub fn are_animations_ongoing(&self) -> bool {
         self.rules.baba_is_float
+            || self
+                .open_animation
+                .as_ref()
+                .is_some_and(|open| !open.is_done())
     }
 
     pub fn surface(&self) -> &LayerSurface {
@@ -186,7 +359,7 @@ impl MappedLayer {
 
     pub fn render_normal<R: NiriRenderer>(
         &self,
-        mut ctx: RenderCtx<R>,
+        ctx: RenderCtx<R>,
         ns: Option<usize>,
         location: Point<f64, Logical>,
         xray_pos: XrayPos,
@@ -194,14 +367,72 @@ impl MappedLayer {
     ) {
         let scale = Scale::from(self.scale);
         let alpha = self.rules.opacity.unwrap_or(1.).clamp(0., 1.);
-
         let bob_offset = self.bob_offset();
         let location = location + bob_offset;
         let xray_pos = xray_pos.offset(bob_offset);
+        let should_block_out = ctx.target.should_block_out(self.rules.block_out_from);
 
+        self.set_offscreen_data(None);
+
+        if let Some(open) = &self.open_animation {
+            let mut elements: Vec<WaylandSurfaceRenderElement<GlesRenderer>> = Vec::new();
+            push_elements_from_surface_tree(
+                ctx.renderer.as_gles_renderer(),
+                self.surface.wl_surface(),
+                Point::from((0, 0)),
+                scale,
+                alpha,
+                Kind::ScanoutCandidate,
+                &mut |elem| elements.push(elem),
+            );
+
+            if !elements.is_empty() {
+                let mut geo_size = self.surface.cached_state().size.to_f64();
+                if geo_size.w <= 0. || geo_size.h <= 0. {
+                    geo_size = encompassing_geo(scale, elements.iter())
+                        .size
+                        .to_f64()
+                        .to_logical(scale);
+                }
+
+                if geo_size.w > 0. && geo_size.h > 0. {
+                    match open.render(
+                        ctx.renderer.as_gles_renderer(),
+                        &elements,
+                        geo_size,
+                        location,
+                        scale,
+                        alpha,
+                    ) {
+                        Ok((elem, data)) => {
+                            self.set_offscreen_data(Some(data));
+                            push(elem.into());
+                            return;
+                        }
+                        Err(err) => {
+                            warn!("error rendering layer opening animation: {err:?}");
+                        }
+                    }
+                }
+            }
+        }
+
+        self.render_normal_inner(ctx, ns, location, xray_pos, should_block_out, push);
+    }
+
+    fn render_normal_inner<R: NiriRenderer>(
+        &self,
+        mut ctx: RenderCtx<R>,
+        ns: Option<usize>,
+        location: Point<f64, Logical>,
+        xray_pos: XrayPos,
+        should_block_out: bool,
+        push: &mut dyn FnMut(LayerSurfaceRenderElement<R>),
+    ) {
+        let scale = Scale::from(self.scale);
+        let alpha = self.rules.opacity.unwrap_or(1.).clamp(0., 1.);
         let surface = self.surface.wl_surface();
 
-        let should_block_out = ctx.target.should_block_out(self.rules.block_out_from);
         if should_block_out {
             // Round to physical pixels.
             let location = location.to_physical_precise_round(scale).to_logical(scale);
@@ -216,12 +447,10 @@ impl MappedLayer {
             push(elem.into());
         } else {
             // Layer surfaces don't have extra geometry like windows.
-            let buf_pos = location;
-
             push_elements_from_surface_tree(
                 ctx.renderer,
                 surface,
-                buf_pos.to_physical_precise_round(scale),
+                location.to_physical_precise_round(scale),
                 scale,
                 alpha,
                 Kind::ScanoutCandidate,
@@ -322,6 +551,24 @@ impl MappedLayer {
                 xray_pos,
                 &mut |elem| push(elem.into()),
             );
+        }
+    }
+
+    fn set_offscreen_data(&self, data: Option<OffscreenData>) {
+        let Some(data) = data else {
+            self.offscreen_data.replace(None);
+            return;
+        };
+
+        let mut offscreen_data = self.offscreen_data.borrow_mut();
+        match &mut *offscreen_data {
+            None => {
+                *offscreen_data = Some(data);
+            }
+            Some(existing) => {
+                existing.id = data.id;
+                existing.states.states.extend(data.states.states);
+            }
         }
     }
 }
