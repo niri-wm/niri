@@ -11,6 +11,8 @@ pub struct Animations {
     pub workspace_switch: WorkspaceSwitchAnim,
     pub window_open: WindowOpenAnim,
     pub window_close: WindowCloseAnim,
+    pub layer_open: LayerOpenAnim,
+    pub layer_close: LayerCloseAnim,
     pub horizontal_view_movement: HorizontalViewMovementAnim,
     pub window_movement: WindowMovementAnim,
     pub window_resize: WindowResizeAnim,
@@ -31,6 +33,8 @@ impl Default for Animations {
             window_movement: Default::default(),
             window_open: Default::default(),
             window_close: Default::default(),
+            layer_open: Default::default(),
+            layer_close: Default::default(),
             window_resize: Default::default(),
             config_notification_open_close: Default::default(),
             exit_confirmation_open_close: Default::default(),
@@ -55,6 +59,10 @@ pub struct AnimationsPart {
     pub window_open: Option<WindowOpenAnim>,
     #[knuffel(child)]
     pub window_close: Option<WindowCloseAnim>,
+    #[knuffel(child)]
+    pub layer_open: Option<LayerOpenAnim>,
+    #[knuffel(child)]
+    pub layer_close: Option<LayerCloseAnim>,
     #[knuffel(child)]
     pub horizontal_view_movement: Option<HorizontalViewMovementAnim>,
     #[knuffel(child)]
@@ -179,6 +187,48 @@ pub struct WindowCloseAnim {
 }
 
 impl Default for WindowCloseAnim {
+    fn default() -> Self {
+        Self {
+            anim: Animation {
+                off: false,
+                kind: Kind::Easing(EasingParams {
+                    duration_ms: 150,
+                    curve: Curve::EaseOutQuad,
+                }),
+            },
+            custom_shader: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct LayerOpenAnim {
+    pub anim: Animation,
+    pub custom_shader: Option<String>,
+}
+
+impl Default for LayerOpenAnim {
+    fn default() -> Self {
+        Self {
+            anim: Animation {
+                off: false,
+                kind: Kind::Easing(EasingParams {
+                    duration_ms: 150,
+                    curve: Curve::EaseOutExpo,
+                }),
+            },
+            custom_shader: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct LayerCloseAnim {
+    pub anim: Animation,
+    pub custom_shader: Option<String>,
+}
+
+impl Default for LayerCloseAnim {
     fn default() -> Self {
         Self {
             anim: Animation {
@@ -424,6 +474,58 @@ where
 }
 
 impl<S> knuffel::Decode<S> for WindowResizeAnim
+where
+    S: knuffel::traits::ErrorSpan,
+{
+    fn decode_node(
+        node: &knuffel::ast::SpannedNode<S>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) -> Result<Self, DecodeError<S>> {
+        let default = Self::default().anim;
+        let mut custom_shader = None;
+        let anim = Animation::decode_node(node, ctx, default, |child, ctx| {
+            if &**child.node_name == "custom-shader" {
+                custom_shader = parse_arg_node("custom-shader", child, ctx)?;
+                Ok(true)
+            } else {
+                Ok(false)
+            }
+        })?;
+
+        Ok(Self {
+            anim,
+            custom_shader,
+        })
+    }
+}
+
+impl<S> knuffel::Decode<S> for LayerOpenAnim
+where
+    S: knuffel::traits::ErrorSpan,
+{
+    fn decode_node(
+        node: &knuffel::ast::SpannedNode<S>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) -> Result<Self, DecodeError<S>> {
+        let default = Self::default().anim;
+        let mut custom_shader = None;
+        let anim = Animation::decode_node(node, ctx, default, |child, ctx| {
+            if &**child.node_name == "custom-shader" {
+                custom_shader = parse_arg_node("custom-shader", child, ctx)?;
+                Ok(true)
+            } else {
+                Ok(false)
+            }
+        })?;
+
+        Ok(Self {
+            anim,
+            custom_shader,
+        })
+    }
+}
+
+impl<S> knuffel::Decode<S> for LayerCloseAnim
 where
     S: knuffel::traits::ErrorSpan,
 {
