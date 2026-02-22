@@ -176,8 +176,18 @@ impl RenderElement<GlesRenderer> for FramebufferEffectElement {
 
         inner.intermediate = None;
 
+        // We want clamp-to-edge behavior for out-of-bounds pixels. However, glBlitFramebuffer seems
+        // to skip out-of-bounds pixels, even though my reading of the docs suggests otherwise (we
+        // use GL_LINEAR filter). So, clamp dst to the framebuffer bounds ourselves.
+        let output_rect = Rectangle::from_size(frame.output_size());
+        let clamped_dst = match dst.intersection(output_rect) {
+            Some(clamped) => clamped,
+            None => return Ok(()),
+        };
+        let clamp_scale = clamped_dst.size.to_f64() / dst.size.to_f64();
+
         let transform = frame.transformation();
-        let dst = transform.transform_rect_in(dst, &frame.output_size());
+        let dst = transform.transform_rect_in(clamped_dst, &output_rect.size);
 
         // Compute size from our geometry and scale.
         //
@@ -200,6 +210,7 @@ impl RenderElement<GlesRenderer> for FramebufferEffectElement {
         let size = src
             .size
             .to_logical(1., Transform::Normal)
+            .upscale(clamp_scale)
             .to_physical_precise_round(self.scale);
         let size = transform.transform_size(size);
 
@@ -257,10 +268,6 @@ impl RenderElement<GlesRenderer> for FramebufferEffectElement {
                     framebuffer.tex_id(),
                     0,
                 );
-
-                // FIXME: figure out what to do with BlitFramebuffer stubbornly clipping values
-                // outside of src, even though it is supposed to clamp to edge.
-                gl.Clear(ffi::COLOR_BUFFER_BIT);
 
                 gl.BlitFramebuffer(
                     dst.loc.x,
@@ -324,25 +331,53 @@ impl RenderElement<GlesRenderer> for FramebufferEffectElement {
             return Ok(());
         };
 
-        let crop = src.to_logical(1., Transform::Normal, &src.size);
+        // Clamp the same way as in capture_framebuffer().
+        let output_rect = Rectangle::from_size(frame.output_size());
+        let clamped_dst = match dst.intersection(output_rect) {
+            Some(clamped) => clamped,
+            None => return Ok(()),
+        };
+        let clamp_offset = clamped_dst.loc - dst.loc;
 
         // Filter damage by subregion, reusing the stored Vec to avoid allocation.
-        let damage = if let Some(subregion) = &self.subregion {
+        let filtered = &mut inner.subregion_damage;
+        filtered.clear();
+
+        if let Some(subregion) = &self.subregion {
             // Convert to subregion coordinates.
-            let mut crop = crop;
+            let mut crop = src.to_logical(1., Transform::Normal, &src.size);
             crop.loc += self.geometry.loc;
-
-            let filtered = &mut inner.subregion_damage;
-            filtered.clear();
             subregion.filter_damage(crop, dst, damage, filtered);
-
-            if filtered.is_empty() {
-                return Ok(());
-            }
-            &filtered[..]
         } else {
-            damage
+            filtered.extend(damage.iter());
         };
+
+        // Adjust for clamped dst.
+        if clamped_dst != dst {
+            let r = Rectangle::new(clamp_offset, clamped_dst.size);
+            filtered.retain_mut(|d| {
+                if let Some(mut crop) = d.intersection(r) {
+                    crop.loc -= clamp_offset;
+                    *d = crop;
+                    true
+                } else {
+                    false
+                }
+            });
+        }
+
+        if filtered.is_empty() {
+            return Ok(());
+        }
+        let damage = &filtered[..];
+
+        // Adjust src proportionally to the dst clamping.
+        let src_loc = src.loc.to_logical(1., Transform::Normal, &src.size);
+        let dst_to_src = src.size / dst.size.to_f64();
+        let crop = Rectangle::new(
+            src_loc + clamp_offset.to_f64().upscale(dst_to_src).to_logical(1.),
+            clamped_dst.size.to_f64().upscale(dst_to_src).to_logical(1.),
+        );
 
         let uniforms = inner
             .program
@@ -353,7 +388,7 @@ impl RenderElement<GlesRenderer> for FramebufferEffectElement {
         frame.render_texture_from_to(
             texture,
             Rectangle::from_size(texture.size().to_f64()),
-            dst,
+            clamped_dst,
             damage,
             &[],
             // The intermediate texture has the same transform as the frame.
