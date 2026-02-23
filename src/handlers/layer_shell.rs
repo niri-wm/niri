@@ -127,7 +127,7 @@ impl State {
             .unwrap();
 
         if is_mapped(surface) {
-            let was_unmapped = self.niri.unmapped_layer_surfaces.remove(surface);
+            let was_mapped = self.niri.mapped_layer_surfaces.contains_key(layer);
 
             if let Some(idx) = self
                 .niri
@@ -138,8 +138,11 @@ impl State {
                 self.niri.closing_layers.remove(idx);
             }
 
-            // Resolve rules for newly mapped layer surfaces.
-            if was_unmapped {
+            // Handle map edge: create state and start the open animation once.
+            // And resolve rules for newly mapped layer surfaces.
+            if !was_mapped {
+                self.niri.unmapped_layer_surfaces.remove(surface);
+
                 let config = self.niri.config.borrow();
 
                 let rules = &config.layer_rules;
@@ -190,7 +193,7 @@ impl State {
             // https://github.com/niri-wm/niri/issues/641
             let on_demand = layer.cached_state().keyboard_interactivity
                 == wlr_layer::KeyboardInteractivity::OnDemand;
-            if was_unmapped && on_demand {
+            if !was_mapped && on_demand {
                 // I guess it'd make sense to check that no higher-layer on-demand surface
                 // has focus, but Smithay's Layer doesn't implement Ord so this would be a
                 // little annoying.
