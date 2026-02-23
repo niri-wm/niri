@@ -417,6 +417,7 @@ pub struct Niri {
 #[derive(Debug)]
 pub struct ClosingLayerState {
     pub output: Output,
+    pub surface: LayerSurface,
     pub layer: Layer,
     pub for_backdrop: bool,
     pub animation: ClosingLayer,
@@ -4044,6 +4045,8 @@ impl Niri {
                     let Some(geo) = layer_map.layer_geometry(surface) else {
                         continue;
                     };
+
+                    mapped.set_last_geometry(geo);
 
                     mapped.update_render_elements(geo.size.to_f64());
                 }
