@@ -4642,11 +4642,28 @@ impl Niri {
         }
 
         for surface in layer_map_for_output(output).layers() {
+            let offscreen_data = self
+                .mapped_layer_surfaces
+                .get(surface)
+                .map(MappedLayer::offscreen_data);
+
             surface.with_surfaces(|surface, states| {
-                update_surface_primary_scanout_output(
-                    surface,
+                let primary_scanout_output = states
+                    .data_map
+                    .get_or_insert_threadsafe(Mutex::<PrimaryScanoutOutput>::default);
+                let mut primary_scanout_output = primary_scanout_output.lock().unwrap();
+
+                let mut id = Id::from_wayland_resource(surface);
+
+                if let Some(data) = offscreen_data.as_ref().and_then(|data| data.as_ref()) {
+                    if data.states.element_was_presented(id.clone()) {
+                        id = data.id.clone();
+                    }
+                }
+
+                primary_scanout_output.update_from_render_element_states(
+                    id,
                     output,
-                    states,
                     render_element_states,
                     // Layer surfaces are shown only on one output at a time.
                     |_, _, output, _| output,

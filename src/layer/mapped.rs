@@ -1,3 +1,5 @@
+use std::cell::{Ref, RefCell};
+
 use niri_config::utils::MergeWith as _;
 use niri_config::{Config, LayerRule};
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
@@ -13,6 +15,7 @@ use crate::layer::closing_layer::ClosingLayerRenderElement;
 use crate::layer::opening_layer::{OpenAnimation, OpeningLayerRenderElement};
 use crate::layout::shadow::Shadow;
 use crate::niri_render_elements;
+use crate::render_helpers::offscreen::OffscreenData;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::shadow::ShadowRenderElement;
 use crate::render_helpers::snapshot::RenderSnapshot;
@@ -43,6 +46,9 @@ pub struct MappedLayer {
 
     /// The animation upon opening a layer.
     open_animation: Option<OpenAnimation>,
+
+    /// Offscreen state from the current frame's opening animation render.
+    offscreen_data: RefCell<Option<OffscreenData>>,
 
     /// The animation upon closing a layer.
     unmap_snapshot: Option<LayerSurfaceRenderSnapshot>,
@@ -88,6 +94,7 @@ impl MappedLayer {
             scale,
             shadow: Shadow::new(shadow_config),
             open_animation: None,
+            offscreen_data: RefCell::new(None),
             unmap_snapshot: None,
             clock,
         }
@@ -160,6 +167,10 @@ impl MappedLayer {
         self.unmap_snapshot.take()
     }
 
+    pub fn offscreen_data(&self) -> Ref<'_, Option<OffscreenData>> {
+        self.offscreen_data.borrow()
+    }
+
     pub fn advance_animations(&mut self) {
         if self
             .open_animation
@@ -186,6 +197,7 @@ impl MappedLayer {
 
     pub fn reset_open_animation_state(&mut self) {
         self.open_animation = None;
+        self.set_offscreen_data(None);
     }
 
     pub fn are_animations_ongoing(&self) -> bool {
@@ -253,6 +265,8 @@ impl MappedLayer {
         let alpha = self.rules.opacity.unwrap_or(1.).clamp(0., 1.);
         let location = location + self.bob_offset();
 
+        self.set_offscreen_data(None);
+
         if let Some(open) = &self.open_animation {
             let renderer = renderer.as_gles_renderer();
             let mut elements: Vec<WaylandSurfaceRenderElement<GlesRenderer>> = Vec::new();
@@ -270,7 +284,8 @@ impl MappedLayer {
                 let geo_size = self.surface.cached_state().size.to_f64();
                 let res = open.render(renderer, &elements, geo_size, location, scale, alpha);
                 match res {
-                    Ok((elem, _)) => {
+                    Ok((elem, data)) => {
+                        self.set_offscreen_data(Some(data));
                         push(elem.into());
                         return;
                     }
@@ -359,6 +374,24 @@ impl MappedLayer {
                 Kind::ScanoutCandidate,
                 &mut |elem| push(elem.into()),
             );
+        }
+    }
+
+    fn set_offscreen_data(&self, data: Option<OffscreenData>) {
+        let Some(data) = data else {
+            self.offscreen_data.replace(None);
+            return;
+        };
+
+        let mut offscreen_data = self.offscreen_data.borrow_mut();
+        match &mut *offscreen_data {
+            None => {
+                *offscreen_data = Some(data);
+            }
+            Some(existing) => {
+                existing.id = data.id;
+                existing.states.states.extend(data.states.states);
+            }
         }
     }
 }
