@@ -4,6 +4,7 @@ use niri_config::{BlockOutFrom, CornerRadius, ShadowRule};
 use smithay::desktop::LayerSurface;
 
 pub mod mapped;
+
 pub mod closing_layer;
 pub mod opening_layer;
 pub use mapped::MappedLayer;

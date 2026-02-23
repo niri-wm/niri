@@ -4046,8 +4046,6 @@ impl Niri {
                         continue;
                     };
 
-                    mapped.set_last_geometry(geo);
-
                     mapped.update_render_elements(geo.size.to_f64());
                 }
             }
