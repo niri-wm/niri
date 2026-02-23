@@ -4,7 +4,6 @@ use smithay::output::Output;
 use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Rectangle, Scale};
-use smithay::wayland::compositor::SurfaceAttributes;
 use smithay::wayland::compositor::{get_parent, with_states};
 use smithay::wayland::shell::wlr_layer::{
     self, Layer, LayerSurface as WlrLayerSurface, LayerSurfaceData, WlrLayerShellHandler,
@@ -68,7 +67,7 @@ impl WlrLayerShellHandler for State {
             let geo = map.layer_geometry(&layer);
 
             if let Some(mapped) = self.niri.mapped_layer_surfaces.remove(&layer) {
-                if let Some(geo) = geo {
+                if let Some(geo) = geo.or_else(|| mapped.last_geometry()) {
                     self.start_close_animation_for_layer(&output, &layer, geo, mapped);
                 }
             }
@@ -130,6 +129,15 @@ impl State {
         if is_mapped(surface) {
             let was_unmapped = self.niri.unmapped_layer_surfaces.remove(surface);
 
+            if let Some(idx) = self
+                .niri
+                .closing_layers
+                .iter()
+                .position(|closing| &closing.surface == layer)
+            {
+                self.niri.closing_layers.remove(idx);
+            }
+
             // Resolve rules for newly mapped layer surfaces.
             if was_unmapped {
                 let config = self.niri.config.borrow();
@@ -148,9 +156,7 @@ impl State {
                     self.niri.clock.clone(),
                     &config,
                 );
-
-                // Mark for animation when buffer arrives
-                mapped.has_pending_open_animation = true;
+                mapped.start_open_animation(&config.animations);
 
                 let prev = self
                     .niri
@@ -158,24 +164,6 @@ impl State {
                     .insert(layer.clone(), mapped);
                 if prev.is_some() {
                     error!("MappedLayer was present for an unmapped surface");
-                }
-            }
-
-            // Layer surfaces may map before they have renderable content; defer open animation
-            // until we see the first buffer attachment.
-            if with_states(surface, |states| {
-                states
-                    .cached_state
-                    .get::<SurfaceAttributes>()
-                    .current()
-                    .buffer
-                    .is_some()
-            }) {
-                if let Some(mapped) = self.niri.mapped_layer_surfaces.get_mut(layer) {
-                    if mapped.has_pending_open_animation {
-                        mapped.start_open_animation(&self.niri.config.borrow().animations);
-                        mapped.has_pending_open_animation = false;
-                    }
                 }
             }
 
@@ -211,7 +199,7 @@ impl State {
             // The surface is unmapped.
             let geo = map.layer_geometry(layer);
             if let Some(mapped) = self.niri.mapped_layer_surfaces.remove(layer) {
-                if let Some(geo) = geo {
+                if let Some(geo) = geo.or_else(|| mapped.last_geometry()) {
                     self.start_close_animation_for_layer(&output, layer, geo, mapped);
                 }
 
@@ -291,6 +279,7 @@ impl State {
             match res {
                 Ok(animation) => self.niri.closing_layers.push(ClosingLayerState {
                     output: output.clone(),
+                    surface: layer.clone(),
                     layer: layer.layer(),
                     for_backdrop: mapped.place_within_backdrop(),
                     animation,

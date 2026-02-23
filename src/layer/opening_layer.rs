@@ -58,6 +58,10 @@ impl OpenAnimation {
         let progress = self.anim.value();
         let clamped_progress = self.anim.clamped_value().clamp(0., 1.);
 
+        if elements.is_empty() {
+            anyhow::bail!("no elements to animate");
+        }
+
         let (elem, _sync_point, mut data) = self
             .buffer
             .render(renderer, scale, elements)
