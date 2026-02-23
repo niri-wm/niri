@@ -6,6 +6,7 @@ use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::desktop::{LayerSurface, PopupManager};
 use smithay::utils::{Logical, Point, Scale, Size};
 use smithay::wayland::shell::wlr_layer::{ExclusiveZone, Layer};
+use std::time::Duration;
 
 use super::ResolvedLayerRules;
 use crate::animation::{Animation, Clock};
@@ -42,14 +43,20 @@ pub struct MappedLayer {
     /// Scale of the output the layer surface is on (and rounds its sizes to).
     scale: f64,
 
-    /// Whether there is an ongoing open animation that needs to be advanced and rendered.
-    pub has_pending_open_animation: bool,
-
     /// The animation upon opening a layer.
     open_animation: Option<OpenAnimation>,
 
+    /// Pending open animation waiting for renderable content.
+    pending_open_animation: Option<(Duration, niri_config::Animation)>,
+
+    /// Whether the open animation has been started (prevents double triggers).
+    open_animation_started: bool,
+
     /// The animation upon closing a layer.
     unmap_snapshot: Option<LayerSurfaceRenderSnapshot>,
+
+    /// Last known geometry while the layer was mapped.
+    last_geometry: Option<smithay::utils::Rectangle<i32, Logical>>,
 
     /// Clock for driving animations.
     clock: Clock,
@@ -91,9 +98,11 @@ impl MappedLayer {
             view_size,
             scale,
             shadow: Shadow::new(shadow_config),
-            has_pending_open_animation: false,
             open_animation: None,
+            pending_open_animation: None,
+            open_animation_started: false,
             unmap_snapshot: None,
+            last_geometry: None,
             clock,
         }
     }
@@ -165,25 +174,48 @@ impl MappedLayer {
     }
 
     pub fn advance_animations(&mut self) {
+        if self.open_animation.is_none() {
+            if let Some((started_at, anim)) = &self.pending_open_animation {
+                if self.clock.now() >= *started_at {
+                    self.open_animation = Some(OpenAnimation::new(Animation::new(
+                        self.clock.clone(),
+                        0.,
+                        1.,
+                        0.,
+                        *anim,
+                    )));
+                    self.pending_open_animation = None;
+                }
+            }
+        }
+
         if let Some(open_anim) = &self.open_animation {
             if open_anim.is_done() {
                 self.open_animation = None;
+                self.open_animation_started = false;
             }
         }
     }
 
     pub fn start_open_animation(&mut self, config: &niri_config::Animations) {
-        self.open_animation = Some(OpenAnimation::new(Animation::new(
-            self.clock.clone(),
-            0.,
-            1.,
-            0.,
-            config.layer_open.anim,
-        )));
+        if self.open_animation_started {
+            return;
+        }
+
+        self.pending_open_animation = Some((self.clock.now(), config.layer_open.anim));
+        self.open_animation = None;
+        self.open_animation_started = true;
+    }
+
+    pub fn reset_open_animation_state(&mut self) {
+        self.open_animation_started = false;
+        self.pending_open_animation = None;
+        self.open_animation = None;
     }
 
     pub fn are_animations_ongoing(&self) -> bool {
         self.rules.baba_is_float
+            || self.pending_open_animation.is_some()
             || self
                 .open_animation
                 .as_ref()
@@ -192,6 +224,14 @@ impl MappedLayer {
 
     pub fn surface(&self) -> &LayerSurface {
         &self.surface
+    }
+
+    pub fn set_last_geometry(&mut self, geo: smithay::utils::Rectangle<i32, Logical>) {
+        self.last_geometry = Some(geo);
+    }
+
+    pub fn last_geometry(&self) -> Option<smithay::utils::Rectangle<i32, Logical>> {
+        self.last_geometry
     }
 
     pub fn rules(&self) -> &ResolvedLayerRules {
@@ -250,11 +290,14 @@ impl MappedLayer {
         let mut pushed = false;
         if let Some(open) = &self.open_animation {
             let renderer = renderer.as_gles_renderer();
-            let mut elements = Vec::new();
-            self.render_normal_inner(
+            let mut elements: Vec<WaylandSurfaceRenderElement<GlesRenderer>> = Vec::new();
+            push_elements_from_surface_tree(
                 renderer,
-                Point::from((0., 0.)),
-                target,
+                self.surface.wl_surface(),
+                Point::from((0, 0)),
+                scale,
+                alpha,
+                Kind::ScanoutCandidate,
                 &mut |elem| elements.push(elem),
             );
 
