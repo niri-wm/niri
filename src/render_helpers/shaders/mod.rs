@@ -15,7 +15,7 @@ pub struct Shaders {
     pub clipped_surface: Option<GlesTexProgram>,
     pub resize: Option<ShaderProgram>,
     pub gradient_fade: Option<GlesTexProgram>,
-    pub custom_resize: RefCell<Option<ShaderProgram>>,
+    pub custom_window_resize: RefCell<Option<ShaderProgram>>,
     pub custom_window_close: RefCell<Option<ShaderProgram>>,
     pub custom_window_open: RefCell<Option<ShaderProgram>>,
     pub custom_layer_close: RefCell<Option<ShaderProgram>>,
@@ -26,9 +26,9 @@ pub struct Shaders {
 pub enum ProgramType {
     Border,
     Shadow,
-    Resize,
-    Close,
-    Open,
+    WindowResize,
+    WindowClose,
+    WindowOpen,
     LayerClose,
     LayerOpen,
 }
@@ -117,7 +117,7 @@ impl Shaders {
             clipped_surface,
             resize,
             gradient_fade,
-            custom_resize: RefCell::new(None),
+            custom_window_resize: RefCell::new(None),
             custom_window_close: RefCell::new(None),
             custom_window_open: RefCell::new(None),
             custom_layer_close: RefCell::new(None),
@@ -138,11 +138,11 @@ impl Shaders {
             .expect("shaders::init() must be called when creating the renderer")
     }
 
-    pub fn replace_custom_resize_program(
+    pub fn replace_custom_window_resize_program(
         &self,
         program: Option<ShaderProgram>,
     ) -> Option<ShaderProgram> {
-        self.custom_resize.replace(program)
+        self.custom_window_resize.replace(program)
     }
 
     pub fn replace_custom_window_close_program(
@@ -177,13 +177,13 @@ impl Shaders {
         match program {
             ProgramType::Border => self.border.clone(),
             ProgramType::Shadow => self.shadow.clone(),
-            ProgramType::Resize => self
-                .custom_resize
+            ProgramType::WindowResize => self
+                .custom_window_resize
                 .borrow()
                 .clone()
                 .or_else(|| self.resize.clone()),
-            ProgramType::Close => self.custom_window_close.borrow().clone(),
-            ProgramType::Open => self.custom_window_open.borrow().clone(),
+            ProgramType::WindowClose => self.custom_window_close.borrow().clone(),
+            ProgramType::WindowOpen => self.custom_window_open.borrow().clone(),
             ProgramType::LayerClose => self.custom_layer_close.borrow().clone(),
             ProgramType::LayerOpen => self.custom_layer_open.borrow().clone(),
         }
@@ -238,7 +238,7 @@ pub fn set_custom_resize_program(renderer: &mut GlesRenderer, src: Option<&str>)
         None
     };
 
-    if let Some(prev) = Shaders::get(renderer).replace_custom_resize_program(program) {
+    if let Some(prev) = Shaders::get(renderer).replace_custom_window_resize_program(program) {
         if let Err(err) = prev.destroy(renderer) {
             warn!("error destroying previous custom resize shader: {err:?}");
         }

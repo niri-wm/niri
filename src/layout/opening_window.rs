@@ -63,7 +63,10 @@ impl OpenAnimation {
             .render(renderer, scale, elements)
             .context("error rendering to offscreen buffer")?;
 
-        if Shaders::get(renderer).program(ProgramType::Open).is_some() {
+        if Shaders::get(renderer)
+            .program(ProgramType::WindowOpen)
+            .is_some()
+        {
             // OffscreenBuffer renders with Transform::Normal and the scale that we passed, so we
             // can assume that below.
             let offset = elem.offset();
@@ -98,7 +101,7 @@ impl OpenAnimation {
                 Mat3::from_translation(-tex_loc / tex_size) * Mat3::from_scale(geo_size / tex_size);
 
             let elem = ShaderRenderElement::new(
-                ProgramType::Open,
+                ProgramType::WindowOpen,
                 area.size,
                 None,
                 scale.x as f32,
