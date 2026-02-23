@@ -67,7 +67,7 @@ impl WlrLayerShellHandler for State {
             let geo = map.layer_geometry(&layer);
 
             if let Some(mapped) = self.niri.mapped_layer_surfaces.remove(&layer) {
-                if let Some(geo) = geo.or_else(|| mapped.last_geometry()) {
+                if let Some(geo) = geo {
                     self.start_close_animation_for_layer(&output, &layer, geo, mapped);
                 }
             }
@@ -156,6 +156,7 @@ impl State {
                     self.niri.clock.clone(),
                     &config,
                 );
+                // Start the open animation immediately on map.
                 mapped.start_open_animation(&config.animations);
 
                 let prev = self
@@ -199,7 +200,7 @@ impl State {
             // The surface is unmapped.
             let geo = map.layer_geometry(layer);
             if let Some(mapped) = self.niri.mapped_layer_surfaces.remove(layer) {
-                if let Some(geo) = geo.or_else(|| mapped.last_geometry()) {
+                if let Some(geo) = geo {
                     self.start_close_animation_for_layer(&output, layer, geo, mapped);
                 }
 

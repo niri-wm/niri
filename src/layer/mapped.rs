@@ -6,13 +6,11 @@ use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::desktop::{LayerSurface, PopupManager};
 use smithay::utils::{Logical, Point, Scale, Size};
 use smithay::wayland::shell::wlr_layer::{ExclusiveZone, Layer};
-use std::time::Duration;
 
 use super::ResolvedLayerRules;
 use crate::animation::{Animation, Clock};
 use crate::layer::closing_layer::ClosingLayerRenderElement;
-use crate::layer::opening_layer::OpenAnimation;
-use crate::layer::opening_layer::OpeningLayerRenderElement;
+use crate::layer::opening_layer::{OpenAnimation, OpeningLayerRenderElement};
 use crate::layout::shadow::Shadow;
 use crate::niri_render_elements;
 use crate::render_helpers::renderer::NiriRenderer;
@@ -46,17 +44,8 @@ pub struct MappedLayer {
     /// The animation upon opening a layer.
     open_animation: Option<OpenAnimation>,
 
-    /// Pending open animation waiting for renderable content.
-    pending_open_animation: Option<(Duration, niri_config::Animation)>,
-
-    /// Whether the open animation has been started (prevents double triggers).
-    open_animation_started: bool,
-
     /// The animation upon closing a layer.
     unmap_snapshot: Option<LayerSurfaceRenderSnapshot>,
-
-    /// Last known geometry while the layer was mapped.
-    last_geometry: Option<smithay::utils::Rectangle<i32, Logical>>,
 
     /// Clock for driving animations.
     clock: Clock,
@@ -99,10 +88,7 @@ impl MappedLayer {
             scale,
             shadow: Shadow::new(shadow_config),
             open_animation: None,
-            pending_open_animation: None,
-            open_animation_started: false,
             unmap_snapshot: None,
-            last_geometry: None,
             clock,
         }
     }
@@ -148,7 +134,8 @@ impl MappedLayer {
             &mut |elem| contents.push(elem),
         );
 
-        // A bit of a hack to render blocked out as for screencast, but I think it's fine here.
+        // A bit of a hack to render blocked out as for screencast, but I think it's fine here as
+        // well.
         let mut blocked_out_contents = Vec::new();
         self.render_normal_inner(
             renderer,
@@ -174,48 +161,35 @@ impl MappedLayer {
     }
 
     pub fn advance_animations(&mut self) {
-        if self.open_animation.is_none() {
-            if let Some((started_at, anim)) = &self.pending_open_animation {
-                if self.clock.now() >= *started_at {
-                    self.open_animation = Some(OpenAnimation::new(Animation::new(
-                        self.clock.clone(),
-                        0.,
-                        1.,
-                        0.,
-                        *anim,
-                    )));
-                    self.pending_open_animation = None;
-                }
-            }
-        }
-
-        if let Some(open_anim) = &self.open_animation {
-            if open_anim.is_done() {
-                self.open_animation = None;
-                self.open_animation_started = false;
-            }
+        if self
+            .open_animation
+            .as_ref()
+            .is_some_and(|open_anim| open_anim.is_done())
+        {
+            self.open_animation = None;
         }
     }
 
-    pub fn start_open_animation(&mut self, config: &niri_config::Animations) {
-        if self.open_animation_started {
+    pub fn start_open_animation(&mut self, anim_config: &niri_config::Animations) {
+        if self.open_animation.is_some() {
             return;
         }
 
-        self.pending_open_animation = Some((self.clock.now(), config.layer_open.anim));
-        self.open_animation = None;
-        self.open_animation_started = true;
+        self.open_animation = Some(OpenAnimation::new(Animation::new(
+            self.clock.clone(),
+            0.,
+            1.,
+            0.,
+            anim_config.layer_open.anim,
+        )));
     }
 
     pub fn reset_open_animation_state(&mut self) {
-        self.open_animation_started = false;
-        self.pending_open_animation = None;
         self.open_animation = None;
     }
 
     pub fn are_animations_ongoing(&self) -> bool {
         self.rules.baba_is_float
-            || self.pending_open_animation.is_some()
             || self
                 .open_animation
                 .as_ref()
@@ -224,14 +198,6 @@ impl MappedLayer {
 
     pub fn surface(&self) -> &LayerSurface {
         &self.surface
-    }
-
-    pub fn set_last_geometry(&mut self, geo: smithay::utils::Rectangle<i32, Logical>) {
-        self.last_geometry = Some(geo);
-    }
-
-    pub fn last_geometry(&self) -> Option<smithay::utils::Rectangle<i32, Logical>> {
-        self.last_geometry
     }
 
     pub fn rules(&self) -> &ResolvedLayerRules {
@@ -287,7 +253,6 @@ impl MappedLayer {
         let alpha = self.rules.opacity.unwrap_or(1.).clamp(0., 1.);
         let location = location + self.bob_offset();
 
-        let mut pushed = false;
         if let Some(open) = &self.open_animation {
             let renderer = renderer.as_gles_renderer();
             let mut elements: Vec<WaylandSurfaceRenderElement<GlesRenderer>> = Vec::new();
@@ -301,21 +266,22 @@ impl MappedLayer {
                 &mut |elem| elements.push(elem),
             );
 
-            let geo_size = self.surface.cached_state().size.to_f64();
-            match open.render(renderer, &elements, geo_size, location, scale, alpha) {
-                Ok((elem, _)) => {
-                    push(elem.into());
-                    pushed = true;
-                }
-                Err(err) => {
-                    warn!("error rendering layer opening animation: {err:?}");
+            if !elements.is_empty() {
+                let geo_size = self.surface.cached_state().size.to_f64();
+                let res = open.render(renderer, &elements, geo_size, location, scale, alpha);
+                match res {
+                    Ok((elem, _)) => {
+                        push(elem.into());
+                        return;
+                    }
+                    Err(err) => {
+                        warn!("error rendering layer opening animation: {err:?}");
+                    }
                 }
             }
         }
 
-        if !pushed {
-            self.render_normal_inner(renderer, location, target, push);
-        }
+        self.render_normal_inner(renderer, location, target, push);
     }
 
     fn render_normal_inner<R: NiriRenderer>(
