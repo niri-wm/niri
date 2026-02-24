@@ -346,6 +346,14 @@ window-rule {
     clip-to-geometry true
 }
 
+// Example: auto-consume foot terminals into the same column as tabs.
+// (This example rule is commented out with a "/-" in front.)
+/-window-rule {
+    match app-id="^foot$"
+    default-column-display "tabbed"
+    open-consume-into-column "active"
+}
+
 binds {
     // Keys consist of modifiers separated by + signs, followed by an XKB key name
     // in the end. To find an XKB name for a particular key, you may use a program

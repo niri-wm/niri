@@ -5,6 +5,7 @@ use std::time::Duration;
 use niri_config::utils::MergeWith as _;
 use niri_config::{
     CenterFocusedColumn, CornerRadius, OutputName, PresetSize, Workspace as WorkspaceConfig,
+    window_rule::ConsumeIntoColumn,
 };
 use niri_ipc::{ColumnDisplay, PositionChange, SizeChange, WindowLayout};
 use smithay::backend::renderer::element::Kind;
@@ -1118,6 +1119,14 @@ impl<W: LayoutElement> Workspace<W> {
             return;
         }
         self.scrolling.consume_into_column();
+    }
+
+    pub fn auto_consume_window(&mut self, window_id: &W::Id, strategy: ConsumeIntoColumn) {
+        // Skip floating windows; auto-consume only applies to tiled layout.
+        if self.floating.has_window(window_id) {
+            return;
+        }
+        self.scrolling.auto_consume_window(window_id, strategy);
     }
 
     pub fn expel_from_column(&mut self) {
