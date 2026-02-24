@@ -1642,8 +1642,18 @@ impl State {
                     self.niri.layout.toggle_window_height(Some(&window), false);
                 }
             }
+            Action::AlignColumnLeft => {
+                self.niri.layout.align_column_left();
+                // FIXME: granular
+                self.niri.queue_redraw_all();
+            }
             Action::CenterColumn => {
                 self.niri.layout.center_column();
+                // FIXME: granular
+                self.niri.queue_redraw_all();
+            }
+            Action::AlignColumnRight => {
+                self.niri.layout.align_column_right();
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }

@@ -125,6 +125,13 @@ pub enum SizingMode {
     Fullscreen,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Alignment {
+    Left,
+    Center,
+    Right,
+}
+
 pub trait LayoutElement {
     /// Type that can be used as a unique ID of this element.
     type Id: PartialEq + std::fmt::Debug + Clone;
@@ -2196,11 +2203,25 @@ impl<W: LayoutElement> Layout<W> {
         workspace.set_column_display(display);
     }
 
+    pub fn align_column_left(&mut self) {
+        let Some(workspace) = self.active_workspace_mut() else {
+            return;
+        };
+        workspace.align_column_left();
+    }
+
     pub fn center_column(&mut self) {
         let Some(workspace) = self.active_workspace_mut() else {
             return;
         };
         workspace.center_column();
+    }
+
+    pub fn align_column_right(&mut self) {
+        let Some(workspace) = self.active_workspace_mut() else {
+            return;
+        };
+        workspace.align_column_right();
     }
 
     pub fn center_window(&mut self, id: Option<&W::Id>) {
