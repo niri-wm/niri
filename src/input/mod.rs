@@ -3286,12 +3286,17 @@ impl State {
         let horizontal_amount = event.amount(Axis::Horizontal);
         let vertical_amount = event.amount(Axis::Vertical);
 
-        // Handle touchpad scroll bindings.
-        if source == AxisSource::Finger {
+        // Handle touchpad and trackpoint scroll bindings.
+        if source == AxisSource::Finger || source == AxisSource::Continuous {
             let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
             let modifiers = modifiers_from_state(mods);
 
-            let horizontal = horizontal_amount.unwrap_or(0.);
+            // On trackpoints the horizontal scroll needs to be flipped
+            let horizontal = match source {
+				AxisSource::Finger => horizontal_amount.unwrap_or(0.),
+				AxisSource::Continuous => -horizontal_amount.unwrap_or(0.),
+				_ => 0.
+            };
             let vertical = vertical_amount.unwrap_or(0.);
 
             if should_handle_in_overview && modifiers.is_empty() {
