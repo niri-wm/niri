@@ -171,6 +171,13 @@ impl<'a> WindowRef<'a> {
             WindowRef::Mapped(mapped) => mapped.is_window_cast_target(),
         }
     }
+
+    pub fn is_xwayland(self) -> bool {
+        match self {
+            WindowRef::Unmapped(unmapped) => unmapped.is_xwayland(),
+            WindowRef::Mapped(mapped) => mapped.is_xwayland(),
+        }
+    }
 }
 
 impl ResolvedWindowRules {
@@ -429,6 +436,12 @@ fn window_matches(window: WindowRef, role: &XdgToplevelSurfaceRoleAttributes, m:
 
     if let Some(is_window_cast_target) = m.is_window_cast_target {
         if window.is_window_cast_target() != is_window_cast_target {
+            return false;
+        }
+    }
+
+    if let Some(is_xwayland) = m.is_xwayland {
+        if window.is_xwayland() != is_xwayland {
             return false;
         }
     }
