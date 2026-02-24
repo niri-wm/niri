@@ -832,6 +832,44 @@ impl Tty {
             if let Some(src) = config.animations.layer_open.custom_shader.as_deref() {
                 shaders::set_custom_layer_open_program(gles_renderer, Some(src));
             }
+            if let Some(src) = config.animations.layer_bar_close.custom_shader.as_deref() {
+                shaders::set_custom_layer_bar_close_program(gles_renderer, Some(src));
+            }
+            if let Some(src) = config.animations.layer_bar_open.custom_shader.as_deref() {
+                shaders::set_custom_layer_bar_open_program(gles_renderer, Some(src));
+            }
+            if let Some(src) = config
+                .animations
+                .layer_wallpaper_close
+                .custom_shader
+                .as_deref()
+            {
+                shaders::set_custom_layer_wallpaper_close_program(gles_renderer, Some(src));
+            }
+            if let Some(src) = config
+                .animations
+                .layer_wallpaper_open
+                .custom_shader
+                .as_deref()
+            {
+                shaders::set_custom_layer_wallpaper_open_program(gles_renderer, Some(src));
+            }
+            if let Some(src) = config
+                .animations
+                .layer_launcher_close
+                .custom_shader
+                .as_deref()
+            {
+                shaders::set_custom_layer_launcher_close_program(gles_renderer, Some(src));
+            }
+            if let Some(src) = config
+                .animations
+                .layer_launcher_open
+                .custom_shader
+                .as_deref()
+            {
+                shaders::set_custom_layer_launcher_open_program(gles_renderer, Some(src));
+            }
             drop(config);
 
             niri.update_shaders();

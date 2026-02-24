@@ -71,7 +71,6 @@ impl ResolvedLayerRules {
             if let Some(x) = rule.baba_is_float {
                 resolved.baba_is_float = x;
             }
-
             resolved.shadow.merge_with(&rule.shadow);
         }
 

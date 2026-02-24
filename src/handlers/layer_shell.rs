@@ -6,8 +6,8 @@ use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Rectangle, Scale};
 use smithay::wayland::compositor::{get_parent, with_states};
 use smithay::wayland::shell::wlr_layer::{
-    self, Layer, LayerSurface as WlrLayerSurface, LayerSurfaceData, WlrLayerShellHandler,
-    WlrLayerShellState,
+    self, Anchor, ExclusiveZone, Layer, LayerSurface as WlrLayerSurface, LayerSurfaceData,
+    WlrLayerShellHandler, WlrLayerShellState,
 };
 use smithay::wayland::shell::xdg::PopupSurface;
 
@@ -15,7 +15,15 @@ use crate::animation::Animation;
 use crate::layer::closing_layer::ClosingLayer;
 use crate::layer::{MappedLayer, ResolvedLayerRules};
 use crate::niri::{ClosingLayerState, State};
+use crate::render_helpers::shaders::ProgramType;
 use crate::utils::{is_mapped, output_size, send_scale_transform};
+
+#[derive(Clone, Copy)]
+enum LayerAnimationKind {
+    Bar,
+    Wallpaper,
+    Launcher,
+}
 
 impl WlrLayerShellHandler for State {
     fn shell_state(&mut self) -> &mut WlrLayerShellState {
@@ -148,6 +156,21 @@ impl State {
                 let rules = &config.layer_rules;
                 let rules = ResolvedLayerRules::compute(rules, layer, self.niri.is_at_startup);
 
+                let kind = resolve_layer_animation_kind(layer);
+                let (anim_config, program) = match kind {
+                    LayerAnimationKind::Bar => {
+                        (&config.animations.layer_bar_open, ProgramType::LayerBarOpen)
+                    }
+                    LayerAnimationKind::Wallpaper => (
+                        &config.animations.layer_wallpaper_open,
+                        ProgramType::LayerWallpaperOpen,
+                    ),
+                    LayerAnimationKind::Launcher => (
+                        &config.animations.layer_launcher_open,
+                        ProgramType::LayerLauncherOpen,
+                    ),
+                };
+
                 let output_size = output_size(&output);
                 let scale = output.current_scale().fractional_scale();
 
@@ -159,8 +182,9 @@ impl State {
                     self.niri.clock.clone(),
                     &config,
                 );
+
                 // Start the open animation immediately on map.
-                mapped.start_open_animation(&config.animations);
+                mapped.start_open_animation(anim_config, program);
 
                 let prev = self
                     .niri
@@ -251,8 +275,24 @@ impl State {
         geo: Rectangle<i32, Logical>,
         mut mapped: MappedLayer,
     ) {
-        let anim_config = self.niri.config.borrow().animations.layer_close.anim;
         let scale = Scale::from(output.current_scale().fractional_scale());
+        let kind = resolve_layer_animation_kind(layer);
+        let config = self.niri.config.borrow();
+
+        let (anim_config, program) = match kind {
+            LayerAnimationKind::Bar => (
+                config.animations.layer_bar_close.anim,
+                ProgramType::LayerBarClose,
+            ),
+            LayerAnimationKind::Wallpaper => (
+                config.animations.layer_wallpaper_close.anim,
+                ProgramType::LayerWallpaperClose,
+            ),
+            LayerAnimationKind::Launcher => (
+                config.animations.layer_launcher_close.anim,
+                ProgramType::LayerLauncherClose,
+            ),
+        };
 
         self.backend.with_primary_renderer(|renderer| {
             let snapshot = mapped.take_unmap_snapshot().or_else(|| {
@@ -278,6 +318,7 @@ impl State {
                 geo.size.to_f64(),
                 geo.loc.to_f64(),
                 anim,
+                program,
             );
 
             match res {
@@ -291,5 +332,22 @@ impl State {
                 Err(err) => warn!("error starting layer close animation: {err:?}"),
             }
         });
+    }
+}
+
+fn resolve_layer_animation_kind(layer: &LayerSurface) -> LayerAnimationKind {
+    let state = layer.cached_state();
+    let anchor = state.anchor;
+    let has_exclusive_zone = matches!(state.exclusive_zone, ExclusiveZone::Exclusive(_));
+    let has_all_edges = anchor
+        .contains(Anchor::TOP | Anchor::BOTTOM | Anchor::LEFT | Anchor::RIGHT)
+        && anchor.bits().count_ones() == 4;
+
+    if has_exclusive_zone {
+        LayerAnimationKind::Bar
+    } else if has_all_edges {
+        LayerAnimationKind::Wallpaper
+    } else {
+        LayerAnimationKind::Launcher
     }
 }
