@@ -575,8 +575,6 @@ impl Niri {
             }
 
             if cursor_data.is_none() {
-                // NOTE: The FIXME should no longer apply due to this commit `a34ed515`. Hopefully
-                // FIXME: support debug draw opaque regions.
                 elements.extend(
                     self.render(renderer, output, false, RenderTarget::Screencast)
                         .into_iter()

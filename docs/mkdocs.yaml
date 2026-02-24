@@ -1,7 +1,7 @@
 site_name: niri
 docs_dir: wiki
-site_url: https://yalter.github.io/niri
-repo_url: https://github.com/YaLTeR/niri
+site_url: https://niri-wm.github.io/niri
+repo_url: https://github.com/niri-wm/niri
 edit_uri: edit/main/docs/wiki/
 use_directory_urls: false
 
