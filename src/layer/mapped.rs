@@ -21,7 +21,7 @@ use crate::render_helpers::shadow::ShadowRenderElement;
 use crate::render_helpers::snapshot::RenderSnapshot;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
 use crate::render_helpers::surface::push_elements_from_surface_tree;
-use crate::render_helpers::RenderTarget;
+use crate::render_helpers::{encompassing_geo, RenderTarget};
 use crate::utils::{baba_is_float_offset, round_logical_in_physical};
 
 #[derive(Debug)]
@@ -268,10 +268,9 @@ impl MappedLayer {
         self.set_offscreen_data(None);
 
         if let Some(open) = &self.open_animation {
-            let renderer = renderer.as_gles_renderer();
             let mut elements: Vec<WaylandSurfaceRenderElement<GlesRenderer>> = Vec::new();
             push_elements_from_surface_tree(
-                renderer,
+                renderer.as_gles_renderer(),
                 self.surface.wl_surface(),
                 Point::from((0, 0)),
                 scale,
@@ -281,8 +280,27 @@ impl MappedLayer {
             );
 
             if !elements.is_empty() {
-                let geo_size = self.surface.cached_state().size.to_f64();
-                let res = open.render(renderer, &elements, geo_size, location, scale, alpha);
+                let mut geo_size = self.surface.cached_state().size.to_f64();
+                if geo_size.w <= 0. || geo_size.h <= 0. {
+                    geo_size = encompassing_geo(scale, elements.iter())
+                        .size
+                        .to_f64()
+                        .to_logical(scale);
+                }
+
+                if geo_size.w <= 0. || geo_size.h <= 0. {
+                    self.render_normal_inner(renderer, location, target, push);
+                    return;
+                }
+
+                let res = open.render(
+                    renderer.as_gles_renderer(),
+                    &elements,
+                    geo_size,
+                    location,
+                    scale,
+                    alpha,
+                );
                 match res {
                     Ok((elem, data)) => {
                         self.set_offscreen_data(Some(data));
