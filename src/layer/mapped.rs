@@ -1,5 +1,6 @@
 use std::cell::{Ref, RefCell};
 
+use niri_config::animations::LayerOpenAnim;
 use niri_config::utils::MergeWith as _;
 use niri_config::{Config, LayerRule};
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
@@ -17,6 +18,7 @@ use crate::layout::shadow::Shadow;
 use crate::niri_render_elements;
 use crate::render_helpers::offscreen::OffscreenData;
 use crate::render_helpers::renderer::NiriRenderer;
+use crate::render_helpers::shaders::ProgramType;
 use crate::render_helpers::shadow::ShadowRenderElement;
 use crate::render_helpers::snapshot::RenderSnapshot;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
@@ -181,18 +183,15 @@ impl MappedLayer {
         }
     }
 
-    pub fn start_open_animation(&mut self, anim_config: &niri_config::Animations) {
+    pub fn start_open_animation(&mut self, anim_config: &LayerOpenAnim, program: ProgramType) {
         if self.open_animation.is_some() {
             return;
         }
 
-        self.open_animation = Some(OpenAnimation::new(Animation::new(
-            self.clock.clone(),
-            0.,
-            1.,
-            0.,
-            anim_config.layer_open.anim,
-        )));
+        self.open_animation = Some(OpenAnimation::new(
+            Animation::new(self.clock.clone(), 0., 1., 0., anim_config.anim),
+            program,
+        ));
     }
 
     pub fn reset_open_animation_state(&mut self) {

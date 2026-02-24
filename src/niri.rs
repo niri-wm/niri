@@ -1546,22 +1546,156 @@ impl State {
             layer_rules_changed = true;
         }
 
-        if config.animations.layer_close.custom_shader
-            != old_config.animations.layer_close.custom_shader
-        {
-            let src = config.animations.layer_close.custom_shader.as_deref();
+        let new_layer_close_shader = config
+            .animations
+            .layer_bar_close
+            .custom_shader
+            .as_deref()
+            .or(config
+                .animations
+                .layer_wallpaper_close
+                .custom_shader
+                .as_deref())
+            .or(config
+                .animations
+                .layer_launcher_close
+                .custom_shader
+                .as_deref())
+            .or(config.animations.layer_close.custom_shader.as_deref());
+        let old_layer_close_shader = old_config
+            .animations
+            .layer_bar_close
+            .custom_shader
+            .as_deref()
+            .or(old_config
+                .animations
+                .layer_wallpaper_close
+                .custom_shader
+                .as_deref())
+            .or(old_config
+                .animations
+                .layer_launcher_close
+                .custom_shader
+                .as_deref())
+            .or(old_config.animations.layer_close.custom_shader.as_deref());
+        if new_layer_close_shader != old_layer_close_shader {
             self.backend.with_primary_renderer(|renderer| {
-                shaders::set_custom_layer_close_program(renderer, src);
+                shaders::set_custom_layer_close_program(renderer, new_layer_close_shader);
             });
             shaders_changed = true;
         }
 
-        if config.animations.layer_open.custom_shader
-            != old_config.animations.layer_open.custom_shader
-        {
-            let src = config.animations.layer_open.custom_shader.as_deref();
+        let new_layer_open_shader = config
+            .animations
+            .layer_bar_open
+            .custom_shader
+            .as_deref()
+            .or(config
+                .animations
+                .layer_wallpaper_open
+                .custom_shader
+                .as_deref())
+            .or(config
+                .animations
+                .layer_launcher_open
+                .custom_shader
+                .as_deref())
+            .or(config.animations.layer_open.custom_shader.as_deref());
+        let old_layer_open_shader = old_config
+            .animations
+            .layer_bar_open
+            .custom_shader
+            .as_deref()
+            .or(old_config
+                .animations
+                .layer_wallpaper_open
+                .custom_shader
+                .as_deref())
+            .or(old_config
+                .animations
+                .layer_launcher_open
+                .custom_shader
+                .as_deref())
+            .or(old_config.animations.layer_open.custom_shader.as_deref());
+        if new_layer_open_shader != old_layer_open_shader {
             self.backend.with_primary_renderer(|renderer| {
-                shaders::set_custom_layer_open_program(renderer, src);
+                shaders::set_custom_layer_open_program(renderer, new_layer_open_shader);
+            });
+            shaders_changed = true;
+        }
+
+        if config.animations.layer_bar_open.custom_shader
+            != old_config.animations.layer_bar_open.custom_shader
+        {
+            let src = config.animations.layer_bar_open.custom_shader.as_deref();
+            self.backend.with_primary_renderer(|renderer| {
+                shaders::set_custom_layer_bar_open_program(renderer, src);
+            });
+            shaders_changed = true;
+        }
+
+        if config.animations.layer_bar_close.custom_shader
+            != old_config.animations.layer_bar_close.custom_shader
+        {
+            let src = config.animations.layer_bar_close.custom_shader.as_deref();
+            self.backend.with_primary_renderer(|renderer| {
+                shaders::set_custom_layer_bar_close_program(renderer, src);
+            });
+            shaders_changed = true;
+        }
+
+        if config.animations.layer_wallpaper_open.custom_shader
+            != old_config.animations.layer_wallpaper_open.custom_shader
+        {
+            let src = config
+                .animations
+                .layer_wallpaper_open
+                .custom_shader
+                .as_deref();
+            self.backend.with_primary_renderer(|renderer| {
+                shaders::set_custom_layer_wallpaper_open_program(renderer, src);
+            });
+            shaders_changed = true;
+        }
+
+        if config.animations.layer_wallpaper_close.custom_shader
+            != old_config.animations.layer_wallpaper_close.custom_shader
+        {
+            let src = config
+                .animations
+                .layer_wallpaper_close
+                .custom_shader
+                .as_deref();
+            self.backend.with_primary_renderer(|renderer| {
+                shaders::set_custom_layer_wallpaper_close_program(renderer, src);
+            });
+            shaders_changed = true;
+        }
+
+        if config.animations.layer_launcher_open.custom_shader
+            != old_config.animations.layer_launcher_open.custom_shader
+        {
+            let src = config
+                .animations
+                .layer_launcher_open
+                .custom_shader
+                .as_deref();
+            self.backend.with_primary_renderer(|renderer| {
+                shaders::set_custom_layer_launcher_open_program(renderer, src);
+            });
+            shaders_changed = true;
+        }
+
+        if config.animations.layer_launcher_close.custom_shader
+            != old_config.animations.layer_launcher_close.custom_shader
+        {
+            let src = config
+                .animations
+                .layer_launcher_close
+                .custom_shader
+                .as_deref();
+            self.backend.with_primary_renderer(|renderer| {
+                shaders::set_custom_layer_launcher_close_program(renderer, src);
             });
             shaders_changed = true;
         }
