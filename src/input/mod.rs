@@ -1265,6 +1265,40 @@ impl State {
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
+            Action::FocusWindowOrWorkspaceOrMonitorDown => {
+                if !self.niri.layout.focus_window_or_workspace_or_monitor_down() {
+                    // Fall back to monitor below
+                    if let Some(output) = self.niri.output_down() {
+                        self.niri.layout.focus_output(&output);
+                        if !self.maybe_warp_cursor_to_focus_centered() {
+                            self.move_cursor_to_output(&output);
+                        }
+                        self.niri.layer_shell_on_demand_focus = None;
+                    }
+                } else {
+                    self.maybe_warp_cursor_to_focus();
+                    self.niri.layer_shell_on_demand_focus = None;
+                }
+                // FIXME: granular
+                self.niri.queue_redraw_all();
+            }
+            Action::FocusWindowOrWorkspaceOrMonitorUp => {
+                if !self.niri.layout.focus_window_or_workspace_or_monitor_up() {
+                    // Fall back to monitor above
+                    if let Some(output) = self.niri.output_up() {
+                        self.niri.layout.focus_output(&output);
+                        if !self.maybe_warp_cursor_to_focus_centered() {
+                            self.move_cursor_to_output(&output);
+                        }
+                        self.niri.layer_shell_on_demand_focus = None;
+                    }
+                } else {
+                    self.maybe_warp_cursor_to_focus();
+                    self.niri.layer_shell_on_demand_focus = None;
+                }
+                // FIXME: granular
+                self.niri.queue_redraw_all();
+            }
             Action::FocusWindowTop => {
                 self.niri.layout.focus_window_top();
                 self.maybe_warp_cursor_to_focus();
