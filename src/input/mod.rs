@@ -35,7 +35,7 @@ use smithay::input::SeatHandler;
 use smithay::output::Output;
 use smithay::reexports::wayland_server::protocol::wl_data_source::WlDataSource;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::utils::{Logical, Point, Rectangle, Scale, Transform, SERIAL_COUNTER};
+use smithay::utils::{Logical, Physical, Point, Rectangle, Scale, Transform, SERIAL_COUNTER};
 use smithay::wayland::keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitor;
 use smithay::wayland::pointer_constraints::{with_pointer_constraint, PointerConstraint};
 use smithay::wayland::tablet_manager::{TabletDescriptor, TabletSeatTrait};
@@ -2426,6 +2426,7 @@ impl State {
                     let cursor_local = cursor_pos - output_geo.loc;
                     let movement_mode = self.niri.config.borrow().zoom.movement_mode.clone();
                     let locked = output.zoom_state().map(|z| z.locked).unwrap_or(false);
+
                     self.niri.layout.set_zoom_level(
                         &output,
                         target_level,
@@ -2433,6 +2434,12 @@ impl State {
                         &movement_mode,
                         locked,
                     );
+
+                    // If the zoom is locked, we need to update the base focal point to keep the
+                    // content under the cursor consistent.
+                    self.niri
+                        .update_zoom_base_focal(&output, cursor_local, None);
+
                     self.niri.queue_redraw(&output);
                 }
             }
@@ -2624,16 +2631,7 @@ impl State {
         }
 
         if let Some(output) = self.niri.screenshot_ui.selection_output() {
-            let geom = self.niri.global_space.output_geometry(output).unwrap();
-            let mut point = (new_pos - geom.loc.to_f64())
-                .to_physical(output.current_scale().fractional_scale())
-                .to_i32_round::<i32>();
-
-            let size = output.current_mode().unwrap().size;
-            let transform = output.current_transform();
-            let size = transform.transform_size(size);
-            point.x = point.x.clamp(0, size.w - 1);
-            point.y = point.y.clamp(0, size.h - 1);
+            let point = self.screenshot_ui_point_on_output(output, pos);
 
             self.niri.screenshot_ui.pointer_motion(point, None);
         }
@@ -2749,6 +2747,11 @@ impl State {
             }
         }
 
+        if let Some(output) = self.niri.screenshot_ui.selection_output() {
+            let point = self.screenshot_ui_point_on_output(output, new_pos);
+            self.niri.screenshot_ui.pointer_motion(point, None);
+        }
+
         // Redraw to update the cursor position.
         // FIXME: redraw only outputs overlapping the cursor.
         self.niri.queue_redraw_all();
@@ -2776,17 +2779,7 @@ impl State {
         let pointer = self.niri.seat.get_pointer().unwrap();
 
         if let Some(output) = self.niri.screenshot_ui.selection_output() {
-            let geom = self.niri.global_space.output_geometry(output).unwrap();
-            let mut point = (pos - geom.loc.to_f64())
-                .to_physical(output.current_scale().fractional_scale())
-                .to_i32_round::<i32>();
-
-            let size = output.current_mode().unwrap().size;
-            let transform = output.current_transform();
-            let size = transform.transform_size(size);
-            point.x = point.x.clamp(0, size.w - 1);
-            point.y = point.y.clamp(0, size.h - 1);
-
+            let point = self.screenshot_ui_point_on_output(output, pos);
             self.niri.screenshot_ui.pointer_motion(point, None);
         }
 
@@ -2851,6 +2844,11 @@ impl State {
         if let Some((output, _)) = self.niri.output_under(pos) {
             let output = output.clone();
             self.niri.update_zoom_base_focal(&output, pos, None);
+        }
+
+        if let Some(output) = self.niri.screenshot_ui.selection_output() {
+            let point = self.screenshot_ui_point_on_output(output, pos);
+            self.niri.screenshot_ui.pointer_motion(point, None);
         }
 
         // Redraw to update the cursor position.
@@ -3144,16 +3142,7 @@ impl State {
                 let pos = pointer.current_location();
                 if let Some((output, _)) = self.niri.output_under(pos) {
                     let output = output.clone();
-                    let geom = self.niri.global_space.output_geometry(&output).unwrap();
-                    let mut point = (pos - geom.loc.to_f64())
-                        .to_physical(output.current_scale().fractional_scale())
-                        .to_i32_round();
-
-                    let size = output.current_mode().unwrap().size;
-                    let transform = output.current_transform();
-                    let size = transform.transform_size(size);
-                    point.x = min(size.w - 1, point.x);
-                    point.y = min(size.h - 1, point.y);
+                    let point = self.screenshot_ui_point_on_output(&output, pos);
 
                     if self.niri.screenshot_ui.pointer_down(output, point, None) {
                         self.niri.queue_redraw_all();
@@ -3639,17 +3628,7 @@ impl State {
         let pos = self.clamp_position_to_zoom(pos);
 
         if let Some(output) = self.niri.screenshot_ui.selection_output() {
-            let geom = self.niri.global_space.output_geometry(output).unwrap();
-            let mut point = (pos - geom.loc.to_f64())
-                .to_physical(output.current_scale().fractional_scale())
-                .to_i32_round::<i32>();
-
-            let size = output.current_mode().unwrap().size;
-            let transform = output.current_transform();
-            let size = transform.transform_size(size);
-            point.x = point.x.clamp(0, size.w - 1);
-            point.y = point.y.clamp(0, size.h - 1);
-
+            let point = self.screenshot_ui_point_on_output(output, pos);
             self.niri.screenshot_ui.pointer_motion(point, None);
         }
 
@@ -3703,6 +3682,11 @@ impl State {
             self.niri.update_zoom_base_focal(&output, pos, None);
         }
 
+        if let Some(output) = self.niri.screenshot_ui.selection_output() {
+            let point = self.screenshot_ui_point_on_output(output, pos);
+            self.niri.screenshot_ui.pointer_motion(point, None);
+        }
+
         // Redraw to update the cursor position.
         // FIXME: redraw only outputs overlapping the cursor.
         self.niri.queue_redraw_all();
@@ -3728,16 +3712,7 @@ impl State {
 
                     if self.niri.screenshot_ui.is_open() {
                         if let Some(output) = under.output.clone() {
-                            let geom = self.niri.global_space.output_geometry(&output).unwrap();
-                            let mut point = (pos - geom.loc.to_f64())
-                                .to_physical(output.current_scale().fractional_scale())
-                                .to_i32_round();
-
-                            let size = output.current_mode().unwrap().size;
-                            let transform = output.current_transform();
-                            let size = transform.transform_size(size);
-                            point.x = min(size.w - 1, point.x);
-                            point.y = min(size.h - 1, point.y);
+                            let point = self.screenshot_ui_point_on_output(&output, pos);
 
                             if self.niri.screenshot_ui.pointer_down(output, point, None) {
                                 self.niri.queue_redraw_all();
@@ -4259,6 +4234,24 @@ impl State {
             }
         }
         pos
+    }
+
+    fn screenshot_ui_point_on_output(
+        &self,
+        output: &Output,
+        pos: Point<f64, Logical>,
+    ) -> Point<i32, Physical> {
+        let geom = self.niri.global_space.output_geometry(output).unwrap();
+        let mut point = (pos - geom.loc.to_f64())
+            .to_physical(output.current_scale().fractional_scale())
+            .to_i32_round::<i32>();
+
+        let size = output.current_mode().unwrap().size;
+        let transform = output.current_transform();
+        let size = transform.transform_size(size);
+        point.x = point.x.clamp(0, size.w - 1);
+        point.y = point.y.clamp(0, size.h - 1);
+        point
     }
 
     fn on_touch_down<I: InputBackend>(&mut self, evt: I::TouchDownEvent) {

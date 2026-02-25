@@ -575,10 +575,15 @@ impl Niri {
             }
 
             if cursor_data.is_none() {
-                elements.extend(
-                    self.render(renderer, output, false, RenderTarget::Screencast)
-                        .into_iter()
-                        .map(CastRenderElement::from),
+                self.render_inner(
+                    renderer,
+                    output,
+                    false,
+                    RenderTarget::Screencast,
+                    &mut |elem| {
+                        let zoomed = self.zoomed_element(elem, output);
+                        elements.push(zoomed.into())
+                    },
                 );
 
                 let mut pointer_pos = Point::default();
