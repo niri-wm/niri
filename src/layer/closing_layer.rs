@@ -152,19 +152,17 @@ impl ClosingLayer {
             let relative = self.pos - view_rect.loc;
             let pos = view_rect.loc + relative.to_physical_precise_round(scale).to_logical(scale);
 
+            let geo_loc = Vec2::new(pos.x as f32, pos.y as f32);
+            let geo_size = Vec2::new(self.geo_size.w as f32, self.geo_size.h as f32);
+
+            let input_to_geo = Mat3::from_scale(area_size / geo_size)
+                * Mat3::from_translation((area_loc - geo_loc) / area_size);
+
             let tex_scale = buffer.texture_scale();
             let tex_scale = Vec2::new(tex_scale.x as f32, tex_scale.y as f32);
             let tex_loc = Vec2::new(offset.x as f32, offset.y as f32);
             let tex_size = buffer.texture().size();
             let tex_size = Vec2::new(tex_size.w as f32, tex_size.h as f32) / tex_scale;
-
-            // The close shader runs on a frozen snapshot. Use snapshot-space geometry so shader
-            // transforms remain valid after unmap even if the mapped geometry changed.
-            let geo_loc = Vec2::new(pos.x as f32, pos.y as f32);
-            let geo_size = tex_size;
-
-            let input_to_geo = Mat3::from_scale(area_size / geo_size)
-                * Mat3::from_translation((area_loc - geo_loc) / area_size);
 
             let geo_to_tex =
                 Mat3::from_translation(-tex_loc / tex_size) * Mat3::from_scale(geo_size / tex_size);
@@ -210,7 +208,6 @@ impl ClosingLayer {
 
         let mut location = self.pos + offset;
         location.x -= view_rect.loc.x;
-        location.y -= view_rect.loc.y;
         let elem = RelocateRenderElement::from_element(
             elem,
             location.to_physical_precise_round(scale),
