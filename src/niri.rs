@@ -1622,6 +1622,7 @@ impl State {
                     .zoom_state()
                     .map(|z| (z.locked, z.level))
                     .unwrap_or((false, 1.0));
+
                 self.niri.layout.set_zoom_level(
                     &output,
                     current_level,
@@ -1629,6 +1630,11 @@ impl State {
                     &movement_mode,
                     locked,
                 );
+
+                // Update the focal point so that if the user changes the movement mode again while
+                // zoomed, it will be correct.
+                self.niri.update_zoom_base_focal(&output, cursor_local, None);
+
                 self.niri.queue_redraw(&output);
             }
         }
@@ -4277,20 +4283,18 @@ impl Niri {
         }
     }
 
-    pub fn zoom_render_elements<R: NiriRenderer>(
+    pub fn zoomed_element<R: NiriRenderer>(
         &self,
-        elements: Vec<OutputRenderElements<R>>,
+        element: OutputRenderElements<R>,
         output: &Output,
-    ) -> Vec<OutputRenderElements<R>> {
+    ) -> OutputRenderElements<R> {
         // Apply zoom to the render elements when needed.
         let zoom_state = match output.zoom_state() {
             Some(state) => state.clone(),
-            None => return elements,
+            None => return element,
         };
 
         let output_scale = Scale::from(output.current_scale().fractional_scale());
-        let output_geo = self.global_space.output_geometry(output).unwrap();
-        let output_size = output_geo.size.to_physical_precise_round(output_scale);
         let cursor_logical_pos = zoom_state.cursor_logical_pos;
 
         let (zoom_factor, zoom_focal_point) = (zoom_state.level, zoom_state.focal);
@@ -4305,8 +4309,8 @@ impl Niri {
 
         // Generate match arms for each OutputRenderElement variant.
         macro_rules! apply_zoom {
-            ($elem:expr, $($variant:ident),*) => {
-                match $elem {
+            ($($variant:ident),*) => {
+                match element {
                     OutputRenderElements::Pointer(pointer_elem) => {
                         let pointer_geo = pointer_elem.geometry(output_scale);
                         let pointer_pos = pointer_geo.loc;
@@ -4366,7 +4370,7 @@ impl Niri {
 
                         // Use origin=(0,0) to avoid focal point rounding jitter.
                         // Relocate::Absolute places element at exact computed position.
-                        CropRenderElement::from_element(
+                        let e =
                             RelocateRenderElement::from_element(
                                 RescaleRenderElement::from_element(
                                     pointer_elem,
@@ -4375,12 +4379,8 @@ impl Niri {
                                 ),
                                 final_pos,
                                 Relocate::Absolute
-                            ),
-                            output_scale,
-                            Rectangle::from_size(output_size)
-                        )
-                        .map(|e| OutputRenderElements::Zoomed(ZoomedRenderElements::Pointer(e)))
-                        .into()
+                            );
+                        OutputRenderElements::Zoomed(ZoomedRenderElements::Pointer(e)).into()
                     }
                     $(
                         OutputRenderElements::$variant(elem) => {
@@ -4395,8 +4395,7 @@ impl Niri {
                                     .round() as i32,
                             ));
 
-                            CropRenderElement::from_element(
-                                RelocateRenderElement::from_element(
+                            let e = RelocateRenderElement::from_element(
                                     RescaleRenderElement::from_element(
                                         elem,
                                         focal_point_physical,
@@ -4404,35 +4403,26 @@ impl Niri {
                                     ),
                                     subpixel_correction,
                                     Relocate::Relative
-                                ),
-                                output_scale,
-                                Rectangle::from_size(output_size)
-                            )
-                            .map(|e| OutputRenderElements::Zoomed(ZoomedRenderElements::$variant(e)))
-                            .into()
+                                );
+                            OutputRenderElements::Zoomed(ZoomedRenderElements::$variant(e)).into()
                         }
                     )*
-                    _ => Some($elem),
+                    _ => element,
                 }
             }
         }
 
-        elements
-            .into_iter()
-            .filter_map(|elem| {
-                apply_zoom!(
-                    elem,
-                    Monitor,
-                    RescaledTile,
-                    LayerSurface,
-                    Wayland,
-                    SolidColor,
-                    Texture,
-                    RelocatedColor,
-                    RelocatedLayerSurface
-                )
-            })
-            .collect()
+        apply_zoom!(
+            Monitor,
+            RescaledTile,
+            LayerSurface,
+            Wayland,
+            SolidColor,
+            // ScreenshotUi,
+            Texture,
+            RelocatedColor,
+            RelocatedLayerSurface
+        )
     }
 
     pub fn render<R: NiriRenderer>(
@@ -4445,10 +4435,9 @@ impl Niri {
         let mut elements = Vec::new();
 
         self.render_inner(renderer, output, include_pointer, target, &mut |elem| {
-            elements.push(elem)
+            let zoomed = self.zoomed_element(elem, output);
+            elements.push(zoomed);
         });
-
-        elements = self.zoom_render_elements(elements, output);
 
         elements
     }
@@ -6561,8 +6550,8 @@ niri_render_elements! {
     }
 }
 
-// Define a type alias for the common zoom wrapper: Crop(Relocate(Rescale(T)))
-type ZoomWrapper<T> = CropRenderElement<RelocateRenderElement<RescaleRenderElement<T>>>;
+// Define a type alias for the common zoom wrapper: Relocate(Rescale(T))
+type ZoomWrapper<T> = RelocateRenderElement<RescaleRenderElement<T>>;
 
 // Separate enum for all zoomed elements - this avoids type conflicts with
 // OutputRenderElements since zoomed types are wrapped in a different enum
@@ -6571,11 +6560,12 @@ niri_render_elements! {
         Monitor = ZoomWrapper<MonitorRenderElement<R>>,
         RescaledTile = ZoomWrapper<RescaleRenderElement<TileRenderElement<R>>>,
         LayerSurface = ZoomWrapper<LayerSurfaceRenderElement<R>>,
-        RelocatedLayerSurface = ZoomWrapper<ZoomWrapper<LayerSurfaceRenderElement<R>>>,
-        RelocatedColor = ZoomWrapper<ZoomWrapper<SolidColorRenderElement>>,
+        RelocatedLayerSurface = ZoomWrapper<CropRenderElement<ZoomWrapper<LayerSurfaceRenderElement<R>>>>,
+        RelocatedColor = ZoomWrapper<CropRenderElement<ZoomWrapper<SolidColorRenderElement>>>,
         Pointer = ZoomWrapper<PointerRenderElements<R>>,
         Wayland = ZoomWrapper<WaylandSurfaceRenderElement<R>>,
         SolidColor = ZoomWrapper<SolidColorRenderElement>,
+        // ScreenshotUi = ZoomWrapper<ScreenshotUiRenderElement>,
         Texture = ZoomWrapper<PrimaryGpuTextureRenderElement>,
     }
 }
@@ -6585,8 +6575,8 @@ niri_render_elements! {
         Monitor = MonitorRenderElement<R>,
         RescaledTile = RescaleRenderElement<TileRenderElement<R>>,
         LayerSurface = LayerSurfaceRenderElement<R>,
-        RelocatedLayerSurface = ZoomWrapper<LayerSurfaceRenderElement<R>>,
-        RelocatedColor = ZoomWrapper<SolidColorRenderElement>,
+        RelocatedLayerSurface = CropRenderElement<ZoomWrapper<LayerSurfaceRenderElement<R>>>,
+        RelocatedColor = CropRenderElement<ZoomWrapper<SolidColorRenderElement>>,
         Pointer = PointerRenderElements<R>,
         Wayland = WaylandSurfaceRenderElement<R>,
         SolidColor = SolidColorRenderElement,
