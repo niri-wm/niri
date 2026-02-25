@@ -69,6 +69,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let cli = Cli::parse();
 
+    // Warn if running as a TTY compositor without --session, as this likely means
+    // D-Bus services (ScreenCast, etc.) won't be registered.
+    if !cli.session
+        && env::var_os("WAYLAND_DISPLAY").is_none()
+        && env::var_os("WAYLAND_SOCKET").is_none()
+        && env::var_os("DISPLAY").is_none()
+        && env::var_os("WSL_DISTRO_NAME").is_none()
+    {
+        warn!(
+            "running on TTY without --session flag; \
+             D-Bus interfaces like ScreenCast won't be registered. \
+             Add --session if this is your main compositor instance."
+        );
+    }
+
     if cli.session {
         // If we're starting as a session, assume that the intention is to start on a TTY unless
         // this is a WSL environment. Remove DISPLAY, WAYLAND_DISPLAY or WAYLAND_SOCKET from our
@@ -282,12 +297,16 @@ fn import_environment() {
     if cfg!(feature = "systemd") {
         write!(
             init_system_import,
-            "systemctl --user import-environment {variables};"
+            "command -v systemctl >/dev/null 2>&1 && systemctl --user import-environment {variables}; "
         )
         .unwrap();
     }
     if cfg!(feature = "dinit") {
-        write!(init_system_import, "dinitctl setenv {variables};").unwrap();
+        write!(
+            init_system_import,
+            "command -v dinitctl >/dev/null 2>&1 && dinitctl setenv {variables}; "
+        )
+        .unwrap();
     }
 
     let rv = Command::new("/bin/sh")
@@ -295,7 +314,7 @@ fn import_environment() {
             "-c",
             &format!(
                 "{init_system_import}\
-                 hash dbus-update-activation-environment 2>/dev/null && \
+                 command -v dbus-update-activation-environment >/dev/null 2>&1 && \
                  dbus-update-activation-environment {variables}"
             ),
         ])
