@@ -390,6 +390,7 @@ pub struct Niri {
 
     pub window_mru_ui: WindowMruUi,
     pub pending_mru_commit: Option<PendingMruCommit>,
+    pub previous_layout_focus_id: Option<MappedId>,
 
     pub pick_window: Option<async_channel::Sender<Option<MappedId>>>,
     pub pick_color: Option<async_channel::Sender<Option<niri_ipc::PickedColor>>>,
@@ -799,6 +800,8 @@ impl State {
         self.niri.popups.cleanup();
         self.refresh_popup_grab();
         self.update_keyboard_focus();
+
+        self.update_focus_mru_timestamp();
 
         // Should be called before refresh_layout() because that one will refresh other window
         // states and then send a pending configure.
@@ -1266,40 +1269,6 @@ impl State {
             {
                 if let Some((mapped, _)) = self.niri.layout.find_window_and_output_mut(surface) {
                     mapped.set_is_focused(true);
-
-                    // If `mapped` does not have a focus timestamp, then the window is newly
-                    // created/mapped and a timestamp is unconditionally created.
-                    //
-                    // If `mapped` already has a timestamp only update it after the focus lock-in
-                    // period has gone by without the focus having elsewhere.
-                    let stamp = get_monotonic_time();
-
-                    let debounce = self.niri.config.borrow().recent_windows.debounce_ms;
-                    let debounce = Duration::from_millis(u64::from(debounce));
-
-                    if mapped.get_focus_timestamp().is_none() || debounce.is_zero() {
-                        mapped.set_focus_timestamp(stamp);
-                    } else {
-                        let timer = Timer::from_duration(debounce);
-
-                        let focus_token = self
-                            .niri
-                            .event_loop
-                            .insert_source(timer, move |_, _, state| {
-                                state.niri.mru_apply_keyboard_commit();
-                                TimeoutAction::Drop
-                            })
-                            .unwrap();
-                        if let Some(PendingMruCommit { token, .. }) =
-                            self.niri.pending_mru_commit.replace(PendingMruCommit {
-                                id: mapped.id(),
-                                token: focus_token,
-                                stamp,
-                            })
-                        {
-                            self.niri.event_loop.remove(token);
-                        }
-                    }
                 }
             }
 
@@ -1362,6 +1331,58 @@ impl State {
 
             // FIXME: can be more granular.
             self.niri.queue_redraw_all();
+        }
+    }
+
+    pub fn update_focus_mru_timestamp(&mut self) {
+        let current_focus_id = self.niri.layout.focus().map(|win| win.id());
+        if self.niri.previous_layout_focus_id == current_focus_id {
+            return;
+        }
+
+        self.niri.previous_layout_focus_id = current_focus_id;
+
+        if let Some(id) = current_focus_id {
+            if let Some(mapped) = self
+                .niri
+                .layout
+                .workspaces_mut()
+                .find_map(|ws| ws.windows_mut().find(|w| w.id() == id))
+            {
+                // If `mapped` does not have a focus timestamp, then the window is newly
+                // created/mapped and a timestamp is unconditionally created.
+                //
+                // If `mapped` already has a timestamp only update it after the focus lock-in
+                // period has gone by without the focus having elsewhere.
+                let stamp = get_monotonic_time();
+
+                let debounce = self.niri.config.borrow().recent_windows.debounce_ms;
+                let debounce = Duration::from_millis(u64::from(debounce));
+
+                if mapped.get_focus_timestamp().is_none() || debounce.is_zero() {
+                    mapped.set_focus_timestamp(stamp);
+                } else {
+                    let timer = Timer::from_duration(debounce);
+
+                    let focus_token = self
+                        .niri
+                        .event_loop
+                        .insert_source(timer, move |_, _, state| {
+                            state.niri.mru_apply_keyboard_commit();
+                            TimeoutAction::Drop
+                        })
+                        .unwrap();
+                    if let Some(PendingMruCommit { token, .. }) =
+                        self.niri.pending_mru_commit.replace(PendingMruCommit {
+                            id: mapped.id(),
+                            token: focus_token,
+                            stamp,
+                        })
+                    {
+                        self.niri.event_loop.remove(token);
+                    }
+                }
+            }
         }
     }
 
@@ -2544,6 +2565,7 @@ impl Niri {
 
             window_mru_ui,
             pending_mru_commit: None,
+            previous_layout_focus_id: None,
 
             pick_window: None,
             pick_color: None,
