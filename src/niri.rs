@@ -5842,7 +5842,7 @@ impl Niri {
         }
 
         if let Some(window) = &new_focus.window {
-            if !self.layout.is_overview_open() && current_focus.window.as_ref() != Some(window) {
+            if !self.layout.is_overview_open() {
                 let (window, hit) = window;
 
                 // Don't trigger focus-follows-mouse over the tab indicator.
