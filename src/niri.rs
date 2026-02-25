@@ -1843,38 +1843,31 @@ impl State {
     }
 
     pub fn apply_transient_output_config(&mut self, name: &str, action: niri_ipc::OutputAction) {
-        self.modify_output_config(name, move |config| match action {
-            niri_ipc::OutputAction::Off => config.off = true,
-            niri_ipc::OutputAction::On => config.off = false,
-            niri_ipc::OutputAction::Mode { mode } => {
-                config.mode = match mode {
-                    niri_ipc::ModeToSet::Automatic => None,
-                    niri_ipc::ModeToSet::Specific(mode) => Some(niri_config::output::Mode {
-                        custom: false,
-                        mode,
-                    }),
-                };
-                config.modeline = None;
-            }
-            niri_ipc::OutputAction::CustomMode { mode } => {
-                config.mode = Some(niri_config::output::Mode { custom: true, mode });
-                config.modeline = None;
-            }
-            niri_ipc::OutputAction::Modeline {
-                clock,
-                hdisplay,
-                hsync_start,
-                hsync_end,
-                htotal,
-                vdisplay,
-                vsync_start,
-                vsync_end,
-                vtotal,
-                hsync_polarity,
-                vsync_polarity,
-            } => {
-                // Do not reset config.mode to None since it's used as a fallback.
-                config.modeline = Some(niri_config::output::Modeline {
+        // Special handling for Toggle since we need to read the current state.
+        if matches!(action, niri_ipc::OutputAction::Toggle) {
+            self.modify_output_config(name, |config| {
+                config.off = !config.off;
+            });
+        } else {
+            self.modify_output_config(name, move |config| match action {
+                niri_ipc::OutputAction::Off => config.off = true,
+                niri_ipc::OutputAction::On => config.off = false,
+                niri_ipc::OutputAction::Toggle => unreachable!(),
+                niri_ipc::OutputAction::Mode { mode } => {
+                    config.mode = match mode {
+                        niri_ipc::ModeToSet::Automatic => None,
+                        niri_ipc::ModeToSet::Specific(mode) => Some(niri_config::output::Mode {
+                            custom: false,
+                            mode,
+                        }),
+                    };
+                    config.modeline = None;
+                }
+                niri_ipc::OutputAction::CustomMode { mode } => {
+                    config.mode = Some(niri_config::output::Mode { custom: true, mode });
+                    config.modeline = None;
+                }
+                niri_ipc::OutputAction::Modeline {
                     clock,
                     hdisplay,
                     hsync_start,
@@ -1886,34 +1879,51 @@ impl State {
                     vtotal,
                     hsync_polarity,
                     vsync_polarity,
-                })
-            }
-            niri_ipc::OutputAction::Scale { scale } => {
-                config.scale = match scale {
-                    niri_ipc::ScaleToSet::Automatic => None,
-                    niri_ipc::ScaleToSet::Specific(scale) => Some(FloatOrInt(scale)),
-                }
-            }
-            niri_ipc::OutputAction::Transform { transform } => config.transform = transform,
-            niri_ipc::OutputAction::Position { position } => {
-                config.position = match position {
-                    niri_ipc::PositionToSet::Automatic => None,
-                    niri_ipc::PositionToSet::Specific(position) => Some(niri_config::Position {
-                        x: position.x,
-                        y: position.y,
-                    }),
-                }
-            }
-            niri_ipc::OutputAction::Vrr { vrr } => {
-                config.variable_refresh_rate = if vrr.vrr {
-                    Some(niri_config::Vrr {
-                        on_demand: vrr.on_demand,
+                } => {
+                    // Do not reset config.mode to None since it's used as a fallback.
+                    config.modeline = Some(niri_config::output::Modeline {
+                        clock,
+                        hdisplay,
+                        hsync_start,
+                        hsync_end,
+                        htotal,
+                        vdisplay,
+                        vsync_start,
+                        vsync_end,
+                        vtotal,
+                        hsync_polarity,
+                        vsync_polarity,
                     })
-                } else {
-                    None
                 }
-            }
-        });
+                niri_ipc::OutputAction::Scale { scale } => {
+                    config.scale = match scale {
+                        niri_ipc::ScaleToSet::Automatic => None,
+                        niri_ipc::ScaleToSet::Specific(scale) => Some(FloatOrInt(scale)),
+                    }
+                }
+                niri_ipc::OutputAction::Transform { transform } => config.transform = transform,
+                niri_ipc::OutputAction::Position { position } => {
+                    config.position = match position {
+                        niri_ipc::PositionToSet::Automatic => None,
+                        niri_ipc::PositionToSet::Specific(position) => {
+                            Some(niri_config::Position {
+                                x: position.x,
+                                y: position.y,
+                            })
+                        }
+                    }
+                }
+                niri_ipc::OutputAction::Vrr { vrr } => {
+                    config.variable_refresh_rate = if vrr.vrr {
+                        Some(niri_config::Vrr {
+                            on_demand: vrr.on_demand,
+                        })
+                    } else {
+                        None
+                    }
+                }
+            });
+        }
 
         self.reload_output_config();
     }
