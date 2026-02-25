@@ -1982,6 +1982,24 @@ fn window_closed_on_previous_workspace() {
 }
 
 #[test]
+fn cleanup_trailing_workspace_on_window_close() {
+    let ops = [
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::CloseWindow(1),
+    ];
+
+    let layout = check_ops(ops);
+    let MonitorSet::Normal { monitors, .. } = layout.monitor_set else {
+        unreachable!()
+    };
+
+    assert_eq!(monitors[0].workspaces.len(), 1);
+}
+
+#[test]
 fn removing_output_must_keep_empty_focus_on_primary() {
     let ops = [
         Op::AddOutput(1),

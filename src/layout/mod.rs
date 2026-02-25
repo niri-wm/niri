@@ -1137,6 +1137,32 @@ impl<W: LayoutElement> Layout<W> {
                                 mon.workspaces.remove(1);
                                 mon.active_workspace_idx = 0;
                             }
+
+                            // If the last two workspaces are empty unnamed, remove the last one.
+                            let len = mon.workspaces.len();
+                            if len >= 2
+                                // FIXME: Should `!ws.has_windows_or_name()` be checked here
+                                // or it will be redundant?
+                                && !mon.workspaces[len - 1].has_windows_or_name()
+                                && !mon.workspaces[len - 2].has_windows_or_name()
+                                && mon.active_workspace_idx != len - 1
+                                && mon.workspace_switch.is_none()
+                            {
+                                mon.workspaces.remove(len - 1);
+                            }
+
+                            // If empty_workspace_above_first is set and the first two workspaces are
+                            // empty unnamed, remove the first one.
+                            if mon.options.layout.empty_workspace_above_first
+                                && mon.workspaces.len() >= 2
+                                && !mon.workspaces[0].has_windows_or_name()
+                                && !mon.workspaces[1].has_windows_or_name()
+                                && mon.active_workspace_idx != 0
+                                && mon.workspace_switch.is_none()
+                            {
+                                mon.workspaces.remove(0);
+                                mon.active_workspace_idx -= 1;
+                            }
                             return Some(removed);
                         }
                     }

@@ -650,6 +650,28 @@ impl<W: LayoutElement> Monitor<W> {
             self.workspaces.remove(1);
             self.active_workspace_idx = 0;
         }
+
+        // If the last two workspaces are empty unnamed, remove the last one.
+        let len = self.workspaces.len();
+        if len >= 2
+            && !self.workspaces[len - 1].has_windows_or_name()
+            && !self.workspaces[len - 2].has_windows_or_name()
+            && self.active_workspace_idx != len - 1
+        {
+            self.workspaces.remove(len - 1);
+        }
+
+        // If empty_workspace_above_first is set and the first two workspaces are
+        // empty unnamed, remove the first one.
+        if self.options.layout.empty_workspace_above_first
+            && self.workspaces.len() >= 2
+            && !self.workspaces[0].has_windows_or_name()
+            && !self.workspaces[1].has_windows_or_name()
+            && self.active_workspace_idx != 0
+        {
+            self.workspaces.remove(0);
+            self.active_workspace_idx -= 1;
+        }
     }
 
     pub fn unname_workspace(&mut self, id: WorkspaceId) -> bool {
@@ -2097,10 +2119,36 @@ impl<W: LayoutElement> Monitor<W> {
         }
 
         if self.options.layout.empty_workspace_above_first {
-            assert!(
-                self.workspaces.len() != 2,
+            assert_ne!(
+                self.workspaces.len(),
+                2,
                 "if empty_workspace_above_first is set there must be just 1 or 3+ workspaces"
             )
+        }
+
+        // If there's no workspace switch in progress, there can't be any
+        // two consecutive empty unnamed workspaces at the end
+        if self.workspace_switch.is_none() && self.workspaces.len() >= 2 {
+            let len = self.workspaces.len();
+            assert!(
+                !(!self.workspaces[len - 1].has_windows_or_name()
+                    && !self.workspaces[len - 2].has_windows_or_name()),
+                "the last two workspaces cannot both be empty and unnamed"
+            );
+        }
+
+        // If there's no workspace switch in progress, and empty_workspace_above_first is set,
+        // there can't be any two consecutive empty unnamed workspaces at the beginning
+        if self.options.layout.empty_workspace_above_first
+            && self.workspace_switch.is_none()
+            && self.workspaces.len() >= 2
+        {
+            assert!(
+                !(!self.workspaces[0].has_windows_or_name()
+                    && !self.workspaces[1].has_windows_or_name()),
+                "when empty_workspace_above_first is set, the first two workspaces \
+         cannot both be empty and unnamed"
+            );
         }
 
         // If there's no workspace switch in progress, there can't be any non-last non-active
