@@ -767,6 +767,159 @@ where
         node: &knuffel::ast::SpannedNode<S>,
         ctx: &mut knuffel::decode::Context<S>,
     ) -> Result<Self, DecodeError<S>> {
+        fn recursive_get_bind<S>(
+            node: &knuffel::ast::SpannedNode<S>,
+            ctx: &mut knuffel::decode::Context<S>,
+            mut repeat: bool,
+            mut cooldown: Option<Duration>,
+            mut allow_when_locked: bool,
+            mut allow_inhibiting: bool,
+            mut hotkey_overlay_title: Option<Option<String>>,
+        ) -> Result<Vec<Bind>, DecodeError<S>>
+        where
+            S: knuffel::traits::ErrorSpan,
+        {
+            let mut binds = vec![];
+
+            let mut allow_when_locked_node = None;
+            for (name, val) in &node.properties {
+                match &***name {
+                    "repeat" => {
+                        repeat = knuffel::traits::DecodeScalar::decode(val, ctx)?;
+                    }
+                    "cooldown-ms" => {
+                        cooldown = Some(Duration::from_millis(
+                            knuffel::traits::DecodeScalar::decode(val, ctx)?,
+                        ));
+                    }
+                    "allow-when-locked" => {
+                        allow_when_locked = knuffel::traits::DecodeScalar::decode(val, ctx)?;
+                        allow_when_locked_node = Some(name);
+                    }
+                    "allow-inhibiting" => {
+                        allow_inhibiting = knuffel::traits::DecodeScalar::decode(val, ctx)?;
+                    }
+                    "hotkey-overlay-title" => {
+                        hotkey_overlay_title =
+                            Some(knuffel::traits::DecodeScalar::decode(val, ctx)?);
+                    }
+                    name_str => {
+                        ctx.emit_error(DecodeError::unexpected(
+                            name,
+                            "property",
+                            format!("unexpected property `{}`", name_str.escape_default()),
+                        ));
+                    }
+                }
+            }
+
+            match node.node_name.parse::<Key>() {
+                Ok(key) => {
+                    let mut children = node.children();
+
+                    // If the action is invalid but the key is fine, we still want to return
+                    // something. That way, the parent can handle the existence
+                    // of duplicate keybinds, even if their contents are not
+                    // valid.
+                    let dummy = Bind {
+                        key,
+                        action: Action::Spawn(vec![]),
+                        repeat: true,
+                        cooldown: None,
+                        allow_when_locked: false,
+                        allow_inhibiting: true,
+                        hotkey_overlay_title: None,
+                    };
+
+                    if let Some(child) = children.next() {
+                        for unwanted_child in children {
+                            ctx.emit_error(DecodeError::unexpected(
+                                unwanted_child,
+                                "node",
+                                "only one action is allowed per keybind",
+                            ));
+                        }
+                        match Action::decode_node(child, ctx) {
+                            Ok(action) => {
+                                if !matches!(action, Action::Spawn(_) | Action::SpawnSh(_)) {
+                                    if let Some(node) = allow_when_locked_node {
+                                        ctx.emit_error(DecodeError::unexpected(
+                                            node,
+                                            "property",
+                                            "allow-when-locked can only be set on spawn binds",
+                                        ));
+                                    }
+                                }
+
+                                // The toggle-inhibit action must always be uninhibitable.
+                                // Otherwise, it would be impossible to trigger it.
+                                if matches!(action, Action::ToggleKeyboardShortcutsInhibit) {
+                                    allow_inhibiting = false;
+                                }
+
+                                binds.push(Bind {
+                                    key,
+                                    action,
+                                    repeat,
+                                    cooldown,
+                                    allow_when_locked,
+                                    allow_inhibiting,
+                                    hotkey_overlay_title,
+                                });
+                            }
+                            Err(e) => {
+                                ctx.emit_error(e);
+                                binds.push(dummy);
+                            }
+                        }
+                    } else {
+                        ctx.emit_error(DecodeError::missing(
+                            node,
+                            "expected an action for this keybind",
+                        ));
+                        binds.push(dummy);
+                    }
+                }
+                Err(e) => 'error: {
+                    // Check if this node is a valid modifier without a trigger
+                    if let Ok(modifiers) = Modifiers::from_str(&node.node_name) {
+                        let children = node.children();
+
+                        for child in children {
+                            match recursive_get_bind(
+                                child,
+                                ctx,
+                                repeat,
+                                cooldown,
+                                allow_when_locked,
+                                allow_inhibiting,
+                                hotkey_overlay_title.clone(),
+                            ) {
+                                Err(e) => ctx.emit_error(e),
+                                Ok(mut b) => {
+                                    for bind in &mut b {
+                                        // Add the parent modifier to the sub-bind modifiers
+                                        bind.key.modifiers |= modifiers;
+                                    }
+                                    binds.append(&mut b);
+
+                                    // Skip the returning of an error since we got a sub-bind
+                                    break 'error;
+                                }
+                            }
+                        }
+                    }
+
+                    return Err(DecodeError::conversion(
+                        &node.node_name,
+                        e.wrap_err("invalid keybind"),
+                    ));
+                }
+            }
+
+            Ok(binds)
+        }
+
         expect_only_children(node, ctx);
 
         let mut seen_keys = HashSet::new();
@@ -774,44 +927,61 @@ where
         let mut binds = Vec::new();
 
         for child in node.children() {
-            match Bind::decode_node(child, ctx) {
+            let repeat = true;
+            let cooldown = None;
+            let allow_when_locked = false;
+            let allow_inhibiting = true;
+            let hotkey_overlay_title = None;
+
+            match recursive_get_bind(
+                child,
+                ctx,
+                repeat,
+                cooldown,
+                allow_when_locked,
+                allow_inhibiting,
+                hotkey_overlay_title,
+            ) {
                 Err(e) => {
                     ctx.emit_error(e);
                 }
-                Ok(bind) => {
-                    if seen_keys.insert(bind.key) {
-                        binds.push(bind);
-                    } else {
-                        // ideally, this error should point to the previous instance of this keybind
-                        //
-                        // i (sodiboo) have tried to implement this in various ways:
-                        // miette!(), #[derive(Diagnostic)]
-                        // DecodeError::Custom, DecodeError::Conversion
-                        // nothing seems to work, and i suspect it's not possible.
-                        //
-                        // DecodeError is fairly restrictive.
-                        // even DecodeError::Custom just wraps a std::error::Error
-                        // and this erases all rich information from miette. (why???)
-                        //
-                        // why does knuffel do this?
-                        // from what i can tell, it doesn't even use DecodeError for much.
-                        // it only ever converts them to a Report anyways!
-                        // https://github.com/tailhook/knuffel/blob/c44c6b0c0f31ea6d1174d5d2ed41064922ea44ca/src/wrappers.rs#L55-L58
-                        //
-                        // besides like, allowing downstream users (such as us!)
-                        // to match on parse failure, i don't understand why
-                        // it doesn't just use a generic error type
-                        //
-                        // even the matching isn't consistent,
-                        // because errors can also be omitted as ctx.emit_error.
-                        // why does *that one* especially, require a DecodeError?
-                        //
-                        // anyways if you can make it format nicely, definitely do fix this
-                        ctx.emit_error(DecodeError::unexpected(
-                            &child.node_name,
-                            "keybind",
-                            "duplicate keybind",
-                        ));
+                Ok(b) => {
+                    for bind in b {
+                        if seen_keys.insert(bind.key) {
+                            binds.push(bind);
+                        } else {
+                            // ideally, this error should point to the previous instance of this
+                            // keybind
+                            //
+                            // i (sodiboo) have tried to implement this in various ways:
+                            // miette!(), #[derive(Diagnostic)]
+                            // DecodeError::Custom, DecodeError::Conversion
+                            // nothing seems to work, and i suspect it's not possible.
+                            //
+                            // DecodeError is fairly restrictive.
+                            // even DecodeError::Custom just wraps a std::error::Error
+                            // and this erases all rich information from miette. (why???)
+                            //
+                            // why does knuffel do this?
+                            // from what i can tell, it doesn't even use DecodeError for much.
+                            // it only ever converts them to a Report anyways!
+                            // https://github.com/tailhook/knuffel/blob/c44c6b0c0f31ea6d1174d5d2ed41064922ea44ca/src/wrappers.rs#L55-L58
+                            //
+                            // besides like, allowing downstream users (such as us!)
+                            // to match on parse failure, i don't understand why
+                            // it doesn't just use a generic error type
+                            //
+                            // even the matching isn't consistent,
+                            // because errors can also be omitted as ctx.emit_error.
+                            // why does *that one* especially, require a DecodeError?
+                            //
+                            // anyways if you can make it format nicely, definitely do fix this
+                            ctx.emit_error(DecodeError::unexpected(
+                                &child.node_name,
+                                "keybind",
+                                "duplicate keybind",
+                            ));
+                        }
                     }
                 }
             }
@@ -952,14 +1122,11 @@ where
     }
 }
 
-impl FromStr for Key {
-    type Err = miette::Error;
+impl<'a> TryFrom<std::str::Split<'a, char>> for Modifiers {
+    type Error = miette::Error;
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
+    fn try_from(split: std::str::Split<'a, char>) -> Result<Self, Self::Error> {
         let mut modifiers = Modifiers::empty();
-
-        let mut split = s.split('+');
-        let key = split.next_back().unwrap();
 
         for part in split {
             let part = part.trim();
@@ -985,6 +1152,32 @@ impl FromStr for Key {
                 return Err(miette!("invalid modifier: {part}"));
             }
         }
+
+        Ok(modifiers)
+    }
+}
+
+impl FromStr for Modifiers {
+    type Err = miette::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let split = s.split('+');
+
+        match Modifiers::try_from(split) {
+            Ok(modifiers) => Ok(modifiers),
+            Err(err) => Err(err),
+        }
+    }
+}
+
+impl FromStr for Key {
+    type Err = miette::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut split = s.split('+');
+        let key = split.next_back().unwrap();
+
+        let modifiers = Modifiers::try_from(split)?;
 
         let trigger = if key.eq_ignore_ascii_case("MouseLeft") {
             Trigger::MouseLeft
