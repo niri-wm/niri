@@ -1563,6 +1563,16 @@ impl State {
             shaders_changed = true;
         }
 
+        if config.animations.screen_transition.custom_shader
+            != old_config.animations.screen_transition.custom_shader
+        {
+            let src = config.animations.screen_transition.custom_shader.as_deref();
+            self.backend.with_primary_renderer(|renderer| {
+                shaders::set_custom_screen_transition_program(renderer, src);
+            });
+            shaders_changed = true;
+        }
+
         if config.cursor.hide_after_inactive_ms != old_config.cursor.hide_after_inactive_ms {
             cursor_inactivity_timeout_changed = true;
         }
