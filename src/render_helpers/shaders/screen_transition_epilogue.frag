@@ -1,9 +1,8 @@
-
 void main() {
-    vec3 coords_geo = niri_input_to_geo * vec3(niri_v_coords, 1.0);
-    vec3 size_geo = vec3(niri_geo_size, 1.0);
+    vec3 coords_input = vec3(niri_v_coords, 1.0);
+    vec3 size_input = vec3(niri_size, 1.0);
 
-    vec4 color = screen_transition_color(coords_geo, size_geo);
+    vec4 color = screen_transition_color(coords_input, size_input);
 
     color = color * niri_alpha;
 

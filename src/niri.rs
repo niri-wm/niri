@@ -4554,8 +4554,7 @@ impl Niri {
                     }
                 });
 
-                let transition_elem = transition.render(ctx.renderer, ctx.target, mouse_pos);
-                push(transition_elem.into());
+                push(transition.render(ctx.renderer, ctx.target, mouse_pos).into());
             }
         }
 
@@ -7099,21 +7098,13 @@ impl Niri {
                     );
 
                     if let Err(err) = &res {
-                        warn!(
-                            "error rendering {:?} for output {}: {err:?}",
-                            target,
-                            output.name()
-                        );
+                        warn!("error rendering output {}: {err:?}", output.name());
                     }
 
                     res
                 });
 
                 if textures.iter().any(|res| res.is_err()) {
-                    warn!(
-                        "skipping screen transition for output {} due to render errors",
-                        output.name()
-                    );
                     return None;
                 }
 
@@ -7135,8 +7126,6 @@ impl Niri {
         let delay = delay_ms.map_or(screen_transition::DELAY, |d| {
             Duration::from_millis(u64::from(d))
         });
-
-        let anim_config = self.config.borrow().animations.screen_transition.anim;
 
         for (output, from_texture) in textures {
             let state = self.output_state.get_mut(&output).unwrap();
