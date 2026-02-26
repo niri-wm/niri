@@ -156,7 +156,7 @@ impl Shaders {
         self.custom_open.replace(program)
     }
 
-    pub fn replace_custom_transition_program(
+    pub fn replace_custom_screen_transition_program(
         &self,
         program: Option<ShaderProgram>,
     ) -> Option<ShaderProgram> {
@@ -324,20 +324,20 @@ fn compile_screen_transition_program(
     renderer: &mut GlesRenderer,
     src: &str,
 ) -> Result<ShaderProgram, GlesError> {
-    let mut program = include_str!("transition_prelude.frag").to_string();
+    let mut program = include_str!("screen_transition_prelude.frag").to_string();
     program.push_str(src);
-    program.push_str(include_str!("transition_epilogue.frag"));
+    program.push_str(include_str!("screen_transition_epilogue.frag"));
 
     ShaderProgram::compile(
         renderer,
         &program,
         &[
-            UniformName::new("niri_cursor_coords", UniformType::_2f),
             UniformName::new("niri_progress", UniformType::_1f),
             UniformName::new("niri_clamped_progress", UniformType::_1f),
+            UniformName::new("niri_mouse_pos", UniformType::_2f),
             UniformName::new("niri_random_seed", UniformType::_1f),
         ],
-        &["niri_tex_prev", "niri_tex_next"],
+        &["niri_tex_from"],
     )
 }
 
@@ -354,7 +354,7 @@ pub fn set_custom_screen_transition_program(renderer: &mut GlesRenderer, src: Op
         None
     };
 
-    if let Some(prev) = Shaders::get(renderer).replace_custom_transition_program(program) {
+    if let Some(prev) = Shaders::get(renderer).replace_custom_screen_transition_program(program) {
         if let Err(err) = prev.destroy(renderer) {
             warn!("error destroying previous custom transition shader: {err:?}");
         }
