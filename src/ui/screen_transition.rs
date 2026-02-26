@@ -4,10 +4,14 @@ use smithay::backend::renderer::element::Kind;
 use smithay::backend::renderer::gles::GlesTexture;
 use smithay::utils::{Scale, Transform};
 
-use crate::animation::Clock;
+use crate::animation::{Animation, Clock};
+use crate::niri_render_elements;
 use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
+use crate::render_helpers::shader_element::ShaderRenderElement;
+use crate::render_helpers::shaders::{mat3_uniform, ProgramType, Shaders};
+use crate::render_helpers::snapshot::RenderSnapshot;
 use crate::render_helpers::texture::{TextureBuffer, TextureRenderElement};
-use crate::render_helpers::RenderTarget;
+use crate::render_helpers::{render_to_encompassing_texture, RenderTarget};
 
 pub const DELAY: Duration = Duration::from_millis(250);
 pub const DURATION: Duration = Duration::from_millis(500);
@@ -18,19 +22,33 @@ pub struct ScreenTransition {
     from_texture: [TextureBuffer<GlesTexture>; 3],
     /// Monotonic time when to start the crossfade.
     start_at: Duration,
+    /// The transition animation.
+    anim: Animation,
+    /// Random seed for the shader.
+    random_seed: f32,
     /// Clock to drive animations.
     clock: Clock,
+}
+
+niri_render_elements! {
+    ScreenTransitionRenderElement => {
+        Texture = PrimaryGpuTextureRenderElement,
+        Shader = ShaderRenderElement,
+    }
 }
 
 impl ScreenTransition {
     pub fn new(
         from_texture: [TextureBuffer<GlesTexture>; 3],
         delay: Duration,
+        anim: Animation,
         clock: Clock,
     ) -> Self {
         Self {
             from_texture,
             start_at: clock.now_unadjusted() + delay,
+            anim,
+            random_seed: fastrand::f32(),
             clock,
         }
     }
