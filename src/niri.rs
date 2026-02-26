@@ -169,7 +169,7 @@ use crate::ui::config_error_notification::ConfigErrorNotification;
 use crate::ui::exit_confirm_dialog::{ExitConfirmDialog, ExitConfirmDialogRenderElement};
 use crate::ui::hotkey_overlay::HotkeyOverlay;
 use crate::ui::mru::{MruCloseRequest, WindowMruUi, WindowMruUiRenderElement};
-use crate::ui::screen_transition::{self, ScreenTransition};
+use crate::ui::screen_transition::{self, ScreenTransition, ScreenTransitionRenderElement};
 use crate::ui::screenshot_ui::{OutputScreenshot, ScreenshotUi, ScreenshotUiRenderElement};
 use crate::utils::scale::{closest_representable_scale, guess_monitor_scale};
 use crate::utils::spawning::{CHILD_DISPLAY, CHILD_ENV};
@@ -4226,7 +4226,25 @@ impl Niri {
         // Next, the screen transition texture.
         {
             if let Some(transition) = &state.screen_transition {
-                push(transition.render(ctx.target).into());
+                let mouse_pos = self.global_space.output_geometry(output).and_then(|geo| {
+                    let pos = self
+                        .tablet_cursor_location
+                        .unwrap_or_else(|| self.seat.get_pointer().unwrap().current_location());
+                    let local =
+                        Point::from((pos.x - f64::from(geo.loc.x), pos.y - f64::from(geo.loc.y)));
+
+                    if local.x < 0.
+                        || local.y < 0.
+                        || f64::from(geo.size.w) <= local.x
+                        || f64::from(geo.size.h) <= local.y
+                    {
+                        None
+                    } else {
+                        Some(local)
+                    }
+                });
+
+                push(transition.render(ctx.renderer, ctx.target, mouse_pos).into());
             }
         }
 
@@ -6244,6 +6262,8 @@ impl Niri {
     pub fn do_screen_transition(&mut self, renderer: &mut GlesRenderer, delay_ms: Option<u16>) {
         let _span = tracy_client::span!("Niri::do_screen_transition");
 
+        let anim_config = self.config.borrow().animations.screen_transition.anim;
+
         self.update_render_elements(None);
 
         let textures: Vec<_> = self
@@ -6313,6 +6333,7 @@ impl Niri {
             state.screen_transition = Some(ScreenTransition::new(
                 from_texture,
                 delay,
+                anim_config,
                 self.clock.clone(),
             ));
         }
@@ -6533,6 +6554,7 @@ niri_render_elements! {
         ScreenshotUi = ScreenshotUiRenderElement,
         WindowMruUi = WindowMruUiRenderElement<R>,
         ExitConfirmDialog = ExitConfirmDialogRenderElement,
+        ScreenTransition = ScreenTransitionRenderElement,
         Texture = PrimaryGpuTextureRenderElement,
         // Used for the CPU-rendered panels.
         RelocatedMemoryBuffer = RelocateRenderElement<MemoryRenderBufferRenderElement<R>>,
