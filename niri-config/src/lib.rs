@@ -701,6 +701,7 @@ mod tests {
 
                 tablet {
                     map-to-output "eDP-1"
+                    map-to-active-output
                     calibration-matrix 1.0 2.0 3.0 \
                                        4.0 5.0 6.0
                 }
@@ -1093,6 +1094,7 @@ mod tests {
                     map_to_output: Some(
                         "eDP-1",
                     ),
+                    map_to_active_output: true,
                     left_handed: false,
                 },
                 touch: Touch {

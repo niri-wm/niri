@@ -89,6 +89,7 @@ input {
     tablet {
         // off
         map-to-output "eDP-1"
+        // map-to-active-output
         // left-handed
         // calibration-matrix 1.0 0.0 0.0 0.0 1.0 0.0
     }
@@ -280,6 +281,10 @@ input {
 Valid output names are the same as the ones used for output configuration.
 
 <sup>Since: 0.1.7</sup> When a tablet is not mapped to any output, it will map to the union of all connected outputs, without aspect ratio correction.
+
+Setting specific to `tablet`:
+
+- `map-to-active-output`: will map the tablet to the active output, takes precedence over `map-to-output`.
 
 ### General Settings
 
