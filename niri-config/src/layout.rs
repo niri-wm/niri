@@ -24,6 +24,7 @@ pub struct Layout {
     pub gaps: f64,
     pub struts: Struts,
     pub background_color: Color,
+    pub anchor: Anchor,
 }
 
 impl Default for Layout {
@@ -52,6 +53,7 @@ impl Default for Layout {
                 PresetSize::Proportion(2. / 3.),
             ],
             background_color: DEFAULT_BACKGROUND_COLOR,
+            anchor: Anchor::default(),
         }
     }
 }
@@ -78,6 +80,7 @@ impl MergeWith<LayoutPart> for Layout {
             default_column_display,
             struts,
             background_color,
+            anchor,
         );
 
         if let Some(x) = part.default_column_width {
@@ -126,6 +129,8 @@ pub struct LayoutPart {
     pub struts: Option<Struts>,
     #[knuffel(child)]
     pub background_color: Option<Color>,
+    #[knuffel(child, unwrap(argument))]
+    pub anchor: Option<Anchor>,
 }
 
 #[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
@@ -168,6 +173,15 @@ pub enum CenterFocusedColumn {
     /// Focusing a column will center it if it doesn't fit on the screen together with the
     /// previously focused column.
     OnOverflow,
+}
+
+#[derive(knuffel::DecodeScalar, Debug, Default, PartialEq, Eq, Clone, Copy)]
+pub enum Anchor {
+    /// Columns are anchored to the left edge of the output.
+    #[default]
+    Left,
+    /// Columns are anchored to the right edge of the output.
+    Right,
 }
 
 impl<S> knuffel::Decode<S> for DefaultPresetSize
