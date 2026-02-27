@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
 use miette::miette;
-use smithay::input::keyboard::XkbConfig;
+use smithay::input::keyboard::{keysyms, Keysym, XkbConfig};
 use smithay::reexports::input;
 
 use crate::binds::Modifiers;
@@ -429,6 +429,22 @@ impl ModKey {
             ModKey::IsoLevel3Shift => Modifiers::ISO_LEVEL3_SHIFT,
             ModKey::IsoLevel5Shift => Modifiers::ISO_LEVEL5_SHIFT,
         }
+    }
+
+    pub fn matches_keysym(&self, keysym: Keysym) -> bool {
+        matches!(
+            (self, keysym.raw()),
+            (ModKey::Ctrl, keysyms::KEY_Control_L)
+                | (ModKey::Ctrl, keysyms::KEY_Control_R)
+                | (ModKey::Shift, keysyms::KEY_Shift_L)
+                | (ModKey::Shift, keysyms::KEY_Shift_R)
+                | (ModKey::Alt, keysyms::KEY_Alt_L)
+                | (ModKey::Alt, keysyms::KEY_Alt_R)
+                | (ModKey::Super, keysyms::KEY_Super_L)
+                | (ModKey::Super, keysyms::KEY_Super_R)
+                | (ModKey::IsoLevel3Shift, keysyms::KEY_ISO_Level3_Shift)
+                | (ModKey::IsoLevel5Shift, keysyms::KEY_ISO_Level5_Shift)
+        )
     }
 }
 
