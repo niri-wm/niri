@@ -651,7 +651,9 @@ Afterward, the window will remember its last floating position.
 By default, new floating windows open at the center of the screen, and windows from the tiling layout open close to their visual screen position.
 
 The position uses logical coordinates relative to the working area.
-By default, they are relative to the top-left corner of the working area, but you can change this by setting `relative-to` to one of these values: `top-left`, `top-right`, `bottom-left`, `bottom-right`, `top`, `bottom`, `left`, or `right`.
+By default, they are relative to the top-left corner of the working area, but you can change this by setting `relative-to` to one of these values: `top-left`, `top-right`, `bottom-left`, `bottom-right`, `top`, `bottom`, `left`, `right`, `active-window-center`, `active-window-top-left`, `active-window-top-right`, `active-window-bottom-left`, `active-window-bottom-right`, `active-window-top`, `active-window-bottom`, `active-window-left`, or `active-window-right`.
+
+The `active-window-*` values align the matching point of the floating window with that point on the active window.
 
 For example, if you have a bar at the top, then `x=0 y=0` will put the top-left corner of the window directly below the bar.
 If instead you write `x=0 y=0 relative-to="top-right"`, then the top-right corner of the window will align with the top-right corner of the workspace, also directly below the bar.
