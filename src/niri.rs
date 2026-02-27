@@ -2825,27 +2825,7 @@ impl Niri {
     }
 
     pub fn remove_output(&mut self, output: &Output) {
-        for layer in layer_map_for_output(output).layers() {
-            layer.layer_surface().send_close();
-        }
-
-        self.layout.remove_output(output);
-        self.global_space.unmap_output(output);
-        self.reposition_outputs(None);
-        self.gamma_control_manager_state.output_removed(output);
-
         let state = self.output_state.remove(output).unwrap();
-
-        match state.redraw_state {
-            RedrawState::Idle => (),
-            RedrawState::Queued => (),
-            RedrawState::WaitingForVBlank { .. } => (),
-            RedrawState::WaitingForEstimatedVBlank(token) => self.event_loop.remove(token),
-            RedrawState::WaitingForEstimatedVBlankAndQueued(token) => self.event_loop.remove(token),
-        }
-
-        self.stop_casts_for_target(CastTarget::output(output));
-        self.screencopy_state.remove_output(output);
 
         // Disable the output global and remove some time later to give the clients some time to
         // process it.
@@ -2863,6 +2843,26 @@ impl Niri {
                 },
             )
             .unwrap();
+
+        for layer in layer_map_for_output(output).layers() {
+            layer.layer_surface().send_close();
+        }
+
+        self.layout.remove_output(output);
+        self.global_space.unmap_output(output);
+        self.reposition_outputs(None);
+        self.gamma_control_manager_state.output_removed(output);
+
+        match state.redraw_state {
+            RedrawState::Idle => (),
+            RedrawState::Queued => (),
+            RedrawState::WaitingForVBlank { .. } => (),
+            RedrawState::WaitingForEstimatedVBlank(token) => self.event_loop.remove(token),
+            RedrawState::WaitingForEstimatedVBlankAndQueued(token) => self.event_loop.remove(token),
+        }
+
+        self.stop_casts_for_target(CastTarget::output(output));
+        self.screencopy_state.remove_output(output);
 
         match mem::take(&mut self.lock_state) {
             LockState::Locking(confirmation) => {
