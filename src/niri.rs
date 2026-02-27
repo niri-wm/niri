@@ -367,6 +367,8 @@ pub struct Niri {
     /// resolution mice.
     pub notified_activity_this_iteration: bool,
     pub pointer_inside_hot_corner: bool,
+    pub hot_corner_pressure: (i32, i32),
+    pub hot_corner_event_stream: Vec<(u64, (i32, i32))>,
     pub tablet_cursor_location: Option<Point<f64, Logical>>,
     pub gesture_swipe_3f_cumulative: Option<(f64, f64)>,
     pub overview_scroll_swipe_gesture: ScrollSwipeGesture,
@@ -2521,6 +2523,8 @@ impl Niri {
             pointer_inactivity_timer_got_reset: false,
             notified_activity_this_iteration: false,
             pointer_inside_hot_corner: false,
+            hot_corner_pressure: (0, 0),
+            hot_corner_event_stream: Vec::default(),
             tablet_cursor_location: None,
             gesture_swipe_3f_cumulative: None,
             overview_scroll_swipe_gesture: ScrollSwipeGesture::new(),
