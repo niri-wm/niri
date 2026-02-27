@@ -180,6 +180,8 @@ pub enum Action {
     FocusWindowUpOrColumnRight,
     FocusWindowOrWorkspaceDown,
     FocusWindowOrWorkspaceUp,
+    FocusWindowOrWorkspaceOrMonitorDown,
+    FocusWindowOrWorkspaceOrMonitorUp,
     FocusWindowTop,
     FocusWindowBottom,
     FocusWindowDownOrTop,
@@ -460,6 +462,12 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::FocusWindowUpOrColumnRight {} => Self::FocusWindowUpOrColumnRight,
             niri_ipc::Action::FocusWindowOrWorkspaceDown {} => Self::FocusWindowOrWorkspaceDown,
             niri_ipc::Action::FocusWindowOrWorkspaceUp {} => Self::FocusWindowOrWorkspaceUp,
+            niri_ipc::Action::FocusWindowOrWorkspaceOrMonitorDown {} => {
+                Self::FocusWindowOrWorkspaceOrMonitorDown
+            }
+            niri_ipc::Action::FocusWindowOrWorkspaceOrMonitorUp {} => {
+                Self::FocusWindowOrWorkspaceOrMonitorUp
+            }
             niri_ipc::Action::FocusWindowTop {} => Self::FocusWindowTop,
             niri_ipc::Action::FocusWindowBottom {} => Self::FocusWindowBottom,
             niri_ipc::Action::FocusWindowDownOrTop {} => Self::FocusWindowDownOrTop,

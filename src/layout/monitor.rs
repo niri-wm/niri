@@ -781,6 +781,20 @@ impl<W: LayoutElement> Monitor<W> {
         }
     }
 
+    pub fn focus_window_or_workspace_or_monitor_down(&mut self) -> bool {
+        if self.active_workspace().focus_down() {
+            return true;
+        }
+        self.switch_workspace_down()
+    }
+
+    pub fn focus_window_or_workspace_or_monitor_up(&mut self) -> bool {
+        if self.active_workspace().focus_up() {
+            return true;
+        }
+        self.switch_workspace_up()
+    }
+
     pub fn move_to_workspace_up(&mut self, focus: bool) {
         let source_workspace_idx = self.active_workspace_idx;
 
@@ -974,7 +988,7 @@ impl<W: LayoutElement> Monitor<W> {
         self.add_column(new_idx, column, activate);
     }
 
-    pub fn switch_workspace_up(&mut self) {
+    pub fn switch_workspace_up(&mut self) -> bool {
         let new_idx = match &self.workspace_switch {
             // During a DnD scroll, select the prev apparent workspace.
             Some(WorkspaceSwitch::Gesture(gesture)) if gesture.dnd_last_event_time.is_some() => {
@@ -985,10 +999,12 @@ impl<W: LayoutElement> Monitor<W> {
             _ => self.active_workspace_idx.saturating_sub(1),
         };
 
+        let changed = new_idx != self.active_workspace_idx;
         self.activate_workspace(new_idx);
+        changed
     }
 
-    pub fn switch_workspace_down(&mut self) {
+    pub fn switch_workspace_down(&mut self) -> bool {
         let new_idx = match &self.workspace_switch {
             // During a DnD scroll, select the next apparent workspace.
             Some(WorkspaceSwitch::Gesture(gesture)) if gesture.dnd_last_event_time.is_some() => {
@@ -999,7 +1015,9 @@ impl<W: LayoutElement> Monitor<W> {
             _ => min(self.active_workspace_idx + 1, self.workspaces.len() - 1),
         };
 
+        let changed = new_idx != self.active_workspace_idx;
         self.activate_workspace(new_idx);
+        changed
     }
 
     fn previous_workspace_idx(&self) -> Option<usize> {
