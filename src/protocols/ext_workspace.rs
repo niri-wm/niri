@@ -201,9 +201,6 @@ fn refresh_workspace_group(protocol_state: &mut ExtWorkspaceManagerState, output
     for group in &data.instances {
         let manager: &ExtWorkspaceManagerV1 = group.data().unwrap();
         for (_, ws) in protocol_state.workspaces.iter() {
-            if ws.output.as_ref() != Some(output) {
-                continue;
-            }
             for workspace in &ws.instances {
                 if workspace.data() == Some(manager) {
                     group.workspace_enter(workspace);

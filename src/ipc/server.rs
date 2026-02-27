@@ -279,6 +279,18 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
         }
         Request::Workspaces => {
             let state = ctx.event_stream_state.borrow();
+            let workspaces = state
+                .workspaces
+                .workspaces
+                .values()
+                .filter(|workspace| !workspace.is_hidden)
+                .cloned()
+                .collect();
+            Response::Workspaces(workspaces)
+        }
+
+        Request::WorkspacesWithHidden => {
+            let state = ctx.event_stream_state.borrow();
             let workspaces = state.workspaces.workspaces.values().cloned().collect();
             Response::Workspaces(workspaces)
         }
@@ -603,9 +615,21 @@ impl State {
         // Check for workspace changes.
         let mut seen = HashSet::new();
         let mut need_workspaces_changed = false;
+        let mut last_output: Option<String> = None;
+        let mut visible_idx = 0usize;
         for (mon, ws_idx, ws) in layout.workspaces() {
             let id = ws.id().get();
             seen.insert(id);
+
+            if ws.hidden {
+                continue;
+            }
+
+            let output_name = mon.map(|mon| mon.output_name().clone());
+            if last_output != output_name {
+                visible_idx = 0;
+                last_output = output_name.clone();
+            }
 
             let Some(ipc_ws) = state.workspaces.get(&id) else {
                 // A new workspace was added.
@@ -614,10 +638,9 @@ impl State {
             };
 
             // Check for any changes that we can't signal as individual events.
-            let output_name = mon.map(|mon| mon.output_name());
-            if ipc_ws.idx != u8::try_from(ws_idx + 1).unwrap_or(u8::MAX)
+            if ipc_ws.idx != u8::try_from(visible_idx + 1).unwrap_or(u8::MAX)
                 || ipc_ws.name.as_ref() != ws.name()
-                || ipc_ws.output.as_ref() != output_name
+                || ipc_ws.output.as_ref() != output_name.as_ref()
             {
                 need_workspaces_changed = true;
                 break;
@@ -641,6 +664,7 @@ impl State {
             let is_focused = Some(id) == focused_ws_id;
             if is_focused && !ipc_ws.is_focused {
                 events.push(Event::WorkspaceActivated { id, focused: true });
+                visible_idx += 1;
                 continue;
             }
 
@@ -649,30 +673,52 @@ impl State {
             if is_active && !ipc_ws.is_active {
                 events.push(Event::WorkspaceActivated { id, focused: false });
             }
+
+            visible_idx += 1;
         }
 
-        // Check if any workspaces were removed.
-        if !need_workspaces_changed && state.workspaces.keys().any(|id| !seen.contains(id)) {
+        // Check if any workspaces were removed that weren't also hidden.
+        if !need_workspaces_changed
+            && state.workspaces.keys().any(|id| {
+                !seen.contains(id) && state.workspaces.get(id).is_some_and(|ws| !ws.is_hidden)
+            })
+        {
             need_workspaces_changed = true;
         }
 
         if need_workspaces_changed {
             events.clear();
 
+            let mut last_output: Option<String> = None;
+            let mut visible_idx = 0usize;
             let workspaces = layout
                 .workspaces()
-                .map(|(mon, ws_idx, ws)| {
+                .filter_map(|(mon, ws_idx, ws)| {
+                    if ws.hidden {
+                        return None;
+                    }
+
+                    let output_name = mon.map(|mon| mon.output_name().clone());
+                    if last_output != output_name {
+                        visible_idx = 0;
+                        last_output = output_name.clone();
+                    }
+
                     let id = ws.id().get();
-                    Workspace {
+                    let result = Workspace {
                         id,
-                        idx: u8::try_from(ws_idx + 1).unwrap_or(u8::MAX),
+                        idx: u8::try_from(visible_idx + 1).unwrap_or(u8::MAX),
                         name: ws.name().cloned(),
-                        output: mon.map(|mon| mon.output_name().clone()),
+                        output: output_name,
                         is_urgent: ws.is_urgent(),
                         is_active: mon.is_some_and(|mon| mon.active_workspace_idx() == ws_idx),
                         is_focused: Some(id) == focused_ws_id,
+                        is_hidden: ws.hidden,
                         active_window_id: ws.active_window().map(|win| win.id().get()),
-                    }
+                    };
+
+                    visible_idx += 1;
+                    Some(result)
                 })
                 .collect();
 
@@ -682,6 +728,26 @@ impl State {
         for event in events {
             state.apply(event.clone());
             server.send_event(event);
+        }
+
+        for (mon, ws_idx, ws) in layout.workspaces() {
+            if !ws.hidden {
+                continue;
+            }
+            let id = ws.id().get();
+            let output_name = mon.map(|mon| mon.output_name().clone());
+            let hidden_ws = Workspace {
+                id,
+                idx: u8::try_from(ws_idx + 1).unwrap_or(u8::MAX),
+                name: ws.name().cloned(),
+                output: output_name,
+                is_urgent: ws.is_urgent(),
+                is_active: false,
+                is_focused: false,
+                is_hidden: true,
+                active_window_id: ws.active_window().map(|win| win.id().get()),
+            };
+            state.workspaces.insert(id, hidden_ws);
         }
     }
 
