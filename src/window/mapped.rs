@@ -211,6 +211,24 @@ impl MappedId {
     pub fn get(self) -> u64 {
         self.0
     }
+
+    /// Converts the ID to a string that can be used as an identifier in
+    /// ext_foreign_toplevel_handle_v1::identifier
+    ///
+    /// > An identifier is a string that contains up to 32 printable ASCII bytes.
+    /// > An identifier must not be an empty string.
+    ///
+    /// Since the ID is exposed to IPC, it's useful for this conversion to be stable and reversible.
+    /// That way, clients can associate a foreign toplevel handle with an IPC window ID.
+    ///
+    /// We use the decimal representation of the ID, which is up to 20 characters long for u64::MAX.
+    /// This is within the 32-character limit, and is nice because it matches up with how `niri msg`
+    /// prints the IDs to the console.
+    ///
+    /// This namespace can be extended in the future, with any non-numeric prefix to disambiguate.
+    pub fn to_protocol_identifier(self) -> String {
+        format!("{}", self.0)
+    }
 }
 
 /// Interactive resize state.
