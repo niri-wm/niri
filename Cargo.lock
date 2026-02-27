@@ -567,14 +567,14 @@ dependencies = [
 
 [[package]]
 name = "calloop"
-version = "0.14.4"
+version = "0.14.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4dbf9978365bac10f54d1d4b04f7ce4427e51f71d61f2fe15e3fed5166474df7"
+checksum = "cb9f6e1368bd4621d2c86baa7e37de77a938adf5221e5dd3d6133340101b309e"
 dependencies = [
  "async-task",
  "bitflags 2.10.0",
  "futures-io",
- "nix 0.31.1",
+ "nix",
  "polling",
  "rustix 1.1.3",
  "slab",
@@ -599,7 +599,7 @@ version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "138efcf0940a02ebf0cc8d1eff41a1682a46b431630f4c52450d6265876021fa"
 dependencies = [
- "calloop 0.14.4",
+ "calloop 0.14.3",
  "rustix 1.1.3",
  "wayland-backend",
  "wayland-client",
@@ -940,7 +940,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1068,7 +1068,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1416,7 +1416,7 @@ dependencies = [
  "gobject-sys",
  "libc",
  "system-deps",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1735,7 +1735,7 @@ checksum = "3640c1c38b8e4e43584d8df18be5fc6b0aa314ce6ebf51b53313d4306cca8e46"
 dependencies = [
  "hermit-abi 0.5.2",
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1985,7 +1985,7 @@ dependencies = [
  "cookie-factory",
  "libc",
  "libspa-sys",
- "nix 0.30.1",
+ "nix",
  "nom 8.0.0",
  "system-deps",
 ]
@@ -2171,7 +2171,7 @@ dependencies = [
  "atomic",
  "bitflags 2.10.0",
  "bytemuck",
- "calloop 0.14.4",
+ "calloop 0.14.3",
  "calloop-wayland-source 0.4.1",
  "clap",
  "clap_complete",
@@ -2263,18 +2263,6 @@ name = "nix"
 version = "0.30.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "74523f3a35e05aba87a1d978330aef40f67b0304ac79c1c00b294c9830543db6"
-dependencies = [
- "bitflags 2.10.0",
- "cfg-if",
- "cfg_aliases",
- "libc",
-]
-
-[[package]]
-name = "nix"
-version = "0.31.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "225e7cfe711e0ba79a68baeddb2982723e4235247aefce1482f2f16c27865b66"
 dependencies = [
  "bitflags 2.10.0",
  "cfg-if",
@@ -2772,7 +2760,7 @@ dependencies = [
  "libc",
  "libspa",
  "libspa-sys",
- "nix 0.30.1",
+ "nix",
  "once_cell",
  "pipewire-sys",
  "thiserror 2.0.17",
@@ -3177,7 +3165,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.11.0",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3402,13 +3390,13 @@ checksum = "b7c388c1b5e93756d0c740965c41e8822f866621d41acbdf6336a6a168f8840c"
 [[package]]
 name = "smithay"
 version = "0.7.0"
-source = "git+https://github.com/Smithay/smithay.git#ae14fa12f6ee3fc4dd4c766ffb21848f991a6a18"
+source = "git+https://github.com/Smithay/smithay.git?rev=9219bf8a9#9219bf8a9b79f528a834c1083630e590a9b1a04e"
 dependencies = [
  "aliasable",
  "appendlist",
  "atomic_float",
  "bitflags 2.10.0",
- "calloop 0.14.4",
+ "calloop 0.14.3",
  "cc",
  "cgmath",
  "cursor-icon",
@@ -3477,7 +3465,7 @@ dependencies = [
 [[package]]
 name = "smithay-drm-extras"
 version = "0.1.0"
-source = "git+https://github.com/Smithay/smithay.git#ae14fa12f6ee3fc4dd4c766ffb21848f991a6a18"
+source = "git+https://github.com/Smithay/smithay.git?rev=9219bf8a9#9219bf8a9b79f528a834c1083630e590a9b1a04e"
 dependencies = [
  "drm",
  "libdisplay-info",
@@ -3583,7 +3571,7 @@ dependencies = [
  "getrandom 0.3.4",
  "once_cell",
  "rustix 1.1.3",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4182,7 +4170,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.48.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
