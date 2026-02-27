@@ -94,6 +94,12 @@ pub struct Match {
     pub is_urgent: Option<bool>,
     #[knuffel(property)]
     pub at_startup: Option<bool>,
+    #[knuffel(property, str)]
+    pub window_label: Option<RegexEq>,
+    #[knuffel(property, str)]
+    pub with_value: Option<RegexEq>,
+    #[knuffel(property)]
+    pub with_no_value: Option<bool>,
 }
 
 #[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]

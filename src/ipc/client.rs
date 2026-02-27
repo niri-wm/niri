@@ -49,6 +49,7 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
         Msg::RequestError => Request::ReturnError,
         Msg::OverviewState => Request::OverviewState,
         Msg::Casts => Request::Casts,
+        Msg::WindowLabels { id } => Request::WindowLabels { id: *id },
     };
 
     let mut socket = Socket::connect().context("error connecting to the niri socket")?;
@@ -550,6 +551,32 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
                 println!();
             }
         }
+        Msg::WindowLabels { .. } => {
+            let Response::WindowLabels(labels) = response else {
+                bail!("unexpected response: expected WindowLabels, got {response:?}");
+            };
+
+            if json {
+                let labels = serde_json::to_string(&labels).context("error formatting response")?;
+                println!("{labels}");
+                return Ok(());
+            }
+
+            if labels.is_none() {
+                println!("no labels present");
+                return Ok(());
+            }
+
+            let mut labels: Vec<(String, Option<String>)> =
+                labels.map(|mut ls| ls.drain().collect()).unwrap_or(vec![]);
+            labels.sort_by(|a, b| a.0.cmp(&b.0));
+
+            let empty = "<no-value>".to_string();
+            for (k, v) in labels {
+                println!("{}: {}", k, v.as_ref().unwrap_or(&empty));
+                println!();
+            }
+        }
     }
 
     Ok(())
@@ -736,6 +763,16 @@ fn print_window(window: &Window) {
         fmt_rounded(window_offset_in_tile.0),
         fmt_rounded(window_offset_in_tile.1)
     );
+
+    if let Some(labels) = &window.labels {
+        if !labels.is_empty() {
+            let empty = "<no-value>".to_string();
+            println!("  Labels:");
+            for (n, v) in labels {
+                println!("    {}: {}", n, v.as_ref().unwrap_or(&empty));
+            }
+        }
+    }
 }
 
 fn print_cast(cast: &Cast) {
