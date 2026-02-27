@@ -480,6 +480,12 @@ pub enum Action {
         #[cfg_attr(feature = "clap", arg())]
         reference: WorkspaceReferenceArg,
     },
+    /// Switch to a workspace on its monitor without changing the focused monitor.
+    SwitchWorkspace {
+        /// Reference (index or name) of the workspace to switch to.
+        #[cfg_attr(feature = "clap", arg())]
+        reference: WorkspaceReferenceArg,
+    },
     /// Focus the previous workspace.
     FocusWorkspacePrevious {},
     /// Move the focused window to the workspace below.

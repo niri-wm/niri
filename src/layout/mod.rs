@@ -2161,6 +2161,13 @@ impl<W: LayoutElement> Layout<W> {
         monitor.switch_workspace_previous();
     }
 
+    pub fn switch_workspace_on_output(&mut self, output: &Output, idx: usize) {
+        let Some(monitor) = self.monitor_for_output_mut(output) else {
+            return;
+        };
+        monitor.switch_workspace(idx);
+    }
+
     pub fn consume_into_column(&mut self) {
         let Some(workspace) = self.active_workspace_mut() else {
             return;
