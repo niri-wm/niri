@@ -541,6 +541,10 @@ enum Op {
         #[proptest(strategy = "0..=5usize")]
         output_id: usize,
     },
+    SwapWorkspacesWithOutput {
+        #[proptest(strategy = "0..=5usize")]
+        output_id: usize,
+    },
     SetWorkspaceName {
         #[proptest(strategy = "1..=5usize")]
         new_ws_name: usize,
@@ -1297,6 +1301,13 @@ impl Op {
                 };
 
                 layout.move_workspace_to_output_by_id(old_idx, Some(old_output), &output);
+            }
+            Op::SwapWorkspacesWithOutput { output_id } => {
+                let name = format!("output{output_id}");
+                let Some(output) = layout.outputs().find(|o| o.name() == name).cloned() else {
+                    return;
+                };
+                layout.swap_workspaces_with_output(&output);
             }
             Op::SwitchPresetColumnWidth => layout.toggle_width(true),
             Op::SwitchPresetColumnWidthBack => layout.toggle_width(false),

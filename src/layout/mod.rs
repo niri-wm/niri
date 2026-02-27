@@ -3439,6 +3439,45 @@ impl<W: LayoutElement> Layout<W> {
         activate
     }
 
+    pub fn swap_workspaces_with_output(&mut self, target_output: &Output) {
+        let MonitorSet::Normal {
+            monitors,
+            active_monitor_idx,
+            ..
+        } = &mut self.monitor_set
+        else {
+            return;
+        };
+        let current_monitor_idx = *active_monitor_idx;
+        let target_monitor_idx = monitors
+            .iter()
+            .position(|x| x.output == *target_output)
+            .unwrap();
+        if current_monitor_idx == target_monitor_idx {
+            return;
+        }
+
+        let current_workspace_idx = monitors[current_monitor_idx].active_workspace_idx;
+        let target_workspace_idx = monitors[target_monitor_idx].active_workspace_idx;
+
+        let target_monitor = &mut monitors[target_monitor_idx];
+        let target_output_id = OutputId::new(&target_monitor.output);
+        let mut target_workspace = target_monitor.remove_workspace_by_idx(target_workspace_idx);
+
+        let current_monitor = &mut monitors[*active_monitor_idx];
+        let current_output_id = OutputId::new(&current_monitor.output);
+        let mut current_workspace = current_monitor.remove_workspace_by_idx(current_workspace_idx);
+        current_workspace.original_output = target_output_id;
+        target_workspace.original_output = current_output_id;
+        current_monitor.insert_workspace(target_workspace, current_workspace_idx, true);
+
+        (&mut monitors[target_monitor_idx]).insert_workspace(
+            current_workspace,
+            target_workspace_idx,
+            true,
+        );
+    }
+
     pub fn set_fullscreen(&mut self, id: &W::Id, is_fullscreen: bool) {
         // Check if this is a request to unset the windowed fullscreen state.
         if !is_fullscreen {

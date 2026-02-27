@@ -2101,6 +2101,16 @@ impl State {
                     }
                 }
             }
+            Action::SwapWorkspacesWithMonitorPrevious => {
+                if let Some(output) = self.niri.output_previous() {
+                    self.niri.layout.swap_workspaces_with_output(&output);
+                }
+            }
+            Action::SwapWorkspacesWithMonitorNext => {
+                if let Some(output) = self.niri.output_next() {
+                    self.niri.layout.swap_workspaces_with_output(&output);
+                }
+            }
             Action::MoveWorkspaceToMonitor(new_output) => {
                 if let Some(new_output) = self.niri.output_by_name_match(&new_output).cloned() {
                     if self.niri.layout.move_workspace_to_output(&new_output)
