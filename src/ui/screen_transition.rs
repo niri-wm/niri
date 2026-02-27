@@ -2,16 +2,17 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::time::Duration;
 
+use glam::{Mat3, Vec2, Vec3};
 use smithay::backend::renderer::element::Kind;
 use smithay::backend::renderer::gles::{GlesTexture, Uniform};
-use smithay::utils::{Logical, Point, Scale, Transform};
+use smithay::utils::{Logical, Point, Scale, Size, Transform};
 
 use crate::animation::{Animation, Clock};
 use crate::niri_render_elements;
 use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::shader_element::ShaderRenderElement;
-use crate::render_helpers::shaders::{ProgramType, Shaders};
+use crate::render_helpers::shaders::{mat3_uniform, ProgramType, Shaders};
 use crate::render_helpers::texture::{TextureBuffer, TextureRenderElement};
 use crate::render_helpers::RenderTarget;
 
@@ -96,6 +97,25 @@ impl ScreenTransition {
                 .map(|pos| [pos.x as f32, pos.y as f32])
                 .unwrap_or([-1., -1.]);
 
+            // We need to transform the geometry coordinates to texture coordinates in the shader,
+            // so we calculate a matrix for that here.
+            let transform = self.from_texture[idx].texture_transform();
+            let size: Size<f64, Logical> = Size::from((1., 1.));
+
+            let p00 = transform.transform_point_in(Point::from((0., 0.)), &size);
+            let p10 = transform.transform_point_in(Point::from((1., 0.)), &size);
+            let p01 = transform.transform_point_in(Point::from((0., 1.)), &size);
+
+            let origin = Vec2::new(p00.x as f32, p00.y as f32);
+            let basis_x = Vec2::new((p10.x - p00.x) as f32, (p10.y - p00.y) as f32);
+            let basis_y = Vec2::new((p01.x - p00.x) as f32, (p01.y - p00.y) as f32);
+
+            let geo_to_tex = Mat3::from_cols(
+                basis_x.extend(0.),
+                basis_y.extend(0.),
+                Vec3::new(origin.x, origin.y, 1.),
+            );
+
             return ShaderRenderElement::new(
                 ProgramType::ScreenTransition,
                 self.from_texture[idx].logical_size(),
@@ -103,6 +123,7 @@ impl ScreenTransition {
                 texture_scale.x as f32,
                 1.,
                 Rc::new([
+                    mat3_uniform("niri_geo_to_tex", geo_to_tex),
                     Uniform::new("niri_progress", progress as f32),
                     Uniform::new("niri_clamped_progress", clamped_progress as f32),
                     Uniform::new("niri_mouse_pos", mouse_pos),
