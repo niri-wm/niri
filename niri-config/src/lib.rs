@@ -337,6 +337,10 @@ where
                     }
 
                     let base = ctx.get::<BasePath>().unwrap();
+                    let path = match (path.strip_prefix("~"), std::env::home_dir()) {
+                        (Ok(rest), Some(home)) => home.join(rest),
+                        _ => path,
+                    };
                     let path = base.0.join(path);
 
                     // We use DecodeError::Missing throughout this block because it results in the
@@ -2404,5 +2408,50 @@ mod tests {
         +                0.66667,
         "#,
         );
+    }
+
+    fn unique_tmp_dir(base: &Path, name: &str) -> PathBuf {
+        let pid = std::process::id();
+        let dir = base.join(format!("niri-test-{pid}-{name}"));
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn include_tilde_expansion() {
+        let home = match std::env::home_dir() {
+            Some(h) if h.is_dir() => h,
+            _ => return,
+        };
+
+        let temp_dir = unique_tmp_dir(&home, "tilde");
+        let extra = temp_dir.join("extra.kdl");
+        fs::write(&extra, "prefer-no-csd").unwrap();
+
+        let rest = extra.strip_prefix(&home).unwrap();
+        let tilde_path = format!("~/{}", rest.display());
+
+        let config_path = temp_dir.join("config.kdl");
+        fs::write(&config_path, format!(r#"include "{}""#, tilde_path)).unwrap();
+
+        let config = Config::load(&config_path).config.unwrap();
+        let _ = fs::remove_dir_all(&temp_dir);
+        assert!(config.prefer_no_csd);
+    }
+
+    #[test]
+    fn include_absolute_path() {
+        let temp_dir = unique_tmp_dir(&std::env::temp_dir(), "absolute");
+        let extra = temp_dir.join("extra.kdl");
+        fs::write(&extra, "prefer-no-csd").unwrap();
+
+        let config_temp_dir = unique_tmp_dir(&std::env::temp_dir(), "absolute-config");
+        let config_path = config_temp_dir.join("config.kdl");
+        fs::write(&config_path, format!(r#"include "{}""#, extra.display())).unwrap();
+
+        let config = Config::load(&config_path).config.unwrap();
+        let _ = fs::remove_dir_all(&temp_dir);
+        let _ = fs::remove_dir_all(&config_temp_dir);
+        assert!(config.prefer_no_csd);
     }
 }
