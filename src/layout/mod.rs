@@ -594,6 +594,17 @@ impl HitType {
             .map(|hit| (tile.window(), hit.offset_win_pos(tile_pos)))
     }
 
+    /// Like `hit_tile()`, but clipped to the tile's activation region.
+    pub fn hit_tile_within_activation_region<W: LayoutElement>(
+        tile: &Tile<W>,
+        tile_pos: Point<f64, Logical>,
+        point: Point<f64, Logical>,
+    ) -> Option<(&W, Self)> {
+        let pos_within_tile = point - tile_pos;
+        tile.hit_within_activation_region(pos_within_tile)
+            .map(|hit| (tile.window(), hit.offset_win_pos(tile_pos)))
+    }
+
     pub fn to_activate(self) -> Self {
         match self {
             HitType::Input { .. } => HitType::Activate {
