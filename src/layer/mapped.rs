@@ -1,20 +1,29 @@
+use std::cell::{Ref, RefCell};
+
+use niri_config::animations::LayerOpenAnim;
 use niri_config::utils::MergeWith as _;
 use niri_config::{Config, LayerRule};
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::element::Kind;
+use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::desktop::{LayerSurface, PopupManager};
 use smithay::utils::{Logical, Point, Scale, Size};
 use smithay::wayland::shell::wlr_layer::{ExclusiveZone, Layer};
 
 use super::ResolvedLayerRules;
-use crate::animation::Clock;
+use crate::animation::{Animation, Clock};
+use crate::layer::closing_layer::ClosingLayerRenderElement;
+use crate::layer::opening_layer::{OpenAnimation, OpeningLayerRenderElement};
 use crate::layout::shadow::Shadow;
 use crate::niri_render_elements;
+use crate::render_helpers::offscreen::OffscreenData;
 use crate::render_helpers::renderer::NiriRenderer;
+use crate::render_helpers::shaders::ProgramType;
 use crate::render_helpers::shadow::ShadowRenderElement;
+use crate::render_helpers::snapshot::RenderSnapshot;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
 use crate::render_helpers::surface::push_elements_from_surface_tree;
-use crate::render_helpers::RenderTarget;
+use crate::render_helpers::{encompassing_geo, RenderTarget};
 use crate::utils::{baba_is_float_offset, round_logical_in_physical};
 
 #[derive(Debug)]
@@ -37,6 +46,15 @@ pub struct MappedLayer {
     /// Scale of the output the layer surface is on (and rounds its sizes to).
     scale: f64,
 
+    /// The animation upon opening a layer.
+    open_animation: Option<OpenAnimation>,
+
+    /// Offscreen state from the current frame's opening animation render.
+    offscreen_data: RefCell<Option<OffscreenData>>,
+
+    /// The animation upon closing a layer.
+    unmap_snapshot: Option<LayerSurfaceRenderSnapshot>,
+
     /// Clock for driving animations.
     clock: Clock,
 }
@@ -46,8 +64,15 @@ niri_render_elements! {
         Wayland = WaylandSurfaceRenderElement<R>,
         SolidColor = SolidColorRenderElement,
         Shadow = ShadowRenderElement,
+        Opening = OpeningLayerRenderElement,
+        Closing = ClosingLayerRenderElement,
     }
 }
+
+pub type LayerSurfaceRenderSnapshot = RenderSnapshot<
+    LayerSurfaceRenderElement<GlesRenderer>,
+    LayerSurfaceRenderElement<GlesRenderer>,
+>;
 
 impl MappedLayer {
     pub fn new(
@@ -70,6 +95,9 @@ impl MappedLayer {
             view_size,
             scale,
             shadow: Shadow::new(shadow_config),
+            open_animation: None,
+            offscreen_data: RefCell::new(None),
+            unmap_snapshot: None,
             clock,
         }
     }
@@ -105,8 +133,78 @@ impl MappedLayer {
             .update_render_elements(size, true, radius, self.scale, 1.);
     }
 
+    pub fn store_unmap_snapshot(&mut self, renderer: &mut GlesRenderer) {
+        let _span = tracy_client::span!("MappedLayer::store_unmap_snapshot");
+        let mut contents = Vec::new();
+        self.render_normal_inner(
+            renderer,
+            Point::from((0., 0.)),
+            RenderTarget::Output,
+            &mut |elem| contents.push(elem),
+        );
+
+        // A bit of a hack to render blocked out as for screencast, but I think it's fine here as
+        // well.
+        let mut blocked_out_contents = Vec::new();
+        self.render_normal_inner(
+            renderer,
+            Point::from((0., 0.)),
+            RenderTarget::Screencast,
+            &mut |elem| blocked_out_contents.push(elem),
+        );
+
+        let size = self.surface.cached_state().size.to_f64();
+
+        self.unmap_snapshot = Some(LayerSurfaceRenderSnapshot {
+            contents,
+            blocked_out_contents,
+            block_out_from: self.rules.block_out_from,
+            size,
+            texture: Default::default(),
+            blocked_out_texture: Default::default(),
+        })
+    }
+
+    pub fn take_unmap_snapshot(&mut self) -> Option<LayerSurfaceRenderSnapshot> {
+        self.unmap_snapshot.take()
+    }
+
+    pub fn offscreen_data(&self) -> Ref<'_, Option<OffscreenData>> {
+        self.offscreen_data.borrow()
+    }
+
+    pub fn advance_animations(&mut self) {
+        if self
+            .open_animation
+            .as_ref()
+            .is_some_and(|open_anim| open_anim.is_done())
+        {
+            self.open_animation = None;
+        }
+    }
+
+    pub fn start_open_animation(&mut self, anim_config: &LayerOpenAnim, program: ProgramType) {
+        if self.open_animation.is_some() {
+            return;
+        }
+
+        self.open_animation = Some(OpenAnimation::new(
+            Animation::new(self.clock.clone(), 0., 1., 0., anim_config.anim),
+            program,
+        ));
+    }
+
+    pub fn reset_open_animation_state(&mut self) {
+        self.open_animation = None;
+        self.set_offscreen_data(None);
+    }
+
     pub fn are_animations_ongoing(&self) -> bool {
         self.rules.baba_is_float
+            || self
+                .open_animation
+                .as_ref()
+                .is_some_and(|open| !open.is_done())
     }
 
     pub fn surface(&self) -> &LayerSurface {
@@ -165,6 +263,68 @@ impl MappedLayer {
         let scale = Scale::from(self.scale);
         let alpha = self.rules.opacity.unwrap_or(1.).clamp(0., 1.);
         let location = location + self.bob_offset();
+
+        self.set_offscreen_data(None);
+
+        if let Some(open) = &self.open_animation {
+            let mut elements: Vec<WaylandSurfaceRenderElement<GlesRenderer>> = Vec::new();
+            push_elements_from_surface_tree(
+                renderer.as_gles_renderer(),
+                self.surface.wl_surface(),
+                Point::from((0, 0)),
+                scale,
+                alpha,
+                Kind::ScanoutCandidate,
+                &mut |elem| elements.push(elem),
+            );
+
+            if !elements.is_empty() {
+                let mut geo_size = self.surface.cached_state().size.to_f64();
+                if geo_size.w <= 0. || geo_size.h <= 0. {
+                    geo_size = encompassing_geo(scale, elements.iter())
+                        .size
+                        .to_f64()
+                        .to_logical(scale);
+                }
+
+                if geo_size.w <= 0. || geo_size.h <= 0. {
+                    self.render_normal_inner(renderer, location, target, push);
+                    return;
+                }
+
+                let res = open.render(
+                    renderer.as_gles_renderer(),
+                    &elements,
+                    geo_size,
+                    location,
+                    scale,
+                    alpha,
+                );
+                match res {
+                    Ok((elem, data)) => {
+                        self.set_offscreen_data(Some(data));
+                        push(elem.into());
+                        return;
+                    }
+                    Err(err) => {
+                        warn!("error rendering layer opening animation: {err:?}");
+                    }
+                }
+            }
+        }
+
+        self.render_normal_inner(renderer, location, target, push);
+    }
+
+    fn render_normal_inner<R: NiriRenderer>(
+        &self,
+        renderer: &mut R,
+        location: Point<f64, Logical>,
+        target: RenderTarget,
+        push: &mut dyn FnMut(LayerSurfaceRenderElement<R>),
+    ) {
+        let scale = Scale::from(self.scale);
+        let alpha = self.rules.opacity.unwrap_or(1.).clamp(0., 1.);
 
         if target.should_block_out(self.rules.block_out_from) {
             // Round to physical pixels.
@@ -231,6 +391,24 @@ impl MappedLayer {
                 Kind::ScanoutCandidate,
                 &mut |elem| push(elem.into()),
             );
+        }
+    }
+
+    fn set_offscreen_data(&self, data: Option<OffscreenData>) {
+        let Some(data) = data else {
+            self.offscreen_data.replace(None);
+            return;
+        };
+
+        let mut offscreen_data = self.offscreen_data.borrow_mut();
+        match &mut *offscreen_data {
+            None => {
+                *offscreen_data = Some(data);
+            }
+            Some(existing) => {
+                existing.id = data.id;
+                existing.states.states.extend(data.states.states);
+            }
         }
     }
 }

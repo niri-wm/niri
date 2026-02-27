@@ -133,6 +133,7 @@ use crate::input::{
     mods_with_wheel_binds, TabletData,
 };
 use crate::ipc::server::IpcServer;
+use crate::layer::closing_layer::ClosingLayer;
 use crate::layer::mapped::LayerSurfaceRenderElement;
 use crate::layer::MappedLayer;
 use crate::layout::tile::TileRenderElement;
@@ -238,6 +239,9 @@ pub struct Niri {
 
     /// Extra data for mapped layer surfaces.
     pub mapped_layer_surfaces: HashMap<LayerSurface, MappedLayer>,
+
+    /// Layer surfaces in closing animations.
+    pub closing_layers: Vec<ClosingLayerState>,
 
     // Cached root surface for every surface, so that we can access it in destroyed() where the
     // normal get_parent() is cleared out.
@@ -413,6 +417,15 @@ pub struct Niri {
 
     #[cfg(feature = "xdp-gnome-screencast")]
     pub casting: Screencasting,
+}
+
+#[derive(Debug)]
+pub struct ClosingLayerState {
+    pub output: Output,
+    pub surface: LayerSurface,
+    pub layer: Layer,
+    pub for_backdrop: bool,
+    pub animation: ClosingLayer,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -1533,6 +1546,160 @@ impl State {
             layer_rules_changed = true;
         }
 
+        let new_layer_close_shader = config
+            .animations
+            .layer_bar_close
+            .custom_shader
+            .as_deref()
+            .or(config
+                .animations
+                .layer_wallpaper_close
+                .custom_shader
+                .as_deref())
+            .or(config
+                .animations
+                .layer_launcher_close
+                .custom_shader
+                .as_deref())
+            .or(config.animations.layer_close.custom_shader.as_deref());
+        let old_layer_close_shader = old_config
+            .animations
+            .layer_bar_close
+            .custom_shader
+            .as_deref()
+            .or(old_config
+                .animations
+                .layer_wallpaper_close
+                .custom_shader
+                .as_deref())
+            .or(old_config
+                .animations
+                .layer_launcher_close
+                .custom_shader
+                .as_deref())
+            .or(old_config.animations.layer_close.custom_shader.as_deref());
+        if new_layer_close_shader != old_layer_close_shader {
+            self.backend.with_primary_renderer(|renderer| {
+                shaders::set_custom_layer_close_program(renderer, new_layer_close_shader);
+            });
+            shaders_changed = true;
+        }
+
+        let new_layer_open_shader = config
+            .animations
+            .layer_bar_open
+            .custom_shader
+            .as_deref()
+            .or(config
+                .animations
+                .layer_wallpaper_open
+                .custom_shader
+                .as_deref())
+            .or(config
+                .animations
+                .layer_launcher_open
+                .custom_shader
+                .as_deref())
+            .or(config.animations.layer_open.custom_shader.as_deref());
+        let old_layer_open_shader = old_config
+            .animations
+            .layer_bar_open
+            .custom_shader
+            .as_deref()
+            .or(old_config
+                .animations
+                .layer_wallpaper_open
+                .custom_shader
+                .as_deref())
+            .or(old_config
+                .animations
+                .layer_launcher_open
+                .custom_shader
+                .as_deref())
+            .or(old_config.animations.layer_open.custom_shader.as_deref());
+        if new_layer_open_shader != old_layer_open_shader {
+            self.backend.with_primary_renderer(|renderer| {
+                shaders::set_custom_layer_open_program(renderer, new_layer_open_shader);
+            });
+            shaders_changed = true;
+        }
+
+        if config.animations.layer_bar_open.custom_shader
+            != old_config.animations.layer_bar_open.custom_shader
+        {
+            let src = config.animations.layer_bar_open.custom_shader.as_deref();
+            self.backend.with_primary_renderer(|renderer| {
+                shaders::set_custom_layer_bar_open_program(renderer, src);
+            });
+            shaders_changed = true;
+        }
+
+        if config.animations.layer_bar_close.custom_shader
+            != old_config.animations.layer_bar_close.custom_shader
+        {
+            let src = config.animations.layer_bar_close.custom_shader.as_deref();
+            self.backend.with_primary_renderer(|renderer| {
+                shaders::set_custom_layer_bar_close_program(renderer, src);
+            });
+            shaders_changed = true;
+        }
+
+        if config.animations.layer_wallpaper_open.custom_shader
+            != old_config.animations.layer_wallpaper_open.custom_shader
+        {
+            let src = config
+                .animations
+                .layer_wallpaper_open
+                .custom_shader
+                .as_deref();
+            self.backend.with_primary_renderer(|renderer| {
+                shaders::set_custom_layer_wallpaper_open_program(renderer, src);
+            });
+            shaders_changed = true;
+        }
+
+        if config.animations.layer_wallpaper_close.custom_shader
+            != old_config.animations.layer_wallpaper_close.custom_shader
+        {
+            let src = config
+                .animations
+                .layer_wallpaper_close
+                .custom_shader
+                .as_deref();
+            self.backend.with_primary_renderer(|renderer| {
+                shaders::set_custom_layer_wallpaper_close_program(renderer, src);
+            });
+            shaders_changed = true;
+        }
+
+        if config.animations.layer_launcher_open.custom_shader
+            != old_config.animations.layer_launcher_open.custom_shader
+        {
+            let src = config
+                .animations
+                .layer_launcher_open
+                .custom_shader
+                .as_deref();
+            self.backend.with_primary_renderer(|renderer| {
+                shaders::set_custom_layer_launcher_open_program(renderer, src);
+            });
+            shaders_changed = true;
+        }
+
+        if config.animations.layer_launcher_close.custom_shader
+            != old_config.animations.layer_launcher_close.custom_shader
+        {
+            let src = config
+                .animations
+                .layer_launcher_close
+                .custom_shader
+                .as_deref();
+            self.backend.with_primary_renderer(|renderer| {
+                shaders::set_custom_layer_launcher_close_program(renderer, src);
+            });
+            shaders_changed = true;
+        }
+
         if config.animations.window_resize.custom_shader
             != old_config.animations.window_resize.custom_shader
         {
@@ -1548,7 +1715,7 @@ impl State {
         {
             let src = config.animations.window_close.custom_shader.as_deref();
             self.backend.with_primary_renderer(|renderer| {
-                shaders::set_custom_close_program(renderer, src);
+                shaders::set_custom_window_close_program(renderer, src);
             });
             shaders_changed = true;
         }
@@ -1558,7 +1725,7 @@ impl State {
         {
             let src = config.animations.window_open.custom_shader.as_deref();
             self.backend.with_primary_renderer(|renderer| {
-                shaders::set_custom_open_program(renderer, src);
+                shaders::set_custom_window_open_program(renderer, src);
             });
             shaders_changed = true;
         }
@@ -2446,6 +2613,7 @@ impl Niri {
             unmapped_windows: HashMap::new(),
             unmapped_layer_surfaces: HashSet::new(),
             mapped_layer_surfaces: HashMap::new(),
+            closing_layers: Vec::new(),
             root_surface: HashMap::new(),
             dmabuf_pre_commit_hook: HashMap::new(),
             blocker_cleared_tx,
@@ -3980,6 +4148,13 @@ impl Niri {
         self.exit_confirm_dialog.advance_animations();
         self.screenshot_ui.advance_animations();
         self.window_mru_ui.advance_animations();
+        for mapped in self.mapped_layer_surfaces.values_mut() {
+            mapped.advance_animations();
+        }
+        self.closing_layers.retain_mut(|closing| {
+            closing.animation.advance_animations();
+            closing.animation.are_animations_ongoing()
+        });
 
         for state in self.output_state.values_mut() {
             if let Some(transition) = &mut state.screen_transition {
@@ -4181,7 +4356,9 @@ impl Niri {
         }
         macro_rules! push_normal_from_layer {
             ($layer:expr, $backdrop:expr, $push:expr) => {{
-                self.render_layer_normal(renderer, target, &layer_map, $layer, $backdrop, $push);
+                self.render_layer_normal(
+                    renderer, output, target, &layer_map, $layer, $backdrop, $push,
+                );
             }};
             ($layer:expr, true) => {{
                 push_normal_from_layer!($layer, true, &mut |elem| push(elem.into()));
@@ -4290,6 +4467,7 @@ impl Niri {
     fn render_layer_normal<R: NiriRenderer>(
         &self,
         renderer: &mut R,
+        output: &Output,
         target: RenderTarget,
         layer_map: &LayerMap,
         layer: Layer,
@@ -4298,6 +4476,23 @@ impl Niri {
     ) {
         for (mapped, geo) in self.layers_in_render_order(layer_map, layer, for_backdrop) {
             mapped.render_normal(renderer, geo.loc.to_f64(), target, push);
+        }
+
+        let scale = Scale::from(output.current_scale().fractional_scale());
+        let view_rect = Rectangle::from_size(output_size(output));
+        for closing in self.closing_layers.iter().rev() {
+            if &closing.output != output
+                || closing.layer != layer
+                || closing.for_backdrop != for_backdrop
+            {
+                continue;
+            }
+
+            let elem =
+                closing
+                    .animation
+                    .render(renderer.as_gles_renderer(), view_rect, scale, target);
+            push(elem.into());
         }
     }
 
@@ -4354,6 +4549,10 @@ impl Niri {
                     .layers()
                     .filter_map(|surface| self.mapped_layer_surfaces.get(surface))
                     .any(|mapped| mapped.are_animations_ongoing());
+                state.unfinished_animations_remain |= self
+                    .closing_layers
+                    .iter()
+                    .any(|closing| closing.output == *output);
             }
 
             // Render.
@@ -4577,11 +4776,28 @@ impl Niri {
         }
 
         for surface in layer_map_for_output(output).layers() {
+            let offscreen_data = self
+                .mapped_layer_surfaces
+                .get(surface)
+                .map(MappedLayer::offscreen_data);
+
             surface.with_surfaces(|surface, states| {
-                update_surface_primary_scanout_output(
-                    surface,
+                let primary_scanout_output = states
+                    .data_map
+                    .get_or_insert_threadsafe(Mutex::<PrimaryScanoutOutput>::default);
+                let mut primary_scanout_output = primary_scanout_output.lock().unwrap();
+
+                let mut id = Id::from_wayland_resource(surface);
+
+                if let Some(data) = offscreen_data.as_ref().and_then(|data| data.as_ref()) {
+                    if data.states.element_was_presented(id.clone()) {
+                        id = data.id.clone();
+                    }
+                }
+
+                primary_scanout_output.update_from_render_element_states(
+                    id,
                     output,
-                    states,
                     render_element_states,
                     // Layer surfaces are shown only on one output at a time.
                     |_, _, output, _| output,

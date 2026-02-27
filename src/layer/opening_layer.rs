@@ -22,21 +22,23 @@ pub struct OpenAnimation {
     anim: Animation,
     random_seed: f32,
     buffer: OffscreenBuffer,
+    program: ProgramType,
 }
 
 niri_render_elements! {
-    OpeningWindowRenderElement => {
+    OpeningLayerRenderElement => {
         Offscreen = RelocateRenderElement<RescaleRenderElement<OffscreenRenderElement>>,
         Shader = ShaderRenderElement,
     }
 }
 
 impl OpenAnimation {
-    pub fn new(anim: Animation) -> Self {
+    pub fn new(anim: Animation, program: ProgramType) -> Self {
         Self {
             anim,
             random_seed: fastrand::f32(),
             buffer: OffscreenBuffer::default(),
+            program,
         }
     }
 
@@ -54,7 +56,7 @@ impl OpenAnimation {
         location: Point<f64, Logical>,
         scale: Scale<f64>,
         alpha: f32,
-    ) -> anyhow::Result<(OpeningWindowRenderElement, OffscreenData)> {
+    ) -> anyhow::Result<(OpeningLayerRenderElement, OffscreenData)> {
         let progress = self.anim.value();
         let clamped_progress = self.anim.clamped_value().clamp(0., 1.);
 
@@ -63,10 +65,7 @@ impl OpenAnimation {
             .render(renderer, scale, elements)
             .context("error rendering to offscreen buffer")?;
 
-        if Shaders::get(renderer)
-            .program(ProgramType::WindowOpen)
-            .is_some()
-        {
+        if Shaders::get(renderer).program(self.program).is_some() {
             // OffscreenBuffer renders with Transform::Normal and the scale that we passed, so we
             // can assume that below.
             let offset = elem.offset();
@@ -101,7 +100,7 @@ impl OpenAnimation {
                 Mat3::from_translation(-tex_loc / tex_size) * Mat3::from_scale(geo_size / tex_size);
 
             let elem = ShaderRenderElement::new(
-                ProgramType::WindowOpen,
+                self.program,
                 area.size,
                 None,
                 scale.x as f32,
