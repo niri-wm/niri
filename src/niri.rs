@@ -146,6 +146,7 @@ use crate::protocols::foreign_toplevel::{self, ForeignToplevelManagerState};
 use crate::protocols::gamma_control::GammaControlManagerState;
 use crate::protocols::mutter_x11_interop::MutterX11InteropManagerState;
 use crate::protocols::output_management::OutputManagementManagerState;
+use crate::protocols::output_power_management::{self, OutputPowerManagementManagerState};
 use crate::protocols::screencopy::{Screencopy, ScreencopyBuffer, ScreencopyManagerState};
 use crate::protocols::virtual_pointer::VirtualPointerManagerState;
 use crate::render_helpers::debug::push_opaque_regions;
@@ -276,6 +277,7 @@ pub struct Niri {
     pub ext_workspace_state: ExtWorkspaceManagerState,
     pub screencopy_state: ScreencopyManagerState,
     pub output_management_state: OutputManagementManagerState,
+    pub output_power_management_state: OutputPowerManagementManagerState,
     pub viewporter_state: ViewporterState,
     pub xdg_foreign_state: XdgForeignState,
     pub shm_state: ShmState,
@@ -482,6 +484,7 @@ pub struct OutputState {
     screen_transition: Option<ScreenTransition>,
     /// Damage tracker used for the debug damage visualization.
     pub debug_damage_tracker: OutputDamageTracker,
+    pub power_mode: output_power_management::Mode,
 }
 
 #[derive(Debug, Default)]
@@ -2282,6 +2285,10 @@ impl Niri {
         let mut output_management_state =
             OutputManagementManagerState::new::<State, _>(&display_handle, client_is_unrestricted);
         output_management_state.on_config_changed(config_.outputs.clone());
+        let output_power_management_state = OutputPowerManagementManagerState::new::<State, _>(
+            &display_handle,
+            client_is_unrestricted,
+        );
         let screencopy_state =
             ScreencopyManagerState::new::<State, _>(&display_handle, client_is_unrestricted);
         let viewporter_state = ViewporterState::new::<State>(&display_handle);
@@ -2466,6 +2473,7 @@ impl Niri {
             foreign_toplevel_state,
             ext_workspace_state,
             output_management_state,
+            output_power_management_state,
             screencopy_state,
             viewporter_state,
             xdg_foreign_state,
@@ -2816,6 +2824,7 @@ impl Niri {
             lock_color_buffer: SolidColorBuffer::new(size, CLEAR_COLOR_LOCKED),
             screen_transition: None,
             debug_damage_tracker: OutputDamageTracker::from_output(&output),
+            power_mode: output_power_management::Mode::On,
         };
         let rv = self.output_state.insert(output.clone(), state);
         assert!(rv.is_none(), "output was already tracked");
@@ -2833,6 +2842,7 @@ impl Niri {
         self.global_space.unmap_output(output);
         self.reposition_outputs(None);
         self.gamma_control_manager_state.output_removed(output);
+        self.output_power_management_state.output_removed(output);
 
         let state = self.output_state.remove(output).unwrap();
 
@@ -2955,15 +2965,50 @@ impl Niri {
 
         self.monitors_active = false;
         backend.set_monitors_active(false);
+        for output in self.global_space.outputs() {
+            self.output_power_management_state
+                .output_power_mode_changed(output, output_power_management::Mode::Off);
+
+            if let Some(state) = self.output_state.get_mut(output) {
+                state.power_mode = output_power_management::Mode::Off;
+            }
+        }
     }
 
     pub fn activate_monitors(&mut self, backend: &mut Backend) {
         if self.monitors_active {
             return;
         }
+        backend.set_monitors_active(true);
+        self.activate_monitors_without_backend();
+    }
+
+    /// Note: This is intended to only be directly used by the backend module,
+    /// when the backend would want to call `activate_monitors()` but is unable
+    /// to provide a reference to the whole `Backend` type.
+    ///
+    /// The backend needs to call its own `set_monitors_active(true)` before
+    /// calling this.
+    ///
+    /// One possible long-term solution: The type of the backend argument could
+    /// be turned into a trait bound, where the trait is implemented by both the
+    /// top-level `Backend` and its inner variant types.
+    pub fn activate_monitors_without_backend(&mut self) {
+        if self.monitors_active {
+            return;
+        }
 
         self.monitors_active = true;
-        backend.set_monitors_active(true);
+
+        // Notify per-output power states when activating monitors
+        for output in self.global_space.outputs() {
+            let output_state = self.output_state.get_mut(output).unwrap();
+            self.output_power_management_state
+                .output_power_mode_changed(output, output_state.power_mode);
+            if let Some(state) = self.output_state.get_mut(output) {
+                state.power_mode = output_power_management::Mode::On;
+            }
+        }
 
         self.queue_redraw_all();
     }
@@ -4335,6 +4380,11 @@ impl Niri {
         let mut res = RenderResult::Skipped;
         if self.monitors_active {
             let state = self.output_state.get_mut(output).unwrap();
+            if state.power_mode == output_power_management::Mode::Off {
+                state.redraw_state = RedrawState::Idle;
+                return;
+            }
+
             state.unfinished_animations_remain = self.layout.are_animations_ongoing(Some(output));
             state.unfinished_animations_remain |=
                 self.config_error_notification.are_animations_ongoing();
@@ -4442,6 +4492,27 @@ impl Niri {
 
             self.render_for_screencopy_with_damage(renderer, output);
         });
+    }
+
+    pub fn set_output_power(
+        &mut self,
+        output: &Output,
+        mode: output_power_management::Mode,
+        backend: &mut Backend,
+    ) {
+        let output_state = self.output_state.get_mut(output).unwrap();
+        if output_state.power_mode == mode {
+            return;
+        }
+        output_state.power_mode = mode;
+        backend.set_output_power(self, output, mode == output_power_management::Mode::On);
+
+        if mode == output_power_management::Mode::On {
+            self.queue_redraw(output);
+        }
+
+        self.output_power_management_state
+            .output_power_mode_changed(output, mode);
     }
 
     pub fn refresh_on_demand_vrr(&mut self, backend: &mut Backend, output: &Output) {
