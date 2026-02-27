@@ -26,6 +26,19 @@ pub struct Cli {
     /// on a TTY as your non-main compositor instance, to avoid messing up the global environment.
     #[arg(long)]
     pub session: bool,
+    /// Provide a custom value for the `XDG_CURRENT_DESKTOP`
+    /// environment variable (which by default is set to `niri`).
+    ///
+    /// A custom value (such as `GNOME:niri`) may help when dealing
+    /// with third-party software that checks `XDG_CURRENT_DESKTOP`
+    /// for whatever reason and misbehaves when the value is
+    /// unexpected.
+    ///
+    /// This can also be set with the `NIRI_XDG_CURRENT_DESKTOP`
+    /// environment variable.  If both are set, the command line
+    /// argument takes precedence.
+    #[arg(long)]
+    pub xdg_current_desktop: Option<OsString>,
     /// Command to run upon compositor startup.
     #[arg(last = true)]
     pub command: Vec<OsString>,
