@@ -1,10 +1,12 @@
 use std::cell::{Cell, Ref, RefCell};
+use std::sync::Arc;
 use std::time::Duration;
 
 use niri_config::{Color, CornerRadius, GradientInterpolation, WindowRule};
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::element::Kind;
 use smithay::backend::renderer::gles::GlesRenderer;
+use smithay::backend::renderer::utils::RendererSurfaceStateUserData;
 use smithay::desktop::space::SpaceElement as _;
 use smithay::desktop::{PopupManager, Window};
 use smithay::output::{self, Output};
@@ -22,6 +24,7 @@ use smithay::wayland::shell::xdg::{
 use wayland_backend::server::Credentials;
 
 use super::{ResolvedWindowRules, WindowRef};
+use crate::handlers::background_effect::get_cached_blur_region;
 use crate::handlers::KdeDecorationsModeState;
 use crate::layout::{
     ConfigureIntent, InteractiveResizeData, LayoutElement, LayoutElementRenderElement,
@@ -36,7 +39,7 @@ use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderEleme
 use crate::render_helpers::surface::{
     push_elements_from_surface_tree, render_snapshot_from_surface_tree,
 };
-use crate::render_helpers::{BakedBuffer, RenderTarget};
+use crate::render_helpers::{BakedBuffer, RenderCtx, RenderTarget};
 use crate::utils::id::IdCounter;
 use crate::utils::transaction::Transaction;
 use crate::utils::{
@@ -407,10 +410,12 @@ impl Mapped {
 
         RenderSnapshot {
             contents,
+            contents_with_blocked_out_bg: None,
             blocked_out_contents,
             block_out_from: self.rules().block_out_from,
             size,
             texture: Default::default(),
+            texture_with_blocked_out_bg: Default::default(),
             blocked_out_texture: Default::default(),
         }
     }
@@ -520,11 +525,14 @@ impl Mapped {
         };
 
         self.render(
-            renderer,
+            RenderCtx {
+                renderer,
+                target: RenderTarget::Screencast,
+                xray: None,
+            },
             location,
             scale,
             1.,
-            RenderTarget::Screencast,
             &mut |elem| push(use_border(elem)),
         );
     }
@@ -613,14 +621,13 @@ impl LayoutElement for Mapped {
 
     fn render_normal<R: NiriRenderer>(
         &self,
-        renderer: &mut R,
+        ctx: RenderCtx<R>,
         location: Point<f64, Logical>,
         scale: Scale<f64>,
         alpha: f32,
-        target: RenderTarget,
         push: &mut dyn FnMut(LayoutElementRenderElement<R>),
     ) {
-        if target.should_block_out(self.rules.block_out_from) {
+        if ctx.target.should_block_out(self.rules.block_out_from) {
             let mut buffer = self.block_out_buffer.borrow_mut();
             buffer.resize(self.window.geometry().size.to_f64());
             let elem =
@@ -631,7 +638,7 @@ impl LayoutElement for Mapped {
             let surface = self.toplevel().wl_surface();
             let mut push = |elem: WaylandSurfaceRenderElement<R>| push(elem.into());
             push_elements_from_surface_tree(
-                renderer,
+                ctx.renderer,
                 surface,
                 buf_pos.to_physical_precise_round(scale),
                 scale,
@@ -644,14 +651,13 @@ impl LayoutElement for Mapped {
 
     fn render_popups<R: NiriRenderer>(
         &self,
-        renderer: &mut R,
+        ctx: RenderCtx<R>,
         location: Point<f64, Logical>,
         scale: Scale<f64>,
         alpha: f32,
-        target: RenderTarget,
         push: &mut dyn FnMut(LayoutElementRenderElement<R>),
     ) {
-        if target.should_block_out(self.rules.block_out_from) {
+        if ctx.target.should_block_out(self.rules.block_out_from) {
             return;
         }
 
@@ -662,7 +668,7 @@ impl LayoutElement for Mapped {
             let offset = self.window.geometry().loc + popup_offset - popup.geometry().loc;
 
             push_elements_from_surface_tree(
-                renderer,
+                ctx.renderer,
                 popup.wl_surface(),
                 (buf_pos + offset.to_f64()).to_physical_precise_round(scale),
                 scale,
@@ -1292,6 +1298,30 @@ impl LayoutElement for Mapped {
 
     fn interactive_resize_data(&self) -> Option<InteractiveResizeData> {
         Some(self.interactive_resize.as_ref()?.data())
+    }
+
+    fn main_surface_geo(&self) -> Rectangle<i32, Logical> {
+        with_states(self.toplevel().wl_surface(), |states| {
+            let geo_loc = states
+                .cached_state
+                .get::<SurfaceCachedState>()
+                .current()
+                .geometry
+                .unwrap_or_default()
+                .loc;
+
+            let data = states.data_map.get::<RendererSurfaceStateUserData>();
+            data.and_then(|d| d.lock().unwrap().view())
+                .map(|view| Rectangle {
+                    loc: view.offset - geo_loc,
+                    size: view.dst,
+                })
+        })
+        .unwrap_or_default()
+    }
+
+    fn blur_region(&self) -> Option<Arc<Vec<Rectangle<i32, Logical>>>> {
+        with_states(self.toplevel().wl_surface(), get_cached_blur_region)
     }
 
     fn on_commit(&mut self, commit_serial: Serial) {

@@ -14,6 +14,7 @@ Here are all matchers and properties that a layer rule could have:
 layer-rule {
     match namespace="waybar"
     match at-startup=true
+    match layer="top"
 
     // Properties that apply continuously.
     opacity 0.5
@@ -34,6 +35,13 @@ layer-rule {
     geometry-corner-radius 12
     place-within-backdrop true
     baba-is-float true
+
+    background-effect {
+        xray true
+        blur true
+        noise 0.05
+        saturation 3
+    }
 }
 ```
 
@@ -66,6 +74,22 @@ layer-rule {
     match at-startup=true
 
     opacity 0.5
+}
+```
+
+#### `layer`
+
+<sup>Since: next release</sup>
+
+Matches surfaces on this layer-shell layer.
+Can be `"background"`, `"bottom"`, `"top"`, or `"overlay"`.
+
+```kdl
+// Make all overlay-layer surfaces FLOAT.
+layer-rule {
+    match layer="overlay"
+
+    baba-is-float true
 }
 ```
 
@@ -189,5 +213,31 @@ layer-rule {
     match namespace="^launcher$"
 
     baba-is-float true
+}
+```
+
+#### `background-effect`
+
+<sup>Since: next release</sup>
+
+Override the background effect options for this surface.
+
+- `xray`: set to `true` to enable the xray effect, or `false` to disable it.
+- `blur`: set to `true` to enable blur behind this surface, or `false` to force-disable it.
+- `noise`: amount of pixel noise added to the background (helps with color banding from blur).
+- `saturation`: color saturation of the background (`0` is desaturated, `1` is normal, `2` is 200% saturation).
+
+See the [window effects page](./Window-Effects.md) for an overview of background effects.
+
+```kdl
+// Make top and overlay layers use the regular blur (if enabled),
+// while bottom and background layers keep using the efficient xray blur.
+layer-rule {
+    match layer="top"
+    match layer="overlay"
+
+    background-effect {
+        xray false
+    }
 }
 ```
