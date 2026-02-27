@@ -25,7 +25,7 @@ use super::shadow::Shadow;
 use super::tile::{Tile, TileRenderSnapshot};
 use super::{
     ActivateWindow, HitType, InsertPosition, InteractiveResizeData, LayoutElement, Options,
-    RemovedTile, SizeFrac,
+    RemovedTile, SizeFrac, StickyRestoreInfo, StickyRestorePosition,
 };
 use crate::animation::Clock;
 use crate::niri_render_elements;
@@ -461,6 +461,57 @@ impl<W: LayoutElement> Workspace<W> {
 
     pub fn is_floating(&self, id: &W::Id) -> bool {
         self.floating.has_window(id)
+    }
+
+    pub(super) fn sticky_restore_info_for_window(
+        &self,
+        id: &W::Id,
+    ) -> Option<StickyRestoreInfo<W::Id>> {
+        if self.floating.has_window(id) {
+            return Some(StickyRestoreInfo {
+                workspace_id: self.id(),
+                position: StickyRestorePosition::Floating,
+                next_to: None,
+            });
+        }
+
+        let mut position = None;
+        let mut next_to = None;
+
+        for (column_idx, column) in self.scrolling.columns().enumerate() {
+            let mut prev_id = None;
+            for (tile_idx, (tile, _)) in column.tiles().enumerate() {
+                if tile.window().id() == id {
+                    position = Some((column_idx, tile_idx));
+                    next_to = prev_id;
+                    break;
+                }
+                prev_id = Some(tile.window().id().clone());
+            }
+            if position.is_some() {
+                break;
+            }
+        }
+
+        if let Some((column_idx, tile_idx)) = position {
+            Some(StickyRestoreInfo {
+                workspace_id: self.id(),
+                position: StickyRestorePosition::Tiling {
+                    column_idx,
+                    tile_idx,
+                },
+                next_to,
+            })
+        } else {
+            None
+        }
+    }
+
+    pub(super) fn tiling_column_len(&self, column_idx: usize) -> Option<usize> {
+        self.scrolling
+            .columns()
+            .nth(column_idx)
+            .map(|col| col.tiles().count())
     }
 
     pub fn current_output(&self) -> Option<&Output> {
@@ -1802,8 +1853,11 @@ impl<W: LayoutElement> Workspace<W> {
     pub fn refresh(&mut self, is_active: bool, is_focused: bool) {
         self.scrolling
             .refresh(is_active && !self.floating_is_active.get(), is_focused);
-        self.floating
-            .refresh(is_active && self.floating_is_active.get(), is_focused);
+        self.floating.refresh(
+            is_active && self.floating_is_active.get(),
+            is_focused,
+            false,
+        );
     }
 
     pub fn scroll_amount_to_activate(&self, window: &W::Id) -> f64 {

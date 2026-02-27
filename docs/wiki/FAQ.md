@@ -73,10 +73,8 @@ Keep in mind that it's an experimental implementation that may have problems and
 
 ### Can I make a window sticky / pinned / always on top / appear on all workspaces?
 
-Not yet, follow/upvote [this issue](https://github.com/niri-wm/niri/issues/932).
-
-You can emulate this with a script that uses the niri IPC.
-For example, [nirius](https://git.sr.ht/~tsdh/nirius) seems to have this feature (`toggle-follow-mode`).
+Yes. Use the `open-sticky true` window rule to make a specific window sticky on open, or bind
+`toggle-window-sticky` to toggle stickiness for the focused window.
 
 ### How do I make the Bitwarden window in Firefox open as floating?
 

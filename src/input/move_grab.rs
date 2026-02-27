@@ -91,6 +91,19 @@ impl MoveGrab {
                             .any(|w| w.window == self.window)
                             .then(|| (mon.map(|mon| mon.output().clone()), ws_idx))
                     });
+                    let res = res.or_else(|| {
+                        if !layout.is_sticky_window(&self.window) {
+                            return None;
+                        }
+
+                        let ws = layout.workspace_under(
+                            false,
+                            &self.start_output,
+                            self.start_pos_within_output,
+                        )?;
+                        let ws_idx = layout.find_workspace_by_id(ws.id()).map(|(idx, _)| idx)?;
+                        Some((Some(self.start_output.clone()), ws_idx))
+                    });
                     if let Some((Some(output), ws_idx)) = res {
                         layout.focus_output(&output);
                         layout.toggle_overview_to_workspace(ws_idx);
@@ -138,6 +151,10 @@ impl MoveGrab {
 
     fn begin_view_offset(&mut self, data: &mut State) -> bool {
         let layout = &mut data.niri.layout;
+        if layout.is_sticky_window(&self.window) {
+            return false;
+        }
+
         let Some(ws_idx) = layout.workspaces().find_map(|(mon, ws_idx, ws)| {
             let ws_idx = ws
                 .windows()
@@ -197,7 +214,7 @@ impl MoveGrab {
                             .any(|w| w.window == self.window)
                             .then(|| ws.is_floating(&self.window))
                     })
-                    .unwrap_or(false);
+                    .unwrap_or_else(|| data.niri.layout.is_sticky_window(&self.window));
 
                 let is_view_offset =
                     self.enable_view_offset && !is_floating && c.x.abs() > c.y.abs();

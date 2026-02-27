@@ -181,6 +181,7 @@ impl Layout {
             None,
             false,
             false,
+            false,
             ActivateWindow::default(),
         );
         self.windows.push(window);
@@ -208,6 +209,7 @@ impl Layout {
             AddWindowTarget::NextTo(right_of.id()),
             width,
             None,
+            false,
             false,
             false,
             ActivateWindow::default(),

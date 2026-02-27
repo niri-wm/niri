@@ -2146,6 +2146,20 @@ impl State {
                     self.niri.queue_redraw_all();
                 }
             }
+            Action::ToggleWindowSticky => {
+                self.niri.layout.toggle_window_sticky(None);
+                // FIXME: granular
+                self.niri.queue_redraw_all();
+            }
+            Action::ToggleWindowStickyById(id) => {
+                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
+                let window = window.map(|(_, m)| m.window.clone());
+                if let Some(window) = window {
+                    self.niri.layout.toggle_window_sticky(Some(&window));
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
+                }
+            }
             Action::MoveWindowToFloating => {
                 self.niri.layout.set_window_floating(None, true);
                 // FIXME: granular
@@ -3653,9 +3667,26 @@ impl State {
                     } else if let Some((window, _)) = under.window {
                         if let Some(output) = is_overview_open.then_some(under.output).flatten() {
                             let mut workspaces = self.niri.layout.workspaces();
-                            if let Some(ws_idx) = workspaces.find_map(|(_, ws_idx, ws)| {
+                            let ws_idx = workspaces.find_map(|(_, ws_idx, ws)| {
                                 ws.windows().any(|w| w.window == window).then_some(ws_idx)
-                            }) {
+                            });
+                            let ws_idx = ws_idx.or_else(|| {
+                                if !self.niri.layout.is_sticky_window(&window) {
+                                    return None;
+                                }
+
+                                let (output, pos_within_output) = self.niri.output_under(pos)?;
+                                let ws = self.niri.layout.workspace_under(
+                                    false,
+                                    output,
+                                    pos_within_output,
+                                )?;
+                                self.niri
+                                    .layout
+                                    .find_workspace_by_id(ws.id())
+                                    .map(|(idx, _)| idx)
+                            });
+                            if let Some(ws_idx) = ws_idx {
                                 drop(workspaces);
                                 self.niri.layout.focus_output(&output);
                                 self.niri.layout.toggle_overview_to_workspace(ws_idx);
