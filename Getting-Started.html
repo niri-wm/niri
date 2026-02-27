@@ -1,0 +1,2045 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+        <link rel="canonical" href="https://niri-wm.github.io/niri/Getting-Started.html">
+      
+      
+      
+        <link rel="next" href="Example-systemd-Setup.html">
+      
+      
+      <link rel="icon" href="_assets/icons/logo.svg">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.6.15">
+    
+    
+      
+        <title>Getting Started - niri</title>
+      
+    
+    
+      <link rel="stylesheet" href="assets/stylesheets/main.342714a4.min.css">
+      
+        
+        <link rel="stylesheet" href="assets/stylesheets/palette.06af60db.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="_assets/stylesheets/niri.css">
+    
+    <script>__md_scope=new URL(".",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#quick-start" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="." title="niri" class="md-header__button md-logo" aria-label="niri" data-md-component="logo">
+      
+  <img src="_assets/icons/logo.svg" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            niri
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Getting Started
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m14.3 16-.7-2h-3.2l-.7 2H7.8L11 7h2l3.2 9zM20 8.69V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12zm-9.15 3.96h2.3L12 9z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_2" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="indigo"  aria-label="Switch to system preference"  type="radio" name="__palette" id="__palette_2">
+    
+      <label class="md-header__button md-icon" title="Switch to system preference" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/niri-wm/niri" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M439.55 236.05 244 40.45a28.87 28.87 0 0 0-40.81 0l-40.66 40.63 51.52 51.52c27.06-9.14 52.68 16.77 43.39 43.68l49.66 49.66c34.23-11.8 61.18 31 35.47 56.69-26.49 26.49-70.21-2.87-56-37.34L240.22 199v121.85c25.3 12.54 22.26 41.85 9.08 55a34.34 34.34 0 0 1-48.55 0c-17.57-17.6-11.07-46.91 11.25-56v-123c-20.8-8.51-24.6-30.74-18.64-45L142.57 101 8.45 235.14a28.86 28.86 0 0 0 0 40.81l195.61 195.6a28.86 28.86 0 0 0 40.8 0l194.69-194.69a28.86 28.86 0 0 0 0-40.81"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="." title="niri" class="md-nav__button md-logo" aria-label="niri" data-md-component="logo">
+      
+  <img src="_assets/icons/logo.svg" alt="logo">
+
+    </a>
+    niri
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/niri-wm/niri" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M439.55 236.05 244 40.45a28.87 28.87 0 0 0-40.81 0l-40.66 40.63 51.52 51.52c27.06-9.14 52.68 16.77 43.39 43.68l49.66 49.66c34.23-11.8 61.18 31 35.47 56.69-26.49 26.49-70.21-2.87-56-37.34L240.22 199v121.85c25.3 12.54 22.26 41.85 9.08 55a34.34 34.34 0 0 1-48.55 0c-17.57-17.6-11.07-46.91 11.25-56v-123c-20.8-8.51-24.6-30.74-18.64-45L142.57 101 8.45 235.14a28.86 28.86 0 0 0 0 40.81l195.61 195.6a28.86 28.86 0 0 0 40.8 0l194.69-194.69a28.86 28.86 0 0 0 0-40.81"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_1" id="__nav_1_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    Usage
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_1_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_1">
+            <span class="md-nav__icon md-icon"></span>
+            Usage
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    Getting Started
+    
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="Getting-Started.html" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    Getting Started
+    
+  </span>
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#quick-start" class="md-nav__link">
+    <span class="md-ellipsis">
+      Quick start
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#slower-and-more-considered-start" class="md-nav__link">
+    <span class="md-ellipsis">
+      Slower and more considered start
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Slower and more considered start">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#desktop-environments" class="md-nav__link">
+    <span class="md-ellipsis">
+      Desktop environments
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#nvidia" class="md-nav__link">
+    <span class="md-ellipsis">
+      NVIDIA
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#asahi-arm-and-other-kmsro-devices" class="md-nav__link">
+    <span class="md-ellipsis">
+      Asahi, ARM, and other kmsro devices
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#nixnixos" class="md-nav__link">
+    <span class="md-ellipsis">
+      Nix/NixOS
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#virtual-machines" class="md-nav__link">
+    <span class="md-ellipsis">
+      Virtual Machines
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#main-default-hotkeys" class="md-nav__link">
+    <span class="md-ellipsis">
+      Main Default Hotkeys
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#building" class="md-nav__link">
+    <span class="md-ellipsis">
+      Building
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Building">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#nixosnix" class="md-nav__link">
+    <span class="md-ellipsis">
+      NixOS/Nix
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#manual-installation" class="md-nav__link">
+    <span class="md-ellipsis">
+      Manual Installation
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Example-systemd-Setup.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Example systemd Setup
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Important-Software.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Important Software
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Workspaces.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Workspaces
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Floating-Windows.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Floating Windows
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Tabs.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Tabs
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Overview.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Overview
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Screencasting.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Screencasting
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Layer%E2%80%90Shell-Components.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Layer‐Shell Components
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="IPC.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    IPC, niri msg
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Application-Issues.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Application-Specific Issues
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Nvidia.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Nvidia
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Xwayland.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Xwayland
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Gestures.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Gestures
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Fullscreen-and-Maximize.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Fullscreen and Maximize
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Packaging-niri.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Packaging niri
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Integrating-niri.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Integrating niri
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Accessibility.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Accessibility
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Name-and-Logo.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Name and Logo
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="FAQ.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    FAQ
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    Configuration
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            Configuration
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Configuration%3A-Introduction.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Introduction
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Configuration%3A-Input.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Input
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Configuration%3A-Outputs.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Outputs
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Configuration%3A-Key-Bindings.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Key Bindings
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Configuration%3A-Switch-Events.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Switch Events
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Configuration%3A-Layout.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Layout
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Configuration%3A-Named-Workspaces.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Named Workspaces
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Configuration%3A-Miscellaneous.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Miscellaneous
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Configuration%3A-Window-Rules.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Window Rules
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Configuration%3A-Layer-Rules.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Layer Rules
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Configuration%3A-Animations.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Animations
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Configuration%3A-Gestures.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Gestures
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Configuration%3A-Recent-Windows.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Recent Windows
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Configuration%3A-Debug-Options.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Debug Options
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Configuration%3A-Include.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Include
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    Development
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            Development
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Development%3A-Design-Principles.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Design Principles
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Development%3A-Developing-niri.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Developing niri
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Development%3A-Documenting-niri.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Documenting niri
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Development%3A-Fractional-Layout.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Fractional Layout
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Development%3A-Redraw-Loop.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Redraw Loop
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Development%3A-Animation-Timing.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Animation Timing
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#quick-start" class="md-nav__link">
+    <span class="md-ellipsis">
+      Quick start
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#slower-and-more-considered-start" class="md-nav__link">
+    <span class="md-ellipsis">
+      Slower and more considered start
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Slower and more considered start">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#desktop-environments" class="md-nav__link">
+    <span class="md-ellipsis">
+      Desktop environments
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#nvidia" class="md-nav__link">
+    <span class="md-ellipsis">
+      NVIDIA
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#asahi-arm-and-other-kmsro-devices" class="md-nav__link">
+    <span class="md-ellipsis">
+      Asahi, ARM, and other kmsro devices
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#nixnixos" class="md-nav__link">
+    <span class="md-ellipsis">
+      Nix/NixOS
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#virtual-machines" class="md-nav__link">
+    <span class="md-ellipsis">
+      Virtual Machines
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#main-default-hotkeys" class="md-nav__link">
+    <span class="md-ellipsis">
+      Main Default Hotkeys
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#building" class="md-nav__link">
+    <span class="md-ellipsis">
+      Building
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Building">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#nixosnix" class="md-nav__link">
+    <span class="md-ellipsis">
+      NixOS/Nix
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#manual-installation" class="md-nav__link">
+    <span class="md-ellipsis">
+      Manual Installation
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/niri-wm/niri/edit/main/docs/wiki/Getting-Started.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+  <h1>Getting Started</h1>
+
+<h2 id="quick-start">Quick start<a class="headerlink" href="#quick-start" title="Permanent link">#</a></h2>
+<p>Use these commands to install niri with <a href="https://github.com/AvengeMedia/DankMaterialShell">DankMaterialShell</a> for a fairly out-of-the-box experience.</p>
+<p>Fedora:
+<div class="language-text highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>sudo dnf copr enable avengemedia/dms
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>sudo dnf install niri dms
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>systemctl --user add-wants niri.service dms
+</span></code></pre></div></p>
+<p>Arch Linux (via <a href="https://github.com/morganamilo/paru">paru</a>):
+<div class="language-text highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>sudo pacman -Syu niri xwayland-satellite xdg-desktop-portal-gnome xdg-desktop-portal-gtk alacritty
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>paru -S dms-shell-bin matugen cava qt6-multimedia-ffmpeg
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>systemctl --user add-wants niri.service dms
+</span></code></pre></div></p>
+<p>Ubuntu 25.10 and above:
+<div class="language-text highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>sudo add-apt-repository ppa:avengemedia/danklinux
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>sudo add-apt-repository ppa:avengemedia/dms
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>sudo apt install niri dms
+</span></code></pre></div></p>
+<p>After running these commands, log out, choose Niri in your display manager, and log back in.
+Or, if not using a display manager, run <code>niri-session</code> on a TTY.</p>
+<p>The default niri config will run Waybar, so you might get two bars on screen.
+To fix this, stop Waybar with <code>pkill waybar</code> command, then open <code>~/.config/niri/config.kdl</code> and delete the <code>spawn-at-startup "waybar"</code> line.</p>
+<p>Check the DankMaterialShell's <a href="https://danklinux.com/docs/dankmaterialshell/compositors#niri-configuration">compositor setup page</a> to learn how to configure DMS-specific binds and other niri integrations.</p>
+<h2 id="slower-and-more-considered-start">Slower and more considered start<a class="headerlink" href="#slower-and-more-considered-start" title="Permanent link">#</a></h2>
+<p>The easiest way to get niri is to install one of the distribution packages.
+Here are some of them: <a href="https://copr.fedorainfracloud.org/coprs/yalter/niri/">Fedora COPR</a> and <a href="https://copr.fedorainfracloud.org/coprs/yalter/niri-git/">nightly COPR</a> (which I maintain myself), <a href="https://github.com/sodiboo/niri-flake">NixOS Flake</a>, and some more from repology below, including a <a href="https://pacstall.dev/packages/niri/">pacstall package</a> for Debian-based distros.
+See the <a href="#building">Building</a> section if you'd like to compile niri yourself and the <a href="Packaging-niri.html">Packaging niri</a> page if you want to package niri.</p>
+<p><a href="https://repology.org/project/niri/versions"><img alt="Packaging status" src="https://repology.org/badge/vertical-allrepos/niri.svg" /></a></p>
+<p>After installing, start niri from your display manager like GDM.
+Press <kbd>Super</kbd><kbd>T</kbd> to run a terminal (<a href="https://github.com/alacritty/alacritty">Alacritty</a>) and <kbd>Super</kbd><kbd>D</kbd> to run an application launcher (<a href="https://codeberg.org/dnkl/fuzzel">fuzzel</a>).
+To exit niri, press <kbd>Super</kbd><kbd>Shift</kbd><kbd>E</kbd>.</p>
+<p>If you're not using a display manager, you should run <code>niri-session</code> (systemd/dinit) or <code>niri --session</code> (others) from a TTY.
+The <code>--session</code> flag will make niri import its environment variables globally into the system manager and D-Bus, and start its D-Bus services.
+The <code>niri-session</code> script will additionally start niri as a systemd/dinit service, which starts up a graphical session target required by some services like portals.</p>
+<p>You can also run <code>niri</code> inside an existing desktop session.
+Then it will open as a window, where you can give it a try.
+Note that this windowed mode is mainly meant for development, so it is a bit buggy (in particular, there are issues with hotkeys).</p>
+<p>Next, see the <a href="Important-Software.html">list of important software</a> required for normal desktop use, like a notification daemon and portals.
+Also, check the <a href="Configuration%3A-Introduction.html">configuration introduction</a> page to get started configuring niri.
+There you can find links to other pages containing thorough documentation and examples for all options.
+Finally, the <a href="Xwayland.html">Xwayland</a> page explains how to run X11 applications on niri.</p>
+<h3 id="desktop-environments">Desktop environments<a class="headerlink" href="#desktop-environments" title="Permanent link">#</a></h3>
+<p>Some desktop environments and shells work with niri and can give a more out-of-the-box experience:</p>
+<ul>
+<li><a href="https://lxqt-project.org/">LXQt</a> officially supports niri, see <a href="https://github.com/lxqt/lxqt/wiki/ConfigWaylandSettings#general">their wiki</a> for details on setting it up.</li>
+<li>Many <a href="https://www.xfce.org/">XFCE</a> components work on Wayland, including niri. See <a href="https://wiki.xfce.org/releng/wayland_roadmap#component_specific_status">their wiki</a> for details.</li>
+<li>There are complete desktop shells based on Quickshell that support niri, for example <a href="https://github.com/AvengeMedia/DankMaterialShell">DankMaterialShell</a> and <a href="https://github.com/noctalia-dev/noctalia-shell">Noctalia</a>.</li>
+<li>You can run a <a href="https://system76.com/cosmic/">COSMIC</a> session with niri using <a href="https://github.com/Drakulix/cosmic-ext-extra-sessions">cosmic-ext-extra-sessions</a>.</li>
+</ul>
+<h3 id="nvidia">NVIDIA<a class="headerlink" href="#nvidia" title="Permanent link">#</a></h3>
+<p>The NVIDIA drivers currently have an issue with high VRAM usage due to a heap reuse quirk.
+You're recommended to apply a manual fix documented <a href="Nvidia.html">here</a> if you run niri on an NVIDIA GPU.</p>
+<p>NVIDIA GPUs can have problems running niri (for example, the screen remains black upon starting from a TTY).
+Sometimes, the problems can be fixed.
+You can try the following:</p>
+<ol>
+<li>Update NVIDIA drivers. You need a GPU and drivers recent enough to support GBM.</li>
+<li>Make sure kernel modesetting is enabled. This usually involves adding <code>nvidia-drm.modeset=1</code> to the kernel command line. Find and follow a guide for your distribution. Guides from other Wayland compositors can help.</li>
+</ol>
+<h3 id="asahi-arm-and-other-kmsro-devices">Asahi, ARM, and other kmsro devices<a class="headerlink" href="#asahi-arm-and-other-kmsro-devices" title="Permanent link">#</a></h3>
+<p>On some of these systems, niri fails to correctly detect the primary render device.
+If you're getting a black screen when starting niri on a TTY, you can try to set the device manually.</p>
+<p>First, find which devices you have:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>$ ls -l /dev/dri/
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>drwxr-xr-x@       - root 14 мая 07:07 by-path
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>crw-rw----@   226,0 root 14 мая 07:07 card0
+</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>crw-rw----@   226,1 root 14 мая 07:07 card1
+</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>crw-rw-rw-@ 226,128 root 14 мая 07:07 renderD128
+</span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>crw-rw-rw-@ 226,129 root 14 мая 07:07 renderD129
+</span></code></pre></div>
+<p>You will likely have one <code>render</code> device and two <code>card</code> devices.</p>
+<p>Open the niri config file at <code>~/.config/niri/config.kdl</code> and put your <code>render</code> device path like this:</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nl">debug</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="nl">    render-drm-device</span><span class="w"> </span><span class="s">&quot;/dev/dri/renderD128&quot;</span>
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="o">}</span>
+</span></code></pre></div>
+<p>Save, then try to start niri again.
+If you still get a black screen, try using each of the <code>card</code> devices.</p>
+<h3 id="nixnixos">Nix/NixOS<a class="headerlink" href="#nixnixos" title="Permanent link">#</a></h3>
+<p>There's a common problem of mesa drivers going out of sync with niri, so make sure your system mesa version matches the niri mesa version.
+When this happens, you usually see a black screen when trying to start niri from a TTY.</p>
+<p>Also, on Intel graphics, you may need a workaround described <a href="https://wiki.nixos.org/wiki/Intel_Graphics">here</a>.</p>
+<h3 id="virtual-machines">Virtual Machines<a class="headerlink" href="#virtual-machines" title="Permanent link">#</a></h3>
+<p>To run niri in a VM, make sure to enable 3D acceleration.</p>
+<h2 id="main-default-hotkeys">Main Default Hotkeys<a class="headerlink" href="#main-default-hotkeys" title="Permanent link">#</a></h2>
+<p>When running on a TTY, the Mod key is <kbd>Super</kbd>.
+When running in a window, the Mod key is <kbd>Alt</kbd>.</p>
+<p>The general system is: if a hotkey switches somewhere, then adding <kbd>Ctrl</kbd> will move the focused window or column there.</p>
+<table>
+<thead>
+<tr>
+<th>Hotkey</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><kbd>Mod</kbd><kbd>Shift</kbd><kbd>/</kbd></td>
+<td>Show a list of important niri hotkeys</td>
+</tr>
+<tr>
+<td><kbd>Mod</kbd><kbd>T</kbd></td>
+<td>Spawn <code>alacritty</code> (terminal)</td>
+</tr>
+<tr>
+<td><kbd>Mod</kbd><kbd>D</kbd></td>
+<td>Spawn <code>fuzzel</code> (application launcher)</td>
+</tr>
+<tr>
+<td><kbd>Super</kbd><kbd>Alt</kbd><kbd>L</kbd></td>
+<td>Spawn <code>swaylock</code> (screen locker)</td>
+</tr>
+<tr>
+<td><kbd>Mod</kbd><kbd>Q</kbd></td>
+<td>Close the focused window</td>
+</tr>
+<tr>
+<td><kbd>Mod</kbd><kbd>H</kbd> or <kbd>Mod</kbd><kbd>←</kbd></td>
+<td>Focus the column to the left</td>
+</tr>
+<tr>
+<td><kbd>Mod</kbd><kbd>L</kbd> or <kbd>Mod</kbd><kbd>→</kbd></td>
+<td>Focus the column to the right</td>
+</tr>
+<tr>
+<td><kbd>Mod</kbd><kbd>J</kbd> or <kbd>Mod</kbd><kbd>↓</kbd></td>
+<td>Focus the window below in a column</td>
+</tr>
+<tr>
+<td><kbd>Mod</kbd><kbd>K</kbd> or <kbd>Mod</kbd><kbd>↑</kbd></td>
+<td>Focus the window above in a column</td>
+</tr>
+<tr>
+<td><kbd>Mod</kbd><kbd>Ctrl</kbd><kbd>H</kbd> or <kbd>Mod</kbd><kbd>Ctrl</kbd><kbd>←</kbd></td>
+<td>Move the focused column to the left</td>
+</tr>
+<tr>
+<td><kbd>Mod</kbd><kbd>Ctrl</kbd><kbd>L</kbd> or <kbd>Mod</kbd><kbd>Ctrl</kbd><kbd>→</kbd></td>
+<td>Move the focused column to the right</td>
+</tr>
+<tr>
+<td><kbd>Mod</kbd><kbd>Ctrl</kbd><kbd>J</kbd> or <kbd>Mod</kbd><kbd>Ctrl</kbd><kbd>↓</kbd></td>
+<td>Move the focused window below in a column</td>
+</tr>
+<tr>
+<td><kbd>Mod</kbd><kbd>Ctrl</kbd><kbd>K</kbd> or <kbd>Mod</kbd><kbd>Ctrl</kbd><kbd>↑</kbd></td>
+<td>Move the focused window above in a column</td>
+</tr>
+<tr>
+<td><kbd>Mod</kbd><kbd>Shift</kbd><kbd>H</kbd><kbd>J</kbd><kbd>K</kbd><kbd>L</kbd> or <kbd>Mod</kbd><kbd>Shift</kbd><kbd>←</kbd><kbd>↓</kbd><kbd>↑</kbd><kbd>→</kbd></td>
+<td>Focus the monitor to the side</td>
+</tr>
+<tr>
+<td><kbd>Mod</kbd><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>H</kbd><kbd>J</kbd><kbd>K</kbd><kbd>L</kbd> or <kbd>Mod</kbd><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>←</kbd><kbd>↓</kbd><kbd>↑</kbd><kbd>→</kbd></td>
+<td>Move the focused column to the monitor to the side</td>
+</tr>
+<tr>
+<td><kbd>Mod</kbd><kbd>U</kbd> or <kbd>Mod</kbd><kbd>PageDown</kbd></td>
+<td>Switch to the workspace below</td>
+</tr>
+<tr>
+<td><kbd>Mod</kbd><kbd>I</kbd> or <kbd>Mod</kbd><kbd>PageUp</kbd></td>
+<td>Switch to the workspace above</td>
+</tr>
+<tr>
+<td><kbd>Mod</kbd><kbd>Ctrl</kbd><kbd>U</kbd> or <kbd>Mod</kbd><kbd>Ctrl</kbd><kbd>PageDown</kbd></td>
+<td>Move the focused column to the workspace below</td>
+</tr>
+<tr>
+<td><kbd>Mod</kbd><kbd>Ctrl</kbd><kbd>I</kbd> or <kbd>Mod</kbd><kbd>Ctrl</kbd><kbd>PageUp</kbd></td>
+<td>Move the focused column to the workspace above</td>
+</tr>
+<tr>
+<td><kbd>Mod</kbd><kbd>Shift</kbd><kbd>U</kbd> or <kbd>Mod</kbd><kbd>Shift</kbd><kbd>PageDown</kbd></td>
+<td>Move the focused workspace down</td>
+</tr>
+<tr>
+<td><kbd>Mod</kbd><kbd>Shift</kbd><kbd>I</kbd> or <kbd>Mod</kbd><kbd>Shift</kbd><kbd>PageUp</kbd></td>
+<td>Move the focused workspace up</td>
+</tr>
+<tr>
+<td><kbd>Mod</kbd><kbd>,</kbd></td>
+<td>Consume the window to the right into the focused column</td>
+</tr>
+<tr>
+<td><kbd>Mod</kbd><kbd>.</kbd></td>
+<td>Expel the bottom window in the focused column into its own column</td>
+</tr>
+<tr>
+<td><kbd>Mod</kbd><kbd>[</kbd></td>
+<td>Consume or expel the focused window to the left</td>
+</tr>
+<tr>
+<td><kbd>Mod</kbd><kbd>]</kbd></td>
+<td>Consume or expel the focused window to the right</td>
+</tr>
+<tr>
+<td><kbd>Mod</kbd><kbd>R</kbd></td>
+<td>Toggle between preset column widths</td>
+</tr>
+<tr>
+<td><kbd>Mod</kbd><kbd>Shift</kbd><kbd>R</kbd></td>
+<td>Toggle between preset column heights</td>
+</tr>
+<tr>
+<td><kbd>Mod</kbd><kbd>F</kbd></td>
+<td>Maximize column</td>
+</tr>
+<tr>
+<td><kbd>Mod</kbd><kbd>C</kbd></td>
+<td>Center column within view</td>
+</tr>
+<tr>
+<td><kbd>Mod</kbd><kbd>-</kbd></td>
+<td>Decrease column width by 10%</td>
+</tr>
+<tr>
+<td><kbd>Mod</kbd><kbd>=</kbd></td>
+<td>Increase column width by 10%</td>
+</tr>
+<tr>
+<td><kbd>Mod</kbd><kbd>Shift</kbd><kbd>-</kbd></td>
+<td>Decrease window height by 10%</td>
+</tr>
+<tr>
+<td><kbd>Mod</kbd><kbd>Shift</kbd><kbd>=</kbd></td>
+<td>Increase window height by 10%</td>
+</tr>
+<tr>
+<td><kbd>Mod</kbd><kbd>Ctrl</kbd><kbd>R</kbd></td>
+<td>Reset window height back to automatic</td>
+</tr>
+<tr>
+<td><kbd>Mod</kbd><kbd>Shift</kbd><kbd>F</kbd></td>
+<td>Toggle full-screen on the focused window</td>
+</tr>
+<tr>
+<td><kbd>Mod</kbd><kbd>V</kbd></td>
+<td>Move the focused window between the floating and the tiling layout</td>
+</tr>
+<tr>
+<td><kbd>Mod</kbd><kbd>Shift</kbd><kbd>V</kbd></td>
+<td>Switch focus between the floating and the tiling layout</td>
+</tr>
+<tr>
+<td><kbd>PrtSc</kbd></td>
+<td>Take an area screenshot. Select the area to screenshot with mouse, then press Space to save the screenshot, or Escape to cancel</td>
+</tr>
+<tr>
+<td><kbd>Alt</kbd><kbd>PrtSc</kbd></td>
+<td>Take a screenshot of the focused window to clipboard and to <code>~/Pictures/Screenshots/</code></td>
+</tr>
+<tr>
+<td><kbd>Ctrl</kbd><kbd>PrtSc</kbd></td>
+<td>Take a screenshot of the focused monitor to clipboard and to <code>~/Pictures/Screenshots/</code></td>
+</tr>
+<tr>
+<td><kbd>Mod</kbd><kbd>Shift</kbd><kbd>E</kbd> or <kbd>Ctrl</kbd><kbd>Alt</kbd><kbd>Delete</kbd></td>
+<td>Exit niri</td>
+</tr>
+</tbody>
+</table>
+<h2 id="building">Building<a class="headerlink" href="#building" title="Permanent link">#</a></h2>
+<p>First, install the dependencies for your distribution.</p>
+<ul>
+<li>
+<p>Ubuntu 24.04:</p>
+<div class="language-sh highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>sudo<span class="w"> </span>apt-get<span class="w"> </span>install<span class="w"> </span>-y<span class="w"> </span>gcc<span class="w"> </span>clang<span class="w"> </span>libudev-dev<span class="w"> </span>libgbm-dev<span class="w"> </span>libxkbcommon-dev<span class="w"> </span>libegl1-mesa-dev<span class="w"> </span>libwayland-dev<span class="w"> </span>libinput-dev<span class="w"> </span>libdbus-1-dev<span class="w"> </span>libsystemd-dev<span class="w"> </span>libseat-dev<span class="w"> </span>libpipewire-0.3-dev<span class="w"> </span>libpango1.0-dev<span class="w"> </span>libdisplay-info-dev
+</span></code></pre></div>
+</li>
+<li>
+<p>Fedora:</p>
+<div class="language-sh highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>sudo<span class="w"> </span>dnf<span class="w"> </span>install<span class="w"> </span>gcc<span class="w"> </span>libudev-devel<span class="w"> </span>libgbm-devel<span class="w"> </span>libxkbcommon-devel<span class="w"> </span>wayland-devel<span class="w"> </span>libinput-devel<span class="w"> </span>dbus-devel<span class="w"> </span>systemd-devel<span class="w"> </span>libseat-devel<span class="w"> </span>pipewire-devel<span class="w"> </span>pango-devel<span class="w"> </span>cairo-gobject-devel<span class="w"> </span>clang<span class="w"> </span>libdisplay-info-devel
+</span></code></pre></div>
+</li>
+</ul>
+<p>Next, get latest stable Rust: <a href="https://rustup.rs/">https://rustup.rs/</a></p>
+<p>Then, build niri with <code>cargo build --release</code>.</p>
+<p>Check Cargo.toml for a list of build features.
+For example, you can replace systemd integration with dinit integration using <code>cargo build --release --no-default-features --features dinit,dbus,xdp-gnome-screencast</code>.</p>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>Do NOT build with <code>--all-features</code>!</p>
+<p>Some features are meant only for development use.
+For example, one of the features enables collection of profiling data into a memory buffer that will grow indefinitely until you run out of memory.</p>
+</div>
+<h3 id="nixosnix">NixOS/Nix<a class="headerlink" href="#nixosnix" title="Permanent link">#</a></h3>
+<p>We have a community-maintained flake which provides a devshell with required dependencies. Use <code>nix build</code> to build niri, and then run <code>./results/bin/niri</code>.</p>
+<p>If you're not on NixOS, you may need <a href="https://github.com/nix-community/nixGL">NixGL</a> to run the resulting binary:</p>
+<div class="language-sh highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>nix<span class="w"> </span>run<span class="w"> </span>--impure<span class="w"> </span>github:guibou/nixGL<span class="w"> </span>--<span class="w"> </span>./results/bin/niri
+</span></code></pre></div>
+<h3 id="manual-installation">Manual Installation<a class="headerlink" href="#manual-installation" title="Permanent link">#</a></h3>
+<p>If installing directly without a package, the recommended file destinations are slightly different.
+In this case, put the files in the directories indicated in the table below.
+These may vary depending on your distribution.</p>
+<p>Don't forget to make sure that the path to <code>niri</code> in niri.service is correct.
+This defaults to <code>/usr/bin/niri</code>.</p>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Destination</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>target/release/niri</code></td>
+<td><code>/usr/local/bin/</code></td>
+</tr>
+<tr>
+<td><code>resources/niri-session</code></td>
+<td><code>/usr/local/bin/</code></td>
+</tr>
+<tr>
+<td><code>resources/niri.desktop</code></td>
+<td><code>/usr/local/share/wayland-sessions/</code></td>
+</tr>
+<tr>
+<td><code>resources/niri-portals.conf</code></td>
+<td><code>/usr/local/share/xdg-desktop-portal/</code></td>
+</tr>
+<tr>
+<td><code>resources/niri.service</code> (systemd)</td>
+<td><code>/etc/systemd/user/</code></td>
+</tr>
+<tr>
+<td><code>resources/niri-shutdown.target</code> (systemd)</td>
+<td><code>/etc/systemd/user/</code></td>
+</tr>
+<tr>
+<td><code>resources/dinit/niri</code> (dinit)</td>
+<td><code>/etc/dinit.d/user/</code></td>
+</tr>
+<tr>
+<td><code>resources/dinit/niri.target</code> (dinit)</td>
+<td><code>/etc/dinit.d/user/</code></td>
+</tr>
+</tbody>
+</table>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      <script id="__config" type="application/json">{"base": ".", "features": ["navigation.instant", "search.suggest", "content.code.copy", "content.action.edit"], "search": "assets/javascripts/workers/search.d50fe291.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="assets/javascripts/bundle.56ea9cef.min.js"></script>
+      
+    
+  </body>
+</html>

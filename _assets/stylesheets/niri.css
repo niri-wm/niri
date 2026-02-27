@@ -1,0 +1,66 @@
+:root  > * {
+  --md-primary-fg-color: #1e97b5;
+  --md-primary-fg-color--dark: color-mix(in srgb, var(--md-primary-fg-color), black 20%);
+  --md-accent-fg-color: var(--md-primary-fg-color--dark);
+}
+
+.md-logo > img {
+  background-color: white;
+  border-radius: 8px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root  > * {
+    --md-primary-fg-color: #167188;
+    --md-accent-fg-color: #1e97b5;
+    --md-typeset-a-color: color-mix(in srgb, var(--md-accent-fg-color), white 30%);
+  }
+
+  .md-logo > img {
+    background-color: #eee;
+  }
+}
+
+.md-nav--primary .md-nav__title {
+  box-shadow: none;
+}
+
+@media screen and (min-width: 76.25em) {
+  .md-nav__title {
+    display: none;
+  }
+}
+
+@media screen and (min-width: 76.25em) {
+  .md-main {
+    min-height: 100vh;
+  }
+}
+
+.md-nav__link--active {
+  font-weight: bold;
+}
+
+.highlight .gp, .highlight .go {
+  user-select: none;
+}
+
+.md-source-file__fact {
+  visibility: hidden;
+}
+
+.badge {
+    font-size: 0.85em;
+    box-shadow: 0 0 0 1px inset var(--md-accent-fg-color--transparent);
+    padding: 0.2rem 0.3rem;
+}
+
+.md-typeset table:not([class]) td {
+    padding: .5em 1.25em;
+    vertical-align: middle;
+}
+
+/* Improve keyboard shortcuts for screen readers: this way they won't break on them. */
+.md-typeset kbd {
+    display: inline;
+}
