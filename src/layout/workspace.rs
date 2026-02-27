@@ -1602,6 +1602,12 @@ impl<W: LayoutElement> Workspace<W> {
         floating.chain(scrolling)
     }
 
+    pub fn tiles_with_geometry(&self) -> impl Iterator<Item = (&Tile<W>, Rectangle<f64, Logical>)> {
+        let scrolling = self.scrolling.tiles_with_geometry();
+        let floating = self.floating.tiles_with_geometry();
+        floating.chain(scrolling)
+    }
+
     pub fn tiles_with_ipc_layouts(&self) -> impl Iterator<Item = (&Tile<W>, WindowLayout)> {
         let scrolling = self.scrolling.tiles_with_ipc_layouts();
         let floating = self.floating.tiles_with_ipc_layouts();
