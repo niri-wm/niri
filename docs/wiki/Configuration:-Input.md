@@ -384,3 +384,9 @@ input {
     mod-key-nested "Super"
 }
 ```
+
+### AZERTY
+When using Niri with an AZERTY keyboard layout, the default workspace keybinds (or any keybinds using numbers) will not work as intended.
+
+Please refer to [the Azerty configuration page](./Configuration:-Azerty.md)
+
