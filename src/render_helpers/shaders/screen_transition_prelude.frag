@@ -8,6 +8,7 @@ varying vec2 niri_v_coords;
 uniform vec2 niri_size;
 
 uniform sampler2D niri_tex_from;
+uniform mat3 niri_geo_to_tex;
 
 uniform float niri_progress;
 uniform float niri_clamped_progress;
