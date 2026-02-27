@@ -513,6 +513,8 @@ enum Op {
     CenterVisibleColumns,
     FocusWorkspaceDown,
     FocusWorkspaceUp,
+    FocusWorkspaceDownOrFirst,
+    FocusWorkspaceUpOrLast,
     FocusWorkspace(#[proptest(strategy = "0..=4usize")] usize),
     FocusWorkspaceAutoBackAndForth(#[proptest(strategy = "0..=4usize")] usize),
     FocusWorkspacePrevious,
@@ -1175,6 +1177,8 @@ impl Op {
             Op::CenterVisibleColumns => layout.center_visible_columns(),
             Op::FocusWorkspaceDown => layout.switch_workspace_down(),
             Op::FocusWorkspaceUp => layout.switch_workspace_up(),
+            Op::FocusWorkspaceDownOrFirst => layout.switch_workspace_down_or_first(),
+            Op::FocusWorkspaceUpOrLast => layout.switch_workspace_up_or_last(),
             Op::FocusWorkspace(idx) => layout.switch_workspace(idx),
             Op::FocusWorkspaceAutoBackAndForth(idx) => {
                 layout.switch_workspace_auto_back_and_forth(idx)
