@@ -264,6 +264,8 @@ pub struct Niri {
     pub devices: HashSet<input::Device>,
     pub tablets: HashMap<input::Device, TabletData>,
     pub touch: HashSet<input::Device>,
+    /// Tracks the last keyboard device that sent an event, for per-device XKB switching.
+    pub last_keyboard_device: Option<String>,
 
     // Smithay state.
     pub compositor_state: CompositorState,
@@ -1322,7 +1324,7 @@ impl State {
                 }
             }
 
-            if self.niri.config.borrow().input.keyboard.track_layout == TrackLayout::Window {
+            if self.niri.config.borrow().input.keyboards.track_layout() == TrackLayout::Window {
                 let current_layout = keyboard.with_xkb_state(self, |context| {
                     let xkb = context.xkb().lock().unwrap();
                     xkb.active_layout()
@@ -1382,7 +1384,7 @@ impl State {
     }
 
     fn load_xkb_file(&mut self) {
-        let xkb_file = self.niri.config.borrow().input.keyboard.xkb.file.clone();
+        let xkb_file = self.niri.config.borrow().input.keyboards.xkb().file.clone();
         if let Some(xkb_file) = xkb_file {
             if let Err(err) = self.set_xkb_file(xkb_file) {
                 warn!("error loading xkb_file: {err:?}");
@@ -1474,23 +1476,30 @@ impl State {
         }
 
         // We need &mut self to reload the xkb config, so just store it here.
-        if config.input.keyboard.xkb != old_config.input.keyboard.xkb {
-            reload_xkb = Some(config.input.keyboard.xkb.clone());
+        if config.input.keyboards.xkb() != old_config.input.keyboards.xkb() {
+            reload_xkb = Some(config.input.keyboards.xkb());
+        }
+
+        // Reset the last keyboard device if keyboard configs changed, so the next keystroke
+        // will trigger a re-application of the XKB configuration.
+        if config.input.keyboards != old_config.input.keyboards {
+            self.niri.last_keyboard_device = None;
         }
 
         // Reload the repeat info.
-        if config.input.keyboard.repeat_rate != old_config.input.keyboard.repeat_rate
-            || config.input.keyboard.repeat_delay != old_config.input.keyboard.repeat_delay
+        if config.input.keyboards.repeat_rate() != old_config.input.keyboards.repeat_rate()
+            || config.input.keyboards.repeat_delay() != old_config.input.keyboards.repeat_delay()
         {
             let keyboard = self.niri.seat.get_keyboard().unwrap();
             keyboard.change_repeat_info(
-                config.input.keyboard.repeat_rate.into(),
-                config.input.keyboard.repeat_delay.into(),
+                config.input.keyboards.repeat_rate().into(),
+                config.input.keyboards.repeat_delay().into(),
             );
         }
 
         if config.input.touchpad != old_config.input.touchpad
-            || config.input.mouse != old_config.input.mouse
+            || config.input.keyboards != old_config.input.keyboards
+            || config.input.mice != old_config.input.mice
             || config.input.trackball != old_config.input.trackball
             || config.input.trackpoint != old_config.input.trackpoint
             || config.input.tablet != old_config.input.tablet
@@ -2153,7 +2162,7 @@ impl State {
 
         {
             let config = self.niri.config.borrow();
-            if config.input.keyboard.xkb != Xkb::default() {
+            if config.input.keyboards.xkb() != Xkb::default() {
                 trace!("ignoring locale1 xkb change because niri config has xkb settings");
                 return;
             }
@@ -2313,9 +2322,9 @@ impl Niri {
 
         let mut seat: Seat<State> = seat_state.new_wl_seat(&display_handle, backend.seat_name());
         let keyboard = match seat.add_keyboard(
-            config_.input.keyboard.xkb.to_xkb_config(),
-            config_.input.keyboard.repeat_delay.into(),
-            config_.input.keyboard.repeat_rate.into(),
+            config_.input.keyboards.xkb().to_xkb_config(),
+            config_.input.keyboards.repeat_delay().into(),
+            config_.input.keyboards.repeat_rate().into(),
         ) {
             Err(err) => {
                 if let smithay::input::keyboard::Error::BadKeymap = err {
@@ -2325,14 +2334,14 @@ impl Niri {
                 }
                 seat.add_keyboard(
                     Default::default(),
-                    config_.input.keyboard.repeat_delay.into(),
-                    config_.input.keyboard.repeat_rate.into(),
+                    config_.input.keyboards.repeat_delay().into(),
+                    config_.input.keyboards.repeat_rate().into(),
                 )
                 .unwrap()
             }
             Ok(keyboard) => keyboard,
         };
-        if config_.input.keyboard.numlock {
+        if config_.input.keyboards.numlock() {
             let mut modifier_state = keyboard.modifier_state();
             modifier_state.num_lock = true;
             keyboard.set_modifier_state(modifier_state);
@@ -2456,6 +2465,7 @@ impl Niri {
             devices: HashSet::new(),
             tablets: HashMap::new(),
             touch: HashSet::new(),
+            last_keyboard_device: None,
 
             compositor_state,
             xdg_shell_state,

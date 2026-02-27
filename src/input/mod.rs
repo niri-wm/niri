@@ -441,6 +441,9 @@ impl State {
         #[cfg(not(feature = "dbus"))]
         let _ = consumed_by_a11y;
 
+        // Check if we need to switch XKB configuration for a different keyboard device.
+        self.maybe_switch_keyboard_xkb::<I>(&event);
+
         let Some(Some(bind)) = self.niri.seat.get_keyboard().unwrap().input(
             self,
             event.key_code(),
@@ -594,16 +597,16 @@ impl State {
         }
 
         let config = self.niri.config.borrow();
-        let config = &config.input.keyboard;
+        let keyboards = &config.input.keyboards;
 
-        let repeat_rate = config.repeat_rate;
+        let repeat_rate = keyboards.repeat_rate();
         if repeat_rate == 0 {
             return;
         }
         let repeat_duration = Duration::from_secs_f64(1. / f64::from(repeat_rate));
 
         let repeat_timer =
-            Timer::from_duration(Duration::from_millis(u64::from(config.repeat_delay)));
+            Timer::from_duration(Duration::from_millis(u64::from(keyboards.repeat_delay())));
 
         let token = self
             .niri
@@ -637,6 +640,67 @@ impl State {
 
         self.niri.pointer_visibility = PointerVisibility::Hidden;
         self.niri.queue_redraw_all();
+    }
+
+    /// Switches XKB configuration when a different keyboard device is used.
+    ///
+    /// This allows per-device keyboard layouts - for example, you can have one keyboard
+    /// with "us" layout and another with "us,ru" layout. The active XKB configuration
+    /// will switch automatically based on which keyboard you're typing on.
+    fn maybe_switch_keyboard_xkb<I: InputBackend>(&mut self, event: &I::KeyboardKeyEvent) {
+        let device = event.device();
+        let device_name = device.name().to_string();
+
+        // Check if this is a different keyboard than the last one
+        if self.niri.last_keyboard_device.as_ref() == Some(&device_name) {
+            return;
+        }
+
+        // Look up the keyboard configuration for this device
+        let xkb = {
+            let config = self.niri.config.borrow();
+            let keyboard_config = config.input.keyboards.find(Some(&device_name));
+
+            // Get the XKB config for this device (may be device-specific or default)
+            keyboard_config.xkb.clone().or_else(|| {
+                // If this device has no specific config, use the default
+                let default_config = config.input.keyboards.find(None);
+                default_config.xkb.clone()
+            })
+        }; // config borrow is dropped here
+
+        // Only switch if there's an XKB config to apply
+        if let Some(xkb) = xkb {
+            let xkb_config = xkb.to_xkb_config();
+
+            // Preserve the num lock state when switching keyboards
+            let keyboard = self.niri.seat.get_keyboard().unwrap();
+            let num_lock = keyboard.modifier_state().num_lock;
+
+            // Try to set the new XKB config
+            if let Err(err) = keyboard.set_xkb_config(self, xkb_config) {
+                warn!(
+                    "error switching xkb config for device '{}': {err:?}",
+                    device_name
+                );
+                return;
+            }
+
+            // Restore num lock to its previous value
+            let mut mods_state = keyboard.modifier_state();
+            if mods_state.num_lock != num_lock {
+                mods_state.num_lock = num_lock;
+                keyboard.set_modifier_state(mods_state);
+            }
+
+            debug!("switched XKB config for keyboard device: {}", device_name);
+
+            // Notify IPC clients about the layout change
+            self.ipc_keyboard_layouts_changed();
+        }
+
+        // Update the last keyboard device
+        self.niri.last_keyboard_device = Some(device_name);
     }
 
     pub fn handle_bind(&mut self, bind: Bind) {
@@ -3462,7 +3526,7 @@ impl State {
         let device_scroll_factor = {
             let config = self.niri.config.borrow();
             match source {
-                AxisSource::Wheel => config.input.mouse.scroll_factor,
+                AxisSource::Wheel => config.input.mice.find(None).scroll_factor,
                 AxisSource::Finger => config.input.touchpad.scroll_factor,
                 _ => None,
             }
@@ -4784,7 +4848,7 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
         && !is_trackball
         && !is_trackpoint;
     if is_mouse {
-        let c = &config.mouse;
+        let c = config.mice.find(Some(device.name()));
         let _ = device.config_send_events_set_mode(if c.off {
             input::SendEventsMode::DISABLED
         } else {

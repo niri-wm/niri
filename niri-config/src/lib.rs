@@ -626,8 +626,8 @@ mod tests {
     #[test]
     fn default_repeat_params() {
         let config = Config::parse_mem("").unwrap();
-        assert_eq!(config.input.keyboard.repeat_delay, 600);
-        assert_eq!(config.input.keyboard.repeat_rate, 25);
+        assert_eq!(config.input.keyboards.repeat_delay(), 600);
+        assert_eq!(config.input.keyboards.repeat_rate(), 25);
     }
 
     #[track_caller]
@@ -950,22 +950,35 @@ mod tests {
         assert_debug_snapshot!(parsed, @r#"
         Config {
             input: Input {
-                keyboard: Keyboard {
-                    xkb: Xkb {
-                        rules: "",
-                        model: "",
-                        layout: "us,ru",
-                        variant: "",
-                        options: Some(
-                            "grp:win_space_toggle",
-                        ),
-                        file: None,
-                    },
-                    repeat_delay: 600,
-                    repeat_rate: 25,
-                    track_layout: Window,
-                    numlock: false,
-                },
+                keyboards: Keyboards(
+                    [
+                        Keyboard {
+                            name: None,
+                            xkb: Some(
+                                Xkb {
+                                    rules: "",
+                                    model: "",
+                                    layout: "us,ru",
+                                    variant: "",
+                                    options: Some(
+                                        "grp:win_space_toggle",
+                                    ),
+                                    file: None,
+                                },
+                            ),
+                            repeat_delay: Some(
+                                600,
+                            ),
+                            repeat_rate: Some(
+                                25,
+                            ),
+                            track_layout: Some(
+                                Window,
+                            ),
+                            numlock: None,
+                        },
+                    ],
+                ),
                 touchpad: Touchpad {
                     off: false,
                     tap: true,
@@ -1010,36 +1023,41 @@ mod tests {
                         },
                     ),
                 },
-                mouse: Mouse {
-                    off: false,
-                    natural_scroll: true,
-                    accel_speed: FloatOrInt(
-                        0.4,
-                    ),
-                    accel_profile: Some(
-                        Flat,
-                    ),
-                    scroll_method: Some(
-                        NoScroll,
-                    ),
-                    scroll_button: Some(
-                        273,
-                    ),
-                    scroll_button_lock: false,
-                    left_handed: false,
-                    middle_emulation: true,
-                    scroll_factor: Some(
-                        ScrollFactor {
-                            base: Some(
-                                FloatOrInt(
-                                    0.2,
-                                ),
+                mice: Mice(
+                    [
+                        Mouse {
+                            name: None,
+                            off: false,
+                            natural_scroll: true,
+                            accel_speed: FloatOrInt(
+                                0.4,
                             ),
-                            horizontal: None,
-                            vertical: None,
+                            accel_profile: Some(
+                                Flat,
+                            ),
+                            scroll_method: Some(
+                                NoScroll,
+                            ),
+                            scroll_button: Some(
+                                273,
+                            ),
+                            scroll_button_lock: false,
+                            left_handed: false,
+                            middle_emulation: true,
+                            scroll_factor: Some(
+                                ScrollFactor {
+                                    base: Some(
+                                        FloatOrInt(
+                                            0.2,
+                                        ),
+                                    ),
+                                    horizontal: None,
+                                    vertical: None,
+                                },
+                            ),
                         },
-                    ),
-                },
+                    ],
+                ),
                 trackpoint: Trackpoint {
                     off: true,
                     natural_scroll: true,

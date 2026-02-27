@@ -10,9 +10,9 @@ use crate::FloatOrInt;
 
 #[derive(Debug, Default, PartialEq)]
 pub struct Input {
-    pub keyboard: Keyboard,
+    pub keyboards: Keyboards,
     pub touchpad: Touchpad,
-    pub mouse: Mouse,
+    pub mice: Mice,
     pub trackpoint: Trackpoint,
     pub trackball: Trackball,
     pub tablet: Tablet,
@@ -27,12 +27,12 @@ pub struct Input {
 
 #[derive(knuffel::Decode, Debug, Default, PartialEq)]
 pub struct InputPart {
-    #[knuffel(child)]
-    pub keyboard: Option<KeyboardPart>,
+    #[knuffel(children(name = "keyboard"))]
+    pub keyboards: Keyboards,
     #[knuffel(child)]
     pub touchpad: Option<Touchpad>,
-    #[knuffel(child)]
-    pub mouse: Option<Mouse>,
+    #[knuffel(children(name = "mouse"))]
+    pub mice: Mice,
     #[knuffel(child)]
     pub trackpoint: Option<Trackpoint>,
     #[knuffel(child)]
@@ -59,20 +59,11 @@ impl MergeWith<InputPart> for Input {
     fn merge_with(&mut self, part: &InputPart) {
         merge!(
             (self, part),
-            keyboard,
             disable_power_key_handling,
             workspace_auto_back_and_forth,
         );
 
-        merge_clone!(
-            (self, part),
-            touchpad,
-            mouse,
-            trackpoint,
-            trackball,
-            tablet,
-            touch,
-        );
+        merge_clone!((self, part), touchpad, trackpoint, trackball, tablet, touch,);
 
         merge_clone_opt!(
             (self, part),
@@ -81,33 +72,16 @@ impl MergeWith<InputPart> for Input {
             mod_key,
             mod_key_nested,
         );
+
+        self.keyboards.0.extend(part.keyboards.0.iter().cloned());
+        self.mice.0.extend(part.mice.0.iter().cloned());
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(knuffel::Decode, Debug, Clone, PartialEq, Eq)]
 pub struct Keyboard {
-    pub xkb: Xkb,
-    pub repeat_delay: u16,
-    pub repeat_rate: u8,
-    pub track_layout: TrackLayout,
-    pub numlock: bool,
-}
-
-impl Default for Keyboard {
-    fn default() -> Self {
-        Self {
-            xkb: Default::default(),
-            // The defaults were chosen to match wlroots and sway.
-            repeat_delay: 600,
-            repeat_rate: 25,
-            track_layout: Default::default(),
-            numlock: Default::default(),
-        }
-    }
-}
-
-#[derive(knuffel::Decode, Debug, PartialEq, Eq)]
-pub struct KeyboardPart {
+    #[knuffel(argument)]
+    pub name: Option<String>,
     #[knuffel(child)]
     pub xkb: Option<Xkb>,
     #[knuffel(child, unwrap(argument))]
@@ -120,10 +94,66 @@ pub struct KeyboardPart {
     pub numlock: Option<Flag>,
 }
 
-impl MergeWith<KeyboardPart> for Keyboard {
-    fn merge_with(&mut self, part: &KeyboardPart) {
-        merge_clone!((self, part), xkb, repeat_delay, repeat_rate, track_layout);
-        merge!((self, part), numlock);
+const DEFAULT_KEYBOARD: Keyboard = Keyboard {
+    name: None,
+    xkb: None,
+    repeat_delay: None,
+    repeat_rate: None,
+    track_layout: None,
+    numlock: None,
+};
+
+impl Default for Keyboard {
+    fn default() -> Self {
+        DEFAULT_KEYBOARD
+    }
+}
+
+#[derive(Debug, Default, PartialEq)]
+pub struct Keyboards(pub Vec<Keyboard>);
+
+impl FromIterator<Keyboard> for Keyboards {
+    fn from_iter<T: IntoIterator<Item = Keyboard>>(iter: T) -> Self {
+        Self(Vec::from_iter(iter))
+    }
+}
+
+impl Keyboards {
+    pub fn find<'a>(&'a self, name: Option<&str>) -> &'a Keyboard {
+        name.and_then(|name| {
+            self.0.iter().find(|k| {
+                k.name
+                    .as_deref()
+                    .is_some_and(|n| n.eq_ignore_ascii_case(name))
+            })
+        })
+        .or_else(|| self.0.iter().find(|k| k.name.is_none()))
+        .unwrap_or(&DEFAULT_KEYBOARD)
+    }
+
+    /// Get the XKB configuration, defaulting to an empty config if not set.
+    pub fn xkb(&self) -> Xkb {
+        self.find(None).xkb.clone().unwrap_or_default()
+    }
+
+    /// Get the repeat delay, defaulting to 600ms if not set.
+    pub fn repeat_delay(&self) -> u16 {
+        self.find(None).repeat_delay.unwrap_or(600)
+    }
+
+    /// Get the repeat rate, defaulting to 25 if not set.
+    pub fn repeat_rate(&self) -> u8 {
+        self.find(None).repeat_rate.unwrap_or(25)
+    }
+
+    /// Get the track layout setting, defaulting to Global if not set.
+    pub fn track_layout(&self) -> TrackLayout {
+        self.find(None).track_layout.unwrap_or_default()
+    }
+
+    /// Get the numlock setting, defaulting to false if not set.
+    pub fn numlock(&self) -> bool {
+        self.find(None).numlock.map(|f| f.0).unwrap_or(false)
     }
 }
 
@@ -223,8 +253,10 @@ pub struct Touchpad {
     pub scroll_factor: Option<ScrollFactor>,
 }
 
-#[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]
+#[derive(knuffel::Decode, Debug, Clone, PartialEq)]
 pub struct Mouse {
+    #[knuffel(argument)]
+    pub name: Option<String>,
     #[knuffel(child)]
     pub off: bool,
     #[knuffel(child)]
@@ -245,6 +277,49 @@ pub struct Mouse {
     pub middle_emulation: bool,
     #[knuffel(child)]
     pub scroll_factor: Option<ScrollFactor>,
+}
+
+const DEFAULT_MOUSE: Mouse = Mouse {
+    name: None,
+    off: false,
+    natural_scroll: false,
+    accel_speed: FloatOrInt(0.0),
+    accel_profile: None,
+    scroll_method: None,
+    scroll_button: None,
+    scroll_button_lock: false,
+    left_handed: false,
+    middle_emulation: false,
+    scroll_factor: None,
+};
+
+impl Default for Mouse {
+    fn default() -> Self {
+        DEFAULT_MOUSE
+    }
+}
+
+#[derive(Debug, Default, PartialEq)]
+pub struct Mice(pub Vec<Mouse>);
+
+impl FromIterator<Mouse> for Mice {
+    fn from_iter<T: IntoIterator<Item = Mouse>>(iter: T) -> Self {
+        Self(Vec::from_iter(iter))
+    }
+}
+
+impl Mice {
+    pub fn find<'a>(&'a self, name: Option<&str>) -> &'a Mouse {
+        name.and_then(|name| {
+            self.0.iter().find(|m| {
+                m.name
+                    .as_deref()
+                    .is_some_and(|n| n.eq_ignore_ascii_case(name))
+            })
+        })
+        .or_else(|| self.0.iter().find(|m| m.name.is_none()))
+        .unwrap_or(&DEFAULT_MOUSE)
+    }
 }
 
 #[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]
@@ -534,7 +609,7 @@ mod tests {
             "#,
         );
 
-        assert_debug_snapshot!(parsed.mouse.scroll_factor, @r#"
+        assert_debug_snapshot!(parsed.mice.find(None).scroll_factor, @r#"
         Some(
             ScrollFactor {
                 base: Some(
@@ -576,7 +651,7 @@ mod tests {
             "#,
         );
 
-        assert_debug_snapshot!(parsed.mouse.scroll_factor, @r#"
+        assert_debug_snapshot!(parsed.mice.find(None).scroll_factor, @r#"
         Some(
             ScrollFactor {
                 base: None,
@@ -626,7 +701,7 @@ mod tests {
             "#,
         );
 
-        assert_debug_snapshot!(parsed.mouse.scroll_factor, @r#"
+        assert_debug_snapshot!(parsed.mice.find(None).scroll_factor, @r#"
         Some(
             ScrollFactor {
                 base: None,
@@ -668,7 +743,7 @@ mod tests {
             "#,
         );
 
-        assert_debug_snapshot!(parsed.mouse.scroll_factor, @r#"
+        assert_debug_snapshot!(parsed.mice.find(None).scroll_factor, @r#"
         Some(
             ScrollFactor {
                 base: Some(
@@ -700,6 +775,131 @@ mod tests {
                 ),
                 vertical: None,
             },
+        )
+        "#);
+    }
+
+    #[test]
+    fn parse_keyboards_name() {
+        // Test no name and name provided
+        let parsed = do_parse(
+            r#"
+            keyboard {
+                xkb {
+                    layout "us"
+                }
+            }
+
+            keyboard "AT Translated Set 2 keyboard" {
+                xkb {
+                    layout "us,ru"
+                    options "grp:alt_shift_toggle"
+                }
+            }
+            "#,
+        );
+
+        assert_debug_snapshot!(parsed.keyboards, @r#"
+        Keyboards(
+            [
+                Keyboard {
+                    name: None,
+                    xkb: Some(
+                        Xkb {
+                            rules: "",
+                            model: "",
+                            layout: "us",
+                            variant: "",
+                            options: None,
+                            file: None,
+                        },
+                    ),
+                    repeat_delay: None,
+                    repeat_rate: None,
+                    track_layout: None,
+                    numlock: None,
+                },
+                Keyboard {
+                    name: Some(
+                        "AT Translated Set 2 keyboard",
+                    ),
+                    xkb: Some(
+                        Xkb {
+                            rules: "",
+                            model: "",
+                            layout: "us,ru",
+                            variant: "",
+                            options: Some(
+                                "grp:alt_shift_toggle",
+                            ),
+                            file: None,
+                        },
+                    ),
+                    repeat_delay: None,
+                    repeat_rate: None,
+                    track_layout: None,
+                    numlock: None,
+                },
+            ],
+        )
+        "#);
+    }
+
+    #[test]
+    fn parse_mice_name() {
+        // Test no name and name provided
+        let parsed = do_parse(
+            r#"
+            mouse {
+                natural-scroll
+                accel-speed 0.5
+            }
+
+            mouse "Logitech G Pro" {
+                accel-speed -0.3
+                accel-profile "flat"
+            }
+            "#,
+        );
+
+        assert_debug_snapshot!(parsed.mice, @r#"
+        Mice(
+            [
+                Mouse {
+                    name: None,
+                    off: false,
+                    natural_scroll: true,
+                    accel_speed: FloatOrInt(
+                        0.5,
+                    ),
+                    accel_profile: None,
+                    scroll_method: None,
+                    scroll_button: None,
+                    scroll_button_lock: false,
+                    left_handed: false,
+                    middle_emulation: false,
+                    scroll_factor: None,
+                },
+                Mouse {
+                    name: Some(
+                        "Logitech G Pro",
+                    ),
+                    off: false,
+                    natural_scroll: false,
+                    accel_speed: FloatOrInt(
+                        -0.3,
+                    ),
+                    accel_profile: Some(
+                        Flat,
+                    ),
+                    scroll_method: None,
+                    scroll_button: None,
+                    scroll_button_lock: false,
+                    left_handed: false,
+                    middle_emulation: false,
+                    scroll_factor: None,
+                },
+            ],
         )
         "#);
     }
