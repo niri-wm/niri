@@ -130,7 +130,7 @@ use crate::input::scroll_swipe_gesture::ScrollSwipeGesture;
 use crate::input::scroll_tracker::ScrollTracker;
 use crate::input::{
     apply_libinput_settings, mods_with_finger_scroll_binds, mods_with_mouse_binds,
-    mods_with_wheel_binds, TabletData,
+    mods_with_wheel_binds, DeviceData, TabletData,
 };
 use crate::ipc::server::IpcServer;
 use crate::layer::mapped::LayerSurfaceRenderElement;
@@ -261,7 +261,7 @@ pub struct Niri {
     /// startup, libinput will immediately send a closed event.
     pub is_lid_closed: bool,
 
-    pub devices: HashSet<input::Device>,
+    pub devices: HashMap<input::Device, DeviceData>,
     pub tablets: HashMap<input::Device, TabletData>,
     pub touch: HashSet<input::Device>,
 
@@ -1493,8 +1493,8 @@ impl State {
             || config.input.mouse != old_config.input.mouse
             || config.input.trackball != old_config.input.trackball
             || config.input.trackpoint != old_config.input.trackpoint
-            || config.input.tablet != old_config.input.tablet
-            || config.input.touch != old_config.input.touch
+            || config.input.tablets != old_config.input.tablets
+            || config.input.touch_screens != old_config.input.touch_screens
         {
             libinput_config_changed = true;
         }
@@ -1632,7 +1632,7 @@ impl State {
 
         if libinput_config_changed {
             let config = self.niri.config.borrow();
-            for mut device in self.niri.devices.iter().cloned() {
+            for mut device in self.niri.devices.keys().cloned() {
                 apply_libinput_settings(&config.input, &mut device);
             }
         }
@@ -2453,7 +2453,7 @@ impl Niri {
             monitors_active: true,
             is_lid_closed: false,
 
-            devices: HashSet::new(),
+            devices: HashMap::new(),
             tablets: HashMap::new(),
             touch: HashSet::new(),
 
@@ -3530,15 +3530,15 @@ impl Niri {
             .map(|(_, m)| m.window.clone())
     }
 
-    pub fn output_for_tablet(&self) -> Option<&Output> {
+    pub fn output_for_tablet(&self, name: Option<&str>) -> Option<&Output> {
         let config = self.config.borrow();
-        let map_to_output = config.input.tablet.map_to_output.as_ref();
+        let map_to_output = config.input.tablets.find(name).map_to_output.as_ref();
         map_to_output.and_then(|name| self.output_by_name_match(name))
     }
 
-    pub fn output_for_touch(&self) -> Option<&Output> {
+    pub fn output_for_touch(&self, name: Option<&str>) -> Option<&Output> {
         let config = self.config.borrow();
-        let map_to_output = config.input.touch.map_to_output.as_ref();
+        let map_to_output = config.input.touch_screens.find(name).map_to_output.as_ref();
         map_to_output
             .and_then(|name| self.output_by_name_match(name))
             .or_else(|| self.global_space.outputs().next())

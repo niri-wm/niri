@@ -4,7 +4,8 @@ In this section you can configure input devices like keyboard and mouse, and som
 
 There's a section for each device type: `keyboard`, `touchpad`, `mouse`, `trackpoint`, `trackball`, `tablet`, `touch`.
 Settings in those sections will apply to every device of that type.
-Currently, there's no way to configure specific devices individually (but that is planned).
+Currently, there's no way to configure specific `keyboard`, `touchpad`, `mouse`, or `trackpoint` devices
+individually (but that is planned).
 
 All settings at a glance:
 
@@ -280,6 +281,35 @@ input {
 Valid output names are the same as the ones used for output configuration.
 
 <sup>Since: 0.1.7</sup> When a tablet is not mapped to any output, it will map to the union of all connected outputs, without aspect ratio correction.
+
+> [!TIP]
+>
+> <sup>Since: next release</sup>
+>
+> It is possible to configure specific `tablet` and `touch` devices by name.
+>
+> Any non‑device‑specific settings will apply as a fallback when no matching device‑specific block exists:
+>
+> ```kdl
+> input {
+>     tablet {
+>         map-to-output "eDP-1";
+>     }
+>
+>     // Map this specific tablet to a different output.
+>     tablet "ELAN9009:00 04F3:2F2A Stylus" {
+>         map-to-output "DP-1";
+>     }
+>
+>     // Map this specific touchscreen to DP-1.
+>     touch "ELAN9009:00 04F3:2F2A" {
+>         map-to-output "DP-1";
+>     }
+> }
+> ```
+>
+> The device name is case-insensitive.
+> Device names are taken from libinput; you can find them by running `sudo libinput list-devices` or `sudo libinput debug-events`.
 
 ### General Settings
 
