@@ -332,6 +332,7 @@ fn compile_screen_transition_program(
         renderer,
         &program,
         &[
+            UniformName::new("niri_geo_to_tex", UniformType::Matrix3x3),
             UniformName::new("niri_progress", UniformType::_1f),
             UniformName::new("niri_clamped_progress", UniformType::_1f),
             UniformName::new("niri_mouse_pos", UniformType::_2f),
