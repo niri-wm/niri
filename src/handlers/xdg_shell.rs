@@ -1,7 +1,7 @@
 use std::cell::Cell;
 
 use calloop::Interest;
-use niri_config::PresetSize;
+use niri_config::{OutputName, PresetSize};
 use smithay::desktop::{
     find_popup_root_surface, get_popup_toplevel_coords, layer_map_for_output, utils, LayerSurface,
     PopupKeyboardGrab, PopupKind, PopupManager, PopupPointerGrab, PopupUngrabStrategy, Window,
@@ -1029,38 +1029,50 @@ impl State {
     pub fn send_initial_configure(&mut self, toplevel: &ToplevelSurface) {
         let _span = tracy_client::span!("State::send_initial_configure");
 
-        let Some(unmapped) = self.niri.unmapped_windows.get_mut(toplevel.wl_surface()) else {
-            error!("window must be present in unmapped_windows in send_initial_configure()");
-            return;
-        };
-
         let config = self.niri.config.borrow();
-        let rules = ResolvedWindowRules::compute(
-            &config.window_rules,
-            WindowRef::Unmapped(unmapped),
-            self.niri.is_at_startup,
-        );
 
-        let Unmapped { window, state, .. } = unmapped;
+        // Compute rules without output context first, to get open-on-output /
+        // open-on-workspace redirects.
+        let (preliminary_rules, wants_fullscreen, wants_maximized) = {
+            let Some(unmapped) = self.niri.unmapped_windows.get_mut(toplevel.wl_surface()) else {
+                error!("window must be present in unmapped_windows in send_initial_configure()");
+                return;
+            };
 
-        let InitialConfigureState::NotConfigured {
-            wants_fullscreen,
-            wants_maximized,
-        } = state
-        else {
-            error!("window must not be already configured in send_initial_configure()");
-            return;
+            let preliminary_rules = ResolvedWindowRules::compute(
+                &config.window_rules,
+                WindowRef::Unmapped(unmapped),
+                self.niri.is_at_startup,
+                None,
+            );
+
+            let Unmapped { state, .. } = unmapped;
+
+            let InitialConfigureState::NotConfigured {
+                wants_fullscreen,
+                wants_maximized,
+            } = state
+            else {
+                error!("window must not be already configured in send_initial_configure()");
+                return;
+            };
+
+            (
+                preliminary_rules,
+                wants_fullscreen.clone(),
+                *wants_maximized,
+            )
         };
 
         // Pick the target monitor. First, check if we had a workspace set in the window rules.
-        let mon = rules
+        let mon = preliminary_rules
             .open_on_workspace
             .as_deref()
             .and_then(|name| self.niri.layout.monitor_for_workspace(name));
 
         // If not, check if we had an output set in the window rules.
         let mon = mon.or_else(|| {
-            rules
+            preliminary_rules
                 .open_on_output
                 .as_deref()
                 .and_then(|name| {
@@ -1106,6 +1118,24 @@ impl State {
             .map(|(mon, _)| mon.output().clone());
         let mon = mon.map(|(mon, _)| mon);
 
+        // Recompute rules with the target output for on-output matching.
+        let output_name = mon
+            .map(|m| m.output())
+            .and_then(|o| o.user_data().get::<OutputName>().cloned());
+
+        let unmapped = self
+            .niri
+            .unmapped_windows
+            .get_mut(toplevel.wl_surface())
+            .unwrap();
+        let rules = ResolvedWindowRules::compute(
+            &config.window_rules,
+            WindowRef::Unmapped(unmapped),
+            self.niri.is_at_startup,
+            output_name.as_ref(),
+        );
+        let Unmapped { window, state, .. } = unmapped;
+
         let mut width = None;
         let mut floating_width = None;
         let mut height = None;
@@ -1126,7 +1156,7 @@ impl State {
         let mut is_pending_maximized = false;
         if let Some(ws) = ws {
             // Set a fullscreen and maximized state based on window request and window rule.
-            is_pending_maximized = (*wants_maximized && rules.open_maximized_to_edges.is_none())
+            is_pending_maximized = (wants_maximized && rules.open_maximized_to_edges.is_none())
                 || rules.open_maximized_to_edges == Some(true);
 
             if (wants_fullscreen.is_some() && rules.open_fullscreen.is_none())
@@ -1371,10 +1401,17 @@ impl State {
         let window_rules = &config.window_rules;
 
         if let Some(unmapped) = self.niri.unmapped_windows.get_mut(toplevel.wl_surface()) {
+            let output_name = match &unmapped.state {
+                InitialConfigureState::Configured { output, .. } => output
+                    .as_ref()
+                    .and_then(|o| o.user_data().get::<OutputName>().cloned()),
+                _ => None,
+            };
             let new_rules = ResolvedWindowRules::compute(
                 window_rules,
                 WindowRef::Unmapped(unmapped),
                 self.niri.is_at_startup,
+                output_name.as_ref(),
             );
             if let InitialConfigureState::Configured { rules, .. } = &mut unmapped.state {
                 *rules = new_rules;
@@ -1384,7 +1421,14 @@ impl State {
             .layout
             .find_window_and_output_mut(toplevel.wl_surface())
         {
-            if mapped.recompute_window_rules(window_rules, self.niri.is_at_startup) {
+            let output_name = output
+                .as_ref()
+                .and_then(|o| o.user_data().get::<OutputName>().cloned());
+            if mapped.recompute_window_rules(
+                window_rules,
+                self.niri.is_at_startup,
+                output_name.as_ref(),
+            ) {
                 drop(config);
                 let output = output.cloned();
                 let window = mapped.window.clone();

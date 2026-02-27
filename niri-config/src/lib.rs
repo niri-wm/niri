@@ -207,7 +207,28 @@ where
                 }
                 "spawn-at-startup" => m_push!(spawn_at_startup),
                 "spawn-sh-at-startup" => m_push!(spawn_sh_at_startup),
-                "window-rule" => m_push!(window_rules),
+                "window-rule" => {
+                    let part: WindowRule = knuffel::Decode::decode_node(node, ctx)?;
+                    // open-on-output and open-on-workspace conflict with on-output matchers.
+                    let has_on_output = part.matches.iter().any(|m| m.on_output.is_some())
+                        || part.excludes.iter().any(|m| m.on_output.is_some());
+                    if has_on_output {
+                        for child in node.children() {
+                            let child_name = &**child.node_name;
+                            if matches!(child_name, "open-on-output" | "open-on-workspace") {
+                                ctx.emit_error(DecodeError::unexpected(
+                                    child,
+                                    "node",
+                                    format!(
+                                        "node `{child_name}` is not allowed in a window \
+                                         rule with `on-output`"
+                                    ),
+                                ));
+                            }
+                        }
+                    }
+                    config.borrow_mut().window_rules.push(part);
+                }
                 "layer-rule" => m_push!(layer_rules),
                 "workspace" => m_push!(workspaces),
 
