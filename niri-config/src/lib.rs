@@ -15,6 +15,7 @@ extern crate tracing;
 
 use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
+use std::env::home_dir;
 use std::ffi::OsStr;
 use std::fs::{self, File};
 use std::io::Write as _;
@@ -299,7 +300,8 @@ where
                             "additional argument for include path is required",
                         )
                     })?;
-                    let path: PathBuf = knuffel::traits::DecodeScalar::decode(path_val, ctx)?;
+                    let decoded_path: PathBuf =
+                        knuffel::traits::DecodeScalar::decode(path_val, ctx)?;
 
                     // Check for extra arguments
                     if let Some(val) = iter_args.next() {
@@ -336,8 +338,17 @@ where
                         ));
                     }
 
-                    let base = ctx.get::<BasePath>().unwrap();
-                    let path = base.0.join(path);
+                    let path = if let Ok(rest) = decoded_path.strip_prefix("~") {
+                        if let Some(dir) = home_dir() {
+                            dir.join(rest)
+                        } else {
+                            warn!("failed to expand path {:?}", decoded_path);
+                            decoded_path
+                        }
+                    } else {
+                        let base = ctx.get::<BasePath>().unwrap();
+                        base.0.join(decoded_path)
+                    };
 
                     // We use DecodeError::Missing throughout this block because it results in the
                     // least confusing error messages while still allowing to provide a span.
