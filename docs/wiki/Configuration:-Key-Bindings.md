@@ -81,6 +81,34 @@ binds {
 
 This is mostly useful for the scroll bindings.
 
+### Non-Qwerty Layout
+Any non-Qwerty layout should work as-is and work out of the box (the default xkb layout is used for resolution of bind symbols).
+
+> [!TIP]
+> Make sure your default xkb layout is Qwerty, as this will ensure correct behavior of bindings in many applications.
+> Using a non-Qwerty layout by default regularly leads to applications behaving undesirably, so be mindful of this fact.
+
+If you want to use symbolic values for keybind resolution with your non-Qwerty layout, then you should set the following in your config:
+```kdl
+input {
+    bind-to-keysyms true
+}
+```
+
+### Physical Key Mapping
+You can bind to physical keycodes in niri. To find the keycode, you can use programs like wev.
+
+For example, binding to Mod+T in Qwerty will look like this:
+
+```kdl
+binds {
+    Mod+keycode:28 { spawn "alacritty"; }
+}
+```
+Note that this ultimately allows for the possibility of multiple bindings to one key, and this is intended behavior.
+Multiple layouts can have different mappings to symbols. However, it's still illegal to bind multiple times to one keycode.
+In case of collision, the first bind value in the config is used.
+
 ### Scroll Bindings
 
 You can bind mouse wheel scroll ticks using the following syntax.
