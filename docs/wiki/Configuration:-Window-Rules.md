@@ -48,6 +48,7 @@ window-rule {
     open-fullscreen true
     open-floating true
     open-focused false
+    open-consume-into-column true
 
     // Properties that apply continuously.
     draw-border-with-background false
@@ -508,6 +509,36 @@ window-rule {
     match app-id=r#"^org\.keepassxc\.KeePassXC$"# title="^Unlock Database - KeePassXC$"
 
     open-focused true
+}
+```
+
+#### `open-consume-into-column`
+
+<sup>Since: unreleased</sup>
+
+Automatically consume this window into an existing column containing another window with the same rule. Only applies to tiled windows; floating windows are unaffected.
+
+Possible values:
+
+- `"active"` — prefer the most recently active matching column, falling back to the first.
+- `"first"` — always consume into the first (leftmost) matching column.
+
+```kdl
+// Automatically stack foot terminals as tabs in the same column.
+window-rule {
+    match app-id="^foot$"
+    default-column-display "tabbed"
+    open-consume-into-column "active"
+}
+```
+
+You can also combine windows from different apps into the same column:
+
+```kdl
+window-rule {
+    match app-id="^foot$"
+    match app-id="^librewolf$"
+    open-consume-into-column "active"
 }
 ```
 
