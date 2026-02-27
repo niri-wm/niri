@@ -15,10 +15,10 @@ repository = "https://github.com/niri-wm/niri"
 rust-version = "1.85"
 
 [workspace.dependencies]
-anyhow = "1.0.100"
-bitflags = "2.10.0"
-clap = { version = "4.5.54", features = ["derive"] }
-insta = "1.46.0"
+anyhow = "1.0.101"
+bitflags = "2.11.0"
+clap = { version = "4.5.59", features = ["derive"] }
+insta = "1.46.3"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
 tracing = { version = "0.1.44", features = ["max_level_trace", "release_max_level_debug"] }
