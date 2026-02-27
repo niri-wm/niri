@@ -96,6 +96,7 @@ input {
     touch {
         // off
         map-to-output "eDP-1"
+        // natural-scroll
         // calibration-matrix 1.0 0.0 0.0 0.0 1.0 0.0
     }
 
@@ -262,6 +263,10 @@ Settings specific to `tablet` and `touch`:
 - `calibration-matrix`: set to six floating point numbers to change the calibration matrix. See the [`LIBINPUT_CALIBRATION_MATRIX` documentation](https://wayland.freedesktop.org/libinput/doc/latest/device-configuration-via-udev.html) for examples.
     - <sup>Since: 25.02</sup> for `tablet`
     - <sup>Since: 25.11</sup> for `touch`
+
+Settings specific to `touch`:
+
+- `natural-scroll`: <sup>Since: next</sup> if set, inverts the scrolling direction for touchscreen gestures (workspace switching and view scrolling).
 
 Tablets and touchscreens are absolute pointing devices that can be mapped to a specific output like so:
 
