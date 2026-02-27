@@ -107,10 +107,6 @@ impl VirtualKeyboardHandler for State {
         time: u32,
         _keyboard: KeyboardHandle<Self>,
     ) {
-        // The virtual keyboard impl in Smithay changes the keymap, so we'll need to reset it on
-        // the next real keyboard event.
-        self.niri.reset_keymap = true;
-
         let event = VirtualKeyboardKeyEvent {
             keycode,
             state,
