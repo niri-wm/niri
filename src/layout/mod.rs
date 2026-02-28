@@ -2829,13 +2829,12 @@ impl<W: LayoutElement> Layout<W> {
                     let focal_done = mon.zoom_focal_anim.as_ref().is_none_or(|a| a.is_done());
 
                     if level_done && focal_done {
-                        // All animations done, clean up
-                        if let Some(ref progress) = mon.zoom_level_progress {
-                            let final_level = progress.level();
-                            if let Some(mut zoom_state) = mon.output.zoom_state() {
+                        if let Some(mut zoom_state) = mon.output.zoom_state() {
+                            if let Some(ref progress) = mon.zoom_level_progress {
+                                let final_level = progress.level();
                                 zoom_state.level = final_level;
-                                zoom_state.transitioning = false;
                             }
+                            zoom_state.transitioning = false;
                         }
                         if let Some(ref anim) = mon.zoom_focal_anim {
                             let final_focal = anim.value();
@@ -2945,7 +2944,11 @@ impl<W: LayoutElement> Layout<W> {
             // The cursor position is used to compute focal points dynamically.
             if let Some(ref mut progress) = mon.zoom_level_progress {
                 match progress {
-                    ZoomLevelProgress::Gesture(gesture) => gesture.current_level = pos.x,
+                    ZoomLevelProgress::Gesture(gesture) => {
+                        gesture.cursor_pos = Some(pos);
+                        gesture.current_focal =
+                            gesture.compute_focal_or(gesture.current_level, gesture.current_focal);
+                    }
                     ZoomLevelProgress::Animation(_) => {}
                 }
             }
