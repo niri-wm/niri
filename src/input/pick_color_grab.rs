@@ -14,7 +14,7 @@ use smithay::utils::{Logical, Physical, Point, Scale, Size, Transform};
 
 use crate::niri::State;
 use crate::render_helpers::{render_and_download, RenderTarget};
-use crate::zoom::OutputZoomExt;
+use crate::zoom::{zoom_display_cursor_logical, OutputZoomExt};
 
 pub struct PickColorGrab {
     start_data: PointerGrabStartData<State>,
@@ -40,25 +40,18 @@ impl PickColorGrab {
         let (output, pos_within_output) = data.niri.output_under(location)?;
         let output = output.clone();
 
-        // handle.current_location() reports (due to clamping in OnEdge mode or other adjustments).
-        // Use cursor_logical_pos from zoom state if available, as that's where the cursor
-        // is actually rendered.
+        // When zoom is active, the cursor is visually clamped to the zoom viewport.
+        // Compute the display position on-the-fly from viewport math.
         let pos_within_output = if output.zoom_is_active() {
-            output
-                .zoom_cursor_logical_pos()
-                .unwrap_or(pos_within_output)
-        } else {
-            pos_within_output
-        };
-
-        // Use cursor_logical_pos from zoom state if available, as that's where the cursor
-        // is actually rendered.
-        let pos_within_output = if let Some(zoom_state) = output.zoom_state() {
-            if zoom_state.is_active() {
-                zoom_state.cursor_logical_pos.unwrap_or(pos_within_output)
-            } else {
-                pos_within_output
-            }
+            let mode_size = output.current_mode().map(|m| m.size).unwrap_or_default();
+            let scale = output.current_scale().fractional_scale();
+            let output_size = mode_size.to_f64().to_logical(scale);
+            zoom_display_cursor_logical(
+                pos_within_output,
+                output_size,
+                output.zoom_level(),
+                output.zoom_focal(),
+            )
         } else {
             pos_within_output
         };

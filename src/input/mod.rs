@@ -112,6 +112,14 @@ impl<D: SeatHandler> PointerOrTouchStartData<D> {
 }
 
 impl State {
+    fn active_zoom_output(&self, requested_output: Option<&str>) -> Option<Output> {
+        let output = match requested_output {
+            Some(name) => self.niri.output_by_name_match(name).cloned(),
+            None => self.niri.layout.active_output().cloned(),
+        }?;
+        output.has_zoom_state().then_some(output)
+    }
+
     pub fn process_input_event<I: InputBackend + 'static>(&mut self, event: InputEvent<I>)
     where
         I::Device: 'static, // Needed for downcasting.
@@ -2383,15 +2391,9 @@ impl State {
                 }
             }
             Action::SetZoomLevel(level, output) => {
-                let target_output = match output {
-                    Some(name) => self.niri.output_by_name_match(&name).cloned(),
-                    None => self.niri.layout.active_output().cloned(),
-                };
-                if let Some(output) = target_output {
+                if let Some(output) = self.active_zoom_output(output.as_deref()) {
+                    let current_level = output.zoom_level();
                     let target_level = {
-                        let Some(zoom_state) = output.zoom_state() else {
-                            return;
-                        };
                         let factor_str = level.trim();
                         let is_relative =
                             factor_str.starts_with('+') || factor_str.starts_with('-');
@@ -2400,9 +2402,9 @@ impl State {
                             Ok(delta) => {
                                 let increment_type = &self.niri.config.borrow().zoom.increment_type;
                                 let new_level = match increment_type {
-                                    ZoomIncrementType::Linear => zoom_state.level + delta,
+                                    ZoomIncrementType::Linear => current_level + delta,
                                     ZoomIncrementType::Exponential => {
-                                        (zoom_state.level.ln() + delta).exp()
+                                        (current_level.ln() + delta).exp()
                                     }
                                 };
                                 let max_zoom = self.niri.config.borrow().zoom.max_zoom;
@@ -2442,11 +2444,7 @@ impl State {
                 }
             }
             Action::ToggleZoomLock(output) => {
-                let target_output = match output {
-                    Some(name) => self.niri.output_by_name_match(&name).cloned(),
-                    None => self.niri.layout.active_output().cloned(),
-                };
-                if let Some(output) = target_output {
+                if let Some(output) = self.active_zoom_output(output.as_deref()) {
                     let was_locked = if let Some(mut zoom_state) = output.zoom_state() {
                         let was = zoom_state.locked;
                         zoom_state.locked = !was;
@@ -2733,16 +2731,10 @@ impl State {
 
         // Handle cursor and focal center movement across outputs with different zoom levels or
         // locked zoom.
-        let old_output = self.niri.global_space.output_under(pos).next().cloned();
-        let new_output = self.niri.output_under(new_pos).map(|(o, _)| o.clone());
-        if let (Some(new_out), Some(old_out)) = (new_output, old_output) {
+        if let Some((new_out, _)) = self.niri.output_under(new_pos) {
+            let new_out = new_out.clone();
             self.niri
                 .update_zoom_base_focal(&new_out, new_pos, Some(pos));
-            if old_out != new_out {
-                if let Some(mut zoom_state) = old_out.zoom_state() {
-                    zoom_state.cursor_logical_pos = None;
-                }
-            }
         }
 
         if let Some(output) = self.niri.screenshot_ui.selection_output() {

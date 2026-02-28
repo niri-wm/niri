@@ -18,8 +18,7 @@ use super::workspace::{
     WorkspaceRenderElement,
 };
 use super::{
-    compute_overview_zoom, ActivateWindow, HitType, LayoutElement, Options, ZoomFocalAnimation,
-    ZoomLevelProgress,
+    compute_overview_zoom, ActivateWindow, HitType, LayoutElement, Options, ZoomTransition,
 };
 use crate::animation::{Animation, Clock};
 use crate::input::swipe_tracker::SwipeTracker;
@@ -90,10 +89,8 @@ pub struct Monitor<W: LayoutElement> {
     pub(super) options: Rc<Options>,
     /// Layout config overrides for this monitor.
     layout_config: Option<niri_config::LayoutPart>,
-    /// In-progress zoom level animation or gesture for this monitor.
-    pub(super) zoom_level_progress: Option<ZoomLevelProgress>,
-    /// In-progress focal point animation for this monitor.
-    pub(super) zoom_focal_anim: Option<ZoomFocalAnimation>,
+    /// In-progress zoom transition state for this monitor.
+    pub(super) zoom_transition: ZoomTransition,
 }
 
 #[derive(Debug)]
@@ -352,8 +349,7 @@ impl<W: LayoutElement> Monitor<W> {
             base_options,
             options,
             layout_config,
-            zoom_level_progress: None,
-            zoom_focal_anim: None,
+            zoom_transition: ZoomTransition::default(),
         }
     }
 

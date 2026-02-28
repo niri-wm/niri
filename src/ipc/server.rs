@@ -465,15 +465,13 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
                     .outputs()
                     .fold(HashMap::new(), |mut acc, output| {
                         let level = output.zoom_level();
-                        if level != 1.0 {
-                            acc.insert(
-                                output.name().clone(),
-                                niri_ipc::Zoom {
-                                    is_locked: output.zoom_locked(),
-                                    level,
-                                },
-                            );
-                        }
+                        acc.insert(
+                            output.name().clone(),
+                            niri_ipc::Zoom {
+                                is_locked: output.zoom_locked(),
+                                level,
+                            },
+                        );
                         acc
                     });
 

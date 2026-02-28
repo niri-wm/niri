@@ -31,7 +31,9 @@ use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderEleme
 use crate::render_helpers::texture::{TextureBuffer, TextureRenderElement};
 use crate::render_helpers::{render_to_texture, RenderTarget};
 use crate::utils::to_physical_precise_round;
-use crate::zoom::{OutputZoomExt, ZoomWrapper};
+use crate::zoom::{
+    zoom_subpixel_correction, zoom_transform_physical_point, OutputZoomExt, ZoomWrapper,
+};
 
 const SELECTION_BORDER: i32 = 2;
 
@@ -132,6 +134,33 @@ impl Button {
 }
 
 impl ScreenshotUi {
+    fn capture_source_rect(
+        output: &Output,
+        rect: Rectangle<i32, Physical>,
+        scale: Scale<f64>,
+    ) -> Rectangle<i32, Physical> {
+        if !output.zoom_is_active() {
+            return rect;
+        }
+
+        let zoom_focal = output.zoom_focal();
+        let zoom_level = output.zoom_level();
+        let correction_i32 = zoom_subpixel_correction(zoom_focal, zoom_level, scale);
+        let correction =
+            Point::<f64, Physical>::from((correction_i32.x as f64, correction_i32.y as f64));
+        let min =
+            zoom_transform_physical_point(rect.loc, zoom_level, zoom_focal, scale, correction);
+        let max = zoom_transform_physical_point(
+            rect.loc + rect.size,
+            zoom_level,
+            zoom_focal,
+            scale,
+            correction,
+        );
+
+        Rectangle::from_extremities(min, max)
+    }
+
     pub fn new(clock: Clock, config: Rc<RefCell<Config>>) -> Self {
         Self::Closed {
             last_selection: None,
@@ -581,10 +610,7 @@ impl ScreenshotUi {
                     *b = rect.loc + rect.size - Size::from((1, 1));
                 }
 
-                let mut border = to_physical_precise_round(scale, SELECTION_BORDER);
-                if output.zoom_is_active() {
-                    border = ((border as f64) / output.zoom_level()).round().max(1.0) as i32;
-                }
+                let border = to_physical_precise_round(scale, SELECTION_BORDER);
 
                 let resize = move |buffer: &mut SolidColorBuffer, w: i32, h: i32| {
                     let size = Size::<_, Physical>::from((w, h));
@@ -627,10 +653,9 @@ impl ScreenshotUi {
         }
     }
 
-    // Helper to apply zoom to a texture element, matching Niri::zoomed_element logic.
     fn apply_zoom<E: Element>(&self, elem: E, output: &Output) -> ScreenshotUiRenderElement
     where
-        ScreenshotUiRenderElement: From<RelocateRenderElement<RescaleRenderElement<E>>> + From<E>,
+        ScreenshotUiRenderElement: From<ZoomWrapper<E>> + From<E>,
     {
         if !output.has_zoom_state() {
             return elem.into();
@@ -638,14 +663,8 @@ impl ScreenshotUi {
         let output_scale = Scale::from(output.current_scale().fractional_scale());
         let (zoom_level, zoom_focal) = (output.zoom_level(), output.zoom_focal());
         let focal_physical = zoom_focal.to_physical_precise_round(output_scale);
-        let focal_physical_f64 = zoom_focal.to_physical(output_scale);
-        // Subpixel correction from Niri::zoomed_element
-        let subpixel_correction = Point::<i32, Physical>::from((
-            ((focal_physical.x as f64 - focal_physical_f64.x) * (zoom_level - 1.0)).round() as i32,
-            ((focal_physical.y as f64 - focal_physical_f64.y) * (zoom_level - 1.0)).round() as i32,
-        ));
+        let subpixel_correction = zoom_subpixel_correction(zoom_focal, zoom_level, output_scale);
 
-        // Determine if elem is SolidColorRenderElement or PrimaryGpuTextureRenderElement
         match elem.into() {
             ScreenshotUiRenderElement::Screenshot(elem) => RelocateRenderElement::from_element(
                 RescaleRenderElement::from_element(elem, focal_physical, zoom_level),
@@ -654,8 +673,6 @@ impl ScreenshotUi {
             )
             .into(),
             ScreenshotUiRenderElement::SolidColor(elem) => RelocateRenderElement::from_element(
-                // Never scale the selection border, to keep it visible and not blurry. This is a
-                // bit of a hack, but it works well enough in practice.
                 RescaleRenderElement::from_element(elem, focal_physical, zoom_level),
                 subpixel_correction,
                 Relocate::Relative,
@@ -756,41 +773,42 @@ impl ScreenshotUi {
             panic!("screenshot UI must be open to capture");
         };
 
-        let data = &output_data[&selection.0];
-        let rect = rect_from_corner_points(selection.1, selection.2);
         let output = &selection.0;
+        let data = &output_data[output];
+        let rect = rect_from_corner_points(selection.1, selection.2);
+        let scale = Scale::from(data.scale);
+        let source_rect = Self::capture_source_rect(output, rect, scale);
 
         let screenshot = &data.screenshot[0];
-
-        // Composite the pointer on top if needed.
         let mut tex_rect = None;
-        if *show_pointer {
-            if let Some(pointer) = screenshot.pointer.clone() {
-                let scale = pointer.0.buffer().texture_scale();
-                let offset = rect.loc.upscale(-1);
 
-                let mut elements = ArrayVec::<_, 2>::new();
-                elements.push(self.apply_zoom(pointer, output));
-                elements.push(self.apply_zoom(screenshot.buffer.clone(), output));
-                let elements = elements.iter().rev().map(|elem| {
-                    RelocateRenderElement::from_element(elem, offset, Relocate::Relative)
-                });
+        if output.zoom_is_active() || (*show_pointer && screenshot.pointer.is_some()) {
+            let mut elements = ArrayVec::<_, 2>::new();
+            if *show_pointer {
+                if let Some(pointer) = screenshot.pointer.clone() {
+                    elements.push(pointer.into())
+                }
+            }
+            elements.push(self.apply_zoom(screenshot.buffer.clone(), output));
 
-                let res = render_to_texture(
-                    renderer,
-                    rect.size,
-                    scale,
-                    Transform::Normal,
-                    Fourcc::Abgr8888,
-                    elements,
-                );
-                match res {
-                    Ok((texture, _)) => {
-                        tex_rect = Some((texture, Rectangle::from_size(rect.size)));
-                    }
-                    Err(err) => {
-                        warn!("error compositing pointer onto screenshot: {err:?}");
-                    }
+            let elements = elements.iter().rev().map(|elem| {
+                RelocateRenderElement::from_element(elem, Point::from((0, 0)), Relocate::Relative)
+            });
+
+            let res = render_to_texture(
+                renderer,
+                data.size,
+                scale,
+                Transform::Normal,
+                Fourcc::Abgr8888,
+                elements,
+            );
+            match res {
+                Ok((texture, _)) => {
+                    tex_rect = Some((texture, source_rect));
+                }
+                Err(err) => {
+                    warn!("error compositing screenshot capture: {err:?}");
                 }
             }
         }
