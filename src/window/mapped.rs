@@ -800,6 +800,13 @@ impl LayoutElement for Mapped {
             self.animate_next_configure = true;
         }
 
+        // If we requested a concrete size before and the client committed without applying it,
+        // role state may already contain that size even though the actual window size differs.
+        // In that case, force another configure on the next same-size request.
+        if !changed && size.w > 0 && size.h > 0 && self.window.geometry().size != size {
+            self.needs_configure = true;
+        }
+
         self.request_size_once = Some(RequestSizeOnce::WaitingForConfigure);
     }
 
