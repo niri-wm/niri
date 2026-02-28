@@ -1357,10 +1357,8 @@ fn repeated_size_request() {
     f.double_roundtrip(id);
 
     // This should send a new configure since the window had committed.
-    //
-    // FIXME: doesn't request that currently.
     assert_snapshot!(
         f.client(id).window(&surface).format_recent_configures(),
-        @""
+        @"size: 200 × 100, bounds: 1920 × 1080, states: [Activated]"
     );
 }
