@@ -228,6 +228,9 @@ A few settings are common between input devices:
 
 - `off`: if set, no events will be sent from this device.
 
+> [!TIP]
+> <sup>Since: next release</sup> For touchpads, you can also toggle them on/off at runtime using the [`toggle-touchpad` action](./Configuration:-Key-Bindings.md#toggle-touchpad), without editing the config.
+
 A few settings are common between `touchpad`, `mouse`, `trackpoint`, and `trackball`:
 
 - `natural-scroll`: if set, inverts the scrolling direction.
