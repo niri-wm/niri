@@ -1,5 +1,5 @@
 use std::cell::RefCell;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::ffi::OsStr;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
@@ -36,6 +36,7 @@ use crate::layout::workspace::WorkspaceId;
 use crate::niri::State;
 use crate::utils::{version, with_toplevel_role};
 use crate::window::Mapped;
+use crate::zoom::OutputZoomExt;
 
 // If an event stream client fails to read events fast enough that we accumulate more than this
 // number in our buffer, we drop that event stream client.
@@ -454,6 +455,33 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
             let state = ctx.event_stream_state.borrow();
             let casts = state.casts.casts.values().cloned().collect();
             Response::Casts(casts)
+        }
+        Request::ZoomState => {
+            let (tx, rx) = async_channel::bounded(1);
+            ctx.event_loop.insert_idle(move |state| {
+                let zooms = state
+                    .niri
+                    .layout
+                    .outputs()
+                    .fold(HashMap::new(), |mut acc, output| {
+                        let level = output.zoom_level();
+                        if level != 1.0 {
+                            acc.insert(
+                                output.name().clone(),
+                                niri_ipc::Zoom {
+                                    is_locked: output.zoom_locked(),
+                                    level,
+                                },
+                            );
+                        }
+                        acc
+                    });
+
+                let _ = tx.send_blocking(zooms);
+            });
+            let result = rx.recv().await;
+            let zooms = result.map_err(|_| String::from("error getting zoom states"))?;
+            Response::ZoomState(zooms)
         }
     };
 

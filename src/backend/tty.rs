@@ -32,7 +32,9 @@ use smithay::backend::libinput::{LibinputInputBackend, LibinputSessionInterface}
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::renderer::multigpu::gbm::GbmGlesBackend;
 use smithay::backend::renderer::multigpu::{GpuManager, MultiFrame, MultiRenderer};
-use smithay::backend::renderer::{DebugFlags, ImportDma, ImportEgl, RendererSuper};
+use smithay::backend::renderer::{
+    DebugFlags, ImportDma, ImportEgl, Renderer, RendererSuper, TextureFilter,
+};
 use smithay::backend::session::libseat::LibSeatSession;
 use smithay::backend::session::{Event as SessionEvent, Session};
 use smithay::backend::udev::{self, UdevBackend, UdevEvent};
@@ -69,6 +71,7 @@ use crate::render_helpers::debug::draw_damage;
 use crate::render_helpers::renderer::AsGlesRenderer;
 use crate::render_helpers::{resources, shaders, RenderTarget};
 use crate::utils::{get_monotonic_time, is_laptop_panel, logical_output, PanelOrientation};
+use crate::zoom::{OutputZoomExt, OutputZoomState};
 
 const SUPPORTED_COLOR_FORMATS: [Fourcc; 4] = [
     Fourcc::Xrgb8888,
@@ -1344,6 +1347,11 @@ impl Tty {
             .user_data()
             .insert_if_missing(|| TtyOutputState { node, crtc });
         output.user_data().insert_if_missing(|| output_name.clone());
+
+        output
+            .user_data()
+            .insert_if_missing(|| Mutex::new(OutputZoomState::new_for_output(&output)));
+
         if let Some(x) = orientation {
             output.user_data().insert_if_missing(|| PanelOrientation(x));
         }
@@ -1837,6 +1845,18 @@ impl Tty {
                 return rv;
             }
         };
+
+        let zoom_factor = output.zoom_level();
+
+        // Apply filter temporarily before rendering
+        // Set filter based on this output's zoom level
+        let filter = match zoom_factor {
+            z if z < 2.0 => TextureFilter::Linear,
+            _ => TextureFilter::Nearest,
+        };
+
+        let _ = renderer.upscale_filter(filter);
+        let _ = renderer.downscale_filter(filter);
 
         // Render the elements.
         let mut elements =

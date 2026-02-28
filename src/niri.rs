@@ -16,7 +16,7 @@ use calloop::futures::Scheduler;
 use niri_config::debug::PreviewRender;
 use niri_config::{
     Config, FloatOrInt, Key, Modifiers, OutputName, TrackLayout, WarpMouseToFocusMode,
-    WorkspaceReference, Xkb,
+    WorkspaceReference, Xkb, ZoomMovementMode,
 };
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::input::Keycode;
@@ -178,6 +178,7 @@ use crate::utils::{
 };
 use crate::window::mapped::MappedId;
 use crate::window::{InitialConfigureState, Mapped, ResolvedWindowRules, Unmapped, WindowRef};
+use crate::zoom::{compute_focal_for_cursor, OutputZoomExt, ZoomWrapper};
 
 const CLEAR_COLOR_LOCKED: [f32; 4] = [0.3, 0.1, 0.1, 1.];
 
@@ -1473,6 +1474,9 @@ impl State {
             self.niri.cursor_texture_cache.clear();
         }
 
+        // We need to check zoom movement mode change, but defer the action until after drop.
+        let zoom_movement_mode_changed = config.zoom.movement_mode != old_config.zoom.movement_mode;
+
         // We need &mut self to reload the xkb config, so just store it here.
         if config.input.keyboard.xkb != old_config.input.keyboard.xkb {
             reload_xkb = Some(config.input.keyboard.xkb.clone());
@@ -1601,6 +1605,37 @@ impl State {
 
         // Release the borrow.
         drop(old_config);
+
+        if zoom_movement_mode_changed {
+            let global_pointer_pos = self.niri.seat.get_pointer().unwrap().current_location();
+            if let Some((output, _)) = self.niri.output_under(global_pointer_pos) {
+                let output = output.clone();
+                let output_geo = self
+                    .niri
+                    .global_space
+                    .output_geometry(&output)
+                    .unwrap()
+                    .to_f64();
+                let cursor_local = global_pointer_pos - output_geo.loc;
+                let movement_mode = self.niri.config.borrow().zoom.movement_mode.clone();
+                let (locked, current_level) = (output.zoom_locked(), output.zoom_level());
+
+                self.niri.layout.set_zoom_level(
+                    &output,
+                    current_level,
+                    cursor_local,
+                    &movement_mode,
+                    locked,
+                );
+
+                // Update the focal point so that if the user changes the movement mode again while
+                // zoomed, it will be correct.
+                self.niri
+                    .update_zoom_base_focal(&output, cursor_local, None);
+
+                self.niri.queue_redraw(&output);
+            }
+        }
 
         // Now with a &mut self we can reload the xkb config.
         if let Some(mut xkb) = reload_xkb {
@@ -2981,6 +3016,191 @@ impl Niri {
         Some((output, pos_within_output))
     }
 
+    /// Returns the effective cursor position for hit-testing, accounting for zoom.
+    ///
+    /// When zoom is active, the cursor may be rendered at a different position than
+    /// `pointer.current_location()` reports (e.g., due to clamping in OnEdge mode).
+    /// This function returns `cursor_logical_pos` from the zoom state when available,
+    /// ensuring hit-testing matches where the cursor is visually rendered.
+    pub fn effective_cursor_pos(&self, pos: Point<f64, Logical>) -> Point<f64, Logical> {
+        let Some((output, _pos_within_output)) = self.output_under(pos) else {
+            return pos;
+        };
+
+        if !output.zoom_is_active() {
+            return pos;
+        }
+
+        let output_pos = self
+            .global_space
+            .output_geometry(output)
+            .unwrap()
+            .loc
+            .to_f64();
+
+        output
+            .zoom_cursor_logical_pos()
+            .map(|p| p + output_pos)
+            .unwrap_or(pos)
+    }
+
+    /// Update the zoom focal point for the given output based on cursor position.
+    ///
+    /// `old_pos_global` is the previous cursor pos (for OnEdge movement mode).
+    /// We pass `None` for absolute events or zoom changes, which will use
+    /// Centered/CursorFollow behavior.
+    pub fn update_zoom_base_focal(
+        &mut self,
+        output: &Output,
+        new_pos_global: Point<f64, Logical>,
+        old_pos_global: Option<Point<f64, Logical>>,
+    ) {
+        let Some(mut zoom_state) = output.zoom_state() else {
+            return;
+        };
+
+        let Some(output_geometry) = self.global_space.output_geometry(output) else {
+            return;
+        };
+        let output_geometry = output_geometry.to_f64();
+
+        let cursor_position = new_pos_global - output_geometry.loc;
+
+        // During animations, the animation owns focal tracking — focal
+        // writes would be silently overwritten when the animation completes.
+        // Only update cursor_logical_pos so cursor rendering stays correct.
+        // Also update anim.cursor_pos so focal_point() tracks the live cursor,
+        // preventing cursor jitter when scale_with_zoom is enabled.
+        if zoom_state.transitioning {
+            zoom_state.cursor_logical_pos = Some(cursor_position);
+            drop(zoom_state);
+            self.layout.set_zoom_cursor_pos(output, cursor_position);
+            return;
+        }
+
+        if zoom_state.locked {
+            zoom_state.cursor_logical_pos = Some(cursor_position);
+            return;
+        }
+
+        let zoom_factor = zoom_state.level;
+        let focal_point = zoom_state.focal;
+        let movement = &self.config.borrow().zoom.movement_mode;
+
+        let (new_focal, display_cursor) = match movement {
+            ZoomMovementMode::CursorFollow => (Some(cursor_position), cursor_position),
+
+            ZoomMovementMode::Centered => {
+                let focal = compute_focal_for_cursor(
+                    cursor_position,
+                    zoom_factor,
+                    output_geometry.size,
+                    movement,
+                );
+                (Some(focal), cursor_position)
+            }
+
+            ZoomMovementMode::OnEdge => (|| {
+                let Some(old_pos) = old_pos_global else {
+                    let focal = compute_focal_for_cursor(
+                        cursor_position,
+                        zoom_factor,
+                        output_geometry.size,
+                        &ZoomMovementMode::Centered,
+                    );
+                    return (Some(focal), cursor_position);
+                };
+
+                let zoomed_geometry_global = {
+                    let focal_global = focal_point + output_geometry.loc;
+                    output.zoomed_geometry(output_geometry, focal_global, zoom_factor)
+                };
+
+                let jump_threshold =
+                    (16.0 * output.current_scale().fractional_scale()) / zoom_factor;
+                let jump_detect_size: Size<f64, Logical> = (jump_threshold, jump_threshold).into();
+                let original_rect = Rectangle::new(
+                    old_pos - jump_detect_size.downscale(2.0).to_point(),
+                    jump_detect_size,
+                );
+
+                // Jump detection: if we teleported across the viewport, recenter.
+                if !zoomed_geometry_global.overlaps_or_touches(original_rect) {
+                    let focal = compute_focal_for_cursor(
+                        cursor_position,
+                        zoom_factor,
+                        output_geometry.size,
+                        &ZoomMovementMode::Centered,
+                    );
+                    return (Some(focal), cursor_position);
+                }
+
+                // Edge push: when cursor leaves viewport, pan viewport to follow.
+                if !zoomed_geometry_global.contains(new_pos_global) {
+                    let scale = zoom_factor / (zoom_factor - 1.0);
+                    let viewport_size = output_geometry.size.downscale(zoom_factor);
+
+                    let zoomed_geometry_local = {
+                        let geo: Rectangle<f64, Logical> =
+                            Rectangle::from_size(output_geometry.size);
+                        output.zoomed_geometry(geo, focal_point, zoom_factor)
+                    };
+
+                    let vp_left = zoomed_geometry_local.loc.x;
+                    let vp_right = vp_left + zoomed_geometry_local.size.w;
+                    let vp_top = zoomed_geometry_local.loc.y;
+                    let vp_bottom = vp_top + zoomed_geometry_local.size.h;
+
+                    let mut new_focal = focal_point;
+
+                    if cursor_position.x < vp_left {
+                        new_focal.x = cursor_position.x * scale;
+                    } else if cursor_position.x > vp_right {
+                        new_focal.x = (cursor_position.x - viewport_size.w) * scale;
+                    }
+
+                    if cursor_position.y < vp_top {
+                        new_focal.y = cursor_position.y * scale;
+                    } else if cursor_position.y > vp_bottom {
+                        new_focal.y = (cursor_position.y - viewport_size.h) * scale;
+                    }
+
+                    new_focal.x = new_focal
+                        .x
+                        .clamp(0.0, output_geometry.size.w - f64::EPSILON);
+                    new_focal.y = new_focal
+                        .y
+                        .clamp(0.0, output_geometry.size.h - f64::EPSILON);
+
+                    let new_vp_local = {
+                        let geo: Rectangle<f64, Logical> =
+                            Rectangle::from_size(output_geometry.size);
+                        output.zoomed_geometry(geo, new_focal, zoom_factor)
+                    };
+                    let clamped_cursor = Point::from((
+                        cursor_position.x.clamp(
+                            new_vp_local.loc.x,
+                            new_vp_local.loc.x + new_vp_local.size.w - 1.0,
+                        ),
+                        cursor_position.y.clamp(
+                            new_vp_local.loc.y,
+                            new_vp_local.loc.y + new_vp_local.size.h - 1.0,
+                        ),
+                    ));
+                    return (Some(new_focal), clamped_cursor);
+                }
+
+                // Cursor inside viewport, no focal change.
+                (None, cursor_position)
+            })(),
+        };
+
+        if let Some(focal) = new_focal {
+            zoom_state.focal = focal;
+        }
+        zoom_state.cursor_logical_pos = Some(display_cursor);
+    }
+
     fn is_inside_hot_corner(&self, output: &Output, pos: Point<f64, Logical>) -> bool {
         let config = self.config.borrow();
         let hot_corners = output
@@ -3171,6 +3391,8 @@ impl Niri {
             return None;
         }
 
+        let pos = self.effective_cursor_pos(pos);
+
         let (output, pos_within_output) = self.output_under(pos)?;
 
         if self.is_sticky_obscured_under(output, pos_within_output) {
@@ -3209,6 +3431,8 @@ impl Niri {
     /// This function does not take pointer or touch grabs into account.
     pub fn contents_under(&self, pos: Point<f64, Logical>) -> PointContents {
         let mut rv = PointContents::default();
+
+        let pos = self.effective_cursor_pos(pos);
 
         let Some((output, pos_within_output)) = self.output_under(pos) else {
             return rv;
@@ -3622,6 +3846,14 @@ impl Niri {
             .unwrap_or_else(|| self.seat.get_pointer().unwrap().current_location());
         let pointer_pos = pointer_pos - output_pos.to_f64();
 
+        // When zoom is active, use cursor_logical_pos for rendering if available.
+        // This ensures the cursor is rendered at the correct position when the
+        // logical cursor position differs from the pointer position (e.g., OnEdge clamping).
+        let pointer_pos = if output.zoom_is_active() {
+            output.zoom_cursor_logical_pos().unwrap_or(pointer_pos)
+        } else {
+            pointer_pos
+        };
         // Get the render cursor to draw.
         let cursor_scale = output_scale.integer_scale();
         let render_cursor = self.cursor_manager.get_render_cursor(cursor_scale);
@@ -3631,6 +3863,9 @@ impl Niri {
         match render_cursor {
             RenderCursor::Hidden => (),
             RenderCursor::Surface { surface, hotspot } => {
+                // Store hotspot in zoom state for jitter-free positioning.
+                output.zoom_store_hotspot(hotspot.to_physical_precise_round(output_scale));
+
                 let pointer_pos =
                     (pointer_pos - hotspot.to_f64()).to_physical_precise_round(output_scale);
 
@@ -3651,6 +3886,10 @@ impl Niri {
             } => {
                 let (idx, frame) = cursor.frame(self.start_time.elapsed().as_millis() as u32);
                 let hotspot = XCursor::hotspot(frame).to_logical(scale);
+
+                // Store hotspot in zoom state for jitter-free positioning.
+                output.zoom_store_hotspot(hotspot.to_physical_precise_round(output_scale));
+
                 let pointer_pos =
                     (pointer_pos - hotspot.to_f64()).to_physical_precise_round(output_scale);
 
@@ -4025,6 +4264,35 @@ impl Niri {
         }
     }
 
+    pub fn zoomed_element<R: NiriRenderer>(
+        &self,
+        element: OutputRenderElements<R>,
+        output: &Output,
+    ) -> OutputRenderElements<R> {
+        // Apply zoom to the render elements when needed.
+        if !output.has_zoom_state() {
+            return element;
+        }
+
+        let output_scale = Scale::from(output.current_scale().fractional_scale());
+        let cursor_logical_pos = output.zoom_cursor_logical_pos();
+
+        let (zoom_level, zoom_focal) = (output.zoom_level(), output.zoom_focal());
+        let zoom_cursor_hotspot = output.zoom_cursor_hotspot();
+
+        let scale_with_zoom = self.config.borrow().cursor.scale_with_zoom;
+
+        apply_zoom_to_render_element(
+            element,
+            zoom_level,
+            output_scale,
+            scale_with_zoom,
+            cursor_logical_pos,
+            zoom_focal,
+            zoom_cursor_hotspot,
+        )
+    }
+
     pub fn render<R: NiriRenderer>(
         &self,
         renderer: &mut R,
@@ -4033,9 +4301,12 @@ impl Niri {
         target: RenderTarget,
     ) -> Vec<OutputRenderElements<R>> {
         let mut elements = Vec::new();
+
         self.render_inner(renderer, output, include_pointer, target, &mut |elem| {
-            elements.push(elem)
+            let zoomed = self.zoomed_element(elem, output);
+            elements.push(zoomed);
         });
+
         elements
     }
 
@@ -5126,7 +5397,10 @@ impl Niri {
                 RenderTarget::ScreenCapture,
             ];
             let screenshot = targets.map(|target| {
-                let elements = self.render::<GlesRenderer>(renderer, &output, false, target);
+                let mut elements = Vec::new();
+                self.render_inner::<GlesRenderer>(renderer, &output, false, target, &mut |elem| {
+                    elements.push(elem)
+                });
                 let elements = elements.iter().rev();
 
                 let res = render_to_texture(
@@ -6133,6 +6407,140 @@ fn scale_relocate_crop<E: Element>(
     CropRenderElement::from_element(elem, output_scale, ws_geo)
 }
 
+fn apply_zoom_to_render_element<R: NiriRenderer>(
+    element: OutputRenderElements<R>,
+    zoom_factor: f64,
+    output_scale: Scale<f64>,
+    scale_with_zoom: bool,
+    cursor_logical_pos: Option<Point<f64, Logical>>,
+    zoom_focal_point: Point<f64, Logical>,
+    zoom_cursor_hotspot: Option<Point<i32, Physical>>,
+) -> OutputRenderElements<R> {
+    let focal_point_physical: Point<i32, Physical> =
+        zoom_focal_point.to_physical_precise_round(output_scale);
+    let focal_point_physical_f64: Point<f64, Physical> = zoom_focal_point.to_physical(output_scale);
+
+    let cursor_physical_f64: Option<Point<f64, Physical>> =
+        cursor_logical_pos.map(|p| p.to_physical(output_scale));
+
+    // Generate match arms for each OutputRenderElement variant.
+    macro_rules! apply_zoom {
+        ($($variant:ident),*) => {
+            match element {
+                OutputRenderElements::Pointer(pointer_elem) => {
+                    let pointer_geo = pointer_elem.geometry(output_scale);
+                    let pointer_pos = pointer_geo.loc;
+
+                    // Use the continuous f64 cursor position for the ideal
+                    // on-screen hotspot position.
+                    let cursor_pos_f64: Point<f64, Physical> =
+                        cursor_physical_f64.unwrap_or_else(|| {
+                            Point::from((pointer_pos.x as f64, pointer_pos.y as f64))
+                        });
+
+                    // Ideal cursor hotspot screen position with f64 precision.
+                    let target: Point<f64, Physical> = Point::from((
+                        cursor_pos_f64.x * zoom_factor
+                            - focal_point_physical_f64.x * (zoom_factor - 1.0),
+                        cursor_pos_f64.y * zoom_factor
+                            - focal_point_physical_f64.y * (zoom_factor - 1.0),
+                    ));
+
+                    let target_rounded: Point<i32, Physical> = Point::from((
+                        target.x.round() as i32,
+                        target.y.round() as i32,
+                    ));
+
+                    // Get the hotspot from zoom state (set during render_pointer).
+                    // This avoids computing hotspot_in_elem = cursor_f64 - pointer_pos(i32)
+                    // which oscillates and causes jitter.
+                    let hotspot: Point<i32, Physical> =
+                        zoom_cursor_hotspot
+                        .unwrap_or_else(|| {
+                            // Fallback: compute from element geometry (may jitter).
+                            Point::from((
+                                (cursor_pos_f64.x - pointer_pos.x as f64).round() as i32,
+                                (cursor_pos_f64.y - pointer_pos.y as f64).round() as i32,
+                            ))
+                        });
+
+                    // Compute final element position: place hotspot at target.
+                    // hotspot_scaled accounts for cursor scaling with zoom.
+                    let (cursor_zoom, final_pos) = if scale_with_zoom {
+                        let hotspot_scaled: Point<i32, Physical> = Point::from((
+                            (hotspot.x as f64 * zoom_factor).round() as i32,
+                            (hotspot.y as f64 * zoom_factor).round() as i32,
+                        ));
+                        let pos: Point<i32, Physical> = Point::from((
+                            target_rounded.x - hotspot_scaled.x,
+                            target_rounded.y - hotspot_scaled.y,
+                        ));
+                        (zoom_factor, pos)
+                    } else {
+                        let pos: Point<i32, Physical> = Point::from((
+                            target_rounded.x - hotspot.x,
+                            target_rounded.y - hotspot.y,
+                        ));
+                        (1.0, pos)
+                    };
+
+                    // Use origin=(0,0) to avoid focal point rounding jitter.
+                    // Relocate::Absolute places element at exact computed position.
+                    let e =
+                        RelocateRenderElement::from_element(
+                            RescaleRenderElement::from_element(
+                                pointer_elem,
+                                Point::from((0, 0)),
+                                cursor_zoom
+                            ),
+                            final_pos,
+                            Relocate::Absolute
+                        );
+                    OutputRenderElements::Zoomed(ZoomedRenderElements::Pointer(e)).into()
+                }
+                $(
+                    OutputRenderElements::$variant(elem) => {
+                        // Compute subpixel correction to compensate for integer rounding of focal point.
+                        // RescaleRenderElement uses integer focal, causing viewport jitter at high zoom
+                        // when the f64 focal oscillates around .5 boundaries. This offset corrects for
+                        // the rounding error: correction = (focal_i32 - focal_f64) * (zoom - 1)
+                        let subpixel_correction: Point<i32, Physical> = Point::from((
+                            ((focal_point_physical.x as f64 - focal_point_physical_f64.x) * (zoom_factor - 1.0))
+                                .round() as i32,
+                            ((focal_point_physical.y as f64 - focal_point_physical_f64.y) * (zoom_factor - 1.0))
+                                .round() as i32,
+                        ));
+
+                        let e = RelocateRenderElement::from_element(
+                                RescaleRenderElement::from_element(
+                                    elem,
+                                    focal_point_physical,
+                                    zoom_factor
+                                ),
+                                subpixel_correction,
+                                Relocate::Relative
+                            );
+                        OutputRenderElements::Zoomed(ZoomedRenderElements::$variant(e)).into()
+                    }
+                )*
+                _ => element,
+            }
+        }
+    }
+
+    apply_zoom!(
+        Monitor,
+        RescaledTile,
+        LayerSurface,
+        Wayland,
+        SolidColor,
+        // ScreenshotUi,
+        Texture,
+        RelocatedColor,
+        RelocatedLayerSurface
+    )
+}
+
 niri_render_elements! {
     PointerRenderElements<R> => {
         Wayland = WaylandSurfaceRenderElement<R>,
@@ -6147,17 +6555,30 @@ niri_render_elements! {
     }
 }
 
+// Separate enum for all zoomed elements - this avoids type conflicts with
+// OutputRenderElements since zoomed types are wrapped in a different enum
+niri_render_elements! {
+    ZoomedRenderElements<R> => {
+        Monitor = ZoomWrapper<MonitorRenderElement<R>>,
+        RescaledTile = ZoomWrapper<RescaleRenderElement<TileRenderElement<R>>>,
+        LayerSurface = ZoomWrapper<LayerSurfaceRenderElement<R>>,
+        RelocatedLayerSurface = ZoomWrapper<CropRenderElement<ZoomWrapper<LayerSurfaceRenderElement<R>>>>,
+        RelocatedColor = ZoomWrapper<CropRenderElement<ZoomWrapper<SolidColorRenderElement>>>,
+        Pointer = ZoomWrapper<PointerRenderElements<R>>,
+        Wayland = ZoomWrapper<WaylandSurfaceRenderElement<R>>,
+        SolidColor = ZoomWrapper<SolidColorRenderElement>,
+        // ScreenshotUi = ZoomWrapper<ScreenshotUiRenderElement>,
+        Texture = ZoomWrapper<PrimaryGpuTextureRenderElement>,
+    }
+}
+
 niri_render_elements! {
     OutputRenderElements<R> => {
         Monitor = MonitorRenderElement<R>,
         RescaledTile = RescaleRenderElement<TileRenderElement<R>>,
         LayerSurface = LayerSurfaceRenderElement<R>,
-        RelocatedLayerSurface = CropRenderElement<RelocateRenderElement<RescaleRenderElement<
-            LayerSurfaceRenderElement<R>
-        >>>,
-        RelocatedColor = CropRenderElement<RelocateRenderElement<RescaleRenderElement<
-            SolidColorRenderElement
-        >>>,
+        RelocatedLayerSurface = CropRenderElement<ZoomWrapper<LayerSurfaceRenderElement<R>>>,
+        RelocatedColor = CropRenderElement<ZoomWrapper<SolidColorRenderElement>>,
         Pointer = PointerRenderElements<R>,
         Wayland = WaylandSurfaceRenderElement<R>,
         SolidColor = SolidColorRenderElement,
@@ -6167,5 +6588,7 @@ niri_render_elements! {
         Texture = PrimaryGpuTextureRenderElement,
         // Used for the CPU-rendered panels.
         RelocatedMemoryBuffer = RelocateRenderElement<MemoryRenderBufferRenderElement<R>>,
+        // All zoomed elements wrapped in a single variant
+        Zoomed = ZoomedRenderElements<R>,
     }
 }

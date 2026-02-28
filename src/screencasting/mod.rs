@@ -580,7 +580,10 @@ impl Niri {
                     output,
                     false,
                     RenderTarget::Screencast,
-                    &mut |elem| elements.push(elem.into()),
+                    &mut |elem| {
+                        let zoomed = self.zoomed_element(elem, output);
+                        elements.push(zoomed.into())
+                    },
                 );
 
                 let mut pointer_pos = Point::default();
