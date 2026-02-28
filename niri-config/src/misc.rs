@@ -118,11 +118,13 @@ impl MergeWith<ClipboardPart> for Clipboard {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Overview {
     pub zoom: f64,
     pub backdrop_color: Color,
     pub workspace_shadow: WorkspaceShadow,
+    /// Optional zoom presets for cycling. If None/empty, zoom cycling is disabled.
+    pub zoom_presets: Option<Vec<f64>>,
 }
 
 impl Default for Overview {
@@ -131,11 +133,17 @@ impl Default for Overview {
             zoom: 0.5,
             backdrop_color: DEFAULT_BACKDROP_COLOR,
             workspace_shadow: WorkspaceShadow::default(),
+            zoom_presets: None,
         }
     }
 }
 
-#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+/// Wrapper for parsing zoom presets from KDL arguments.
+/// Usage: `zoom-presets 0.5 0.25 0.1`
+#[derive(knuffel::Decode, Debug, Clone, PartialEq)]
+pub struct ZoomPresets(#[knuffel(arguments)] pub Vec<f64>);
+
+#[derive(knuffel::Decode, Debug, Clone, PartialEq)]
 pub struct OverviewPart {
     #[knuffel(child, unwrap(argument))]
     pub zoom: Option<FloatOrInt<0, 1>>,
@@ -143,12 +151,17 @@ pub struct OverviewPart {
     pub backdrop_color: Option<Color>,
     #[knuffel(child)]
     pub workspace_shadow: Option<WorkspaceShadowPart>,
+    #[knuffel(child)]
+    pub zoom_presets: Option<ZoomPresets>,
 }
 
 impl MergeWith<OverviewPart> for Overview {
     fn merge_with(&mut self, part: &OverviewPart) {
         merge!((self, part), zoom, workspace_shadow);
         merge_clone!((self, part), backdrop_color);
+        if let Some(presets) = &part.zoom_presets {
+            self.zoom_presets = Some(presets.0.clone());
+        }
     }
 }
 

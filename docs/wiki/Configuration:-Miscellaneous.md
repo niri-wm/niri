@@ -240,6 +240,17 @@ overview {
 }
 ```
 
+#### `zoom-presets`
+
+Define a list of zoom levels to cycle through using the `overview-zoom-cycle` action.
+If not set or empty, the cycle action does nothing.
+
+```kdl
+overview {
+    zoom-presets 0.5 0.25 0.1
+}
+```
+
 ### `xwayland-satellite`
 
 <sup>Since: 25.08</sup>

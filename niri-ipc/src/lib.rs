@@ -914,6 +914,22 @@ pub enum Action {
     OpenOverview {},
     /// Close the Overview.
     CloseOverview {},
+    /// Cycle to the next zoom preset in overview.
+    ///
+    /// No-op if not in overview or no presets configured.
+    OverviewZoomCycle {
+        /// Cycle in reverse direction (previous preset instead of next).
+        #[cfg_attr(feature = "clap", arg(short, long))]
+        reverse: bool,
+    },
+    /// Zoom in to the next higher zoom preset in overview.
+    ///
+    /// No-op if not in overview, no presets configured, or already at highest zoom.
+    OverviewZoomIn {},
+    /// Zoom out to the next lower zoom preset in overview.
+    ///
+    /// No-op if not in overview, no presets configured, or already at lowest zoom.
+    OverviewZoomOut {},
     /// Toggle urgent status of a window.
     ToggleWindowUrgent {
         /// Id of the window to toggle urgent.

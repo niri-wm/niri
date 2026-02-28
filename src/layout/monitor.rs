@@ -79,6 +79,12 @@ pub struct Monitor<W: LayoutElement> {
     pub(super) overview_open: bool,
     /// Progress of the overview zoom animation, 1 is fully in overview.
     overview_progress: Option<OverviewProgress>,
+    /// Target overview zoom level (runtime, may differ from config default).
+    overview_zoom_target: f64,
+    /// Animation for smooth zoom transitions.
+    overview_zoom_anim: Option<Animation>,
+    /// Current index in zoom presets for cycling.
+    overview_zoom_preset_idx: usize,
     /// Clock for driving animations.
     pub(super) clock: Clock,
     /// Configurable properties of the layout as received from the parent layout.
@@ -340,6 +346,9 @@ impl<W: LayoutElement> Monitor<W> {
             insert_hint_render_loc: None,
             overview_open: false,
             overview_progress: None,
+            overview_zoom_target: options.overview.zoom,
+            overview_zoom_anim: None,
+            overview_zoom_preset_idx: 0,
             workspace_switch: None,
             clock,
             base_options,
@@ -1068,6 +1077,13 @@ impl<W: LayoutElement> Monitor<W> {
             None => (),
         }
 
+        // Check if zoom animation is done.
+        if let Some(anim) = &self.overview_zoom_anim {
+            if anim.is_done() {
+                self.overview_zoom_anim = None;
+            }
+        }
+
         for ws in &mut self.workspaces {
             ws.advance_animations();
         }
@@ -1077,6 +1093,7 @@ impl<W: LayoutElement> Monitor<W> {
         self.workspace_switch
             .as_ref()
             .is_some_and(|s| s.is_animation_ongoing())
+            || self.overview_zoom_anim.is_some()
             || self.workspaces.iter().any(|ws| ws.are_animations_ongoing())
     }
 
@@ -1369,9 +1386,115 @@ impl<W: LayoutElement> Monitor<W> {
         self.workspace_size(zoom) + Size::from((0., gap))
     }
 
+    /// Get the current animated overview zoom value for rendering.
+    fn overview_zoom_value(&self) -> f64 {
+        self.overview_zoom_anim
+            .as_ref()
+            .map_or(self.overview_zoom_target, |anim| anim.value())
+    }
+
     pub fn overview_zoom(&self) -> f64 {
         let progress = self.overview_progress.as_ref().map(|p| p.value());
-        compute_overview_zoom(&self.options, progress)
+        compute_overview_zoom(self.overview_zoom_value(), progress)
+    }
+
+    /// Get the current target overview zoom level (before animation interpolation).
+    pub fn overview_zoom_target(&self) -> f64 {
+        self.overview_zoom_target
+    }
+
+    /// Reset zoom to config default - call when overview closes.
+    /// This is instant (no animation) since the overview is closing.
+    pub fn reset_overview_zoom(&mut self, default_zoom: f64) {
+        self.overview_zoom_target = default_zoom;
+        self.overview_zoom_anim = None;
+        self.overview_zoom_preset_idx = 0;
+    }
+
+    /// Cycle to next/previous zoom preset with animation.
+    pub fn cycle_overview_zoom(
+        &mut self,
+        presets: &[f64],
+        reverse: bool,
+        config: niri_config::Animation,
+    ) {
+        if presets.is_empty() {
+            return;
+        }
+        let len = presets.len();
+        if reverse {
+            self.overview_zoom_preset_idx =
+                (self.overview_zoom_preset_idx + len - 1) % len;
+        } else {
+            self.overview_zoom_preset_idx = (self.overview_zoom_preset_idx + 1) % len;
+        }
+        let new_target = presets[self.overview_zoom_preset_idx];
+        self.animate_zoom_to(new_target, config);
+    }
+
+    /// Zoom in to the next higher zoom preset (less zoomed out).
+    pub fn overview_zoom_in(&mut self, presets: &[f64], config: niri_config::Animation) {
+        if presets.is_empty() {
+            return;
+        }
+
+        let current = self.overview_zoom_target;
+        // Find the smallest preset greater than current (zoom in = higher value)
+        let next = presets
+            .iter()
+            .copied()
+            .filter(|&p| p > current + 0.0001)
+            .min_by(|a, b| a.partial_cmp(b).unwrap());
+
+        if let Some(new_target) = next {
+            // Update preset index to match
+            if let Some(idx) = presets.iter().position(|&p| (p - new_target).abs() < 0.0001) {
+                self.overview_zoom_preset_idx = idx;
+            }
+            self.animate_zoom_to(new_target, config);
+        }
+    }
+
+    /// Zoom out to the next lower zoom preset (more zoomed out).
+    pub fn overview_zoom_out(&mut self, presets: &[f64], config: niri_config::Animation) {
+        if presets.is_empty() {
+            return;
+        }
+
+        let current = self.overview_zoom_target;
+        // Find the largest preset smaller than current (zoom out = lower value)
+        let next = presets
+            .iter()
+            .copied()
+            .filter(|&p| p < current - 0.0001)
+            .max_by(|a, b| a.partial_cmp(b).unwrap());
+
+        if let Some(new_target) = next {
+            // Update preset index to match
+            if let Some(idx) = presets.iter().position(|&p| (p - new_target).abs() < 0.0001) {
+                self.overview_zoom_preset_idx = idx;
+            }
+            self.animate_zoom_to(new_target, config);
+        }
+    }
+
+    /// Start or retarget a zoom animation.
+    fn animate_zoom_to(&mut self, new_target: f64, config: niri_config::Animation) {
+        let current = self.overview_zoom_value();
+        self.overview_zoom_target = new_target;
+
+        if config.off || (current - new_target).abs() < 0.0001 {
+            // No animation needed.
+            self.overview_zoom_anim = None;
+        } else {
+            self.overview_zoom_anim = Some(Animation::new(
+                self.clock.clone(),
+                current,
+                new_target,
+                0.,
+                config,
+            ));
+        }
     }
 
     pub(super) fn set_overview_progress(&mut self, progress: Option<&super::OverviewProgress>) {
@@ -1450,7 +1573,7 @@ impl<W: LayoutElement> Monitor<W> {
                 // - first_y = to * from_height - switch_anim.value() * from_height - to * current_height
                 // - first_y = -switch_anim.value() * from_height + to * (from_height - current_height)
                 let from = progress_anim.from();
-                let from_zoom = compute_overview_zoom(&self.options, Some(from));
+                let from_zoom = compute_overview_zoom(self.overview_zoom_value(), Some(from));
                 let from_ws_height_with_gap = self.workspace_size_with_gap(from_zoom).h;
 
                 let zoom = self.overview_zoom();
