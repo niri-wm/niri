@@ -498,7 +498,16 @@ impl CompositorHandler for State {
             .root_surface
             .retain(|k, v| k != surface && v != surface);
 
-        self.niri.dmabuf_pre_commit_hook.remove(surface);
+        // The object destruction order is not guaranteed to follow the logical role order. So for
+        // example when a client disconnects unexpectedly, WlSurface::destroyed() may be called
+        // before XdgShellHandler::toplevel_destroyed(). In this case, the surface will *not* have
+        // the default dmabuf pre-commit hook: it will still have the toplevel pre-commit hook.
+        //
+        // So, this may come out empty, and then the toplevel pre-commit hook will be removed in the
+        // subsequent toplevel_destroyed() call.
+        if let Some(hook) = self.niri.dmabuf_pre_commit_hook.remove(surface) {
+            remove_pre_commit_hook(surface, hook);
+        }
     }
 }
 
@@ -517,6 +526,11 @@ delegate_shm!(State);
 
 impl State {
     pub fn add_default_dmabuf_pre_commit_hook(&mut self, surface: &WlSurface) {
+        if !surface.is_alive() {
+            error!("tried to add dmabuf pre-commit hook for a dead surface");
+            return;
+        }
+
         let hook = add_pre_commit_hook::<Self, _>(surface, move |state, _dh, surface| {
             let maybe_dmabuf = with_states(surface, |surface_data| {
                 surface_data

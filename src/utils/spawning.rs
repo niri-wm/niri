@@ -213,6 +213,8 @@ mod systemd {
     pub fn do_spawn(command: &OsStr, mut process: Command) -> Option<Child> {
         #[cfg(target_env = "gnu")]
         use libc::close_range;
+        #[cfg(target_os = "openbsd")]
+        use libc::closefrom;
 
         #[cfg(not(target_env = "gnu"))] // musl
         pub fn close_range(first: libc::c_uint, last: libc::c_uint, flags: libc::c_uint) -> i64 {
@@ -295,9 +297,20 @@ mod systemd {
                         if let Some(pipe) = pipe_wait_read {
                             // We're going to exit afterwards. Close all other FDs to allow
                             // Command::spawn() to return in the parent process.
-                            let raw = pipe.as_raw_fd() as u32;
-                            let _ = close_range(0, raw - 1, 0);
-                            let _ = close_range(raw + 1, !0, 0);
+                            #[cfg(not(target_os = "openbsd"))]
+                            {
+                                let raw = pipe.as_raw_fd() as u32;
+                                let _ = close_range(0, raw - 1, 0);
+                                let _ = close_range(raw + 1, !0, 0);
+                            }
+                            #[cfg(target_os = "openbsd")]
+                            {
+                                let raw = pipe.as_raw_fd();
+                                for fd in 0..raw {
+                                    close(fd);
+                                }
+                                closefrom(raw + 1);
+                            }
 
                             let _ = read_all(pipe, &mut [0]);
                         }

@@ -45,7 +45,7 @@ hotkey-overlay {
 To run X11 apps, you can use [xwayland-satellite](https://github.com/Supreeeme/xwayland-satellite).
 Check [the Xwayland wiki page](./Xwayland.md) for instructions.
 
-Keep in mind that you can run many Electron apps such as VSCode natively on Wayland by passing the right flags, e.g. `code --ozone-platform-hint=auto`
+Keep in mind that you can run many Electron apps such as VSCode or Discord natively on Wayland by passing the right flags, as described [here](./Application-Issues.md#electron-applications).
 
 ### Why doesn't niri integrate Xwayland like other compositors?
 
@@ -66,14 +66,14 @@ I wouldn't be too surprised if, down the road, xwayland-satellite becomes the st
 
 ### Can I enable blur behind semitransparent windows?
 
-Not yet, follow/upvote [this issue](https://github.com/YaLTeR/niri/issues/54).
+Not yet, follow/upvote [this issue](https://github.com/niri-wm/niri/issues/54).
 
-There's also [a PR](https://github.com/YaLTeR/niri/pull/1634) adding blur to niri which you can build and run manually.
+There's also [a PR](https://github.com/niri-wm/niri/pull/1634) adding blur to niri which you can build and run manually.
 Keep in mind that it's an experimental implementation that may have problems and performance concerns.
 
 ### Can I make a window sticky / pinned / always on top / appear on all workspaces?
 
-Not yet, follow/upvote [this issue](https://github.com/YaLTeR/niri/issues/932).
+Not yet, follow/upvote [this issue](https://github.com/niri-wm/niri/issues/932).
 
 You can emulate this with a script that uses the niri IPC.
 For example, [nirius](https://git.sr.ht/~tsdh/nirius) seems to have this feature (`toggle-follow-mode`).
@@ -82,7 +82,7 @@ For example, [nirius](https://git.sr.ht/~tsdh/nirius) seems to have this feature
 
 Firefox seems to first open the Bitwarden window with a generic Firefox title, and only later change the window title to Bitwarden, so you can't effectively target it with an `open-floating` window rule.
 
-You'll need to use a script, for example [this one](https://github.com/YaLTeR/niri/discussions/1599) or other ones (search niri issues and discussions for Bitwarden).
+You'll need to use a script, for example [this one](https://github.com/niri-wm/niri/discussions/1599) or other ones (search niri issues and discussions for Bitwarden).
 
 ### Can I open a window directly in the current column / in the same column as another window?
 
@@ -92,7 +92,7 @@ Listen to the event stream for a new window opening, then call an action like `c
 Adding this directly to niri is challenging:
 
 - The act of "opening a window directly in some column" by itself is quite involved. Niri will have to compute the exact initial window size provided how other windows in a column would resize in response. This logic exists, but it isn't directly pluggable to the code computing a size for a new window. Then, it'll need to handle all sorts of edge cases like the column disappearing, or new windows getting added to the column, before the target window had a chance to appear.
-- How do you indicate if a new window should spawn in an existing column (and in which one), as opposed to a new column? Different people seem to have different needs here (including very complex rules based on parent PID, etc.), and it's very unclear design-wise what kind of (simple) setting is actually needed and would be useful. See also https://github.com/YaLTeR/niri/discussions/1125.
+- How do you indicate if a new window should spawn in an existing column (and in which one), as opposed to a new column? Different people seem to have different needs here (including very complex rules based on parent PID, etc.), and it's very unclear design-wise what kind of (simple) setting is actually needed and would be useful. See also https://github.com/niri-wm/niri/discussions/1125.
 
 ### Why does moving the mouse against a monitor edge focus the next window, but only sometimes?
 

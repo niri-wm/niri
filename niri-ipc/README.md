@@ -1,6 +1,6 @@
 # niri-ipc
 
-Types and helpers for interfacing with the [niri](https://github.com/YaLTeR/niri) Wayland compositor.
+Types and helpers for interfacing with the [niri](https://github.com/niri-wm/niri) Wayland compositor.
 
 ## Backwards compatibility
 

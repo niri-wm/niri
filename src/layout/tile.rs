@@ -1042,7 +1042,7 @@ impl<W: LayoutElement> Tile<W> {
         let location = location + self.bob_offset();
 
         let window_loc = self.window_loc();
-        let window_size = self.window_size().to_f64();
+        let window_size = self.window_size();
         let animated_window_size = self.animated_window_size();
         let window_render_loc = location + window_loc;
         let area = Rectangle::new(window_render_loc, animated_window_size);
