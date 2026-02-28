@@ -1451,6 +1451,12 @@ mod tests {
                     b: 0.25,
                     a: 1.0,
                 },
+                fullscreen_backdrop_color: Color {
+                    r: 0.15,
+                    g: 0.15,
+                    b: 0.15,
+                    a: 1.0,
+                },
             },
             prefer_no_csd: true,
             cursor: Cursor {
