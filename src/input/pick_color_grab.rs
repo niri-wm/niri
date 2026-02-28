@@ -43,6 +43,16 @@ impl PickColorGrab {
         // handle.current_location() reports (due to clamping in OnEdge mode or other adjustments).
         // Use cursor_logical_pos from zoom state if available, as that's where the cursor
         // is actually rendered.
+        let pos_within_output = if output.zoom_is_active() {
+            output
+                .zoom_cursor_logical_pos()
+                .unwrap_or(pos_within_output)
+        } else {
+            pos_within_output
+        };
+
+        // Use cursor_logical_pos from zoom state if available, as that's where the cursor
+        // is actually rendered.
         let pos_within_output = if let Some(zoom_state) = output.zoom_state() {
             if zoom_state.is_active() {
                 zoom_state.cursor_logical_pos.unwrap_or(pos_within_output)

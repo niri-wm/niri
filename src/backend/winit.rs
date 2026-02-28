@@ -184,11 +184,11 @@ impl Winit {
     pub fn render(&mut self, niri: &mut Niri, output: &Output) -> RenderResult {
         let _span = tracy_client::span!("Winit::render");
 
-        let zoom_factor = output.zoom_state().map(|z| z.level).unwrap_or(1.0);
+        let zoom_level = output.zoom_level();
 
         // Apply filter temporarily before rendering
         // based on this output's zoom level
-        let filter = match zoom_factor {
+        let filter = match zoom_level {
             z if z < 2.0 => TextureFilter::Linear,
             _ => TextureFilter::Nearest,
         };

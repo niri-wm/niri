@@ -464,17 +464,19 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
                     .layout
                     .outputs()
                     .fold(HashMap::new(), |mut acc, output| {
-                        if let Some(zoom) = output.zoom_state() {
+                        let level = output.zoom_level();
+                        if level != 1.0 {
                             acc.insert(
                                 output.name().clone(),
                                 niri_ipc::Zoom {
-                                    is_locked: zoom.locked,
-                                    level: zoom.level,
+                                    is_locked: output.zoom_locked(),
+                                    level,
                                 },
                             );
                         }
                         acc
                     });
+
                 let _ = tx.send_blocking(zooms);
             });
             let result = rx.recv().await;

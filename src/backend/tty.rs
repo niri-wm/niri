@@ -1846,7 +1846,7 @@ impl Tty {
             }
         };
 
-        let zoom_factor = output.zoom_state().map(|z| z.level).unwrap_or(1.0);
+        let zoom_factor = output.zoom_level();
 
         // Apply filter temporarily before rendering
         // Set filter based on this output's zoom level

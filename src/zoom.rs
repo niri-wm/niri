@@ -1,32 +1,12 @@
 use std::sync::{Mutex, MutexGuard};
 
 use niri_config::ZoomMovementMode;
+use smithay::backend::renderer::element::utils::{RelocateRenderElement, RescaleRenderElement};
 use smithay::output::Output;
 use smithay::utils::{Logical, Physical, Point, Rectangle, Size};
 
-use crate::rubber_band::RubberBand;
-
-/// Zoom rubber-banding constants (matching OVERVIEW_GESTURE_RUBBER_BAND pattern)
-pub const ZOOM_GESTURE_RUBBER_BAND: RubberBand = RubberBand {
-    stiffness: 0.5,
-    limit: 0.05,
-};
-
-/// Convert log-space position to zoom level.
-/// start_level * exp(log_pos) gives the new zoom level.
-pub fn log_pos_to_zoom_level(start_level: f64, log_pos: f64) -> f64 {
-    start_level * log_pos.exp()
-}
-
-/// Compute clamped zoom level with rubber-banding in log-space.
-/// min_level and max_level define the zoom bounds (typically 1.0 and some max like 10.0).
-pub fn clamp_zoom_level_with_rubber_band(level: f64, min_level: f64, max_level: f64) -> f64 {
-    let log_level = level.ln();
-    let log_min = min_level.ln();
-    let log_max = max_level.ln();
-    let clamped_log = ZOOM_GESTURE_RUBBER_BAND.clamp(log_min, log_max, log_level);
-    clamped_log.exp()
-}
+// Define a type alias for the common zoom wrapper: Relocate(Rescale(T))
+pub type ZoomWrapper<T> = RelocateRenderElement<RescaleRenderElement<T>>;
 
 /// Per-output zoom snapshot.
 ///
@@ -80,7 +60,7 @@ impl OutputZoomState {
         output_geometry: Rectangle<f64, Logical>,
     ) -> Rectangle<f64, Logical> {
         let focal_global = self.focal + output_geometry.loc;
-        zoomed_viewport(output_geometry, focal_global, self.level)
+        apply_zoom_viewport(output_geometry, focal_global, self.level)
     }
 
     pub fn clamp_to_viewport(
@@ -117,6 +97,95 @@ impl Default for OutputZoomState {
 
 pub trait OutputZoomExt {
     fn zoom_state(&self) -> Option<MutexGuard<'_, OutputZoomState>>;
+
+    /// Returns true if zoom state has been initialized on this output.
+    fn has_zoom_state(&self) -> bool {
+        self.zoom_state().is_some()
+    }
+
+    /// Returns true if zoom is active (level > 1.0), false if no zoom or not available.
+    fn zoom_is_active(&self) -> bool {
+        self.zoom_state().is_some_and(|z| z.is_active())
+    }
+
+    /// Get current zoom level, returns 1.0 if not available.
+    fn zoom_level(&self) -> f64 {
+        self.zoom_state().map(|z| z.level).unwrap_or(1.0)
+    }
+
+    /// Get current focal point, returns origin if not available.
+    fn zoom_focal(&self) -> Point<f64, Logical> {
+        self.zoom_state()
+            .map(|z| z.focal)
+            .unwrap_or_else(|| Point::from((0.0, 0.0)))
+    }
+
+    /// Get locked state, returns false if not available.
+    fn zoom_locked(&self) -> bool {
+        self.zoom_state().map(|z| z.locked).unwrap_or(false)
+    }
+
+    /// Get transitioning state, returns false if not available.
+    fn zoom_transitioning(&self) -> bool {
+        self.zoom_state().map(|z| z.transitioning).unwrap_or(false)
+    }
+
+    /// Get cursor logical position, returns None if not available.
+    fn zoom_cursor_logical_pos(&self) -> Option<Point<f64, Logical>> {
+        self.zoom_state().and_then(|z| z.cursor_logical_pos)
+    }
+
+    /// Get cursor hotspot, returns None if not available.
+    fn zoom_cursor_hotspot(&self) -> Option<Point<i32, Physical>> {
+        self.zoom_state().and_then(|z| z.cursor_hotspot)
+    }
+
+    /// Compute viewport for the given output geometry if zoom is active.
+    fn zoom_viewport_global(
+        &self,
+        output_geometry: Rectangle<f64, Logical>,
+    ) -> Option<Rectangle<f64, Logical>> {
+        let zoom_state = self.zoom_state()?;
+        if zoom_state.is_active() {
+            Some(zoom_state.viewport_global(output_geometry))
+        } else {
+            None
+        }
+    }
+
+    /// Compute zoomed viewport for arbitrary focal/zoom.
+    fn zoomed_geometry(
+        &self,
+        output_rect: Rectangle<f64, Logical>,
+        focal_point: Point<f64, Logical>,
+        zoom_factor: f64,
+    ) -> Rectangle<f64, Logical> {
+        apply_zoom_viewport(output_rect, focal_point, zoom_factor)
+    }
+
+    /// Clamp a position to the zoom viewport if zoom is active.
+    fn zoom_clamp_to_viewport(
+        &self,
+        pos: Point<f64, Logical>,
+        output_geometry: Rectangle<f64, Logical>,
+    ) -> Option<Point<f64, Logical>> {
+        let zoom_state = self.zoom_state()?;
+        if zoom_state.is_active() {
+            Some(zoom_state.clamp_to_viewport(pos, output_geometry))
+        } else {
+            None
+        }
+    }
+
+    /// Store cursor hotspot if zoom is active. Returns true if stored.
+    fn zoom_store_hotspot(&self, hotspot: Point<i32, Physical>) -> bool {
+        if let Some(mut zoom_state) = self.zoom_state() {
+            zoom_state.store_hotspot(hotspot);
+            true
+        } else {
+            false
+        }
+    }
 }
 
 impl OutputZoomExt for Output {
@@ -128,16 +197,15 @@ impl OutputZoomExt for Output {
     }
 }
 
-pub fn zoomed_viewport(
-    output_rect: Rectangle<f64, Logical>,
+fn apply_zoom_viewport(
+    mut output_rect: Rectangle<f64, Logical>,
     focal_point: Point<f64, Logical>,
     zoom_factor: f64,
 ) -> Rectangle<f64, Logical> {
-    let mut geo = output_rect;
-    geo.loc -= focal_point;
-    geo = geo.downscale(zoom_factor);
-    geo.loc += focal_point;
-    geo
+    output_rect.loc -= focal_point;
+    output_rect = output_rect.downscale(zoom_factor);
+    output_rect.loc += focal_point;
+    output_rect
 }
 
 pub fn compute_focal_for_cursor(

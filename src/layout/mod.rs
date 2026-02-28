@@ -73,10 +73,7 @@ use crate::utils::{
     round_logical_in_physical_max1, ResizeEdge,
 };
 use crate::window::ResolvedWindowRules;
-pub use crate::zoom::{
-    clamp_zoom_level_with_rubber_band, compute_focal_for_cursor, log_pos_to_zoom_level,
-    OutputZoomExt, OutputZoomState,
-};
+pub use crate::zoom::{compute_focal_for_cursor, OutputZoomExt, OutputZoomState};
 
 pub mod closing_window;
 pub mod floating;
@@ -106,6 +103,11 @@ const INTERACTIVE_MOVE_ALPHA: f64 = 0.75;
 const OVERVIEW_GESTURE_MOVEMENT: f64 = 300.;
 
 const OVERVIEW_GESTURE_RUBBER_BAND: RubberBand = RubberBand {
+    stiffness: 0.5,
+    limit: 0.05,
+};
+
+pub const ZOOM_GESTURE_RUBBER_BAND: RubberBand = RubberBand {
     stiffness: 0.5,
     limit: 0.05,
 };
@@ -5416,4 +5418,20 @@ fn compute_overview_zoom(options: &Options, overview_progress: Option<f64>) -> f
     } else {
         1.
     }
+}
+
+/// Compute clamped zoom level with rubber-banding in log-space.
+/// min_level and max_level define the zoom bounds (typically 1.0 and some max like 10.0).
+pub fn clamp_zoom_level_with_rubber_band(level: f64, min_level: f64, max_level: f64) -> f64 {
+    let log_level = level.ln();
+    let log_min = min_level.ln();
+    let log_max = max_level.ln();
+    let clamped_log = ZOOM_GESTURE_RUBBER_BAND.clamp(log_min, log_max, log_level);
+    clamped_log.exp()
+}
+
+/// Convert log-space position to zoom level.
+/// start_level * exp(log_pos) gives the new zoom level.
+pub fn log_pos_to_zoom_level(start_level: f64, log_pos: f64) -> f64 {
+    start_level * log_pos.exp()
 }
