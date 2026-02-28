@@ -16,7 +16,7 @@ use smithay::backend::input::TouchSlot;
 use smithay::backend::renderer::element::utils::{
     Relocate, RelocateRenderElement, RescaleRenderElement,
 };
-use smithay::backend::renderer::element::Kind;
+use smithay::backend::renderer::element::{Element, Kind};
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
 use smithay::backend::renderer::{ExportMem, Texture as _};
 use smithay::input::keyboard::{Keysym, ModifiersState};
@@ -110,7 +110,8 @@ niri_render_elements! {
     ScreenshotUiRenderElement => {
         Screenshot = PrimaryGpuTextureRenderElement,
         SolidColor = SolidColorRenderElement,
-        ZoomedScreenshot = ZoomWrapper<PrimaryGpuTextureRenderElement>
+        ZoomedScreenshot = ZoomWrapper<PrimaryGpuTextureRenderElement>,
+        ZoomedSolidColor = ZoomWrapper<SolidColorRenderElement>
     }
 }
 
@@ -580,7 +581,10 @@ impl ScreenshotUi {
                     *b = rect.loc + rect.size - Size::from((1, 1));
                 }
 
-                let border = to_physical_precise_round(scale, SELECTION_BORDER);
+                let mut border = to_physical_precise_round(scale, SELECTION_BORDER);
+                if output.zoom_is_active() {
+                    border = ((border as f64) / output.zoom_level()).round().max(1.0) as i32;
+                }
 
                 let resize = move |buffer: &mut SolidColorBuffer, w: i32, h: i32| {
                     let size = Size::<_, Physical>::from((w, h));
@@ -624,11 +628,10 @@ impl ScreenshotUi {
     }
 
     // Helper to apply zoom to a texture element, matching Niri::zoomed_element logic.
-    fn apply_zoom(
-        &self,
-        elem: PrimaryGpuTextureRenderElement,
-        output: &Output,
-    ) -> ScreenshotUiRenderElement {
+    fn apply_zoom<E: Element>(&self, elem: E, output: &Output) -> ScreenshotUiRenderElement
+    where
+        ScreenshotUiRenderElement: From<RelocateRenderElement<RescaleRenderElement<E>>> + From<E>,
+    {
         if !output.has_zoom_state() {
             return elem.into();
         }
@@ -642,12 +645,24 @@ impl ScreenshotUi {
             ((focal_physical.y as f64 - focal_physical_f64.y) * (zoom_level - 1.0)).round() as i32,
         ));
 
-        RelocateRenderElement::from_element(
-            RescaleRenderElement::from_element(elem, focal_physical, zoom_level),
-            subpixel_correction,
-            Relocate::Relative,
-        )
-        .into()
+        // Determine if elem is SolidColorRenderElement or PrimaryGpuTextureRenderElement
+        match elem.into() {
+            ScreenshotUiRenderElement::Screenshot(elem) => RelocateRenderElement::from_element(
+                RescaleRenderElement::from_element(elem, focal_physical, zoom_level),
+                subpixel_correction,
+                Relocate::Relative,
+            )
+            .into(),
+            ScreenshotUiRenderElement::SolidColor(elem) => RelocateRenderElement::from_element(
+                // Never scale the selection border, to keep it visible and not blurry. This is a
+                // bit of a hack, but it works well enough in practice.
+                RescaleRenderElement::from_element(elem, focal_physical, zoom_level),
+                subpixel_correction,
+                Relocate::Relative,
+            )
+            .into(),
+            other => other,
+        }
     }
 
     pub fn render_output(
@@ -706,7 +721,7 @@ impl ScreenshotUi {
                 progress,
                 Kind::Unspecified,
             );
-            push(elem.into());
+            push(self.apply_zoom(elem, output));
         }
 
         // The screenshot itself goes last.
@@ -719,7 +734,7 @@ impl ScreenshotUi {
 
         if *show_pointer {
             if let Some(pointer) = screenshot.pointer.clone() {
-                push(pointer.into());
+                push(self.apply_zoom(pointer, output));
             }
         }
         push(self.apply_zoom(screenshot.buffer.clone(), output));
