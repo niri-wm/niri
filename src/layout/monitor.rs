@@ -1403,6 +1403,18 @@ impl<W: LayoutElement> Monitor<W> {
         self.overview_zoom_target
     }
 
+    /// Set zoom target without animation (for use before opening overview,
+    /// where the open animation handles the visual transition).
+    pub fn set_zoom_target_no_anim(&mut self, target: f64) {
+        self.overview_zoom_target = target;
+        self.overview_zoom_anim = None;
+    }
+
+    /// Set the preset cycling index.
+    pub fn set_zoom_preset_idx(&mut self, idx: usize) {
+        self.overview_zoom_preset_idx = idx;
+    }
+
     /// Reset zoom to config default - call when overview closes.
     /// This is instant (no animation) since the overview is closing.
     pub fn reset_overview_zoom(&mut self, default_zoom: f64) {

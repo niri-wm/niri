@@ -420,7 +420,8 @@ binds {
 #### `overview-zoom-cycle`
 
 Cycle through the zoom levels defined in [`zoom-presets`](./Configuration:-Miscellaneous.md#zoom-presets) while in the [Overview](./Overview.md).
-Does nothing if no presets are configured or if the overview is closed.
+If the overview is closed, it will automatically open at the first preset.
+Does nothing if no presets are configured.
 
 Zoom changes are animated and reset to the config default when the overview closes.
 
@@ -439,10 +440,10 @@ binds {
 Zoom in or out to the next preset in [`zoom-presets`](./Configuration:-Miscellaneous.md#zoom-presets) while in the [Overview](./Overview.md).
 Unlike `overview-zoom-cycle`, these actions move directionally based on zoom value rather than cycling through the preset list.
 
-- `overview-zoom-in`: moves to the next higher zoom value (workspaces appear larger)
-- `overview-zoom-out`: moves to the next lower zoom value (workspaces appear smaller)
+- `overview-zoom-in`: moves to the next higher zoom value (workspaces appear larger); if already at the highest preset, automatically closes the overview
+- `overview-zoom-out`: moves to the next lower zoom value (workspaces appear smaller); if the overview is closed, automatically opens it at the highest preset
 
-Does nothing if already at the highest/lowest preset, no presets are configured, or the overview is closed.
+Does nothing if no presets are configured. `overview-zoom-in` does nothing if the overview is already closed.
 
 ```kdl
 binds {
