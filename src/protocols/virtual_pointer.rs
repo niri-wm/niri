@@ -263,6 +263,7 @@ impl InputBackend for VirtualPointerInputBackend {
     type TabletToolProximityEvent = UnusedEvent;
     type TabletToolTipEvent = UnusedEvent;
     type TabletToolButtonEvent = UnusedEvent;
+    type TabletPadButtonEvent = UnusedEvent;
 
     type SwitchToggleEvent = UnusedEvent;
 
