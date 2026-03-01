@@ -20,6 +20,10 @@ animations {
         spring damping-ratio=1.0 stiffness=1000 epsilon=0.0001
     }
 
+    screen-transition {
+        spring damping-ratio=1.0 stiffness=1000 epsilon=0.0001
+    }
+
     window-open {
         duration-ms 150
         curve "ease-out-expo"
@@ -436,6 +440,57 @@ The close fade-out animation of the recent windows switcher.
 animations {
     recent-windows-close {
         spring damping-ratio=1.0 stiffness=800 epsilon=0.001
+    }
+}
+```
+
+#### `screen-transition`
+
+<sup>Since: next release</sup>
+
+The cross-fade animation of the `do-screen-transition` action.
+
+> [!NOTE]
+> Only the animated transition between the two screens is affected by this animation. Not the freeze-frame delay before the transition starts.
+> For more on how to configure that, see [this section](./Configuration:-Key-Bindings.md#do-screen-transition).
+> The delay is also not affected by the `slowdown` parameter.
+
+```kdl
+animations {
+    screen-transition {
+        spring damping-ratio=1.0 stiffness=1000 epsilon=0.0001
+    }
+}
+```
+
+##### `custom-shader`
+
+<sup>Since: next release</sup>
+
+You can write a custom shader for drawing the screen during a screen transition animation.
+
+See [this example shader](./examples/screen_transition_custom_shader.frag) for a full documentation with several animations to experiment with.
+
+If a custom shader fails to compile, niri will print a warning and fall back to the default, or previous successfully compiled shader.
+When running niri as a systemd service, you can see the warnings in the journal: `journalctl -ef /usr/bin/niri`
+
+> [!WARNING]
+>
+> Custom shaders do not have a backwards compatibility guarantee.
+> I may need to change their interface as I'm developing new features.
+
+<!-- Example: resize will show the next (after resize) window texture right away, stretched to the current geometry. -->
+
+```kdl
+animations {
+    screen-transition {
+        custom-shader r"
+            vec4 screen_transition_color(vec3 coords_curr_geo, vec3 size_curr_geo) {
+                vec3 coords_tex_next = niri_geo_to_tex_next * coords_curr_geo;
+                vec4 color = texture2D(niri_tex_next, coords_tex_next.st);
+                return color * niri_clamped_progress;
+            }
+        "
     }
 }
 ```
