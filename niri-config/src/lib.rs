@@ -638,6 +638,36 @@ mod tests {
     }
 
     #[test]
+    fn inhibit() {
+        let parsed = do_parse(
+            r##"
+            window-rule {
+                inhibit-idle "fullscreen"                
+            }
+            window-rule {
+                inhibit-idle "always"
+            }
+            window-rule {
+                inhibit-idle null
+            }
+            window-rule {
+            }
+            "##,
+        );
+
+        assert!(matches!(
+            parsed.window_rules[0].inhibit_idle,
+            Some(Some(InhibitIdle::Fullscreen))
+        ));
+        assert!(matches!(
+            parsed.window_rules[1].inhibit_idle,
+            Some(Some(InhibitIdle::Always))
+        ));
+        assert!(matches!(parsed.window_rules[2].inhibit_idle, Some(None)));
+        assert!(matches!(parsed.window_rules[3].inhibit_idle, None));
+    }
+
+    #[test]
     fn parse() {
         let parsed = do_parse(
             r##"
@@ -1845,6 +1875,7 @@ mod tests {
                     ),
                     scroll_factor: None,
                     tiled_state: None,
+                    inhibit_idle: None,
                 },
             ],
             layer_rules: [
