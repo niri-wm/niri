@@ -2336,8 +2336,9 @@ impl State {
                     .all(|m| m.overview_zoom_target() >= max_preset - 0.0001);
 
                 if all_at_max {
-                    // Auto-close overview.
-                    self.niri.layout.close_overview();
+                    // Auto-close overview, preserving zoom so the close
+                    // animation transitions smoothly from the current level.
+                    self.niri.layout.close_overview_preserving_zoom();
                 } else {
                     for monitor in self.niri.layout.monitors_mut() {
                         monitor.overview_zoom_in(&presets, anim_config);

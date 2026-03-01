@@ -4587,6 +4587,38 @@ impl<W: LayoutElement> Layout<W> {
         true
     }
 
+    /// Close the overview without resetting zoom level.
+    ///
+    /// Used when auto-closing from zoom-in so the close animation smoothly
+    /// transitions from the current zoom level instead of snapping to the
+    /// config default first.
+    pub fn close_overview_preserving_zoom(&mut self) -> bool {
+        if !self.overview_open {
+            return false;
+        }
+
+        self.overview_open = false;
+
+        // Reset only the preset index so the next open starts fresh,
+        // but keep the current zoom target/animation so the close
+        // animation doesn't snap.
+        for monitor in self.monitors_mut() {
+            monitor.reset_overview_zoom_preset_idx();
+        }
+
+        let from = self.overview_progress.take().map_or(0., |p| p.value());
+        self.overview_progress = Some(OverviewProgress::Animation(Animation::new(
+            self.clock.clone(),
+            from,
+            0.,
+            0.,
+            self.options.animations.overview_open_close.0,
+        )));
+
+        self.set_monitors_overview_state();
+        true
+    }
+
     pub fn toggle_overview_to_workspace(&mut self, ws_idx: usize) {
         let config = self.options.animations.overview_open_close.0;
         if let Some(mon) = self.active_monitor() {

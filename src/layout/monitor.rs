@@ -1423,6 +1423,10 @@ impl<W: LayoutElement> Monitor<W> {
         self.overview_zoom_preset_idx = 0;
     }
 
+    pub fn reset_overview_zoom_preset_idx(&mut self) {
+        self.overview_zoom_preset_idx = 0;
+    }
+
     /// Cycle to next/previous zoom preset with animation.
     pub fn cycle_overview_zoom(
         &mut self,
