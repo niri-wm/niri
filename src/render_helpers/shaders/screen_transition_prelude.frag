@@ -7,6 +7,9 @@ uniform float niri_tint;
 varying vec2 niri_v_coords;
 uniform vec2 niri_size;
 
+uniform mat3 niri_input_to_geo;
+uniform vec2 niri_geo_size;
+
 uniform sampler2D niri_tex_from;
 uniform mat3 niri_geo_to_tex;
 
