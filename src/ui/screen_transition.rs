@@ -17,7 +17,6 @@ use crate::render_helpers::texture::{TextureBuffer, TextureRenderElement};
 use crate::render_helpers::RenderTarget;
 
 pub const DELAY: Duration = Duration::from_millis(250);
-pub const DURATION: Duration = Duration::from_millis(500);
 
 #[derive(Debug)]
 pub struct ScreenTransition {
@@ -73,6 +72,9 @@ impl ScreenTransition {
         target: RenderTarget,
         mouse_pos: Option<Point<f64, Logical>>,
     ) -> ScreenTransitionRenderElement {
+        // Animation start_time is set from clock.now(), so we must use clock.now() here
+        // too (not now_unadjusted) to keep the time domain consistent. This means screen
+        // transitions now respect animation slowdown, unlike the original hardcoded crossfade.
         let now = self.clock.now().saturating_sub(self.delay);
 
         let alpha = self.anim.value_at(now);
@@ -97,8 +99,15 @@ impl ScreenTransition {
                 .map(|pos| [pos.x as f32, pos.y as f32])
                 .unwrap_or([-1., -1.]);
 
-            // We need to transform the geometry coordinates to texture coordinates in the shader,
-            // so we calculate a matrix for that here.
+            // For a full-screen transition the element IS the geometry, so input_to_geo
+            // is identity. Shader authors get coords in [0,1] matching the close/open
+            // convention, with geo_size providing the actual output dimensions.
+            let input_to_geo = Mat3::IDENTITY;
+            let logical_size = self.from_texture[idx].logical_size();
+            let geo_size = [logical_size.w as f32, logical_size.h as f32];
+
+            // We need to transform the geometry coordinates to texture coordinates in the
+            // shader, so we calculate a matrix for that here.
             let transform = self.from_texture[idx].texture_transform();
             let size: Size<f64, Logical> = Size::from((1., 1.));
 
@@ -123,6 +132,8 @@ impl ScreenTransition {
                 texture_scale.x as f32,
                 1.,
                 Rc::new([
+                    mat3_uniform("niri_input_to_geo", input_to_geo),
+                    Uniform::new("niri_geo_size", geo_size),
                     mat3_uniform("niri_geo_to_tex", geo_to_tex),
                     Uniform::new("niri_progress", progress as f32),
                     Uniform::new("niri_clamped_progress", clamped_progress as f32),
