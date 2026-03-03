@@ -99,6 +99,12 @@ const INTERACTIVE_MOVE_START_THRESHOLD: f64 = 256. * 256.;
 /// Opacity of interactively moved tiles targeting the scrolling layout.
 const INTERACTIVE_MOVE_ALPHA: f64 = 0.75;
 
+/// Mutter-like resistance threshold for dragging floating windows towards working area edges.
+const FLOATING_EDGE_RESISTANCE_TOWARDS_WORKING_AREA: f64 = 32.;
+
+/// Resistance threshold for movement away from working area edges.
+const FLOATING_EDGE_RESISTANCE_AWAY_WORKING_AREA: f64 = 0.;
+
 /// Amount of touchpad movement to toggle the overview.
 const OVERVIEW_GESTURE_MOVEMENT: f64 = 300.;
 
@@ -560,19 +566,148 @@ impl<W: LayoutElement> InteractiveMoveState<W> {
 }
 
 impl<W: LayoutElement> InteractiveMoveData<W> {
-    fn tile_render_location(&self, zoom: f64) -> Point<f64, Logical> {
-        let scale = Scale::from(self.output.current_scale().fractional_scale());
+    fn pointer_offset_within_output(&self, zoom: f64) -> Point<f64, Logical> {
         let window_size = self.tile.window_size();
         let pointer_offset_within_window = Point::from((
             window_size.w * self.pointer_ratio_within_window.0,
             window_size.h * self.pointer_ratio_within_window.1,
         ));
-        let pos = self.pointer_pos_within_output
-            - (pointer_offset_within_window + self.tile.window_loc() - self.tile.render_offset())
-                .upscale(zoom);
+
+        (pointer_offset_within_window + self.tile.window_loc() - self.tile.render_offset())
+            .upscale(zoom)
+    }
+
+    fn tile_render_location_for_pointer(
+        &self,
+        pointer_pos_within_output: Point<f64, Logical>,
+        zoom: f64,
+    ) -> Point<f64, Logical> {
+        let scale = Scale::from(self.output.current_scale().fractional_scale());
+        let pos = pointer_pos_within_output - self.pointer_offset_within_output(zoom);
         // Round to physical pixels.
         pos.to_physical_precise_round(scale).to_logical(scale)
     }
+
+    fn pointer_pos_for_tile_render_location(
+        &self,
+        tile_render_location: Point<f64, Logical>,
+        zoom: f64,
+    ) -> Point<f64, Logical> {
+        tile_render_location + self.pointer_offset_within_output(zoom)
+    }
+
+    fn tile_render_location(&self, zoom: f64) -> Point<f64, Logical> {
+        self.tile_render_location_for_pointer(self.pointer_pos_within_output, zoom)
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum ResistanceSide {
+    Left,
+    Right,
+    Top,
+    Bottom,
+}
+
+fn is_moving_towards_side(side: ResistanceSide, old_pos: f64, new_pos: f64) -> bool {
+    match side {
+        ResistanceSide::Left | ResistanceSide::Top => new_pos < old_pos,
+        ResistanceSide::Right | ResistanceSide::Bottom => new_pos > old_pos,
+    }
+}
+
+fn apply_axis_edge_resistance(
+    side: ResistanceSide,
+    old_pos: f64,
+    new_pos: f64,
+    edge_pos: f64,
+) -> f64 {
+    if old_pos == new_pos {
+        return new_pos;
+    }
+
+    let moving_towards = is_moving_towards_side(side, old_pos, new_pos);
+    let threshold = if moving_towards {
+        FLOATING_EDGE_RESISTANCE_TOWARDS_WORKING_AREA
+    } else {
+        FLOATING_EDGE_RESISTANCE_AWAY_WORKING_AREA
+    };
+    let crossed_edge = match side {
+        ResistanceSide::Left | ResistanceSide::Top => old_pos >= edge_pos && new_pos <= edge_pos,
+        ResistanceSide::Right | ResistanceSide::Bottom => {
+            old_pos <= edge_pos && new_pos >= edge_pos
+        }
+    };
+
+    if moving_towards && crossed_edge && f64::abs(edge_pos - new_pos) < threshold {
+        edge_pos
+    } else {
+        new_pos
+    }
+}
+
+fn pick_stricter_translation(a: f64, b: f64) -> f64 {
+    if f64::abs(a) < f64::abs(b) {
+        a
+    } else {
+        b
+    }
+}
+
+fn ranges_overlap_or_touch(start_a: f64, end_a: f64, start_b: f64, end_b: f64) -> bool {
+    start_a <= end_b && start_b <= end_a
+}
+
+fn apply_floating_working_area_edge_resistance(
+    old_rect: Rectangle<f64, Logical>,
+    new_rect: Rectangle<f64, Logical>,
+    working_area: Rectangle<f64, Logical>,
+) -> Point<f64, Logical> {
+    let old_left = old_rect.loc.x;
+    let old_right = old_rect.loc.x + old_rect.size.w;
+    let old_top = old_rect.loc.y;
+    let old_bottom = old_rect.loc.y + old_rect.size.h;
+
+    let mut new_left = new_rect.loc.x;
+    let mut new_right = new_rect.loc.x + new_rect.size.w;
+    let mut new_top = new_rect.loc.y;
+    let new_bottom = new_rect.loc.y + new_rect.size.h;
+
+    let area_left = working_area.loc.x;
+    let area_right = working_area.loc.x + working_area.size.w;
+    let area_top = working_area.loc.y;
+    let area_bottom = working_area.loc.y + working_area.size.h;
+
+    let old_vert_overlaps_area =
+        ranges_overlap_or_touch(old_top, old_bottom, area_top, area_bottom);
+    let new_vert_overlaps_area =
+        ranges_overlap_or_touch(new_top, new_bottom, area_top, area_bottom);
+    if old_vert_overlaps_area || new_vert_overlaps_area {
+        let resisted_left =
+            apply_axis_edge_resistance(ResistanceSide::Left, old_left, new_left, area_left);
+        let resisted_right =
+            apply_axis_edge_resistance(ResistanceSide::Right, old_right, new_right, area_right);
+        let x_change =
+            pick_stricter_translation(resisted_left - old_left, resisted_right - old_right);
+        new_left = old_left + x_change;
+        new_right = old_right + x_change;
+    }
+
+    let old_horiz_overlaps_area =
+        ranges_overlap_or_touch(old_left, old_right, area_left, area_right);
+    let new_horiz_overlaps_area =
+        ranges_overlap_or_touch(new_left, new_right, area_left, area_right);
+    if old_horiz_overlaps_area || new_horiz_overlaps_area {
+        let resisted_top =
+            apply_axis_edge_resistance(ResistanceSide::Top, old_top, new_top, area_top);
+        let resisted_bottom =
+            apply_axis_edge_resistance(ResistanceSide::Bottom, old_bottom, new_bottom, area_bottom);
+        let y_change =
+            pick_stricter_translation(resisted_top - old_top, resisted_bottom - old_bottom);
+        new_top = old_top + y_change;
+    }
+
+    Point::from((new_left, new_top))
 }
 
 impl ActivateWindow {
@@ -3999,6 +4134,7 @@ impl<W: LayoutElement> Layout<W> {
                     }
                 }
 
+                let mut output_changed = false;
                 if output != move_.output {
                     move_.tile.window().output_leave(&move_.output);
                     move_.tile.window().output_enter(&output);
@@ -4008,6 +4144,7 @@ impl<W: LayoutElement> Layout<W> {
                     );
                     move_.output = output.clone();
                     self.focus_output(&output);
+                    output_changed = true;
 
                     move_.output_config = self
                         .monitor_for_output(&output)
@@ -4024,6 +4161,46 @@ impl<W: LayoutElement> Layout<W> {
                         .with_merged_layout(move_.workspace_config.as_ref().map(|(_, c)| c))
                         .adjusted_for_scale(scale);
                     move_.tile.update_config(view_size, scale, Rc::new(options));
+                }
+
+                let mut pointer_pos_within_output = pointer_pos_within_output;
+                if move_.is_floating && self.overview_progress.is_none() {
+                    if let Some(mon) = self.monitor_for_output(&output) {
+                        // Keep resistance anchored to the previous workspace while sticking to its
+                        // edge, unless the output changed and we cannot use the previous pointer.
+                        let workspace_lookup_pos = if output_changed {
+                            pointer_pos_within_output
+                        } else {
+                            move_.pointer_pos_within_output
+                        };
+
+                        if let Some((ws, ws_geo)) = mon.workspace_under(workspace_lookup_pos) {
+                            let zoom = mon.overview_zoom();
+                            let ws_working_area = ws.working_area();
+                            let working_area = Rectangle::new(
+                                ws_geo.loc + ws_working_area.loc.upscale(zoom),
+                                ws_working_area.size.upscale(zoom),
+                            );
+
+                            let old_tile_pos = move_.tile_render_location(zoom);
+                            let new_tile_pos = move_
+                                .tile_render_location_for_pointer(pointer_pos_within_output, zoom);
+                            let tile_size = move_.tile.tile_size().upscale(zoom);
+                            let old_rect = Rectangle::new(old_tile_pos, tile_size);
+                            let new_rect = Rectangle::new(new_tile_pos, tile_size);
+
+                            let resisted_tile_pos = apply_floating_working_area_edge_resistance(
+                                old_rect,
+                                new_rect,
+                                working_area,
+                            );
+
+                            if resisted_tile_pos != new_tile_pos {
+                                pointer_pos_within_output = move_
+                                    .pointer_pos_for_tile_render_location(resisted_tile_pos, zoom);
+                            }
+                        }
+                    }
                 }
 
                 move_.pointer_pos_within_output = pointer_pos_within_output;

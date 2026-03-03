@@ -1650,6 +1650,14 @@ fn check_ops_with_options(
     layout
 }
 
+#[track_caller]
+fn moving_pointer_pos(layout: &Layout<TestWindow>) -> Point<f64, Logical> {
+    let Some(InteractiveMoveState::Moving(move_)) = &layout.interactive_move else {
+        panic!("interactive move must be in moving state");
+    };
+    move_.pointer_pos_within_output
+}
+
 #[test]
 fn operations_dont_panic() {
     if std::env::var_os("RUN_SLOW_TESTS").is_none() {
@@ -3029,6 +3037,158 @@ fn interactive_move_from_workspace_with_layout_config() {
     ];
 
     check_ops(ops);
+}
+
+#[test]
+fn floating_edge_resistance_sticks_and_releases() {
+    let area = Rectangle::from_size(Size::from((1280., 720.)));
+    let size = Size::from((100., 200.));
+
+    let old = Rectangle::new(Point::from((40., 100.)), size);
+    let new = Rectangle::new(Point::from((20., 100.)), size);
+    let resisted = apply_floating_working_area_edge_resistance(old, new, area);
+    assert_eq!(resisted, Point::from((20., 100.)));
+
+    let old = Rectangle::new(Point::from((20., 100.)), size);
+    let new = Rectangle::new(Point::from((-10., 100.)), size);
+    let resisted = apply_floating_working_area_edge_resistance(old, new, area);
+    assert_eq!(resisted, Point::from((0., 100.)));
+
+    let old = Rectangle::new(Point::from((0., 100.)), size);
+    let new = Rectangle::new(Point::from((-31., 100.)), size);
+    let resisted = apply_floating_working_area_edge_resistance(old, new, area);
+    assert_eq!(resisted, Point::from((0., 100.)));
+
+    let old = Rectangle::new(Point::from((0., 100.)), size);
+    let new = Rectangle::new(Point::from((-33., 100.)), size);
+    let resisted = apply_floating_working_area_edge_resistance(old, new, area);
+    assert_eq!(resisted, Point::from((-33., 100.)));
+}
+
+#[test]
+fn floating_edge_resistance_does_not_apply_away_from_edge() {
+    let area = Rectangle::from_size(Size::from((1280., 720.)));
+    let size = Size::from((100., 200.));
+
+    let old = Rectangle::new(Point::from((10., 100.)), size);
+    let new = Rectangle::new(Point::from((20., 100.)), size);
+    let resisted = apply_floating_working_area_edge_resistance(old, new, area);
+    assert_eq!(resisted, Point::from((20., 100.)));
+}
+
+#[test]
+fn pick_stricter_translation_prefers_smaller_magnitude() {
+    assert_eq!(pick_stricter_translation(-5., -12.), -5.);
+    assert_eq!(pick_stricter_translation(7., -3.), -3.);
+    assert_eq!(pick_stricter_translation(4., -4.), -4.);
+}
+
+#[test]
+fn floating_interactive_move_resists_working_area_edges() {
+    let mut layout = Layout::default();
+    Op::AddOutput(1).apply(&mut layout);
+    Op::AddOutput(2).apply(&mut layout);
+    Op::AddWindow {
+        params: TestWindowParams {
+            is_floating: true,
+            ..TestWindowParams::new(1)
+        },
+    }
+    .apply(&mut layout);
+
+    Op::InteractiveMoveBegin {
+        window: 1,
+        output_idx: 1,
+        px: 0.,
+        py: 0.,
+    }
+    .apply(&mut layout);
+    Op::InteractiveMoveUpdate {
+        window: 1,
+        dx: 0.,
+        dy: 0.,
+        output_idx: 2,
+        px: 40.,
+        py: 40.,
+    }
+    .apply(&mut layout);
+
+    Op::InteractiveMoveUpdate {
+        window: 1,
+        dx: 0.,
+        dy: 0.,
+        output_idx: 2,
+        px: 20.,
+        py: 20.,
+    }
+    .apply(&mut layout);
+    assert_eq!(moving_pointer_pos(&layout), Point::from((20., 20.)));
+
+    Op::InteractiveMoveUpdate {
+        window: 1,
+        dx: 0.,
+        dy: 0.,
+        output_idx: 2,
+        px: -10.,
+        py: -10.,
+    }
+    .apply(&mut layout);
+    assert_eq!(moving_pointer_pos(&layout), Point::from((0., 0.)));
+
+    Op::InteractiveMoveUpdate {
+        window: 1,
+        dx: 0.,
+        dy: 0.,
+        output_idx: 2,
+        px: -40.,
+        py: -40.,
+    }
+    .apply(&mut layout);
+    assert_eq!(moving_pointer_pos(&layout), Point::from((-40., -40.)));
+}
+
+#[test]
+fn floating_interactive_move_has_no_resistance_in_overview() {
+    let mut layout = Layout::default();
+    Op::AddOutput(1).apply(&mut layout);
+    Op::AddOutput(2).apply(&mut layout);
+    Op::AddWindow {
+        params: TestWindowParams {
+            is_floating: true,
+            ..TestWindowParams::new(1)
+        },
+    }
+    .apply(&mut layout);
+
+    Op::InteractiveMoveBegin {
+        window: 1,
+        output_idx: 1,
+        px: 0.,
+        py: 0.,
+    }
+    .apply(&mut layout);
+    Op::InteractiveMoveUpdate {
+        window: 1,
+        dx: 0.,
+        dy: 0.,
+        output_idx: 2,
+        px: 40.,
+        py: 0.,
+    }
+    .apply(&mut layout);
+
+    layout.toggle_overview();
+
+    Op::InteractiveMoveUpdate {
+        window: 1,
+        dx: 0.,
+        dy: 0.,
+        output_idx: 2,
+        px: 20.,
+        py: 0.,
+    }
+    .apply(&mut layout);
+    assert_eq!(moving_pointer_pos(&layout), Point::from((20., 0.)));
 }
 
 #[test]
