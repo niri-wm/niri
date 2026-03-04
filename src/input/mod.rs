@@ -381,7 +381,13 @@ impl State {
                 let xkb_config = config.input.keyboard.xkb.clone();
                 std::mem::drop(config);
 
-                if xkb_config != Xkb::default() {
+                if let Some(xkb_file) = xkb_config.file.as_ref() {
+                    // File-based keymap: re-apply from file (to_xkb_config()
+                    // drops the file field, so we must handle it separately).
+                    if let Err(err) = self.set_xkb_file(xkb_file.clone()) {
+                        warn!("error resetting xkb_file: {err:?}");
+                    }
+                } else if xkb_config != Xkb::default() {
                     self.set_xkb_config(xkb_config.to_xkb_config());
                 } else {
                     // Use locale1 settings if xkb config is unset.

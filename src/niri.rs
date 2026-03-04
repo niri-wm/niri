@@ -1366,7 +1366,7 @@ impl State {
     }
 
     /// Loads the xkb keymap from a file config setting.
-    fn set_xkb_file(&mut self, xkb_file: String) -> anyhow::Result<()> {
+    pub(crate) fn set_xkb_file(&mut self, xkb_file: String) -> anyhow::Result<()> {
         let xkb_file = PathBuf::from(xkb_file);
         let xkb_file = expand_home(&xkb_file)
             .context("failed to expand ~")?
