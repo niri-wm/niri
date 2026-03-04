@@ -72,7 +72,7 @@ impl ClosingLayer {
         anim: Animation,
         program: ProgramType,
     ) -> anyhow::Result<Self> {
-        let _span = tracy_client::span!("ClosingWindow::new");
+        let _span = tracy_client::span!("ClosingLayer::new");
 
         let mut render_to_texture = |elements: Vec<E>| -> anyhow::Result<_> {
             let (texture, _sync_point, geo) = render_to_encompassing_texture(

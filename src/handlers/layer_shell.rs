@@ -158,15 +158,28 @@ impl State {
 
                 let kind = resolve_layer_animation_kind(layer);
                 let (anim_config, program) = match kind {
-                    LayerAnimationKind::Bar => {
-                        (&config.animations.layer_bar_open, ProgramType::LayerBarOpen)
-                    }
+                    LayerAnimationKind::Bar => (
+                        config
+                            .animations
+                            .layer_bar_open
+                            .as_ref()
+                            .unwrap_or(&config.animations.layer_open),
+                        ProgramType::LayerBarOpen,
+                    ),
                     LayerAnimationKind::Wallpaper => (
-                        &config.animations.layer_wallpaper_open,
+                        config
+                            .animations
+                            .layer_wallpaper_open
+                            .as_ref()
+                            .unwrap_or(&config.animations.layer_open),
                         ProgramType::LayerWallpaperOpen,
                     ),
                     LayerAnimationKind::Launcher => (
-                        &config.animations.layer_launcher_open,
+                        config
+                            .animations
+                            .layer_launcher_open
+                            .as_ref()
+                            .unwrap_or(&config.animations.layer_open),
                         ProgramType::LayerLauncherOpen,
                     ),
                 };
@@ -281,15 +294,30 @@ impl State {
 
         let (anim_config, program) = match kind {
             LayerAnimationKind::Bar => (
-                config.animations.layer_bar_close.anim,
+                config
+                    .animations
+                    .layer_bar_close
+                    .as_ref()
+                    .unwrap_or(&config.animations.layer_close)
+                    .anim,
                 ProgramType::LayerBarClose,
             ),
             LayerAnimationKind::Wallpaper => (
-                config.animations.layer_wallpaper_close.anim,
+                config
+                    .animations
+                    .layer_wallpaper_close
+                    .as_ref()
+                    .unwrap_or(&config.animations.layer_close)
+                    .anim,
                 ProgramType::LayerWallpaperClose,
             ),
             LayerAnimationKind::Launcher => (
-                config.animations.layer_launcher_close.anim,
+                config
+                    .animations
+                    .layer_launcher_close
+                    .as_ref()
+                    .unwrap_or(&config.animations.layer_close)
+                    .anim,
                 ProgramType::LayerLauncherClose,
             ),
         };
@@ -335,6 +363,12 @@ impl State {
     }
 }
 
+/// Classifies a layer surface into one of three animation kinds based on its geometry hints.
+///
+/// The heuristic, in priority order:
+/// - **Bar**: has an exclusive zone (reserves screen space) — e.g. panels, docks.
+/// - **Wallpaper**: anchored to all four edges with no exclusive zone — e.g. desktop backgrounds.
+/// - **Launcher**: everything else — e.g. app launchers, notification overlays.
 fn resolve_layer_animation_kind(layer: &LayerSurface) -> LayerAnimationKind {
     let state = layer.cached_state();
     let anchor = state.anchor;
