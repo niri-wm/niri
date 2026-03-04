@@ -12,7 +12,7 @@ use zwlr_output_power_v1::ZwlrOutputPowerV1;
 
 const VERSION: u32 = 1;
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Mode {
     Off,
     On,
