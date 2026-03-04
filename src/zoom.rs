@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use niri_config::ZoomMovementMode;
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::element::utils::{
@@ -5,6 +7,7 @@ use smithay::backend::renderer::element::utils::{
 };
 use smithay::backend::renderer::element::Element;
 use smithay::output::Output;
+use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Physical, Point, Rectangle, Scale, Size};
 
 use crate::layer::mapped::LayerSurfaceRenderElement;
@@ -53,6 +56,8 @@ niri_render_elements! {
     }
 }
 
+pub const SCALE_CHANGE_THRESHOLD: f64 = 0.25;
+
 /// Per-output zoom snapshot.
 ///
 /// This struct holds the effective zoom values that external consumers (backends,
@@ -75,6 +80,8 @@ pub struct OutputZoomState {
     pub locked: bool,
     /// Whether a zoom animation or gesture is currently in progress (layout-owned).
     pub transitioning: bool,
+    pub zoomed_surfaces: HashMap<WlSurface, f64>,
+    pub last_scale_update_level: Option<f64>,
 }
 
 impl OutputZoomState {
@@ -88,11 +95,17 @@ impl OutputZoomState {
             focal: Point::from((logical_size.w / 2.0, logical_size.h / 2.0)),
             locked: false,
             transitioning: false,
+            zoomed_surfaces: HashMap::new(),
+            last_scale_update_level: None,
         }
     }
 
     pub fn is_active(&self) -> bool {
         self.level > 1.0
+    }
+
+    pub fn get_surface_zoom_factor(&self, surface: &WlSurface) -> f64 {
+        self.zoomed_surfaces.get(surface).copied().unwrap_or(1.0)
     }
 
     pub fn viewport_global(
@@ -123,6 +136,8 @@ impl Default for OutputZoomState {
             focal: Point::from((0.0, 0.0)),
             locked: false,
             transitioning: false,
+            zoomed_surfaces: HashMap::new(),
+            last_scale_update_level: None,
         }
     }
 }
@@ -136,6 +151,23 @@ pub fn apply_zoom_viewport(
     output_rect = output_rect.downscale(zoom_factor);
     output_rect.loc += focal_point;
     output_rect
+}
+
+pub use apply_zoom_viewport as zoomed_viewport;
+
+pub fn calculate_visibility(
+    window_geo: Rectangle<f64, Logical>,
+    zoom_rect: Rectangle<f64, Logical>,
+) -> f64 {
+    let Some(intersect) = window_geo.intersection(zoom_rect) else {
+        return 0.0;
+    };
+    let intersect_area = intersect.size.w * intersect.size.h;
+    let window_area = window_geo.size.w * window_geo.size.h;
+    if window_area <= 0.0 {
+        return 0.0;
+    }
+    (intersect_area / window_area).clamp(0.0, 1.0)
 }
 
 pub fn compute_focal_for_cursor(

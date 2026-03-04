@@ -95,6 +95,7 @@ pub struct OutputData {
     size: Size<i32, Physical>,
     scale: f64,
     transform: Transform,
+    capture_zoom: f64,
     // Output, screencast, screen capture.
     screenshot: [OutputScreenshot; 3],
     buffers: [SolidColorBuffer; 8],
@@ -104,6 +105,7 @@ pub struct OutputData {
 
 pub struct OutputScreenshot {
     texture: GlesTexture,
+    hr_texture: Option<GlesTexture>,
     buffer: PrimaryGpuTextureRenderElement,
     pointer: Option<PrimaryGpuTextureRenderElement>,
 }
@@ -262,8 +264,7 @@ impl ScreenshotUi {
     pub fn open(
         &mut self,
         renderer: &mut GlesRenderer,
-        // Output, screencast, screen capture.
-        screenshots: HashMap<Output, [OutputScreenshot; 3]>,
+        screenshots: HashMap<Output, (f64, [OutputScreenshot; 3])>,
         default_output: Output,
         show_pointer: bool,
         path: Option<String>,
@@ -309,7 +310,7 @@ impl ScreenshotUi {
 
         let output_data = screenshots
             .into_iter()
-            .map(|(output, screenshot)| {
+            .map(|(output, (capture_zoom, screenshot))| {
                 let transform = output.current_transform();
                 let output_mode = output.current_mode().unwrap();
                 let size = transform.transform_size(output_mode.size);
@@ -339,6 +340,7 @@ impl ScreenshotUi {
                     size,
                     scale,
                     transform,
+                    capture_zoom,
                     screenshot,
                     buffers,
                     locations,
@@ -844,10 +846,92 @@ impl ScreenshotUi {
         let data = &output_data[output];
         let rect = rect_from_corner_points(selection.1, selection.2);
         let scale = Scale::from(data.scale);
+
+        let screenshot = &data.screenshot[0];
+
+        if data.capture_zoom > 1.0 {
+            if let Some(hr_tex) = &screenshot.hr_texture {
+                let cz = data.capture_zoom;
+                let hr_rect: Rectangle<i32, Physical> = Rectangle::new(
+                    Point::from((
+                        (rect.loc.x as f64 * cz).round() as i32,
+                        (rect.loc.y as f64 * cz).round() as i32,
+                    )),
+                    Size::from((
+                        (rect.size.w as f64 * cz).round() as i32,
+                        (rect.size.h as f64 * cz).round() as i32,
+                    )),
+                );
+
+                let hr_size = Size::from((
+                    (data.size.w as f64 * cz).round() as i32,
+                    (data.size.h as f64 * cz).round() as i32,
+                ));
+                let hr_scale = Scale::from(scale.x * cz);
+
+                let source_tex = if *show_pointer && screenshot.pointer.is_some() {
+                    let hr_buffer =
+                        PrimaryGpuTextureRenderElement(TextureRenderElement::from_texture_buffer(
+                            TextureBuffer::from_texture(
+                                renderer,
+                                hr_tex.clone(),
+                                hr_scale,
+                                Transform::Normal,
+                                Vec::new(),
+                            ),
+                            (0., 0.),
+                            1.,
+                            None,
+                            None,
+                            Kind::Unspecified,
+                        ));
+                    let mut elements = ArrayVec::<CaptureRenderElement, 2>::new();
+                    if let Some(pointer) = screenshot.pointer.clone() {
+                        elements.push(CaptureRenderElement::Texture(pointer));
+                    }
+                    elements.push(CaptureRenderElement::Texture(hr_buffer));
+                    let elements = elements.iter().rev().map(|elem| {
+                        RelocateRenderElement::from_element(
+                            elem,
+                            Point::from((0, 0)),
+                            Relocate::Relative,
+                        )
+                    });
+                    match render_to_texture(
+                        renderer,
+                        hr_size,
+                        hr_scale,
+                        Transform::Normal,
+                        Fourcc::Abgr8888,
+                        elements,
+                    ) {
+                        Ok((tex, _)) => tex,
+                        Err(err) => {
+                            warn!("error compositing hr screenshot capture: {err:?}");
+                            hr_tex.clone()
+                        }
+                    }
+                } else {
+                    hr_tex.clone()
+                };
+
+                let buf_rect =
+                    hr_rect
+                        .to_logical(1)
+                        .to_buffer(1, Transform::Normal, &Size::from((1, 1)));
+                let mapping = renderer
+                    .copy_texture(&source_tex, buf_rect, Fourcc::Abgr8888)
+                    .context("error copying texture")?;
+                let copy = renderer
+                    .map_texture(&mapping)
+                    .context("error mapping texture")?;
+                return Ok((hr_rect.size, copy.to_vec()));
+            }
+        }
+
         let source_rect =
             Self::capture_source_rect(rect, scale, zoom_active, zoom_level, zoom_focal);
 
-        let screenshot = &data.screenshot[0];
         let mut tex_rect = None;
 
         if zoom_active || (*show_pointer && screenshot.pointer.is_some()) {
@@ -894,7 +978,6 @@ impl ScreenshotUi {
         }
 
         let (texture, rect) = tex_rect.unwrap_or_else(|| (screenshot.texture.clone(), rect));
-        // The size doesn't actually matter because we're not transforming anything.
         let buf_rect = rect
             .to_logical(1)
             .to_buffer(1, Transform::Normal, &Size::from((1, 1)));
@@ -1145,14 +1228,26 @@ impl OutputScreenshot {
     pub fn from_textures(
         renderer: &mut GlesRenderer,
         scale: Scale<f64>,
+        capture_zoom: f64,
         texture: GlesTexture,
+        hr_texture: Option<GlesTexture>,
         pointer: Option<(GlesTexture, Rectangle<i32, Physical>)>,
     ) -> Self {
+        let (buffer_tex, buffer_scale) = if capture_zoom > 1.0 {
+            if let Some(ref hr) = hr_texture {
+                (hr.clone(), Scale::from(scale.x * capture_zoom))
+            } else {
+                (texture.clone(), scale)
+            }
+        } else {
+            (texture.clone(), scale)
+        };
+
         let buffer = PrimaryGpuTextureRenderElement(TextureRenderElement::from_texture_buffer(
             TextureBuffer::from_texture(
                 renderer,
-                texture.clone(),
-                scale,
+                buffer_tex,
+                buffer_scale,
                 Transform::Normal,
                 Vec::new(),
             ),
@@ -1182,6 +1277,7 @@ impl OutputScreenshot {
 
         Self {
             texture,
+            hr_texture,
             buffer,
             pointer,
         }

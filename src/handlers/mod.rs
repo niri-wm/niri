@@ -224,9 +224,10 @@ impl InputMethodHandler for State {
         if let Some(output) = self.output_for_popup(&popup) {
             let scale = output.current_scale();
             let transform = output.current_transform();
+            let zoom_state = self.niri.layout.zoom_state_for_output(output).cloned();
             let wl_surface = popup.wl_surface();
             with_states(wl_surface, |data| {
-                send_scale_transform(wl_surface, data, scale, transform);
+                send_scale_transform(wl_surface, data, scale, transform, zoom_state.as_ref());
             });
         }
 
@@ -480,7 +481,7 @@ pub fn configure_lock_surface(surface: &LockSurface, output: &Output) {
     let transform = output.current_transform();
     let wl_surface = surface.wl_surface();
     with_states(wl_surface, |data| {
-        send_scale_transform(wl_surface, data, scale, transform);
+        send_scale_transform(wl_surface, data, scale, transform, None);
     });
     surface.send_configure();
 }

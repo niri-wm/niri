@@ -516,7 +516,7 @@ impl<W: LayoutElement> Workspace<W> {
 
     fn enter_output_for_window(&self, window: &W) {
         if let Some(output) = &self.output {
-            window.set_preferred_scale_transform(self.scale, self.transform);
+            window.set_preferred_scale_transform(self.scale, self.transform, None);
             window.output_enter(output);
         }
     }
@@ -578,7 +578,7 @@ impl<W: LayoutElement> Workspace<W> {
 
         if scale_transform_changed {
             for window in self.windows() {
-                window.set_preferred_scale_transform(self.scale, self.transform);
+                window.set_preferred_scale_transform(self.scale, self.transform, None);
             }
         }
     }
@@ -853,7 +853,7 @@ impl<W: LayoutElement> Workspace<W> {
         rules: &ResolvedWindowRules,
     ) {
         window.with_surfaces(|surface, data| {
-            send_scale_transform(surface, data, self.scale, self.transform);
+            send_scale_transform(surface, data, self.scale, self.transform, None);
         });
 
         let toplevel = window.toplevel().expect("no x11 support");

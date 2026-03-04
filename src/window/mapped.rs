@@ -44,6 +44,7 @@ use crate::utils::{
     with_toplevel_last_uncommitted_configure, with_toplevel_role, with_toplevel_role_and_current,
     ResizeEdge,
 };
+use crate::zoom::OutputZoomState;
 
 #[derive(Debug)]
 pub struct Mapped {
@@ -825,9 +826,18 @@ impl LayoutElement for Mapped {
         self.toplevel().wl_surface() == wl_surface
     }
 
-    fn set_preferred_scale_transform(&self, scale: output::Scale, transform: Transform) {
+    fn wl_surface(&self) -> Option<WlSurface> {
+        Some(self.toplevel().wl_surface().clone())
+    }
+
+    fn set_preferred_scale_transform(
+        &self,
+        scale: output::Scale,
+        transform: Transform,
+        zoom_state: Option<&OutputZoomState>,
+    ) {
         self.window.with_surfaces(|surface, data| {
-            send_scale_transform(surface, data, scale, transform);
+            send_scale_transform(surface, data, scale, transform, zoom_state);
         });
     }
 

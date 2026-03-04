@@ -867,7 +867,7 @@ impl State {
             self,
             under.surface,
             &MotionEvent {
-                location: location,
+                location,
                 serial: SERIAL_COUNTER.next_serial(),
                 time: get_monotonic_time().as_millis() as u32,
             },
@@ -1086,7 +1086,7 @@ impl State {
             self,
             under.surface,
             &MotionEvent {
-                location: location,
+                location,
                 serial: SERIAL_COUNTER.next_serial(),
                 time: get_monotonic_time().as_millis() as u32,
             },
@@ -1997,10 +1997,12 @@ impl State {
 
         self.niri.update_render_elements(None);
 
-        let Some(screenshots) = self
-            .backend
-            .with_primary_renderer(|renderer| self.niri.capture_screenshots(renderer).collect())
-        else {
+        let Some(screenshots) = self.backend.with_primary_renderer(|renderer| {
+            self.niri
+                .capture_screenshots(renderer)
+                .map(|(output, zoom, shots)| (output, (zoom, shots)))
+                .collect()
+        }) else {
             return;
         };
 
@@ -2958,11 +2960,12 @@ impl Niri {
         let scale = output.current_scale();
         let transform = output.current_transform();
 
+        let zoom_state = self.layout.zoom_state_for_output(output).cloned();
         {
             let mut layer_map = layer_map_for_output(output);
             for layer in layer_map.layers() {
                 layer.with_surfaces(|surface, data| {
-                    send_scale_transform(surface, data, scale, transform);
+                    send_scale_transform(surface, data, scale, transform, zoom_state.as_ref());
                 });
 
                 if let Some(mapped) = self.mapped_layer_surfaces.get_mut(layer) {
@@ -4002,6 +4005,7 @@ impl Niri {
                         data,
                         output::Scale::Fractional(cursor_scale),
                         cursor_transform,
+                        None,
                     )
                 });
                 if let Some((surface, _)) = dnd {
@@ -4011,6 +4015,7 @@ impl Niri {
                             data,
                             output::Scale::Fractional(dnd_scale),
                             dnd_transform,
+                            None,
                         );
                     });
                 }
@@ -4065,6 +4070,7 @@ impl Niri {
                         data,
                         output::Scale::Fractional(dnd_scale),
                         dnd_transform,
+                        None,
                     );
                 });
             }
@@ -5376,13 +5382,15 @@ impl Niri {
     pub fn capture_screenshots<'a>(
         &'a self,
         renderer: &'a mut GlesRenderer,
-    ) -> impl Iterator<Item = (Output, [OutputScreenshot; 3])> + 'a {
+    ) -> impl Iterator<Item = (Output, f64, [OutputScreenshot; 3])> + 'a {
         self.global_space.outputs().cloned().filter_map(|output| {
             let size = output.current_mode().unwrap().size;
             let transform = output.current_transform();
             let size = transform.transform_size(size);
 
             let scale = Scale::from(output.current_scale().fractional_scale());
+            let effective_zoom = self.layout.effective_zoom_for_output(&output);
+
             let targets = [
                 RenderTarget::Output,
                 RenderTarget::Screencast,
@@ -5409,6 +5417,34 @@ impl Niri {
                     warn!("error rendering output {}: {err:?}", output.name());
                 }
                 let res_output = res.ok();
+
+                let hr_texture = if target == RenderTarget::Output && effective_zoom > 1.0 {
+                    let hr_size = Size::from((
+                        (size.w as f64 * effective_zoom).round() as i32,
+                        (size.h as f64 * effective_zoom).round() as i32,
+                    ));
+                    let hr_scale = Scale::from(scale.x * effective_zoom);
+                    let mut hr_elements = Vec::new();
+                    let ctx = RenderCtx { renderer, target };
+                    self.render(ctx, &output, false, &mut |elem| hr_elements.push(elem));
+                    let hr_elements = hr_elements.iter().rev();
+                    match render_to_texture(
+                        renderer,
+                        hr_size,
+                        hr_scale,
+                        Transform::Normal,
+                        Fourcc::Abgr8888,
+                        hr_elements,
+                    ) {
+                        Ok((tex, _)) => Some(tex),
+                        Err(err) => {
+                            warn!("error rendering hr output {}: {err:?}", output.name());
+                            None
+                        }
+                    }
+                } else {
+                    None
+                };
 
                 let mut pointer = Vec::new();
 
@@ -5439,7 +5475,9 @@ impl Niri {
                     OutputScreenshot::from_textures(
                         renderer,
                         scale,
+                        effective_zoom,
                         texture,
+                        hr_texture,
                         res_pointer.map(|(texture, _, geo)| (texture, geo)),
                     )
                 })
@@ -5450,7 +5488,7 @@ impl Niri {
             }
 
             let screenshot = screenshot.map(|res| res.unwrap());
-            Some((output, screenshot))
+            Some((output, effective_zoom, screenshot))
         })
     }
 

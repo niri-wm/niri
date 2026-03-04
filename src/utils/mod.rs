@@ -33,6 +33,7 @@ use wayland_backend::server::Credentials;
 
 use crate::handlers::KdeDecorationsModeState;
 use crate::niri::ClientState;
+use crate::zoom::OutputZoomState;
 
 pub mod id;
 pub mod scale;
@@ -257,10 +258,17 @@ pub fn send_scale_transform(
     data: &SurfaceData,
     scale: output::Scale,
     transform: Transform,
+    zoom_state: Option<&OutputZoomState>,
 ) {
+    let mut effective_scale = scale.fractional_scale();
+    if let Some(zoom) = zoom_state {
+        if let Some(&surface_zoom) = zoom.zoomed_surfaces.get(surface) {
+            effective_scale *= surface_zoom;
+        }
+    }
     send_surface_state(surface, data, scale.integer_scale(), transform);
     with_fractional_scale(data, |fractional| {
-        fractional.set_preferred_scale(scale.fractional_scale());
+        fractional.set_preferred_scale(effective_scale);
     });
 }
 

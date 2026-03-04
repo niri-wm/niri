@@ -1211,8 +1211,16 @@ impl State {
                         {
                             let scale = output.current_scale();
                             let transform = output.current_transform();
+                            let zoom_state =
+                                self.niri.layout.zoom_state_for_output(output).cloned();
                             with_states(surface, |data| {
-                                send_scale_transform(surface, data, scale, transform);
+                                send_scale_transform(
+                                    surface,
+                                    data,
+                                    scale,
+                                    transform,
+                                    zoom_state.as_ref(),
+                                );
                             });
                         }
                         popup.send_configure().expect("initial configure failed");

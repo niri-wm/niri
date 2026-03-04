@@ -2355,6 +2355,9 @@ mod tests {
                 increment_type: Linear,
                 pinch_sensitivity: 1.0,
                 max_zoom: 10.0,
+                use_fractional_scale: false,
+                max_fractional_scale: 5.0,
+                scale_sensitivity: 1.0,
             },
         }
         "#);
