@@ -715,8 +715,6 @@ impl Tty {
 
                 self.set_monitors_active(true);
                 niri.activate_monitors_without_backend();
-
-                niri.queue_redraw_all();
             }
         }
     }
