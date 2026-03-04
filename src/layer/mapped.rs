@@ -194,11 +194,6 @@ impl MappedLayer {
         ));
     }
 
-    pub fn reset_open_animation_state(&mut self) {
-        self.open_animation = None;
-        self.set_offscreen_data(None);
-    }
-
     pub fn are_animations_ongoing(&self) -> bool {
         self.rules.baba_is_float
             || self

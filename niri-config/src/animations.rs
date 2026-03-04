@@ -13,12 +13,12 @@ pub struct Animations {
     pub window_close: WindowCloseAnim,
     pub layer_open: LayerOpenAnim,
     pub layer_close: LayerCloseAnim,
-    pub layer_bar_open: LayerOpenAnim,
-    pub layer_bar_close: LayerCloseAnim,
-    pub layer_wallpaper_open: LayerOpenAnim,
-    pub layer_wallpaper_close: LayerCloseAnim,
-    pub layer_launcher_open: LayerOpenAnim,
-    pub layer_launcher_close: LayerCloseAnim,
+    pub layer_bar_open: Option<LayerOpenAnim>,
+    pub layer_bar_close: Option<LayerCloseAnim>,
+    pub layer_wallpaper_open: Option<LayerOpenAnim>,
+    pub layer_wallpaper_close: Option<LayerCloseAnim>,
+    pub layer_launcher_open: Option<LayerOpenAnim>,
+    pub layer_launcher_close: Option<LayerCloseAnim>,
     pub horizontal_view_movement: HorizontalViewMovementAnim,
     pub window_movement: WindowMovementAnim,
     pub window_resize: WindowResizeAnim,
@@ -41,12 +41,12 @@ impl Default for Animations {
             window_close: Default::default(),
             layer_open: Default::default(),
             layer_close: Default::default(),
-            layer_bar_open: Default::default(),
-            layer_bar_close: Default::default(),
-            layer_wallpaper_open: Default::default(),
-            layer_wallpaper_close: Default::default(),
-            layer_launcher_open: Default::default(),
-            layer_launcher_close: Default::default(),
+            layer_bar_open: None,
+            layer_bar_close: None,
+            layer_wallpaper_open: None,
+            layer_wallpaper_close: None,
+            layer_launcher_open: None,
+            layer_launcher_close: None,
             window_resize: Default::default(),
             config_notification_open_close: Default::default(),
             exit_confirmation_open_close: Default::default(),
@@ -114,41 +114,6 @@ impl MergeWith<AnimationsPart> for Animations {
 
         merge!((self, part), slowdown);
 
-        let prev_layer_open = self.layer_open.clone();
-        if let Some(layer_open) = &part.layer_open {
-            self.layer_open = layer_open.clone();
-            if part.layer_bar_open.is_none() && self.layer_bar_open == prev_layer_open {
-                self.layer_bar_open = layer_open.clone();
-            }
-            if part.layer_wallpaper_open.is_none() && self.layer_wallpaper_open == prev_layer_open {
-                self.layer_wallpaper_open = layer_open.clone();
-            }
-            if part.layer_launcher_open.is_none() && self.layer_launcher_open == prev_layer_open {
-                self.layer_launcher_open = layer_open.clone();
-            }
-        }
-
-        let prev_layer_close = self.layer_close.clone();
-        if let Some(layer_close) = &part.layer_close {
-            self.layer_close = layer_close.clone();
-            if part.layer_bar_close.is_none() && self.layer_bar_close == prev_layer_close {
-                self.layer_bar_close = layer_close.clone();
-            }
-            if part.layer_wallpaper_close.is_none()
-                && self.layer_wallpaper_close == prev_layer_close
-            {
-                self.layer_wallpaper_close = layer_close.clone();
-            }
-            if part.layer_launcher_close.is_none() && self.layer_launcher_close == prev_layer_close
-            {
-                self.layer_launcher_close = layer_close.clone();
-            }
-        }
-
-        merge_clone!((self, part), layer_bar_open, layer_bar_close);
-        merge_clone!((self, part), layer_wallpaper_open, layer_wallpaper_close);
-        merge_clone!((self, part), layer_launcher_open, layer_launcher_close);
-
         // Animation properties are fairly tied together, except maybe `off`. So let's just save
         // ourselves the work and not merge within individual animations.
         merge_clone!(
@@ -156,6 +121,8 @@ impl MergeWith<AnimationsPart> for Animations {
             workspace_switch,
             window_open,
             window_close,
+            layer_open,
+            layer_close,
             horizontal_view_movement,
             window_movement,
             window_resize,
@@ -164,6 +131,18 @@ impl MergeWith<AnimationsPart> for Animations {
             screenshot_ui_open,
             overview_open_close,
             recent_windows_close,
+        );
+
+        // Specific layer animation overrides: None means "fall back to the generic layer_open /
+        // layer_close at runtime". merge_clone_opt! preserves None when not set in the part.
+        merge_clone_opt!(
+            (self, part),
+            layer_bar_open,
+            layer_bar_close,
+            layer_wallpaper_open,
+            layer_wallpaper_close,
+            layer_launcher_open,
+            layer_launcher_close,
         );
     }
 }
