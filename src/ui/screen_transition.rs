@@ -55,7 +55,8 @@ impl ScreenTransition {
     }
 
     pub fn is_done(&self) -> bool {
-        self.anim.end_time() <= self.clock.now().saturating_sub(self.delay)
+        self.anim
+            .is_done_at(self.clock.now().saturating_sub(self.delay))
     }
 
     pub fn update_render_elements(&mut self, scale: Scale<f64>, transform: Transform) {
