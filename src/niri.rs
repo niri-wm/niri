@@ -4244,7 +4244,8 @@ impl Niri {
                     }
                 });
 
-                push(transition.render(ctx.renderer, ctx.target, mouse_pos).into());
+                let transition_elem = transition.render(ctx.renderer, ctx.target, mouse_pos);
+                push(transition_elem.into());
             }
         }
 
@@ -6299,13 +6300,21 @@ impl Niri {
                     );
 
                     if let Err(err) = &res {
-                        warn!("error rendering output {}: {err:?}", output.name());
+                        warn!(
+                            "error rendering {:?} for output {}: {err:?}",
+                            target,
+                            output.name()
+                        );
                     }
 
                     res
                 });
 
                 if textures.iter().any(|res| res.is_err()) {
+                    warn!(
+                        "skipping screen transition for output {} due to render errors",
+                        output.name()
+                    );
                     return None;
                 }
 

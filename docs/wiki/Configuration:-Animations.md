@@ -441,6 +441,7 @@ animations {
 ```
 
 #### `screen-transition`
+
 <sup>Since: next release</sup>
 
 The cross-fade animation of the `do-screen-transition` action.
@@ -448,7 +449,7 @@ The cross-fade animation of the `do-screen-transition` action.
 ```kdl
 animations {
     screen-transition {
-        curve "ease-out-quad"
+        curve "ease-out-expo"
     }
 }
 ```
@@ -469,16 +470,16 @@ When running niri as a systemd service, you can see the warnings in the journal:
 > Custom shaders do not have a backwards compatibility guarantee.
 > I may need to change their interface as I'm developing new features.
 
-<!-- Example: resize will show the next (after resize) window texture right away, stretched to the current geometry. -->
+<!-- Example: screen transition will show the previous screen texture and gradually fade in the next screen texture on top of it. -->
 
 ```kdl
 animations {
     screen-transition {
         custom-shader r"
             vec4 screen_transition_color(vec3 coords_curr_geo, vec3 size_curr_geo) {
-                vec3 coords_tex_next = niri_geo_to_tex_next * coords_curr_geo;
-                vec4 color = texture2D(niri_tex_next, coords_tex_next.st);
-                return color * niri_clamped_progress;
+                vec3 coords_tex = niri_geo_to_tex * coords_curr_geo;
+                vec4 color = texture2D(niri_tex_from, coords_tex.st);
+                return color * (1.0 - niri_clamped_progress);
             }
         "
     }
