@@ -2871,10 +2871,10 @@ impl Niri {
         match mem::take(&mut self.lock_state) {
             LockState::Locking(confirmation) => {
                 // We're locking and an output was removed, check if the requirements are now met.
-                let all_locked = self
-                    .output_state
-                    .values()
-                    .all(|state| state.lock_render_state == LockRenderState::Locked);
+                let all_locked = self.output_state.values().all(|state| {
+                    state.power_mode == output_power_management::Mode::Off
+                        || state.lock_render_state == LockRenderState::Locked
+                });
 
                 if all_locked {
                     let lock = confirmation.ext_session_lock().clone();
@@ -2962,10 +2962,6 @@ impl Niri {
         for output in self.global_space.outputs() {
             self.output_power_management_state
                 .output_power_mode_changed(output, output_power_management::Mode::Off);
-
-            if let Some(state) = self.output_state.get_mut(output) {
-                state.power_mode = output_power_management::Mode::Off;
-            }
         }
     }
 
@@ -2996,12 +2992,9 @@ impl Niri {
 
         // Notify per-output power states when activating monitors
         for output in self.global_space.outputs() {
-            let output_state = self.output_state.get_mut(output).unwrap();
+            let power_mode = self.output_state.get(output).unwrap().power_mode;
             self.output_power_management_state
-                .output_power_mode_changed(output, output_state.power_mode);
-            if let Some(state) = self.output_state.get_mut(output) {
-                state.power_mode = output_power_management::Mode::On;
-            }
+                .output_power_mode_changed(output, power_mode);
         }
 
         self.queue_redraw_all();
@@ -4373,11 +4366,42 @@ impl Niri {
 
         let mut res = RenderResult::Skipped;
         if self.monitors_active {
-            let state = self.output_state.get_mut(output).unwrap();
-            if state.power_mode == output_power_management::Mode::Off {
-                state.redraw_state = RedrawState::Idle;
+            let is_power_off = {
+                let state = self.output_state.get_mut(output).unwrap();
+                if state.power_mode == output_power_management::Mode::Off {
+                    state.redraw_state = RedrawState::Idle;
+                    true
+                } else {
+                    false
+                }
+            };
+            if is_power_off {
+                if matches!(
+                    self.lock_state,
+                    LockState::Locking(_) | LockState::Locked(_)
+                ) {
+                    self.output_state.get_mut(output).unwrap().lock_render_state =
+                        LockRenderState::Locked;
+                }
+                if matches!(self.lock_state, LockState::Locking(_)) {
+                    let all_locked = self.output_state.values().all(|s| {
+                        s.power_mode == output_power_management::Mode::Off
+                            || s.lock_render_state == LockRenderState::Locked
+                    });
+                    if all_locked {
+                        match mem::take(&mut self.lock_state) {
+                            LockState::Locking(confirmation) => {
+                                let lock = confirmation.ext_session_lock().clone();
+                                confirmation.lock();
+                                self.lock_state = LockState::Locked(lock);
+                            }
+                            other => self.lock_state = other,
+                        }
+                    }
+                }
                 return;
             }
+            let state = self.output_state.get_mut(output).unwrap();
 
             state.unfinished_animations_remain = self.layout.are_animations_ongoing(Some(output));
             state.unfinished_animations_remain |=
@@ -4438,10 +4462,10 @@ impl Niri {
                     self.unlock();
                 } else {
                     // Check if all outputs are now locked.
-                    let all_locked = self
-                        .output_state
-                        .values()
-                        .all(|state| state.lock_render_state == LockRenderState::Locked);
+                    let all_locked = self.output_state.values().all(|state| {
+                        state.power_mode == output_power_management::Mode::Off
+                            || state.lock_render_state == LockRenderState::Locked
+                    });
 
                     if all_locked {
                         // All outputs are locked, report success.
@@ -4503,6 +4527,47 @@ impl Niri {
 
         if mode == output_power_management::Mode::On {
             self.queue_redraw(output);
+        } else {
+            // Powering off: hand off active-output focus if this output was active.
+            let is_active = self
+                .layout
+                .active_output()
+                .map(|a| a == output)
+                .unwrap_or(false);
+            if is_active {
+                let other = self
+                    .output_state
+                    .iter()
+                    .filter(|(o, s)| {
+                        *o != output && s.power_mode == output_power_management::Mode::On
+                    })
+                    .map(|(o, _)| o.clone())
+                    .next();
+                if let Some(other_output) = other {
+                    self.layout.focus_output(&other_output);
+                }
+            }
+
+            // If we are in the Locking state, check whether the lock can now complete.
+            if matches!(self.lock_state, LockState::Locking(_)) {
+                let state = self.output_state.get_mut(output).unwrap();
+                state.lock_render_state = LockRenderState::Locked;
+
+                let all_locked = self.output_state.values().all(|s| {
+                    s.power_mode == output_power_management::Mode::Off
+                        || s.lock_render_state == LockRenderState::Locked
+                });
+                if all_locked {
+                    match mem::take(&mut self.lock_state) {
+                        LockState::Locking(confirmation) => {
+                            let lock = confirmation.ext_session_lock().clone();
+                            confirmation.lock();
+                            self.lock_state = LockState::Locked(lock);
+                        }
+                        other => self.lock_state = other,
+                    }
+                }
+            }
         }
 
         self.output_power_management_state
@@ -5597,6 +5662,8 @@ impl Niri {
                 confirmation,
                 deadline_token,
             };
+
+            self.maybe_continue_to_locking();
         }
     }
 
@@ -5608,6 +5675,10 @@ impl Niri {
 
         // Check if there are any outputs whose lock surfaces had not had a commit yet.
         for state in self.output_state.values() {
+            if state.power_mode == output_power_management::Mode::Off {
+                continue;
+            }
+
             let Some(surface) = &state.lock_surface else {
                 // Surface not created yet.
                 return;

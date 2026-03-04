@@ -11,6 +11,7 @@ use smithay::output::Output;
 use super::client::{Client, ClientId};
 use super::server::Server;
 use crate::niri::{NewClient, Niri};
+use crate::protocols::output_power_management;
 
 pub struct Fixture {
     pub event_loop: EventLoop<'static, State>,
@@ -144,6 +145,32 @@ impl Fixture {
     pub fn double_roundtrip(&mut self, id: ClientId) {
         self.roundtrip(id);
         self.roundtrip(id);
+    }
+
+    pub fn set_output_power_mode(&mut self, n: u8, mode: output_power_management::Mode) {
+        let state = self.niri_state();
+        let idx = usize::from(n - 1);
+        let output = state.niri.global_space.outputs().nth(idx).unwrap().clone();
+        state
+            .niri
+            .set_output_power(&output, mode, &mut state.backend);
+    }
+
+    pub fn deactivate_monitors(&mut self) {
+        let state = self.niri_state();
+        state.niri.deactivate_monitors(&mut state.backend);
+    }
+
+    pub fn activate_monitors(&mut self) {
+        let state = self.niri_state();
+        state.niri.activate_monitors(&mut state.backend);
+    }
+
+    pub fn get_output_power_mode(&self, n: u8) -> output_power_management::Mode {
+        let niri = &self.state.server.state.niri;
+        let idx = usize::from(n - 1);
+        let output = niri.global_space.outputs().nth(idx).unwrap().clone();
+        niri.output_state.get(&output).unwrap().power_mode
     }
 }
 
