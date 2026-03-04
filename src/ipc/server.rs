@@ -1,5 +1,5 @@
 use std::cell::RefCell;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::ffi::OsStr;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
@@ -454,6 +454,31 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
             let state = ctx.event_stream_state.borrow();
             let casts = state.casts.casts.values().cloned().collect();
             Response::Casts(casts)
+        }
+        Request::ZoomState => {
+            let (tx, rx) = async_channel::bounded(1);
+            ctx.event_loop.insert_idle(move |state| {
+                let zooms = state
+                    .niri
+                    .layout
+                    .outputs()
+                    .fold(HashMap::new(), |mut acc, output| {
+                        let level = state.niri.layout.zoom_level_for_output(output);
+                        acc.insert(
+                            output.name().clone(),
+                            niri_ipc::Zoom {
+                                is_locked: state.niri.layout.zoom_locked_for_output(output),
+                                level,
+                            },
+                        );
+                        acc
+                    });
+
+                let _ = tx.send_blocking(zooms);
+            });
+            let result = rx.recv().await;
+            let zooms = result.map_err(|_| String::from("error getting zoom states"))?;
+            Response::ZoomState(zooms)
         }
     };
 

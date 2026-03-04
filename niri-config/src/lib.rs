@@ -89,6 +89,7 @@ pub struct Config {
     pub debug: Debug,
     pub workspaces: Vec<Workspace>,
     pub recent_windows: RecentWindows,
+    pub zoom: Zoom,
 }
 
 #[derive(Debug, Clone)]
@@ -196,6 +197,7 @@ where
                 "animations" => m_merge!(animations),
                 "gestures" => m_merge!(gestures),
                 "overview" => m_merge!(overview),
+                "zoom" => m_merge!(zoom),
                 "xwayland-satellite" => m_merge!(xwayland_satellite),
                 "switch-events" => m_merge!(switch_events),
                 "debug" => m_merge!(debug),
@@ -837,7 +839,7 @@ mod tests {
                 window-open { off; }
 
                 window-close {
-                    curve "cubic-bezier" 0.05 0.7 0.1 1  
+                    curve "cubic-bezier" 0.05 0.7 0.1 1
                 }
 
                 recent-windows-close {
@@ -1460,6 +1462,7 @@ mod tests {
                 hide_after_inactive_ms: Some(
                     3000,
                 ),
+                scale_with_zoom: false,
             },
             screenshot_path: ScreenshotPath(
                 Some(
@@ -1611,6 +1614,30 @@ mod tests {
                                 damping_ratio: 1.0,
                                 stiffness: 800,
                                 epsilon: 0.001,
+                            },
+                        ),
+                    },
+                ),
+                zoom_level_change: ZoomLevelChangeAnim(
+                    Animation {
+                        off: false,
+                        kind: Spring(
+                            SpringParams {
+                                damping_ratio: 1.0,
+                                stiffness: 1200,
+                                epsilon: 0.0001,
+                            },
+                        ),
+                    },
+                ),
+                zoom_focal_pan: ZoomFocalPanAnim(
+                    Animation {
+                        off: false,
+                        kind: Spring(
+                            SpringParams {
+                                damping_ratio: 1.0,
+                                stiffness: 800,
+                                epsilon: 0.0001,
                             },
                         ),
                     },
@@ -2322,6 +2349,12 @@ mod tests {
                         hotkey_overlay_title: None,
                     },
                 ],
+            },
+            zoom: Zoom {
+                movement_mode: CursorFollow,
+                increment_type: Linear,
+                pinch_sensitivity: 1.0,
+                max_zoom: 10.0,
             },
         }
         "#);
