@@ -624,6 +624,7 @@ impl XdgShellHandler for State {
             mapped.set_needs_configure();
 
             let window = mapped.window.clone();
+            let prefer_windowed = mapped.rules.prefer_windowed_fullscreen.unwrap_or(false);
 
             if let Some(requested_output) = requested_output {
                 if Some(&requested_output) != current_output {
@@ -636,7 +637,11 @@ impl XdgShellHandler for State {
                 }
             }
 
-            self.niri.layout.set_fullscreen(&window, true);
+            if prefer_windowed {
+                self.niri.layout.toggle_windowed_fullscreen(&window);
+            } else {
+                self.niri.layout.set_fullscreen(&window, true);
+            }
         } else if let Some(unmapped) = self.niri.unmapped_windows.get_mut(toplevel.wl_surface()) {
             match &mut unmapped.state {
                 InitialConfigureState::NotConfigured {

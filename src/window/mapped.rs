@@ -59,7 +59,7 @@ pub struct Mapped {
     pre_commit_hook: HookId,
 
     /// Up-to-date rules.
-    rules: ResolvedWindowRules,
+    pub(crate) rules: ResolvedWindowRules,
 
     /// Whether the window rules need to be recomputed.
     ///
