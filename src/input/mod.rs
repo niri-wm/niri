@@ -1570,10 +1570,10 @@ impl State {
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
-            Action::SwitchPresetColumnWidth { forwards, wrap } => {
+            Action::SwitchPresetColumnWidth(forwards, wrap) => {
                 self.niri.layout.toggle_width(forwards, wrap);
             }
-            Action::SwitchPresetWindowWidth { forwards, wrap } => {
+            Action::SwitchPresetWindowWidth(forwards, wrap) => {
                 self.niri.layout.toggle_window_width(None, forwards, wrap);
             }
             Action::SwitchPresetWindowWidthById { id, forwards, wrap } => {
@@ -1585,7 +1585,7 @@ impl State {
                         .toggle_window_width(Some(&window), forwards, wrap);
                 }
             }
-            Action::SwitchPresetWindowHeight { forwards, wrap } => {
+            Action::SwitchPresetWindowHeight(forwards, wrap) => {
                 self.niri.layout.toggle_window_height(None, forwards, wrap);
             }
             Action::SwitchPresetWindowHeightById { id, forwards, wrap } => {

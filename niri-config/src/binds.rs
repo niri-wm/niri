@@ -302,27 +302,24 @@ pub enum Action {
     ResetWindowHeight,
     #[knuffel(skip)]
     ResetWindowHeightById(u64),
-    #[knuffel(skip)]
-    SwitchPresetColumnWidth {
-        forwards: bool,
-        wrap: bool,
-    },
-    #[knuffel(skip)]
-    SwitchPresetWindowWidth {
-        forwards: bool,
-        wrap: bool,
-    },
+    SwitchPresetColumnWidth(
+        #[knuffel(property(name = "forwards"))] bool,
+        #[knuffel(property(name = "wrap"))] bool,
+    ),
+    SwitchPresetWindowWidth(
+        #[knuffel(property(name = "forwards"))] bool,
+        #[knuffel(property(name = "wrap"))] bool,
+    ),
     #[knuffel(skip)]
     SwitchPresetWindowWidthById {
         id: u64,
         forwards: bool,
         wrap: bool,
     },
-    #[knuffel(skip)]
-    SwitchPresetWindowHeight {
-        forwards: bool,
-        wrap: bool,
-    },
+    SwitchPresetWindowHeight(
+        #[knuffel(property(name = "forwards"))] bool,
+        #[knuffel(property(name = "wrap"))] bool,
+    ),
     #[knuffel(skip)]
     SwitchPresetWindowHeightById {
         id: u64,
@@ -608,13 +605,13 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::ResetWindowHeight { id: None } => Self::ResetWindowHeight,
             niri_ipc::Action::ResetWindowHeight { id: Some(id) } => Self::ResetWindowHeightById(id),
             niri_ipc::Action::SwitchPresetColumnWidth { forwards, wrap } => {
-                Self::SwitchPresetColumnWidth { forwards, wrap }
+                Self::SwitchPresetColumnWidth(forwards, wrap)
             }
             niri_ipc::Action::SwitchPresetWindowWidth {
                 id: None,
                 forwards,
                 wrap,
-            } => Self::SwitchPresetWindowWidth { forwards, wrap },
+            } => Self::SwitchPresetWindowWidth(forwards, wrap),
             niri_ipc::Action::SwitchPresetWindowWidth {
                 id: Some(id),
                 forwards,
@@ -624,7 +621,7 @@ impl From<niri_ipc::Action> for Action {
                 id: None,
                 forwards,
                 wrap,
-            } => Self::SwitchPresetWindowHeight { forwards, wrap },
+            } => Self::SwitchPresetWindowHeight(forwards, wrap),
             niri_ipc::Action::SwitchPresetWindowHeight {
                 id: Some(id),
                 forwards,

@@ -714,10 +714,10 @@ pub enum Action {
     /// Switch between preset column widths.
     SwitchPresetColumnWidth {
         /// If traversing should be in forwards direction
-        #[cfg_attr(feature = "clap", arg(short = 'f', long, action = clap::ArgAction::Set, default_value_t = true))]
+        #[cfg_attr(feature = "clap", arg(short, long, action = clap::ArgAction::Set, default_value_t = true))]
         forwards: bool,
         /// If traversing should wrap around
-        #[cfg_attr(feature = "clap", arg(short = 'w', long, action = clap::ArgAction::Set, default_value_t = true))]
+        #[cfg_attr(feature = "clap", arg(short, long, action = clap::ArgAction::Set, default_value_t = true))]
         wrap: bool,
     },
     /// Switch between preset window widths.
@@ -728,10 +728,10 @@ pub enum Action {
         #[cfg_attr(feature = "clap", arg(long))]
         id: Option<u64>,
         /// If traversing should be in forwards direction
-        #[cfg_attr(feature = "clap", arg(short = 'f', long, action = clap::ArgAction::Set, default_value_t = true))]
+        #[cfg_attr(feature = "clap", arg(short, long, action = clap::ArgAction::Set, default_value_t = true))]
         forwards: bool,
         /// If traversing should wrap around
-        #[cfg_attr(feature = "clap", arg(short = 'f', long, action = clap::ArgAction::Set, default_value_t = true))]
+        #[cfg_attr(feature = "clap", arg(short, long, action = clap::ArgAction::Set, default_value_t = true))]
         wrap: bool,
     },
     /// Switch between preset window heights.
@@ -742,10 +742,10 @@ pub enum Action {
         #[cfg_attr(feature = "clap", arg(long))]
         id: Option<u64>,
         /// If traversing should be in forwards direction
-        #[cfg_attr(feature = "clap", arg(short = 'f', long, action = clap::ArgAction::Set, default_value_t = true))]
+        #[cfg_attr(feature = "clap", arg(short, long, action = clap::ArgAction::Set, default_value_t = true))]
         forwards: bool,
         /// If traversing should wrap around
-        #[cfg_attr(feature = "clap", arg(short = 'f', long, action = clap::ArgAction::Set, default_value_t = true))]
+        #[cfg_attr(feature = "clap", arg(short, long, action = clap::ArgAction::Set, default_value_t = true))]
         wrap: bool,
     },
     /// Toggle the maximized state of the focused column.
