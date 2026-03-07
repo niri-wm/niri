@@ -4,12 +4,17 @@ use std::fmt;
 use std::fmt::Write as _;
 use std::os::unix::net::UnixStream;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use calloop::EventLoop;
 use calloop_wayland_source::WaylandSource;
 use single_pixel_buffer::v1::client::wp_single_pixel_buffer_manager_v1::WpSinglePixelBufferManagerV1;
+use smithay::reexports::wayland_protocols::ext::session_lock::v1::client::{
+    ext_session_lock_manager_v1::ExtSessionLockManagerV1,
+    ext_session_lock_surface_v1::{self, ExtSessionLockSurfaceV1},
+    ext_session_lock_v1::{self, ExtSessionLockV1},
+};
 use smithay::reexports::wayland_protocols::wp::single_pixel_buffer;
 use smithay::reexports::wayland_protocols::wp::viewporter::client::wp_viewport::WpViewport;
 use smithay::reexports::wayland_protocols::wp::viewporter::client::wp_viewporter::WpViewporter;
@@ -21,6 +26,10 @@ use smithay::reexports::wayland_protocols_wlr::layer_shell::v1::client::zwlr_lay
 };
 use smithay::reexports::wayland_protocols_wlr::layer_shell::v1::client::zwlr_layer_surface_v1::{
     self, ZwlrLayerSurfaceV1,
+};
+use smithay::reexports::wayland_protocols_wlr::output_power_management::v1::client::{
+    zwlr_output_power_manager_v1::ZwlrOutputPowerManagerV1,
+    zwlr_output_power_v1::{self, ZwlrOutputPowerV1},
 };
 use wayland_backend::client::Backend;
 use wayland_client::globals::Global;
@@ -55,9 +64,13 @@ pub struct State {
     pub layer_shell: Option<ZwlrLayerShellV1>,
     pub spbm: Option<WpSinglePixelBufferManagerV1>,
     pub viewporter: Option<WpViewporter>,
+    pub output_power_manager: Option<ZwlrOutputPowerManagerV1>,
+    pub session_lock_manager: Option<ExtSessionLockManagerV1>,
 
     pub windows: Vec<Window>,
     pub layers: Vec<LayerSurface>,
+    pub output_powers: HashMap<WlOutput, Vec<PowerControl>>,
+    pub session_locks: Vec<SessionLock>,
 }
 
 pub struct Window {
@@ -124,6 +137,36 @@ pub struct SyncData {
     pub done: AtomicBool,
 }
 
+#[derive(Debug, Default)]
+pub struct PowerControlData {
+    pub mode_events: Vec<zwlr_output_power_v1::Mode>,
+    pub failed_received: bool,
+}
+
+pub struct PowerControl {
+    pub power: ZwlrOutputPowerV1,
+    pub data: Arc<Mutex<PowerControlData>>,
+}
+
+#[derive(Debug, Default)]
+pub struct SessionLockData {
+    pub locked: bool,
+    pub finished: bool,
+    pub lock_surface_configures: Vec<(u32, u32, u32)>,
+}
+
+pub struct SessionLockSurface {
+    pub surface: WlSurface,
+    pub lock_surface: ExtSessionLockSurfaceV1,
+    pub viewport: WpViewport,
+}
+
+pub struct SessionLock {
+    pub lock: ExtSessionLockV1,
+    pub data: Arc<Mutex<SessionLockData>>,
+    pub lock_surfaces: Vec<SessionLockSurface>,
+}
+
 static CLIENT_ID_COUNTER: IdCounter = IdCounter::new();
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -181,8 +224,12 @@ impl Client {
             layer_shell: None,
             spbm: None,
             viewporter: None,
+            output_power_manager: None,
+            session_lock_manager: None,
             windows: Vec::new(),
             layers: Vec::new(),
+            output_powers: HashMap::new(),
+            session_locks: Vec::new(),
         };
 
         Self {
@@ -231,6 +278,14 @@ impl Client {
 
     pub fn layer(&mut self, surface: &WlSurface) -> &mut LayerSurface {
         self.state.layer(surface)
+    }
+
+    pub fn create_output_power_control(&mut self, output: &WlOutput) -> &PowerControl {
+        self.state.create_output_power_control(output)
+    }
+
+    pub fn output_power_control(&self, output: &WlOutput) -> &PowerControl {
+        self.state.output_power_control(output)
     }
 
     pub fn output(&mut self, name: &str) -> WlOutput {
@@ -318,6 +373,22 @@ impl State {
             .iter_mut()
             .find(|w| w.surface == *surface)
             .unwrap()
+    }
+
+    pub fn create_output_power_control(&mut self, output: &WlOutput) -> &PowerControl {
+        let manager = self.output_power_manager.as_ref().unwrap();
+        let data = Arc::new(Mutex::new(PowerControlData::default()));
+        let power = manager.get_output_power(output, &self.qh, data.clone());
+        let control = PowerControl { power, data };
+        self.output_powers
+            .entry(output.clone())
+            .or_default()
+            .push(control);
+        self.output_powers[output].last().unwrap()
+    }
+
+    pub fn output_power_control(&self, output: &WlOutput) -> &PowerControl {
+        self.output_powers[output].last().unwrap()
     }
 }
 
@@ -522,6 +593,12 @@ impl Dispatch<WlRegistry, ()> for State {
                     let version = min(version, WlOutput::interface().version);
                     let output = registry.bind(name, version, qh, ());
                     state.outputs.insert(output, String::new());
+                } else if interface == ZwlrOutputPowerManagerV1::interface().name {
+                    let version = min(version, ZwlrOutputPowerManagerV1::interface().version);
+                    state.output_power_manager = Some(registry.bind(name, version, qh, ()));
+                } else if interface == ExtSessionLockManagerV1::interface().name {
+                    let version = min(version, ExtSessionLockManagerV1::interface().version);
+                    state.session_lock_manager = Some(registry.bind(name, version, qh, ()));
                 }
 
                 let global = Global {
@@ -773,5 +850,169 @@ impl Dispatch<WpViewport, ()> for State {
         _qhandle: &QueueHandle<Self>,
     ) {
         unreachable!()
+    }
+}
+
+impl Dispatch<ZwlrOutputPowerManagerV1, ()> for State {
+    fn event(
+        _state: &mut Self,
+        _proxy: &ZwlrOutputPowerManagerV1,
+        _event: <ZwlrOutputPowerManagerV1 as wayland_client::Proxy>::Event,
+        _data: &(),
+        _conn: &Connection,
+        _qhandle: &QueueHandle<Self>,
+    ) {
+        unreachable!()
+    }
+}
+
+impl Dispatch<ZwlrOutputPowerV1, Arc<Mutex<PowerControlData>>> for State {
+    fn event(
+        _state: &mut Self,
+        _proxy: &ZwlrOutputPowerV1,
+        event: <ZwlrOutputPowerV1 as wayland_client::Proxy>::Event,
+        data: &Arc<Mutex<PowerControlData>>,
+        _conn: &Connection,
+        _qhandle: &QueueHandle<Self>,
+    ) {
+        let mut guard = data.lock().unwrap();
+        match event {
+            zwlr_output_power_v1::Event::Mode { mode } => {
+                if let Ok(m) = mode.into_result() {
+                    guard.mode_events.push(m);
+                }
+            }
+            zwlr_output_power_v1::Event::Failed => {
+                guard.failed_received = true;
+            }
+            _ => unreachable!(),
+        }
+    }
+}
+
+impl Dispatch<ExtSessionLockManagerV1, ()> for State {
+    fn event(
+        _state: &mut Self,
+        _proxy: &ExtSessionLockManagerV1,
+        _event: <ExtSessionLockManagerV1 as wayland_client::Proxy>::Event,
+        _data: &(),
+        _conn: &Connection,
+        _qhandle: &QueueHandle<Self>,
+    ) {
+        unreachable!()
+    }
+}
+
+impl Dispatch<ExtSessionLockV1, Arc<Mutex<SessionLockData>>> for State {
+    fn event(
+        _state: &mut Self,
+        _proxy: &ExtSessionLockV1,
+        event: <ExtSessionLockV1 as wayland_client::Proxy>::Event,
+        data: &Arc<Mutex<SessionLockData>>,
+        _conn: &Connection,
+        _qhandle: &QueueHandle<Self>,
+    ) {
+        let mut guard = data.lock().unwrap();
+        match event {
+            ext_session_lock_v1::Event::Locked => {
+                guard.locked = true;
+            }
+            ext_session_lock_v1::Event::Finished => {
+                guard.finished = true;
+            }
+            _ => unreachable!(),
+        }
+    }
+}
+
+impl Dispatch<ExtSessionLockSurfaceV1, Arc<Mutex<SessionLockData>>> for State {
+    fn event(
+        _state: &mut Self,
+        surface: &ExtSessionLockSurfaceV1,
+        event: <ExtSessionLockSurfaceV1 as wayland_client::Proxy>::Event,
+        data: &Arc<Mutex<SessionLockData>>,
+        _conn: &Connection,
+        _qhandle: &QueueHandle<Self>,
+    ) {
+        let mut guard = data.lock().unwrap();
+        match event {
+            ext_session_lock_surface_v1::Event::Configure {
+                serial,
+                width,
+                height,
+            } => {
+                surface.ack_configure(serial);
+                guard.lock_surface_configures.push((serial, width, height));
+            }
+            _ => unreachable!(),
+        }
+    }
+}
+
+impl State {
+    pub fn start_lock(&mut self) -> Arc<Mutex<SessionLockData>> {
+        let manager = self.session_lock_manager.as_ref().unwrap();
+        let data = Arc::new(Mutex::new(SessionLockData::default()));
+        let lock = manager.lock(&self.qh, data.clone());
+        self.session_locks.push(SessionLock {
+            lock,
+            data: data.clone(),
+            lock_surfaces: Vec::new(),
+        });
+        data
+    }
+
+    pub fn create_lock_surface(&mut self, output: &WlOutput) {
+        let compositor = self.compositor.as_ref().unwrap().clone();
+        let viewporter = self.viewporter.as_ref().unwrap().clone();
+        let session_lock = self.session_locks.last_mut().unwrap();
+        let data = session_lock.data.clone();
+        let surface = compositor.create_surface(&self.qh, ());
+        let viewport = viewporter.get_viewport(&surface, &self.qh, ());
+        let lock_surface = session_lock
+            .lock
+            .get_lock_surface(&surface, output, &self.qh, data);
+        session_lock.lock_surfaces.push(SessionLockSurface {
+            surface,
+            lock_surface,
+            viewport,
+        });
+    }
+
+    pub fn commit_lock_surfaces(&self) {
+        let spbm = self.spbm.as_ref().unwrap();
+        let session_lock = self.session_locks.last().unwrap();
+        let data = session_lock.data.lock().unwrap();
+        for (i, lock_surf) in session_lock.lock_surfaces.iter().enumerate() {
+            let buffer = spbm.create_u32_rgba_buffer(0, 0, 0, u32::MAX, &self.qh, ());
+            let (width, height) = data
+                .lock_surface_configures
+                .get(i)
+                .or_else(|| data.lock_surface_configures.last())
+                .map(|&(_, w, h)| (w as i32, h as i32))
+                .unwrap_or((1, 1));
+            lock_surf.viewport.set_destination(width, height);
+            lock_surf.surface.attach(Some(&buffer), 0, 0);
+            lock_surf.surface.commit();
+        }
+    }
+}
+
+impl Client {
+    pub fn start_lock(&mut self) -> Arc<Mutex<SessionLockData>> {
+        self.state.start_lock()
+    }
+
+    pub fn create_lock_surface(&mut self, output: &WlOutput) {
+        self.state.create_lock_surface(output)
+    }
+
+    pub fn commit_lock_surfaces(&mut self) {
+        self.state.commit_lock_surfaces();
+        self.connection.flush().unwrap();
+    }
+
+    pub fn session_lock_data(&self) -> Arc<Mutex<SessionLockData>> {
+        self.state.session_locks.last().unwrap().data.clone()
     }
 }
