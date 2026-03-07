@@ -231,6 +231,17 @@ impl EventStreamStatePart for WindowsState {
                     win.layout = update;
                 }
             }
+            Event::WindowFullscreenStateChanged {
+                id,
+                fullscreen_state,
+            } => {
+                for win in self.windows.values_mut() {
+                    if win.id == id {
+                        win.fullscreen_state = fullscreen_state;
+                        break;
+                    }
+                }
+            }
             event => return Some(event),
         }
         None
