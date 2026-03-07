@@ -11,6 +11,14 @@ pub struct Animations {
     pub workspace_switch: WorkspaceSwitchAnim,
     pub window_open: WindowOpenAnim,
     pub window_close: WindowCloseAnim,
+    pub layer_open: LayerOpenAnim,
+    pub layer_close: LayerCloseAnim,
+    pub layer_bar_open: Option<LayerOpenAnim>,
+    pub layer_bar_close: Option<LayerCloseAnim>,
+    pub layer_wallpaper_open: Option<LayerOpenAnim>,
+    pub layer_wallpaper_close: Option<LayerCloseAnim>,
+    pub layer_launcher_open: Option<LayerOpenAnim>,
+    pub layer_launcher_close: Option<LayerCloseAnim>,
     pub horizontal_view_movement: HorizontalViewMovementAnim,
     pub window_movement: WindowMovementAnim,
     pub window_resize: WindowResizeAnim,
@@ -31,6 +39,14 @@ impl Default for Animations {
             window_movement: Default::default(),
             window_open: Default::default(),
             window_close: Default::default(),
+            layer_open: Default::default(),
+            layer_close: Default::default(),
+            layer_bar_open: None,
+            layer_bar_close: None,
+            layer_wallpaper_open: None,
+            layer_wallpaper_close: None,
+            layer_launcher_open: None,
+            layer_launcher_close: None,
             window_resize: Default::default(),
             config_notification_open_close: Default::default(),
             exit_confirmation_open_close: Default::default(),
@@ -55,6 +71,22 @@ pub struct AnimationsPart {
     pub window_open: Option<WindowOpenAnim>,
     #[knuffel(child)]
     pub window_close: Option<WindowCloseAnim>,
+    #[knuffel(child)]
+    pub layer_open: Option<LayerOpenAnim>,
+    #[knuffel(child)]
+    pub layer_close: Option<LayerCloseAnim>,
+    #[knuffel(child)]
+    pub layer_bar_open: Option<LayerOpenAnim>,
+    #[knuffel(child)]
+    pub layer_bar_close: Option<LayerCloseAnim>,
+    #[knuffel(child)]
+    pub layer_wallpaper_open: Option<LayerOpenAnim>,
+    #[knuffel(child)]
+    pub layer_wallpaper_close: Option<LayerCloseAnim>,
+    #[knuffel(child)]
+    pub layer_launcher_open: Option<LayerOpenAnim>,
+    #[knuffel(child)]
+    pub layer_launcher_close: Option<LayerCloseAnim>,
     #[knuffel(child)]
     pub horizontal_view_movement: Option<HorizontalViewMovementAnim>,
     #[knuffel(child)]
@@ -89,6 +121,8 @@ impl MergeWith<AnimationsPart> for Animations {
             workspace_switch,
             window_open,
             window_close,
+            layer_open,
+            layer_close,
             horizontal_view_movement,
             window_movement,
             window_resize,
@@ -97,6 +131,18 @@ impl MergeWith<AnimationsPart> for Animations {
             screenshot_ui_open,
             overview_open_close,
             recent_windows_close,
+        );
+
+        // Specific layer animation overrides: None means "fall back to the generic layer_open /
+        // layer_close at runtime". merge_clone_opt! preserves None when not set in the part.
+        merge_clone_opt!(
+            (self, part),
+            layer_bar_open,
+            layer_bar_close,
+            layer_wallpaper_open,
+            layer_wallpaper_close,
+            layer_launcher_open,
+            layer_launcher_close,
         );
     }
 }
@@ -179,6 +225,48 @@ pub struct WindowCloseAnim {
 }
 
 impl Default for WindowCloseAnim {
+    fn default() -> Self {
+        Self {
+            anim: Animation {
+                off: false,
+                kind: Kind::Easing(EasingParams {
+                    duration_ms: 150,
+                    curve: Curve::EaseOutQuad,
+                }),
+            },
+            custom_shader: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct LayerOpenAnim {
+    pub anim: Animation,
+    pub custom_shader: Option<String>,
+}
+
+impl Default for LayerOpenAnim {
+    fn default() -> Self {
+        Self {
+            anim: Animation {
+                off: false,
+                kind: Kind::Easing(EasingParams {
+                    duration_ms: 150,
+                    curve: Curve::EaseOutExpo,
+                }),
+            },
+            custom_shader: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct LayerCloseAnim {
+    pub anim: Animation,
+    pub custom_shader: Option<String>,
+}
+
+impl Default for LayerCloseAnim {
     fn default() -> Self {
         Self {
             anim: Animation {
@@ -424,6 +512,58 @@ where
 }
 
 impl<S> knuffel::Decode<S> for WindowResizeAnim
+where
+    S: knuffel::traits::ErrorSpan,
+{
+    fn decode_node(
+        node: &knuffel::ast::SpannedNode<S>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) -> Result<Self, DecodeError<S>> {
+        let default = Self::default().anim;
+        let mut custom_shader = None;
+        let anim = Animation::decode_node(node, ctx, default, |child, ctx| {
+            if &**child.node_name == "custom-shader" {
+                custom_shader = parse_arg_node("custom-shader", child, ctx)?;
+                Ok(true)
+            } else {
+                Ok(false)
+            }
+        })?;
+
+        Ok(Self {
+            anim,
+            custom_shader,
+        })
+    }
+}
+
+impl<S> knuffel::Decode<S> for LayerOpenAnim
+where
+    S: knuffel::traits::ErrorSpan,
+{
+    fn decode_node(
+        node: &knuffel::ast::SpannedNode<S>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) -> Result<Self, DecodeError<S>> {
+        let default = Self::default().anim;
+        let mut custom_shader = None;
+        let anim = Animation::decode_node(node, ctx, default, |child, ctx| {
+            if &**child.node_name == "custom-shader" {
+                custom_shader = parse_arg_node("custom-shader", child, ctx)?;
+                Ok(true)
+            } else {
+                Ok(false)
+            }
+        })?;
+
+        Ok(Self {
+            anim,
+            custom_shader,
+        })
+    }
+}
+
+impl<S> knuffel::Decode<S> for LayerCloseAnim
 where
     S: knuffel::traits::ErrorSpan,
 {
