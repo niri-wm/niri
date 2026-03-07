@@ -18,7 +18,7 @@ use super::workspace::{InteractiveResize, ResolvedSize};
 use super::{ConfigureIntent, HitType, InteractiveResizeData, LayoutElement, Options, RemovedTile};
 use crate::animation::{Animation, Clock};
 use crate::input::swipe_tracker::SwipeTracker;
-use crate::layout::SizingMode;
+use crate::layout::{next_preset_idx, SizingMode};
 use crate::niri_render_elements;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::RenderTarget;
@@ -2581,13 +2581,13 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         None
     }
 
-    pub fn toggle_width(&mut self, forwards: bool) {
+    pub fn toggle_width(&mut self, forwards: bool, wrap: bool) {
         if self.columns.is_empty() {
             return;
         }
 
         let col = &mut self.columns[self.active_column_idx];
-        col.toggle_width(None, forwards);
+        col.toggle_width(None, forwards, wrap);
 
         cancel_resize_for_column(&mut self.interactive_resize, col);
     }
@@ -2675,7 +2675,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         cancel_resize_for_column(&mut self.interactive_resize, col);
     }
 
-    pub fn toggle_window_width(&mut self, window: Option<&W::Id>, forwards: bool) {
+    pub fn toggle_window_width(&mut self, window: Option<&W::Id>, forwards: bool, wrap: bool) {
         if self.columns.is_empty() {
             return;
         }
@@ -2694,12 +2694,12 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             (&mut self.columns[self.active_column_idx], None)
         };
 
-        col.toggle_width(tile_idx, forwards);
+        col.toggle_width(tile_idx, forwards, wrap);
 
         cancel_resize_for_column(&mut self.interactive_resize, col);
     }
 
-    pub fn toggle_window_height(&mut self, window: Option<&W::Id>, forwards: bool) {
+    pub fn toggle_window_height(&mut self, window: Option<&W::Id>, forwards: bool, wrap: bool) {
         if self.columns.is_empty() {
             return;
         }
@@ -2718,7 +2718,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             (&mut self.columns[self.active_column_idx], None)
         };
 
-        col.toggle_window_height(tile_idx, forwards);
+        col.toggle_window_height(tile_idx, forwards, wrap);
 
         cancel_resize_for_column(&mut self.interactive_resize, col);
     }
@@ -4791,7 +4791,7 @@ impl<W: LayoutElement> Column<W> {
         true
     }
 
-    fn toggle_width(&mut self, tile_idx: Option<usize>, forwards: bool) {
+    fn toggle_width(&mut self, tile_idx: Option<usize>, forwards: bool, wrap: bool) {
         let tile_idx = tile_idx.unwrap_or(self.active_tile_idx);
 
         let preset_idx = if self.is_full_width || self.is_pending_maximized {
@@ -4802,7 +4802,7 @@ impl<W: LayoutElement> Column<W> {
 
         let len = self.options.layout.preset_column_widths.len();
         let preset_idx = if let Some(idx) = preset_idx {
-            (idx + if forwards { 1 } else { len - 1 }) % len
+            next_preset_idx(idx, len, forwards, wrap)
         } else {
             let tile = &self.tiles[tile_idx];
             let current_window = tile.window_expected_or_current_size().w;
@@ -5003,7 +5003,7 @@ impl<W: LayoutElement> Column<W> {
         self.update_tile_sizes(true);
     }
 
-    fn toggle_window_height(&mut self, tile_idx: Option<usize>, forwards: bool) {
+    fn toggle_window_height(&mut self, tile_idx: Option<usize>, forwards: bool, wrap: bool) {
         let tile_idx = tile_idx.unwrap_or(self.active_tile_idx);
 
         // Start by converting all heights to automatic, since only one window in the column can be
@@ -5018,7 +5018,7 @@ impl<W: LayoutElement> Column<W> {
         let len = self.options.layout.preset_window_heights.len();
         let preset_idx = match self.data[tile_idx].height {
             WindowHeight::Preset(idx) if !self.is_pending_maximized => {
-                (idx + if forwards { 1 } else { len - 1 }) % len
+                next_preset_idx(idx, len, forwards, wrap)
             }
             _ => {
                 let current = self.data[tile_idx].size.h;
