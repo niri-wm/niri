@@ -725,6 +725,7 @@ mod tests {
                 transform "flipped-90"
                 position x=10 y=20
                 mode "1920x1080@144"
+                bpc 10
                 variable-refresh-rate on-demand=true
                 background-color "rgba(25, 25, 102, 1.0)"
                 hot-corners {
@@ -837,7 +838,7 @@ mod tests {
                 window-open { off; }
 
                 window-close {
-                    curve "cubic-bezier" 0.05 0.7 0.1 1  
+                    curve "cubic-bezier" 0.05 0.7 0.1 1
                 }
 
                 recent-windows-close {
@@ -1138,6 +1139,9 @@ mod tests {
                                 y: 20,
                             },
                         ),
+                        bpc: Some(
+                            _10,
+                        ),
                         mode: Some(
                             Mode {
                                 custom: false,
@@ -1183,6 +1187,7 @@ mod tests {
                         scale: None,
                         transform: Normal,
                         position: None,
+                        bpc: None,
                         mode: Some(
                             Mode {
                                 custom: true,
@@ -1209,6 +1214,7 @@ mod tests {
                         scale: None,
                         transform: Normal,
                         position: None,
+                        bpc: None,
                         mode: None,
                         modeline: Some(
                             Modeline {
