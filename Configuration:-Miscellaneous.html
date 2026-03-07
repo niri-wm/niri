@@ -1,0 +1,2067 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+        <link rel="canonical" href="https://niri-wm.github.io/niri/Configuration%3A-Miscellaneous.html">
+      
+      
+        <link rel="prev" href="Configuration%3A-Named-Workspaces.html">
+      
+      
+        <link rel="next" href="Configuration%3A-Window-Rules.html">
+      
+      
+      <link rel="icon" href="_assets/icons/logo.svg">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.6.15">
+    
+    
+      
+        <title>Miscellaneous - niri</title>
+      
+    
+    
+      <link rel="stylesheet" href="assets/stylesheets/main.342714a4.min.css">
+      
+        
+        <link rel="stylesheet" href="assets/stylesheets/palette.06af60db.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="_assets/stylesheets/niri.css">
+    
+    <script>__md_scope=new URL(".",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#spawn-at-startup" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="." title="niri" class="md-header__button md-logo" aria-label="niri" data-md-component="logo">
+      
+  <img src="_assets/icons/logo.svg" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            niri
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Miscellaneous
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m14.3 16-.7-2h-3.2l-.7 2H7.8L11 7h2l3.2 9zM20 8.69V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12zm-9.15 3.96h2.3L12 9z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_2" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="indigo"  aria-label="Switch to system preference"  type="radio" name="__palette" id="__palette_2">
+    
+      <label class="md-header__button md-icon" title="Switch to system preference" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/niri-wm/niri" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M439.55 236.05 244 40.45a28.87 28.87 0 0 0-40.81 0l-40.66 40.63 51.52 51.52c27.06-9.14 52.68 16.77 43.39 43.68l49.66 49.66c34.23-11.8 61.18 31 35.47 56.69-26.49 26.49-70.21-2.87-56-37.34L240.22 199v121.85c25.3 12.54 22.26 41.85 9.08 55a34.34 34.34 0 0 1-48.55 0c-17.57-17.6-11.07-46.91 11.25-56v-123c-20.8-8.51-24.6-30.74-18.64-45L142.57 101 8.45 235.14a28.86 28.86 0 0 0 0 40.81l195.61 195.6a28.86 28.86 0 0 0 40.8 0l194.69-194.69a28.86 28.86 0 0 0 0-40.81"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="." title="niri" class="md-nav__button md-logo" aria-label="niri" data-md-component="logo">
+      
+  <img src="_assets/icons/logo.svg" alt="logo">
+
+    </a>
+    niri
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/niri-wm/niri" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M439.55 236.05 244 40.45a28.87 28.87 0 0 0-40.81 0l-40.66 40.63 51.52 51.52c27.06-9.14 52.68 16.77 43.39 43.68l49.66 49.66c34.23-11.8 61.18 31 35.47 56.69-26.49 26.49-70.21-2.87-56-37.34L240.22 199v121.85c25.3 12.54 22.26 41.85 9.08 55a34.34 34.34 0 0 1-48.55 0c-17.57-17.6-11.07-46.91 11.25-56v-123c-20.8-8.51-24.6-30.74-18.64-45L142.57 101 8.45 235.14a28.86 28.86 0 0 0 0 40.81l195.61 195.6a28.86 28.86 0 0 0 40.8 0l194.69-194.69a28.86 28.86 0 0 0 0-40.81"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1" >
+        
+          
+          <label class="md-nav__link" for="__nav_1" id="__nav_1_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    Usage
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_1">
+            <span class="md-nav__icon md-icon"></span>
+            Usage
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Getting-Started.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Getting Started
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Example-systemd-Setup.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Example systemd Setup
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Important-Software.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Important Software
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Workspaces.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Workspaces
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Floating-Windows.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Floating Windows
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Tabs.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Tabs
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Overview.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Overview
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Screencasting.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Screencasting
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Layer%E2%80%90Shell-Components.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Layer‐Shell Components
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="IPC.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    IPC, niri msg
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Application-Issues.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Application-Specific Issues
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Nvidia.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Nvidia
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Xwayland.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Xwayland
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Gestures.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Gestures
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Fullscreen-and-Maximize.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Fullscreen and Maximize
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Packaging-niri.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Packaging niri
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Integrating-niri.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Integrating niri
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Accessibility.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Accessibility
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Name-and-Logo.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Name and Logo
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="FAQ.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    FAQ
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    Configuration
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            Configuration
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Configuration%3A-Introduction.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Introduction
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Configuration%3A-Input.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Input
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Configuration%3A-Outputs.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Outputs
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Configuration%3A-Key-Bindings.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Key Bindings
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Configuration%3A-Switch-Events.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Switch Events
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Configuration%3A-Layout.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Layout
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Configuration%3A-Named-Workspaces.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Named Workspaces
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    Miscellaneous
+    
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="Configuration%3A-Miscellaneous.html" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    Miscellaneous
+    
+  </span>
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#spawn-at-startup" class="md-nav__link">
+    <span class="md-ellipsis">
+      spawn-at-startup
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#spawn-sh-at-startup" class="md-nav__link">
+    <span class="md-ellipsis">
+      spawn-sh-at-startup
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#prefer-no-csd" class="md-nav__link">
+    <span class="md-ellipsis">
+      prefer-no-csd
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#screenshot-path" class="md-nav__link">
+    <span class="md-ellipsis">
+      screenshot-path
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#environment" class="md-nav__link">
+    <span class="md-ellipsis">
+      environment
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cursor" class="md-nav__link">
+    <span class="md-ellipsis">
+      cursor
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="cursor">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#hide-when-typing" class="md-nav__link">
+    <span class="md-ellipsis">
+      hide-when-typing
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#hide-after-inactive-ms" class="md-nav__link">
+    <span class="md-ellipsis">
+      hide-after-inactive-ms
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      overview
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="overview">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#zoom" class="md-nav__link">
+    <span class="md-ellipsis">
+      zoom
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#backdrop-color" class="md-nav__link">
+    <span class="md-ellipsis">
+      backdrop-color
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#workspace-shadow" class="md-nav__link">
+    <span class="md-ellipsis">
+      workspace-shadow
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#xwayland-satellite" class="md-nav__link">
+    <span class="md-ellipsis">
+      xwayland-satellite
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#clipboard" class="md-nav__link">
+    <span class="md-ellipsis">
+      clipboard
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#hotkey-overlay" class="md-nav__link">
+    <span class="md-ellipsis">
+      hotkey-overlay
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="hotkey-overlay">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#skip-at-startup" class="md-nav__link">
+    <span class="md-ellipsis">
+      skip-at-startup
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#hide-not-bound" class="md-nav__link">
+    <span class="md-ellipsis">
+      hide-not-bound
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#config-notification" class="md-nav__link">
+    <span class="md-ellipsis">
+      config-notification
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Configuration%3A-Window-Rules.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Window Rules
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Configuration%3A-Layer-Rules.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Layer Rules
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Configuration%3A-Animations.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Animations
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Configuration%3A-Gestures.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Gestures
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Configuration%3A-Recent-Windows.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Recent Windows
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Configuration%3A-Debug-Options.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Debug Options
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Configuration%3A-Include.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Include
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    Development
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            Development
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Development%3A-Design-Principles.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Design Principles
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Development%3A-Developing-niri.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Developing niri
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Development%3A-Documenting-niri.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Documenting niri
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Development%3A-Fractional-Layout.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Fractional Layout
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Development%3A-Redraw-Loop.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Redraw Loop
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Development%3A-Animation-Timing.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Animation Timing
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#spawn-at-startup" class="md-nav__link">
+    <span class="md-ellipsis">
+      spawn-at-startup
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#spawn-sh-at-startup" class="md-nav__link">
+    <span class="md-ellipsis">
+      spawn-sh-at-startup
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#prefer-no-csd" class="md-nav__link">
+    <span class="md-ellipsis">
+      prefer-no-csd
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#screenshot-path" class="md-nav__link">
+    <span class="md-ellipsis">
+      screenshot-path
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#environment" class="md-nav__link">
+    <span class="md-ellipsis">
+      environment
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cursor" class="md-nav__link">
+    <span class="md-ellipsis">
+      cursor
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="cursor">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#hide-when-typing" class="md-nav__link">
+    <span class="md-ellipsis">
+      hide-when-typing
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#hide-after-inactive-ms" class="md-nav__link">
+    <span class="md-ellipsis">
+      hide-after-inactive-ms
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      overview
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="overview">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#zoom" class="md-nav__link">
+    <span class="md-ellipsis">
+      zoom
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#backdrop-color" class="md-nav__link">
+    <span class="md-ellipsis">
+      backdrop-color
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#workspace-shadow" class="md-nav__link">
+    <span class="md-ellipsis">
+      workspace-shadow
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#xwayland-satellite" class="md-nav__link">
+    <span class="md-ellipsis">
+      xwayland-satellite
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#clipboard" class="md-nav__link">
+    <span class="md-ellipsis">
+      clipboard
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#hotkey-overlay" class="md-nav__link">
+    <span class="md-ellipsis">
+      hotkey-overlay
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="hotkey-overlay">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#skip-at-startup" class="md-nav__link">
+    <span class="md-ellipsis">
+      skip-at-startup
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#hide-not-bound" class="md-nav__link">
+    <span class="md-ellipsis">
+      hide-not-bound
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#config-notification" class="md-nav__link">
+    <span class="md-ellipsis">
+      config-notification
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/niri-wm/niri/edit/main/docs/wiki/Configuration:-Miscellaneous.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+  <h1>Miscellaneous</h1>
+
+<p>This page documents all top-level options that don't otherwise have dedicated pages.</p>
+<p>Here are all of these options at a glance:</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nl">spawn-at-startup</span><span class="w"> </span><span class="s">&quot;waybar&quot;</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nl">spawn-at-startup</span><span class="w"> </span><span class="s">&quot;alacritty&quot;</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="nl">spawn-sh-at-startup</span><span class="w"> </span><span class="s">&quot;qs -c ~/source/qs/MyAwesomeShell&quot;</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="nl">prefer-no-csd</span>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="nl">screenshot-path</span><span class="w"> </span><span class="s">&quot;~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png&quot;</span>
+</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>
+</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="nl">environment</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="nl">    QT_QPA_PLATFORM</span><span class="w"> </span><span class="s">&quot;wayland&quot;</span>
+</span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="nl">    DISPLAY</span><span class="w"> </span><span class="s">null</span>
+</span><span id="__span-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="o">}</span>
+</span><span id="__span-0-13"><a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>
+</span><span id="__span-0-14"><a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="nl">cursor</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-0-15"><a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a><span class="nl">    xcursor-theme</span><span class="w"> </span><span class="s">&quot;breeze_cursors&quot;</span>
+</span><span id="__span-0-16"><a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a><span class="nl">    xcursor-size</span><span class="w"> </span><span class="m m-Decimal">48</span>
+</span><span id="__span-0-17"><a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>
+</span><span id="__span-0-18"><a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a><span class="nl">    hide-when-typing</span>
+</span><span id="__span-0-19"><a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a><span class="nl">    hide-after-inactive-ms</span><span class="w"> </span><span class="m m-Decimal">1000</span>
+</span><span id="__span-0-20"><a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a><span class="o">}</span>
+</span><span id="__span-0-21"><a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a>
+</span><span id="__span-0-22"><a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a><span class="nl">overview</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-0-23"><a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a><span class="nl">    zoom</span><span class="w"> </span><span class="mf">0.5</span>
+</span><span id="__span-0-24"><a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a><span class="nl">    backdrop-color</span><span class="w"> </span><span class="s">&quot;#262626&quot;</span>
+</span><span id="__span-0-25"><a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a>
+</span><span id="__span-0-26"><a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a><span class="nl">    workspace-shadow</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-0-27"><a id="__codelineno-0-27" name="__codelineno-0-27" href="#__codelineno-0-27"></a><span class="w">        </span><span class="c1">// off</span>
+</span><span id="__span-0-28"><a id="__codelineno-0-28" name="__codelineno-0-28" href="#__codelineno-0-28"></a><span class="nl">        softness</span><span class="w"> </span><span class="m m-Decimal">40</span>
+</span><span id="__span-0-29"><a id="__codelineno-0-29" name="__codelineno-0-29" href="#__codelineno-0-29"></a><span class="nl">        spread</span><span class="w"> </span><span class="m m-Decimal">10</span>
+</span><span id="__span-0-30"><a id="__codelineno-0-30" name="__codelineno-0-30" href="#__codelineno-0-30"></a><span class="nl">        offset</span><span class="w"> </span><span class="na">x=</span><span class="m m-Decimal">0</span><span class="w"> </span><span class="na">y=</span><span class="m m-Decimal">10</span>
+</span><span id="__span-0-31"><a id="__codelineno-0-31" name="__codelineno-0-31" href="#__codelineno-0-31"></a><span class="nl">        color</span><span class="w"> </span><span class="s">&quot;#00000050&quot;</span>
+</span><span id="__span-0-32"><a id="__codelineno-0-32" name="__codelineno-0-32" href="#__codelineno-0-32"></a><span class="w">    </span><span class="o">}</span>
+</span><span id="__span-0-33"><a id="__codelineno-0-33" name="__codelineno-0-33" href="#__codelineno-0-33"></a><span class="o">}</span>
+</span><span id="__span-0-34"><a id="__codelineno-0-34" name="__codelineno-0-34" href="#__codelineno-0-34"></a>
+</span><span id="__span-0-35"><a id="__codelineno-0-35" name="__codelineno-0-35" href="#__codelineno-0-35"></a><span class="nl">xwayland-satellite</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-0-36"><a id="__codelineno-0-36" name="__codelineno-0-36" href="#__codelineno-0-36"></a><span class="w">    </span><span class="c1">// off</span>
+</span><span id="__span-0-37"><a id="__codelineno-0-37" name="__codelineno-0-37" href="#__codelineno-0-37"></a><span class="nl">    path</span><span class="w"> </span><span class="s">&quot;xwayland-satellite&quot;</span>
+</span><span id="__span-0-38"><a id="__codelineno-0-38" name="__codelineno-0-38" href="#__codelineno-0-38"></a><span class="o">}</span>
+</span><span id="__span-0-39"><a id="__codelineno-0-39" name="__codelineno-0-39" href="#__codelineno-0-39"></a>
+</span><span id="__span-0-40"><a id="__codelineno-0-40" name="__codelineno-0-40" href="#__codelineno-0-40"></a><span class="nl">clipboard</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-0-41"><a id="__codelineno-0-41" name="__codelineno-0-41" href="#__codelineno-0-41"></a><span class="nl">    disable-primary</span>
+</span><span id="__span-0-42"><a id="__codelineno-0-42" name="__codelineno-0-42" href="#__codelineno-0-42"></a><span class="o">}</span>
+</span><span id="__span-0-43"><a id="__codelineno-0-43" name="__codelineno-0-43" href="#__codelineno-0-43"></a>
+</span><span id="__span-0-44"><a id="__codelineno-0-44" name="__codelineno-0-44" href="#__codelineno-0-44"></a><span class="nl">hotkey-overlay</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-0-45"><a id="__codelineno-0-45" name="__codelineno-0-45" href="#__codelineno-0-45"></a><span class="nl">    skip-at-startup</span>
+</span><span id="__span-0-46"><a id="__codelineno-0-46" name="__codelineno-0-46" href="#__codelineno-0-46"></a><span class="nl">    hide-not-bound</span>
+</span><span id="__span-0-47"><a id="__codelineno-0-47" name="__codelineno-0-47" href="#__codelineno-0-47"></a><span class="o">}</span>
+</span><span id="__span-0-48"><a id="__codelineno-0-48" name="__codelineno-0-48" href="#__codelineno-0-48"></a>
+</span><span id="__span-0-49"><a id="__codelineno-0-49" name="__codelineno-0-49" href="#__codelineno-0-49"></a><span class="nl">config-notification</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-0-50"><a id="__codelineno-0-50" name="__codelineno-0-50" href="#__codelineno-0-50"></a><span class="nl">    disable-failed</span>
+</span><span id="__span-0-51"><a id="__codelineno-0-51" name="__codelineno-0-51" href="#__codelineno-0-51"></a><span class="o">}</span>
+</span></code></pre></div>
+<h3 id="spawn-at-startup"><code>spawn-at-startup</code><a class="headerlink" href="#spawn-at-startup" title="Permanent link">#</a></h3>
+<p>Add lines like this to spawn processes at niri startup.</p>
+<p><code>spawn-at-startup</code> accepts a path to the program binary as the first argument, followed by arguments to the program.</p>
+<p>This option works the same way as the <a href="Configuration%3A-Key-Bindings.html#spawn"><code>spawn</code> key binding action</a>, so please read about all its subtleties there.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nl">spawn-at-startup</span><span class="w"> </span><span class="s">&quot;waybar&quot;</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="nl">spawn-at-startup</span><span class="w"> </span><span class="s">&quot;alacritty&quot;</span>
+</span></code></pre></div>
+<p>Note that running niri as a systemd session supports xdg-desktop-autostart out of the box, which may be more convenient to use.
+Thanks to this, apps that you configured to autostart in GNOME will also "just work" in niri, without any manual <code>spawn-at-startup</code> configuration.</p>
+<h3 id="spawn-sh-at-startup"><code>spawn-sh-at-startup</code><a class="headerlink" href="#spawn-sh-at-startup" title="Permanent link">#</a></h3>
+<p><span class="badge"><a href="https://github.com/niri-wm/niri/releases/tag/v25.08">Since: 25.08</a></span></p>
+<p>Add lines like this to run shell commands at niri startup.</p>
+<p>The argument is a single string that is passed verbatim to <code>sh</code>.
+You can use shell variables, pipelines, <code>~</code> expansion and everything else as expected.</p>
+<p>See detailed description in the docs for the <a href="Configuration%3A-Key-Bindings.html#spawn-sh"><code>spawn-sh</code> key binding action</a>.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1">// Pass all arguments in the same string.</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nl">spawn-sh-at-startup</span><span class="w"> </span><span class="s">&quot;qs -c ~/source/qs/MyAwesomeShell&quot;</span>
+</span></code></pre></div>
+<h3 id="prefer-no-csd"><code>prefer-no-csd</code><a class="headerlink" href="#prefer-no-csd" title="Permanent link">#</a></h3>
+<p>This flag will make niri ask the applications to omit their client-side decorations.</p>
+<p>If an application will specifically ask for CSD, the request will be honored.
+Additionally, clients will be informed that they are tiled, removing some rounded corners.</p>
+<p>With <code>prefer-no-csd</code> set, applications that negotiate server-side decorations through the xdg-decoration protocol will have focus ring and border drawn around them <em>without</em> a solid colored background.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Unlike most other options, changing <code>prefer-no-csd</code> will not entirely affect already running applications.
+It will make some windows rectangular, but won't remove the title bars.
+This mainly has to do with niri working around a <a href="https://github.com/libsdl-org/SDL/issues/8173">bug in SDL2</a> that prevents SDL2 applications from starting.</p>
+<p>Restart applications after changing <code>prefer-no-csd</code> in the config to fully apply it.</p>
+</div>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nl">prefer-no-csd</span>
+</span></code></pre></div>
+<h3 id="screenshot-path"><code>screenshot-path</code><a class="headerlink" href="#screenshot-path" title="Permanent link">#</a></h3>
+<p>Set the path where screenshots are saved.
+A <code>~</code> at the front will be expanded to the home directory.</p>
+<p>The path is formatted with <code>strftime(3)</code> to give you the screenshot date and time.</p>
+<p>Niri will create the last folder of the path if it doesn't exist.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nl">screenshot-path</span><span class="w"> </span><span class="s">&quot;~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png&quot;</span>
+</span></code></pre></div>
+<p>You can also set this option to <code>null</code> to disable saving screenshots to disk.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nl">screenshot-path</span><span class="w"> </span><span class="s">null</span>
+</span></code></pre></div>
+<h3 id="environment"><code>environment</code><a class="headerlink" href="#environment" title="Permanent link">#</a></h3>
+<p>Override environment variables for processes spawned by niri.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="nl">environment</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">    </span><span class="c1">// Set a variable like this:</span>
+</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">    </span><span class="c1">// QT_QPA_PLATFORM &quot;wayland&quot;</span>
+</span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>
+</span><span id="__span-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="w">    </span><span class="c1">// Remove a variable by using null as the value:</span>
+</span><span id="__span-6-6"><a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="w">    </span><span class="c1">// DISPLAY null</span>
+</span><span id="__span-6-7"><a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="o">}</span>
+</span></code></pre></div>
+<p>Note that these variables do not propagate to the systemd global environment, so tools and applications started by systemd do not see them.
+In particular, if you start a desktop shell like DankMaterialShell through systemd, then use its built-in application launcher, the apps won't see these environment variables.</p>
+<p>If you want all processes to see the environment variables, you can set them in your login shell config instead (i.e. <code>~/.bash_profile</code>).
+The <code>niri-session</code> shell script runs through the login shell and imports all environment variables to systemd before starting niri.
+Keep in mind that all compositors will see variables set in the login shell, not just niri.</p>
+<h3 id="cursor"><code>cursor</code><a class="headerlink" href="#cursor" title="Permanent link">#</a></h3>
+<p>Change the theme and size of the cursor as well as set the <code>XCURSOR_THEME</code> and <code>XCURSOR_SIZE</code> environment variables.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="nl">cursor</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="nl">    xcursor-theme</span><span class="w"> </span><span class="s">&quot;breeze_cursors&quot;</span>
+</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="nl">    xcursor-size</span><span class="w"> </span><span class="m m-Decimal">48</span>
+</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="o">}</span>
+</span></code></pre></div>
+<h4 id="hide-when-typing"><code>hide-when-typing</code><a class="headerlink" href="#hide-when-typing" title="Permanent link">#</a></h4>
+<p><span class="badge"><a href="https://github.com/niri-wm/niri/releases/tag/v0.1.10">Since: 0.1.10</a></span></p>
+<p>If set, hides the cursor when pressing a key on the keyboard.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>This setting might interfere with games running in Wine in native Wayland mode that use mouselook, such as first-person games.
+If your character's point of view jumps down when you press a key and move the mouse simultaneously, try disabling this setting.</p>
+</div>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="nl">cursor</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="nl">    hide-when-typing</span>
+</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="o">}</span>
+</span></code></pre></div>
+<h4 id="hide-after-inactive-ms"><code>hide-after-inactive-ms</code><a class="headerlink" href="#hide-after-inactive-ms" title="Permanent link">#</a></h4>
+<p><span class="badge"><a href="https://github.com/niri-wm/niri/releases/tag/v0.1.10">Since: 0.1.10</a></span></p>
+<p>If set, the cursor will automatically hide once this number of milliseconds passes since the last cursor movement.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="nl">cursor</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="w">    </span><span class="c1">// Hide the cursor after one second of inactivity.</span>
+</span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="nl">    hide-after-inactive-ms</span><span class="w"> </span><span class="m m-Decimal">1000</span>
+</span><span id="__span-9-4"><a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="o">}</span>
+</span></code></pre></div>
+<h3 id="overview"><code>overview</code><a class="headerlink" href="#overview" title="Permanent link">#</a></h3>
+<p><span class="badge"><a href="https://github.com/niri-wm/niri/releases/tag/v25.05">Since: 25.05</a></span></p>
+<p>Settings for the <a href="Overview.html">Overview</a>.</p>
+<h4 id="zoom"><code>zoom</code><a class="headerlink" href="#zoom" title="Permanent link">#</a></h4>
+<p>Control how much the workspaces zoom out in the overview.
+<code>zoom</code> ranges from 0 to 0.75 where lower values make everything smaller.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="c1">// Make workspaces four times smaller than normal in the overview.</span>
+</span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="nl">overview</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-10-3"><a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="nl">    zoom</span><span class="w"> </span><span class="mf">0.25</span>
+</span><span id="__span-10-4"><a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="o">}</span>
+</span></code></pre></div>
+<h4 id="backdrop-color"><code>backdrop-color</code><a class="headerlink" href="#backdrop-color" title="Permanent link">#</a></h4>
+<p>Set the backdrop color behind workspaces in the overview.
+The backdrop is also visible between workspaces when switching.</p>
+<p>The alpha channel for this color will be ignored.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="c1">// Make the backdrop light.</span>
+</span><span id="__span-11-2"><a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="nl">overview</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-11-3"><a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="nl">    backdrop-color</span><span class="w"> </span><span class="s">&quot;#777777&quot;</span>
+</span><span id="__span-11-4"><a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="o">}</span>
+</span></code></pre></div>
+<p>You can also set the color per-output <a href="Configuration%3A-Outputs.html#backdrop-color">in the output config</a>.</p>
+<h4 id="workspace-shadow"><code>workspace-shadow</code><a class="headerlink" href="#workspace-shadow" title="Permanent link">#</a></h4>
+<p>Control the shadow behind workspaces visible in the overview.</p>
+<p>Settings here mirror the normal <a href="Configuration%3A-Layout.html#shadow"><code>shadow</code> config in the layout section</a>, so check the documentation there.</p>
+<p>Workspace shadows are configured for a workspace size normalized to 1080 pixels tall, then zoomed out together with the workspace.
+Practically, this means that you'll want bigger spread, offset, and softness compared to window shadows.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="c1">// Disable workspace shadows in the overview.</span>
+</span><span id="__span-12-2"><a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="nl">overview</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-12-3"><a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a><span class="nl">    workspace-shadow</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-12-4"><a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a><span class="nl">        off</span>
+</span><span id="__span-12-5"><a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a><span class="w">    </span><span class="o">}</span>
+</span><span id="__span-12-6"><a id="__codelineno-12-6" name="__codelineno-12-6" href="#__codelineno-12-6"></a><span class="o">}</span>
+</span></code></pre></div>
+<h3 id="xwayland-satellite"><code>xwayland-satellite</code><a class="headerlink" href="#xwayland-satellite" title="Permanent link">#</a></h3>
+<p><span class="badge"><a href="https://github.com/niri-wm/niri/releases/tag/v25.08">Since: 25.08</a></span></p>
+<p>Settings for integration with <a href="https://github.com/Supreeeme/xwayland-satellite">xwayland-satellite</a>.</p>
+<p>When a recent enough xwayland-satellite is detected, niri will create the X11 sockets and set <code>DISPLAY</code>, then automatically spawn <code>xwayland-satellite</code> when an X11 client tries to connect.
+If Xwayland dies, niri will keep watching the X11 socket and restart <code>xwayland-satellite</code> as needed.
+This is very similar to how built-in Xwayland works in other compositors.</p>
+<p><code>off</code> disables the integration: niri won't create an X11 socket and won't set the <code>DISPLAY</code> environment variable.</p>
+<p><code>path</code> sets the path to the <code>xwayland-satellite</code> binary.
+By default, it's just <code>xwayland-satellite</code>, so it's looked up like any other non-absolute program name.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="c1">// Use a custom build of xwayland-satellite.</span>
+</span><span id="__span-13-2"><a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a><span class="nl">xwayland-satellite</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-13-3"><a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a><span class="nl">    path</span><span class="w"> </span><span class="s">&quot;~/source/rs/xwayland-satellite/target/release/xwayland-satellite&quot;</span>
+</span><span id="__span-13-4"><a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a><span class="o">}</span>
+</span></code></pre></div>
+<h3 id="clipboard"><code>clipboard</code><a class="headerlink" href="#clipboard" title="Permanent link">#</a></h3>
+<p><span class="badge"><a href="https://github.com/niri-wm/niri/releases/tag/v25.02">Since: 25.02</a></span></p>
+<p>Clipboard settings.</p>
+<p>Set the <code>disable-primary</code> flag to disable the primary clipboard (middle-click paste).
+Toggling this flag will only apply to applications started afterward.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-14-1"><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="nl">clipboard</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-14-2"><a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a><span class="nl">    disable-primary</span>
+</span><span id="__span-14-3"><a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a><span class="o">}</span>
+</span></code></pre></div>
+<h3 id="hotkey-overlay"><code>hotkey-overlay</code><a class="headerlink" href="#hotkey-overlay" title="Permanent link">#</a></h3>
+<p>Settings for the "Important Hotkeys" overlay.</p>
+<h4 id="skip-at-startup"><code>skip-at-startup</code><a class="headerlink" href="#skip-at-startup" title="Permanent link">#</a></h4>
+<p>Set the <code>skip-at-startup</code> flag if you don't want to see the hotkey help at niri startup.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-15-1"><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="nl">hotkey-overlay</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-15-2"><a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a><span class="nl">    skip-at-startup</span>
+</span><span id="__span-15-3"><a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a><span class="o">}</span>
+</span></code></pre></div>
+<h4 id="hide-not-bound"><code>hide-not-bound</code><a class="headerlink" href="#hide-not-bound" title="Permanent link">#</a></h4>
+<p><span class="badge"><a href="https://github.com/niri-wm/niri/releases/tag/v25.08">Since: 25.08</a></span></p>
+<p>By default, niri will show the most important actions even if they aren't bound to any key, to prevent confusion.
+Set the <code>hide-not-bound</code> flag if you want to hide all actions not bound to any key.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-16-1"><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="nl">hotkey-overlay</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-16-2"><a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a><span class="nl">    hide-not-bound</span>
+</span><span id="__span-16-3"><a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a><span class="o">}</span>
+</span></code></pre></div>
+<p>You can customize which binds the hotkey overlay shows using the <a href="Configuration%3A-Key-Bindings.html#custom-hotkey-overlay-titles"><code>hotkey-overlay-title</code> property</a>.</p>
+<h3 id="config-notification"><code>config-notification</code><a class="headerlink" href="#config-notification" title="Permanent link">#</a></h3>
+<p><span class="badge"><a href="https://github.com/niri-wm/niri/releases/tag/v25.08">Since: 25.08</a></span></p>
+<p>Settings for the config created/failed notification.</p>
+<p>Set the <code>disable-failed</code> flag to disable the "Failed to parse the config file" notification.
+For example, if you have a custom one.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-17-1"><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a><span class="nl">config-notification</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-17-2"><a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a><span class="nl">    disable-failed</span>
+</span><span id="__span-17-3"><a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a><span class="o">}</span>
+</span></code></pre></div>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      <script id="__config" type="application/json">{"base": ".", "features": ["navigation.instant", "search.suggest", "content.code.copy", "content.action.edit"], "search": "assets/javascripts/workers/search.d50fe291.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="assets/javascripts/bundle.56ea9cef.min.js"></script>
+      
+    
+  </body>
+</html>
