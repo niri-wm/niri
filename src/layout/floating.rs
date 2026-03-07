@@ -783,6 +783,18 @@ impl<W: LayoutElement> FloatingSpace<W> {
         let win_height = ensure_min_max_size(win_height, min_size.h, max_size.h);
 
         let win_size = Size::from((win_width, win_height));
+        if win_size.w > 0
+            && win_size.h > 0
+            && win.size() == win_size
+            && win.sizing_mode().is_normal()
+            && win.pending_sizing_mode().is_normal()
+            && matches!(
+                win.configure_intent(),
+                ConfigureIntent::NotNeeded | ConfigureIntent::Throttled
+            )
+        {
+            return;
+        }
         win.request_size_once(win_size, animate);
     }
 
@@ -830,6 +842,18 @@ impl<W: LayoutElement> FloatingSpace<W> {
         let win_width = ensure_min_max_size(win_width, min_size.w, max_size.w);
 
         let win_size = Size::from((win_width, win_height));
+        if win_size.w > 0
+            && win_size.h > 0
+            && win.size() == win_size
+            && win.sizing_mode().is_normal()
+            && win.pending_sizing_mode().is_normal()
+            && matches!(
+                win.configure_intent(),
+                ConfigureIntent::NotNeeded | ConfigureIntent::Throttled
+            )
+        {
+            return;
+        }
         win.request_size_once(win_size, animate);
     }
 
