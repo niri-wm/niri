@@ -303,12 +303,12 @@ pub enum Action {
     #[knuffel(skip)]
     ResetWindowHeightById(u64),
     SwitchPresetColumnWidth(
-        #[knuffel(property(name = "forwards"))] bool,
-        #[knuffel(property(name = "wrap"))] bool,
+        #[knuffel(property(name = "forwards"), default = true)] bool,
+        #[knuffel(property(name = "wrap"), default = true)] bool,
     ),
     SwitchPresetWindowWidth(
-        #[knuffel(property(name = "forwards"))] bool,
-        #[knuffel(property(name = "wrap"))] bool,
+        #[knuffel(property(name = "forwards"), default = true)] bool,
+        #[knuffel(property(name = "wrap"), default = true)] bool,
     ),
     #[knuffel(skip)]
     SwitchPresetWindowWidthById {
@@ -317,8 +317,8 @@ pub enum Action {
         wrap: bool,
     },
     SwitchPresetWindowHeight(
-        #[knuffel(property(name = "forwards"))] bool,
-        #[knuffel(property(name = "wrap"))] bool,
+        #[knuffel(property(name = "forwards"), default = true)] bool,
+        #[knuffel(property(name = "wrap"), default = true)] bool,
     ),
     #[knuffel(skip)]
     SwitchPresetWindowHeightById {
