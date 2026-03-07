@@ -2257,6 +2257,7 @@ dependencies = [
  "tracy-client",
  "wayland-backend",
  "wayland-client",
+ "wayland-protocols-plasma",
  "wayland-scanner",
  "wayland-server",
  "xcursor",
@@ -3475,7 +3476,7 @@ checksum = "b7c388c1b5e93756d0c740965c41e8822f866621d41acbdf6336a6a168f8840c"
 [[package]]
 name = "smithay"
 version = "0.7.0"
-source = "git+https://github.com/Smithay/smithay.git#f1d0d2c43e843233119af3dcf76d619e1afff4ee"
+source = "git+https://github.com/Smithay/smithay.git?rev=5b4e4e8036d9961b30e5173dc1f033b3f9af2d7a#5b4e4e8036d9961b30e5173dc1f033b3f9af2d7a"
 dependencies = [
  "aliasable",
  "appendlist",
@@ -4218,6 +4219,7 @@ dependencies = [
  "wayland-client",
  "wayland-protocols",
  "wayland-scanner",
+ "wayland-server",
 ]
 
 [[package]]
