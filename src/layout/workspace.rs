@@ -1173,11 +1173,11 @@ impl<W: LayoutElement> Workspace<W> {
         self.scrolling.center_visible_columns();
     }
 
-    pub fn toggle_width(&mut self, forwards: bool) {
+    pub fn toggle_width(&mut self, forwards: bool, wrap: bool) {
         if self.floating_is_active.get() {
-            self.floating.toggle_window_width(None, forwards);
+            self.floating.toggle_window_width(None, forwards, wrap);
         } else {
-            self.scrolling.toggle_width(forwards);
+            self.scrolling.toggle_width(forwards, wrap);
         }
     }
 
@@ -1227,23 +1227,23 @@ impl<W: LayoutElement> Workspace<W> {
         self.scrolling.reset_window_height(window);
     }
 
-    pub fn toggle_window_width(&mut self, window: Option<&W::Id>, forwards: bool) {
+    pub fn toggle_window_width(&mut self, window: Option<&W::Id>, forwards: bool, wrap: bool) {
         if window.map_or(self.floating_is_active.get(), |id| {
             self.floating.has_window(id)
         }) {
-            self.floating.toggle_window_width(window, forwards);
+            self.floating.toggle_window_width(window, forwards, wrap);
         } else {
-            self.scrolling.toggle_window_width(window, forwards);
+            self.scrolling.toggle_window_width(window, forwards, wrap);
         }
     }
 
-    pub fn toggle_window_height(&mut self, window: Option<&W::Id>, forwards: bool) {
+    pub fn toggle_window_height(&mut self, window: Option<&W::Id>, forwards: bool, wrap: bool) {
         if window.map_or(self.floating_is_active.get(), |id| {
             self.floating.has_window(id)
         }) {
-            self.floating.toggle_window_height(window, forwards);
+            self.floating.toggle_window_height(window, forwards, wrap);
         } else {
-            self.scrolling.toggle_window_height(window, forwards);
+            self.scrolling.toggle_window_height(window, forwards, wrap);
         }
     }
 

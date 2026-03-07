@@ -251,7 +251,10 @@ fn collect_actions(config: &Config) -> Vec<&Action> {
     }
 
     actions.extend(&[
-        &Action::SwitchPresetColumnWidth,
+        &Action::SwitchPresetColumnWidth {
+            forwards: true,
+            wrap: true,
+        },
         &Action::MaximizeColumn,
         &Action::ConsumeOrExpelWindowLeft,
         &Action::ConsumeOrExpelWindowRight,
@@ -470,7 +473,10 @@ fn action_name(action: &Action) -> String {
         Action::MoveColumnToWorkspaceUp(_) => String::from("Move Column to Workspace Up"),
         Action::MoveWindowToWorkspaceDown(_) => String::from("Move Window to Workspace Down"),
         Action::MoveWindowToWorkspaceUp(_) => String::from("Move Window to Workspace Up"),
-        Action::SwitchPresetColumnWidth => String::from("Switch Preset Column Widths"),
+        Action::SwitchPresetColumnWidth {
+            forwards: true,
+            wrap: true,
+        } => String::from("Switch Preset Column Widths"),
         Action::MaximizeColumn => String::from("Maximize Column"),
         Action::ConsumeOrExpelWindowLeft => String::from("Consume or Expel Window Left"),
         Action::ConsumeOrExpelWindowRight => String::from("Consume or Expel Window Right"),

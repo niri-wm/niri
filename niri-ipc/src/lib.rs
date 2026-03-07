@@ -712,9 +712,14 @@ pub enum Action {
         id: Option<u64>,
     },
     /// Switch between preset column widths.
-    SwitchPresetColumnWidth {},
-    /// Switch between preset column widths backwards.
-    SwitchPresetColumnWidthBack {},
+    SwitchPresetColumnWidth {
+        /// If traversing should be in forwards direction
+        #[cfg_attr(feature = "clap", arg(short = 'f', long, action = clap::ArgAction::Set, default_value_t = true))]
+        forwards: bool,
+        /// If traversing should wrap around
+        #[cfg_attr(feature = "clap", arg(short = 'w', long, action = clap::ArgAction::Set, default_value_t = true))]
+        wrap: bool,
+    },
     /// Switch between preset window widths.
     SwitchPresetWindowWidth {
         /// Id of the window whose width to switch.
@@ -722,14 +727,12 @@ pub enum Action {
         /// If `None`, uses the focused window.
         #[cfg_attr(feature = "clap", arg(long))]
         id: Option<u64>,
-    },
-    /// Switch between preset window widths backwards.
-    SwitchPresetWindowWidthBack {
-        /// Id of the window whose width to switch.
-        ///
-        /// If `None`, uses the focused window.
-        #[cfg_attr(feature = "clap", arg(long))]
-        id: Option<u64>,
+        /// If traversing should be in forwards direction
+        #[cfg_attr(feature = "clap", arg(short = 'f', long, action = clap::ArgAction::Set, default_value_t = true))]
+        forwards: bool,
+        /// If traversing should wrap around
+        #[cfg_attr(feature = "clap", arg(short = 'f', long, action = clap::ArgAction::Set, default_value_t = true))]
+        wrap: bool,
     },
     /// Switch between preset window heights.
     SwitchPresetWindowHeight {
@@ -738,14 +741,12 @@ pub enum Action {
         /// If `None`, uses the focused window.
         #[cfg_attr(feature = "clap", arg(long))]
         id: Option<u64>,
-    },
-    /// Switch between preset window heights backwards.
-    SwitchPresetWindowHeightBack {
-        /// Id of the window whose height to switch.
-        ///
-        /// If `None`, uses the focused window.
-        #[cfg_attr(feature = "clap", arg(long))]
-        id: Option<u64>,
+        /// If traversing should be in forwards direction
+        #[cfg_attr(feature = "clap", arg(short = 'f', long, action = clap::ArgAction::Set, default_value_t = true))]
+        forwards: bool,
+        /// If traversing should wrap around
+        #[cfg_attr(feature = "clap", arg(short = 'f', long, action = clap::ArgAction::Set, default_value_t = true))]
+        wrap: bool,
     },
     /// Toggle the maximized state of the focused column.
     MaximizeColumn {},
