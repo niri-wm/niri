@@ -1,7 +1,7 @@
 use std::cmp::{max, min};
 
 use niri_config::utils::MergeWith as _;
-use niri_config::window_rule::{Match, WindowRule};
+use niri_config::window_rule::{ConsumeIntoColumn, Match, WindowRule};
 use niri_config::{
     BlockOutFrom, BorderRule, CornerRadius, FloatingPosition, PresetSize, ShadowRule,
     TabIndicatorRule,
@@ -72,6 +72,9 @@ pub struct ResolvedWindowRules {
 
     /// Whether the window should open focused.
     pub open_focused: Option<bool>,
+
+    /// Strategy for auto-consuming this window into an existing column, if any.
+    pub open_consume_into_column: Option<ConsumeIntoColumn>,
 
     /// Extra bound on the minimum window width.
     pub min_width: Option<u16>,
@@ -249,6 +252,10 @@ impl ResolvedWindowRules {
 
                 if let Some(x) = rule.open_focused {
                     resolved.open_focused = Some(x);
+                }
+
+                if let Some(x) = rule.open_consume_into_column {
+                    resolved.open_consume_into_column = Some(x);
                 }
 
                 if let Some(x) = rule.min_width {
