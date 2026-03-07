@@ -62,3 +62,19 @@ Non-xray effects are currently experimental because they have some known limitat
 
 - They disappear during window open/close animations and while dragging a tiled window.
 Fixing this requries a refactor to the niri rendering code to defer offscreen rendering, and possibly other refactors.
+
+### Implementation notes
+
+The `ext-background-effect` protocol supports any wl_surface.
+We currently implement it only for toplevels, layer surfaces, and pop-ups, which should cover the vast majority of what's actually used by applications.
+
+For pop-ups, effects default to *non-xray* because pop-ups generally appear on top of windows.
+
+In particular, the following surface types don't support `ext-background-effect`.
+They can be implemented as the need arises.
+
+- Subsurfaces. Would require implementing `clip-to-geometry` support for background effects.
+- Lock surfaces. Not useful as it would just show our red locked session background.
+- Cursor and drag-and-drop icon.
+The main challenge here will be screencasts where the cursor is rendered separately.
+This is problematic because non-xray effects require rendering the whole scene in one go rather than separately.

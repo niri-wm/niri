@@ -114,6 +114,7 @@ niri_render_elements! {
     LayoutElementRenderElement<R> => {
         Wayland = WaylandSurfaceRenderElement<R>,
         SolidColor = SolidColorRenderElement,
+        BackgroundEffect = BackgroundEffectElement,
     }
 }
 

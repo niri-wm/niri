@@ -257,7 +257,8 @@ impl MappedLayer {
 
     pub fn render_popups<R: NiriRenderer>(
         &self,
-        ctx: RenderCtx<R>,
+        mut ctx: RenderCtx<R>,
+        ns: Option<usize>,
         location: Point<f64, Logical>,
         push: &mut dyn FnMut(LayerSurfaceRenderElement<R>),
     ) {
@@ -267,19 +268,48 @@ impl MappedLayer {
 
         let scale = Scale::from(self.scale);
         let alpha = self.rules.opacity.unwrap_or(1.).clamp(0., 1.);
-        let location = location + self.bob_offset();
+
+        let bob_offset = self.bob_offset();
+        let location = location + bob_offset;
+        let xray_pos = xray_pos.offset(bob_offset);
 
         let surface = self.surface.wl_surface();
         for (popup, offset) in PopupManager::popups_for_surface(surface) {
-            let surface_loc = location + (offset - popup.geometry().loc).to_f64();
+            let surface = popup.wl_surface();
+            let popup_geo = popup.geometry();
+            let surface_loc = location + (offset - popup_geo.loc).to_f64();
 
             push_elements_from_surface_tree(
                 ctx.renderer,
-                popup.wl_surface(),
+                surface,
                 surface_loc.to_physical_precise_round(scale),
                 scale,
                 alpha,
                 Kind::ScanoutCandidate,
+                &mut |elem| push(elem.into()),
+            );
+
+            let geometry = Rectangle::new(location + offset.to_f64(), popup_geo.size.to_f64());
+            let surface_off = popup_geo.loc.upscale(-1).to_f64();
+            let surface_anim_scale = Scale::from(1.);
+            let effect = niri_config::BackgroundEffect {
+                xray: Some(false),
+                ..Default::default()
+            };
+            background_effect::render_for_tile(
+                ctx.as_gles(),
+                ns,
+                geometry,
+                self.scale,
+                false,
+                surface,
+                surface_off,
+                surface_anim_scale,
+                self.blur_config,
+                niri_config::CornerRadius::default(),
+                effect,
+                false,
+                XrayPos::default(),
                 &mut |elem| push(elem.into()),
             );
         }

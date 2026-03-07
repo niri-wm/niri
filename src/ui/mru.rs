@@ -421,6 +421,12 @@ impl Thumbnail {
                 // Otherwise, render the solid color as is.
                 LayoutElementRenderElement::SolidColor(elem).into()
             }
+            elem @ LayoutElementRenderElement::BackgroundEffect(_) => {
+                // This is only used on popups for now. If subsurface blur is implemented, this
+                // will need to be handled somehow.
+                error!("background effect clipping is unimplemented");
+                elem.into()
+            }
         };
 
         let downscale = move |elem| {

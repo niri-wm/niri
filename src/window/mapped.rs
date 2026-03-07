@@ -657,7 +657,7 @@ impl LayoutElement for Mapped {
 
     fn render_popups<R: NiriRenderer>(
         &self,
-        ctx: RenderCtx<R>,
+        mut ctx: RenderCtx<R>,
         location: Point<f64, Logical>,
         scale: Scale<f64>,
         alpha: f32,
@@ -669,15 +669,41 @@ impl LayoutElement for Mapped {
 
         let surface = self.toplevel().wl_surface();
         for (popup, offset) in PopupManager::popups_for_surface(surface) {
+            let surface = popup.wl_surface();
+            let popup_geo = popup.geometry();
             let surface_loc = location + (offset - popup.geometry().loc).to_f64();
 
             push_elements_from_surface_tree(
                 ctx.renderer,
-                popup.wl_surface(),
+                surface,
                 surface_loc.to_physical_precise_round(scale),
                 scale,
                 alpha,
                 Kind::ScanoutCandidate,
+                &mut |elem| push(elem.into()),
+            );
+
+            let geometry = Rectangle::new(location + offset.to_f64(), popup_geo.size.to_f64());
+            let surface_off = popup_geo.loc.upscale(-1).to_f64();
+            let surface_anim_scale = Scale::from(1.);
+            let effect = niri_config::BackgroundEffect {
+                xray: Some(false),
+                ..Default::default()
+            };
+            background_effect::render_for_tile(
+                ctx.as_gles(),
+                None,
+                geometry,
+                scale.x,
+                false,
+                surface,
+                surface_off,
+                surface_anim_scale,
+                self.blur_config,
+                CornerRadius::default(),
+                effect,
+                false,
+                XrayPos::default(),
                 &mut |elem| push(elem.into()),
             );
         }

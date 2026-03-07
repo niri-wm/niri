@@ -4518,14 +4518,14 @@ impl Niri {
     fn render_layer_popups<R: NiriRenderer>(
         &self,
         mut ctx: RenderCtx<R>,
-        _ns: Option<usize>,
+        ns: Option<usize>,
         layer_map: &LayerMap,
         layer: Layer,
         for_backdrop: bool,
         push: &mut dyn FnMut(LayerSurfaceRenderElement<R>),
     ) {
         for (mapped, geo) in self.layers_in_render_order(layer_map, layer, for_backdrop) {
-            mapped.render_popups(ctx.r(), geo.loc.to_f64(), push);
+            mapped.render_popups(ctx.r(), ns, geo.loc.to_f64(), push);
         }
     }
 
