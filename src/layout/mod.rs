@@ -327,6 +327,13 @@ pub struct Layout<W: LayoutElement> {
     options: Rc<Options>,
 }
 
+#[derive(Debug, Clone)]
+pub struct OutputZoomState {
+    pub level: f64,
+    pub focal_point: Point<f64, Logical>,
+    pub locked: bool,
+}
+
 #[derive(Debug)]
 enum MonitorSet<W: LayoutElement> {
     /// At least one output is connected.

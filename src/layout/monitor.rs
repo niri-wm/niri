@@ -4,7 +4,6 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use niri_config::{CornerRadius, LayoutPart};
-use niri_ipc::ZoomMovement;
 use smithay::backend::renderer::element::utils::{
     CropRenderElement, Relocate, RelocateRenderElement, RescaleRenderElement,
 };
@@ -88,18 +87,6 @@ pub struct Monitor<W: LayoutElement> {
     pub(super) options: Rc<Options>,
     /// Layout config overrides for this monitor.
     layout_config: Option<niri_config::LayoutPart>,
-    /// Whether cursor zoom is enabled for this monitor.
-    pub zoom_enabled: bool,
-    /// Cursor zoom factor for this monitor (1.0 = no zoom).
-    pub zoom_factor: f64,
-    /// Cursor zoom center position for this monitor (in output-local logical coordinates).
-    pub zoom_center: Point<f64, Logical>,
-    /// Cursor zoom movement mode for this monitor.
-    pub zoom_movement: ZoomMovement,
-    /// Cursor zoom threshold for edge-pushed behavior (fraction of output size, default 0.15).
-    pub zoom_threshold: f64,
-    /// Whether the cursor_zoom center is currently frozen (not updated with cursor movements).
-    pub zoom_frozen: bool,
 }
 
 #[derive(Debug)]
@@ -358,12 +345,6 @@ impl<W: LayoutElement> Monitor<W> {
             base_options,
             options,
             layout_config,
-            zoom_factor: 1.0,
-            zoom_enabled: false,
-            zoom_center: Point::from((0., 0.)),
-            zoom_movement: ZoomMovement::default(),
-            zoom_threshold: 0.15,
-            zoom_frozen: false,
         }
     }
 
@@ -1391,23 +1372,6 @@ impl<W: LayoutElement> Monitor<W> {
     pub fn overview_zoom(&self) -> f64 {
         let progress = self.overview_progress.as_ref().map(|p| p.value());
         compute_overview_zoom(&self.options, progress)
-    }
-
-    pub fn update_zoom_config(&mut self, zoom: Option<&niri_config::output::Zoom>) {
-        if let Some(zoom) = zoom {
-            if let Some(factor) = zoom.factor {
-                self.zoom_factor = factor.0;
-            }
-            if let Some(movement) = zoom.movement {
-                self.zoom_movement = movement;
-            }
-            if let Some(threshold) = zoom.threshold {
-                self.zoom_threshold = threshold.clamp(0.0, 1.0);
-            }
-            if let Some(frozen) = zoom.frozen {
-                self.zoom_frozen = frozen.0;
-            }
-        }
     }
 
     pub(super) fn set_overview_progress(&mut self, progress: Option<&super::OverviewProgress>) {

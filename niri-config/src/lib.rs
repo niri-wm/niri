@@ -43,7 +43,6 @@ pub mod recent_windows;
 pub mod utils;
 pub mod window_rule;
 pub mod workspace;
-pub mod zoom;
 
 pub use crate::animations::{Animation, Animations};
 pub use crate::appearance::*;
@@ -62,7 +61,6 @@ pub use crate::utils::FloatOrInt;
 use crate::utils::{Flag, MergeWith as _};
 pub use crate::window_rule::{FloatingPosition, RelativeTo, WindowRule};
 pub use crate::workspace::{Workspace, WorkspaceLayoutPart};
-pub use crate::zoom::ZoomConfig;
 
 const RECURSION_LIMIT: u8 = 10;
 
@@ -91,7 +89,7 @@ pub struct Config {
     pub debug: Debug,
     pub workspaces: Vec<Workspace>,
     pub recent_windows: RecentWindows,
-    pub zoom: ZoomConfig,
+    pub zoom: Zoom,
 }
 
 #[derive(Debug, Clone)]
@@ -841,7 +839,7 @@ mod tests {
                 window-open { off; }
 
                 window-close {
-                    curve "cubic-bezier" 0.05 0.7 0.1 1  
+                    curve "cubic-bezier" 0.05 0.7 0.1 1
                 }
 
                 recent-windows-close {
@@ -1180,7 +1178,6 @@ mod tests {
                             },
                         ),
                         layout: None,
-                        zoom: None,
                     },
                     Output {
                         off: false,
@@ -1207,7 +1204,6 @@ mod tests {
                         backdrop_color: None,
                         hot_corners: None,
                         layout: None,
-                        zoom: None,
                     },
                     Output {
                         off: false,
@@ -1237,7 +1233,6 @@ mod tests {
                         backdrop_color: None,
                         hot_corners: None,
                         layout: None,
-                        zoom: None,
                     },
                 ],
             ),
@@ -2331,10 +2326,9 @@ mod tests {
                     },
                 ],
             },
-            zoom: ZoomConfig {
-                default_factor: None,
-                movement: None,
-                threshold: None,
+            zoom: Zoom {
+                movement_mode: CursorFollow,
+                increment_type: Linear,
             },
         }
         "#);

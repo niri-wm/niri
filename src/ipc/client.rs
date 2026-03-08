@@ -8,7 +8,7 @@ use niri_config::OutputName;
 use niri_ipc::socket::Socket;
 use niri_ipc::{
     Action, Cast, CastKind, CastTarget, Event, KeyboardLayouts, LogicalOutput, Mode, Output,
-    OutputConfigChanged, Overview, Request, Response, Transform, Window, WindowLayout,
+    OutputConfigChanged, Overview, Request, Response, Transform, Window, WindowLayout, Zoom,
 };
 use serde_json::json;
 
@@ -507,9 +507,6 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
                     Event::CastStopped { stream_id } => {
                         println!("Cast stopped: stream id {stream_id}");
                     }
-                    Event::ZoomStateChange { output, state } => {
-                        println!("Zoom state changed on {output}: {state:?}");
-                    }
                 }
             }
         }
@@ -555,37 +552,23 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
             }
         }
         Msg::ZoomState => {
-            let Response::ZoomStateChange {
-                state: zoom_state, ..
-            } = response
-            else {
+            let Response::ZoomState(zoom_states) = response else {
                 bail!("unexpected response: expected ZoomState, got {response:?}");
             };
 
             if json {
-                let response =
-                    serde_json::to_string(&zoom_state).context("error formatting response")?;
-                println!("{response}");
+                let zoom_states =
+                    serde_json::to_string(&zoom_states).context("error formatting response")?;
+                println!("{zoom_states}");
                 return Ok(());
             }
 
-            let niri_ipc::ZoomState {
-                enabled,
-                factor,
-                movement,
-                threshold,
-                frozen,
-            } = zoom_state;
-            println!("Zoom State:");
-            println!("  Enabled: {}", enabled);
-            println!("  Factor: {:.2}", factor);
-            let m = match movement {
-                niri_ipc::ZoomMovement::Cursor => "cursor-follow",
-                niri_ipc::ZoomMovement::EdgePushed => "edge-pushed",
-            };
-            println!("  Movement: {m}");
-            println!("  Threshold: {:.2}", threshold);
-            println!("  Frozen: {}", frozen);
+            for (output_name, Zoom { level, is_locked }) in zoom_states {
+                println!("Output \"{output_name}\":");
+                println!("  Zoom level: {:.2}", level);
+                println!("  Zoom locked: {}", if is_locked { "yes" } else { "no" });
+                println!();
+            }
         }
     }
 
@@ -605,7 +588,6 @@ fn print_output(output: Output) -> anyhow::Result<()> {
         vrr_supported,
         vrr_enabled,
         logical,
-        ..
     } = output;
 
     let serial = serial.as_deref().unwrap_or("Unknown");
