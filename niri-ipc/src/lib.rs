@@ -932,6 +932,12 @@ pub enum Action {
         #[cfg_attr(feature = "clap", arg(long))]
         id: u64,
     },
+    /// Set the cursor zoom factor (desktop magnification centered on cursor).
+    SetCursorZoom {
+        /// Zoom factor (1.0 = no zoom, 2.0 = 2x magnification, etc.)
+        #[cfg_attr(feature = "clap", arg())]
+        factor: f64,
+    },
     /// Reload the config file.
     ///
     /// Can be useful for scripts changing the config file, to avoid waiting the small duration for

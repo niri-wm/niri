@@ -368,6 +368,8 @@ pub enum Action {
     #[knuffel(skip)]
     UnsetWindowUrgent(u64),
     #[knuffel(skip)]
+    SetCursorZoom(f64),
+    #[knuffel(skip)]
     LoadConfigFile(#[knuffel(argument)] Option<String>),
     #[knuffel(skip)]
     MruAdvance {
@@ -699,6 +701,7 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::ToggleWindowUrgent { id } => Self::ToggleWindowUrgent(id),
             niri_ipc::Action::SetWindowUrgent { id } => Self::SetWindowUrgent(id),
             niri_ipc::Action::UnsetWindowUrgent { id } => Self::UnsetWindowUrgent(id),
+            niri_ipc::Action::SetCursorZoom { factor } => Self::SetCursorZoom(factor),
             niri_ipc::Action::LoadConfigFile { path } => Self::LoadConfigFile(path),
         }
     }

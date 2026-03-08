@@ -392,6 +392,9 @@ pub struct Niri {
     pub debug_draw_opaque_regions: bool,
     pub debug_draw_damage: bool,
 
+    /// Cursor zoom factor for desktop magnification (1.0 = no zoom).
+    pub cursor_zoom_factor: f64,
+
     #[cfg(feature = "dbus")]
     pub dbus: Option<crate::dbus::DBusServers>,
     #[cfg(feature = "dbus")]
@@ -2544,6 +2547,8 @@ impl Niri {
 
             debug_draw_opaque_regions: false,
             debug_draw_damage: false,
+
+            cursor_zoom_factor: 1.0,
 
             #[cfg(feature = "dbus")]
             dbus: None,
