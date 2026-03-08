@@ -531,6 +531,7 @@ impl Thumbnail {
                 radius,
                 scale,
                 0.5,
+                0.,
             );
             let bg_elems = background
                 .render(renderer, loc)
@@ -552,6 +553,7 @@ impl Thumbnail {
                 radius.expanded_by(config.width as f32),
                 scale,
                 1.,
+                0.,
             );
 
             let border_elems = border
