@@ -684,6 +684,28 @@ impl State {
 
                 let is_locked = this.niri.is_locked();
                 let is_in_screenshot = this.niri.screenshot_ui.is_open();
+
+                #[cfg(feature = "dbus")]
+                if let (Some(shell), Some(dbus)) = (&this.niri.gnome_shell, &this.niri.dbus) {
+                    if let Some(conn_shell) = &dbus.conn_gnome_shell {
+                        match conn_shell
+                            .object_server()
+                            .interface::<_, crate::dbus::gnome_shell::Shell>("/org/gnome/Shell")
+                        {
+                            Ok(iface) => {
+                                if let Some(keysym) = raw {
+                                    if shell
+                                        .process_key(keysym, *mods, mod_key, pressed, time, iface)
+                                    {
+                                        return ShouldInterceptResult::Forward;
+                                    }
+                                }
+                            }
+                            Err(err) => warn!("error getting gnome Shell interface: {err:?}"),
+                        }
+                    }
+                }
+
                 let res = {
                     let config = this.niri.config.borrow();
                     let bindings = make_binds_iter(
