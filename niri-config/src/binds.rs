@@ -1191,4 +1191,84 @@ mod tests {
             },
         );
     }
+
+    #[test]
+    fn trigger_display() {
+        assert_eq!(Trigger::Keysym(Keysym::Return).to_string(), "Return");
+        assert_eq!(Trigger::Keysym(Keysym::space).to_string(), "space");
+        assert_eq!(Trigger::Keysym(Keysym::Escape).to_string(), "Escape");
+        assert_eq!(Trigger::MouseLeft.to_string(), "MouseLeft");
+    }
+
+    #[test]
+    fn modifiers_display() {
+        assert_eq!(Modifiers::CTRL.to_string(), "Ctrl");
+        assert_eq!(Modifiers::SHIFT.to_string(), "Shift");
+        assert_eq!(Modifiers::ALT.to_string(), "Alt");
+        assert_eq!(Modifiers::SUPER.to_string(), "Super");
+        assert_eq!(Modifiers::ISO_LEVEL3_SHIFT.to_string(), "Iso_Level3_Shift");
+        assert_eq!(Modifiers::ISO_LEVEL5_SHIFT.to_string(), "Iso_Level5_Shift");
+        assert_eq!(Modifiers::COMPOSITOR.to_string(), "Mod");
+
+        let all_mods = Modifiers::CTRL
+            | Modifiers::SHIFT
+            | Modifiers::ALT
+            | Modifiers::SUPER
+            | Modifiers::ISO_LEVEL3_SHIFT
+            | Modifiers::ISO_LEVEL5_SHIFT
+            | Modifiers::COMPOSITOR;
+
+        assert_eq!(
+            all_mods.to_string(),
+            "Ctrl+Shift+Alt+Super+Iso_Level3_Shift+Iso_Level5_Shift+Mod"
+        );
+        assert_eq!(Modifiers::empty().to_string(), "");
+    }
+
+    #[test]
+    fn key_display() {
+        // Basic
+        let key = Key {
+            trigger: Trigger::Keysym(Keysym::a),
+            modifiers: Modifiers::empty(),
+        };
+        assert_eq!(key.to_string(), "a");
+
+        // With mods
+        let key = Key {
+            trigger: Trigger::Keysym(Keysym::b),
+            modifiers: Modifiers::CTRL | Modifiers::SHIFT,
+        };
+        assert_eq!(key.to_string(), "Ctrl+Shift+b");
+
+        // Test mouse trigger
+        let key = Key {
+            trigger: Trigger::MouseLeft,
+            modifiers: Modifiers::CTRL,
+        };
+        assert_eq!(key.to_string(), "Ctrl+MouseLeft");
+    }
+
+    #[test]
+    fn key_idempotence() {
+        let test_cases = [
+            "a",
+            "Ctrl+b",
+            "Shift+Alt+c",
+            "Mod+d",
+            "Ctrl+Mod+e",
+            "MouseLeft",
+            "Ctrl+MouseRight",
+            "Alt+WheelScrollDown",
+            "Iso_Level3_Shift+f",
+        ];
+
+        for input in test_cases {
+            let key = input
+                .parse::<Key>()
+                .unwrap_or_else(|_| panic!("Failed to parse: {}", input));
+            let output = key.to_string();
+            assert_eq!(input, output, "Round trip failed for: {}", input);
+        }
+    }
 }
