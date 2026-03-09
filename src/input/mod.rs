@@ -50,6 +50,8 @@ use self::resize_grab::ResizeGrab;
 use self::spatial_movement_grab::SpatialMovementGrab;
 #[cfg(feature = "dbus")]
 use crate::dbus::freedesktop_a11y::KbMonBlock;
+#[cfg(feature = "dbus")]
+use crate::dbus::gnome_shell::GlobalShortcutsPortalBinds;
 use crate::layout::scrolling::ScrollDirection;
 use crate::layout::{ActivateWindow, LayoutElement as _};
 use crate::niri::{CastTarget, Niri, PointerVisibility, State};
@@ -691,6 +693,8 @@ impl State {
                         &config,
                         &this.niri.screenshot_ui,
                         &mut this.niri.window_mru_ui,
+                        #[cfg(feature = "dbus")]
+                        &this.niri.global_shortcuts_portal_binds,
                         this.niri.keyboard_focus.is_overview(),
                         modifiers,
                     );
@@ -2720,6 +2724,28 @@ impl State {
                     self.niri.queue_redraw_mru_output();
                 }
             }
+            Action::GlobalShortcutActivateAction(action) => {
+                #[cfg(feature = "dbus")]
+                {
+                    let Some(shell) = self.niri.gnome_shell.as_ref() else {
+                        error!("attempted to activate action {action} but gnome_shell is missing");
+                        return;
+                    };
+                    shell.activate_action(action, time, &mut self.niri.activation_state);
+                }
+            }
+            Action::GlobalShortcutDeactivateAction(action) => {
+                #[cfg(feature = "dbus")]
+                {
+                    let Some(shell) = self.niri.gnome_shell.as_ref() else {
+                        error!(
+                            "attempted to deactivate action {action} but gnome_shell is missing"
+                        );
+                        return;
+                    };
+                    shell.deactivate_action(action, time, &mut self.niri.activation_state);
+                }
+            }
             Action::TestAction => {
                 #[cfg(test)]
                 {
@@ -3086,6 +3112,8 @@ impl State {
             &config,
             &self.niri.screenshot_ui,
             &mut self.niri.window_mru_ui,
+            #[cfg(feature = "dbus")]
+            &self.niri.global_shortcuts_portal_binds,
             self.niri.keyboard_focus.is_overview(),
             modifiers,
         );
@@ -5772,6 +5800,7 @@ fn make_binds_iter<'a>(
     config: &'a Config,
     screenshot_ui: &'a ScreenshotUi,
     mru: &'a mut WindowMruUi,
+    #[cfg(feature = "dbus")] global_shortcuts: &'a GlobalShortcutsPortalBinds,
     overview_focused: bool,
     mods: Modifiers,
 ) -> impl Iterator<Item = &'a Bind> + Clone {
@@ -5797,11 +5826,17 @@ fn make_binds_iter<'a>(
         .flatten();
 
     // The precedence is screenshot UI, then general, then MRU binds.
-    screenshot_binds
+    let all_binds = screenshot_binds
         .chain(general_binds)
         .chain(mru_binds)
         .chain(mru_open_binds)
-        .chain(overview_binds)
+        .chain(overview_binds);
+
+    // The GlobalShortcuts portal binds go last.
+    #[cfg(feature = "dbus")]
+    let all_binds = all_binds.chain(global_shortcuts.binds());
+
+    all_binds
 }
 
 #[cfg(test)]
