@@ -353,13 +353,17 @@ pub fn zoom_transform_physical_point(
     output_scale: Scale<f64>,
     correction: Point<f64, Physical>,
 ) -> Point<i32, Physical> {
-    let focal = zoom_focal.to_physical(output_scale);
+    let focal: Point<i32, Physical> = zoom_focal.to_physical_precise_round(output_scale);
     let p = point.to_f64();
-    Point::<f64, Physical>::from((
-        p.x * zoom_level - focal.x * (zoom_level - 1.0) + correction.x,
-        p.y * zoom_level - focal.y * (zoom_level - 1.0) + correction.y,
+    let rounded = Point::<f64, Physical>::from((
+        p.x * zoom_level - focal.x as f64 * (zoom_level - 1.0),
+        p.y * zoom_level - focal.y as f64 * (zoom_level - 1.0),
     ))
-    .to_i32_round::<i32>()
+    .to_i32_round::<i32>();
+    Point::from((
+        rounded.x + correction.x as i32,
+        rounded.y + correction.y as i32,
+    ))
 }
 
 #[cfg(test)]

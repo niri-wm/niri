@@ -4220,6 +4220,8 @@ impl Niri {
             self.layout.zoom_focal_for_output(output),
         );
 
+        let output_size_phys = output_size(output).to_physical_precise_round(output_scale);
+
         let scale_with_zoom = self.config.borrow().cursor.scale_with_zoom;
 
         // Compute cursor display position and hotspot on-demand for jitter-free
@@ -4273,6 +4275,7 @@ impl Niri {
             zoom_focal,
             cursor_logical_pos,
             cursor_hotspot,
+            output_size_phys,
         )
     }
 
@@ -6390,6 +6393,7 @@ fn scale_relocate_crop<E: Element>(
     CropRenderElement::from_element(elem, output_scale, ws_geo)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn apply_zoom_to_render_element<R: NiriRenderer>(
     element: OutputRenderElements<R>,
     zoom_factor: f64,
@@ -6398,6 +6402,7 @@ fn apply_zoom_to_render_element<R: NiriRenderer>(
     zoom_focal_point: Point<f64, Logical>,
     cursor_logical_pos: Option<Point<f64, Logical>>,
     cursor_hotspot: Option<Point<i32, Physical>>,
+    output_size_phys: Size<i32, Physical>,
 ) -> OutputRenderElements<R> {
     // Generate match arms for each OutputRenderElement variant.
     macro_rules! apply_zoom {
@@ -6481,8 +6486,39 @@ fn apply_zoom_to_render_element<R: NiriRenderer>(
                         OutputRenderElements::Zoomed(ZoomedRenderElements::Texture(e)).into()
                     }
                     ScreenshotUiRenderElement::SolidColor(elem) => {
-                        let e = zoom_wrap(elem, zoom_factor, output_scale, zoom_focal_point);
-                        OutputRenderElements::Zoomed(ZoomedRenderElements::SolidColor(e)).into()
+                        let focal: Point<i32, Physical> =
+                            zoom_focal_point.to_physical_precise_round(output_scale);
+                        let correction =
+                            zoom_subpixel_correction(zoom_focal_point, zoom_factor, output_scale);
+                        let w = output_size_phys.w;
+                        let h = output_size_phys.h;
+                        let w_zoomed = (w as f64 * zoom_factor).round() as i32;
+                        let h_zoomed = (h as f64 * zoom_factor).round() as i32;
+                        let base_x = (-(focal.x as f64) * zoom_factor).round() as i32
+                            + focal.x
+                            + correction.x;
+                        let base_y = (-(focal.y as f64) * zoom_factor).round() as i32
+                            + focal.y
+                            + correction.y;
+                        let phys = elem.geometry(output_scale);
+                        let map_x = |edge: i32| -> i32 {
+                            ((w_zoomed as i64 * edge as i64 + w as i64 / 2) / w as i64) as i32
+                        };
+                        let map_y = |edge: i32| -> i32 {
+                            ((h_zoomed as i64 * edge as i64 + h as i64 / 2) / h as i64) as i32
+                        };
+                        let left = base_x + map_x(phys.loc.x);
+                        let top = base_y + map_y(phys.loc.y);
+                        let right = base_x + map_x(phys.loc.x + phys.size.w);
+                        let bottom = base_y + map_y(phys.loc.y + phys.size.h);
+                        let zoomed_phys = Rectangle::new(
+                            Point::from((left, top)),
+                            Size::from(((right - left).max(0), (bottom - top).max(0))),
+                        );
+                        OutputRenderElements::SolidColor(
+                            elem.with_geometry_physical(zoomed_phys, output_scale),
+                        )
+                        .into()
                     }
                     ScreenshotUiRenderElement::Pointer(ScreenshotPointerElement(elem)) => {
                         if scale_with_zoom {
