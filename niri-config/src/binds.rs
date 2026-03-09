@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::fmt::Display;
 use std::str::FromStr;
 use std::time::Duration;
 
@@ -9,7 +10,9 @@ use niri_ipc::{
     ColumnDisplay, LayoutSwitchTarget, PositionChange, SizeChange, WorkspaceReferenceArg,
 };
 use smithay::input::keyboard::keysyms::KEY_NoSymbol;
-use smithay::input::keyboard::xkb::{keysym_from_name, KEYSYM_CASE_INSENSITIVE, KEYSYM_NO_FLAGS};
+use smithay::input::keyboard::xkb::{
+    keysym_from_name, keysym_get_name, KEYSYM_CASE_INSENSITIVE, KEYSYM_NO_FLAGS,
+};
 use smithay::input::keyboard::Keysym;
 
 use crate::recent_windows::{MruDirection, MruFilter, MruScope};
@@ -1048,6 +1051,82 @@ impl FromStr for Key {
         };
 
         Ok(Key { trigger, modifiers })
+    }
+}
+
+impl Display for Key {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mods_str = self.modifiers.to_string();
+        let trigger_str = self.trigger.to_string();
+
+        let mut parts = Vec::new();
+        if !mods_str.is_empty() {
+            parts.push(mods_str.as_str());
+        }
+        parts.push(trigger_str.as_str());
+
+        write!(f, "{}", parts.join("+"))
+    }
+}
+
+impl Display for Trigger {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let str = match self {
+            Trigger::Keysym(keysym) => &keysym_get_name(*keysym),
+            Trigger::MouseLeft => "MouseLeft",
+            Trigger::MouseRight => "MouseRight",
+            Trigger::MouseMiddle => "MouseMiddle",
+            Trigger::MouseBack => "MouseBack",
+            Trigger::MouseForward => "MouseForward",
+            Trigger::WheelScrollDown => "WheelScrollDown",
+            Trigger::WheelScrollUp => "WheelScrollUp",
+            Trigger::WheelScrollLeft => "WheelScrollLeft",
+            Trigger::WheelScrollRight => "WheelScrollRight",
+            Trigger::TouchpadScrollDown => "TouchpadScrollDown",
+            Trigger::TouchpadScrollUp => "TouchpadScrollUp",
+            Trigger::TouchpadScrollLeft => "TouchpadScrollLeft",
+            Trigger::TouchpadScrollRight => "TouchpadScrollRight",
+        };
+
+        write!(f, "{}", str)?;
+        Ok(())
+    }
+}
+
+impl Display for Modifiers {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut parts = Vec::new();
+
+        if self.contains(Modifiers::CTRL) {
+            parts.push("Ctrl");
+        }
+        if self.contains(Modifiers::SHIFT) {
+            parts.push("Shift");
+        }
+        if self.contains(Modifiers::ALT) {
+            parts.push("Alt");
+        }
+        if self.contains(Modifiers::SUPER) {
+            parts.push("Super");
+        }
+        if self.contains(Modifiers::ISO_LEVEL3_SHIFT) {
+            parts.push("Iso_Level3_Shift");
+        }
+        if self.contains(Modifiers::ISO_LEVEL5_SHIFT) {
+            parts.push("Iso_Level5_Shift");
+        }
+        if self.contains(Modifiers::COMPOSITOR) {
+            parts.push("Mod");
+        }
+
+        for (i, part) in parts.iter().enumerate() {
+            if i > 0 {
+                write!(f, "+")?;
+            }
+            write!(f, "{}", part)?;
+        }
+
+        Ok(())
     }
 }
 
