@@ -712,9 +712,9 @@ impl Tty {
                 self.refresh_ipc_outputs(niri);
 
                 niri.notify_activity();
-                niri.monitors_active = true;
+
                 self.set_monitors_active(true);
-                niri.queue_redraw_all();
+                niri.activate_monitors_without_backend();
             }
         }
     }
@@ -2260,6 +2260,17 @@ impl Tty {
                 }
             }
         }
+    }
+
+    pub fn set_output_power(&mut self, output: &Output, active: bool) {
+        let tty_state: &TtyOutputState = output.user_data().get().unwrap();
+        let device = self.devices.get_mut(&tty_state.node).unwrap();
+        let surface = device.surfaces.get_mut(&tty_state.crtc).unwrap();
+
+        if !active {
+            let _ = surface.compositor.clear();
+        }
+        // When active=true, next render_frame() re-enables CRTC
     }
 
     pub fn update_ignored_nodes_config(&mut self, niri: &mut Niri) {
