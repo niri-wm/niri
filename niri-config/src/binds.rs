@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 use std::str::FromStr;
+use std::sync::Arc;
 use std::time::Duration;
 
 use bitflags::bitflags;
@@ -21,12 +22,33 @@ pub struct Binds(pub Vec<Bind>);
 #[derive(Debug, Clone, PartialEq)]
 pub struct Bind {
     pub key: Key,
-    pub action: Action,
+    pub actions: Arc<[Action]>,
     pub repeat: bool,
     pub cooldown: Option<Duration>,
     pub allow_when_locked: bool,
     pub allow_inhibiting: bool,
     pub hotkey_overlay_title: Option<Option<String>>,
+}
+
+impl Bind {
+    pub fn actions(&self) -> &[Action] {
+        &self.actions
+    }
+
+    pub fn single_action(&self) -> Option<&Action> {
+        match &*self.actions {
+            [action] => Some(action),
+            _ => None,
+        }
+    }
+
+    pub fn has_single_action(&self, action: &Action) -> bool {
+        self.single_action() == Some(action)
+    }
+
+    pub fn all_actions(&self, predicate: impl FnMut(&Action) -> bool) -> bool {
+        self.actions.iter().all(predicate)
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
@@ -893,7 +915,7 @@ where
         // even if their contents are not valid.
         let dummy = Self {
             key,
-            action: Action::Spawn(vec![]),
+            actions: vec![Action::Spawn(vec![])].into(),
             repeat: true,
             cooldown: None,
             allow_when_locked: false,
@@ -909,39 +931,47 @@ where
                     "only one action is allowed per keybind",
                 ));
             }
-            match Action::decode_node(child, ctx) {
-                Ok(action) => {
-                    if !matches!(action, Action::Spawn(_) | Action::SpawnSh(_)) {
-                        if let Some(node) = allow_when_locked_node {
-                            ctx.emit_error(DecodeError::unexpected(
-                                node,
-                                "property",
-                                "allow-when-locked can only be set on spawn binds",
-                            ));
-                        }
-                    }
-
-                    // The toggle-inhibit action must always be uninhibitable.
-                    // Otherwise, it would be impossible to trigger it.
-                    if matches!(action, Action::ToggleKeyboardShortcutsInhibit) {
-                        allow_inhibiting = false;
-                    }
-
-                    Ok(Self {
-                        key,
-                        action,
-                        repeat,
-                        cooldown,
-                        allow_when_locked,
-                        allow_inhibiting,
-                        hotkey_overlay_title,
-                    })
-                }
+            let action = match Action::decode_node(child, ctx) {
+                Ok(action) => action,
                 Err(e) => {
                     ctx.emit_error(e);
-                    Ok(dummy)
+                    return Ok(dummy);
+                }
+            };
+
+            let actions: Arc<[Action]> = vec![action].into();
+
+            if !actions
+                .iter()
+                .all(|action| matches!(action, Action::Spawn(_) | Action::SpawnSh(_)))
+            {
+                if let Some(node) = allow_when_locked_node {
+                    ctx.emit_error(DecodeError::unexpected(
+                        node,
+                        "property",
+                        "allow-when-locked can only be set on spawn binds",
+                    ));
                 }
             }
+
+            // The toggle-inhibit action must always be uninhibitable.
+            // Otherwise, it would be impossible to trigger it.
+            if actions
+                .iter()
+                .any(|action| matches!(action, Action::ToggleKeyboardShortcutsInhibit))
+            {
+                allow_inhibiting = false;
+            }
+
+            Ok(Self {
+                key,
+                actions,
+                repeat,
+                cooldown,
+                allow_when_locked,
+                allow_inhibiting,
+                hotkey_overlay_title,
+            })
         } else {
             ctx.emit_error(DecodeError::missing(
                 node,
