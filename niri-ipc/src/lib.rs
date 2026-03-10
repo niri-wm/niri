@@ -454,8 +454,12 @@ pub enum Action {
         #[cfg_attr(feature = "clap", arg())]
         display: ColumnDisplay,
     },
+    /// Align the focused column to the left of the screen
+    AlignColumnLeft {},
     /// Center the focused column on the screen.
     CenterColumn {},
+    /// Align the focused column to the right of the screen
+    AlignColumnRight {},
     /// Center a window on the screen.
     #[cfg_attr(
         feature = "clap",
