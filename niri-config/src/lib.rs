@@ -1892,7 +1892,9 @@ mod tests {
                                 COMPOSITOR,
                             ),
                         },
-                        action: ToggleKeyboardShortcutsInhibit,
+                        actions: [
+                            ToggleKeyboardShortcutsInhibit,
+                        ],
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
@@ -1912,7 +1914,9 @@ mod tests {
                                 SHIFT | COMPOSITOR,
                             ),
                         },
-                        action: ToggleKeyboardShortcutsInhibit,
+                        actions: [
+                            ToggleKeyboardShortcutsInhibit,
+                        ],
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
@@ -1928,11 +1932,13 @@ mod tests {
                                 COMPOSITOR,
                             ),
                         },
-                        action: Spawn(
-                            [
-                                "alacritty",
-                            ],
-                        ),
+                        actions: [
+                            Spawn(
+                                [
+                                    "alacritty",
+                                ],
+                            ),
+                        ],
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: true,
@@ -1948,7 +1954,9 @@ mod tests {
                                 COMPOSITOR,
                             ),
                         },
-                        action: CloseWindow,
+                        actions: [
+                            CloseWindow,
+                        ],
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
@@ -1966,7 +1974,9 @@ mod tests {
                                 SHIFT | COMPOSITOR,
                             ),
                         },
-                        action: FocusMonitorLeft,
+                        actions: [
+                            FocusMonitorLeft,
+                        ],
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
@@ -1982,9 +1992,11 @@ mod tests {
                                 SHIFT | COMPOSITOR,
                             ),
                         },
-                        action: FocusMonitor(
-                            "eDP-1",
-                        ),
+                        actions: [
+                            FocusMonitor(
+                                "eDP-1",
+                            ),
+                        ],
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
@@ -2000,7 +2012,9 @@ mod tests {
                                 CTRL | SHIFT | COMPOSITOR,
                             ),
                         },
-                        action: MoveWindowToMonitorRight,
+                        actions: [
+                            MoveWindowToMonitorRight,
+                        ],
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
@@ -2016,9 +2030,11 @@ mod tests {
                                 CTRL | ALT | COMPOSITOR,
                             ),
                         },
-                        action: MoveWindowToMonitor(
-                            "eDP-1",
-                        ),
+                        actions: [
+                            MoveWindowToMonitor(
+                                "eDP-1",
+                            ),
+                        ],
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
@@ -2034,9 +2050,11 @@ mod tests {
                                 CTRL | ALT | COMPOSITOR,
                             ),
                         },
-                        action: MoveColumnToMonitor(
-                            "DP-1",
-                        ),
+                        actions: [
+                            MoveColumnToMonitor(
+                                "DP-1",
+                            ),
+                        ],
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
@@ -2052,7 +2070,9 @@ mod tests {
                                 COMPOSITOR,
                             ),
                         },
-                        action: ConsumeWindowIntoColumn,
+                        actions: [
+                            ConsumeWindowIntoColumn,
+                        ],
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
@@ -2068,11 +2088,13 @@ mod tests {
                                 COMPOSITOR,
                             ),
                         },
-                        action: FocusWorkspace(
-                            Index(
-                                1,
+                        actions: [
+                            FocusWorkspace(
+                                Index(
+                                    1,
+                                ),
                             ),
-                        ),
+                        ],
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
@@ -2088,11 +2110,13 @@ mod tests {
                                 SHIFT | COMPOSITOR,
                             ),
                         },
-                        action: FocusWorkspace(
-                            Name(
-                                "workspace-1",
+                        actions: [
+                            FocusWorkspace(
+                                Name(
+                                    "workspace-1",
+                                ),
                             ),
-                        ),
+                        ],
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
@@ -2108,9 +2132,11 @@ mod tests {
                                 SHIFT | COMPOSITOR,
                             ),
                         },
-                        action: Quit(
-                            true,
-                        ),
+                        actions: [
+                            Quit(
+                                true,
+                            ),
+                        ],
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
@@ -2124,7 +2150,9 @@ mod tests {
                                 COMPOSITOR,
                             ),
                         },
-                        action: FocusWorkspaceDown,
+                        actions: [
+                            FocusWorkspaceDown,
+                        ],
                         repeat: true,
                         cooldown: Some(
                             150ms,
@@ -2142,9 +2170,11 @@ mod tests {
                                 ALT | SUPER,
                             ),
                         },
-                        action: SpawnSh(
-                            "pkill orca || exec orca",
-                        ),
+                        actions: [
+                            SpawnSh(
+                                "pkill orca || exec orca",
+                            ),
+                        ],
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: true,
@@ -2262,13 +2292,15 @@ mod tests {
                                 ALT,
                             ),
                         },
-                        action: MruAdvance {
-                            direction: Forward,
-                            scope: None,
-                            filter: Some(
-                                All,
-                            ),
-                        },
+                        actions: [
+                            MruAdvance {
+                                direction: Forward,
+                                scope: None,
+                                filter: Some(
+                                    All,
+                                ),
+                            },
+                        ],
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
@@ -2284,13 +2316,15 @@ mod tests {
                                 ALT,
                             ),
                         },
-                        action: MruAdvance {
-                            direction: Forward,
-                            scope: None,
-                            filter: Some(
-                                AppId,
-                            ),
-                        },
+                        actions: [
+                            MruAdvance {
+                                direction: Forward,
+                                scope: None,
+                                filter: Some(
+                                    AppId,
+                                ),
+                            },
+                        ],
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
@@ -2306,15 +2340,17 @@ mod tests {
                                 SUPER,
                             ),
                         },
-                        action: MruAdvance {
-                            direction: Forward,
-                            scope: Some(
-                                Output,
-                            ),
-                            filter: Some(
-                                All,
-                            ),
-                        },
+                        actions: [
+                            MruAdvance {
+                                direction: Forward,
+                                scope: Some(
+                                    Output,
+                                ),
+                                filter: Some(
+                                    All,
+                                ),
+                            },
+                        ],
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: false,

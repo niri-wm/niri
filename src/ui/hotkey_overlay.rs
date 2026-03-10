@@ -158,7 +158,7 @@ fn format_bind(binds: &[Bind], action: &Action) -> Option<(Option<Key>, String)>
     let mut found_null_title = false;
 
     for bind in binds {
-        if bind.action != *action {
+        if !bind.has_single_action(action) {
             continue;
         }
 
@@ -202,15 +202,21 @@ fn collect_actions(config: &Config) -> Vec<&Action> {
 
     // Prefer Quit(false) if found, otherwise try Quit(true), and if there's neither, fall back to
     // Quit(false).
-    if binds.iter().any(|bind| bind.action == Action::Quit(false)) {
+    if binds
+        .iter()
+        .any(|bind| bind.has_single_action(&Action::Quit(false)))
+    {
         actions.push(&Action::Quit(false));
-    } else if binds.iter().any(|bind| bind.action == Action::Quit(true)) {
+    } else if binds
+        .iter()
+        .any(|bind| bind.has_single_action(&Action::Quit(true)))
+    {
         actions.push(&Action::Quit(true));
     } else {
         actions.push(&Action::Quit(false));
     }
 
-    actions.extend(&[
+    actions.extend([
         &Action::CloseWindow,
         &Action::FocusColumnLeft,
         &Action::FocusColumnRight,
@@ -221,36 +227,44 @@ fn collect_actions(config: &Config) -> Vec<&Action> {
     ]);
 
     // Prefer move-column-to-workspace-down, but fall back to move-window-to-workspace-down.
-    if let Some(bind) = binds
-        .iter()
-        .find(|bind| matches!(bind.action, Action::MoveColumnToWorkspaceDown(_)))
-    {
-        actions.push(&bind.action);
-    } else if binds
-        .iter()
-        .any(|bind| matches!(bind.action, Action::MoveWindowToWorkspaceDown(_)))
-    {
+    if binds.iter().any(|bind| {
+        matches!(
+            bind.single_action(),
+            Some(Action::MoveColumnToWorkspaceDown(_))
+        )
+    }) {
+        actions.push(&Action::MoveColumnToWorkspaceDown(true));
+    } else if binds.iter().any(|bind| {
+        matches!(
+            bind.single_action(),
+            Some(Action::MoveWindowToWorkspaceDown(_))
+        )
+    }) {
         actions.push(&Action::MoveWindowToWorkspaceDown(true));
     } else {
         actions.push(&Action::MoveColumnToWorkspaceDown(true));
     }
 
     // Same for -up.
-    if let Some(bind) = binds
-        .iter()
-        .find(|bind| matches!(bind.action, Action::MoveColumnToWorkspaceUp(_)))
-    {
-        actions.push(&bind.action);
-    } else if binds
-        .iter()
-        .any(|bind| matches!(bind.action, Action::MoveWindowToWorkspaceUp(_)))
-    {
+    if binds.iter().any(|bind| {
+        matches!(
+            bind.single_action(),
+            Some(Action::MoveColumnToWorkspaceUp(_))
+        )
+    }) {
+        actions.push(&Action::MoveColumnToWorkspaceUp(true));
+    } else if binds.iter().any(|bind| {
+        matches!(
+            bind.single_action(),
+            Some(Action::MoveWindowToWorkspaceUp(_))
+        )
+    }) {
         actions.push(&Action::MoveWindowToWorkspaceUp(true));
     } else {
         actions.push(&Action::MoveColumnToWorkspaceUp(true));
     }
 
-    actions.extend(&[
+    actions.extend([
         &Action::SwitchPresetColumnWidth,
         &Action::MaximizeColumn,
         &Action::ConsumeOrExpelWindowLeft,
@@ -261,33 +275,33 @@ fn collect_actions(config: &Config) -> Vec<&Action> {
     ]);
 
     // Screenshot is not as important, can omit if not bound.
-    if let Some(bind) = binds
+    if binds
         .iter()
-        .find(|bind| matches!(bind.action, Action::Screenshot(_, _)))
+        .any(|bind| matches!(bind.single_action(), Some(Action::Screenshot(_, _))))
     {
-        actions.push(&bind.action);
+        actions.push(&Action::Screenshot(true, None));
     }
 
     // Add actions with a custom hotkey-overlay-title.
     for bind in binds {
-        if matches!(bind.hotkey_overlay_title, Some(Some(_))) {
-            // Avoid duplicate actions.
-            if !actions.contains(&&bind.action) {
-                actions.push(&bind.action);
-            }
+        let Some(action) = bind.single_action() else {
+            continue;
+        };
+        if matches!(bind.hotkey_overlay_title, Some(Some(_))) && !actions.contains(&action) {
+            actions.push(action);
         }
     }
 
     // Add the spawn actions.
     for bind in binds.iter().filter(|bind| {
-        matches!(bind.action, Action::Spawn(_) | Action::SpawnSh(_))
+        matches!(bind.single_action(), Some(Action::Spawn(_) | Action::SpawnSh(_)))
             // Only show binds with Mod or Super to filter out stuff like volume up/down.
             && (bind.key.modifiers.contains(Modifiers::COMPOSITOR)
                 || bind.key.modifiers.contains(Modifiers::SUPER))
             // Also filter out wheel and touchpad scroll binds.
             && matches!(bind.key.trigger, Trigger::Keysym(_))
     }) {
-        let action = &bind.action;
+        let action = bind.single_action().unwrap();
 
         // We only show one bind for each action, so we need to deduplicate the Spawn actions.
         if !actions.contains(&action) {
@@ -296,8 +310,8 @@ fn collect_actions(config: &Config) -> Vec<&Action> {
     }
 
     if config.hotkey_overlay.hide_not_bound {
-        // Only keep actions that have been bound
-        actions.retain(|&action| binds.iter().any(|bind| bind.action == *action))
+        // Only keep actions that have been bound.
+        actions.retain(|&action| binds.iter().any(|bind| bind.has_single_action(action)))
     }
 
     actions
@@ -711,4 +725,5 @@ mod tests {
             @" Super + P : Hello"
         );
     }
+
 }
