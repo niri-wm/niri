@@ -94,6 +94,12 @@ pub struct Tile<W: LayoutElement> {
     /// The animation of the tile's opacity.
     pub(super) alpha_animation: Option<AlphaAnimation>,
 
+    /// The animation of the focus ring fading in/out.
+    focus_ring_anim: Option<Animation>,
+
+    /// Whether the tile was focused on the last render update.
+    was_focus_active: bool,
+
     /// Offset during the initial interactive move rubberband.
     pub(super) interactive_move_offset: Point<f64, Logical>,
 
@@ -202,6 +208,8 @@ impl<W: LayoutElement> Tile<W> {
             move_x_animation: None,
             move_y_animation: None,
             alpha_animation: None,
+            focus_ring_anim: None,
+            was_focus_active: false,
             interactive_move_offset: Point::from((0., 0.)),
             unmap_snapshot: None,
             rounded_corner_damage: Default::default(),
@@ -450,6 +458,11 @@ impl<W: LayoutElement> Tile<W> {
                 .alpha_animation
                 .as_ref()
                 .is_some_and(|alpha| !alpha.anim.is_done())
+            || self
+                .focus_ring_anim
+                .as_ref()
+                .is_some_and(|anim| !anim.is_done())
+            || (self.was_focus_active && self.options.layout.focus_ring.gradient_spin_speed > 0.)
     }
 
     pub fn update_render_elements(&mut self, is_active: bool, view_rect: Rectangle<f64, Logical>) {
@@ -487,6 +500,7 @@ impl<W: LayoutElement> Tile<W> {
             radius,
             self.scale,
             1. - expanded_progress as f32,
+            0.,
         );
 
         let radius = if self.visual_border_width().is_some() {
@@ -511,15 +525,63 @@ impl<W: LayoutElement> Tile<W> {
             false
         };
         let radius = radius.expanded_by(self.focus_ring.width() as f32);
+
+        let fade_ms = self.options.layout.focus_ring.fade_duration_ms;
+
+        // Animate focus ring fade in/out on focus change.
+        if is_active != self.was_focus_active {
+            if fade_ms > 0 {
+                let (from, to) = if is_active { (0., 1.) } else { (1., 0.) };
+                self.focus_ring_anim = Some(Animation::ease(
+                    self.clock.clone(),
+                    from,
+                    to,
+                    0.,
+                    fade_ms,
+                    crate::animation::Curve::EaseOutCubic,
+                ));
+            } else {
+                self.focus_ring_anim = None;
+            }
+            self.was_focus_active = is_active;
+        }
+
+        let focus_ring_alpha = if fade_ms > 0 {
+            match &self.focus_ring_anim {
+                Some(anim) if !anim.is_done() => {
+                    anim.clamped_value() as f32
+                }
+                _ => {
+                    self.focus_ring_anim = None;
+                    if is_active { 1.0 } else { 0.0 }
+                }
+            }
+        } else {
+            if is_active { 1.0 } else { 0.0 }
+        };
+
+        // During fade-out, keep rendering with active colors.
+        let ring_is_active = is_active || focus_ring_alpha > 0.0;
+
+        // Rotate gradient while focus ring is visible.
+        let spin_speed = self.options.layout.focus_ring.gradient_spin_speed as f32;
+        let gradient_angle_offset = if ring_is_active && spin_speed > 0. {
+            let secs = self.clock.now().as_secs_f32();
+            (secs * spin_speed) % 360.
+        } else {
+            0.
+        };
+
         self.focus_ring.update_render_elements(
             animated_tile_size,
-            is_active,
+            ring_is_active,
             !draw_focus_ring_with_background,
             self.window.is_urgent(),
             view_rect,
             radius,
             self.scale,
-            1. - expanded_progress as f32,
+            focus_ring_alpha * (1. - expanded_progress as f32),
+            gradient_angle_offset,
         );
 
         self.fullscreen_backdrop.resize(animated_tile_size);
