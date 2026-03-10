@@ -27,7 +27,6 @@ pub struct ShortcutsProvider {
 pub enum ShortcutsProviderToNiri {
     BindShortcuts {
         app_id: String,
-        parent_window: String,
         shortcuts: Vec<BindShortcutRequest>,
         results: async_channel::Sender<Vec<BindShortcutResponse>>,
     },
@@ -54,14 +53,13 @@ impl ShortcutsProvider {
     async fn bind_shortcuts(
         &self,
         app_id: String,
-        parent_window: String,
+        _parent_window: String,
         shortcuts: Vec<BindShortcutRequest>,
     ) -> fdo::Result<Vec<BindShortcutResponse>> {
         let (tx, rx) = async_channel::bounded(1);
 
         if let Err(err) = self.to_niri.send(ShortcutsProviderToNiri::BindShortcuts {
             app_id,
-            parent_window,
             shortcuts,
             results: tx,
         }) {
@@ -166,18 +164,6 @@ impl Serialize for BindShortcutResponse {
     where
         S: serde::Serializer,
     {
-        // Replace xkb style modifiers with gnome portals `<...>` tagged modifiers
-        let _formatted_shortcuts: Vec<String> = {
-            self.shortcuts
-                .iter()
-                .map(|s| {
-                    GNOME_PORTAL_KEY_MAP
-                        .iter()
-                        .fold(s.clone(), |acc, (to, from)| acc.replace(from, to))
-                })
-                .collect()
-        };
-
         let opts = BindShortcutResponseOpts {
             description: self.description.clone(),
             shortcuts: self.shortcuts.clone(),

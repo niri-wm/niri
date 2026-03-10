@@ -69,8 +69,6 @@ impl Shell {
         &mut self,
         accelerators: Vec<AcceleratorGrab>,
     ) -> fdo::Result<Vec<u32>> {
-        debug!("Tried to grab accels: {:?}", accelerators);
-
         let (tx, rx) = async_channel::bounded(1);
 
         if let Err(err) = self.to_niri.send(ShellToNiri::GrabAccelerators {
@@ -87,8 +85,6 @@ impl Shell {
     }
 
     async fn ungrab_accelerators(&self, actions: Vec<u32>) -> fdo::Result<bool> {
-        debug!("Tried to ungrab actions: {:?}", actions);
-
         let (tx, rx) = async_channel::bounded(1);
 
         if let Err(err) = self.to_niri.send(ShellToNiri::UngrabAccelerators {

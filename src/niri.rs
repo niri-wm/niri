@@ -2110,7 +2110,7 @@ impl State {
         grabs: Vec<AcceleratorGrab>,
         tx: async_channel::Sender<Vec<u32>>,
     ) {
-        debug!("[GnomeShell] requesting grab accelerators: {:?}", grabs);
+        debug!("requesting grab global shortcut accelerators: {grabs:?}");
         let Some(shell) = &mut self.niri.gnome_shell else {
             warn!("gnome shell requested without being created");
             let _ = tx.send_blocking(Vec::new());
@@ -2129,7 +2129,7 @@ impl State {
             })
             .collect();
 
-        debug!("[GnomeShell] returning actions: {:?}", results);
+        debug!("returning actions: {results:?}");
         if let Err(err) = tx.send_blocking(results) {
             warn!("error sending grab accelerators result to gnome shell: {err:?}");
         }
@@ -2137,7 +2137,7 @@ impl State {
 
     #[cfg(feature = "dbus")]
     fn handle_ungrab_accelerators(&mut self, actions: Vec<u32>, tx: async_channel::Sender<bool>) {
-        debug!("[GnomeShell] requesting ungrab accelerators: {:?}", actions);
+        debug!("requesting ungrab global shortcut accelerators: {actions:?}",);
         let Some(shell) = &mut self.niri.gnome_shell else {
             warn!("gnome shell requested without being created");
             let _ = tx.send_blocking(false);
@@ -2153,7 +2153,7 @@ impl State {
                 }
             });
 
-        debug!("[GnomeShell] returning result: {:?}", result);
+        debug!("returning result: {result:?}");
         if let Err(err) = tx.send_blocking(result) {
             warn!("error sending ungrab accelerators result to gnome shell: {err:?}");
         }
@@ -2163,15 +2163,9 @@ impl State {
     pub fn on_shortcuts_provider_msg(&mut self, msg: ShortcutsProviderToNiri) {
         let ShortcutsProviderToNiri::BindShortcuts {
             app_id,
-            parent_window,
             shortcuts,
             results: tx,
         } = msg;
-        debug!(
-            "[ShortcutProvider] Trying to match: `{}::{}` requesting to bind: `{:?}`",
-            app_id, parent_window, shortcuts
-        );
-
         let config = self.niri.config.borrow();
         let permitted: Vec<_> = config
             .global_shortcuts
@@ -2199,8 +2193,6 @@ impl State {
                 }
             })
             .collect();
-
-        debug!("[ShortcutProvider] responding with: {:?}", result);
 
         if let Err(err) = tx.send_blocking(result) {
             warn!("error sending bind shortcuts result to gnome shell: {err:?}");
