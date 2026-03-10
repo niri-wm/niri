@@ -690,6 +690,10 @@ fn print_window(window: &Window) {
         "  Is floating: {}",
         if window.is_floating { "yes" } else { "no" }
     );
+    println!(
+        "  Is sticky: {}",
+        if window.is_sticky { "yes" } else { "no" }
+    );
 
     if let Some(pid) = window.pid {
         println!("  PID: {pid}");
