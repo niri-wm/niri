@@ -924,7 +924,7 @@ mod tests {
             }
 
             global-shortcuts {
-                Ctrl+Shift+A inhibit=false {
+                Ctrl+Shift+A intercept=false {
                     app-id { exact "example"; }
                     shortcut-id { exact "example-sc-id"; }
                 }
@@ -2362,7 +2362,7 @@ mod tests {
                                 CTRL | SHIFT,
                             ),
                         },
-                        inhibit: false,
+                        intercept: false,
                         app_id: Exact(
                             "example",
                         ),
@@ -2379,7 +2379,7 @@ mod tests {
                                 SHIFT,
                             ),
                         },
-                        inhibit: true,
+                        intercept: true,
                         app_id: Match(
                             RegexEq(
                                 Regex(
@@ -2404,7 +2404,7 @@ mod tests {
                                 SHIFT,
                             ),
                         },
-                        inhibit: true,
+                        intercept: true,
                         app_id: NeverMatch,
                         shortcut_id: NeverMatch,
                     },

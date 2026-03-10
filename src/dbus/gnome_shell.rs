@@ -176,7 +176,7 @@ impl Shell {
             .0
             .iter()
             .find(|shortcut| shortcut.trigger == key)
-            .map(|shortcut| shortcut.inhibit)
+            .map(|shortcut| shortcut.intercept)
             .unwrap_or(false)
     }
 

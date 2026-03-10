@@ -11,7 +11,7 @@ pub struct GlobalShortcuts(pub Vec<GlobalShortcut>);
 #[derive(Debug, Clone, PartialEq)]
 pub struct GlobalShortcut {
     pub trigger: Key,
-    pub inhibit: bool,
+    pub intercept: bool,
     pub app_id: Selector,
     pub shortcut_id: Selector,
 }
@@ -90,11 +90,11 @@ where
             ));
         }
 
-        let mut inhibit = true;
+        let mut intercept = true;
         for (name, val) in &node.properties {
             match &***name {
-                "inhibit" => {
-                    inhibit = knuffel::traits::DecodeScalar::decode(val, ctx)?;
+                "intercept" => {
+                    intercept = knuffel::traits::DecodeScalar::decode(val, ctx)?;
                 }
                 name_str => {
                     ctx.emit_error(DecodeError::unexpected(
@@ -131,7 +131,7 @@ where
         let shortcut_id = shortcut_id.unwrap_or(Selector::NeverMatch);
         Ok(Self {
             trigger: key,
-            inhibit,
+            intercept,
             app_id,
             shortcut_id,
         })

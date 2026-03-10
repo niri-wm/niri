@@ -1088,8 +1088,7 @@ impl Display for Trigger {
             Trigger::TouchpadScrollRight => "TouchpadScrollRight",
         };
 
-        write!(f, "{}", str)?;
-        Ok(())
+        write!(f, "{}", str)
     }
 }
 
@@ -1119,14 +1118,7 @@ impl Display for Modifiers {
             parts.push("Mod");
         }
 
-        for (i, part) in parts.iter().enumerate() {
-            if i > 0 {
-                write!(f, "+")?;
-            }
-            write!(f, "{}", part)?;
-        }
-
-        Ok(())
+        write!(f, "{}", parts.join("+"))
     }
 }
 
