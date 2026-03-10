@@ -38,9 +38,13 @@ const FONT: &str = "sans 14px";
 const BORDER: i32 = 4;
 const TEXT_HIDE_P: &str =
     "Press <span face='mono' bgcolor='#2C2C2C'> Space </span> to save the screenshot.\n\
+     Press <span face='mono' bgcolor='#2C2C2C'> Ctrl+C </span> to copy to clipboard.\n\
+     Press <span face='mono' bgcolor='#2C2C2C'> Ctrl+Space </span> to save and copy path to clipboard.\n\
      Press <span face='mono' bgcolor='#2C2C2C'> P </span> to hide the pointer.";
 const TEXT_SHOW_P: &str =
     "Press <span face='mono' bgcolor='#2C2C2C'> Space </span> to save the screenshot.\n\
+     Press <span face='mono' bgcolor='#2C2C2C'> Ctrl+C </span> to copy to clipboard.\n\
+     Press <span face='mono' bgcolor='#2C2C2C'> Ctrl+Space </span> to save and copy path to clipboard.\n\
      Press <span face='mono' bgcolor='#2C2C2C'> P </span> to show the pointer.";
 
 // Ideally the screenshot UI should support cross-output selections. However, that poses some
@@ -1055,11 +1059,19 @@ fn action(raw: Keysym, mods: ModifiersState) -> Option<Action> {
     if !mods.ctrl && (raw == Keysym::space || raw == Keysym::Return) {
         return Some(Action::ConfirmScreenshot {
             write_to_disk: true,
+            copy_path: false,
         });
     }
     if mods.ctrl && raw == Keysym::c {
         return Some(Action::ConfirmScreenshot {
             write_to_disk: false,
+            copy_path: false,
+        });
+    }
+    if mods.ctrl && raw == Keysym::space {
+        return Some(Action::ConfirmScreenshot {
+            write_to_disk: true,
+            copy_path: true,
         });
     }
 
