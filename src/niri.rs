@@ -122,6 +122,8 @@ use crate::dbus::freedesktop_login1::Login1ToNiri;
 #[cfg(feature = "dbus")]
 use crate::dbus::gnome_settings_shortcuts::ShortcutsProviderToNiri;
 #[cfg(feature = "dbus")]
+use crate::dbus::gnome_shell::{AcceleratorGrab, ShellToNiri};
+#[cfg(feature = "dbus")]
 use crate::dbus::gnome_shell_introspect::{self, IntrospectToNiri, NiriToIntrospect};
 #[cfg(feature = "dbus")]
 use crate::dbus::gnome_shell_screenshot::{NiriToScreenshot, ScreenshotToNiri};
@@ -402,6 +404,8 @@ pub struct Niri {
     pub a11y: A11y,
     #[cfg(feature = "dbus")]
     pub inhibit_power_key_fd: Option<zbus::zvariant::OwnedFd>,
+    #[cfg(feature = "dbus")]
+    pub gnome_shell: Option<crate::dbus::gnome_shell::Shell>,
 
     pub ipc_server: Option<IpcServer>,
     pub ipc_outputs_changed: bool,
@@ -2087,6 +2091,75 @@ impl State {
     }
 
     #[cfg(feature = "dbus")]
+    pub fn on_gnome_shell_msg(&mut self, msg: ShellToNiri) {
+        match msg {
+            ShellToNiri::GrabAccelerators {
+                accelerators,
+                results: tx,
+            } => self.handle_grab_accelerators(accelerators, tx),
+            ShellToNiri::UngrabAccelerators {
+                actions,
+                result: tx,
+            } => self.handle_ungrab_accelerators(actions, tx),
+        }
+    }
+
+    #[cfg(feature = "dbus")]
+    fn handle_grab_accelerators(
+        &mut self,
+        grabs: Vec<AcceleratorGrab>,
+        tx: async_channel::Sender<Vec<u32>>,
+    ) {
+        debug!("[GnomeShell] requesting grab accelerators: {:?}", grabs);
+        let Some(shell) = &mut self.niri.gnome_shell else {
+            warn!("gnome shell requested without being created");
+            let _ = tx.send_blocking(Vec::new());
+            return;
+        };
+
+        let results = grabs
+            .iter()
+            .map(|to_grab| {
+                use std::str::FromStr;
+
+                Key::from_str(&to_grab.accelerator)
+                    .ok()
+                    .and_then(|key| shell.grab_key(key))
+                    .unwrap_or(0)
+            })
+            .collect();
+
+        debug!("[GnomeShell] returning actions: {:?}", results);
+        if let Err(err) = tx.send_blocking(results) {
+            warn!("error sending grab accelerators result to gnome shell: {err:?}");
+        }
+    }
+
+    #[cfg(feature = "dbus")]
+    fn handle_ungrab_accelerators(&mut self, actions: Vec<u32>, tx: async_channel::Sender<bool>) {
+        debug!("[GnomeShell] requesting ungrab accelerators: {:?}", actions);
+        let Some(shell) = &mut self.niri.gnome_shell else {
+            warn!("gnome shell requested without being created");
+            let _ = tx.send_blocking(false);
+            return;
+        };
+
+        let result = !actions.is_empty()
+            && actions.iter().fold(true, |acc, action| {
+                if shell.ungrab_action(*action) {
+                    acc
+                } else {
+                    false
+                }
+            });
+
+        debug!("[GnomeShell] returning result: {:?}", result);
+        if let Err(err) = tx.send_blocking(result) {
+            warn!("error sending ungrab accelerators result to gnome shell: {err:?}");
+        }
+    }
+
+    #[cfg(feature = "dbus")]
     pub fn on_shortcuts_provider_msg(&mut self, msg: ShortcutsProviderToNiri) {
         let ShortcutsProviderToNiri::BindShortcuts {
             app_id,
@@ -2094,6 +2167,10 @@ impl State {
             shortcuts,
             results: tx,
         } = msg;
+        debug!(
+            "[ShortcutProvider] Trying to match: `{}::{}` requesting to bind: `{:?}`",
+            app_id, parent_window, shortcuts
+        );
 
         let config = self.niri.config.borrow();
         let permitted: Vec<_> = config
@@ -2122,6 +2199,8 @@ impl State {
                 }
             })
             .collect();
+
+        debug!("[ShortcutProvider] responding with: {:?}", result);
 
         if let Err(err) = tx.send_blocking(result) {
             warn!("error sending bind shortcuts result to gnome shell: {err:?}");
@@ -2597,6 +2676,8 @@ impl Niri {
             a11y,
             #[cfg(feature = "dbus")]
             inhibit_power_key_fd: None,
+            #[cfg(feature = "dbus")]
+            gnome_shell: None,
 
             ipc_server,
             ipc_outputs_changed: false,
