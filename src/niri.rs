@@ -4251,7 +4251,7 @@ impl Niri {
         // into different functions).
         macro_rules! push_popups_from_layer {
             ($layer:expr, $backdrop:expr, $push:expr) => {{
-                self.render_layer_popups(ctx.r(), &layer_map, $layer, $backdrop, $push);
+                self.render_layer_popups(ctx.r(), None, &layer_map, $layer, $backdrop, $push);
             }};
             ($layer:expr, true) => {{
                 push_popups_from_layer!($layer, true, &mut |elem| push(elem.into()));
@@ -4267,6 +4267,7 @@ impl Niri {
             ($layer:expr, $backdrop:expr, $push:expr) => {{
                 self.render_layer_normal(
                     ctx.r(),
+                    None,
                     &layer_map,
                     $layer,
                     Point::new(0., 0.),
@@ -4332,17 +4333,32 @@ impl Niri {
                 }};
             }
 
-            for (_ws, geo) in mon.workspaces_with_render_geo() {
-                push_popups_from_layer!(Layer::Bottom, process!(geo));
-                push_popups_from_layer!(Layer::Background, process!(geo));
+            for (ws, geo) in mon.workspaces_with_render_geo() {
+                let ns = Some(ws.id().get() as usize);
+                let mut push_popups = |layer| {
+                    self.render_layer_popups(ctx.r(), ns, &layer_map, layer, false, process!(geo))
+                };
+                push_popups(Layer::Bottom);
+                push_popups(Layer::Background);
             }
 
             mon.render_workspaces(ctx.r(), focus_ring, &mut |elem| push(elem.into()));
 
             for (ws, geo) in mon.workspaces_with_render_geo() {
+                // The render element namespace. This will be set to the workspace index for
+                // elements duplicated across workspaces (i.e. background and bottom layers) in
+                // order to have their non-xray framebuffer effects separated from each other.
+                //
+                // This doesn't have to correspond exactly to workspace id or idx, the only
+                // requirement is that there's only one framebuffer effect element with a given id +
+                // namespace on the frame at once. Id + namespace is used as the cache key in the
+                // damage tracker.
+                let ns = Some(ws.id().get() as usize);
+
                 let mut push_normal = |layer| {
                     self.render_layer_normal(
                         ctx.r(),
+                        ns,
                         &layer_map,
                         layer,
                         geo.loc,
@@ -4395,6 +4411,7 @@ impl Niri {
             elements.clear();
             self.render_layer_normal(
                 ctx.r(),
+                None,
                 &layer_map,
                 Layer::Background,
                 Point::new(0., 0.),
@@ -4412,6 +4429,7 @@ impl Niri {
             elements.clear();
             self.render_layer_normal(
                 ctx.r(),
+                None,
                 &layer_map,
                 Layer::Background,
                 Point::new(0., 0.),
@@ -4476,6 +4494,7 @@ impl Niri {
     fn render_layer_normal<R: NiriRenderer>(
         &self,
         mut ctx: RenderCtx<R>,
+        ns: Option<usize>,
         layer_map: &LayerMap,
         layer: Layer,
         pos_in_backdrop: Point<f64, Logical>,
@@ -4486,13 +4505,14 @@ impl Niri {
         for (mapped, geo) in self.layers_in_render_order(layer_map, layer, for_backdrop) {
             let loc = geo.loc.to_f64();
             let pos_in_backdrop = pos_in_backdrop + loc.upscale(zoom);
-            mapped.render_normal(ctx.r(), loc, pos_in_backdrop, zoom, push);
+            mapped.render_normal(ctx.r(), ns, loc, pos_in_backdrop, zoom, push);
         }
     }
 
     fn render_layer_popups<R: NiriRenderer>(
         &self,
         mut ctx: RenderCtx<R>,
+        _ns: Option<usize>,
         layer_map: &LayerMap,
         layer: Layer,
         for_backdrop: bool,

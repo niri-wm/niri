@@ -1,4 +1,3 @@
-use std::array;
 use std::sync::Arc;
 
 use niri_config::CornerRadius;
@@ -10,16 +9,11 @@ use crate::render_helpers::blur::BlurOptions;
 use crate::render_helpers::damage::ExtraDamage;
 use crate::render_helpers::framebuffer_effect::{FramebufferEffect, FramebufferEffectElement};
 use crate::render_helpers::xray::XrayElement;
-use crate::render_helpers::{RenderCtx, RenderTarget};
+use crate::render_helpers::RenderCtx;
 
 #[derive(Debug)]
 pub struct BackgroundEffect {
-    // Framebuffer effects are per-render-target because they store the framebuffer contents in a
-    // texture, and those differ per render target.
-    //
-    // FIXME: when we switch to using cache for rendering, we should no longer need this
-    // per-render-target.
-    nonxray: [FramebufferEffect; RenderTarget::COUNT],
+    nonxray: FramebufferEffect,
     /// Damage when options change.
     damage: ExtraDamage,
     /// Corner radius for clipping.
@@ -169,7 +163,7 @@ niri_render_elements! {
 impl BackgroundEffect {
     pub fn new(blur_config: niri_config::Blur) -> Self {
         Self {
-            nonxray: array::from_fn(|_| FramebufferEffect::new()),
+            nonxray: FramebufferEffect::new(),
             damage: ExtraDamage::new(),
             corner_radius: CornerRadius::default(),
             blur_config,
@@ -230,6 +224,7 @@ impl BackgroundEffect {
     pub fn render(
         &self,
         ctx: RenderCtx<GlesRenderer>,
+        ns: Option<usize>,
         mut params: RenderParams,
         push: &mut dyn FnMut(BackgroundEffectElement),
     ) {
@@ -268,8 +263,8 @@ impl BackgroundEffect {
             });
         } else {
             // Render non-xray effect.
-            let elem = &self.nonxray[ctx.target as usize];
-            if let Some(elem) = elem.render(ctx.renderer, params, blur_options, noise, saturation) {
+            let elem = &self.nonxray;
+            if let Some(elem) = elem.render(ns, params, blur_options, noise, saturation) {
                 push(damage.into());
                 push(elem.into());
             }

@@ -178,6 +178,7 @@ impl MappedLayer {
     pub fn render_normal<R: NiriRenderer>(
         &self,
         mut ctx: RenderCtx<R>,
+        ns: Option<usize>,
         location: Point<f64, Logical>,
         mut pos_in_backdrop: Point<f64, Logical>,
         zoom: f64,
@@ -272,7 +273,7 @@ impl MappedLayer {
                     scale: self.scale,
                 };
                 self.background_effect
-                    .render(ctx.as_gles(), params, &mut |elem| push(elem.into()));
+                    .render(ctx.as_gles(), ns, params, &mut |elem| push(elem.into()));
             }
         }
     }
