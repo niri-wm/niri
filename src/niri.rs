@@ -120,6 +120,8 @@ use crate::dbus::freedesktop_locale1::Locale1ToNiri;
 #[cfg(feature = "dbus")]
 use crate::dbus::freedesktop_login1::Login1ToNiri;
 #[cfg(feature = "dbus")]
+use crate::dbus::gnome_settings_shortcuts::ShortcutsProviderToNiri;
+#[cfg(feature = "dbus")]
 use crate::dbus::gnome_shell_introspect::{self, IntrospectToNiri, NiriToIntrospect};
 #[cfg(feature = "dbus")]
 use crate::dbus::gnome_shell_screenshot::{NiriToScreenshot, ScreenshotToNiri};
@@ -2081,6 +2083,48 @@ impl State {
             if let Err(err) = to_screenshot.send_blocking(msg) {
                 warn!("error sending None to screenshot: {err:?}");
             }
+        }
+    }
+
+    #[cfg(feature = "dbus")]
+    pub fn on_shortcuts_provider_msg(&mut self, msg: ShortcutsProviderToNiri) {
+        let ShortcutsProviderToNiri::BindShortcuts {
+            app_id,
+            parent_window,
+            shortcuts,
+            results: tx,
+        } = msg;
+
+        let config = self.niri.config.borrow();
+        let permitted: Vec<_> = config
+            .global_shortcuts
+            .0
+            .iter()
+            .filter(|shortcut_def| shortcut_def.app_id.matches(&app_id))
+            .collect();
+
+        let result = shortcuts
+            .iter()
+            .map(|try_bind| {
+                use crate::dbus::gnome_settings_shortcuts::BindShortcutResponse;
+
+                // Each matching shortcut here is tied to a a single shortcut_id
+                let shortcuts_to_bind = permitted
+                    .iter()
+                    .filter(|p| p.shortcut_id.matches(&try_bind.id))
+                    .map(|to_bind| to_bind.trigger.to_string())
+                    .collect();
+
+                BindShortcutResponse {
+                    id: try_bind.id.clone(),
+                    description: try_bind.description.clone(),
+                    shortcuts: shortcuts_to_bind,
+                }
+            })
+            .collect();
+
+        if let Err(err) = tx.send_blocking(result) {
+            warn!("error sending bind shortcuts result to gnome shell: {err:?}");
         }
     }
 
