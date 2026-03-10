@@ -371,6 +371,8 @@ pub struct Tablet {
 pub struct Touch {
     #[knuffel(child)]
     pub off: bool,
+    #[knuffel(child)]
+    pub natural_scroll: bool,
     #[knuffel(child, unwrap(arguments))]
     pub calibration_matrix: Option<Vec<f32>>,
     #[knuffel(child, unwrap(argument))]
