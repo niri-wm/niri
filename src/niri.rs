@@ -1,4 +1,4 @@
-use std::cell::{Cell, OnceCell, RefCell};
+use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
 use std::ffi::OsString;
 use std::os::unix::net::UnixStream;
@@ -28,7 +28,7 @@ use smithay::backend::renderer::element::utils::{
     RescaleRenderElement,
 };
 use smithay::backend::renderer::element::{
-    default_primary_scanout_output_compare, Element, Id, Kind, PrimaryScanoutOutput,
+    default_primary_scanout_output_compare, Element, Id, Kind, PrimaryScanoutOutput, RenderElement,
     RenderElementStates,
 };
 use smithay::backend::renderer::gles::GlesRenderer;
@@ -5124,57 +5124,65 @@ impl Niri {
         let _span = tracy_client::span!("Niri::render_for_screencopy_with_damage");
 
         let mut screencopy_state = mem::take(&mut self.screencopy_state);
-        let elements = OnceCell::new();
 
         screencopy_state.with_queues_mut(|queue| {
             let (damage_tracker, screencopy) = queue.split();
             if let Some(screencopy) = screencopy {
                 if screencopy.output() == output {
-                    let elements = elements.get_or_init(|| {
-                        let ctx = RenderCtx {
-                            renderer,
-                            target: RenderTarget::ScreenCapture,
-                            xray: None,
-                        };
-                        self.render_to_vec(ctx, output, true)
-                    });
-                    // FIXME: skip elements if not including pointers
-                    let render_result = Self::render_for_screencopy_internal(
+                    let ctx = RenderCtx {
                         renderer,
+                        target: RenderTarget::ScreenCapture,
+                        xray: None,
+                    };
+                    let offset = screencopy.region_loc().upscale(-1);
+                    let mut elements = Vec::new();
+                    self.render(ctx, output, screencopy.overlay_cursor(), &mut |elem| {
+                        let elem =
+                            RelocateRenderElement::from_element(elem, offset, Relocate::Relative);
+                        elements.push(elem);
+                    });
+
+                    let (damages, states) = Self::damage_screencopy_internal(
                         output,
-                        elements,
-                        true,
+                        &elements,
                         damage_tracker,
                         screencopy,
                     );
-                    match render_result {
-                        Ok((sync, damages)) => {
-                            if let Some(damages) = damages {
-                                // Convert from Physical coordinates back to Buffer coordinates.
-                                let transform = output.current_transform();
-                                let physical_size =
-                                    transform.transform_size(screencopy.buffer_size());
-                                let damages = damages.iter().map(|dmg| {
-                                    dmg.to_logical(1).to_buffer(
-                                        1,
-                                        transform.invert(),
-                                        &physical_size.to_logical(1),
-                                    )
-                                });
+                    if let Some(damages) = damages {
+                        // Convert from Physical coordinates back to Buffer coordinates.
+                        let transform = output.current_transform();
+                        let physical_size = transform.transform_size(screencopy.buffer_size());
+                        let damages = damages.iter().map(|dmg| {
+                            dmg.to_logical(1).to_buffer(
+                                1,
+                                transform.invert(),
+                                &physical_size.to_logical(1),
+                            )
+                        });
 
-                                screencopy.damage(damages);
+                        screencopy.damage(damages);
+
+                        let render_result = Self::render_for_screencopy_internal(
+                            renderer,
+                            damage_tracker,
+                            &elements,
+                            states,
+                            screencopy,
+                        );
+                        match render_result {
+                            Ok(sync) => {
                                 queue.pop().submit_after_sync(false, sync, &self.event_loop);
-                            } else {
-                                trace!("no damage found, waiting till next redraw");
+                            }
+                            Err(err) => {
+                                // Recreate damage tracker to report full damage next check.
+                                *damage_tracker =
+                                    OutputDamageTracker::new((0, 0), 1.0, Transform::Normal);
+                                queue.pop();
+                                warn!("error rendering for screencopy: {err:?}");
                             }
                         }
-                        Err(err) => {
-                            // Recreate damage tracker to report full damage next check.
-                            *damage_tracker =
-                                OutputDamageTracker::new((0, 0), 1.0, Transform::Normal);
-                            queue.pop();
-                            warn!("error rendering for screencopy: {err:?}");
-                        }
+                    } else {
+                        trace!("no damage found, waiting till next redraw");
                     }
                 };
             }
@@ -5204,24 +5212,28 @@ impl Niri {
             target: RenderTarget::ScreenCapture,
             xray: None,
         };
-        let elements = self.render_to_vec(ctx, output, screencopy.overlay_cursor());
+        let offset = screencopy.region_loc().upscale(-1);
+        let mut elements = Vec::new();
+        self.render(ctx, output, screencopy.overlay_cursor(), &mut |elem| {
+            let elem = RelocateRenderElement::from_element(elem, offset, Relocate::Relative);
+            elements.push(elem);
+        });
 
         let Some(damage_tracker) = self.screencopy_state.damage_tracker(manager) else {
             error!("screencopy queue must not be deleted as long as frames exist");
             bail!("screencopy queue missing");
         };
 
-        let render_result = Self::render_for_screencopy_internal(
+        let (_damages, states) =
+            Self::damage_screencopy_internal(output, &elements, damage_tracker, &screencopy);
+        let res = Self::render_for_screencopy_internal(
             renderer,
-            output,
-            &elements,
-            false,
             damage_tracker,
+            &elements,
+            states,
             &screencopy,
         );
-
-        let res = render_result
-            .map(|(sync, _damage)| screencopy.submit_after_sync(false, sync, &self.event_loop));
+        let res = res.map(|sync| screencopy.submit_after_sync(false, sync, &self.event_loop));
 
         if res.is_err() {
             // Recreate damage tracker to report full damage next check.
@@ -5231,15 +5243,15 @@ impl Niri {
         res
     }
 
-    #[allow(clippy::type_complexity)]
-    fn render_for_screencopy_internal<'a>(
-        renderer: &mut GlesRenderer,
+    fn damage_screencopy_internal<'a>(
         output: &Output,
-        elements: &[OutputRenderElements<GlesRenderer>],
-        with_damage: bool,
+        elements: &[impl Element],
         damage_tracker: &'a mut OutputDamageTracker,
         screencopy: &Screencopy,
-    ) -> anyhow::Result<(Option<SyncPoint>, Option<&'a Vec<Rectangle<i32, Physical>>>)> {
+    ) -> (
+        Option<&'a Vec<Rectangle<i32, Physical>>>,
+        RenderElementStates,
+    ) {
         let OutputModeSource::Static {
             size: last_size,
             scale: last_scale,
@@ -5257,41 +5269,33 @@ impl Niri {
             *damage_tracker = OutputDamageTracker::new(size, scale, transform);
         }
 
-        let region_loc = screencopy.region_loc();
-        let elements = elements
-            .iter()
-            .map(|element| {
-                RelocateRenderElement::from_element(
-                    element,
-                    region_loc.upscale(-1),
-                    Relocate::Relative,
-                )
-            })
-            .collect::<Vec<_>>();
-
         // Just checked damage tracker has static mode
-        let damages = damage_tracker.damage_output(1, &elements).unwrap().0;
-        if with_damage && damages.is_none() {
-            return Ok((None, None));
-        }
+        damage_tracker.damage_output(1, elements).unwrap()
+    }
 
-        let elements = elements.iter().rev();
-
+    #[allow(clippy::type_complexity)]
+    fn render_for_screencopy_internal(
+        renderer: &mut GlesRenderer,
+        damage_tracker: &mut OutputDamageTracker,
+        elements: &[impl RenderElement<GlesRenderer>],
+        states: RenderElementStates,
+        screencopy: &Screencopy,
+    ) -> anyhow::Result<Option<SyncPoint>> {
         let sync = match screencopy.buffer() {
             ScreencopyBuffer::Dmabuf(dmabuf) => {
                 let sync =
-                    render_to_dmabuf(renderer, dmabuf.clone(), size, scale, transform, elements)
+                    render_to_dmabuf(renderer, damage_tracker, dmabuf.clone(), elements, states)
                         .context("error rendering to screencopy dmabuf")?;
                 Some(sync)
             }
             ScreencopyBuffer::Shm(wl_buffer) => {
-                render_to_shm(renderer, wl_buffer, size, scale, transform, elements)
+                render_to_shm(renderer, damage_tracker, wl_buffer, elements, states)
                     .context("error rendering to screencopy shm buffer")?;
                 None
             }
         };
 
-        Ok((sync, damages))
+        Ok(sync)
     }
 
     #[cfg(not(feature = "xdp-gnome-screencast"))]
