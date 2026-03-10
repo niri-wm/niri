@@ -159,7 +159,7 @@ use crate::render_helpers::surface::push_elements_from_surface_tree;
 use crate::render_helpers::texture::TextureBuffer;
 use crate::render_helpers::xray::Xray;
 use crate::render_helpers::{
-    encompassing_geo, render_to_dmabuf, render_to_encompassing_texture, render_to_shm,
+    encompassing_geo, render_to_dmabuf_dmg, render_to_encompassing_texture, render_to_shm,
     render_to_texture, render_to_vec, shaders, RenderCtx, RenderTarget,
 };
 #[cfg(feature = "xdp-gnome-screencast")]
@@ -5151,42 +5151,47 @@ impl Niri {
                         self.render_to_vec(ctx, output, true)
                     });
                     // FIXME: skip elements if not including pointers
-                    let render_result = Self::render_for_screencopy_internal(
-                        renderer,
+                    let (damages, states) = Self::damage_screencopy_internal(
                         output,
                         elements,
-                        true,
                         damage_tracker,
                         screencopy,
                     );
-                    match render_result {
-                        Ok((sync, damages)) => {
-                            if let Some(damages) = damages {
-                                // Convert from Physical coordinates back to Buffer coordinates.
-                                let transform = output.current_transform();
-                                let physical_size =
-                                    transform.transform_size(screencopy.buffer_size());
-                                let damages = damages.iter().map(|dmg| {
-                                    dmg.to_logical(1).to_buffer(
-                                        1,
-                                        transform.invert(),
-                                        &physical_size.to_logical(1),
-                                    )
-                                });
+                    if let Some(damages) = damages {
+                        // Convert from Physical coordinates back to Buffer coordinates.
+                        let transform = output.current_transform();
+                        let physical_size = transform.transform_size(screencopy.buffer_size());
+                        let damages = damages.iter().map(|dmg| {
+                            dmg.to_logical(1).to_buffer(
+                                1,
+                                transform.invert(),
+                                &physical_size.to_logical(1),
+                            )
+                        });
 
-                                screencopy.damage(damages);
+                        screencopy.damage(damages);
+
+                        let render_result = Self::render_for_screencopy_internal(
+                            renderer,
+                            damage_tracker,
+                            elements,
+                            states,
+                            screencopy,
+                        );
+                        match render_result {
+                            Ok(sync) => {
                                 queue.pop().submit_after_sync(false, sync, &self.event_loop);
-                            } else {
-                                trace!("no damage found, waiting till next redraw");
+                            }
+                            Err(err) => {
+                                // Recreate damage tracker to report full damage next check.
+                                *damage_tracker =
+                                    OutputDamageTracker::new((0, 0), 1.0, Transform::Normal);
+                                queue.pop();
+                                warn!("error rendering for screencopy: {err:?}");
                             }
                         }
-                        Err(err) => {
-                            // Recreate damage tracker to report full damage next check.
-                            *damage_tracker =
-                                OutputDamageTracker::new((0, 0), 1.0, Transform::Normal);
-                            queue.pop();
-                            warn!("error rendering for screencopy: {err:?}");
-                        }
+                    } else {
+                        trace!("no damage found, waiting till next redraw");
                     }
                 };
             }
@@ -5223,17 +5228,16 @@ impl Niri {
             bail!("screencopy queue missing");
         };
 
-        let render_result = Self::render_for_screencopy_internal(
+        let (_damages, states) =
+            Self::damage_screencopy_internal(output, &elements, damage_tracker, &screencopy);
+        let res = Self::render_for_screencopy_internal(
             renderer,
-            output,
-            &elements,
-            false,
             damage_tracker,
+            &elements,
+            states,
             &screencopy,
         );
-
-        let res = render_result
-            .map(|(sync, _damage)| screencopy.submit_after_sync(false, sync, &self.event_loop));
+        let res = res.map(|sync| screencopy.submit_after_sync(false, sync, &self.event_loop));
 
         if res.is_err() {
             // Recreate damage tracker to report full damage next check.
@@ -5243,15 +5247,15 @@ impl Niri {
         res
     }
 
-    #[allow(clippy::type_complexity)]
-    fn render_for_screencopy_internal<'a>(
-        renderer: &mut GlesRenderer,
+    fn damage_screencopy_internal<'a>(
         output: &Output,
         elements: &[OutputRenderElements<GlesRenderer>],
-        with_damage: bool,
         damage_tracker: &'a mut OutputDamageTracker,
         screencopy: &Screencopy,
-    ) -> anyhow::Result<(Option<SyncPoint>, Option<&'a Vec<Rectangle<i32, Physical>>>)> {
+    ) -> (
+        Option<&'a Vec<Rectangle<i32, Physical>>>,
+        RenderElementStates,
+    ) {
         let OutputModeSource::Static {
             size: last_size,
             scale: last_scale,
@@ -5282,28 +5286,37 @@ impl Niri {
             .collect::<Vec<_>>();
 
         // Just checked damage tracker has static mode
-        let damages = damage_tracker.damage_output(1, &elements).unwrap().0;
-        if with_damage && damages.is_none() {
-            return Ok((None, None));
-        }
+        damage_tracker.damage_output(1, &elements).unwrap()
+    }
 
-        let elements = elements.iter().rev();
-
+    #[allow(clippy::type_complexity)]
+    fn render_for_screencopy_internal(
+        renderer: &mut GlesRenderer,
+        damage_tracker: &mut OutputDamageTracker,
+        elements: &[OutputRenderElements<GlesRenderer>],
+        states: RenderElementStates,
+        screencopy: &Screencopy,
+    ) -> anyhow::Result<Option<SyncPoint>> {
         let sync = match screencopy.buffer() {
             ScreencopyBuffer::Dmabuf(dmabuf) => {
-                let sync =
-                    render_to_dmabuf(renderer, dmabuf.clone(), size, scale, transform, elements)
-                        .context("error rendering to screencopy dmabuf")?;
+                let sync = render_to_dmabuf_dmg(
+                    renderer,
+                    damage_tracker,
+                    dmabuf.clone(),
+                    elements,
+                    Some(states),
+                )
+                .context("error rendering to screencopy dmabuf")?;
                 Some(sync)
             }
             ScreencopyBuffer::Shm(wl_buffer) => {
-                render_to_shm(renderer, wl_buffer, size, scale, transform, elements)
+                render_to_shm(renderer, damage_tracker, wl_buffer, elements, states)
                     .context("error rendering to screencopy shm buffer")?;
                 None
             }
         };
 
-        Ok((sync, damages))
+        Ok(sync)
     }
 
     #[cfg(not(feature = "xdp-gnome-screencast"))]

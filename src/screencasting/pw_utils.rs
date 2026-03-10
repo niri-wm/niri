@@ -41,7 +41,7 @@ use smithay::backend::renderer::element::utils::{Relocate, RelocateRenderElement
 use smithay::backend::renderer::element::{Element, RenderElement};
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::renderer::sync::SyncPoint;
-use smithay::backend::renderer::ExportMem;
+use smithay::backend::renderer::{Bind as _, Color32F, ExportMem};
 use smithay::output::{Output, OutputModeSource};
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::{Interest, LoopHandle, Mode, PostAction};
@@ -52,7 +52,7 @@ use zbus::object_server::SignalEmitter;
 use crate::dbus::mutter_screen_cast::{self, CursorMode};
 use crate::niri::{CastTarget, State};
 use crate::render_helpers::{
-    clear_dmabuf, encompassing_geo, render_and_download, render_to_dmabuf,
+    clear_dmabuf, encompassing_geo, render_and_download, render_elements_no_clear,
 };
 use crate::screencasting::CastRenderElement;
 use crate::utils::{get_monotonic_time, CastSessionId, CastStreamId};
@@ -1092,7 +1092,7 @@ impl Cast {
             );
         }
 
-        let (damage, _states) = damage_tracker.damage_output(1, elements).unwrap();
+        let (damage, states) = damage_tracker.damage_output(1, elements).unwrap();
 
         let mut has_cursor_update = false;
         let mut redraw_cursor = false;
@@ -1118,6 +1118,13 @@ impl Cast {
         };
         let buffer = pw_buffer.as_ptr();
 
+        let mut inner = self.inner.borrow_mut();
+        let inner_ = &mut *inner;
+        let CastState::Ready { damage_tracker, .. } = &mut inner_.state else {
+            unreachable!()
+        };
+        let damage_tracker = damage_tracker.as_mut().unwrap();
+
         unsafe {
             let spa_buffer = (*buffer).buffer;
 
@@ -1128,23 +1135,51 @@ impl Cast {
                 // Embed the cursor into the main render.
                 pointer_elements = Some(cursor_data.original.iter());
             }
-            let pointer_elements = pointer_elements.into_iter().flatten();
-            let elements = pointer_elements.chain(elements);
 
             // FIXME: would be good to skip rendering the full frame if only the pointer changed.
             // Unfortunately, I think the OBS PipeWire code needs to be updated first to cleanly
             // allow for that codepath.
             let fd = (*(*spa_buffer).datas).fd;
-            let dmabuf = self.inner.borrow().dmabufs[&fd].clone();
+            let mut dmabuf = inner_.dmabufs[&fd].clone();
 
-            match render_to_dmabuf(
-                renderer,
-                dmabuf,
-                size,
-                scale,
-                Transform::Normal,
-                elements.rev(),
-            ) {
+            let render = || {
+                let mut target = renderer.bind(&mut dmabuf).context("error binding dmabuf")?;
+                let res = damage_tracker
+                    .render_output_with_states(
+                        renderer,
+                        &mut target,
+                        0,
+                        elements,
+                        Color32F::TRANSPARENT,
+                        states,
+                    )
+                    .context("error rendering to dmabuf")?;
+                let mut sync = res.sync;
+
+                // Render the pointer elements separately on top if needed.
+                //
+                // They can't go into the damage tracker together with the other elements, because
+                // the damage tracker wants a slice of elements rather than an iterator, and we
+                // can't easily make a combined slice like that.
+                if let Some(elements) = pointer_elements {
+                    sync = render_elements_no_clear(
+                        renderer,
+                        &mut target,
+                        size,
+                        scale,
+                        Transform::Normal,
+                        elements.rev(),
+                    )
+                    .context("error rendering pointer elements")?;
+                }
+
+                anyhow::Ok(sync)
+            };
+
+            let res = render();
+            drop(inner);
+
+            match res {
                 Ok(sync_point) => {
                     mark_buffer_as_good(pw_buffer, &mut self.sequence_counter);
                     trace!("queueing buffer with seq={}", self.sequence_counter);

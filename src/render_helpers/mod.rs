@@ -4,11 +4,14 @@ use anyhow::{ensure, Context as _};
 use niri_config::BlockOutFrom;
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::allocator::{Buffer, Fourcc};
+use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::element::utils::{Relocate, RelocateRenderElement};
-use smithay::backend::renderer::element::{Element, Kind, RenderElement};
+use smithay::backend::renderer::element::{Element, Kind, RenderElement, RenderElementStates};
 use smithay::backend::renderer::gles::{GlesMapping, GlesRenderer, GlesTarget, GlesTexture};
 use smithay::backend::renderer::sync::SyncPoint;
-use smithay::backend::renderer::{Bind, Color32F, ExportMem, Frame, Offscreen, Renderer};
+use smithay::backend::renderer::{
+    Bind, Color32F, ExportMem, Frame, Offscreen, Renderer, Texture as _,
+};
 use smithay::reexports::wayland_server::protocol::wl_buffer::WlBuffer;
 use smithay::reexports::wayland_server::protocol::wl_shm;
 use smithay::utils::user_data::UserDataMap;
@@ -212,6 +215,41 @@ pub fn render_to_texture(
     Ok((texture, sync_point))
 }
 
+pub fn render_to_texture_dmg(
+    renderer: &mut GlesRenderer,
+    damage_tracker: &mut OutputDamageTracker,
+    fourcc: Fourcc,
+    elements: &[impl RenderElement<GlesRenderer>],
+    states: RenderElementStates,
+) -> anyhow::Result<(GlesTexture, SyncPoint)> {
+    let _span = tracy_client::span!();
+
+    let (size, _scale, _transform) = damage_tracker.mode().try_into().unwrap();
+    let buffer_size = size.to_logical(1).to_buffer(1, Transform::Normal);
+
+    let mut texture: GlesTexture = renderer
+        .create_buffer(fourcc, buffer_size)
+        .context("error creating texture")?;
+
+    let sync_point = {
+        let mut target = renderer
+            .bind(&mut texture)
+            .context("error binding texture")?;
+
+        let res = damage_tracker.render_output_with_states(
+            renderer,
+            &mut target,
+            0,
+            elements,
+            Color32F::TRANSPARENT,
+            states,
+        )?;
+        res.sync
+    };
+
+    Ok((texture, sync_point))
+}
+
 pub fn render_and_download(
     renderer: &mut GlesRenderer,
     size: Size<i32, Physical>,
@@ -225,6 +263,30 @@ pub fn render_and_download(
     let (mut texture, _) = render_to_texture(renderer, size, scale, transform, fourcc, elements)?;
 
     let buffer_size = size.to_logical(1).to_buffer(1, Transform::Normal);
+    // FIXME: would be nice to avoid binding the second time here (after render_to_texture()), but
+    // borrowing makes this inconvenient.
+    let target = renderer
+        .bind(&mut texture)
+        .context("error binding texture")?;
+    let mapping = renderer
+        .copy_framebuffer(&target, Rectangle::from_size(buffer_size), fourcc)
+        .context("error copying framebuffer")?;
+    Ok(mapping)
+}
+
+pub fn render_and_download_dmg(
+    renderer: &mut GlesRenderer,
+    damage_tracker: &mut OutputDamageTracker,
+    fourcc: Fourcc,
+    elements: &[impl RenderElement<GlesRenderer>],
+    states: RenderElementStates,
+) -> anyhow::Result<GlesMapping> {
+    let _span = tracy_client::span!();
+
+    let (mut texture, _) =
+        render_to_texture_dmg(renderer, damage_tracker, fourcc, elements, states)?;
+
+    let buffer_size = texture.size();
     // FIXME: would be nice to avoid binding the second time here (after render_to_texture()), but
     // borrowing makes this inconvenient.
     let target = renderer
@@ -273,16 +335,48 @@ pub fn render_to_dmabuf(
     render_elements(renderer, &mut target, size, scale, transform, elements)
 }
 
+pub fn render_to_dmabuf_dmg(
+    renderer: &mut GlesRenderer,
+    damage_tracker: &mut OutputDamageTracker,
+    mut dmabuf: Dmabuf,
+    elements: &[impl RenderElement<GlesRenderer>],
+    states: Option<RenderElementStates>,
+) -> anyhow::Result<SyncPoint> {
+    let _span = tracy_client::span!();
+    let (size, _scale, _transform) = damage_tracker.mode().try_into().unwrap();
+    ensure!(
+        dmabuf.width() == size.w as u32 && dmabuf.height() == size.h as u32,
+        "invalid buffer size"
+    );
+
+    let mut target = renderer.bind(&mut dmabuf).context("error binding dmabuf")?;
+    let res = if let Some(states) = states {
+        damage_tracker.render_output_with_states(
+            renderer,
+            &mut target,
+            0,
+            elements,
+            Color32F::TRANSPARENT,
+            states,
+        )
+    } else {
+        damage_tracker.render_output(renderer, &mut target, 0, elements, Color32F::TRANSPARENT)
+    }
+    .context("error rendering to dmabuf")?;
+    Ok(res.sync)
+}
+
 pub fn render_to_shm(
     renderer: &mut GlesRenderer,
+    damage_tracker: &mut OutputDamageTracker,
     buffer: &WlBuffer,
-    size: Size<i32, Physical>,
-    scale: Scale<f64>,
-    transform: Transform,
-    elements: impl Iterator<Item = impl RenderElement<GlesRenderer>>,
+    elements: &[impl RenderElement<GlesRenderer>],
+    states: RenderElementStates,
 ) -> anyhow::Result<()> {
     let _span = tracy_client::span!();
     shm::with_buffer_contents_mut(buffer, |shm_buffer, shm_len, buffer_data| {
+        let (size, _scale, _transform) = damage_tracker.mode().try_into().unwrap();
+
         ensure!(
             // The buffer prefers pixels in little endian ...
             buffer_data.format == wl_shm::Format::Xrgb8888
@@ -293,7 +387,7 @@ pub fn render_to_shm(
             "invalid buffer format or size"
         );
         let mapping =
-            render_and_download(renderer, size, scale, transform, Fourcc::Xrgb8888, elements)?;
+            render_and_download_dmg(renderer, damage_tracker, Fourcc::Xrgb8888, elements, states)?;
 
         let bytes = renderer
             .map_texture(&mapping)
@@ -340,6 +434,43 @@ fn render_elements(
     frame
         .clear(Color32F::TRANSPARENT, &[output_rect])
         .context("error clearing")?;
+
+    for element in elements {
+        let src = element.src();
+        let dst = element.geometry(scale);
+
+        if let Some(mut damage) = output_rect.intersection(dst) {
+            damage.loc -= dst.loc;
+
+            let cache = UserDataMap::new();
+            if element.is_framebuffer_effect() {
+                element
+                    .capture_framebuffer(&mut frame, src, dst, &cache)
+                    .context("error in capture_framebuffer()")?;
+            }
+            element
+                .draw(&mut frame, src, dst, &[damage], &[], Some(&cache))
+                .context("error drawing element")?;
+        }
+    }
+
+    frame.finish().context("error finishing frame")
+}
+
+pub fn render_elements_no_clear(
+    renderer: &mut GlesRenderer,
+    target: &mut GlesTarget,
+    size: Size<i32, Physical>,
+    scale: Scale<f64>,
+    transform: Transform,
+    elements: impl Iterator<Item = impl RenderElement<GlesRenderer>>,
+) -> anyhow::Result<SyncPoint> {
+    let transform = transform.invert();
+    let output_rect = Rectangle::from_size(transform.transform_size(size));
+
+    let mut frame = renderer
+        .render(target, size, transform)
+        .context("error starting frame")?;
 
     for element in elements {
         let src = element.src();
