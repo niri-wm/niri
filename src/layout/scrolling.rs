@@ -91,6 +91,10 @@ pub struct ScrollingSpace<W: LayoutElement> {
 
     /// Configurable properties of the layout.
     options: Rc<Options>,
+
+    /// Number of columns that are currently auto-tiled (filling the screen with dwindle layout).
+    /// These are always the first N columns. Columns beyond this count are in scrolling mode.
+    auto_tile_count: usize,
 }
 
 niri_render_elements! {
@@ -306,6 +310,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             scale,
             clock,
             options,
+            auto_tile_count: 0,
         }
     }
 
@@ -959,6 +964,49 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         self.add_tile(Some(col_idx), tile, activate, width, is_full_width, None);
     }
 
+    fn is_auto_tile_enabled(&self) -> bool {
+        self.options.layout.auto_tile.is_some()
+    }
+
+    fn auto_tile_max(&self) -> usize {
+        match &self.options.layout.auto_tile {
+            Some(at) => at.max_columns as usize,
+            None => 0,
+        }
+    }
+
+    /// Returns whether auto-tiling should apply to a new column at `idx`.
+    fn should_auto_tile(&self, idx: usize) -> bool {
+        if !self.is_auto_tile_enabled() {
+            return false;
+        }
+
+        let max = self.auto_tile_max();
+        if self.auto_tile_count >= max {
+            return false;
+        }
+
+        idx <= self.auto_tile_count
+    }
+
+    /// Redistribute widths of all auto-tiled columns to fill the screen equally.
+    fn redistribute_auto_tile_widths(&mut self) {
+        if self.auto_tile_count == 0 {
+            return;
+        }
+
+        let prop = 1.0 / self.auto_tile_count as f64;
+        for i in 0..self.auto_tile_count {
+            if i >= self.columns.len() {
+                break;
+            }
+            let col = &mut self.columns[i];
+            col.set_width_proportion(prop);
+            col.update_tile_sizes(true);
+            self.data[i].update(col);
+        }
+    }
+
     pub fn add_column(
         &mut self,
         idx: Option<usize>,
@@ -976,6 +1024,9 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             }
         });
 
+        // Determine if this new column should be auto-tiled.
+        let do_auto_tile = self.should_auto_tile(idx);
+
         column.update_config(
             self.view_size,
             self.working_area,
@@ -988,6 +1039,11 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
         if !was_empty && idx <= self.active_column_idx {
             self.active_column_idx += 1;
+        }
+
+        if do_auto_tile {
+            self.auto_tile_count += 1;
+            self.redistribute_auto_tile_widths();
         }
 
         // Animate movement of other columns.
@@ -1178,6 +1234,12 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
         let column = self.columns.remove(column_idx);
         self.data.remove(column_idx);
+
+        // If the removed column was in the auto-tile zone, redistribute.
+        if column_idx < self.auto_tile_count {
+            self.auto_tile_count -= 1;
+            self.redistribute_auto_tile_widths();
+        }
 
         // Stop interactive resize.
         if let Some(resize) = &self.interactive_resize {
@@ -4852,6 +4914,13 @@ impl<W: LayoutElement> Column<W> {
         }
 
         self.update_tile_sizes(true);
+    }
+
+    fn set_width_proportion(&mut self, proportion: f64) {
+        self.width = ColumnWidth::Proportion(proportion);
+        self.is_full_width = false;
+        self.is_pending_maximized = false;
+        self.preset_width_idx = None;
     }
 
     fn set_column_width(&mut self, change: SizeChange, tile_idx: Option<usize>, animate: bool) {
