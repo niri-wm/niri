@@ -11,6 +11,7 @@ pub struct GlobalShortcuts(pub Vec<GlobalShortcut>);
 #[derive(Debug, Clone, PartialEq)]
 pub struct GlobalShortcut {
     pub trigger: Key,
+    pub inhibit: bool,
     pub app_id: Selector,
     pub shortcut_id: Selector,
 }
@@ -89,12 +90,20 @@ where
             ));
         }
 
-        for name in node.properties.keys() {
-            ctx.emit_error(DecodeError::unexpected(
-                name,
-                "property",
-                "no properties expected for this node",
-            ))
+        let mut inhibit = true;
+        for (name, val) in &node.properties {
+            match &***name {
+                "inhibit" => {
+                    inhibit = knuffel::traits::DecodeScalar::decode(val, ctx)?;
+                }
+                name_str => {
+                    ctx.emit_error(DecodeError::unexpected(
+                        name,
+                        "property",
+                        format!("unexpected property `{}`", name_str.escape_default()),
+                    ));
+                }
+            }
         }
 
         let key = node
@@ -122,6 +131,7 @@ where
         let shortcut_id = shortcut_id.unwrap_or(Selector::NeverMatch);
         Ok(Self {
             trigger: key,
+            inhibit,
             app_id,
             shortcut_id,
         })
