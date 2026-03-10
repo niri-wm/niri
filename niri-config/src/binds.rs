@@ -911,62 +911,56 @@ where
             hotkey_overlay_title: None,
         };
 
-        if let Some(child) = children.next() {
-            for unwanted_child in children {
-                ctx.emit_error(DecodeError::unexpected(
-                    unwanted_child,
-                    "node",
-                    "only one action is allowed per keybind",
-                ));
-            }
-            let action = match Action::decode_node(child, ctx) {
-                Ok(action) => action,
+        let mut actions = Vec::new();
+        for child in children.by_ref() {
+            match Action::decode_node(child, ctx) {
+                Ok(action) => actions.push(action),
                 Err(e) => {
                     ctx.emit_error(e);
                     return Ok(dummy);
                 }
-            };
-
-            let actions: Arc<[Action]> = vec![action].into();
-
-            if !actions
-                .iter()
-                .all(|action| matches!(action, Action::Spawn(_) | Action::SpawnSh(_)))
-            {
-                if let Some(node) = allow_when_locked_node {
-                    ctx.emit_error(DecodeError::unexpected(
-                        node,
-                        "property",
-                        "allow-when-locked can only be set on spawn binds",
-                    ));
-                }
             }
+        }
 
-            // The toggle-inhibit action must always be uninhibitable.
-            // Otherwise, it would be impossible to trigger it.
-            if actions
-                .iter()
-                .any(|action| matches!(action, Action::ToggleKeyboardShortcutsInhibit))
-            {
-                allow_inhibiting = false;
-            }
-
-            Ok(Self {
-                key,
-                actions,
-                repeat,
-                cooldown,
-                allow_when_locked,
-                allow_inhibiting,
-                hotkey_overlay_title,
-            })
-        } else {
+        if actions.is_empty() {
             ctx.emit_error(DecodeError::missing(
                 node,
                 "expected an action for this keybind",
             ));
-            Ok(dummy)
+            return Ok(dummy);
         }
+
+        if !actions
+            .iter()
+            .all(|action| matches!(action, Action::Spawn(_) | Action::SpawnSh(_)))
+        {
+            if let Some(node) = allow_when_locked_node {
+                ctx.emit_error(DecodeError::unexpected(
+                    node,
+                    "property",
+                    "allow-when-locked can only be set on spawn binds",
+                ));
+            }
+        }
+
+        // The toggle-inhibit action must always be uninhibitable.
+        // Otherwise, it would be impossible to trigger it.
+        if actions
+            .iter()
+            .any(|action| matches!(action, Action::ToggleKeyboardShortcutsInhibit))
+        {
+            allow_inhibiting = false;
+        }
+
+        Ok(Self {
+            key,
+            actions: actions.into(),
+            repeat,
+            cooldown,
+            allow_when_locked,
+            allow_inhibiting,
+            hotkey_overlay_title,
+        })
     }
 }
 
@@ -1072,6 +1066,7 @@ impl FromStr for Key {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Config;
 
     #[test]
     fn parse_xf86_screensaver() {
@@ -1128,6 +1123,35 @@ mod tests {
                 trigger: Trigger::Keysym(Keysym::a),
                 modifiers: Modifiers::ISO_LEVEL5_SHIFT
             },
+        );
+    }
+
+    #[test]
+    fn parse_multiple_actions_per_bind() {
+        let config = Config::parse_mem(
+            r#"
+            binds {
+                Mod+X {
+                    focus-column-right
+                    consume-or-expel-window-left
+                }
+                Mod+Y {
+                    move-window-to-tiling
+                    center-column
+                }
+            }
+            "#,
+        )
+        .unwrap();
+
+        assert_eq!(config.binds.0.len(), 2);
+        assert_eq!(
+            config.binds.0[0].actions(),
+            &[Action::FocusColumnRight, Action::ConsumeOrExpelWindowLeft,]
+        );
+        assert_eq!(
+            config.binds.0[1].actions(),
+            &[Action::MoveWindowToTiling, Action::CenterColumn]
         );
     }
 }

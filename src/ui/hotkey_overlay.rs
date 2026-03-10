@@ -152,7 +152,22 @@ impl HotkeyOverlay {
     }
 }
 
-fn format_bind(binds: &[Bind], action: &Action) -> Option<(Option<Key>, String)> {
+enum OverlayItem<'a> {
+    Action(&'a Action),
+    CustomBind(&'a Bind),
+}
+
+fn format_bind(binds: &[Bind], item: OverlayItem<'_>) -> Option<(Option<Key>, String)> {
+    let OverlayItem::Action(action) = item else {
+        let OverlayItem::CustomBind(bind) = item else {
+            unreachable!();
+        };
+        let Some(Some(title)) = &bind.hotkey_overlay_title else {
+            return None;
+        };
+        return Some((Some(bind.key), title.clone()));
+    };
+
     let mut bind_with_non_null = None;
     let mut bind_with_custom_title = None;
     let mut found_null_title = false;
@@ -194,11 +209,11 @@ fn format_bind(binds: &[Bind], action: &Action) -> Option<(Option<Key>, String)>
     Some((key, title))
 }
 
-fn collect_actions(config: &Config) -> Vec<&Action> {
+fn collect_actions(config: &Config) -> Vec<OverlayItem<'_>> {
     let binds = &config.binds.0;
 
     // Collect actions that we want to show.
-    let mut actions = vec![&Action::ShowHotkeyOverlay];
+    let mut actions = vec![OverlayItem::Action(&Action::ShowHotkeyOverlay)];
 
     // Prefer Quit(false) if found, otherwise try Quit(true), and if there's neither, fall back to
     // Quit(false).
@@ -206,24 +221,24 @@ fn collect_actions(config: &Config) -> Vec<&Action> {
         .iter()
         .any(|bind| bind.has_single_action(&Action::Quit(false)))
     {
-        actions.push(&Action::Quit(false));
+        actions.push(OverlayItem::Action(&Action::Quit(false)));
     } else if binds
         .iter()
         .any(|bind| bind.has_single_action(&Action::Quit(true)))
     {
-        actions.push(&Action::Quit(true));
+        actions.push(OverlayItem::Action(&Action::Quit(true)));
     } else {
-        actions.push(&Action::Quit(false));
+        actions.push(OverlayItem::Action(&Action::Quit(false)));
     }
 
     actions.extend([
-        &Action::CloseWindow,
-        &Action::FocusColumnLeft,
-        &Action::FocusColumnRight,
-        &Action::MoveColumnLeft,
-        &Action::MoveColumnRight,
-        &Action::FocusWorkspaceDown,
-        &Action::FocusWorkspaceUp,
+        OverlayItem::Action(&Action::CloseWindow),
+        OverlayItem::Action(&Action::FocusColumnLeft),
+        OverlayItem::Action(&Action::FocusColumnRight),
+        OverlayItem::Action(&Action::MoveColumnLeft),
+        OverlayItem::Action(&Action::MoveColumnRight),
+        OverlayItem::Action(&Action::FocusWorkspaceDown),
+        OverlayItem::Action(&Action::FocusWorkspaceUp),
     ]);
 
     // Prefer move-column-to-workspace-down, but fall back to move-window-to-workspace-down.
@@ -233,16 +248,22 @@ fn collect_actions(config: &Config) -> Vec<&Action> {
             Some(Action::MoveColumnToWorkspaceDown(_))
         )
     }) {
-        actions.push(&Action::MoveColumnToWorkspaceDown(true));
+        actions.push(OverlayItem::Action(&Action::MoveColumnToWorkspaceDown(
+            true,
+        )));
     } else if binds.iter().any(|bind| {
         matches!(
             bind.single_action(),
             Some(Action::MoveWindowToWorkspaceDown(_))
         )
     }) {
-        actions.push(&Action::MoveWindowToWorkspaceDown(true));
+        actions.push(OverlayItem::Action(&Action::MoveWindowToWorkspaceDown(
+            true,
+        )));
     } else {
-        actions.push(&Action::MoveColumnToWorkspaceDown(true));
+        actions.push(OverlayItem::Action(&Action::MoveColumnToWorkspaceDown(
+            true,
+        )));
     }
 
     // Same for -up.
@@ -252,26 +273,26 @@ fn collect_actions(config: &Config) -> Vec<&Action> {
             Some(Action::MoveColumnToWorkspaceUp(_))
         )
     }) {
-        actions.push(&Action::MoveColumnToWorkspaceUp(true));
+        actions.push(OverlayItem::Action(&Action::MoveColumnToWorkspaceUp(true)));
     } else if binds.iter().any(|bind| {
         matches!(
             bind.single_action(),
             Some(Action::MoveWindowToWorkspaceUp(_))
         )
     }) {
-        actions.push(&Action::MoveWindowToWorkspaceUp(true));
+        actions.push(OverlayItem::Action(&Action::MoveWindowToWorkspaceUp(true)));
     } else {
-        actions.push(&Action::MoveColumnToWorkspaceUp(true));
+        actions.push(OverlayItem::Action(&Action::MoveColumnToWorkspaceUp(true)));
     }
 
     actions.extend([
-        &Action::SwitchPresetColumnWidth,
-        &Action::MaximizeColumn,
-        &Action::ConsumeOrExpelWindowLeft,
-        &Action::ConsumeOrExpelWindowRight,
-        &Action::ToggleWindowFloating,
-        &Action::SwitchFocusBetweenFloatingAndTiling,
-        &Action::ToggleOverview,
+        OverlayItem::Action(&Action::SwitchPresetColumnWidth),
+        OverlayItem::Action(&Action::MaximizeColumn),
+        OverlayItem::Action(&Action::ConsumeOrExpelWindowLeft),
+        OverlayItem::Action(&Action::ConsumeOrExpelWindowRight),
+        OverlayItem::Action(&Action::ToggleWindowFloating),
+        OverlayItem::Action(&Action::SwitchFocusBetweenFloatingAndTiling),
+        OverlayItem::Action(&Action::ToggleOverview),
     ]);
 
     // Screenshot is not as important, can omit if not bound.
@@ -279,16 +300,24 @@ fn collect_actions(config: &Config) -> Vec<&Action> {
         .iter()
         .any(|bind| matches!(bind.single_action(), Some(Action::Screenshot(_, _))))
     {
-        actions.push(&Action::Screenshot(true, None));
+        actions.push(OverlayItem::Action(&Action::Screenshot(true, None)));
     }
 
     // Add actions with a custom hotkey-overlay-title.
     for bind in binds {
-        let Some(action) = bind.single_action() else {
-            continue;
-        };
-        if matches!(bind.hotkey_overlay_title, Some(Some(_))) && !actions.contains(&action) {
-            actions.push(action);
+        if matches!(bind.hotkey_overlay_title, Some(Some(_))) {
+            let Some(action) = bind.single_action() else {
+                actions.push(OverlayItem::CustomBind(bind));
+                continue;
+            };
+
+            // Avoid duplicate actions.
+            if !actions.iter().any(|item| match item {
+                OverlayItem::Action(existing) => *existing == action,
+                OverlayItem::CustomBind(_) => false,
+            }) {
+                actions.push(OverlayItem::Action(action));
+            }
         }
     }
 
@@ -304,14 +333,20 @@ fn collect_actions(config: &Config) -> Vec<&Action> {
         let action = bind.single_action().unwrap();
 
         // We only show one bind for each action, so we need to deduplicate the Spawn actions.
-        if !actions.contains(&action) {
-            actions.push(action);
+        if !actions.iter().any(|item| match item {
+            OverlayItem::Action(existing) => *existing == action,
+            OverlayItem::CustomBind(_) => false,
+        }) {
+            actions.push(OverlayItem::Action(action));
         }
     }
 
     if config.hotkey_overlay.hide_not_bound {
         // Only keep actions that have been bound.
-        actions.retain(|&action| binds.iter().any(|bind| bind.has_single_action(action)))
+        actions.retain(|item| match item {
+            OverlayItem::Action(action) => binds.iter().any(|bind| bind.has_single_action(action)),
+            OverlayItem::CustomBind(bind) => matches!(bind.hotkey_overlay_title, Some(Some(_))),
+        })
     }
 
     actions
@@ -623,13 +658,14 @@ fn prettify_keysym_name(screen_reader: bool, name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use insta::assert_snapshot;
+    use smithay::input::keyboard::Keysym;
 
     use super::*;
 
     #[track_caller]
     fn check(config: &str, action: Action) -> String {
         let config = Config::parse_mem(config).unwrap();
-        if let Some((key, title)) = format_bind(&config.binds.0, &action) {
+        if let Some((key, title)) = format_bind(&config.binds.0, OverlayItem::Action(&action)) {
             let key = key.map(|key| key_name(false, ModKey::Super, &key));
             let key = key.as_deref().unwrap_or("(not bound)");
             format!(" {key} : {title}")
@@ -726,4 +762,33 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_format_multiaction_bind_with_custom_title() {
+        let config = Config::parse_mem(
+            r#"binds {
+                Mod+P hotkey-overlay-title="Focus Next Tiling Column" {
+                    focus-tiling
+                    focus-column-right
+                }
+            }"#,
+        )
+        .unwrap();
+        let bind = config
+            .binds
+            .0
+            .iter()
+            .find(|bind| bind.single_action().is_none())
+            .unwrap();
+
+        assert_eq!(
+            format_bind(&config.binds.0, OverlayItem::CustomBind(bind)),
+            Some((
+                Some(Key {
+                    trigger: Trigger::Keysym(Keysym::p),
+                    modifiers: Modifiers::COMPOSITOR,
+                }),
+                String::from("Focus Next Tiling Column"),
+            ))
+        );
+    }
 }
