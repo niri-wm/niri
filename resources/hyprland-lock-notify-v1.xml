@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<protocol name="hyprland_lock_notify_v1">
+  <copyright>
+    Copyright © 2025 Maximilian Seidler
+    All rights reserved.
+
+    Redistribution and use in source and binary forms, with or without
+    modification, are permitted provided that the following conditions are met:
+
+    1. Redistributions of source code must retain the above copyright notice, this
+       list of conditions and the following disclaimer.
+
+    2. Redistributions in binary form must reproduce the above copyright notice,
+       this list of conditions and the following disclaimer in the documentation
+       and/or other materials provided with the distribution.
+
+    3. Neither the name of the copyright holder nor the names of its
+       contributors may be used to endorse or promote products derived from
+       this software without specific prior written permission.
+
+    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+    AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+    IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+    DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+    FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+    DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+    SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+    CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+    OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+    OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+  </copyright>
+
+  <interface name="hyprland_lock_notifier_v1" version="1">
+    <description summary="lock notification manager">
+      This interface allows clients to monitor whether the wayland session is
+      locked or unlocked.
+    </description>
+
+    <request name="destroy" type="destructor">
+      <description summary="destroy the manager">
+        Destroy the manager object. All objects created via this interface
+        remain valid.
+      </description>
+    </request>
+
+    <request name="get_lock_notification">
+      <description summary="create a notification object">
+        Create a new lock notification object.
+
+        If the session is already locked when calling this method,
+        the locked event shall be sent immediately.
+      </description>
+      <arg name="id" type="new_id" interface="hyprland_lock_notification_v1"/>
+    </request>
+  </interface>
+
+  <interface name="hyprland_lock_notification_v1" version="1">
+    <description summary="lock notification">
+      This interface is used by the compositor to send lock notification events
+      to clients.
+
+      Typically the "locked" and "unlocked" events are emitted when a client
+      locks/unlocks the session via ext-session-lock, but the compositor may
+      choose to send notifications for any other locking mechanisms.
+
+      The compositor must notfiy after possible transition periods
+      between locked and unlocked states of the session.
+      In the context of ext-session-lock, that means the "locked" event is
+      expected to be sent after the session-lock client has presented
+      a lock screen frame on every output, which corresponds to the "locked"
+      event of ext-session-lock.
+    </description>
+
+    <request name="destroy" type="destructor">
+      <description summary="destroy the notification object">
+        Destroy the notification object.
+      </description>
+    </request>
+
+    <event name="locked">
+      <description summary="session is locked">
+        This event is sent when the wayland session is locked.
+
+        It's a compositor protocol error to send this event twice without an
+        unlock event in-between.
+      </description>
+    </event>
+
+    <event name="unlocked">
+      <description summary="session is no longer locked">
+        This event is sent when the wayland session is unlocked.
+
+        It's a compositor protocol error to send this event twice without an
+        locked event in-between. It's a compositor protocol error to send this
+        event prior to any locked event.
+      </description>
+    </event>
+  </interface>
+</protocol>
