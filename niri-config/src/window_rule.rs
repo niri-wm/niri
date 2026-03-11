@@ -31,6 +31,8 @@ pub struct WindowRule {
     pub open_floating: Option<bool>,
     #[knuffel(child, unwrap(argument))]
     pub open_focused: Option<bool>,
+    #[knuffel(child, unwrap(argument, str))]
+    pub open_consume_into_column: Option<ConsumeIntoColumn>,
 
     // Rules applied dynamically.
     #[knuffel(child, unwrap(argument))]
@@ -94,6 +96,28 @@ pub struct Match {
     pub is_urgent: Option<bool>,
     #[knuffel(property)]
     pub at_startup: Option<bool>,
+}
+
+/// Strategy for selecting which existing column to consume a new window into.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum ConsumeIntoColumn {
+    /// Consume into the first (leftmost) matching column.
+    #[default]
+    First,
+    /// Prefer the column that was most recently active, falling back to the first matching column.
+    Active,
+}
+
+impl std::str::FromStr for ConsumeIntoColumn {
+    type Err = &'static str;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "first" => Ok(Self::First),
+            "active" => Ok(Self::Active),
+            _ => Err(r#"invalid value, expected "first" or "active""#),
+        }
+    }
 }
 
 #[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
