@@ -894,9 +894,9 @@ dependencies = [
 
 [[package]]
 name = "csscolorparser"
-version = "0.8.1"
+version = "0.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "02ee6eae4d99456f92dc379ba21cf08f783ef5525f193c3854b4e921ece045c5"
+checksum = "199f851bd3cb5004c09474252c7f74e7c047441ed0979bf3688a7106a13da952"
 dependencies = [
  "num-traits",
  "phf",
