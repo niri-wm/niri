@@ -402,11 +402,22 @@ impl<W: LayoutElement> FloatingSpace<W> {
         self.tiles.is_empty()
     }
 
-    pub fn add_tile(&mut self, tile: Tile<W>, activate: bool) {
-        self.add_tile_at(0, tile, activate);
+    pub fn add_tile(
+        &mut self,
+        tile: Tile<W>,
+        activate: bool,
+        active_window_area: Option<Rectangle<f64, Logical>>,
+    ) {
+        self.add_tile_at(0, tile, activate, active_window_area);
     }
 
-    fn add_tile_at(&mut self, mut idx: usize, mut tile: Tile<W>, activate: bool) {
+    fn add_tile_at(
+        &mut self,
+        mut idx: usize,
+        mut tile: Tile<W>,
+        activate: bool,
+        active_window_area: Option<Rectangle<f64, Logical>>,
+    ) {
         tile.update_config(self.view_size, self.scale, self.options.clone());
 
         // Restore the previous floating window size, and in case the tile is fullscreen,
@@ -431,10 +442,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
         size.h = ensure_min_max_size_maybe_zero(size.h, min_size.h, max_size.h);
 
         win.request_size_once(size, true);
-
-        if activate || self.tiles.is_empty() {
-            self.active_window_id = Some(win.id().clone());
-        }
+        let window_id = win.id().clone();
 
         // Make sure the tile isn't inserted below its parent.
         for (i, tile_above) in self.tiles.iter().enumerate().take(idx) {
@@ -444,13 +452,19 @@ impl<W: LayoutElement> FloatingSpace<W> {
             }
         }
 
-        let pos = self.stored_or_default_tile_pos(&tile).unwrap_or_else(|| {
-            center_preferring_top_left_in_area(self.working_area, tile.tile_size())
-        });
+        let pos = self
+            .stored_or_default_tile_pos(&tile, active_window_area)
+            .unwrap_or_else(|| {
+                center_preferring_top_left_in_area(self.working_area, tile.tile_size())
+            });
 
         let data = Data::new(self.working_area, &tile, pos);
         self.data.insert(idx, data);
         self.tiles.insert(idx, tile);
+
+        if activate || self.tiles.len() == 1 {
+            self.active_window_id = Some(window_id);
+        }
 
         self.bring_up_descendants_of(idx);
     }
@@ -465,7 +479,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
         let pos = self.clamp_within_working_area(pos, tile_size);
         tile.floating_pos = Some(self.logical_to_size_frac(pos));
 
-        self.add_tile_at(idx, tile, activate);
+        self.add_tile_at(idx, tile, activate, None);
     }
 
     fn bring_up_descendants_of(&mut self, idx: usize) {
@@ -1269,35 +1283,66 @@ impl<W: LayoutElement> FloatingSpace<W> {
         Size::from((width, height))
     }
 
-    pub fn stored_or_default_tile_pos(&self, tile: &Tile<W>) -> Option<Point<f64, Logical>> {
+    pub fn stored_or_default_tile_pos(
+        &self,
+        tile: &Tile<W>,
+        active_window_area: Option<Rectangle<f64, Logical>>,
+    ) -> Option<Point<f64, Logical>> {
         let pos = tile.floating_pos.map(|pos| self.scale_by_working_area(pos));
         pos.or_else(|| {
             tile.window().rules().default_floating_position.map(|pos| {
                 let relative_to = pos.relative_to;
                 let size = tile.tile_size();
-                let area = self.working_area;
+                let (relative_to_active_window, right_align, bottom_align, center_x, center_y) =
+                    match relative_to {
+                        RelativeTo::TopLeft => (false, false, false, false, false),
+                        RelativeTo::TopRight => (false, true, false, false, false),
+                        RelativeTo::BottomLeft => (false, false, true, false, false),
+                        RelativeTo::BottomRight => (false, true, true, false, false),
+                        RelativeTo::Top => (false, false, false, true, false),
+                        RelativeTo::Bottom => (false, false, true, true, false),
+                        RelativeTo::Left => (false, false, false, false, true),
+                        RelativeTo::Right => (false, true, false, false, true),
+                        RelativeTo::ActiveWindowCenter => (true, false, false, true, true),
+                        RelativeTo::ActiveWindowTopLeft => (true, false, false, false, false),
+                        RelativeTo::ActiveWindowTopRight => (true, true, false, false, false),
+                        RelativeTo::ActiveWindowBottomLeft => (true, false, true, false, false),
+                        RelativeTo::ActiveWindowBottomRight => (true, true, true, false, false),
+                        RelativeTo::ActiveWindowTop => (true, false, false, true, false),
+                        RelativeTo::ActiveWindowBottom => (true, false, true, true, false),
+                        RelativeTo::ActiveWindowLeft => (true, false, false, false, true),
+                        RelativeTo::ActiveWindowRight => (true, true, false, false, true),
+                    };
+
+                let area = if relative_to_active_window {
+                    active_window_area
+                        .or_else(|| {
+                            self.active_window_id.as_ref().and_then(|id| {
+                                self.idx_of(id).map(|idx| {
+                                    Rectangle::new(self.data[idx].logical_pos, self.data[idx].size)
+                                })
+                            })
+                        })
+                        .unwrap_or(self.working_area)
+                } else {
+                    self.working_area
+                };
 
                 let mut pos = Point::from((pos.x.0, pos.y.0));
-                if relative_to == RelativeTo::TopRight
-                    || relative_to == RelativeTo::BottomRight
-                    || relative_to == RelativeTo::Right
-                {
+                if right_align {
                     pos.x = area.size.w - size.w - pos.x;
                 }
-                if relative_to == RelativeTo::BottomLeft
-                    || relative_to == RelativeTo::BottomRight
-                    || relative_to == RelativeTo::Bottom
-                {
+                if bottom_align {
                     pos.y = area.size.h - size.h - pos.y;
                 }
-                if relative_to == RelativeTo::Top || relative_to == RelativeTo::Bottom {
+                if center_x {
                     pos.x += area.size.w / 2.0 - size.w / 2.0
                 }
-                if relative_to == RelativeTo::Left || relative_to == RelativeTo::Right {
+                if center_y {
                     pos.y += area.size.h / 2.0 - size.h / 2.0
                 }
 
-                pos + self.working_area.loc
+                pos + area.loc
             })
         })
     }
