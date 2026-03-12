@@ -29,6 +29,7 @@
 * [Layout](./Configuration:-Layout.md)
 * [Named Workspaces](./Configuration:-Named-Workspaces.md)
 * [Miscellaneous](./Configuration:-Miscellaneous.md)
+* [Appearance Rules](./Configuration:-Appearance-Rules.md)
 * [Window Rules](./Configuration:-Window-Rules.md)
 * [Layer Rules](./Configuration:-Layer-Rules.md)
 * [Animations](./Configuration:-Animations.md)
