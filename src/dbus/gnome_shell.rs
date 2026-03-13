@@ -20,9 +20,9 @@ pub struct Shell {
     data: Arc<Mutex<Data>>,
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone)]
 struct Data {
-    next_action: Action,
+    action: std::ops::Range<Action>,
     bound_keys: HashMap<niri_config::Key, HashSet<Action>>,
 }
 
@@ -171,7 +171,7 @@ impl Shell {
             })
         }
 
-        // Conditionally inhibit based on config
+        // Conditionally intercept keypresses based on config
         shortcuts
             .0
             .iter()
@@ -186,7 +186,7 @@ impl Shell {
     /// failed.
     pub fn grab_key(&mut self, key: Key) -> Option<Action> {
         let mut data = self.data.lock().unwrap();
-        data.gen_action().inspect(|action| {
+        data.action.next().inspect(|action| {
             data.bound_keys.entry(key).or_default().insert(*action);
         })
     }
@@ -231,15 +231,11 @@ impl Start for Shell {
     }
 }
 
-impl Data {
-    fn gen_action(&mut self) -> Option<Action> {
-        let action = self.next_action;
-        if let Some(new_action) = self.next_action.checked_add(1) {
-            self.next_action = new_action;
-            Some(action)
-        } else {
-            warn!("global shortcut action ids have been exhausted");
-            None
+impl Default for Data {
+    fn default() -> Self {
+        Self {
+            action: (0..Action::MAX),
+            bound_keys: Default::default(),
         }
     }
 }
