@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::fmt::Display;
 use std::str::FromStr;
 use std::time::Duration;
 
@@ -9,7 +10,9 @@ use niri_ipc::{
     ColumnDisplay, LayoutSwitchTarget, PositionChange, SizeChange, WorkspaceReferenceArg,
 };
 use smithay::input::keyboard::keysyms::KEY_NoSymbol;
-use smithay::input::keyboard::xkb::{keysym_from_name, KEYSYM_CASE_INSENSITIVE, KEYSYM_NO_FLAGS};
+use smithay::input::keyboard::xkb::{
+    keysym_from_name, keysym_get_name, KEYSYM_CASE_INSENSITIVE, KEYSYM_NO_FLAGS,
+};
 use smithay::input::keyboard::Keysym;
 
 use crate::recent_windows::{MruDirection, MruFilter, MruScope};
@@ -1051,6 +1054,74 @@ impl FromStr for Key {
     }
 }
 
+impl Display for Key {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mods_str = self.modifiers.to_string();
+        let trigger_str = self.trigger.to_string();
+
+        let mut parts = Vec::new();
+        if !mods_str.is_empty() {
+            parts.push(mods_str.as_str());
+        }
+        parts.push(trigger_str.as_str());
+
+        write!(f, "{}", parts.join("+"))
+    }
+}
+
+impl Display for Trigger {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let str = match self {
+            Trigger::Keysym(keysym) => &keysym_get_name(*keysym),
+            Trigger::MouseLeft => "MouseLeft",
+            Trigger::MouseRight => "MouseRight",
+            Trigger::MouseMiddle => "MouseMiddle",
+            Trigger::MouseBack => "MouseBack",
+            Trigger::MouseForward => "MouseForward",
+            Trigger::WheelScrollDown => "WheelScrollDown",
+            Trigger::WheelScrollUp => "WheelScrollUp",
+            Trigger::WheelScrollLeft => "WheelScrollLeft",
+            Trigger::WheelScrollRight => "WheelScrollRight",
+            Trigger::TouchpadScrollDown => "TouchpadScrollDown",
+            Trigger::TouchpadScrollUp => "TouchpadScrollUp",
+            Trigger::TouchpadScrollLeft => "TouchpadScrollLeft",
+            Trigger::TouchpadScrollRight => "TouchpadScrollRight",
+        };
+
+        write!(f, "{}", str)
+    }
+}
+
+impl Display for Modifiers {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut parts = Vec::new();
+
+        if self.contains(Modifiers::CTRL) {
+            parts.push("Ctrl");
+        }
+        if self.contains(Modifiers::SHIFT) {
+            parts.push("Shift");
+        }
+        if self.contains(Modifiers::ALT) {
+            parts.push("Alt");
+        }
+        if self.contains(Modifiers::SUPER) {
+            parts.push("Super");
+        }
+        if self.contains(Modifiers::ISO_LEVEL3_SHIFT) {
+            parts.push("Iso_Level3_Shift");
+        }
+        if self.contains(Modifiers::ISO_LEVEL5_SHIFT) {
+            parts.push("Iso_Level5_Shift");
+        }
+        if self.contains(Modifiers::COMPOSITOR) {
+            parts.push("Mod");
+        }
+
+        write!(f, "{}", parts.join("+"))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1111,5 +1182,85 @@ mod tests {
                 modifiers: Modifiers::ISO_LEVEL5_SHIFT
             },
         );
+    }
+
+    #[test]
+    fn trigger_display() {
+        assert_eq!(Trigger::Keysym(Keysym::Return).to_string(), "Return");
+        assert_eq!(Trigger::Keysym(Keysym::space).to_string(), "space");
+        assert_eq!(Trigger::Keysym(Keysym::Escape).to_string(), "Escape");
+        assert_eq!(Trigger::MouseLeft.to_string(), "MouseLeft");
+    }
+
+    #[test]
+    fn modifiers_display() {
+        assert_eq!(Modifiers::CTRL.to_string(), "Ctrl");
+        assert_eq!(Modifiers::SHIFT.to_string(), "Shift");
+        assert_eq!(Modifiers::ALT.to_string(), "Alt");
+        assert_eq!(Modifiers::SUPER.to_string(), "Super");
+        assert_eq!(Modifiers::ISO_LEVEL3_SHIFT.to_string(), "Iso_Level3_Shift");
+        assert_eq!(Modifiers::ISO_LEVEL5_SHIFT.to_string(), "Iso_Level5_Shift");
+        assert_eq!(Modifiers::COMPOSITOR.to_string(), "Mod");
+
+        let all_mods = Modifiers::CTRL
+            | Modifiers::SHIFT
+            | Modifiers::ALT
+            | Modifiers::SUPER
+            | Modifiers::ISO_LEVEL3_SHIFT
+            | Modifiers::ISO_LEVEL5_SHIFT
+            | Modifiers::COMPOSITOR;
+
+        assert_eq!(
+            all_mods.to_string(),
+            "Ctrl+Shift+Alt+Super+Iso_Level3_Shift+Iso_Level5_Shift+Mod"
+        );
+        assert_eq!(Modifiers::empty().to_string(), "");
+    }
+
+    #[test]
+    fn key_display() {
+        // Basic
+        let key = Key {
+            trigger: Trigger::Keysym(Keysym::a),
+            modifiers: Modifiers::empty(),
+        };
+        assert_eq!(key.to_string(), "a");
+
+        // With mods
+        let key = Key {
+            trigger: Trigger::Keysym(Keysym::b),
+            modifiers: Modifiers::CTRL | Modifiers::SHIFT,
+        };
+        assert_eq!(key.to_string(), "Ctrl+Shift+b");
+
+        // Test mouse trigger
+        let key = Key {
+            trigger: Trigger::MouseLeft,
+            modifiers: Modifiers::CTRL,
+        };
+        assert_eq!(key.to_string(), "Ctrl+MouseLeft");
+    }
+
+    #[test]
+    fn key_idempotence() {
+        let test_cases = [
+            "a",
+            "Ctrl+b",
+            "Shift+Alt+c",
+            "Mod+d",
+            "Ctrl+Mod+e",
+            "MouseLeft",
+            "Ctrl+MouseRight",
+            "Alt+WheelScrollDown",
+            "Iso_Level3_Shift+f",
+        ];
+
+        for input in test_cases {
+            let key = input
+                .parse::<Key>()
+                .unwrap_or_else(|_| panic!("Failed to parse: {}", input));
+            let output = key.to_string();
+            assert_eq!(input, output, "Round trip failed for: {}", input);
+        }
     }
 }

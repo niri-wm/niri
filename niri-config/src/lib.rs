@@ -34,6 +34,7 @@ pub mod binds;
 pub mod debug;
 pub mod error;
 pub mod gestures;
+pub mod global_shortcuts;
 pub mod input;
 pub mod layer_rule;
 pub mod layout;
@@ -50,6 +51,7 @@ pub use crate::binds::*;
 pub use crate::debug::Debug;
 pub use crate::error::{ConfigIncludeError, ConfigParseResult};
 pub use crate::gestures::Gestures;
+pub use crate::global_shortcuts::*;
 pub use crate::input::{Input, ModKey, ScrollMethod, TrackLayout, WarpMouseToFocusMode, Xkb};
 pub use crate::layer_rule::LayerRule;
 pub use crate::layout::*;
@@ -89,6 +91,7 @@ pub struct Config {
     pub debug: Debug,
     pub workspaces: Vec<Workspace>,
     pub recent_windows: RecentWindows,
+    pub global_shortcuts: GlobalShortcuts,
 }
 
 #[derive(Debug, Clone)]
@@ -224,6 +227,17 @@ where
                     binds.retain(|bind| !part.0.iter().any(|new| new.key == bind.key));
                     // Add all new binds.
                     binds.extend(part.0);
+                }
+                "global-shortcuts" => {
+                    // This section follows the same model as `binds`
+                    let part = GlobalShortcuts::decode_node(node, ctx)?;
+                    let mut config = config.borrow_mut();
+                    let shortcuts = &mut config.global_shortcuts.0;
+
+                    shortcuts.retain(|shortcut| {
+                        !part.0.iter().any(|new| new.trigger == shortcut.trigger)
+                    });
+                    shortcuts.extend(part.0);
                 }
                 "environment" => {
                     let part = Environment::decode_node(node, ctx)?;
@@ -837,7 +851,7 @@ mod tests {
                 window-open { off; }
 
                 window-close {
-                    curve "cubic-bezier" 0.05 0.7 0.1 1  
+                    curve "cubic-bezier" 0.05 0.7 0.1 1
                 }
 
                 recent-windows-close {
@@ -907,6 +921,20 @@ mod tests {
                 Mod+Shift+E allow-inhibiting=false { quit skip-confirmation=true; }
                 Mod+WheelScrollDown cooldown-ms=150 { focus-workspace-down; }
                 Super+Alt+S allow-when-locked=true { spawn-sh "pkill orca || exec orca"; }
+            }
+
+            global-shortcuts {
+                Ctrl+Shift+A intercept=false {
+                    app-id { exact "example"; }
+                    shortcut-id { exact "example-sc-id"; }
+                }
+
+                Shift+B {
+                    app-id { match r#"^com\..*example$"#; }
+                    shortcut-id { match r#"[0-9]+\-id"#; }
+                }
+
+                Shift+C {}
             }
 
             switch-events {
@@ -2323,6 +2351,65 @@ mod tests {
                     },
                 ],
             },
+            global_shortcuts: GlobalShortcuts(
+                [
+                    GlobalShortcut {
+                        trigger: Key {
+                            trigger: Keysym(
+                                XK_a,
+                            ),
+                            modifiers: Modifiers(
+                                CTRL | SHIFT,
+                            ),
+                        },
+                        intercept: false,
+                        app_id: Exact(
+                            "example",
+                        ),
+                        shortcut_id: Exact(
+                            "example-sc-id",
+                        ),
+                    },
+                    GlobalShortcut {
+                        trigger: Key {
+                            trigger: Keysym(
+                                XK_b,
+                            ),
+                            modifiers: Modifiers(
+                                SHIFT,
+                            ),
+                        },
+                        intercept: true,
+                        app_id: Match(
+                            RegexEq(
+                                Regex(
+                                    "^com\\..*example$",
+                                ),
+                            ),
+                        ),
+                        shortcut_id: Match(
+                            RegexEq(
+                                Regex(
+                                    "[0-9]+\\-id",
+                                ),
+                            ),
+                        ),
+                    },
+                    GlobalShortcut {
+                        trigger: Key {
+                            trigger: Keysym(
+                                XK_c,
+                            ),
+                            modifiers: Modifiers(
+                                SHIFT,
+                            ),
+                        },
+                        intercept: true,
+                        app_id: NeverMatch,
+                        shortcut_id: NeverMatch,
+                    },
+                ],
+            ),
         }
         "#);
     }
