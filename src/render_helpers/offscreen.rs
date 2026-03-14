@@ -81,7 +81,12 @@ impl OffscreenBuffer {
             RelocateRenderElement::from_element(ele, geo.loc.upscale(-1), Relocate::Relative)
         }));
 
-        let src_size = geo.size;
+        // Guard against empty elements producing a zero size.
+        let mut src_size = geo.size;
+        if src_size.w == 0 || src_size.h == 0 {
+            src_size = Size::new(1, 1);
+        }
+
         let src_size = src_size.to_logical(1).to_buffer(1, Transform::Normal);
         let offset = geo.loc.to_f64().to_logical(scale);
 
