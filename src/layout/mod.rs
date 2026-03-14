@@ -2753,7 +2753,9 @@ impl<W: LayoutElement> Layout<W> {
             ..
         } = &mut self.monitor_set
         else {
-            error!("update_render_elements called with no monitors");
+            if output.is_some() {
+                error!("update_render_elements called with no monitors but Some output");
+            }
             return;
         };
 
