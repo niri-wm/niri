@@ -2767,6 +2767,8 @@ impl<W: LayoutElement> Layout<W> {
             ..
         } = &mut self.monitor_set
         else {
+            // TODO: this likely shouldn't be an error!(). This happens in a bunch of places, namely
+            // unmap snapshot.
             error!("update_render_elements called with no monitors");
             return;
         };

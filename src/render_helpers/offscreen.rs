@@ -78,6 +78,7 @@ impl OffscreenBuffer {
         let _span = tracy_client::span!("OffscreenBuffer::render");
 
         let geo = encompassing_geo(scale, elements.iter());
+        // TODO: check for zero size.
         let elements = Vec::from_iter(elements.iter().map(|ele| {
             RelocateRenderElement::from_element(ele, geo.loc.upscale(-1), Relocate::Relative)
         }));

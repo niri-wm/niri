@@ -2033,6 +2033,11 @@ impl State {
 
     pub fn store_unmap_snapshot(&mut self, window: &Window, output: Option<&Output>) {
         // We'll be rendering Tiles and other stuff that needs their render elements up to date.
+        //
+        // TODO: we need to update render elements for the unmapped Tile, which may very well be
+        // currently invisible and not reached by layout.update_render_elements(), and for anything
+        // that may end up in the Xray buffer, i.e. layer-shell and workspace backgrounds. We don't
+        // need to update anything else.
         self.niri.update_render_elements(output);
 
         self.backend.with_primary_renderer(|renderer| {
