@@ -614,19 +614,17 @@ impl State {
     }
 
     pub fn handle_bind(&mut self, bind: Bind) {
+        // Reject mixed binds atomically while locked.
+        if self.niri.is_locked() && !bind_allowed_when_locked(&bind) {
+            return;
+        }
+
         let Some(cooldown) = bind.cooldown else {
             for action in bind.actions().iter().cloned() {
                 self.do_action(action, bind.allow_when_locked);
             }
             return;
         };
-
-        // Check this first so that it doesn't trigger the cooldown.
-        if self.niri.is_locked()
-            && !(bind.allow_when_locked || bind.all_actions(allowed_when_locked))
-        {
-            return;
-        }
 
         match self.niri.bind_cooldown_timers.entry(bind.key) {
             // The bind is on cooldown.
@@ -4597,6 +4595,10 @@ fn allowed_when_locked(action: &Action) -> bool {
     )
 }
 
+fn bind_allowed_when_locked(bind: &Bind) -> bool {
+    bind.allow_when_locked || bind.all_actions(allowed_when_locked)
+}
+
 fn allowed_during_screenshot(action: &Action) -> bool {
     matches!(
         action,
@@ -5438,5 +5440,41 @@ mod tests {
             ),
             None,
         );
+    }
+
+    #[test]
+    fn bind_allowed_when_locked_rejects_mixed_multiaction_bind() {
+        let bind = Bind {
+            key: Key {
+                trigger: Trigger::Keysym(Keysym::q),
+                modifiers: Modifiers::COMPOSITOR,
+            },
+            actions: vec![Action::Quit(true), Action::CloseWindow].into(),
+            repeat: true,
+            cooldown: None,
+            allow_when_locked: false,
+            allow_inhibiting: true,
+            hotkey_overlay_title: None,
+        };
+
+        assert!(!bind_allowed_when_locked(&bind));
+    }
+
+    #[test]
+    fn bind_allowed_when_locked_accepts_all_allowed_actions() {
+        let bind = Bind {
+            key: Key {
+                trigger: Trigger::Keysym(Keysym::q),
+                modifiers: Modifiers::COMPOSITOR,
+            },
+            actions: vec![Action::Quit(true), Action::Suspend].into(),
+            repeat: true,
+            cooldown: None,
+            allow_when_locked: false,
+            allow_inhibiting: true,
+            hotkey_overlay_title: None,
+        };
+
+        assert!(bind_allowed_when_locked(&bind));
     }
 }
