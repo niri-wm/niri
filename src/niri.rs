@@ -4250,33 +4250,41 @@ impl Niri {
         // We use macros instead of closures to avoid borrowing issues (renderer and push() go
         // into different functions).
         macro_rules! push_popups_from_layer {
-            ($layer:expr, $backdrop:expr, $push:expr) => {{
-                self.render_layer_popups(ctx.r(), &layer_map, $layer, $backdrop, $push);
+            ($layer:expr, $ns:expr, $backdrop:expr, $push:expr) => {{
+                self.render_layer_popups(ctx.r(), $ns, &layer_map, $layer, $backdrop, $push);
             }};
             ($layer:expr, true) => {{
-                push_popups_from_layer!($layer, true, &mut |elem| push(elem.into()));
+                push_popups_from_layer!($layer, None, true, &mut |elem| push(elem.into()));
             }};
-            ($layer:expr, $push:expr) => {{
-                push_popups_from_layer!($layer, false, $push);
+            ($layer:expr, $ns:expr, $push:expr) => {{
+                push_popups_from_layer!($layer, $ns, false, $push);
             }};
             ($layer:expr) => {{
-                push_popups_from_layer!($layer, false, &mut |elem| push(elem.into()));
+                push_popups_from_layer!($layer, None, false, &mut |elem| push(elem.into()));
             }};
         }
         macro_rules! push_normal_from_layer {
-            ($layer:expr, $xray_pos:expr, $backdrop:expr, $push:expr) => {{
-                self.render_layer_normal(ctx.r(), &layer_map, $layer, $xray_pos, $backdrop, $push);
+            ($layer:expr, $ns:expr, $xray_pos:expr, $backdrop:expr, $push:expr) => {{
+                self.render_layer_normal(
+                    ctx.r(),
+                    $ns,
+                    &layer_map,
+                    $layer,
+                    $xray_pos,
+                    $backdrop,
+                    $push,
+                );
             }};
             ($layer:expr, true) => {{
-                push_normal_from_layer!($layer, XrayPos::default(), true, &mut |elem| {
+                push_normal_from_layer!($layer, None, XrayPos::default(), true, &mut |elem| {
                     push(elem.into())
                 });
             }};
-            ($layer:expr, $xray_pos:expr, $push:expr) => {{
-                push_normal_from_layer!($layer, $xray_pos, false, $push);
+            ($layer:expr, $ns:expr, $xray_pos:expr, $push:expr) => {{
+                push_normal_from_layer!($layer, $ns, $xray_pos, false, $push);
             }};
             ($layer:expr) => {{
-                push_normal_from_layer!($layer, XrayPos::default(), false, &mut |elem| {
+                push_normal_from_layer!($layer, None, XrayPos::default(), false, &mut |elem| {
                     push(elem.into())
                 });
             }};
@@ -4328,17 +4336,27 @@ impl Niri {
                 }};
             }
 
-            for (_ws, geo) in mon.workspaces_with_render_geo() {
-                push_popups_from_layer!(Layer::Bottom, process!(geo));
-                push_popups_from_layer!(Layer::Background, process!(geo));
+            for (ws, geo) in mon.workspaces_with_render_geo() {
+                let ns = Some(ws.id().get() as usize);
+                push_popups_from_layer!(Layer::Bottom, ns, process!(geo));
+                push_popups_from_layer!(Layer::Background, ns, process!(geo));
             }
 
             mon.render_workspaces(ctx.r(), focus_ring, &mut |elem| push(elem.into()));
 
             for (ws, geo) in mon.workspaces_with_render_geo() {
+                // The render element namespace. This will be set to the workspace index for
+                // elements duplicated across workspaces (i.e. background and bottom layers) in
+                // order to have their non-xray framebuffer effects separated from each other.
+                //
+                // This doesn't have to correspond exactly to workspace id or idx, the only
+                // requirement is that there's only one framebuffer effect element with a given id +
+                // namespace on the frame at once. Id + namespace is used as the cache key in the
+                // damage tracker.
+                let ns = Some(ws.id().get() as usize);
                 let xray_pos = XrayPos::new(geo.loc, zoom);
-                push_normal_from_layer!(Layer::Bottom, xray_pos, process!(geo));
-                push_normal_from_layer!(Layer::Background, xray_pos, process!(geo));
+                push_normal_from_layer!(Layer::Bottom, ns, xray_pos, process!(geo));
+                push_normal_from_layer!(Layer::Background, ns, xray_pos, process!(geo));
 
                 process!(geo)(ws.render_background());
             }
@@ -4381,6 +4399,7 @@ impl Niri {
             elements.clear();
             self.render_layer_normal(
                 ctx.r(),
+                None,
                 &layer_map,
                 Layer::Background,
                 XrayPos::default(),
@@ -4397,6 +4416,7 @@ impl Niri {
             elements.clear();
             self.render_layer_normal(
                 ctx.r(),
+                None,
                 &layer_map,
                 Layer::Background,
                 XrayPos::default(),
@@ -4460,6 +4480,7 @@ impl Niri {
     fn render_layer_normal<R: NiriRenderer>(
         &self,
         mut ctx: RenderCtx<R>,
+        ns: Option<usize>,
         layer_map: &LayerMap,
         layer: Layer,
         xray_pos: XrayPos,
@@ -4469,13 +4490,14 @@ impl Niri {
         for (mapped, geo) in self.layers_in_render_order(layer_map, layer, for_backdrop) {
             let loc = geo.loc.to_f64();
             let xray_pos = xray_pos.offset(loc);
-            mapped.render_normal(ctx.r(), loc, xray_pos, push);
+            mapped.render_normal(ctx.r(), ns, loc, xray_pos, push);
         }
     }
 
     fn render_layer_popups<R: NiriRenderer>(
         &self,
         mut ctx: RenderCtx<R>,
+        _ns: Option<usize>,
         layer_map: &LayerMap,
         layer: Layer,
         for_backdrop: bool,

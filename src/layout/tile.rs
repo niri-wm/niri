@@ -255,6 +255,8 @@ impl<W: LayoutElement> Tile<W> {
 
         let shadow_config = self.options.layout.shadow.merged_with(&rules.shadow);
         self.shadow.update_config(shadow_config);
+
+        self.background_effect.update_config(self.options.blur);
     }
 
     pub fn update_shaders(&mut self) {
@@ -1346,7 +1348,7 @@ impl<W: LayoutElement> Tile<W> {
                     scale: self.scale,
                 };
                 self.background_effect
-                    .render(ctx.as_gles(), params, xray_pos, &mut |elem| {
+                    .render(ctx.as_gles(), None, params, xray_pos, &mut |elem| {
                         push(elem.into())
                     });
             }
