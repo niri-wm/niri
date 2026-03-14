@@ -4,10 +4,8 @@ use std::rc::Rc;
 
 use anyhow::{ensure, Context as _};
 use smithay::backend::allocator::Fourcc;
-use smithay::backend::renderer::gles::{
-    ffi, link_program, GlesError, GlesFrame, GlesRenderer, GlesTexture,
-};
-use smithay::backend::renderer::{ContextId, Frame as _, Renderer as _, Texture as _};
+use smithay::backend::renderer::gles::{ffi, link_program, GlesError, GlesRenderer, GlesTexture};
+use smithay::backend::renderer::{ContextId, Renderer as _, Texture as _};
 use smithay::gpu_span_location;
 use smithay::utils::{Buffer, Size};
 
@@ -167,7 +165,7 @@ impl Blur {
 
     pub fn render(
         &mut self,
-        frame: &mut GlesFrame,
+        renderer: &mut GlesRenderer,
         source: &GlesTexture,
         options: BlurOptions,
     ) -> anyhow::Result<GlesTexture> {
@@ -175,7 +173,7 @@ impl Blur {
         trace!("rendering blur");
 
         ensure!(
-            frame.context_id() == self.renderer_context_id,
+            renderer.context_id() == self.renderer_context_id,
             "wrong renderer"
         );
 
@@ -201,13 +199,8 @@ impl Blur {
             "output texture has a non-unique reference"
         );
 
-        frame.with_profiled_context(gpu_span_location!("Blur::render"), |gl| unsafe {
+        renderer.with_profiled_context(gpu_span_location!("Blur::render"), |gl| unsafe {
             while gl.GetError() != ffi::NO_ERROR {}
-
-            let mut current_fbo = 0i32;
-            let mut viewport = [0i32; 4];
-            gl.GetIntegerv(ffi::FRAMEBUFFER_BINDING, &mut current_fbo as *mut _);
-            gl.GetIntegerv(ffi::VIEWPORT, viewport.as_mut_ptr());
 
             gl.Disable(ffi::BLEND);
             gl.Disable(ffi::SCISSOR_TEST);
@@ -340,14 +333,8 @@ impl Blur {
 
             gl.DisableVertexAttribArray(program.attrib_vert as u32);
 
-            gl.BindFramebuffer(ffi::FRAMEBUFFER, 0);
+            gl.BindFramebuffer(ffi::DRAW_FRAMEBUFFER, 0);
             gl.DeleteFramebuffers(fbos.len() as _, fbos.as_ptr());
-
-            // Restore state set by GlesFrame that we just modified.
-            gl.Enable(ffi::BLEND);
-            gl.Enable(ffi::SCISSOR_TEST);
-            gl.BindFramebuffer(ffi::FRAMEBUFFER, current_fbo as u32);
-            gl.Viewport(viewport[0], viewport[1], viewport[2], viewport[3]);
         })?;
 
         Ok(self.textures[0].clone())

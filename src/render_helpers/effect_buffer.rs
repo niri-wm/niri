@@ -7,7 +7,7 @@ use smithay::backend::renderer::element::{Id, RenderElementStates};
 use smithay::backend::renderer::gles::{GlesFrame, GlesRenderer, GlesTexture};
 use smithay::backend::renderer::utils::CommitCounter;
 use smithay::backend::renderer::{
-    Bind as _, Color32F, ContextId, Offscreen as _, Renderer as _, Texture,
+    Bind as _, Color32F, ContextId, FrameContext as _, Offscreen as _, Renderer as _, Texture,
 };
 use smithay::utils::{Buffer, Logical, Physical, Scale, Size, Transform};
 
@@ -312,8 +312,10 @@ impl EffectBuffer {
             texture.clone()
         } else {
             let blur = self.blur.as_mut().context("blur is missing")?;
+            let mut guard = frame.renderer();
+            let renderer = guard.as_mut();
             let blurred = blur
-                .render(frame, &offscreen.texture, self.blur_options)
+                .render(renderer, &offscreen.texture, self.blur_options)
                 .context("error rendering blur")?;
             offscreen.blurred.insert(blurred).clone()
         };
