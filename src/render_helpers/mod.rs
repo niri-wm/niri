@@ -33,6 +33,7 @@ pub mod clipped_surface;
 pub mod damage;
 pub mod debug;
 pub mod effect_buffer;
+pub mod framebuffer_effect;
 pub mod gradient_fade_texture;
 pub mod memory;
 pub mod offscreen;

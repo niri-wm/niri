@@ -697,6 +697,7 @@ impl LayoutElement for Mapped {
         let should_block_out = ctx.target.should_block_out(self.rules.block_out_from);
         background_effect::render_for_tile(
             ctx,
+            None,
             geometry,
             scale,
             clip_to_geometry,

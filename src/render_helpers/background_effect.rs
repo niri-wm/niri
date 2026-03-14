@@ -8,7 +8,9 @@ use wayland_server::protocol::wl_surface::WlSurface;
 
 use crate::handlers::background_effect::get_cached_blur_region;
 use crate::niri_render_elements;
+use crate::render_helpers::blur::BlurOptions;
 use crate::render_helpers::damage::ExtraDamage;
+use crate::render_helpers::framebuffer_effect::{FramebufferEffect, FramebufferEffectElement};
 use crate::render_helpers::xray::{XrayElement, XrayPos};
 use crate::render_helpers::RenderCtx;
 use crate::utils::region::TransformedRegion;
@@ -16,6 +18,7 @@ use crate::utils::surface_geo;
 
 #[derive(Debug)]
 pub struct BackgroundEffect {
+    nonxray: FramebufferEffect,
     /// Damage when options change.
     damage: ExtraDamage,
     /// Corner radius for clipping.
@@ -72,6 +75,7 @@ impl RenderParams {
 
 niri_render_elements! {
     BackgroundEffectElement => {
+        FramebufferEffect = FramebufferEffectElement,
         Xray = XrayElement,
         ExtraDamage = ExtraDamage,
     }
@@ -80,6 +84,7 @@ niri_render_elements! {
 impl BackgroundEffect {
     pub fn new() -> Self {
         Self {
+            nonxray: FramebufferEffect::new(),
             damage: ExtraDamage::new(),
             corner_radius: CornerRadius::default(),
             blur_config: niri_config::Blur::default(),
@@ -90,6 +95,7 @@ impl BackgroundEffect {
     /// Damage the background effect, for example when a blur subregion changes.
     pub fn damage(&mut self) {
         self.damage.damage_all();
+        self.nonxray.damage();
     }
 
     pub fn update_config(&mut self, config: niri_config::Blur) {
@@ -99,6 +105,7 @@ impl BackgroundEffect {
 
         self.blur_config = config;
         self.damage.damage_all();
+        self.nonxray.damage();
     }
 
     pub fn update_render_elements(
@@ -134,6 +141,7 @@ impl BackgroundEffect {
         self.options = options;
         self.corner_radius = corner_radius;
         self.damage.damage_all();
+        self.nonxray.damage();
     }
 
     pub fn is_visible(&self) -> bool {
@@ -143,6 +151,7 @@ impl BackgroundEffect {
     pub fn render(
         &self,
         ctx: RenderCtx<GlesRenderer>,
+        ns: Option<usize>,
         mut params: RenderParams,
         xray_pos: XrayPos,
         push: &mut dyn FnMut(BackgroundEffectElement),
@@ -161,6 +170,7 @@ impl BackgroundEffect {
         // Use noise/saturation from options, falling back to blur defaults if blurred, and
         // to no effect if not blurred.
         let blur = self.options.blur && !self.blur_config.off;
+        let blur_options = blur.then_some(BlurOptions::from(self.blur_config));
         let noise = if blur { self.blur_config.noise } else { 0. };
         let noise = self.options.noise.unwrap_or(noise) as f32;
         let saturation = if blur {
@@ -187,6 +197,10 @@ impl BackgroundEffect {
             );
         } else {
             // Render non-xray effect.
+            let elem = self
+                .nonxray
+                .render(ns, params, blur_options, noise, saturation);
+            push(elem.into());
         }
     }
 }
@@ -269,6 +283,7 @@ pub fn damage_surface(states: &SurfaceData) {
 #[allow(clippy::too_many_arguments)]
 pub fn render_for_tile(
     ctx: RenderCtx<GlesRenderer>,
+    ns: Option<usize>,
     geometry: Rectangle<f64, Logical>,
     scale: f64,
     clip_to_geometry: bool,
@@ -312,6 +327,6 @@ pub fn render_for_tile(
         };
 
         let xray_pos = xray_pos.offset(params.geometry.loc - geometry.loc);
-        background_effect.render(ctx, params, xray_pos, push);
+        background_effect.render(ctx, ns, params, xray_pos, push);
     });
 }

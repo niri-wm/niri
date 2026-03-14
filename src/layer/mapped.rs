@@ -187,6 +187,7 @@ impl MappedLayer {
     pub fn render_normal<R: NiriRenderer>(
         &self,
         mut ctx: RenderCtx<R>,
+        ns: Option<usize>,
         location: Point<f64, Logical>,
         xray_pos: XrayPos,
         push: &mut dyn FnMut(LayerSurfaceRenderElement<R>),
@@ -238,6 +239,7 @@ impl MappedLayer {
         let radius = self.rules.geometry_corner_radius.unwrap_or_default();
         background_effect::render_for_tile(
             ctx.as_gles(),
+            ns,
             geometry,
             self.scale,
             false,

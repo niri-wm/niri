@@ -51,3 +51,14 @@ Xray is automatically enabled by default if any other background effect (like bl
 This is because it's much more efficient: with xray active, niri only needs to blur the background once, and then can reuse this blurred version with no extra work (since the wallpaper changes very rarely).
 
 If you have an animated wallpaper, xray will still have to recompute blur every frame, but that happens once and shared among all windows, rather than recomputed separately for each window.
+
+#### Non-xray effects (experimental)
+
+You can disable xray with `xray false` background effect window rule.
+This gives you the normal kind of blur where everything below a window is blurred.
+Keep in mind that non-xray blur and other non-xray effects are more expensive as niri has to recompute them any time you move the window, or the contents underneath change.
+
+Non-xray effects are currently experimental because they have some known limitations.
+
+- They disappear during window open/close animations and while dragging a tiled window.
+Fixing this requries a refactor to the niri rendering code to defer offscreen rendering, and possibly other refactors.
