@@ -2729,8 +2729,18 @@ impl<W: LayoutElement> Layout<W> {
         if let Some(InteractiveMoveState::Moving(move_)) = &mut self.interactive_move {
             if output.is_none_or(|output| move_.output == *output) {
                 let pos_within_output = move_.tile_render_location(zoom);
+
+                // We're not on any specific workspace so we can't compute a "workspace view" rect.
+                // Let's instead compute a rect relative to the output.
+                //
+                // FIXME: we could make the colors match up better in the overview by figuring out
+                // where a centered workspace would currently be, and computing the view rect
+                // against that. Since most of the time the dragged window will be on a centered
+                // workspace.
                 let view_rect =
-                    Rectangle::new(pos_within_output.upscale(-1.), output_size(&move_.output));
+                    Rectangle::new(pos_within_output.upscale(-1.), output_size(&move_.output))
+                        .downscale(zoom);
+
                 move_.tile.update_render_elements(true, view_rect);
             }
         }
