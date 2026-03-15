@@ -155,7 +155,7 @@ impl State {
             // 2) Same-layer exclusive layer surfaces are already preferred to on-demand surfaces in
             //    update_keyboard_focus(), so we don't need to check for that here.
             //
-            // https://github.com/YaLTeR/niri/issues/641
+            // https://github.com/niri-wm/niri/issues/641
             let on_demand = layer.cached_state().keyboard_interactivity
                 == wlr_layer::KeyboardInteractivity::OnDemand;
             if was_unmapped && on_demand {
