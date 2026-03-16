@@ -714,6 +714,59 @@ binds {
     Mod+Shift+P { power-off-monitors; }
 }
 
+// "Recent Windows" switcher settings. For an overview of all options, see the wiki:
+// https://niri-wm.github.io/niri/Configuration:-Recent-Windows.html
+recent-windows {
+    // Uncomment this line to disable the recent windows switcher altogether.
+    // off
+
+    // Delay, in milliseconds, between the window receiving focus and getting
+    // "committed" to the recent windows list.
+    debounce-ms 750
+
+    // Delay, in milliseconds, between pressing the Alt-Tab bind and the recent
+    // windows switcher visually appearing on screen. The switcher is delayed
+    // by default so that quickly tapping Alt-Tab to switch windows won't cause
+    // annoying fullscreen visual changes.
+    open-delay-ms 150
+
+    highlight {
+        active-color "#999999ff"
+        urgent-color "#ff9999ff"
+        padding 30
+        corner-radius 0
+    }
+
+    previews {
+        max-height 480
+        max-scale 0.5
+    }
+
+    // Configure binds that open and navigate the recent windows switcher.
+    binds {
+        // The available actions are next-window and previous-window.
+        // They can optionally have the following properties:
+        // filter="app-id": filters the switcher to the windows of the currently
+        //   selected application, as determined by the Wayland app ID
+        // scope="all", scope="output", scope="workspace": sets the pre-selected
+        //   scope when this bind is used to open the recent windows switcher.
+        Alt+Tab         { next-window; }
+        Alt+Shift+Tab   { previous-window; }
+        Alt+Grave       { next-window     filter="app-id"; }
+        Alt+Shift+Grave { previous-window filter="app-id"; }
+
+        Mod+Tab         { next-window; }
+        Mod+Shift+Tab   { previous-window; }
+        Mod+Grave       { next-window     filter="app-id"; }
+        Mod+Shift+Grave { previous-window filter="app-id"; }
+
+        // The recent windows binds have lower precedence than the normal binds,
+        // meaning that if you have AltTab bound to something else in the normal
+        // binds, the recent-windows bind won't work.
+        // In this case, you can remove the conflicting normal bind.
+    }
+}
+
 // Override environment variables for processes spawned by Niri.
 environment {
     // Set a variable like this:
