@@ -3337,7 +3337,7 @@ impl<'a> ConnectorProperties<'a> {
         };
 
         let bpc = bpc as u64;
-        let bpc = bpc.clamp(min, max);
+        let bpc = bpc.clamp(*min, *max);
 
         let property::Value::UnsignedRange(value) = info.value_type().convert_value(*value) else {
             bail!("wrong property type")
