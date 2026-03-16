@@ -755,10 +755,11 @@ recent-windows {
         Alt+Grave       { next-window     filter="app-id"; }
         Alt+Shift+Grave { previous-window filter="app-id"; }
 
-        Mod+Tab         { next-window; }
-        Mod+Shift+Tab   { previous-window; }
-        Mod+Grave       { next-window     filter="app-id"; }
-        Mod+Shift+Grave { previous-window filter="app-id"; }
+        // Pre-select the "Output" scope when switching windows.
+        Mod+Tab         { next-window     scope="output"; }
+        Mod+Shift+Tab   { previous-window scope="output"; }
+        Mod+Grave       { next-window     scope="output" filter="app-id"; }
+        Mod+Shift+Grave { previous-window scope="output" filter="app-id"; }
 
         // The recent windows binds have lower precedence than the normal binds,
         // meaning that if you have AltTab bound to something else in the normal
