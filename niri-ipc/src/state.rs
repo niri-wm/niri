@@ -134,11 +134,11 @@ impl EventStreamStatePart for WorkspacesState {
                     }
                 }
             }
-            Event::WorkspaceActivated { id, focused } => {
-                let ws = self.workspaces.get(&id);
-                let ws = ws.expect("activated workspace was missing from the map");
-                let output = ws.output.clone();
-
+            Event::WorkspaceActivated {
+                id,
+                focused,
+                output,
+            } => {
                 for ws in self.workspaces.values_mut() {
                     let got_activated = ws.id == id;
                     if ws.output == output {

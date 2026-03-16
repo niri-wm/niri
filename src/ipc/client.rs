@@ -434,9 +434,14 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
                     Event::WorkspaceUrgencyChanged { id, urgent } => {
                         println!("Workspace {id}: urgency changed to {urgent}");
                     }
-                    Event::WorkspaceActivated { id, focused } => {
+                    Event::WorkspaceActivated {
+                        id,
+                        focused,
+                        output,
+                    } => {
                         let word = if focused { "focused" } else { "activated" };
-                        println!("Workspace {word}: {id}");
+                        let output_state = output.map_or("".into(), |x| format!("on output {x}"));
+                        println!("Workspace {word}: {id} {output_state}");
                     }
                     Event::WorkspaceActiveWindowChanged {
                         workspace_id,

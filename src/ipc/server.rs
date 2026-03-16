@@ -640,14 +640,22 @@ impl State {
             // Check if this workspace became focused.
             let is_focused = Some(id) == focused_ws_id;
             if is_focused && !ipc_ws.is_focused {
-                events.push(Event::WorkspaceActivated { id, focused: true });
+                events.push(Event::WorkspaceActivated {
+                    id,
+                    focused: true,
+                    output: ipc_ws.output.clone(),
+                });
                 continue;
             }
 
             // Check if this workspace became active.
             let is_active = mon.is_some_and(|mon| mon.active_workspace_idx() == ws_idx);
             if is_active && !ipc_ws.is_active {
-                events.push(Event::WorkspaceActivated { id, focused: false });
+                events.push(Event::WorkspaceActivated {
+                    id,
+                    focused: false,
+                    output: ipc_ws.output.clone(),
+                });
             }
         }
 

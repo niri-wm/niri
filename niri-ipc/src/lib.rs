@@ -1596,6 +1596,8 @@ pub enum Event {
         /// If `true`, this is now the single focused workspace. All other workspaces are no longer
         /// focused, but they may remain active on their respective outputs.
         focused: bool,
+        /// The output name the workspace was activated on
+        output: Option<String>,
     },
     /// An active window changed on a workspace.
     WorkspaceActiveWindowChanged {
