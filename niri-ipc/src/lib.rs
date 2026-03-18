@@ -1418,8 +1418,12 @@ pub struct Workspace {
     ///
     /// This is the same index you can use for requests like `niri msg action focus-workspace`.
     ///
-    /// This index *will change* as you move and re-order workspace. It is merely the workspace's
-    /// current position on its monitor. Workspaces on different monitors can have the same index.
+    /// By default, this index *will change* as you move and re-order workspace. It is merely the
+    /// workspace's current position on its monitor, and workspaces on different monitors can have
+    /// the same index.
+    ///
+    /// If the `global-workspace-indices` layout option is enabled, this becomes the workspace's
+    /// global numeric index instead.
     ///
     /// If you need a unique workspace id that doesn't change, see [`Self::id`].
     pub idx: u8,

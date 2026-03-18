@@ -90,7 +90,15 @@ pub fn refresh(state: &mut State) {
 
     // Remove workspaces that no longer exist (sending workspace_leave to workspace groups).
     let mut seen_workspaces = HashMap::new();
-    for (mon, _, ws) in state.niri.layout.workspaces() {
+    for (mon, ws_idx, ws) in state.niri.layout.workspaces() {
+        if state
+            .niri
+            .layout
+            .workspace_display_idx(ws.id(), ws_idx)
+            .is_none()
+        {
+            continue;
+        }
         let output = mon.map(|mon| mon.output());
         seen_workspaces.insert(ws.id(), output);
     }
@@ -133,7 +141,10 @@ pub fn refresh(state: &mut State) {
 
     // Update existing workspaces and create new ones.
     for (mon, ws_idx, ws) in state.niri.layout.workspaces() {
-        changed |= refresh_workspace(protocol_state, mon, ws_idx, ws);
+        let Some(display_idx) = state.niri.layout.workspace_display_idx(ws.id(), ws_idx) else {
+            continue;
+        };
+        changed |= refresh_workspace(protocol_state, mon, ws_idx, display_idx, ws);
     }
 
     // Update workspace groups and create new ones, sending workspace_enter events as needed.
@@ -250,17 +261,17 @@ fn remove_workspace_instances(
     }
 }
 
-fn build_name(ws: &Workspace<Mapped>, ws_idx: usize) -> String {
-    ws.name().cloned().unwrap_or_else(|| {
-        // Add 1 since this is a human-readable name, and our action indexing is 1-based.
-        (ws_idx + 1).to_string()
-    })
+fn build_name(ws: &Workspace<Mapped>, display_idx: usize) -> String {
+    ws.name()
+        .cloned()
+        .unwrap_or_else(|| display_idx.to_string())
 }
 
 fn refresh_workspace(
     protocol_state: &mut ExtWorkspaceManagerState,
     mon: Option<&Monitor<Mapped>>,
     ws_idx: usize,
+    display_idx: usize,
     ws: &Workspace<Mapped>,
 ) -> bool {
     let mut state = ext_workspace_handle_v1::State::empty();
@@ -291,8 +302,9 @@ fn refresh_workspace(
             }
 
             let mut coordinates_changed = false;
-            if data.coordinates[1] != ws_idx as u32 {
-                data.coordinates[1] = ws_idx as u32;
+            let display_coordinate = (display_idx.saturating_sub(1)) as u32;
+            if data.coordinates[1] != display_coordinate {
+                data.coordinates[1] = display_coordinate;
                 coordinates_changed = true;
             }
 
@@ -302,23 +314,13 @@ fn refresh_workspace(
                 state_changed = true;
             }
 
-            // Recreate means name got changed or unset (meaning data.name is back to ws_idx).
-            let check = recreate
-                || if data.id.is_some() {
-                    // True means workspace got named, going from ws_idx to name.
-                    id_set
-                } else {
-                    // The workspace is unnamed, check if ws_idx changed.
-                    coordinates_changed
-                };
+            // For unnamed workspaces, the advertised name is the display index. In global
+            // workspace mode that can change even when the monitor-local ws_idx does not.
             let mut name_changed = false;
-            if check {
-                let new_name = build_name(ws, ws_idx);
-                // This will likely be true, except if the workspace got named its index.
-                if data.name != new_name {
-                    data.name = new_name;
-                    name_changed = true;
-                }
+            let new_name = build_name(ws, display_idx);
+            if recreate || id_set || data.name != new_name {
+                data.name = new_name;
+                name_changed = true;
             }
 
             let mut output_changed = false;
@@ -378,8 +380,8 @@ fn refresh_workspace(
             // New workspace, start tracking it.
             let mut data = ExtWorkspaceData {
                 id: ws.name().cloned(),
-                name: build_name(ws, ws_idx),
-                coordinates: ArrayVec::from([0, ws_idx as u32]),
+                name: build_name(ws, display_idx),
+                coordinates: ArrayVec::from([0, (display_idx.saturating_sub(1)) as u32]),
                 state,
                 instances: Vec::new(),
                 output: output.cloned(),
