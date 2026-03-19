@@ -566,6 +566,12 @@ impl Tty {
                     return;
                 }
 
+                // This helps resolve symlinks (like /dev/dri/by-path/...) to their new underlying
+                // device IDs
+                self.ignored_nodes = ignored_nodes_from_config(&self.config.borrow());
+                self.ignored_nodes.remove(&self.primary_node);
+                self.ignored_nodes.remove(&self.primary_render_node);
+
                 if let Err(err) = self.device_added(device_id, &path, niri) {
                     warn!("error adding device: {err:?}");
                 }
