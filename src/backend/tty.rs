@@ -740,7 +740,10 @@ impl Tty {
             return Ok(());
         }
 
-        if self.ignored_nodes.contains(&node) {
+        // Check the live devices directly, instead of relying on cached `self.ignored_nodes`.
+        // Devices can appear at any time, potentially before `update_ignored_nodes_config()` has
+        // synced the cache with recent config changes.
+        if ignored_nodes_from_config(&self.config.borrow()).contains(&node) {
             debug!("node is ignored, skipping");
             return Ok(());
         }
