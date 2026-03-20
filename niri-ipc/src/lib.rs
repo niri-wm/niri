@@ -117,6 +117,8 @@ pub enum Request {
     ReturnError,
     /// Request information about the overview.
     OverviewState,
+    /// Request information about the screenshot.
+    ScreenshotState,
     /// Request information about screencasts.
     Casts,
 }
@@ -163,6 +165,8 @@ pub enum Response {
     OutputConfigChanged(OutputConfigChanged),
     /// Information about the overview.
     OverviewState(Overview),
+    /// Information about the screenshot UI.
+    ScreenshotState(ScreenshotUi),
     /// Information about screencasts.
     Casts(Vec<Cast>),
 }
@@ -172,6 +176,14 @@ pub enum Response {
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct Overview {
     /// Whether the overview is currently open.
+    pub is_open: bool,
+}
+
+/// Screenshot UI information.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct ScreenshotUi {
+    /// Whether the screenshot ui is currently open.
     pub is_open: bool,
 }
 
