@@ -2004,12 +2004,21 @@ impl State {
     }
 
     pub fn confirm_screenshot(&mut self, write_to_disk: bool) {
-        let ScreenshotUi::Open { path, .. } = &mut self.niri.screenshot_ui else {
+        let ScreenshotUi::Open {
+            path, selection, ..
+        } = &mut self.niri.screenshot_ui
+        else {
             return;
         };
 
-        self.niri.event_loop.insert_idle(|state| {
-            state.ipc_screenshot_ui_event(ScreenshotUiEvent::Confirm);
+        let selection_start = (selection.1.x, selection.1.y);
+        let selection_dimension = (selection.2.x - selection.1.x, selection.2.y - selection.1.y);
+        debug_assert!(selection_dimension.0 >= 0 && selection_dimension.1 >= 0);
+        self.niri.event_loop.insert_idle(move |state| {
+            state.ipc_screenshot_ui_event(ScreenshotUiEvent::Confirm {
+                position: selection_start,
+                size: selection_dimension,
+            });
         });
 
         let path = path.take();

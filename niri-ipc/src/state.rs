@@ -351,7 +351,9 @@ impl EventStreamStatePart for ScreenshotUiState {
         match event {
             Event::ScreenshotUiChanged { event } => match event {
                 ScreenshotUiEvent::Open => self.is_open = true,
-                ScreenshotUiEvent::Cancel | ScreenshotUiEvent::Confirm => self.is_open = false,
+                ScreenshotUiEvent::Cancel | ScreenshotUiEvent::Confirm { .. } => {
+                    self.is_open = false
+                }
             },
             event => return Some(event),
         }

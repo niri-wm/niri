@@ -1586,7 +1586,13 @@ pub enum ScreenshotUiEvent {
     /// Cancel the screenshot.
     Cancel,
     /// Confirm the screenshot.
-    Confirm,
+    Confirm {
+        /// (x, y) coordinate of the selection origin (relative to the output top-left corner), in
+        /// physical pixels.
+        position: (i32, i32),
+        /// Width and height of the selection area, in physical pixels.
+        size: (i32, i32),
+    },
 }
 
 /// A compositor event.

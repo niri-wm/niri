@@ -493,7 +493,10 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
                     Event::ScreenshotUiChanged { event } => match event {
                         ScreenshotUiEvent::Open => println!("Screenshot UI opened"),
                         ScreenshotUiEvent::Cancel => println!("Screenshot UI canceled"),
-                        ScreenshotUiEvent::Confirm => println!("Screenshot UI confirmed"),
+                        ScreenshotUiEvent::Confirm {
+                            position,
+                            size: dimension,
+                        } => println!("Screenshot UI confirmed: {:?}", (position, dimension)),
                     },
                     Event::ScreenshotCaptured { path } => {
                         let mut parts = vec![];
