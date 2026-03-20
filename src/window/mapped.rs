@@ -16,8 +16,7 @@ use smithay::utils::{Logical, Point, Rectangle, Scale, Serial, Size, Transform};
 use smithay::wayland::compositor::{remove_pre_commit_hook, with_states, HookId, SurfaceData};
 use smithay::wayland::seat::WaylandFocus;
 use smithay::wayland::shell::xdg::{
-    SurfaceCachedState, ToplevelCachedState, ToplevelConfigure, ToplevelSurface,
-    XdgToplevelSurfaceData,
+    SurfaceCachedState, ToplevelCachedState, ToplevelConfigure, ToplevelState, ToplevelSurface, XdgToplevelSurfaceData
 };
 use wayland_backend::server::Credentials;
 
@@ -360,8 +359,28 @@ impl Mapped {
         self.is_window_cast_target
     }
 
-    pub fn fullscreen_state(&self) -> u8 {
-        self.sizing_mode().into()
+    pub fn fullscreen_state(&self, state: &ToplevelState) -> u8 {
+        // Can't just call `sizing_mode` because it causes halting,
+        // possibly because the ToplevelState is already locked when
+        // `ResolvedWindowRules::compute` is called, and by extension,
+        //when `window_matches` is called.
+        // self.sizing_mode().into()
+
+        if self.is_windowed_fullscreen {
+            return if self.is_maximized {
+                SizingMode::Maximized.into()
+            } else {
+                SizingMode::Normal.into()
+            };
+        }
+
+        if state.states.contains(xdg_toplevel::State::Fullscreen) {
+            SizingMode::Fullscreen.into()
+        } else if state.states.contains(xdg_toplevel::State::Maximized) {
+            SizingMode::Maximized.into()
+        } else {
+            SizingMode::Normal.into()
+        }
     }
 
     pub fn toggle_ignore_opacity_window_rule(&mut self) {
