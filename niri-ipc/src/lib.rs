@@ -1565,6 +1565,18 @@ pub enum CastTarget {
     },
 }
 
+/// Screenshot UI events.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum ScreenshotUiEvent {
+    /// Start the interactive screenshot.
+    Open,
+    /// Cancel the screenshot.
+    Cancel,
+    /// Confirm the screenshot.
+    Confirm,
+}
+
 /// A compositor event.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
@@ -1678,6 +1690,11 @@ pub enum Event {
         ///
         /// For example, the config file couldn't be parsed.
         failed: bool,
+    },
+    /// The screenshot UI was changed.
+    ScreenshotUiChanged {
+        /// Opened/dismissed/confirmed events of the screenshot UI.
+        event: ScreenshotUiEvent,
     },
     /// A screenshot was captured.
     ScreenshotCaptured {

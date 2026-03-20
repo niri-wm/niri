@@ -18,6 +18,7 @@ use niri_config::{
     Config, FloatOrInt, Key, Modifiers, OutputName, TrackLayout, WarpMouseToFocusMode,
     WorkspaceReference, Xkb,
 };
+use niri_ipc::ScreenshotUiEvent;
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::input::Keycode;
 use smithay::backend::renderer::damage::OutputDamageTracker;
@@ -1943,6 +1944,10 @@ impl State {
             return;
         }
 
+        self.niri.event_loop.insert_idle(|state| {
+            state.ipc_screenshot_ui_event(ScreenshotUiEvent::Open);
+        });
+
         let default_output = self
             .niri
             .output_under_cursor()
@@ -2002,6 +2007,11 @@ impl State {
         let ScreenshotUi::Open { path, .. } = &mut self.niri.screenshot_ui else {
             return;
         };
+
+        self.niri.event_loop.insert_idle(|state| {
+            state.ipc_screenshot_ui_event(ScreenshotUiEvent::Confirm);
+        });
+
         let path = path.take();
 
         self.backend.with_primary_renderer(|renderer| {
@@ -5385,6 +5395,21 @@ impl Niri {
         });
 
         Ok(())
+    }
+
+    pub fn cancel_screenshot(&mut self) {
+        if !self.screenshot_ui.is_open() {
+            return;
+        }
+
+        self.event_loop.insert_idle(|state| {
+            state.ipc_screenshot_ui_event(ScreenshotUiEvent::Cancel);
+        });
+
+        self.screenshot_ui.close();
+        self.cursor_manager
+            .set_cursor_image(CursorImageStatus::default_named());
+        self.queue_redraw_all();
     }
 
     #[cfg(feature = "dbus")]

@@ -942,4 +942,12 @@ impl State {
         state.apply(event.clone());
         server.send_event(event);
     }
+
+    pub fn ipc_screenshot_ui_event(&mut self, event: niri_ipc::ScreenshotUiEvent) {
+        let Some(server) = &self.niri.ipc_server else {
+            return;
+        };
+        let event = Event::ScreenshotUiChanged { event };
+        server.send_event(event);
+    }
 }

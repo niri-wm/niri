@@ -8,7 +8,8 @@ use niri_config::OutputName;
 use niri_ipc::socket::Socket;
 use niri_ipc::{
     Action, Cast, CastKind, CastTarget, Event, KeyboardLayouts, LogicalOutput, Mode, Output,
-    OutputConfigChanged, Overview, Request, Response, Transform, Window, WindowLayout,
+    OutputConfigChanged, Overview, Request, Response, ScreenshotUiEvent, Transform, Window,
+    WindowLayout,
 };
 use serde_json::json;
 
@@ -488,6 +489,11 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
                         };
                         println!("Config loaded {status}");
                     }
+                    Event::ScreenshotUiChanged { event } => match event {
+                        ScreenshotUiEvent::Open => println!("Screenshot UI opened"),
+                        ScreenshotUiEvent::Cancel => println!("Screenshot UI canceled"),
+                        ScreenshotUiEvent::Confirm => println!("Screenshot UI confirmed"),
+                    },
                     Event::ScreenshotCaptured { path } => {
                         let mut parts = vec![];
                         parts.push("copied to clipboard".to_string());
