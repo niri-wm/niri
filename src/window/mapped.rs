@@ -2,7 +2,7 @@ use std::cell::{Cell, Ref, RefCell};
 use std::time::Duration;
 
 use niri_config::{Color, CornerRadius, GradientInterpolation, WindowRule};
-use smithay::backend::renderer::element::surface::render_elements_from_surface_tree;
+use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::element::Kind;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::desktop::space::SpaceElement as _;
@@ -33,8 +33,10 @@ use crate::render_helpers::offscreen::OffscreenData;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::snapshot::RenderSnapshot;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
-use crate::render_helpers::surface::render_snapshot_from_surface_tree;
-use crate::render_helpers::{BakedBuffer, RenderTarget, SplitElements};
+use crate::render_helpers::surface::{
+    push_elements_from_surface_tree, render_snapshot_from_surface_tree,
+};
+use crate::render_helpers::{BakedBuffer, RenderTarget};
 use crate::utils::id::IdCounter;
 use crate::utils::transaction::Transaction;
 use crate::utils::{
@@ -472,7 +474,8 @@ impl Mapped {
         &self,
         renderer: &mut R,
         scale: Scale<f64>,
-    ) -> impl DoubleEndedIterator<Item = WindowCastRenderElements<R>> {
+        push: &mut dyn FnMut(WindowCastRenderElements<R>),
+    ) {
         let bbox = self.window.bbox_with_popups().to_physical_precise_up(scale);
 
         let has_border_shader = BorderRenderElement::has_shader(renderer);
@@ -484,11 +487,9 @@ impl Mapped {
             .to_physical_precise_round(scale)
             .to_logical(scale);
         let radius = radius.fit_to(window_size.w as f32, window_size.h as f32);
-
         let location = self.window.geometry().loc.to_f64() - bbox.loc.to_logical(scale);
-        let elements = self.render(renderer, location, scale, 1., RenderTarget::Screencast);
 
-        elements.into_iter().map(move |elem| {
+        let use_border = |elem| {
             if let LayoutElementRenderElement::SolidColor(elem) = &elem {
                 // In this branch we're rendering a blocked-out window with a solid color. We need
                 // to render it with a rounded corner shader even if clip_to_geometry is false,
@@ -516,7 +517,16 @@ impl Mapped {
             }
 
             WindowCastRenderElements::from(elem)
-        })
+        };
+
+        self.render(
+            renderer,
+            location,
+            scale,
+            1.,
+            RenderTarget::Screencast,
+            &mut |elem| push(use_border(elem)),
+        );
     }
 
     pub fn get_focus_timestamp(&self) -> Option<Duration> {
@@ -601,52 +611,6 @@ impl LayoutElement for Mapped {
         self.window.is_in_input_region(&surface_local)
     }
 
-    fn render<R: NiriRenderer>(
-        &self,
-        renderer: &mut R,
-        location: Point<f64, Logical>,
-        scale: Scale<f64>,
-        alpha: f32,
-        target: RenderTarget,
-    ) -> SplitElements<LayoutElementRenderElement<R>> {
-        let mut rv = SplitElements::default();
-
-        if target.should_block_out(self.rules.block_out_from) {
-            let mut buffer = self.block_out_buffer.borrow_mut();
-            buffer.resize(self.window.geometry().size.to_f64());
-            let elem =
-                SolidColorRenderElement::from_buffer(&buffer, location, alpha, Kind::Unspecified);
-            rv.normal.push(elem.into());
-        } else {
-            let buf_pos = location - self.window.geometry().loc.to_f64();
-
-            let surface = self.toplevel().wl_surface();
-            for (popup, popup_offset) in PopupManager::popups_for_surface(surface) {
-                let offset = self.window.geometry().loc + popup_offset - popup.geometry().loc;
-
-                rv.popups.extend(render_elements_from_surface_tree(
-                    renderer,
-                    popup.wl_surface(),
-                    (buf_pos + offset.to_f64()).to_physical_precise_round(scale),
-                    scale,
-                    alpha,
-                    Kind::ScanoutCandidate,
-                ));
-            }
-
-            rv.normal = render_elements_from_surface_tree(
-                renderer,
-                surface,
-                buf_pos.to_physical_precise_round(scale),
-                scale,
-                alpha,
-                Kind::ScanoutCandidate,
-            );
-        }
-
-        rv
-    }
-
     fn render_normal<R: NiriRenderer>(
         &self,
         renderer: &mut R,
@@ -654,23 +618,26 @@ impl LayoutElement for Mapped {
         scale: Scale<f64>,
         alpha: f32,
         target: RenderTarget,
-    ) -> Vec<LayoutElementRenderElement<R>> {
+        push: &mut dyn FnMut(LayoutElementRenderElement<R>),
+    ) {
         if target.should_block_out(self.rules.block_out_from) {
             let mut buffer = self.block_out_buffer.borrow_mut();
             buffer.resize(self.window.geometry().size.to_f64());
             let elem =
                 SolidColorRenderElement::from_buffer(&buffer, location, alpha, Kind::Unspecified);
-            vec![elem.into()]
+            push(elem.into());
         } else {
             let buf_pos = location - self.window.geometry().loc.to_f64();
             let surface = self.toplevel().wl_surface();
-            render_elements_from_surface_tree(
+            let mut push = |elem: WaylandSurfaceRenderElement<R>| push(elem.into());
+            push_elements_from_surface_tree(
                 renderer,
                 surface,
                 buf_pos.to_physical_precise_round(scale),
                 scale,
                 alpha,
                 Kind::ScanoutCandidate,
+                &mut push,
             )
         }
     }
@@ -682,28 +649,27 @@ impl LayoutElement for Mapped {
         scale: Scale<f64>,
         alpha: f32,
         target: RenderTarget,
-    ) -> Vec<LayoutElementRenderElement<R>> {
+        push: &mut dyn FnMut(LayoutElementRenderElement<R>),
+    ) {
         if target.should_block_out(self.rules.block_out_from) {
-            vec![]
-        } else {
-            let mut rv = vec![];
+            return;
+        }
 
-            let buf_pos = location - self.window.geometry().loc.to_f64();
-            let surface = self.toplevel().wl_surface();
-            for (popup, popup_offset) in PopupManager::popups_for_surface(surface) {
-                let offset = self.window.geometry().loc + popup_offset - popup.geometry().loc;
+        let buf_pos = location - self.window.geometry().loc.to_f64();
+        let surface = self.toplevel().wl_surface();
+        let mut push = |elem: WaylandSurfaceRenderElement<R>| push(elem.into());
+        for (popup, popup_offset) in PopupManager::popups_for_surface(surface) {
+            let offset = self.window.geometry().loc + popup_offset - popup.geometry().loc;
 
-                rv.extend(render_elements_from_surface_tree(
-                    renderer,
-                    popup.wl_surface(),
-                    (buf_pos + offset.to_f64()).to_physical_precise_round(scale),
-                    scale,
-                    alpha,
-                    Kind::ScanoutCandidate,
-                ));
-            }
-
-            rv
+            push_elements_from_surface_tree(
+                renderer,
+                popup.wl_surface(),
+                (buf_pos + offset.to_f64()).to_physical_precise_round(scale),
+                scale,
+                alpha,
+                Kind::ScanoutCandidate,
+                &mut push,
+            );
         }
     }
 

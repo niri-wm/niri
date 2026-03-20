@@ -13,10 +13,12 @@ updates:
         update-types:
           - "minor"
           - "patch"
+    cooldown:
+      default-days: 7
 
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
-    ignore:
-      - dependency-name: "Andrew-Chen-Wang/github-wiki-action"
+    cooldown:
+      default-days: 7

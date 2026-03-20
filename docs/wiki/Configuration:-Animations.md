@@ -428,7 +428,7 @@ animations {
 
 #### `recent-windows-close`
 
-<sup>Since: next release</sup>
+<sup>Since: 25.11</sup>
 
 The close fade-out animation of the recent windows switcher.
 

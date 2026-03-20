@@ -39,6 +39,9 @@ switch-events {
 These events trigger when a convertible laptop goes into or out of tablet mode.
 In tablet mode, the keyboard and mouse are usually inaccessible, so you can use these events to activate the on-screen keyboard.
 
+> [!NOTE]
+> The commands below are just examples, you will need to provide your own on-screen keyboard, such as [sysboard](https://github.com/System64fumo/sysboard) or [wvkbd](https://github.com/jjsullivan5196/wvkbd).
+
 ```kdl
 switch-events {
     tablet-mode-on { spawn "bash" "-c" "gsettings set org.gnome.desktop.a11y.applications screen-keyboard-enabled true"; }

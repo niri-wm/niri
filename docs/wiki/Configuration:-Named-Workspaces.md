@@ -48,7 +48,7 @@ Explicitly moving a named workspace to a different monitor will still update its
 
 ### Layout config overrides
 
-<sup>Since: next release</sup>
+<sup>Since: 25.11</sup>
 
 You can customize layout settings for named workspaces with a `layout {}` block:
 

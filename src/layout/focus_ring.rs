@@ -1,6 +1,5 @@
 use std::iter::zip;
 
-use arrayvec::ArrayVec;
 use niri_config::{CornerRadius, Gradient, GradientRelativeTo};
 use smithay::backend::renderer::element::{Element as _, Kind};
 use smithay::utils::{Logical, Point, Rectangle, Size};
@@ -220,18 +219,17 @@ impl FocusRing {
         &self,
         renderer: &mut impl NiriRenderer,
         location: Point<f64, Logical>,
-    ) -> impl Iterator<Item = FocusRingRenderElement> {
-        let mut rv = ArrayVec::<_, 8>::new();
-
+        push: &mut dyn FnMut(FocusRingRenderElement),
+    ) {
         if self.config.off {
-            return rv.into_iter();
+            return;
         }
 
         let border_width = -self.locations[0].y;
 
         // If drawing as a border with width = 0, then there's nothing to draw.
         if self.is_border && border_width == 0. {
-            return rv.into_iter();
+            return;
         }
 
         let has_border_shader = BorderRenderElement::has_shader(renderer);
@@ -244,7 +242,7 @@ impl FocusRing {
                 SolidColorRenderElement::from_buffer(buffer, location, alpha, Kind::Unspecified)
                     .into()
             };
-            rv.push(elem);
+            push(elem);
         };
 
         if self.is_border {
@@ -258,8 +256,6 @@ impl FocusRing {
                 location + self.locations[0],
             );
         }
-
-        rv.into_iter()
     }
 
     pub fn width(&self) -> f64 {

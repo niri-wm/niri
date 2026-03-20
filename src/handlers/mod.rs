@@ -13,16 +13,16 @@ use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::drm::DrmNode;
 use smithay::backend::input::{InputEvent, TabletToolDescriptor};
 use smithay::desktop::{PopupKind, PopupManager};
-use smithay::input::pointer::{CursorIcon, CursorImageStatus, PointerHandle};
+use smithay::input::dnd::{self, DnDGrab, DndGrabHandler, DndTarget};
+use smithay::input::pointer::{CursorIcon, CursorImageStatus, Focus, PointerHandle};
 use smithay::input::{keyboard, Seat, SeatHandler, SeatState};
 use smithay::output::Output;
 use smithay::reexports::rustix::fs::{fcntl_setfl, OFlags};
 use smithay::reexports::wayland_protocols_wlr::screencopy::v1::server::zwlr_screencopy_manager_v1::ZwlrScreencopyManagerV1;
-use smithay::reexports::wayland_server::protocol::wl_data_source::WlDataSource;
 use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::Resource;
-use smithay::utils::{Logical, Point, Rectangle};
+use smithay::utils::{Logical, Point, Rectangle, Serial};
 use smithay::wayland::compositor::{get_parent, with_states};
 use smithay::wayland::dmabuf::{DmabufGlobal, DmabufHandler, DmabufState, ImportNotifier};
 use smithay::wayland::drm_lease::{
@@ -41,8 +41,7 @@ use smithay::wayland::security_context::{
     SecurityContext, SecurityContextHandler, SecurityContextListenerSource,
 };
 use smithay::wayland::selection::data_device::{
-    set_data_device_focus, ClientDndGrabHandler, DataDeviceHandler, DataDeviceState,
-    ServerDndGrabHandler,
+    set_data_device_focus, DataDeviceHandler, DataDeviceState, WaylandDndGrabHandler,
 };
 use smithay::wayland::selection::ext_data_control::{
     DataControlHandler as ExtDataControlHandler, DataControlState as ExtDataControlState,
@@ -314,23 +313,51 @@ impl DataDeviceHandler for State {
     }
 }
 
-impl ClientDndGrabHandler for State {
-    fn started(
+impl WaylandDndGrabHandler for State {
+    fn dnd_requested<S: dnd::Source>(
         &mut self,
-        _source: Option<WlDataSource>,
+        source: S,
         icon: Option<WlSurface>,
-        _seat: Seat<Self>,
+        seat: Seat<Self>,
+        serial: Serial,
+        type_: dnd::GrabType,
     ) {
         self.niri.dnd_icon = icon.map(|surface| DndIcon {
             surface,
             offset: Point::new(0, 0),
         });
+
+        match type_ {
+            dnd::GrabType::Pointer => {
+                let pointer = seat.get_pointer().unwrap();
+                let start_data = pointer.grab_start_data().unwrap();
+                let grab =
+                    DnDGrab::new_pointer(&self.niri.display_handle, start_data, source, seat);
+                pointer.set_grab(self, grab, serial, Focus::Keep);
+            }
+            dnd::GrabType::Touch => {
+                let touch = seat.get_touch().unwrap();
+                let start_data = touch.grab_start_data().unwrap();
+                let grab = DnDGrab::new_touch(&self.niri.display_handle, start_data, source, seat);
+                touch.set_grab(self, grab, serial);
+            }
+        }
+
         // FIXME: more granular
         self.niri.queue_redraw_all();
     }
+}
 
-    fn dropped(&mut self, target: Option<WlSurface>, validated: bool, _seat: Seat<Self>) {
-        trace!("client dropped, target: {target:?}, validated: {validated}");
+impl DndGrabHandler for State {
+    fn dropped(
+        &mut self,
+        target: Option<DndTarget<'_, Self>>,
+        validated: bool,
+        _seat: Seat<Self>,
+        location: Point<f64, Logical>,
+    ) {
+        let target: Option<&WlSurface> = target.map(DndTarget::into_inner);
+        trace!("dnd dropped, target: {target:?}, validated: {validated}");
 
         // End DnD before activating a specific window below so that it takes precedence.
         self.niri.layout.dnd_end();
@@ -339,7 +366,7 @@ impl ClientDndGrabHandler for State {
         // example. On successful drop, additionally activate the target window.
         let mut activate_output = true;
         if let Some(target) = validated.then_some(target).flatten() {
-            let root = self.niri.find_root_shell_surface(&target);
+            let root = self.niri.find_root_shell_surface(target);
             if let Some((mapped, _)) = self.niri.layout.find_window_and_output(&root) {
                 let window = mapped.window.clone();
                 self.niri.layout.activate_window(&window);
@@ -349,19 +376,10 @@ impl ClientDndGrabHandler for State {
         }
 
         if activate_output {
-            // Find the output from cursor coordinates.
-            //
-            // FIXME: uhhh, we can't actually properly tell if the DnD comes from pointer or touch,
-            // and if it comes from touch, then what the coordinates are. Need to pass more
-            // parameters from Smithay I guess.
-            //
-            // Assume that hidden pointer means touch DnD.
-            if self.niri.pointer_visibility.is_visible() {
-                // We can't even get the current pointer location because it's locked (we're deep
-                // in the grab call stack here). So use the last known one.
-                if let Some(output) = &self.niri.pointer_contents.output {
-                    self.niri.layout.focus_output(output);
-                }
+            // Find the output from drop coordinates.
+            if let Some((output, _)) = self.niri.output_under(location) {
+                let output = output.clone();
+                self.niri.layout.focus_output(&output);
             }
         }
 
@@ -370,8 +388,6 @@ impl ClientDndGrabHandler for State {
         self.niri.queue_redraw_all();
     }
 }
-
-impl ServerDndGrabHandler for State {}
 
 delegate_data_device!(State);
 
@@ -608,11 +624,7 @@ impl ScreencopyHandler for State {
         // If with_damage then push it onto the queue for redraw of the output,
         // otherwise render it immediately.
         if screencopy.with_damage() {
-            let Some(queue) = self.niri.screencopy_state.get_queue_mut(manager) else {
-                trace!("screencopy manager destroyed already");
-                return;
-            };
-            queue.push(screencopy);
+            self.niri.screencopy_state.push(manager, screencopy);
         } else {
             self.backend.with_primary_renderer(|renderer| {
                 if let Err(err) = self

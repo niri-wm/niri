@@ -1,12 +1,13 @@
 use std::cmp::{max, min};
-use std::f64;
 use std::ffi::{CString, OsStr};
+use std::fmt::Display;
 use std::io::Write;
 use std::os::unix::prelude::OsStrExt;
 use std::path::{Path, PathBuf};
 use std::ptr::null_mut;
 use std::sync::atomic::AtomicBool;
 use std::time::Duration;
+use std::{f64, fmt};
 
 use anyhow::{ensure, Context};
 use bitflags::bitflags;
@@ -20,7 +21,7 @@ use smithay::reexports::rustix::time::{clock_gettime, ClockId};
 use smithay::reexports::wayland_protocols::xdg::decoration::zv1::server::zxdg_toplevel_decoration_v1;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::reexports::wayland_server::{DisplayHandle, Resource as _};
+use smithay::reexports::wayland_server::{Client, DisplayHandle, Resource as _};
 use smithay::utils::{Coordinate, Logical, Point, Rectangle, Size, Transform};
 use smithay::wayland::compositor::{send_surface_state, with_states, SurfaceData};
 use smithay::wayland::fractional_scale::with_fractional_scale;
@@ -43,6 +44,56 @@ pub mod watcher;
 pub mod xwayland;
 
 pub static IS_SYSTEMD_SERVICE: AtomicBool = AtomicBool::new(false);
+
+use id::IdCounter;
+
+/// Unique ID for a screencast session.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct CastSessionId(u64);
+
+impl CastSessionId {
+    pub fn next() -> Self {
+        static COUNTER: IdCounter = IdCounter::new();
+        Self(COUNTER.next())
+    }
+
+    pub fn get(self) -> u64 {
+        self.0
+    }
+}
+
+impl Display for CastSessionId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl From<u64> for CastSessionId {
+    fn from(value: u64) -> Self {
+        Self(value)
+    }
+}
+
+/// Unique ID for a screencast stream.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct CastStreamId(u64);
+
+impl CastStreamId {
+    pub fn next() -> Self {
+        static COUNTER: IdCounter = IdCounter::new();
+        Self(COUNTER.next())
+    }
+
+    pub fn get(self) -> u64 {
+        self.0
+    }
+}
+
+impl Display for CastStreamId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
 
 bitflags! {
     #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -412,12 +463,16 @@ pub fn get_credentials_for_surface(surface: &WlSurface) -> Option<Credentials> {
     let dh = DisplayHandle::from(handle);
 
     let client = dh.get_client(surface.id()).ok()?;
+    get_credentials_for_client(&dh, &client)
+}
+
+pub fn get_credentials_for_client(dh: &DisplayHandle, client: &Client) -> Option<Credentials> {
     let data = client.get_data::<ClientState>().unwrap();
     if data.credentials_unknown {
         return None;
     }
 
-    client.get_credentials(&dh).ok()
+    client.get_credentials(dh).ok()
 }
 
 pub fn ensure_min_max_size(mut x: i32, min_size: i32, max_size: i32) -> i32 {
@@ -474,6 +529,7 @@ pub fn baba_is_float_offset(now: Duration, view_height: f64) -> f64 {
 pub fn show_screenshot_notification(image_path: Option<&Path>) -> anyhow::Result<()> {
     use std::collections::HashMap;
 
+    use pango::glib;
     use zbus::zvariant;
 
     let conn = zbus::blocking::Connection::session()?;
@@ -482,7 +538,7 @@ pub fn show_screenshot_notification(image_path: Option<&Path>) -> anyhow::Result
     let mut image_url = None;
     if let Some(path) = image_path {
         match path.canonicalize() {
-            Ok(path) => match url::Url::from_file_path(path) {
+            Ok(path) => match glib::filename_to_uri(path, None) {
                 Ok(url) => {
                     image_url = Some(url);
                 }

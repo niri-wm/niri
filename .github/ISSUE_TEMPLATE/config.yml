@@ -1,9 +1,9 @@
 contact_links:
   - name: Feature request
-    url: https://github.com/YaLTeR/niri/discussions/new?category=ideas
+    url: https://github.com/niri-wm/niri/discussions/new?category=ideas
     about: Ideas for new features and functionality (start a Discussion)
   - name: Ask a question
-    url: https://github.com/YaLTeR/niri/discussions/new?category=q-a
+    url: https://github.com/niri-wm/niri/discussions/new?category=q-a
     about: Question about niri (start a Discussion)
   - name: Matrix room
     url: https://matrix.to/#/#niri:matrix.org

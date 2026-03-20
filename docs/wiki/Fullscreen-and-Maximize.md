@@ -14,7 +14,7 @@ You can make a window open in a maximized column with the [`open-maximized true`
 
 ## Windows maximized to edges
 
-<sup>Since: next release</sup>
+<sup>Since: 25.11</sup>
 
 You can maximize an individual window via `maximize-window-to-edges`.
 This is the same maximize as you can find on other desktop environments and operating systems: it expands a window to the edges of the available screen area.

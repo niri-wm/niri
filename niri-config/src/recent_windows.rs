@@ -6,13 +6,10 @@ use smithay::input::keyboard::Keysym;
 use crate::utils::{expect_only_children, MergeWith};
 use crate::{Action, Bind, Color, FloatOrInt, Key, Modifiers, Trigger};
 
-/// Delay before the window focus is considered to be locked-in for Window
-/// MRU ordering. For now the delay is not configurable.
-pub const DEFAULT_MRU_COMMIT_MS: u64 = 750;
-
 #[derive(Debug, PartialEq)]
 pub struct RecentWindows {
     pub on: bool,
+    pub debounce_ms: u16,
     pub open_delay_ms: u16,
     pub highlight: MruHighlight,
     pub previews: MruPreviews,
@@ -23,6 +20,7 @@ impl Default for RecentWindows {
     fn default() -> Self {
         RecentWindows {
             on: true,
+            debounce_ms: 750,
             open_delay_ms: 150,
             highlight: MruHighlight::default(),
             previews: MruPreviews::default(),
@@ -37,6 +35,8 @@ pub struct RecentWindowsPart {
     pub on: bool,
     #[knuffel(child)]
     pub off: bool,
+    #[knuffel(child, unwrap(argument))]
+    pub debounce_ms: Option<u16>,
     #[knuffel(child, unwrap(argument))]
     pub open_delay_ms: Option<u16>,
     #[knuffel(child)]
@@ -54,7 +54,7 @@ impl MergeWith<RecentWindowsPart> for RecentWindows {
             self.on = false;
         }
 
-        merge_clone!((self, part), open_delay_ms);
+        merge_clone!((self, part), debounce_ms, open_delay_ms);
         merge!((self, part), highlight, previews);
 
         if let Some(part) = &part.binds {

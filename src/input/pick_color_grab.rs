@@ -2,6 +2,7 @@ use niri_ipc::PickedColor;
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::input::ButtonState;
 use smithay::backend::renderer::element::utils::{Relocate, RelocateRenderElement};
+use smithay::backend::renderer::ExportMem as _;
 use smithay::input::pointer::{
     AxisFrame, ButtonEvent, CursorImageStatus, GestureHoldBeginEvent, GestureHoldEndEvent,
     GesturePinchBeginEvent, GesturePinchEndEvent, GesturePinchUpdateEvent, GestureSwipeBeginEvent,
@@ -12,7 +13,7 @@ use smithay::input::SeatHandler;
 use smithay::utils::{Logical, Physical, Point, Scale, Size, Transform};
 
 use crate::niri::State;
-use crate::render_helpers::{render_to_vec, RenderTarget};
+use crate::render_helpers::{render_and_download, RenderTarget};
 
 pub struct PickColorGrab {
     start_data: PointerGrabStartData<State>,
@@ -56,7 +57,7 @@ impl PickColorGrab {
                     RenderTarget::Output,
                 );
 
-                let pixels = match render_to_vec(
+                let mapping = match render_and_download(
                     renderer,
                     size,
                     scale,
@@ -67,6 +68,10 @@ impl PickColorGrab {
                         RelocateRenderElement::from_element(elem, offset, Relocate::Relative)
                     }),
                 ) {
+                    Ok(mapping) => mapping,
+                    Err(_) => return None,
+                };
+                let pixels = match renderer.map_texture(&mapping) {
                     Ok(pixels) => pixels,
                     Err(_) => return None,
                 };

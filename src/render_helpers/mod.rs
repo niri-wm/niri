@@ -5,7 +5,7 @@ use niri_config::BlockOutFrom;
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::allocator::{Buffer, Fourcc};
 use smithay::backend::renderer::element::utils::{Relocate, RelocateRenderElement};
-use smithay::backend::renderer::element::{Kind, RenderElement};
+use smithay::backend::renderer::element::{Element, Kind, RenderElement};
 use smithay::backend::renderer::gles::{GlesMapping, GlesRenderer, GlesTarget, GlesTexture};
 use smithay::backend::renderer::sync::SyncPoint;
 use smithay::backend::renderer::{Bind, Color32F, ExportMem, Frame, Offscreen, Renderer};
@@ -58,13 +58,6 @@ pub struct BakedBuffer<B> {
     pub dst: Option<Size<i32, Logical>>,
 }
 
-/// Render elements split into normal and popup.
-#[derive(Debug)]
-pub struct SplitElements<E> {
-    pub normal: Vec<E>,
-    pub popups: Vec<E>,
-}
-
 pub trait ToRenderElement {
     type RenderElement;
 
@@ -84,41 +77,6 @@ impl RenderTarget {
             Some(BlockOutFrom::Screencast) => self == RenderTarget::Screencast,
             Some(BlockOutFrom::ScreenCapture) => self != RenderTarget::Output,
         }
-    }
-}
-
-impl<E> Default for SplitElements<E> {
-    fn default() -> Self {
-        Self {
-            normal: Vec::new(),
-            popups: Vec::new(),
-        }
-    }
-}
-
-impl<E> IntoIterator for SplitElements<E> {
-    type Item = E;
-    type IntoIter = std::iter::Chain<std::vec::IntoIter<E>, std::vec::IntoIter<E>>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.popups.into_iter().chain(self.normal)
-    }
-}
-
-impl<E> SplitElements<E> {
-    pub fn iter(&self) -> std::iter::Chain<std::slice::Iter<'_, E>, std::slice::Iter<'_, E>> {
-        self.popups.iter().chain(&self.normal)
-    }
-
-    pub fn into_vec(self) -> Vec<E> {
-        let Self { normal, mut popups } = self;
-        popups.extend(normal);
-        popups
-    }
-
-    pub fn extend(&mut self, other: SplitElements<E>) {
-        self.popups.extend(other.popups);
-        self.normal.extend(other.normal);
     }
 }
 
@@ -160,7 +118,7 @@ impl ToRenderElement for BakedBuffer<SolidColorBuffer> {
 
 pub fn encompassing_geo(
     scale: Scale<f64>,
-    elements: impl Iterator<Item = impl RenderElement<GlesRenderer>>,
+    elements: impl Iterator<Item = impl Element>,
 ) -> Rectangle<i32, Physical> {
     elements
         .map(|ele| ele.geometry(scale))

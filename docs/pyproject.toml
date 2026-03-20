@@ -9,6 +9,6 @@ dependencies = [
 ]
 
 # for KDL highlighting support
-# TODO: use the official pygments package once https://github.com/pygments/pygments/pull/2936 is merged
+# FIXME: use the official pygments package once https://github.com/pygments/pygments/pull/2936 is merged
 [tool.uv.sources]
 pygments = { git = "https://github.com/chinatsu/pygments", rev = "0f0b0d4da2839e1285881389155bb4605a0a6dc4" }

@@ -10,7 +10,7 @@ Specifically, niri will announce:
 
 - workspace switching, for example it'll say "Workspace 2" when you switch to the second workspace;
 - the exit confirmation dialog (appears on <kbd>Super</kbd><kbd>Shift</kbd><kbd>E</kbd> by default);
-- <sup>Since: next release</sup> niri has an <kbd>Alt</kbd><kbd>Tab</kbd> window switcher where it will announce the selected window title;
+- <sup>Since: 25.11</sup> niri has an <kbd>Alt</kbd><kbd>Tab</kbd> window switcher where it will announce the selected window title;
 - entering the screenshot UI and the overview (niri will say when these are focused, nothing else for now);
 - whenever a config parse error occurs;
 - the important hotkeys list (for now, as one big announcement without tab navigation; appears on <kbd>Super</kbd><kbd>Shift</kbd><kbd>/</kbd> by default).

@@ -26,6 +26,9 @@ Note that if you're using the provided `resources/niri-portals.conf`, you also n
 
 If you do not want to install `nautilus` (say you use `nemo` instead), you can set `org.freedesktop.impl.portal.FileChooser=gtk;` in `niri-portals.conf` to use the GTK portal for file chooser dialogues.
 
+> [!WARNING]
+> Do not set the `GDK_BACKEND` environment variable globally as this will break the screencast portal.
+
 ### Authentication Agent
 
 Required when apps need to ask for root permissions. Something like `plasma-polkit-agent` works fine. Start it [with systemd](./Example-systemd-Setup.md) or with [`spawn-at-startup`](./Configuration:-Miscellaneous.md#spawn-at-startup).

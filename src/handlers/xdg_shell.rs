@@ -24,7 +24,6 @@ use smithay::wayland::compositor::{
 };
 use smithay::wayland::dmabuf::get_dmabuf;
 use smithay::wayland::input_method::InputMethodSeat;
-use smithay::wayland::selection::data_device::DnDGrab;
 use smithay::wayland::shell::kde::decoration::{KdeDecorationHandler, KdeDecorationState};
 use smithay::wayland::shell::wlr_layer::{self, Layer};
 use smithay::wayland::shell::xdg::decoration::XdgDecorationHandler;
@@ -85,7 +84,7 @@ impl XdgShellHandler for State {
                     if focus.id().same_client_as(&wl_surface.id()) {
                         // Deny move requests from DnD grabs to work around
                         // https://gitlab.gnome.org/GNOME/gtk/-/issues/7113
-                        let is_dnd_grab = grab.as_any().is::<DnDGrab<Self>>();
+                        let is_dnd_grab = Self::is_dnd_grab(grab.as_any());
 
                         if !is_dnd_grab {
                             grab_start_data =
@@ -105,7 +104,7 @@ impl XdgShellHandler for State {
                         if focus.id().same_client_as(&wl_surface.id()) {
                             // Deny move requests from DnD grabs to work around
                             // https://gitlab.gnome.org/GNOME/gtk/-/issues/7113
-                            let is_dnd_grab = grab.as_any().is::<DnDGrab<Self>>();
+                            let is_dnd_grab = Self::is_dnd_grab(grab.as_any());
 
                             if !is_dnd_grab {
                                 grab_start_data =
@@ -134,13 +133,13 @@ impl XdgShellHandler for State {
 
         match &start_data {
             PointerOrTouchStartData::Pointer(_) => {
-                if let Some(grab) = MoveGrab::new(self, start_data, window.clone(), true) {
+                if let Some(grab) = MoveGrab::new(self, start_data, window.clone(), true, None) {
                     pointer.set_grab(self, grab, serial, Focus::Clear);
                 }
             }
             PointerOrTouchStartData::Touch(_) => {
                 let touch = self.niri.seat.get_touch().unwrap();
-                if let Some(grab) = MoveGrab::new(self, start_data, window.clone(), true) {
+                if let Some(grab) = MoveGrab::new(self, start_data, window.clone(), true, None) {
                     touch.set_grab(self, grab, serial);
                 }
             }
@@ -268,15 +267,6 @@ impl XdgShellHandler for State {
     }
 
     fn grab(&mut self, surface: PopupSurface, _seat: WlSeat, serial: Serial) {
-        // HACK: ignore grabs (pretend they work without actually grabbing) if the input method has
-        // a grab. It will likely need refactors in Smithay to support properly since grabs just
-        // replace each other.
-        // FIXME: do this properly.
-        if self.niri.seat.input_method().keyboard_grabbed() {
-            trace!("ignoring popup grab because IME has keyboard grabbed");
-            return;
-        }
-
         let popup = PopupKind::Xdg(surface);
         let Ok(root) = find_popup_root_surface(&popup) else {
             trace!("ignoring popup grab because no root surface");
@@ -374,25 +364,30 @@ impl XdgShellHandler for State {
         let keyboard = seat.get_keyboard().unwrap();
         let pointer = seat.get_pointer().unwrap();
 
-        let can_receive_keyboard_focus = self
-            .niri
-            .layout
-            .active_output()
-            .and_then(|output| {
-                layer_map_for_output(output)
-                    .layer_for_surface(&root, WindowSurfaceType::TOPLEVEL)
-                    .map(|layer_surface| layer_surface.can_receive_keyboard_focus())
-            })
-            .unwrap_or(true);
+        // Smithay cannot do overlapping grabs, so if we have an IME keyboard grab, don't overwrite
+        // it with a popup keyboard grab. This makes the popup menu work in Telegram while an IME
+        // is active (otherwise it hits the grab mismatch check below).
+        //
+        // The second check is for layer surfaces that can't receive keyboard focus, without it
+        // popups don't work properly in Waybar (GTK 3).
+        let can_receive_keyboard_focus = !self.niri.seat.input_method().keyboard_grabbed()
+            && self
+                .niri
+                .layout
+                .active_output()
+                .and_then(|output| {
+                    layer_map_for_output(output)
+                        .layer_for_surface(&root, WindowSurfaceType::TOPLEVEL)
+                        .map(|layer_surface| layer_surface.can_receive_keyboard_focus())
+                })
+                .unwrap_or(true);
 
         let keyboard_grab_mismatches = keyboard.is_grabbed()
             && !(keyboard.has_grab(serial)
-                || grab
-                    .previous_serial()
-                    .map_or(true, |s| keyboard.has_grab(s)));
+                || grab.previous_serial().is_none_or(|s| keyboard.has_grab(s)));
         let pointer_grab_mismatches = pointer.is_grabbed()
             && !(pointer.has_grab(serial)
-                || grab.previous_serial().map_or(true, |s| pointer.has_grab(s)));
+                || grab.previous_serial().is_none_or(|s| pointer.has_grab(s)));
         if (can_receive_keyboard_focus && keyboard_grab_mismatches) || pointer_grab_mismatches {
             trace!("ignoring popup grab because of current grab mismatch");
             grab.ungrab(PopupUngrabStrategy::All);
@@ -868,7 +863,15 @@ impl XdgShellHandler for State {
 
         self.niri.window_mru_ui.remove_window(id);
         self.niri.layout.remove_window(&window, transaction.clone());
-        self.add_default_dmabuf_pre_commit_hook(surface.wl_surface());
+
+        let surface = surface.wl_surface();
+        // This check is necessary because implicit resource destruction is done with
+        // undefined order, so the surface might get destroyed before toplevel_destroyed() is
+        // called. In this case, adding the default pre-commit hook here would leak it, since the
+        // place that removes it is WlSurface::destroyed(), which had already been called by now.
+        if surface.is_alive() {
+            self.add_default_dmabuf_pre_commit_hook(surface);
+        }
 
         // If this is the only instance, then this transaction will complete immediately, so no
         // need to set the timer.
@@ -1256,7 +1259,7 @@ impl State {
         let mut target = self.niri.layout.popup_target_rect(window);
         target.loc -= get_popup_toplevel_coords(popup).to_f64();
 
-        self.position_popup_within_rect(popup, target);
+        self.position_popup_within_rect(popup, target, true);
     }
 
     pub fn unconstrain_layer_shell_popup(
@@ -1290,14 +1293,26 @@ impl State {
         target.loc -= layer_geo.loc;
         target.loc -= get_popup_toplevel_coords(popup);
 
-        self.position_popup_within_rect(popup, target.to_f64());
+        // Don't add padding to layer-shell popups. It's not really needed, and it's unexpected.
+        self.position_popup_within_rect(popup, target.to_f64(), false);
     }
 
-    fn position_popup_within_rect(&self, popup: &PopupKind, target: Rectangle<f64, Logical>) {
+    fn position_popup_within_rect(
+        &self,
+        popup: &PopupKind,
+        target: Rectangle<f64, Logical>,
+        padding: bool,
+    ) {
         match popup {
             PopupKind::Xdg(popup) => {
                 popup.with_pending_state(|state| {
-                    state.geometry = unconstrain_with_padding(state.positioner, target);
+                    state.geometry = if padding {
+                        unconstrain_with_padding(state.positioner, target)
+                    } else {
+                        state
+                            .positioner
+                            .get_unconstrained_geometry(target.to_i32_round())
+                    };
                 });
             }
             PopupKind::InputMethod(popup) => {
@@ -1466,7 +1481,7 @@ pub fn add_mapped_toplevel_pre_commit_hook(toplevel: &ToplevelSurface) -> HookId
                 span.record("serial", format!("{serial:?}"));
             }
 
-            trace!("taking pending transaction");
+            // trace!("taking pending transaction");
             if let Some(transaction) = mapped.take_pending_transaction(serial) {
                 // Transaction can be already completed if it ran past the deadline.
                 let disable = state.niri.config.borrow().debug.disable_transactions;

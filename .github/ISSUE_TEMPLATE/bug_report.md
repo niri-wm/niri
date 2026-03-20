@@ -10,6 +10,13 @@ assignees: ''
 <!-- Please describe the issue here at the top, then fill in the system information below. -->
 
 <!-- Attaching your full niri config can help diagnose the problem. -->
+<details><summary>Config</summary>
+
+```kdl
+insert config here
+```
+
+</details> 
 
 <!--
 If you have a problem with a specific app, please verify that it is running on Wayland, rather than X11. An easy way is to run xeyes and mouse over the app: xeyes will be able to "see" only X11 windows.

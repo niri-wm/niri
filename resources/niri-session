@@ -59,13 +59,37 @@ elif hash dinitctl >/dev/null 2>&1; then
     fi
 
     # Make sure there's no already running session.
-    if dinitctl --user is-started niri >/dev/null 2>&1; then
+    if dinitctl --quiet --user is-started niri 2>/dev/null; then
       echo 'A niri session is already running.'
       exit 1
     fi
 
+    # Import the login manager environment into dinit
+    # Might not work correctly for multiline variable names, but
+    # it is reasonable to assume there are none
+    awk 'BEGIN{for(v in ENVIRON) if (v != "AWKPATH" && v != "AWKLIBPATH") print v}' 2>/dev/null | xargs dinitctl --quiet --user setenv 2>/dev/null
+
+    # Usually the dbus service would start as niri's dependency and inherit
+    # environment from dinit, but in case it has already started we need
+    # to update its environment.
+    if hash dbus-update-activation-environment >/dev/null 2>&1; then
+        dbus-update-activation-environment --all >/dev/null 2>&1
+    fi
+
+    # Create the directory for the logfile, if doesn't exist
+    mkdir --parents $HOME/.local/share/niri
     # Start niri
-    dinitctl --user start niri
+    dinitctl --quiet --user start niri.target 2>&1
+
+    # Wait for termination
+    dinit-monitor --user --initial -c $'sh -c " 
+        if [ "%s" = "stopped" ] || [ "%s" = "failed" ]; then
+            ppid=$(ps -o ppid= -p $$)
+            kill $ppid
+        fi"' niri >/dev/null 2>&1
+
+    # Unset environment that we've set.
+    dinitctl --quiet --user unsetenv WAYLAND_DISPLAY DISPLAY XDG_SESSION_TYPE XDG_CURRENT_DESKTOP NIRI_SOCKET 2>/dev/null
 else
     echo "No systemd or dinit detected, please use niri --session instead."
 fi

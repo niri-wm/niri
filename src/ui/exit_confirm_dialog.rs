@@ -3,7 +3,6 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Mutex;
 
-use arrayvec::ArrayVec;
 use niri_config::Config;
 use ordered_float::NotNan;
 use pangocairo::cairo::{self, ImageSurface};
@@ -151,14 +150,15 @@ impl ExitConfirmDialog {
         &self,
         renderer: &mut R,
         output: &Output,
-    ) -> ArrayVec<ExitConfirmDialogRenderElement, 2> {
-        let mut rv = ArrayVec::new();
-
+        push: &mut dyn FnMut(ExitConfirmDialogRenderElement),
+    ) {
         let (value, clamped_value) = match &self.state {
-            State::Hidden => return rv,
+            State::Hidden => return,
             State::Showing(anim) | State::Hiding(anim) => (anim.value(), anim.clamped_value()),
             State::Visible => (1., 1.),
         };
+        let _span = tracy_client::span!("ExitConfirmDialog::render");
+
         // Can be out of range when starting from past 0. or 1. from a spring bounce.
         let clamped_value = clamped_value.clamp(0., 1.);
 
@@ -168,7 +168,7 @@ impl ExitConfirmDialog {
         let mut buffers = self.buffers.borrow_mut();
         let Some(fallback) = buffers[&NotNan::new(1.).unwrap()].clone() else {
             error!("exit confirm dialog opened without fallback buffer");
-            return rv;
+            return;
         };
 
         let buffer = buffers
@@ -179,7 +179,7 @@ impl ExitConfirmDialog {
         let size = buffer.logical_size();
         let Ok(buffer) = TextureBuffer::from_memory_buffer(renderer.as_gles_renderer(), buffer)
         else {
-            return rv;
+            return;
         };
 
         let location = (output_size.to_point() - size.to_point()).downscale(2.);
@@ -201,7 +201,7 @@ impl ExitConfirmDialog {
             (location + size.downscale(2.)).to_physical_precise_round(scale),
             value.max(0.) * 0.2 + 0.8,
         );
-        rv.push(ExitConfirmDialogRenderElement::Texture(elem));
+        push(ExitConfirmDialogRenderElement::Texture(elem));
 
         // Backdrop.
         let data = output.user_data().get_or_insert(|| {
@@ -218,9 +218,7 @@ impl ExitConfirmDialog {
             clamped_value as f32,
             Kind::Unspecified,
         );
-        rv.push(ExitConfirmDialogRenderElement::SolidColor(elem));
-
-        rv
+        push(ExitConfirmDialogRenderElement::SolidColor(elem));
     }
 }
 

@@ -1,11 +1,11 @@
 // This config is in the KDL format: https://kdl.dev
 // "/-" comments out the following node.
 // Check the wiki for a full description of the configuration:
-// https://yalter.github.io/niri/Configuration:-Introduction
+// https://niri-wm.github.io/niri/Configuration:-Introduction
 
 // Input device configuration.
 // Find the full list of options on the wiki:
-// https://yalter.github.io/niri/Configuration:-Input
+// https://niri-wm.github.io/niri/Configuration:-Input
 input {
     keyboard {
         xkb {
@@ -73,7 +73,7 @@ input {
 // by running `niri msg outputs` while inside a niri instance.
 // The built-in laptop monitor is usually called "eDP-1".
 // Find more information on the wiki:
-// https://yalter.github.io/niri/Configuration:-Outputs
+// https://niri-wm.github.io/niri/Configuration:-Outputs
 // Remember to uncomment the node by removing "/-"!
 /-output "eDP-1" {
     // Uncomment this line to disable this output.
@@ -108,7 +108,7 @@ input {
 
 // Settings that influence how windows are positioned and sized.
 // Find more information on the wiki:
-// https://yalter.github.io/niri/Configuration:-Layout
+// https://niri-wm.github.io/niri/Configuration:-Layout
 layout {
     // Set gaps around windows in logical pixels.
     gaps 16
@@ -295,7 +295,7 @@ screenshot-path "~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png"
 
 // Animation settings.
 // The wiki explains how to configure individual animations:
-// https://yalter.github.io/niri/Configuration:-Animations
+// https://niri-wm.github.io/niri/Configuration:-Animations
 animations {
     // Uncomment to turn off all animations.
     // off
@@ -306,7 +306,7 @@ animations {
 
 // Window rules let you adjust behavior for individual windows.
 // Find more information on the wiki:
-// https://yalter.github.io/niri/Configuration:-Window-Rules
+// https://niri-wm.github.io/niri/Configuration:-Window-Rules
 
 // Work around WezTerm's initial configure bug
 // by setting an empty default-column-width.
@@ -557,6 +557,12 @@ binds {
     Mod+Ctrl+R { reset-window-height; }
     Mod+F { maximize-column; }
     Mod+Shift+F { fullscreen-window; }
+
+    // While maximize-column leaves gaps and borders around the window,
+    // maximize-window-to-edges doesn't: the window expands to the edges of the screen.
+    // This bind corresponds to normal window maximizing,
+    // e.g. by double-clicking on the titlebar.
+    Mod+M { maximize-window-to-edges; }
 
     // Expand the focused column to space not taken up by other fully visible columns.
     // Makes the column "fill the rest of the space".

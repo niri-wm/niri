@@ -110,11 +110,11 @@ impl ConfigErrorNotification {
                     } else {
                         Duration::from_secs(4)
                     };
-                    self.state = State::Shown(self.clock.now() + duration);
+                    self.state = State::Shown(self.clock.now_unadjusted() + duration);
                 }
             }
             State::Shown(deadline) => {
-                if self.clock.now() >= *deadline {
+                if self.clock.now_unadjusted() >= *deadline {
                     self.hide();
                 }
             }
