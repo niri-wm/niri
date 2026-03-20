@@ -360,6 +360,10 @@ impl Mapped {
         self.is_window_cast_target
     }
 
+    pub fn fullscreen_state(&self) -> u8 {
+        self.sizing_mode().into()
+    }
+
     pub fn toggle_ignore_opacity_window_rule(&mut self) {
         self.ignore_opacity_window_rule = !self.ignore_opacity_window_rule;
     }

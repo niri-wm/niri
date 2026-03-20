@@ -171,6 +171,13 @@ impl<'a> WindowRef<'a> {
             WindowRef::Mapped(mapped) => mapped.is_window_cast_target(),
         }
     }
+
+    pub fn fullscreen_state(self) -> Option<u8> {
+        match self {
+            WindowRef::Unmapped(_) => None,
+            WindowRef::Mapped(mapped) => Some(mapped.fullscreen_state()),
+        }
+    }
 }
 
 impl ResolvedWindowRules {
@@ -429,6 +436,15 @@ fn window_matches(window: WindowRef, role: &XdgToplevelSurfaceRoleAttributes, m:
 
     if let Some(is_window_cast_target) = m.is_window_cast_target {
         if window.is_window_cast_target() != is_window_cast_target {
+            return false;
+        }
+    }
+
+    if let Some(m_fullscreen_state) = m.fullscreen_state {
+        let Some(window_fullscreen_state) = window.fullscreen_state() else {
+            return false;
+        };
+        if window_fullscreen_state != m_fullscreen_state {
             return false;
         }
     }
