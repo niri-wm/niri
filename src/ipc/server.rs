@@ -517,9 +517,6 @@ fn make_ipc_window(
     workspace_id: Option<WorkspaceId>,
     layout: WindowLayout,
 ) -> niri_ipc::Window {
-    // Quick hack to fix the consistent halting if we tried to access the sizing mode
-    // inside the constructor
-    let fullscreen_state = mapped.sizing_mode().into();
     with_toplevel_role(mapped.toplevel(), |role| niri_ipc::Window {
         id: mapped.id().get(),
         title: role.title.clone(),
@@ -528,7 +525,7 @@ fn make_ipc_window(
         workspace_id: workspace_id.map(|id| id.get()),
         is_focused: mapped.is_focused(),
         is_floating: mapped.is_floating(),
-        fullscreen_state,
+        sizing_mode: mapped.sizing_mode().into(),
         is_urgent: mapped.is_urgent(),
         layout,
         focus_timestamp: mapped.get_focus_timestamp().map(Timestamp::from),
@@ -743,10 +740,10 @@ impl State {
                 events.push(Event::WindowFocusChanged { id: Some(id) });
             }
 
-            if mapped.sizing_mode() != ipc_win.fullscreen_state.into() {
-                events.push(Event::WindowFullscreenStateChanged {
+            if mapped.sizing_mode() != ipc_win.sizing_mode.into() {
+                events.push(Event::WindowSizingModeChanged {
                     id,
-                    fullscreen_state: mapped.sizing_mode().into(),
+                    sizing_mode: mapped.sizing_mode().into(),
                 });
             }
 

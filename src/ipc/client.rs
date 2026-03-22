@@ -459,11 +459,11 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
                     Event::WindowFocusChanged { id } => {
                         println!("Window focus changed: {id:?}");
                     }
-                    Event::WindowFullscreenStateChanged {
+                    Event::WindowSizingModeChanged {
                         id,
-                        fullscreen_state,
+                        sizing_mode,
                     } => {
-                        println!("Window {id}: fullscreen state changed to {fullscreen_state}");
+                        println!("Window {id}: sizing mode changed to {sizing_mode}");
                     }
                     Event::WindowFocusTimestampChanged {
                         id,
@@ -697,7 +697,7 @@ fn print_window(window: &Window) {
         if window.is_floating { "yes" } else { "no" }
     );
 
-    println!("  Fullscreen state: {}", window.fullscreen_state);
+    println!("  Sizing mode: {}", window.sizing_mode);
 
     if let Some(pid) = window.pid {
         println!("  PID: {pid}");

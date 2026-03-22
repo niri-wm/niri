@@ -231,13 +231,13 @@ impl EventStreamStatePart for WindowsState {
                     win.layout = update;
                 }
             }
-            Event::WindowFullscreenStateChanged {
+            Event::WindowSizingModeChanged {
                 id,
-                fullscreen_state,
+                sizing_mode,
             } => {
                 for win in self.windows.values_mut() {
                     if win.id == id {
-                        win.fullscreen_state = fullscreen_state;
+                        win.sizing_mode = sizing_mode;
                         break;
                     }
                 }

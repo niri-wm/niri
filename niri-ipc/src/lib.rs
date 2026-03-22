@@ -1318,12 +1318,12 @@ pub struct Window {
     ///
     /// There can be either one focused window or zero (e.g. when a layer-shell surface has focus).
     pub is_focused: bool,
-    /// The fullscreen state of this window.
+    /// The sizing of this window.
     ///
     /// - `0`: not fullscreen (tiled or floating)
     /// - `1`: maximized
     /// - `2`: fullscreen
-    pub fullscreen_state: u8,
+    pub sizing_mode: u8,
     /// Whether this window is currently floating.
     ///
     /// If the window isn't floating then it is in the tiling layout.
@@ -1637,15 +1637,15 @@ pub enum Event {
         /// Id of the newly focused window, or `None` if no window is now focused.
         id: Option<u64>,
     },
-    /// A window's fullscreen state was changed changed.
-    WindowFullscreenStateChanged {
+    /// A window's sizing mode was changed changed.
+    WindowSizingModeChanged {
         /// Id of the window.
         id: u64,
-        /// Fullscreen state for the window
+        /// Sizing mode for the window
         /// - `0`: not fullscreen (tiled or floating)
         /// - `1`: maximized
         /// - `2`: fullscreen
-        fullscreen_state: u8,
+        sizing_mode: u8,
     },
     /// Window focus timestamp changed.
     ///

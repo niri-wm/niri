@@ -91,7 +91,7 @@ pub struct Match {
     #[knuffel(property)]
     pub is_window_cast_target: Option<bool>,
     #[knuffel(property)]
-    pub fullscreen_state: Option<u8>,
+    pub sizing_mode: Option<u8>,
     #[knuffel(property)]
     pub is_urgent: Option<bool>,
     #[knuffel(property)]

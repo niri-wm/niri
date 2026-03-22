@@ -11,9 +11,10 @@ use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::utils::{Logical, Size};
 use smithay::wayland::compositor::with_states;
 use smithay::wayland::shell::xdg::{
-    SurfaceCachedState, ToplevelSurface, ToplevelState, XdgToplevelSurfaceRoleAttributes,
+    SurfaceCachedState, ToplevelSurface, XdgToplevelSurfaceRoleAttributes,
 };
 
+use crate::layout::LayoutElement;
 use crate::utils::with_toplevel_role;
 
 pub mod mapped;
@@ -172,10 +173,10 @@ impl<'a> WindowRef<'a> {
         }
     }
 
-    pub fn fullscreen_state(self, state: &ToplevelState) -> Option<u8> {
+    pub fn sizing_mode(self) -> Option<u8> {
         match self {
             WindowRef::Unmapped(_) => None,
-            WindowRef::Mapped(mapped) => Some(mapped.fullscreen_state(state)),
+            WindowRef::Mapped(mapped) => Some(mapped.sizing_mode().into()),
         }
     }
 }
@@ -440,22 +441,11 @@ fn window_matches(window: WindowRef, role: &XdgToplevelSurfaceRoleAttributes, m:
         }
     }
 
-    if let Some(m_fullscreen_state) = m.fullscreen_state {
-        // can't seem to find a way to use the toplevel's committed_state...
-
-        // this doesn't update when the window is focused???
-        // let tl_config = role.last_acked.as_ref();
-        // let state;
-        // if let Some(config) = tl_config {
-        //     state = &config.state;
-        // } else {
-        //     state = server_pending;
-        // }
-
-        let Some(window_fullscreen_state) = window.fullscreen_state(server_pending) else {
+    if let Some(m_sizing_mode) = m.sizing_mode {
+        let Some(window_sizing_mode) = window.sizing_mode() else {
             return false;
         };
-        if window_fullscreen_state != m_fullscreen_state {
+        if m_sizing_mode != window_sizing_mode {
             return false;
         }
     }
