@@ -289,7 +289,7 @@ impl Mapped {
             focus_timestamp: None,
         };
 
-        rv.sizing_mode = rv.committed_sizing_mode();
+        rv.sizing_mode = rv.sizing_mode();
         rv.is_pending_maximized = rv.pending_sizing_mode().is_maximized();
 
         rv
@@ -396,30 +396,7 @@ impl Mapped {
     }
 
     pub fn committed_sizing_mode(&self) -> SizingMode {
-        if self.is_windowed_fullscreen {
-            return if self.is_maximized() {
-                SizingMode::Maximized
-            } else {
-                SizingMode::Normal
-            };
-        }
-
-        self.toplevel().with_committed_state(|state| {
-            // This must always be Some() for mapped windows. However, this function is called on
-            // the code path when removing a just-unmapped window in the commit handler, at which
-            // point state is already None.
-            let Some(state) = state else {
-                return SizingMode::Normal;
-            };
-
-            if state.states.contains(xdg_toplevel::State::Fullscreen) {
-                SizingMode::Fullscreen
-            } else if state.states.contains(xdg_toplevel::State::Maximized) {
-                SizingMode::Maximized
-            } else {
-                SizingMode::Normal
-            }
-        })
+        self.sizing_mode
     }
 
     /// Renders a snapshot of the window without popups.
@@ -1116,7 +1093,30 @@ impl LayoutElement for Mapped {
     }
 
     fn sizing_mode(&self) -> SizingMode {
-        self.sizing_mode
+        if self.is_windowed_fullscreen {
+            return if self.is_maximized() {
+                SizingMode::Maximized
+            } else {
+                SizingMode::Normal
+            };
+        }
+
+        self.toplevel().with_committed_state(|state| {
+            // This must always be Some() for mapped windows. However, this function is called on
+            // the code path when removing a just-unmapped window in the commit handler, at which
+            // point state is already None.
+            let Some(state) = state else {
+                return SizingMode::Normal;
+            };
+
+            if state.states.contains(xdg_toplevel::State::Fullscreen) {
+                SizingMode::Fullscreen
+            } else if state.states.contains(xdg_toplevel::State::Maximized) {
+                SizingMode::Maximized
+            } else {
+                SizingMode::Normal
+            }
+        })
     }
 
     fn pending_sizing_mode(&self) -> SizingMode {

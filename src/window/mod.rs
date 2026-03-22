@@ -176,7 +176,7 @@ impl<'a> WindowRef<'a> {
     pub fn sizing_mode(self) -> Option<u8> {
         match self {
             WindowRef::Unmapped(_) => None,
-            WindowRef::Mapped(mapped) => Some(mapped.sizing_mode().into()),
+            WindowRef::Mapped(mapped) => Some(mapped.committed_sizing_mode().into()),
         }
     }
 }
