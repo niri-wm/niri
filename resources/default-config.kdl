@@ -61,6 +61,30 @@ input {
         // middle-emulation
     }
 
+    // touch {
+    //     // off
+    //     // natural-scroll
+    //     // map-to-output "eDP-1"
+    //     // gestures {
+    //     //     workspace-switch {
+    //     //         // off
+    //     //         finger-count 3
+    //     //         sensitivity 0.4
+    //     //     }
+    //     //     view-scroll {
+    //     //         // off
+    //     //         finger-count 3
+    //     //         sensitivity 0.4
+    //     //     }
+    //     //     overview-toggle {
+    //     //         // off
+    //     //         finger-count 4
+    //     //         sensitivity 0.4
+    //     //     }
+    //     //     recognition-threshold 16.0
+    //     // }
+    // }
+
     // Uncomment this to make the mouse warp to the center of newly focused windows.
     // warp-mouse-to-focus
 

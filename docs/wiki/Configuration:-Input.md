@@ -99,6 +99,28 @@ input {
         map-to-output "eDP-1"
         // natural-scroll
         // calibration-matrix 1.0 0.0 0.0 0.0 1.0 0.0
+
+        gestures {
+            workspace-switch {
+                // off
+                // finger-count 3
+                // sensitivity 0.4
+                // natural-scroll
+            }
+            view-scroll {
+                // off
+                // finger-count 3
+                // sensitivity 0.4
+                // natural-scroll
+            }
+            overview-toggle {
+                // off
+                // finger-count 4
+                // sensitivity 0.4
+                // natural-scroll
+            }
+            // recognition-threshold 16.0
+        }
     }
 
     // disable-power-key-handling
@@ -268,6 +290,23 @@ Settings specific to `tablet` and `touch`:
 Settings specific to `touch`:
 
 - `natural-scroll`: <sup>Since: next</sup> if set, inverts the scrolling direction for touchscreen gestures (workspace switching and view scrolling).
+- `gestures {}`: <sup>Since: next</sup> configure touchscreen multi-finger gestures:
+  - `workspace-switch {}`: 3-finger vertical swipe to switch workspaces.
+    - `off`: disable this gesture.
+    - `finger-count <int>`: number of fingers required (default: 3).
+    - `sensitivity <float>`: speed multiplier (default: 0.4).
+    - `natural-scroll`: if set, inverts direction for this gesture (inherits from touch-level `natural-scroll` if not set).
+  - `view-scroll {}`: 3-finger horizontal swipe to scroll between columns.
+    - `off`: disable this gesture.
+    - `finger-count <int>`: number of fingers required (default: 3).
+    - `sensitivity <float>`: speed multiplier (default: 0.4).
+    - `natural-scroll`: if set, inverts direction for this gesture (inherits from touch-level `natural-scroll` if not set).
+  - `overview-toggle {}`: 4-finger vertical swipe to toggle the overview.
+    - `off`: disable this gesture.
+    - `finger-count <int>`: number of fingers required (default: 4).
+    - `sensitivity <float>`: speed multiplier (default: 0.4).
+    - `natural-scroll`: if set, inverts direction for this gesture (inherits from touch-level `natural-scroll` if not set).
+  - `recognition-threshold <float>`: distance in pixels before a gesture direction is locked (default: 16.0).
 
 Tablets and touchscreens are absolute pointing devices that can be mapped to a specific output like so:
 
