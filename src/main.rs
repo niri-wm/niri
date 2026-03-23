@@ -169,6 +169,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Create the compositor.
     let display = Display::new().unwrap();
+
+    // Increase the buffer size so that it's harder to crash a frozen client with a 1000 Hz mouse.
+    display.handle().set_default_max_buffer_size(1024 * 1024);
+
     let mut state = State::new(
         config,
         event_loop.handle(),

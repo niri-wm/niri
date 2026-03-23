@@ -979,6 +979,32 @@ impl Tty {
                 } => {
                     removed.push(crtc);
                 }
+                // Emitted when the list of connector modes changes at runtime.
+                //
+                // Some devices, notably USB-C docks with DP-MST/alt-mode, report Connected before
+                // the EDID has been read, with an empty mode list. Then, at a later point, the
+                // modes will be populated, at which point we'll get this Changed event.
+                DrmScanEvent::Changed {
+                    connector,
+                    crtc: Some(crtc),
+                } => {
+                    let connector_name = format_connector_name(&connector);
+                    let name = make_output_name(&device.drm, connector.handle(), connector_name);
+                    debug!(
+                        "connector changed: {} \"{}\"",
+                        &name.connector,
+                        name.format_make_model_serial(),
+                    );
+
+                    if !device.known_crtcs.contains_key(&crtc) {
+                        // I guess this can happen if the connector initially wasn't mapped to a
+                        // CRTC but then got mapped before being changed.
+                        warn!("changed connector missing from known crtcs");
+                    }
+
+                    // We don't actually need to do anything here; on_output_config_changed() will
+                    // take care of picking a new mode if needed.
+                }
                 _ => (),
             }
         }
