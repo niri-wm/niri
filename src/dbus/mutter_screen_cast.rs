@@ -286,6 +286,9 @@ impl Session {
     }
 
     /// Creates a [`Stream`] that records a monitor.
+    ///
+    /// Mutter replaces `connector=""` with the primary monitor and gnome-remote-desktop
+    /// utilizes it.
     async fn record_monitor(
         &mut self,
         #[zbus(object_server)] server: &ObjectServer,
@@ -293,6 +296,15 @@ impl Session {
         properties: RecordMonitorProperties,
     ) -> fdo::Result<OwnedObjectPath> {
         debug!(connector, ?properties, "record_monitor");
+
+        let connector = if connector.is_empty() {
+            let new_connector = "DP-2";
+            warn!("Replacing connector={connector:?} with connector={new_connector:?} for gnome-remote-desktop");
+            new_connector
+            // FIXME: HACK: remove this!!
+        } else {
+            connector
+        };
 
         let output = {
             let ipc_outputs = self.ipc_outputs.lock().unwrap();
@@ -510,7 +522,7 @@ pub struct StreamParameters {
     /// Unique identifier used to map the stream to a corresponding region on an EI
     /// absolute device (remote desktop).
     ///
-    /// Currently output names (like eDP-1) are used.
+    /// Currently output names (like `eDP-1`) are used.
     #[zvariant(rename = "mapping-id")]
     pub mapping_id: Option<String>,
 }
