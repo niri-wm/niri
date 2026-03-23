@@ -460,6 +460,7 @@ impl Tty {
 
         let (primary_node, primary_render_node) = primary_node_from_config(&config.borrow())
             .ok_or(())
+            .or_else(|()| primary_node_from_active_outputs().ok_or(()))
             .or_else(|()| {
                 let primary_gpu_path = udev::primary_gpu(&seat_name)
                     .context("error getting the primary GPU")?
@@ -2738,6 +2739,69 @@ fn primary_node_from_config(config: &Config) -> Option<(DrmNode, DrmNode)> {
     debug!("attempting to use render node from config: {path:?}");
 
     primary_node_from_render_node(path)
+}
+
+/// Scans `/sys/class/drm/` for connected external connectors and returns the GPU node that owns
+/// one. On hybrid GPU laptops where external ports are wired to the dGPU but `boot_vga` points to
+/// the iGPU, this avoids the cross-GPU copy that causes severe lag on external monitors.
+fn primary_node_from_active_outputs() -> Option<(DrmNode, DrmNode)> {
+    let entries = match std::fs::read_dir("/sys/class/drm") {
+        Ok(e) => e,
+        Err(err) => {
+            debug!("error reading /sys/class/drm for output-based GPU detection: {err:?}");
+            return None;
+        }
+    };
+
+    // Collect and sort for deterministic ordering across boots.
+    let mut connector_entries: Vec<_> = entries.flatten().collect();
+    connector_entries.sort_by_key(|e| e.file_name());
+
+    for entry in connector_entries {
+        let name = entry.file_name();
+        let name_str = name.to_str().unwrap_or("");
+
+        // Connector entries look like "cardN-Type-N"; skip bare card/render node entries.
+        let Some((card_name, connector)) = name_str.split_once('-') else {
+            continue;
+        };
+
+        // Skip internal laptop panels.
+        if is_laptop_panel(connector) {
+            continue;
+        }
+
+        let Ok(status) = std::fs::read_to_string(entry.path().join("status")) else {
+            continue;
+        };
+        if status.trim() != "connected" {
+            continue;
+        }
+
+        let dev_path = Path::new("/dev/dri").join(card_name);
+
+        let node = match DrmNode::from_path(&dev_path) {
+            Ok(n) => n,
+            Err(err) => {
+                debug!("error opening DRM node {dev_path:?}: {err:?}");
+                continue;
+            }
+        };
+
+        let Some(Ok(render_node)) = node.node_with_type(NodeType::Render) else {
+            debug!("could not get render node for {dev_path:?}, skipping");
+            continue;
+        };
+
+        info!(
+            "auto-selected render node {:?} based on connected external output {name_str:?}; \
+             set render-drm-device in the debug config section to override",
+            render_node.dev_path()
+        );
+        return Some((node, render_node));
+    }
+
+    None
 }
 
 fn ignored_nodes_from_config(config: &Config) -> HashSet<DrmNode> {
