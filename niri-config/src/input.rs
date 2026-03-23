@@ -176,7 +176,7 @@ pub struct ScrollFactor {
 
 impl ScrollFactor {
     pub fn h_v_factors(&self) -> (f64, f64) {
-        let base_value = self.base.map(|f| f.0).unwrap_or(1.0);
+        let base_value = self.base.map(|f| f.0).unwrap_or(0.4);
         let h = self.horizontal.map(|f| f.0).unwrap_or(base_value);
         let v = self.vertical.map(|f| f.0).unwrap_or(base_value);
         (h, v)
@@ -377,6 +377,131 @@ pub struct Touch {
     pub calibration_matrix: Option<Vec<f32>>,
     #[knuffel(child, unwrap(argument))]
     pub map_to_output: Option<String>,
+    #[knuffel(child)]
+    pub gestures: Option<TouchGesturesConfig>,
+}
+
+impl Touch {
+    pub fn gesture_threshold(&self) -> f64 {
+        self.gestures
+            .as_ref()
+            .and_then(|g| g.recognition_threshold)
+            .unwrap_or(16.0)
+    }
+
+    pub fn workspace_switch_enabled(&self) -> bool {
+        self.gestures
+            .as_ref()
+            .and_then(|g| g.workspace_switch.as_ref())
+            .map_or(true, |a| !a.off)
+    }
+
+    pub fn workspace_switch_fingers(&self) -> usize {
+        self.gestures
+            .as_ref()
+            .and_then(|g| g.workspace_switch.as_ref())
+            .and_then(|a| a.finger_count)
+            .unwrap_or(3) as usize
+    }
+
+    pub fn workspace_switch_sensitivity(&self) -> f64 {
+        self.gestures
+            .as_ref()
+            .and_then(|g| g.workspace_switch.as_ref())
+            .and_then(|a| a.sensitivity)
+            .unwrap_or(0.4)
+    }
+
+    pub fn workspace_switch_natural_scroll(&self) -> bool {
+        self.gestures
+            .as_ref()
+            .and_then(|g| g.workspace_switch.as_ref())
+            .map_or(self.natural_scroll, |a| a.natural_scroll || self.natural_scroll)
+    }
+
+    pub fn view_scroll_enabled(&self) -> bool {
+        self.gestures
+            .as_ref()
+            .and_then(|g| g.view_scroll.as_ref())
+            .map_or(true, |a| !a.off)
+    }
+
+    pub fn view_scroll_fingers(&self) -> usize {
+        self.gestures
+            .as_ref()
+            .and_then(|g| g.view_scroll.as_ref())
+            .and_then(|a| a.finger_count)
+            .unwrap_or(3) as usize
+    }
+
+    pub fn view_scroll_sensitivity(&self) -> f64 {
+        self.gestures
+            .as_ref()
+            .and_then(|g| g.view_scroll.as_ref())
+            .and_then(|a| a.sensitivity)
+            .unwrap_or(0.4)
+    }
+
+    pub fn view_scroll_natural_scroll(&self) -> bool {
+        self.gestures
+            .as_ref()
+            .and_then(|g| g.view_scroll.as_ref())
+            .map_or(self.natural_scroll, |a| a.natural_scroll || self.natural_scroll)
+    }
+
+    pub fn overview_toggle_enabled(&self) -> bool {
+        self.gestures
+            .as_ref()
+            .and_then(|g| g.overview_toggle.as_ref())
+            .map_or(true, |a| !a.off)
+    }
+
+    pub fn overview_toggle_fingers(&self) -> usize {
+        self.gestures
+            .as_ref()
+            .and_then(|g| g.overview_toggle.as_ref())
+            .and_then(|a| a.finger_count)
+            .unwrap_or(4) as usize
+    }
+
+    pub fn overview_toggle_sensitivity(&self) -> f64 {
+        self.gestures
+            .as_ref()
+            .and_then(|g| g.overview_toggle.as_ref())
+            .and_then(|a| a.sensitivity)
+            .unwrap_or(0.4)
+    }
+
+    pub fn overview_toggle_natural_scroll(&self) -> bool {
+        self.gestures
+            .as_ref()
+            .and_then(|g| g.overview_toggle.as_ref())
+            .map_or(self.natural_scroll, |a| a.natural_scroll || self.natural_scroll)
+    }
+}
+
+#[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]
+pub struct TouchGesturesConfig {
+    #[knuffel(child)]
+    pub workspace_switch: Option<TouchGestureActionConfig>,
+    #[knuffel(child)]
+    pub view_scroll: Option<TouchGestureActionConfig>,
+    #[knuffel(child)]
+    pub overview_toggle: Option<TouchGestureActionConfig>,
+    #[knuffel(child, unwrap(argument))]
+    pub recognition_threshold: Option<f64>,
+}
+
+#[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]
+pub struct TouchGestureActionConfig {
+    #[knuffel(child)]
+    pub off: bool,
+    #[knuffel(child, unwrap(argument))]
+    pub finger_count: Option<u8>,
+    #[knuffel(child, unwrap(argument))]
+    pub sensitivity: Option<f64>,
+    #[knuffel(child)]
+    pub natural_scroll: bool,
 }
 
 #[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
