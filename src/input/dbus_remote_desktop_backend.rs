@@ -150,6 +150,12 @@ fn tuple_axis<T>(tuple: (T, T), axis: Axis) -> T {
 
 impl PointerAxisEvent<RdInputBackend> for RdEventAdapter<RdPointerAxisEvent> {
     // TODO: test on both continuous and wheel
+
+    // FIXME: contradiction:
+    // - `fn amount` documentation says that this is in pixels
+    // - EI protocol says that a single scroll notch is 1.0
+    // - Niri converts v120 to delta with (x/120*15)
+
     fn amount(&self, axis: Axis) -> Option<f64> {
         Some(tuple_axis(self.inner.delta?, axis))
     }
@@ -245,7 +251,7 @@ pub struct RdTouchEvent<Extra> {
 pub struct UnitIntervalPointKind;
 
 pub struct RdAbsolutePosition {
-    /// Absolute position in the global bounding rectangle.
+    /// Position in the global bounding rectangle.
     pub pos: Point<f64, UnitIntervalPointKind>,
 }
 
@@ -265,7 +271,6 @@ impl AbsolutePositionEvent<RdInputBackend> for RdEventAdapter<RdTouchEvent<RdAbs
         self.inner.extra.pos.y
     }
 
-    // Position in global bounding rectangle
     fn x_transformed(&self, width: i32) -> f64 {
         self.inner.extra.pos.x * width as f64
     }

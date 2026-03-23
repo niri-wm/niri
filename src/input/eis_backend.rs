@@ -9,7 +9,7 @@ use smithay::backend::input::{
     UnusedEvent,
 };
 use smithay::output::Output;
-use smithay::utils::{Logical, Size};
+use smithay::utils::{Logical, Rectangle};
 
 use crate::input::backend_ext::NiriInputDevice;
 use crate::niri::State;
@@ -243,29 +243,30 @@ impl PointerMotionEvent<EisInputBackend> for EisEventAdapter<reis::request::Poin
 }
 
 pub struct AbsolutePositionEventExtra {
-    /// Extent of the global bounding rectangle (i.e. bounds of the raw X and Y coordinates)
-    pub global_extent: Size<f64, Logical>,
+    /// Rectangle that covers all [EI regions](reis::event::Region) advertised to the EI client.
+    pub regions_extent: Rectangle<f64, Logical>,
 }
 
 impl AbsolutePositionEvent<EisInputBackend>
     for EisEventAdapter<reis::request::PointerMotionAbsolute, AbsolutePositionEventExtra>
 {
-    // Basically unused
     fn x(&self) -> f64 {
-        (self.inner.dx_absolute as f64) / self.extra.global_extent.w
+        // Convert to unit interval as required by Niri
+        (self.inner.dx_absolute as f64 - self.extra.regions_extent.loc.x)
+            / self.extra.regions_extent.size.w
     }
 
     fn y(&self) -> f64 {
-        (self.inner.dy_absolute as f64) / self.extra.global_extent.h
+        (self.inner.dy_absolute as f64 - self.extra.regions_extent.loc.y)
+            / self.extra.regions_extent.size.h
     }
 
-    // Position in global bounding rectangle
     fn x_transformed(&self, width: i32) -> f64 {
-        (self.inner.dx_absolute as f64) / self.extra.global_extent.w * width as f64
+        self.x() * width as f64
     }
 
     fn y_transformed(&self, height: i32) -> f64 {
-        (self.inner.dy_absolute as f64) / self.extra.global_extent.h * height as f64
+        self.y() * height as f64
     }
 }
 
@@ -301,22 +302,21 @@ macro_rules! impl_touch_abspos {
     ($($item_name:path),+$(,)?) => {
         $(
         impl AbsolutePositionEvent<EisInputBackend> for EisEventAdapter<$item_name, AbsolutePositionEventExtra> {
-            // Basically unused
             fn x(&self) -> f64 {
-                (self.inner.x as f64) / self.extra.global_extent.w
+                // Convert to unit interval as required by Niri
+                (self.inner.x as f64 - self.extra.regions_extent.loc.x) / self.extra.regions_extent.size.w
             }
 
             fn y(&self) -> f64 {
-                (self.inner.y as f64) / self.extra.global_extent.h
+                (self.inner.y as f64 - self.extra.regions_extent.loc.y) / self.extra.regions_extent.size.h
             }
 
-            // Position in global bounding rectangle
             fn x_transformed(&self, width: i32) -> f64 {
-                (self.inner.x as f64) / self.extra.global_extent.w * width as f64
+                self.x() * width as f64
             }
 
             fn y_transformed(&self, height: i32) -> f64 {
-                (self.inner.y as f64) / self.extra.global_extent.h * height as f64
+                self.y() * height as f64
             }
         }
         )+

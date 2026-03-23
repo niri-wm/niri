@@ -299,11 +299,13 @@ impl Session {
             ipc_outputs.values().find(|o| o.name == connector).cloned()
         };
         let Some(output) = output else {
-            return Err(fdo::Error::Failed("no such monitor".to_owned()));
+            return Err(fdo::Error::Failed(format!(
+                "No such monitor with connector/name: {connector}"
+            )));
         };
 
         if output.logical.is_none() {
-            return Err(fdo::Error::Failed("monitor is disabled".to_owned()));
+            return Err(fdo::Error::Failed("Monitor is disabled".to_owned()));
         }
 
         let target = StreamTarget::Output(output);
@@ -544,6 +546,15 @@ impl Stream {
                 }
             }
         }
+    }
+
+    /// Starts this stream of an already started session.
+    #[zbus(name = "Start")]
+    async fn start_dbus(&self, #[zbus(signal_context)] ctxt: SignalEmitter<'_>) -> fdo::Result<()> {
+        debug!("start");
+
+        self.start(ctxt.to_owned());
+        Ok(())
     }
 }
 

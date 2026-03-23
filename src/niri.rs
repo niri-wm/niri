@@ -1945,6 +1945,9 @@ impl State {
         #[cfg(feature = "dbus")]
         self.niri.on_ipc_outputs_changed();
 
+        #[cfg(feature = "xdp-gnome-remote-desktop")]
+        self.on_ipc_outputs_changed_remote_desktop();
+
         let new_config = self.backend.ipc_outputs().lock().unwrap().clone();
         self.niri.output_management_state.notify_changes(new_config);
     }
