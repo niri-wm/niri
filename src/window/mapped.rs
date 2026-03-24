@@ -409,6 +409,7 @@ impl Mapped {
             contents,
             blocked_out_contents,
             block_out_from: self.rules().block_out_from,
+            hide_from: self.rules().hide_from,
             size,
             texture: Default::default(),
             blocked_out_texture: Default::default(),
@@ -620,6 +621,10 @@ impl LayoutElement for Mapped {
         target: RenderTarget,
         push: &mut dyn FnMut(LayoutElementRenderElement<R>),
     ) {
+        if target.should_hide(self.rules.hide_from) {
+            return;
+        }
+
         if target.should_block_out(self.rules.block_out_from) {
             let mut buffer = self.block_out_buffer.borrow_mut();
             buffer.resize(self.window.geometry().size.to_f64());
@@ -651,6 +656,10 @@ impl LayoutElement for Mapped {
         target: RenderTarget,
         push: &mut dyn FnMut(LayoutElementRenderElement<R>),
     ) {
+        if target.should_hide(self.rules.hide_from) {
+            return;
+        }
+
         if target.should_block_out(self.rules.block_out_from) {
             return;
         }

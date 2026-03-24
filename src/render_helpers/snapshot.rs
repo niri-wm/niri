@@ -24,6 +24,9 @@ pub struct RenderSnapshot<C, B> {
     /// Where the contents were blocked out from at the time of the snapshot.
     pub block_out_from: Option<BlockOutFrom>,
 
+    /// Where the contents were hidden from at the time of the snapshot.
+    pub hide_from: Option<BlockOutFrom>,
+
     /// Visual size of the element at the point of the snapshot.
     pub size: Size<f64, Logical>,
 
@@ -47,6 +50,10 @@ where
         scale: Scale<f64>,
         target: RenderTarget,
     ) -> Option<&(GlesTexture, Rectangle<i32, Physical>)> {
+        if target.should_hide(self.hide_from) {
+            return None;
+        }
+
         if target.should_block_out(self.block_out_from) {
             self.blocked_out_texture.get_or_init(|| {
                 let _span = tracy_client::span!("RenderSnapshot::texture");

@@ -93,6 +93,22 @@ layer-rule {
 }
 ```
 
+#### `hide-from`
+
+<sup>Since: 25.11</sup>
+
+Hide layer surfaces from xdg-desktop-portal screencasts or all screen captures.
+Unlike `block-out-from`, this omits the surface from the captured image rather than replacing it with a black rectangle.
+
+```kdl
+// Hide mako notifications from screencasts.
+layer-rule {
+    match namespace="^notifications$"
+
+    hide-from "screencast"
+}
+```
+
 #### `opacity`
 
 Set the opacity of the surface.

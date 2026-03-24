@@ -44,6 +44,8 @@ layer-rule {
 
 Check [the corresponding wiki section](./Configuration:-Window-Rules.md#block-out-from) for more details and examples.
 
+If you prefer to omit windows from captures completely (without a black placeholder), use the `hide-from` window/layer rule instead.
+
 ### Dynamic screencast target
 
 <sup>Since: 25.05</sup>
