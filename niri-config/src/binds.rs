@@ -38,6 +38,7 @@ pub struct Key {
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub enum Trigger {
     Keysym(Keysym),
+    Keycode(u32),
     MouseLeft,
     MouseRight,
     MouseMiddle,
@@ -1012,6 +1013,13 @@ impl FromStr for Key {
             Trigger::TouchpadScrollLeft
         } else if key.eq_ignore_ascii_case("TouchpadScrollRight") {
             Trigger::TouchpadScrollRight
+        } else if key.to_ascii_lowercase().starts_with("code:") {
+            // Parse keycode: "code:42" or "Code:42"
+            let code_str = key.trim_start_matches(|c: char| !c.is_numeric());
+            match code_str.parse::<u32>() {
+                Ok(code) => Trigger::Keycode(code),
+                Err(_) => return Err(miette!("invalid keycode: {code_str}")),
+            }
         } else {
             let mut keysym = keysym_from_name(key, KEYSYM_CASE_INSENSITIVE);
             // The keyboard event handling code can receive either
@@ -1111,5 +1119,54 @@ mod tests {
                 modifiers: Modifiers::ISO_LEVEL5_SHIFT
             },
         );
+    }
+
+    #[test]
+    fn parse_keycode() {
+        assert_eq!(
+            "code:42".parse::<Key>().unwrap(),
+            Key {
+                trigger: Trigger::Keycode(42),
+                modifiers: Modifiers::empty(),
+            },
+        );
+        assert_eq!(
+            "Code:42".parse::<Key>().unwrap(),
+            Key {
+                trigger: Trigger::Keycode(42),
+                modifiers: Modifiers::empty(),
+            },
+        );
+        assert_eq!(
+            "CODE:42".parse::<Key>().unwrap(),
+            Key {
+                trigger: Trigger::Keycode(42),
+                modifiers: Modifiers::empty(),
+            },
+        );
+    }
+
+    #[test]
+    fn parse_keycode_with_modifiers() {
+        assert_eq!(
+            "Mod+code:42".parse::<Key>().unwrap(),
+            Key {
+                trigger: Trigger::Keycode(42),
+                modifiers: Modifiers::COMPOSITOR,
+            },
+        );
+        assert_eq!(
+            "Ctrl+Shift+code:100".parse::<Key>().unwrap(),
+            Key {
+                trigger: Trigger::Keycode(100),
+                modifiers: Modifiers::CTRL | Modifiers::SHIFT,
+            },
+        );
+    }
+
+    #[test]
+    fn parse_keycode_invalid() {
+        assert!("code:abc".parse::<Key>().is_err());
+        assert!("code:".parse::<Key>().is_err());
     }
 }
