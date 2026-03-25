@@ -1707,6 +1707,7 @@ mod tests {
                     open_fullscreen: Some(
                         false,
                     ),
+                    open_windowed_fullscreen: None,
                     open_floating: Some(
                         false,
                     ),

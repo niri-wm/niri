@@ -195,6 +195,7 @@ impl CompositorHandler for State {
                     // The mapped pre-commit hook deals with dma-bufs on its own.
                     self.remove_default_dmabuf_pre_commit_hook(surface);
                     let hook = add_mapped_toplevel_pre_commit_hook(toplevel);
+                    let open_windowed_fullscreen = rules.open_windowed_fullscreen == Some(true);
                     let mapped = Mapped::new(window, rules, hook);
                     let window = mapped.window.clone();
 
@@ -229,6 +230,11 @@ impl CompositorHandler for State {
                         }
                     } else {
                         error!("layout is missing the window that we just added");
+                    }
+
+                    // Apply windowed fullscreen if the rule says so.
+                    if open_windowed_fullscreen {
+                        self.niri.layout.toggle_windowed_fullscreen(&window);
                     }
 
                     if let Some(output) = output {
