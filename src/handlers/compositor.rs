@@ -196,7 +196,11 @@ impl CompositorHandler for State {
                     self.remove_default_dmabuf_pre_commit_hook(surface);
                     let hook = add_mapped_toplevel_pre_commit_hook(toplevel);
                     let open_windowed_fullscreen = rules.open_windowed_fullscreen == Some(true);
-                    let mapped = Mapped::new(window, rules, hook);
+                    let mut mapped = Mapped::new(window, rules, hook);
+                    if open_windowed_fullscreen {
+                        mapped.request_windowed_fullscreen(true);
+                    }
+
                     let window = mapped.window.clone();
 
                     let target = if let Some(p) = &parent {
@@ -230,11 +234,6 @@ impl CompositorHandler for State {
                         }
                     } else {
                         error!("layout is missing the window that we just added");
-                    }
-
-                    // Apply windowed fullscreen if the rule says so.
-                    if open_windowed_fullscreen {
-                        self.niri.layout.toggle_windowed_fullscreen(&window);
                     }
 
                     if let Some(output) = output {
