@@ -129,13 +129,10 @@ impl<S: knuffel::traits::ErrorSpan> knuffel::Decode<S> for SwitchAction {
             }
         }
 
-        if action.is_none() {
-            ctx.emit_error(DecodeError::missing(node, "expected `spawn` or `spawn-sh`"));
+        match action {
+            Some(action) => Ok(SwitchAction { action }),
+            None => Err(DecodeError::missing(node, "expected `spawn` or `spawn-sh`")),
         }
-
-        Ok(SwitchAction {
-            action: action.unwrap_or(Action::Spawn(vec![])),
-        })
     }
 }
 
