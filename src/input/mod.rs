@@ -4478,15 +4478,7 @@ fn find_configured_switch_action(
         (Switch::TabletMode, SwitchState::On) => &bindings.tablet_mode_on,
         _ => unreachable!(),
     };
-    switch_action.as_ref().map(|switch_action| {
-        if let Some(command) = &switch_action.spawn_sh {
-            Action::SpawnSh(command.clone())
-        } else if let Some(args) = &switch_action.spawn {
-            Action::Spawn(args.clone())
-        } else {
-            unreachable!("SwitchAction must have spawn or spawn-sh set")
-        }
-    })
+    switch_action.as_ref().map(|sa| sa.action.clone())
 }
 
 fn modifiers_from_state(mods: ModifiersState) -> Modifiers {

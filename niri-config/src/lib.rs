@@ -2158,26 +2158,24 @@ mod tests {
                 lid_close: None,
                 tablet_mode_on: Some(
                     SwitchAction {
-                        spawn: Some(
+                        action: Spawn(
                             [
                                 "bash",
                                 "-c",
                                 "gsettings set org.gnome.desktop.a11y.applications screen-keyboard-enabled true",
                             ],
                         ),
-                        spawn_sh: None,
                     },
                 ),
                 tablet_mode_off: Some(
                     SwitchAction {
-                        spawn: Some(
+                        action: Spawn(
                             [
                                 "bash",
                                 "-c",
                                 "gsettings set org.gnome.desktop.a11y.applications screen-keyboard-enabled false",
                             ],
                         ),
-                        spawn_sh: None,
                     },
                 ),
             },
@@ -2428,20 +2426,16 @@ mod tests {
             config.switch_events,
             SwitchBinds {
                 lid_open: Some(SwitchAction {
-                    spawn: Some(vec!["notify-send".to_owned(), "lid open".to_owned()]),
-                    spawn_sh: None,
+                    action: Action::Spawn(vec!["notify-send".to_owned(), "lid open".to_owned()]),
                 }),
                 lid_close: Some(SwitchAction {
-                    spawn: Some(vec!["notify-send".to_owned(), "lid close".to_owned()]),
-                    spawn_sh: None,
+                    action: Action::Spawn(vec!["notify-send".to_owned(), "lid close".to_owned()]),
                 }),
                 tablet_mode_on: Some(SwitchAction {
-                    spawn: Some(vec!["notify-send".to_owned(), "tablet on".to_owned()]),
-                    spawn_sh: None,
+                    action: Action::Spawn(vec!["notify-send".to_owned(), "tablet on".to_owned()]),
                 }),
                 tablet_mode_off: Some(SwitchAction {
-                    spawn: Some(vec!["notify-send".to_owned(), "tablet off".to_owned()]),
-                    spawn_sh: None,
+                    action: Action::Spawn(vec!["notify-send".to_owned(), "tablet off".to_owned()]),
                 }),
             }
         );
@@ -2463,20 +2457,16 @@ mod tests {
             config.switch_events,
             SwitchBinds {
                 lid_open: Some(SwitchAction {
-                    spawn: None,
-                    spawn_sh: Some("echo open".to_owned()),
+                    action: Action::SpawnSh("echo open".to_owned()),
                 }),
                 lid_close: Some(SwitchAction {
-                    spawn: None,
-                    spawn_sh: Some("echo close".to_owned()),
+                    action: Action::SpawnSh("echo close".to_owned()),
                 }),
                 tablet_mode_on: Some(SwitchAction {
-                    spawn: None,
-                    spawn_sh: Some("echo tablet on".to_owned()),
+                    action: Action::SpawnSh("echo tablet on".to_owned()),
                 }),
                 tablet_mode_off: Some(SwitchAction {
-                    spawn: None,
-                    spawn_sh: Some("echo tablet off".to_owned()),
+                    action: Action::SpawnSh("echo tablet off".to_owned()),
                 }),
             }
         );

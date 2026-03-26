@@ -13,7 +13,7 @@ use smithay::input::keyboard::xkb::{keysym_from_name, KEYSYM_CASE_INSENSITIVE, K
 use smithay::input::keyboard::Keysym;
 
 use crate::recent_windows::{MruDirection, MruFilter, MruScope};
-use crate::utils::{expect_only_children, parse_arg_node, MergeWith};
+use crate::utils::{expect_only_children, MergeWith};
 
 #[derive(Debug, Default, PartialEq)]
 pub struct Binds(pub Vec<Bind>);
@@ -92,8 +92,7 @@ impl MergeWith<SwitchBinds> for SwitchBinds {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct SwitchAction {
-    pub spawn: Option<Vec<String>>,
-    pub spawn_sh: Option<String>,
+    pub action: Action,
 }
 
 impl<S: knuffel::traits::ErrorSpan> knuffel::Decode<S> for SwitchAction {
@@ -103,58 +102,40 @@ impl<S: knuffel::traits::ErrorSpan> knuffel::Decode<S> for SwitchAction {
     ) -> Result<Self, DecodeError<S>> {
         expect_only_children(node, ctx);
 
-        let mut spawn: Option<Vec<String>> = None;
-        let mut spawn_sh: Option<String> = None;
+        let mut action: Option<Action> = None;
 
         for child in node.children() {
-            match &**child.node_name {
-                "spawn" => {
-                    if spawn.is_some() || spawn_sh.is_some() {
+            if action.is_some() {
+                ctx.emit_error(DecodeError::unexpected(
+                    child,
+                    "node",
+                    "only one action is allowed per switch event",
+                ));
+                continue;
+            }
+            match Action::decode_node(child, ctx) {
+                Ok(a) => {
+                    if matches!(a, Action::Spawn(_) | Action::SpawnSh(_)) {
+                        action = Some(a);
+                    } else {
                         ctx.emit_error(DecodeError::unexpected(
                             child,
                             "node",
-                            "only one of `spawn` or `spawn-sh` is allowed",
+                            "only `spawn` or `spawn-sh` are supported for switch events",
                         ));
-                        continue;
-                    }
-                    let mut args: Vec<String> = Vec::new();
-                    for arg in child.arguments.iter() {
-                        match knuffel::traits::DecodeScalar::decode(arg, ctx) {
-                            Ok(v) => args.push(v),
-                            Err(e) => ctx.emit_error(e),
-                        }
-                    }
-                    spawn = Some(args);
-                }
-                "spawn-sh" => {
-                    if spawn_sh.is_some() || spawn.is_some() {
-                        ctx.emit_error(DecodeError::unexpected(
-                            child,
-                            "node",
-                            "only one of `spawn` or `spawn-sh` is allowed",
-                        ));
-                        continue;
-                    }
-                    match parse_arg_node("command", child, ctx) {
-                        Ok(cmd) => spawn_sh = Some(cmd),
-                        Err(e) => ctx.emit_error(e),
                     }
                 }
-                name => {
-                    ctx.emit_error(DecodeError::unexpected(
-                        child,
-                        "node",
-                        format!("unexpected node `{}`", name.escape_default()),
-                    ));
-                }
+                Err(e) => ctx.emit_error(e),
             }
         }
 
-        if spawn.is_none() && spawn_sh.is_none() {
+        if action.is_none() {
             ctx.emit_error(DecodeError::missing(node, "expected `spawn` or `spawn-sh`"));
         }
 
-        Ok(SwitchAction { spawn, spawn_sh })
+        Ok(SwitchAction {
+            action: action.unwrap_or(Action::Spawn(vec![])),
+        })
     }
 }
 
