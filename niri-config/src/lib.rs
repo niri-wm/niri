@@ -1429,6 +1429,7 @@ mod tests {
                 center_focused_column: OnOverflow,
                 always_center_single_column: false,
                 empty_workspace_above_first: false,
+                global_workspace_indices: false,
                 default_column_display: Tabbed,
                 gaps: 8.0,
                 struts: Struts {

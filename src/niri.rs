@@ -136,7 +136,7 @@ use crate::ipc::server::IpcServer;
 use crate::layer::mapped::LayerSurfaceRenderElement;
 use crate::layer::MappedLayer;
 use crate::layout::tile::TileRenderElement;
-use crate::layout::workspace::{Workspace, WorkspaceId};
+use crate::layout::workspace::Workspace;
 use crate::layout::{
     HitType, Layout, LayoutElement as _, LayoutElementRenderElement, MonitorRenderElement,
 };
@@ -3499,22 +3499,11 @@ impl Niri {
     }
 
     pub fn find_output_and_workspace_index(
-        &self,
+        &mut self,
         workspace_reference: WorkspaceReference,
     ) -> Option<(Option<Output>, usize)> {
-        let (target_workspace_index, target_workspace) = match workspace_reference {
-            WorkspaceReference::Index(index) => {
-                return Some((None, index.saturating_sub(1) as usize));
-            }
-            WorkspaceReference::Name(name) => self.layout.find_workspace_by_name(&name)?,
-            WorkspaceReference::Id(id) => {
-                let id = WorkspaceId::specific(id);
-                self.layout.find_workspace_by_id(id)?
-            }
-        };
-
-        let target_output = target_workspace.current_output();
-        Some((target_output.cloned(), target_workspace_index))
+        self.layout
+            .find_output_and_workspace_index(workspace_reference)
     }
 
     pub fn find_window_by_id(&self, id: MappedId) -> Option<Window> {
