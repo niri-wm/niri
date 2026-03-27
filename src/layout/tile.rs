@@ -54,7 +54,7 @@ pub struct Tile<W: LayoutElement> {
     /// right away, to avoid black backdrop flicker before the window has had a chance to resize.
     sizing_mode: SizingMode,
 
-    /// The black backdrop for fullscreen windows.
+    /// The backdrop for fullscreen windows.
     fullscreen_backdrop: SolidColorBuffer,
 
     /// Whether the tile should float upon unfullscreening.
@@ -184,6 +184,7 @@ impl<W: LayoutElement> Tile<W> {
         let focus_ring_config = options.layout.focus_ring.merged_with(&rules.focus_ring);
         let shadow_config = options.layout.shadow.merged_with(&rules.shadow);
         let sizing_mode = window.sizing_mode();
+        let fullscreen_backdrop_color = options.layout.fullscreen_backdrop_color;
 
         Self {
             window,
@@ -191,7 +192,7 @@ impl<W: LayoutElement> Tile<W> {
             focus_ring: FocusRing::new(focus_ring_config),
             shadow: Shadow::new(shadow_config),
             sizing_mode,
-            fullscreen_backdrop: SolidColorBuffer::new((0., 0.), [0., 0., 0., 1.]),
+            fullscreen_backdrop: SolidColorBuffer::new((0., 0.), fullscreen_backdrop_color),
             restore_to_floating: false,
             floating_window_size: None,
             floating_pos: None,
@@ -225,6 +226,9 @@ impl<W: LayoutElement> Tile<W> {
         if self.options.layout.preset_window_heights != options.layout.preset_window_heights {
             self.floating_preset_height_idx = None;
         }
+        // Update backdrop colour
+        self.fullscreen_backdrop
+            .set_color(options.layout.fullscreen_backdrop_color);
 
         self.view_size = view_size;
         self.scale = scale;
