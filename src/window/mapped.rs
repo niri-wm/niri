@@ -16,8 +16,7 @@ use smithay::utils::{Logical, Point, Rectangle, Scale, Serial, Size, Transform};
 use smithay::wayland::compositor::{remove_pre_commit_hook, with_states, HookId, SurfaceData};
 use smithay::wayland::seat::WaylandFocus;
 use smithay::wayland::shell::xdg::{
-    SurfaceCachedState, ToplevelCachedState, ToplevelConfigure, ToplevelSurface,
-    XdgToplevelSurfaceData,
+    SurfaceCachedState, ToplevelCachedState, ToplevelConfigure, ToplevelSurface, XdgToplevelSurfaceData
 };
 use wayland_backend::server::Credentials;
 
@@ -98,6 +97,9 @@ pub struct Mapped {
     /// Whether this window is a target of a window cast.
     is_window_cast_target: bool,
 
+    /// The sizing mode (fullscreen state) of this window.
+    sizing_mode: SizingMode,
+
     /// Whether this window should ignore opacity set through window rules.
     ignore_opacity_window_rule: bool,
 
@@ -173,7 +175,7 @@ pub struct Mapped {
     /// support windowed fullscreen, since in windowed fullscreen the toplevel state is always
     /// Fullscreen. So we need this variable to be able to report accurate sizing mode and pending
     /// sizing mode.
-    is_maximized: bool,
+    // is_maximized: bool,
 
     /// Whether this window is pending to be maximized.
     ///
@@ -268,6 +270,7 @@ impl Mapped {
             is_active_in_column: true,
             is_floating: false,
             is_window_cast_target: false,
+            sizing_mode: SizingMode::Normal,
             ignore_opacity_window_rule: false,
             block_out_buffer: RefCell::new(SolidColorBuffer::new((0., 0.), [0., 0., 0., 1.])),
             animate_next_configure: false,
@@ -281,13 +284,12 @@ impl Mapped {
             is_windowed_fullscreen: false,
             is_pending_windowed_fullscreen: false,
             uncommitted_windowed_fullscreen: Vec::new(),
-            is_maximized: false,
             is_pending_maximized: false,
             uncommitted_maximized: Vec::new(),
             focus_timestamp: None,
         };
 
-        rv.is_maximized = rv.sizing_mode().is_maximized();
+        rv.sizing_mode = rv.sizing_mode();
         rv.is_pending_maximized = rv.pending_sizing_mode().is_maximized();
 
         rv
@@ -344,6 +346,10 @@ impl Mapped {
         self.offscreen_data.borrow()
     }
 
+    pub fn is_maximized(&self) -> bool {
+        self.sizing_mode.is_maximized()
+    }
+
     pub fn is_focused(&self) -> bool {
         self.is_focused
     }
@@ -381,6 +387,16 @@ impl Mapped {
 
         self.is_window_cast_target = value;
         self.need_to_recompute_rules = true;
+    }
+
+    pub fn set_sizing_mode(&mut self, value: SizingMode) {
+        let changed = self.sizing_mode != value;
+        self.sizing_mode = value;
+        self.need_to_recompute_rules |= changed;
+    }
+
+    pub fn committed_sizing_mode(&self) -> SizingMode {
+        self.sizing_mode
     }
 
     /// Renders a snapshot of the window without popups.
@@ -680,6 +696,8 @@ impl LayoutElement for Mapped {
         animate: bool,
         transaction: Option<Transaction>,
     ) {
+        self.set_sizing_mode(mode);
+
         // Going into real fullscreen resets windowed fullscreen.
         if mode == SizingMode::Fullscreen {
             self.is_pending_windowed_fullscreen = false;
@@ -692,7 +710,7 @@ impl LayoutElement for Mapped {
         }
 
         self.is_pending_maximized = mode == SizingMode::Maximized;
-        if self.is_maximized != self.is_pending_maximized {
+        if self.is_maximized() != self.is_pending_maximized {
             // Make sure we receive a commit to update self.is_maximized later on.
             self.needs_configure = true;
         }
@@ -735,9 +753,10 @@ impl LayoutElement for Mapped {
         // Assume that when calling this function, the window is going floating, so it can no
         // longer participate in any transactions with other windows.
         self.transaction_for_next_configure = None;
+        self.set_sizing_mode(SizingMode::Normal);
 
         self.is_pending_maximized = false;
-        if self.is_maximized != self.is_pending_maximized {
+        if self.is_maximized() != self.is_pending_maximized {
             // Make sure we receive a commit to update self.is_maximized later on.
             self.needs_configure = true;
         }
@@ -1055,7 +1074,7 @@ impl LayoutElement for Mapped {
                 .uncommitted_maximized
                 .last()
                 .map(|(_, value)| *value)
-                .unwrap_or(self.is_maximized);
+                .unwrap_or(self.is_maximized());
             if last_sent_maximized != self.is_pending_maximized {
                 self.uncommitted_maximized
                     .push((serial, self.is_pending_maximized));
@@ -1075,7 +1094,7 @@ impl LayoutElement for Mapped {
 
     fn sizing_mode(&self) -> SizingMode {
         if self.is_windowed_fullscreen {
-            return if self.is_maximized {
+            return if self.is_maximized() {
                 SizingMode::Maximized
             } else {
                 SizingMode::Normal
@@ -1314,6 +1333,7 @@ impl LayoutElement for Mapped {
             .retain_mut(|(serial, value)| {
                 if commit_serial.is_no_older_than(serial) {
                     self.is_windowed_fullscreen = *value;
+
                     false
                 } else {
                     true
@@ -1323,7 +1343,10 @@ impl LayoutElement for Mapped {
         // "Commit" our "acked" pending maximized state.
         self.uncommitted_maximized.retain_mut(|(serial, value)| {
             if commit_serial.is_no_older_than(serial) {
-                self.is_maximized = *value;
+                let new_state = if *value {SizingMode::Maximized} else {SizingMode::Normal};
+                self.need_to_recompute_rules |= self.sizing_mode != new_state;
+                self.sizing_mode = new_state;
+
                 false
             } else {
                 true
