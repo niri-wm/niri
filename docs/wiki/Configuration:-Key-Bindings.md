@@ -5,11 +5,15 @@ Key bindings are declared in the `binds {}` section of the config.
 > [!NOTE]
 > This is one of the few sections that *does not* get automatically filled with defaults if you omit it, so make sure to copy it from the default config.
 
-Each bind is a hotkey followed by one action enclosed in curly brackets.
+Each bind is a hotkey followed by one or more actions enclosed in curly brackets.
 For example:
 
 ```kdl
 binds {
+    Mod+G {
+        focus-column-right
+        consume-or-expel-window-left
+    }
     Mod+Left { focus-column-left; }
     Super+Alt+L { spawn "swaylock"; }
 }
