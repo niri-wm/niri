@@ -575,6 +575,30 @@ window-rule {
 > This is because window title (and app ID) are not double-buffered in the Wayland protocol, so they are not tied to specific window contents.
 > There's no robust way for Firefox to synchronize visibly showing a different tab and changing the window title.
 
+#### `hide-from`
+
+<sup>Since: 25.11</sup>
+
+Hide windows from xdg-desktop-portal screencasts or all screen captures.
+Unlike `block-out-from`, this rule does not draw a black rectangle: the window is omitted from the captured image entirely.
+
+This can be useful if you prefer to show the content behind the hidden window instead of a black placeholder.
+
+```kdl
+window-rule {
+    match app-id=r#"^org\.keepassxc\.KeePassXC$"#
+    hide-from "screencast"
+}
+```
+
+You can also hide the window from all screen capture paths, including third-party screenshot tools:
+
+```kdl
+window-rule {
+    hide-from "screen-capture"
+}
+```
+
 #### `opacity`
 
 Set the opacity of the window.

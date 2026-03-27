@@ -884,6 +884,8 @@ mod tests {
                 tab-indicator {
                     active-color "#f00"
                 }
+
+                hide-from "screencast"
             }
 
             layer-rule {
@@ -1828,6 +1830,9 @@ mod tests {
                     clip_to_geometry: None,
                     baba_is_float: None,
                     block_out_from: None,
+                    hide_from: Some(
+                        Screencast,
+                    ),
                     variable_refresh_rate: None,
                     default_column_display: Some(
                         Tabbed,
@@ -1866,6 +1871,7 @@ mod tests {
                     block_out_from: Some(
                         Screencast,
                     ),
+                    hide_from: None,
                     shadow: ShadowRule {
                         off: false,
                         on: false,

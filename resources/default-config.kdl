@@ -337,6 +337,10 @@ window-rule {
 
     // Use this instead if you want them visible on third-party screenshot tools.
     // block-out-from "screencast"
+
+    // Use this instead if you prefer removing the windows from captures
+    // entirely, rather than replacing them with black rectangles.
+    // hide-from "screen-capture"
 }
 
 // Example: enable rounded corners for all windows.
