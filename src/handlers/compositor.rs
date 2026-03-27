@@ -486,11 +486,10 @@ impl CompositorHandler for State {
         // subsurface is destroyed; in the case of alacritty, this is the top CSD shadow. But, it
         // gets most of the job done.
         if let Some(root) = self.niri.root_surface.get(surface) {
-            if let Some((mapped, _)) = self.niri.layout.find_window_and_output(root) {
+            if let Some((mapped, output)) = self.niri.layout.find_window_and_output(root) {
                 let window = mapped.window.clone();
-                self.backend.with_primary_renderer(|renderer| {
-                    self.niri.layout.store_unmap_snapshot(renderer, &window);
-                });
+                let output = output.cloned();
+                self.store_unmap_snapshot(&window, output.as_ref());
             }
         }
 

@@ -54,6 +54,14 @@ hotkey-overlay {
 config-notification {
     disable-failed
 }
+
+blur {
+    // off
+    passes 3
+    offset 3.0
+    noise 0.02
+    saturation 1.5
+}
 ```
 
 ### `spawn-at-startup`
@@ -318,5 +326,83 @@ For example, if you have a custom one.
 ```kdl
 config-notification {
     disable-failed
+}
+```
+
+### `blur`
+
+<sup>Since: next release</sup>
+
+Blur configuration that affects all background blur.
+
+See the [window effects page](./Window-Effects.md) for an overview of background effects.
+
+```kdl
+blur {
+    // off
+    passes 3
+    offset 3
+    noise 0.02
+    saturation 1.5
+}
+```
+
+#### `off`
+
+By default, blur is available on request by a window or layer surface (via the `ext-background-effect` protocol).
+You can also enable it manually with the `blur true` background effect [window](./Configuration:-Window-Rules.md#background-effect) or [layer](./Configuration:-Layer-Rules.md#background-effect) rule.
+
+Setting the `off` flag will disable all blur, both requested by the window, and configured in window rules.
+
+```kdl
+blur {
+    off
+}
+```
+
+#### `passes` and `offset`
+
+`passes` contols the number of downsample/upsample passes for dual kawase blur.
+More passes produce a larger, smoother blur, but cost more GPU resources.
+
+`offset` is the pixel offset multiplier for each pass.
+Offset `1` is the original dual kawase blur.
+Larger values produce a smoother blur, at no additional GPU cost.
+
+However, setting `offset` too big will produce visual artifacts.
+You will need to increase `passes` to be able to use a bigger `offset` without artifacts.
+
+When configuring blur, try increasing `offset` first (since it doesn't cause any extra GPU load) until you start getting artifacts.
+Then, if you still need smoother blur, increase `passes` by 1.
+Keep doing this until you get the desired visuals. 
+
+```kdl
+blur {
+    passes 3
+    offset 3.0
+}
+```
+
+#### `noise`
+
+Amount of noise to add on top of the blur.
+
+This is helpful to reduce color banding artifacts.
+
+```kdl
+blur {
+    noise 0.02
+}
+```
+
+#### `saturation`
+
+Color saturation applied to the blurred background.
+
+Values above `1` increase saturation; values below `1` reduce it.
+
+```kdl
+blur {
+    saturation 1.5
 }
 ```

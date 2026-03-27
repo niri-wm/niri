@@ -85,6 +85,7 @@ nav:
     - Xwayland: Xwayland.md
     - Gestures: Gestures.md
     - Fullscreen and Maximize: Fullscreen-and-Maximize.md
+    - Window Effects: Window-Effects.md
     - Packaging niri: Packaging-niri.md
     - Integrating niri: Integrating-niri.md
     - Accessibility: Accessibility.md

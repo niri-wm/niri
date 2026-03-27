@@ -21,7 +21,8 @@ use crate::input::swipe_tracker::SwipeTracker;
 use crate::layout::SizingMode;
 use crate::niri_render_elements;
 use crate::render_helpers::renderer::NiriRenderer;
-use crate::render_helpers::RenderTarget;
+use crate::render_helpers::xray::XrayPos;
+use crate::render_helpers::RenderCtx;
 use crate::utils::transaction::{Transaction, TransactionBlocker};
 use crate::utils::ResizeEdge;
 use crate::window::ResolvedWindowRules;
@@ -2899,8 +2900,8 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
     pub fn render<R: NiriRenderer>(
         &self,
-        renderer: &mut R,
-        target: RenderTarget,
+        mut ctx: RenderCtx<R>,
+        xray_pos: XrayPos,
         focus_ring: bool,
         push: &mut dyn FnMut(ScrollingSpaceRenderElement<R>),
     ) {
@@ -2909,7 +2910,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         // Draw the closing windows on top of the other windows.
         let view_rect = Rectangle::new(Point::from((self.view_pos(), 0.)), self.view_size);
         for closing in self.closing_windows.iter().rev() {
-            let elem = closing.render(renderer.as_gles_renderer(), view_rect, scale, target);
+            let elem = closing.render(ctx.as_gles(), view_rect, scale);
             push(elem.into());
         }
 
@@ -2930,7 +2931,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                 let pos = view_off + col_off + col_render_off;
                 let pos = pos.to_physical_precise_round(scale).to_logical(scale);
                 col.tab_indicator
-                    .render(renderer, pos, &mut |elem| push(elem.into()));
+                    .render(ctx.renderer, pos, &mut |elem| push(elem.into()));
             }
 
             for (tile, tile_off, visible) in col.tiles_in_render_order() {
@@ -2955,7 +2956,8 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                     continue;
                 }
 
-                tile.render(renderer, tile_pos, focus_ring, target, &mut |elem| {
+                let xray_pos = xray_pos.offset(tile_pos);
+                tile.render(ctx.r(), tile_pos, xray_pos, focus_ring, &mut |elem| {
                     push(elem.into())
                 });
             }
