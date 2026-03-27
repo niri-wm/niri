@@ -475,6 +475,14 @@ impl<W: LayoutElement> Workspace<W> {
         }
     }
 
+    fn active_window_rectangle(&self) -> Option<Rectangle<f64, Logical>> {
+        let active_id = self.active_window().map(|win| win.id().clone())?;
+
+        self.tiles_with_render_positions()
+            .find(|(tile, _, _)| tile.window().id() == &active_id)
+            .map(|(tile, pos, _)| Rectangle::new(pos, tile.tile_size()))
+    }
+
     pub fn active_window_mut(&mut self) -> Option<&mut W> {
         if self.floating_is_active.get() {
             self.floating.active_window_mut()
@@ -617,7 +625,8 @@ impl<W: LayoutElement> Workspace<W> {
                 // If the tile is pending maximized or fullscreen, open it in the scrolling layout
                 // where it can do that.
                 if is_floating && tile.window().pending_sizing_mode().is_normal() {
-                    self.floating.add_tile(tile, activate);
+                    let active_window_area = self.active_window_rectangle();
+                    self.floating.add_tile(tile, activate, active_window_area);
 
                     if activate || self.scrolling.is_empty() {
                         self.floating_is_active = FloatingActive::Yes;
@@ -666,7 +675,7 @@ impl<W: LayoutElement> Workspace<W> {
                         let pos = self.floating.logical_to_size_frac(pos);
                         tile.floating_pos = Some(pos);
 
-                        self.floating.add_tile(tile, activate);
+                        self.floating.add_tile(tile, activate, None);
                     }
 
                     if activate || self.scrolling.is_empty() {
@@ -1415,7 +1424,9 @@ impl<W: LayoutElement> Workspace<W> {
             removed.tile.stop_move_animations();
 
             // Come up with a default floating position close to the tile position.
-            let stored_or_default = self.floating.stored_or_default_tile_pos(&removed.tile);
+            let stored_or_default = self
+                .floating
+                .stored_or_default_tile_pos(&removed.tile, self.active_window_rectangle());
             if stored_or_default.is_none() {
                 let offset =
                     if self.options.layout.center_focused_column == CenterFocusedColumn::Always {
@@ -1430,7 +1441,9 @@ impl<W: LayoutElement> Workspace<W> {
                 removed.tile.floating_pos = Some(pos);
             }
 
-            self.floating.add_tile(removed.tile, target_is_active);
+            let active_window_area = self.active_window_rectangle();
+            self.floating
+                .add_tile(removed.tile, target_is_active, active_window_area);
             if target_is_active {
                 self.floating_is_active = FloatingActive::Yes;
             }
@@ -1507,7 +1520,7 @@ impl<W: LayoutElement> Workspace<W> {
                 return;
             };
 
-            let pos = self.floating.stored_or_default_tile_pos(tile);
+            let pos = self.floating.stored_or_default_tile_pos(tile, None);
 
             // If there's no stored floating position, we can only set both components at once, not
             // adjust.
