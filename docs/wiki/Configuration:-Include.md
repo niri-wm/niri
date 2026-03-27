@@ -28,6 +28,37 @@ layout {
 }
 ```
 
+### Path resolution
+
+Paths of included files are relative to the directory of the current
+config file, unless they start with `/` - then they're absolute:
+
+```kdl,must-fail
+// /tmp/config.kdl
+
+include "foo.kdl" // `/tmp/foo.kdl`
+
+include "bar/foo.kdl" // `/tmp/bar/foo.kdl`
+
+include "/foo/bar.kdl" // `/foo/bar.kdl`
+
+// /tmp/bar/foo.kdl
+
+include "baz.kdl" // `/tmp/bar/baz.kdl`
+```
+
+Environment variables and `~` are not resolved:
+
+```kdl,must-fail
+// by default `$XDG_CONFIG_HOME/niri/~/dotfiles/colors.kdl`
+// most likely NOT what you want
+include "~/dotfiles/colors.kdl"
+
+// by default `$XDG_CONFIG_HOME/niri/$FOO/config.kdl`
+// most likely NOT what you want
+include "$FOO/config.kdl"
+```
+
 ### Positionality
 
 Includes are *positional*.
