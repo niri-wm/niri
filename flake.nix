@@ -228,6 +228,10 @@
               # This should only be set with `CARGO_BUILD_RUSTFLAGS="$CARGO_BUILD_RUSTFLAGS -C your-flags"`
               CARGO_BUILD_RUSTFLAGS = niri.RUSTFLAGS;
             };
+
+            # Fix this annoyance, which breaks Smithay's C library feature detection, which in turn breaks screen sharing on my system:
+            # #warning _FORTIFY_SOURCE requires compiling with optimization (-O)
+            hardeningDisable = [ "all" ];
           };
         }
       );

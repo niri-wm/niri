@@ -31,6 +31,7 @@ use smithay::wayland::shell::xdg::{
 };
 use wayland_backend::server::Credentials;
 
+use crate::backend::IpcOutputMap;
 use crate::handlers::KdeDecorationsModeState;
 use crate::niri::ClientState;
 
@@ -92,6 +93,33 @@ impl CastStreamId {
 impl Display for CastStreamId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
+    }
+}
+
+/// Unique ID for a remote desktop session.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct RemoteDesktopSessionId(u64);
+
+impl RemoteDesktopSessionId {
+    pub fn next() -> Self {
+        static COUNTER: IdCounter = IdCounter::new();
+        Self(COUNTER.next())
+    }
+
+    pub fn get(self) -> u64 {
+        self.0
+    }
+}
+
+impl Display for RemoteDesktopSessionId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl From<u64> for RemoteDesktopSessionId {
+    fn from(value: u64) -> Self {
+        Self(value)
     }
 }
 
@@ -194,6 +222,11 @@ pub fn floor_logical_in_physical_max1(scale: f64, logical: f64) -> f64 {
     (logical * scale).max(1.).floor() / scale
 }
 
+/// Returns the logical size of the specified output at the current scale and mode.
+///
+/// # Panics
+///
+/// This function panics if the output doesn't currently have a set mode.
 pub fn output_size(output: &Output) -> Size<f64, Logical> {
     let output_scale = output.current_scale().fractional_scale();
     let output_transform = output.current_transform();
@@ -582,6 +615,22 @@ pub fn cause_panic() {
     let a = Duration::from_secs(1);
     let b = Duration::from_secs(2);
     let _ = a - b;
+}
+
+/// Computes the extent of the logical outputs in the IPC output map.
+pub fn global_bounding_rectangle_ipc(
+    ipc_outputs: &IpcOutputMap,
+) -> Option<Rectangle<i32, Logical>> {
+    ipc_outputs
+        .values()
+        .filter_map(|output| output.logical)
+        .fold(None, |acc, l| {
+            let geo = Rectangle::new(
+                Point::new(l.x, l.y),
+                Size::new(l.width as i32, l.height as i32),
+            );
+            Some(acc.map_or(geo, |acc| acc.merge(geo)))
+        })
 }
 
 #[cfg(test)]
