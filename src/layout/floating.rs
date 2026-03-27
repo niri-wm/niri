@@ -296,6 +296,13 @@ impl<W: LayoutElement> FloatingSpace<W> {
         zip(&mut self.tiles, offsets)
     }
 
+    pub fn tiles_with_geometry(&self) -> impl Iterator<Item = (&Tile<W>, Rectangle<f64, Logical>)> {
+        self.tiles_with_offsets().map(|(tile, offset)| {
+            let size = tile.tile_size();
+            (tile, Rectangle::new(offset, size))
+        })
+    }
+
     pub fn tiles_with_render_positions(
         &self,
     ) -> impl Iterator<Item = (&Tile<W>, Point<f64, Logical>)> {
