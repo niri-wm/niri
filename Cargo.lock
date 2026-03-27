@@ -2257,6 +2257,7 @@ dependencies = [
  "tracy-client",
  "wayland-backend",
  "wayland-client",
+ "wayland-protocols-plasma",
  "wayland-scanner",
  "wayland-server",
  "xcursor",
@@ -3475,7 +3476,7 @@ checksum = "b7c388c1b5e93756d0c740965c41e8822f866621d41acbdf6336a6a168f8840c"
 [[package]]
 name = "smithay"
 version = "0.7.0"
-source = "git+https://github.com/Smithay/smithay.git#f1d0d2c43e843233119af3dcf76d619e1afff4ee"
+source = "git+https://github.com/Smithay/smithay.git?rev=dce4d34e7421559b661af9c519904f4b24346148#dce4d34e7421559b661af9c519904f4b24346148"
 dependencies = [
  "aliasable",
  "appendlist",
@@ -3550,7 +3551,7 @@ dependencies = [
 [[package]]
 name = "smithay-drm-extras"
 version = "0.1.0"
-source = "git+https://github.com/Smithay/smithay.git#f1d0d2c43e843233119af3dcf76d619e1afff4ee"
+source = "git+https://github.com/Smithay/smithay.git?rev=dce4d34e7421559b661af9c519904f4b24346148#dce4d34e7421559b661af9c519904f4b24346148"
 dependencies = [
  "drm",
  "libdisplay-info",
@@ -4218,6 +4219,7 @@ dependencies = [
  "wayland-client",
  "wayland-protocols",
  "wayland-scanner",
+ "wayland-server",
 ]
 
 [[package]]
