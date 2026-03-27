@@ -117,6 +117,8 @@ pub enum Request {
     ReturnError,
     /// Request information about the overview.
     OverviewState,
+    /// Request information about the screenshot.
+    ScreenshotState,
     /// Request information about screencasts.
     Casts,
 }
@@ -163,6 +165,8 @@ pub enum Response {
     OutputConfigChanged(OutputConfigChanged),
     /// Information about the overview.
     OverviewState(Overview),
+    /// Information about the screenshot UI.
+    ScreenshotState(ScreenshotUi),
     /// Information about screencasts.
     Casts(Vec<Cast>),
 }
@@ -172,6 +176,14 @@ pub enum Response {
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct Overview {
     /// Whether the overview is currently open.
+    pub is_open: bool,
+}
+
+/// Screenshot UI information.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct ScreenshotUi {
+    /// Whether the screenshot ui is currently open.
     pub is_open: bool,
 }
 
@@ -1565,6 +1577,24 @@ pub enum CastTarget {
     },
 }
 
+/// Screenshot UI events.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum ScreenshotUiEvent {
+    /// Start the interactive screenshot.
+    Open,
+    /// Cancel the screenshot.
+    Cancel,
+    /// Confirm the screenshot.
+    Confirm {
+        /// (x, y) coordinate of the selection origin (relative to the output top-left corner), in
+        /// physical pixels.
+        position: (i32, i32),
+        /// Width and height of the selection area, in physical pixels.
+        size: (i32, i32),
+    },
+}
+
 /// A compositor event.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
@@ -1678,6 +1708,11 @@ pub enum Event {
         ///
         /// For example, the config file couldn't be parsed.
         failed: bool,
+    },
+    /// The screenshot UI was changed.
+    ScreenshotUiChanged {
+        /// Opened/dismissed/confirmed events of the screenshot UI.
+        event: ScreenshotUiEvent,
     },
     /// A screenshot was captured.
     ScreenshotCaptured {
