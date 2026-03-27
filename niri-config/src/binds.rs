@@ -90,10 +90,50 @@ impl MergeWith<SwitchBinds> for SwitchBinds {
     }
 }
 
-#[derive(knuffel::Decode, Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct SwitchAction {
-    #[knuffel(child, unwrap(arguments))]
-    pub spawn: Vec<String>,
+    pub action: Action,
+}
+
+impl<S: knuffel::traits::ErrorSpan> knuffel::Decode<S> for SwitchAction {
+    fn decode_node(
+        node: &knuffel::ast::SpannedNode<S>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) -> Result<Self, DecodeError<S>> {
+        expect_only_children(node, ctx);
+
+        let mut action: Option<Action> = None;
+
+        for child in node.children() {
+            if action.is_some() {
+                ctx.emit_error(DecodeError::unexpected(
+                    child,
+                    "node",
+                    "only one action is allowed per switch event",
+                ));
+                continue;
+            }
+            match Action::decode_node(child, ctx) {
+                Ok(a) => {
+                    if matches!(a, Action::Spawn(_) | Action::SpawnSh(_)) {
+                        action = Some(a);
+                    } else {
+                        ctx.emit_error(DecodeError::unexpected(
+                            child,
+                            "node",
+                            "only `spawn` or `spawn-sh` are supported for switch events",
+                        ));
+                    }
+                }
+                Err(e) => ctx.emit_error(e),
+            }
+        }
+
+        match action {
+            Some(action) => Ok(SwitchAction { action }),
+            None => Err(DecodeError::missing(node, "expected `spawn` or `spawn-sh`")),
+        }
+    }
 }
 
 // Remember to add new actions to the CLI enum too.
