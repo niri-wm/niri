@@ -36,6 +36,7 @@ window-rule {
     match is-floating=true
     match is-window-cast-target=true
     match is-urgent=true
+    match is-pinned=true
     match at-startup=true
 
     // Properties that apply once upon window opening.
@@ -48,6 +49,7 @@ window-rule {
     open-fullscreen true
     open-floating true
     open-focused false
+    open-pinned true
 
     // Properties that apply continuously.
     draw-border-with-background false
@@ -177,7 +179,7 @@ You can find the title and the app ID of a window by running `niri msg pick-wind
 
 > [!TIP]
 > Another way to find the window title and app ID is to configure the `wlr/taskbar` module in [Waybar](https://github.com/Alexays/Waybar) to include them in the tooltip:
-> 
+>
 > ```json
 > "wlr/taskbar": {
 >     "tooltip-format": "{title} | {app_id}",
@@ -298,6 +300,19 @@ Matches windows that request the user's attention.
 ```kdl
 window-rule {
     match is-urgent=true
+}
+```
+
+#### `is-pinned`
+
+<sup>Since: next release</sup>
+
+Can be `true` or `false`.
+Matches windows that are pinned.
+
+```kdl
+window-rule {
+    match is-pinned=true
 }
 ```
 
@@ -508,6 +523,33 @@ window-rule {
     match app-id=r#"^org\.keepassxc\.KeePassXC$"# title="^Unlock Database - KeePassXC$"
 
     open-focused true
+}
+```
+
+#### `open-pinned`
+
+<sup>Since: next release</sup>
+
+Make the window open pinned.
+
+```kdl
+// Open the Firefox picture-in-picture window as pinned.
+window-rule {
+    match app-id="firefox$" title="^Picture-in-Picture$"
+
+    open-pinned true
+}
+```
+
+Only *floating* pinned windows will remain fixed to the monitor on workspace switch, so you likely want `open-floating` too.
+
+```kdl
+// Open the Firefox picture-in-picture window as floating and pinned.
+window-rule {
+    match app-id="firefox$" title="^Picture-in-Picture$"
+
+    open-floating true
+    open-pinned true
 }
 ```
 

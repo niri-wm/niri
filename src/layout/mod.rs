@@ -223,6 +223,7 @@ pub trait LayoutElement {
     fn is_ignoring_opacity_window_rule(&self) -> bool;
 
     fn is_urgent(&self) -> bool;
+    fn is_pinned(&self) -> bool;
 
     fn configure_intent(&self) -> ConfigureIntent;
     fn send_pending_configure(&mut self);
@@ -447,6 +448,7 @@ pub enum ConfigureIntent {
 }
 
 /// Tile that was just removed from the layout.
+#[derive(Debug)]
 pub struct RemovedTile<W: LayoutElement> {
     tile: Tile<W>,
     /// Width of the column the tile was in.
