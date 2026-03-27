@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::str::FromStr;
 use std::time::Duration;
 
@@ -769,7 +769,7 @@ where
     ) -> Result<Self, DecodeError<S>> {
         expect_only_children(node, ctx);
 
-        let mut seen_keys = HashSet::new();
+        let mut seen_keys: HashMap<Key, Option<&knuffel::ast::SpannedNode<S>>> = HashMap::new();
 
         let mut binds = Vec::new();
 
@@ -779,39 +779,25 @@ where
                     ctx.emit_error(e);
                 }
                 Ok(bind) => {
-                    if seen_keys.insert(bind.key) {
-                        binds.push(bind);
-                    } else {
-                        // ideally, this error should point to the previous instance of this keybind
-                        //
-                        // i (sodiboo) have tried to implement this in various ways:
-                        // miette!(), #[derive(Diagnostic)]
-                        // DecodeError::Custom, DecodeError::Conversion
-                        // nothing seems to work, and i suspect it's not possible.
-                        //
-                        // DecodeError is fairly restrictive.
-                        // even DecodeError::Custom just wraps a std::error::Error
-                        // and this erases all rich information from miette. (why???)
-                        //
-                        // why does knuffel do this?
-                        // from what i can tell, it doesn't even use DecodeError for much.
-                        // it only ever converts them to a Report anyways!
-                        // https://github.com/tailhook/knuffel/blob/c44c6b0c0f31ea6d1174d5d2ed41064922ea44ca/src/wrappers.rs#L55-L58
-                        //
-                        // besides like, allowing downstream users (such as us!)
-                        // to match on parse failure, i don't understand why
-                        // it doesn't just use a generic error type
-                        //
-                        // even the matching isn't consistent,
-                        // because errors can also be omitted as ctx.emit_error.
-                        // why does *that one* especially, require a DecodeError?
-                        //
-                        // anyways if you can make it format nicely, definitely do fix this
+                    if let Some(first_node_opt) = seen_keys.get_mut(&bind.key) {
+                        if let Some(first_node_name) = first_node_opt.take() {
+                            // Even though it's technically incorrect, we use
+                            // `DecodeError::Missing` here because it labels the bind with
+                            // "node starts here", which is the least bad option
+                            ctx.emit_error(DecodeError::missing(
+                                first_node_name,
+                                "duplicate keybind first defined here",
+                            ));
+                        }
+
                         ctx.emit_error(DecodeError::unexpected(
                             &child.node_name,
                             "keybind",
-                            "duplicate keybind",
+                            "duplicate keybind later defined here",
                         ));
+                    } else {
+                        seen_keys.insert(bind.key, Some(child));
+                        binds.push(bind);
                     }
                 }
             }
