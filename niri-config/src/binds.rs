@@ -21,12 +21,36 @@ pub struct Binds(pub Vec<Bind>);
 #[derive(Debug, Clone, PartialEq)]
 pub struct Bind {
     pub key: Key,
-    pub action: Action,
+    pub press_action: Option<Action>,
+    pub release_action: Option<Action>,
     pub repeat: bool,
     pub cooldown: Option<Duration>,
     pub allow_when_locked: bool,
     pub allow_inhibiting: bool,
+    pub allow_invalidation: bool,
     pub hotkey_overlay_title: Option<Option<String>>,
+}
+
+impl Bind {
+    pub fn has_press(&self) -> bool {
+        self.press_action.is_some()
+    }
+
+    pub fn has_release(&self) -> bool {
+        self.release_action.is_some()
+    }
+
+    pub fn is_release_only(&self) -> bool {
+        self.press_action.is_none() && self.release_action.is_some()
+    }
+
+    pub fn action_for(&self, pressed: bool) -> Option<&Action> {
+        if pressed {
+            self.press_action.as_ref()
+        } else {
+            self.release_action.as_ref()
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
@@ -38,6 +62,7 @@ pub struct Key {
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub enum Trigger {
     Keysym(Keysym),
+    KeyCompositor,
     MouseLeft,
     MouseRight,
     MouseMiddle,
@@ -779,34 +804,34 @@ where
                     ctx.emit_error(e);
                 }
                 Ok(bind) => {
+                    // ideally, these errors should point to the previous instance of the keybind
+                    //
+                    // i (sodiboo) have tried to implement this in various ways:
+                    // miette!(), #[derive(Diagnostic)]
+                    // DecodeError::Custom, DecodeError::Conversion
+                    // nothing seems to work, and i suspect it's not possible.
+                    //
+                    // DecodeError is fairly restrictive.
+                    // even DecodeError::Custom just wraps a std::error::Error
+                    // and this erases all rich information from miette. (why???)
+                    //
+                    // why does knuffel do this?
+                    // from what i can tell, it doesn't even use DecodeError for much.
+                    // it only ever converts them to a Report anyways!
+                    // https://github.com/tailhook/knuffel/blob/c44c6b0c0f31ea6d1174d5d2ed41064922ea44ca/src/wrappers.rs#L55-L58
+                    //
+                    // besides like, allowing downstream users (such as us!)
+                    // to match on parse failure, i don't understand why
+                    // it doesn't just use a generic error type
+                    //
+                    // even the matching isn't consistent,
+                    // because errors can also be omitted as ctx.emit_error.
+                    // why does *that one* especially, require a DecodeError?
+                    //
+                    // anyways if you can make it format nicely, definitely do fix this
                     if seen_keys.insert(bind.key) {
                         binds.push(bind);
                     } else {
-                        // ideally, this error should point to the previous instance of this keybind
-                        //
-                        // i (sodiboo) have tried to implement this in various ways:
-                        // miette!(), #[derive(Diagnostic)]
-                        // DecodeError::Custom, DecodeError::Conversion
-                        // nothing seems to work, and i suspect it's not possible.
-                        //
-                        // DecodeError is fairly restrictive.
-                        // even DecodeError::Custom just wraps a std::error::Error
-                        // and this erases all rich information from miette. (why???)
-                        //
-                        // why does knuffel do this?
-                        // from what i can tell, it doesn't even use DecodeError for much.
-                        // it only ever converts them to a Report anyways!
-                        // https://github.com/tailhook/knuffel/blob/c44c6b0c0f31ea6d1174d5d2ed41064922ea44ca/src/wrappers.rs#L55-L58
-                        //
-                        // besides like, allowing downstream users (such as us!)
-                        // to match on parse failure, i don't understand why
-                        // it doesn't just use a generic error type
-                        //
-                        // even the matching isn't consistent,
-                        // because errors can also be omitted as ctx.emit_error.
-                        // why does *that one* especially, require a DecodeError?
-                        //
-                        // anyways if you can make it format nicely, definitely do fix this
                         ctx.emit_error(DecodeError::unexpected(
                             &child.node_name,
                             "keybind",
@@ -855,7 +880,9 @@ where
         let mut allow_when_locked = false;
         let mut allow_when_locked_node = None;
         let mut allow_inhibiting = true;
+        let mut allow_invalidation = true;
         let mut hotkey_overlay_title = None;
+
         for (name, val) in &node.properties {
             match &***name {
                 "repeat" => {
@@ -873,6 +900,9 @@ where
                 "allow-inhibiting" => {
                     allow_inhibiting = knuffel::traits::DecodeScalar::decode(val, ctx)?;
                 }
+                "allow-invalidation" => {
+                    allow_invalidation = knuffel::traits::DecodeScalar::decode(val, ctx)?;
+                }
                 "hotkey-overlay-title" => {
                     hotkey_overlay_title = Some(knuffel::traits::DecodeScalar::decode(val, ctx)?);
                 }
@@ -886,69 +916,179 @@ where
             }
         }
 
-        let mut children = node.children();
-
         // If the action is invalid but the key is fine, we still want to return something.
         // That way, the parent can handle the existence of duplicate keybinds,
         // even if their contents are not valid.
         let dummy = Self {
             key,
-            action: Action::Spawn(vec![]),
+            press_action: Some(Action::Spawn(vec![])),
+            release_action: None,
             repeat: true,
             cooldown: None,
             allow_when_locked: false,
             allow_inhibiting: true,
+            allow_invalidation: true,
             hotkey_overlay_title: None,
         };
 
-        if let Some(child) = children.next() {
-            for unwanted_child in children {
-                ctx.emit_error(DecodeError::unexpected(
-                    unwanted_child,
-                    "node",
-                    "only one action is allowed per keybind",
-                ));
-            }
-            match Action::decode_node(child, ctx) {
-                Ok(action) => {
-                    if !matches!(action, Action::Spawn(_) | Action::SpawnSh(_)) {
-                        if let Some(node) = allow_when_locked_node {
-                            ctx.emit_error(DecodeError::unexpected(
-                                node,
-                                "property",
-                                "allow-when-locked can only be set on spawn binds",
-                            ));
+        let mut press_action: Option<Action> = None;
+        let mut release_action: Option<Action> = None;
+        let mut has_press_section = false;
+        let mut has_release_section = false;
+
+        for child in node.children() {
+            let child_name = &*child.node_name;
+
+            if child_name.as_ref() == "press" {
+                if has_press_section {
+                    ctx.emit_error(DecodeError::unexpected(
+                        &child.node_name,
+                        "section",
+                        "duplicate `press` section",
+                    ));
+                    continue;
+                }
+                has_press_section = true;
+
+                let mut press_children = child.children();
+                if let Some(action_child) = press_children.next() {
+                    for unwanted_child in press_children {
+                        ctx.emit_error(DecodeError::unexpected(
+                            unwanted_child,
+                            "node",
+                            "only one action is allowed per keybind",
+                        ));
+                    }
+                    match Action::decode_node(action_child, ctx) {
+                        Ok(action) => {
+                            press_action = Some(action);
+                        }
+                        Err(e) => {
+                            ctx.emit_error(e);
                         }
                     }
-
-                    // The toggle-inhibit action must always be uninhibitable.
-                    // Otherwise, it would be impossible to trigger it.
-                    if matches!(action, Action::ToggleKeyboardShortcutsInhibit) {
-                        allow_inhibiting = false;
-                    }
-
-                    Ok(Self {
-                        key,
-                        action,
-                        repeat,
-                        cooldown,
-                        allow_when_locked,
-                        allow_inhibiting,
-                        hotkey_overlay_title,
-                    })
+                } else {
+                    ctx.emit_error(DecodeError::missing(
+                        child,
+                        "expected an action for this press section",
+                    ));
                 }
-                Err(e) => {
-                    ctx.emit_error(e);
-                    Ok(dummy)
+            } else if child_name.as_ref() == "release" {
+                if has_release_section {
+                    ctx.emit_error(DecodeError::unexpected(
+                        &child.node_name,
+                        "section",
+                        "duplicate `release` section",
+                    ));
+                    continue;
+                }
+                has_release_section = true;
+
+                let mut release_children = child.children();
+                if let Some(action_child) = release_children.next() {
+                    for unwanted_child in release_children {
+                        ctx.emit_error(DecodeError::unexpected(
+                            unwanted_child,
+                            "node",
+                            "only one action is allowed per keybind",
+                        ));
+                    }
+                    match Action::decode_node(action_child, ctx) {
+                        Ok(action) => {
+                            release_action = Some(action);
+                        }
+                        Err(e) => {
+                            ctx.emit_error(e);
+                        }
+                    }
+                } else {
+                    ctx.emit_error(DecodeError::missing(
+                        child,
+                        "expected an action for this release section",
+                    ));
+                }
+            } else {
+                if has_press_section || has_release_section {
+                    ctx.emit_error(DecodeError::unexpected(
+                        &child.node_name,
+                        "node",
+                        "cannot mix direct actions with press/release sections",
+                    ));
+                    continue;
+                }
+
+                if press_action.is_some() {
+                    ctx.emit_error(DecodeError::unexpected(
+                        &child.node_name,
+                        "node",
+                        "only one action is allowed per keybind",
+                    ));
+                    continue;
+                }
+
+                match Action::decode_node(child, ctx) {
+                    Ok(action) => {
+                        press_action = Some(action);
+                    }
+                    Err(e) => {
+                        ctx.emit_error(e);
+                    }
                 }
             }
-        } else {
-            ctx.emit_error(DecodeError::missing(
-                node,
-                "expected an action for this keybind",
-            ));
-            Ok(dummy)
         }
+
+        if press_action.is_none() && release_action.is_none() {
+            if !has_press_section && !has_release_section {
+                ctx.emit_error(DecodeError::missing(
+                    node,
+                    "expected an action for this keybind",
+                ));
+            }
+            return Ok(dummy);
+        }
+
+        if let Some(ref action) = press_action {
+            if !matches!(action, Action::Spawn(_) | Action::SpawnSh(_)) {
+                if let Some(node) = allow_when_locked_node {
+                    ctx.emit_error(DecodeError::unexpected(
+                        node,
+                        "property",
+                        "allow-when-locked can only be set on spawn binds",
+                    ));
+                }
+            }
+        }
+        if let Some(ref action) = release_action {
+            if !matches!(action, Action::Spawn(_) | Action::SpawnSh(_)) {
+                if let Some(node) = allow_when_locked_node {
+                    ctx.emit_error(DecodeError::unexpected(
+                        node,
+                        "property",
+                        "allow-when-locked can only be set on spawn binds",
+                    ));
+                }
+            }
+        }
+
+        // The toggle-inhibit action must always be uninhibitable.
+        // Otherwise, it would be impossible to trigger it.
+        if matches!(press_action, Some(Action::ToggleKeyboardShortcutsInhibit))
+            || matches!(release_action, Some(Action::ToggleKeyboardShortcutsInhibit))
+        {
+            allow_inhibiting = false;
+        }
+
+        Ok(Self {
+            key,
+            press_action,
+            release_action,
+            repeat,
+            cooldown,
+            allow_when_locked,
+            allow_inhibiting,
+            allow_invalidation,
+            hotkey_overlay_title,
+        })
     }
 }
 
@@ -1012,6 +1152,8 @@ impl FromStr for Key {
             Trigger::TouchpadScrollLeft
         } else if key.eq_ignore_ascii_case("TouchpadScrollRight") {
             Trigger::TouchpadScrollRight
+        } else if key.eq_ignore_ascii_case("Mod") {
+            Trigger::KeyCompositor
         } else {
             let mut keysym = keysym_from_name(key, KEYSYM_CASE_INSENSITIVE);
             // The keyboard event handling code can receive either
@@ -1109,6 +1251,33 @@ mod tests {
             Key {
                 trigger: Trigger::Keysym(Keysym::a),
                 modifiers: Modifiers::ISO_LEVEL5_SHIFT
+            },
+        );
+    }
+
+    #[test]
+    fn parse_mod() {
+        assert_eq!(
+            "Mod".parse::<Key>().unwrap(),
+            Key {
+                trigger: Trigger::KeyCompositor,
+                modifiers: Modifiers::empty(),
+            },
+        );
+
+        assert_eq!(
+            "Ctrl+Mod".parse::<Key>().unwrap(),
+            Key {
+                trigger: Trigger::KeyCompositor,
+                modifiers: Modifiers::CTRL,
+            },
+        );
+
+        assert_eq!(
+            "Mod+Control_L".parse::<Key>().unwrap(),
+            Key {
+                trigger: Trigger::Keysym(Keysym::Control_L),
+                modifiers: Modifiers::COMPOSITOR,
             },
         );
     }
