@@ -1096,18 +1096,16 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     pub fn consume_or_expel_window_left(&mut self, window: Option<&W::Id>) {
-        if window.map_or(self.floating_is_active.get(), |id| {
-            self.floating.has_window(id)
-        }) {
+        if self.floating_is_active.get() {
+            self.floating.move_left();
             return;
         }
         self.scrolling.consume_or_expel_window_left(window);
     }
 
     pub fn consume_or_expel_window_right(&mut self, window: Option<&W::Id>) {
-        if window.map_or(self.floating_is_active.get(), |id| {
-            self.floating.has_window(id)
-        }) {
+        if self.floating_is_active.get() {
+            self.floating.move_right();
             return;
         }
         self.scrolling.consume_or_expel_window_right(window);
