@@ -268,6 +268,9 @@ The difference is that the focus ring is drawn only around the active window, wh
 >
 > Alternatively, you can override this behavior with the [`draw-border-with-background` window rule](./Configuration:-Window-Rules.md#draw-border-with-background).
 
+> [!NOTE]
+> If you want to enable borders in an included config you have to explicitly set it to `on` (see [border special case](./Configuration:-Include.md#border-special-case)).
+
 Focus ring and border have the following options.
 
 ```kdl
@@ -276,6 +279,9 @@ layout {
     border {
         // Uncomment this line to disable the border.
         // off
+
+        // You have to explicitly enable borders in an included config
+        // on
 
         // Width of the border in logical pixels.
         width 4
