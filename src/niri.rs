@@ -3908,12 +3908,12 @@ impl Niri {
     }
 
     pub fn refresh_idle_inhibit(&mut self) {
+        let _span = tracy_client::span!("Niri::refresh_idle_inhibit");
+
         if self.config.borrow().prevent_idle_inhibit {
             self.idle_notifier_state.set_is_inhibited(false);
             return;
         }
-
-        let _span = tracy_client::span!("Niri::refresh_idle_inhibit");
 
         self.idle_inhibiting_surfaces.retain(|s| s.is_alive());
 
