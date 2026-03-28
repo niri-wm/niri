@@ -1,14 +1,18 @@
 use std::ptr;
 
-use anyhow::{ensure, Context};
+use anyhow::{ensure, Context as _};
 use niri_config::BlockOutFrom;
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::allocator::{Buffer, Fourcc};
 use smithay::backend::renderer::element::utils::{Relocate, RelocateRenderElement};
 use smithay::backend::renderer::element::{Element, Kind, RenderElement};
-use smithay::backend::renderer::gles::{GlesMapping, GlesRenderer, GlesTarget, GlesTexture};
+use smithay::backend::renderer::gles::{
+    GlesError, GlesMapping, GlesRenderer, GlesTarget, GlesTexture,
+};
 use smithay::backend::renderer::sync::SyncPoint;
-use smithay::backend::renderer::{Bind, Color32F, ExportMem, Frame, Offscreen, Renderer};
+use smithay::backend::renderer::{
+    Bind, Color32F, ExportMem, Frame, Offscreen, Renderer, Texture as _,
+};
 use smithay::reexports::wayland_server::protocol::wl_buffer::WlBuffer;
 use smithay::reexports::wayland_server::protocol::wl_shm;
 use smithay::utils::{Logical, Physical, Point, Rectangle, Scale, Size, Transform};
@@ -17,6 +21,7 @@ use solid_color::{SolidColorBuffer, SolidColorRenderElement};
 
 use self::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use self::texture::{TextureBuffer, TextureRenderElement};
+use crate::render_helpers::renderer::AsGlesRenderer;
 
 pub mod border;
 pub mod clipped_surface;
@@ -37,6 +42,34 @@ pub mod snapshot;
 pub mod solid_color;
 pub mod surface;
 pub mod texture;
+
+/// A rendering context.
+///
+/// Bundles together things needed by most rendering code.
+pub struct RenderCtx<'a, R> {
+    pub renderer: &'a mut R,
+    pub target: RenderTarget,
+}
+
+impl<'a, R> RenderCtx<'a, R> {
+    /// Reborrows this context with a smaller lifetime.
+    #[inline]
+    pub fn r<'b>(&'b mut self) -> RenderCtx<'b, R> {
+        RenderCtx {
+            renderer: self.renderer,
+            target: self.target,
+        }
+    }
+}
+
+impl<'a, R: AsGlesRenderer> RenderCtx<'a, R> {
+    pub fn as_gles<'b>(&'b mut self) -> RenderCtx<'b, GlesRenderer> {
+        RenderCtx {
+            renderer: self.renderer.as_gles_renderer(),
+            target: self.target,
+        }
+    }
+}
 
 /// What we're rendering for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -126,6 +159,23 @@ pub fn encompassing_geo(
         .unwrap_or_default()
 }
 
+pub fn create_texture(
+    renderer: &mut GlesRenderer,
+    size: Size<i32, Physical>,
+    fourcc: Fourcc,
+) -> Result<GlesTexture, GlesError> {
+    let buffer_size = size.to_logical(1).to_buffer(1, Transform::Normal);
+    renderer.create_buffer(fourcc, buffer_size)
+}
+
+pub fn copy_framebuffer(
+    renderer: &mut GlesRenderer,
+    target: &GlesTarget,
+    fourcc: Fourcc,
+) -> Result<GlesMapping, GlesError> {
+    renderer.copy_framebuffer(target, Rectangle::from_size(target.size()), fourcc)
+}
+
 pub fn render_to_encompassing_texture(
     renderer: &mut GlesRenderer,
     scale: Scale<f64>,
@@ -154,11 +204,7 @@ pub fn render_to_texture(
 ) -> anyhow::Result<(GlesTexture, SyncPoint)> {
     let _span = tracy_client::span!();
 
-    let buffer_size = size.to_logical(1).to_buffer(1, Transform::Normal);
-
-    let mut texture: GlesTexture = renderer
-        .create_buffer(fourcc, buffer_size)
-        .context("error creating texture")?;
+    let mut texture = create_texture(renderer, size, fourcc).context("error creating texture")?;
 
     let sync_point = {
         let mut target = renderer
@@ -181,18 +227,15 @@ pub fn render_and_download(
 ) -> anyhow::Result<GlesMapping> {
     let _span = tracy_client::span!();
 
-    let (mut texture, _) = render_to_texture(renderer, size, scale, transform, fourcc, elements)?;
-
-    let buffer_size = size.to_logical(1).to_buffer(1, Transform::Normal);
-    // FIXME: would be nice to avoid binding the second time here (after render_to_texture()), but
-    // borrowing makes this inconvenient.
-    let target = renderer
+    let mut texture = create_texture(renderer, size, fourcc).context("error creating texture")?;
+    let mut target = renderer
         .bind(&mut texture)
         .context("error binding texture")?;
-    let mapping = renderer
-        .copy_framebuffer(&target, Rectangle::from_size(buffer_size), fourcc)
-        .context("error copying framebuffer")?;
-    Ok(mapping)
+
+    let _sync = render_elements(renderer, &mut target, size, scale, transform, elements)
+        .context("error rendering")?;
+
+    copy_framebuffer(renderer, &target, fourcc).context("error copying framebuffer")
 }
 
 pub fn render_to_vec(

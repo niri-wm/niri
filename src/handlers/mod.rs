@@ -112,6 +112,7 @@ impl SeatHandler for State {
         if self.niri.screenshot_ui.is_open() {
             image = CursorImageStatus::Named(CursorIcon::Crosshair);
         }
+
         self.niri.cursor_manager.set_cursor_image(image);
         // FIXME: more granular
         self.niri.queue_redraw_all();
