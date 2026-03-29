@@ -275,6 +275,14 @@ pub enum Action {
         #[cfg_attr(feature = "clap", arg(short = 'p', long, action = clap::ArgAction::Set, default_value_t = false))]
         show_pointer: bool,
 
+        /// Whether to include window decorations (border, shadow, rounded corners) in the
+        /// screenshot.
+        ///
+        /// When enabled, the screenshot will include the compositor-drawn border, drop shadow,
+        /// and rounded corner clipping, with alpha transparency where appropriate.
+        #[cfg_attr(feature = "clap", arg(long, action = clap::ArgAction::Set, default_value_t = false))]
+        include_decorations: bool,
+
         /// Path to save the screenshot to.
         ///
         /// The path must be absolute, otherwise an error is returned.

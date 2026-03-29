@@ -5224,6 +5224,7 @@ impl Niri {
         mapped: &Mapped,
         write_to_disk: bool,
         show_pointer: bool,
+        include_decorations: bool,
         path: Option<String>,
     ) -> anyhow::Result<()> {
         let _span = tracy_client::span!("Niri::screenshot_window");
@@ -5252,14 +5253,36 @@ impl Niri {
         }
         let pointer_count = elements.len();
 
-        mapped.render(
-            renderer,
-            mapped.window.geometry().loc.to_f64(),
-            scale,
-            alpha,
-            RenderTarget::ScreenCapture,
-            &mut |elem| elements.push(elem.into()),
-        );
+        if include_decorations {
+            if let Some(tile) = self.layout.tile_for_window(mapped) {
+                tile.render_for_screenshot(
+                    renderer,
+                    Point::from((0., 0.)),
+                    mapped.is_focused(),
+                    RenderTarget::ScreenCapture,
+                    &mut |elem| elements.push(elem.into()),
+                );
+            } else {
+                // Fallback if tile not found (e.g. during drag-and-drop).
+                mapped.render(
+                    renderer,
+                    mapped.window.geometry().loc.to_f64(),
+                    scale,
+                    alpha,
+                    RenderTarget::ScreenCapture,
+                    &mut |elem| elements.push(elem.into()),
+                );
+            }
+        } else {
+            mapped.render(
+                renderer,
+                mapped.window.geometry().loc.to_f64(),
+                scale,
+                alpha,
+                RenderTarget::ScreenCapture,
+                &mut |elem| elements.push(elem.into()),
+            );
+        }
 
         // The pointer is not included in encompassing_geo because we don't want it to expand the
         // screenshot size.
@@ -6137,6 +6160,7 @@ niri_render_elements! {
 niri_render_elements! {
     WindowScreenshotRenderElement<R> => {
         Layout = LayoutElementRenderElement<R>,
+        Tile = TileRenderElement<R>,
         Pointer = RelocateRenderElement<PointerRenderElements<R>>,
     }
 }
