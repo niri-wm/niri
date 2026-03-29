@@ -465,6 +465,16 @@ impl State {
                     }
                 }
 
+                if this.niri.config_error_notification.is_open() && pressed {
+                    if matches!(raw, Some(Keysym::Return | Keysym::space)) {
+                        this.niri.config_error_notification.hide();
+                        this.niri.queue_redraw_all();
+                    }
+
+                    this.niri.suppressed_keys.insert(key_code);
+                    return FilterResult::Intercept(None);
+                }
+
                 if this.niri.exit_confirm_dialog.is_open() && pressed {
                     if raw == Some(Keysym::Return) {
                         info!("quitting after confirming exit dialog");
@@ -2747,6 +2757,15 @@ impl State {
 
         // Ignore release events for mouse clicks that triggered a bind.
         if self.niri.suppressed_buttons.remove(&button_code) {
+            return;
+        }
+
+        if self.niri.config_error_notification.is_open() {
+            if ButtonState::Pressed == button_state {
+                self.niri.config_error_notification.hide();
+                self.niri.queue_redraw_all();
+                self.niri.suppressed_buttons.insert(button_code);
+            }
             return;
         }
 

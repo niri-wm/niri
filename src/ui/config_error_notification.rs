@@ -2,7 +2,6 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use std::time::Duration;
 
 use niri_config::Config;
 use ordered_float::NotNan;
@@ -41,7 +40,7 @@ pub struct ConfigErrorNotification {
 enum State {
     Hidden,
     Showing(Animation),
-    Shown(Duration),
+    Shown,
     Hiding(Animation),
 }
 
@@ -102,27 +101,19 @@ impl ConfigErrorNotification {
         self.state = State::Hiding(self.animation(1., 0.));
     }
 
+    pub fn is_open(&self) -> bool {
+        matches!(self.state, State::Showing(_) | State::Shown)
+    }
+
     pub fn advance_animations(&mut self) {
         match &mut self.state {
             State::Hidden => (),
             State::Showing(anim) => {
                 if anim.is_done() {
-                    let duration = if self.created_path.is_some() {
-                        // Make this quite a bit longer because it comes with a monitor modeset
-                        // (can take a while) and an important hotkeys popup diverting the
-                        // attention.
-                        Duration::from_secs(8)
-                    } else {
-                        Duration::from_secs(4)
-                    };
-                    self.state = State::Shown(self.clock.now_unadjusted() + duration);
+                    self.state = State::Shown;
                 }
             }
-            State::Shown(deadline) => {
-                if self.clock.now_unadjusted() >= *deadline {
-                    self.hide();
-                }
-            }
+            State::Shown => (),
             State::Hiding(anim) => {
                 if anim.is_clamped_done() {
                     self.state = State::Hidden;
@@ -162,7 +153,7 @@ impl ConfigErrorNotification {
         let y = match &self.state {
             State::Hidden => unreachable!(),
             State::Showing(anim) | State::Hiding(anim) => -size.h + anim.value() * y_range,
-            State::Shown(_) => f64::from(PADDING) * 2.,
+            State::Shown => f64::from(PADDING) * 2.,
         };
 
         let location = Point::from((x, y));

@@ -509,6 +509,7 @@ pub enum KeyboardFocus {
     Layout { surface: Option<WlSurface> },
     LayerShell { surface: WlSurface },
     LockScreen { surface: Option<WlSurface> },
+    ConfigErrorNotification,
     ScreenshotUi,
     ExitConfirmDialog,
     Overview,
@@ -658,6 +659,7 @@ impl KeyboardFocus {
             KeyboardFocus::Layout { surface } => surface.as_ref(),
             KeyboardFocus::LayerShell { surface } => Some(surface),
             KeyboardFocus::LockScreen { surface } => surface.as_ref(),
+            KeyboardFocus::ConfigErrorNotification => None,
             KeyboardFocus::ScreenshotUi => None,
             KeyboardFocus::ExitConfirmDialog => None,
             KeyboardFocus::Overview => None,
@@ -670,6 +672,7 @@ impl KeyboardFocus {
             KeyboardFocus::Layout { surface } => surface,
             KeyboardFocus::LayerShell { surface } => Some(surface),
             KeyboardFocus::LockScreen { surface } => surface,
+            KeyboardFocus::ConfigErrorNotification => None,
             KeyboardFocus::ScreenshotUi => None,
             KeyboardFocus::ExitConfirmDialog => None,
             KeyboardFocus::Overview => None,
@@ -1018,7 +1021,8 @@ impl State {
         let pointer = &self.niri.seat.get_pointer().unwrap();
         let location = pointer.current_location();
 
-        if !self.niri.exit_confirm_dialog.is_open()
+        if !self.niri.config_error_notification.is_open()
+            && !self.niri.exit_confirm_dialog.is_open()
             && !self.niri.is_locked()
             && !self.niri.screenshot_ui.is_open()
         {
@@ -1127,7 +1131,9 @@ impl State {
         }
 
         // Compute the current focus.
-        let focus = if self.niri.exit_confirm_dialog.is_open() {
+        let focus = if self.niri.config_error_notification.is_open() {
+            KeyboardFocus::ConfigErrorNotification
+        } else if self.niri.exit_confirm_dialog.is_open() {
             KeyboardFocus::ExitConfirmDialog
         } else if self.niri.is_locked() {
             KeyboardFocus::LockScreen {
@@ -3898,6 +3904,7 @@ impl Niri {
             // FIXME: when going into the screenshot UI from a layer-shell focus, and then back to
             // layer-shell, the layout will briefly draw as active, despite never having focus.
             KeyboardFocus::LockScreen { .. } => true,
+            KeyboardFocus::ConfigErrorNotification => true,
             KeyboardFocus::ScreenshotUi => true,
             KeyboardFocus::ExitConfirmDialog => true,
             KeyboardFocus::Overview => true,
