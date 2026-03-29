@@ -7,6 +7,7 @@ use std::time::Duration;
 use niri_config::Config;
 use ordered_float::NotNan;
 use pangocairo::cairo::{self, ImageSurface};
+use pangocairo::pango::glib;
 use pangocairo::pango::FontDescription;
 use smithay::backend::renderer::element::Kind;
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
@@ -31,6 +32,7 @@ pub struct ConfigErrorNotification {
     // If set, this is a "Created config at {path}" notification. If unset, this is a config error
     // notification.
     created_path: Option<PathBuf>,
+    error_report: Option<String>,
 
     clock: Clock,
     config: Rc<RefCell<Config>>,
@@ -49,6 +51,7 @@ impl ConfigErrorNotification {
             state: State::Hidden,
             buffers: RefCell::new(HashMap::new()),
             created_path: None,
+            error_report: None,
             clock,
             config,
         }
@@ -68,20 +71,22 @@ impl ConfigErrorNotification {
     pub fn show_created(&mut self, created_path: &Path) {
         if self.created_path.as_deref() != Some(created_path) {
             self.created_path = Some(created_path.to_owned());
+            self.error_report = None;
             self.buffers.borrow_mut().clear();
         }
 
         self.state = State::Showing(self.animation(0., 1.));
     }
 
-    pub fn show(&mut self) {
+    pub fn show(&mut self, report: String) {
         let c = self.config.borrow();
         if c.config_notification.disable_failed {
             return;
         }
 
-        if self.created_path.is_some() {
+        if self.created_path.is_some() || self.error_report.as_deref() != Some(&report) {
             self.created_path = None;
+            self.error_report = Some(report);
             self.buffers.borrow_mut().clear();
         }
 
@@ -142,11 +147,12 @@ impl ConfigErrorNotification {
         let scale = output.current_scale().fractional_scale();
         let output_size = output_size(output);
         let path = self.created_path.as_deref();
+        let report = self.error_report.as_deref();
 
         let mut buffers = self.buffers.borrow_mut();
         let buffer = buffers
             .entry(NotNan::new(scale).unwrap())
-            .or_insert_with(move || render(renderer.as_gles_renderer(), scale, path).ok());
+            .or_insert_with(move || render(renderer.as_gles_renderer(), scale, path, report).ok());
         let buffer = buffer.clone()?;
 
         let size = buffer.logical_size();
@@ -178,12 +184,13 @@ fn render(
     renderer: &mut GlesRenderer,
     scale: f64,
     created_path: Option<&Path>,
+    error_report: Option<&str>,
 ) -> anyhow::Result<TextureBuffer<GlesTexture>> {
     let _span = tracy_client::span!("config_error_notification::render");
 
     let padding: i32 = to_physical_precise_round(scale, PADDING);
 
-    let mut text = error_text(true);
+    let mut text = error_text(true, error_report);
     let mut border_color = (1., 0.3, 0.3);
     if let Some(path) = created_path {
         text = format!(
@@ -247,12 +254,26 @@ fn render(
     Ok(buffer)
 }
 
-pub fn error_text(markup: bool) -> String {
+pub fn error_text(markup: bool, error_report: Option<&str>) -> String {
     let command = if markup {
         "<span face='monospace' bgcolor='#000000'>niri validate</span>"
     } else {
         "niri validate"
     };
 
-    format!("Failed to parse the config file. Please run {command} to see the errors.")
+    let mut text =
+        format!("Failed to parse the config file. Run {command} for the full error report.");
+
+    if let Some(report) = error_report.filter(|report| !report.is_empty()) {
+        if markup {
+            text.push_str("\n<span face='monospace' bgcolor='#000000' foreground='#ffb0b0'>");
+            text.push_str(&glib::markup_escape_text(report));
+            text.push_str("</span>");
+        } else {
+            text.push('\n');
+            text.push_str(report);
+        }
+    }
+
+    text
 }

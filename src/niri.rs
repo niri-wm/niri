@@ -1401,13 +1401,13 @@ impl State {
         }
     }
 
-    pub fn reload_config(&mut self, config: Result<Config, ()>) {
+    pub fn reload_config(&mut self, config: Result<Config, String>) {
         let _span = tracy_client::span!("State::reload_config");
 
         let mut config = match config {
             Ok(config) => config,
-            Err(()) => {
-                self.niri.config_error_notification.show();
+            Err(summary) => {
+                self.niri.config_error_notification.show(summary);
                 self.niri.queue_redraw_all();
 
                 #[cfg(feature = "dbus")]

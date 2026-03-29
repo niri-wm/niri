@@ -148,7 +148,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config_path = config_path(cli.config);
     env::remove_var("NIRI_CONFIG");
     let (config_created_at, config_load_result) = config_path.load_or_create();
-    let config_errored = config_load_result.config.is_err();
+    let config_error_report = config_load_result
+        .config
+        .as_ref()
+        .err()
+        .map(|err| format!("{err:?}"));
+    let config_errored = config_error_report.is_some();
     let mut config = config_load_result.config.unwrap_or_else(|err| {
         warn!("{err:?}");
         Config::load_default()
@@ -258,7 +263,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Show the config error notification right away if needed.
     if config_errored {
-        state.niri.config_error_notification.show();
+        state
+            .niri
+            .config_error_notification
+            .show(config_error_report.unwrap());
         state.ipc_config_loaded(true);
     } else if let Some(path) = config_created_at {
         state.niri.config_error_notification.show_created(path);
