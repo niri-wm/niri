@@ -52,16 +52,15 @@ impl TestCase for Window {
             .to_f64()
             .downscale(2.);
 
-        self.window
-            .render(
-                renderer,
-                location,
-                Scale::from(1.),
-                1.,
-                RenderTarget::Output,
-            )
-            .into_iter()
-            .map(|elem| Box::new(elem) as _)
-            .collect()
+        let mut rv = Vec::new();
+        self.window.render_normal(
+            renderer,
+            location,
+            Scale::from(1.),
+            1.,
+            RenderTarget::Output,
+            &mut |elem| rv.push(Box::new(elem) as _),
+        );
+        rv
     }
 }

@@ -17,6 +17,7 @@ debug {
     disable-cursor-plane
     disable-direct-scanout
     restrict-primary-scanout-to-matching-format
+    force-disable-connectors-on-resume
     render-drm-device "/dev/dri/renderD129"
     ignore-drm-device "/dev/dri/renderD128"
     ignore-drm-device "/dev/dri/renderD130"
@@ -101,6 +102,19 @@ As is, it may prevent some clients (mpv on my machine) from scanning out to the 
 ```kdl
 debug {
     restrict-primary-scanout-to-matching-format
+}
+```
+
+### `force-disable-connectors-on-resume`
+
+Force-disables all outputs upon resuming niri (TTY switch or waking up from suspend).
+This causes a modeset/screen blank on all outputs.
+
+If niri rendering is corrupted, or monitors don't light up after a TTY switch, you can try this flag.
+
+```kdl
+debug {
+    force-disable-connectors-on-resume
 }
 ```
 

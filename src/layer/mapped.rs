@@ -1,8 +1,6 @@
 use niri_config::utils::MergeWith as _;
 use niri_config::{Config, LayerRule};
-use smithay::backend::renderer::element::surface::{
-    render_elements_from_surface_tree, WaylandSurfaceRenderElement,
-};
+use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::element::Kind;
 use smithay::desktop::{LayerSurface, PopupManager};
 use smithay::utils::{Logical, Point, Scale, Size};
@@ -15,7 +13,8 @@ use crate::niri_render_elements;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::shadow::ShadowRenderElement;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
-use crate::render_helpers::{RenderTarget, SplitElements};
+use crate::render_helpers::surface::push_elements_from_surface_tree;
+use crate::render_helpers::RenderTarget;
 use crate::utils::{baba_is_float_offset, round_logical_in_physical};
 
 #[derive(Debug)]
@@ -156,14 +155,13 @@ impl MappedLayer {
         Point::from((0., y))
     }
 
-    pub fn render<R: NiriRenderer>(
+    pub fn render_normal<R: NiriRenderer>(
         &self,
         renderer: &mut R,
         location: Point<f64, Logical>,
         target: RenderTarget,
-    ) -> SplitElements<LayerSurfaceRenderElement<R>> {
-        let mut rv = SplitElements::default();
-
+        push: &mut dyn FnMut(LayerSurfaceRenderElement<R>),
+    ) {
         let scale = Scale::from(self.scale);
         let alpha = self.rules.opacity.unwrap_or(1.).clamp(0., 1.);
         let location = location + self.bob_offset();
@@ -179,40 +177,60 @@ impl MappedLayer {
                 alpha,
                 Kind::Unspecified,
             );
-            rv.normal.push(elem.into());
+            push(elem.into());
         } else {
             // Layer surfaces don't have extra geometry like windows.
             let buf_pos = location;
 
             let surface = self.surface.wl_surface();
-            for (popup, popup_offset) in PopupManager::popups_for_surface(surface) {
-                // Layer surfaces don't have extra geometry like windows.
-                let offset = popup_offset - popup.geometry().loc;
-
-                rv.popups.extend(render_elements_from_surface_tree(
-                    renderer,
-                    popup.wl_surface(),
-                    (buf_pos + offset.to_f64()).to_physical_precise_round(scale),
-                    scale,
-                    alpha,
-                    Kind::ScanoutCandidate,
-                ));
-            }
-
-            rv.normal = render_elements_from_surface_tree(
+            push_elements_from_surface_tree(
                 renderer,
                 surface,
                 buf_pos.to_physical_precise_round(scale),
                 scale,
                 alpha,
                 Kind::ScanoutCandidate,
+                &mut |elem| push(elem.into()),
             );
         }
 
         let location = location.to_physical_precise_round(scale).to_logical(scale);
-        rv.normal
-            .extend(self.shadow.render(renderer, location).map(Into::into));
+        self.shadow
+            .render(renderer, location, &mut |elem| push(elem.into()));
+    }
 
-        rv
+    pub fn render_popups<R: NiriRenderer>(
+        &self,
+        renderer: &mut R,
+        location: Point<f64, Logical>,
+        target: RenderTarget,
+        push: &mut dyn FnMut(LayerSurfaceRenderElement<R>),
+    ) {
+        let scale = Scale::from(self.scale);
+        let alpha = self.rules.opacity.unwrap_or(1.).clamp(0., 1.);
+        let location = location + self.bob_offset();
+
+        if target.should_block_out(self.rules.block_out_from) {
+            return;
+        }
+
+        // Layer surfaces don't have extra geometry like windows.
+        let buf_pos = location;
+
+        let surface = self.surface.wl_surface();
+        for (popup, popup_offset) in PopupManager::popups_for_surface(surface) {
+            // Layer surfaces don't have extra geometry like windows.
+            let offset = popup_offset - popup.geometry().loc;
+
+            push_elements_from_surface_tree(
+                renderer,
+                popup.wl_surface(),
+                (buf_pos + offset.to_f64()).to_physical_precise_round(scale),
+                scale,
+                alpha,
+                Kind::ScanoutCandidate,
+                &mut |elem| push(elem.into()),
+            );
+        }
     }
 }

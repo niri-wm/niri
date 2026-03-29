@@ -7,7 +7,7 @@ pub mod mapped;
 pub use mapped::MappedLayer;
 
 /// Rules fully resolved for a layer-shell surface.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Default, PartialEq)]
 pub struct ResolvedLayerRules {
     /// Extra opacity to draw this layer surface with.
     pub opacity: Option<f32>,
@@ -29,30 +29,10 @@ pub struct ResolvedLayerRules {
 }
 
 impl ResolvedLayerRules {
-    pub const fn empty() -> Self {
-        Self {
-            opacity: None,
-            block_out_from: None,
-            shadow: ShadowRule {
-                off: false,
-                on: false,
-                offset: None,
-                softness: None,
-                spread: None,
-                draw_behind_window: None,
-                color: None,
-                inactive_color: None,
-            },
-            geometry_corner_radius: None,
-            place_within_backdrop: false,
-            baba_is_float: false,
-        }
-    }
-
     pub fn compute(rules: &[LayerRule], surface: &LayerSurface, is_at_startup: bool) -> Self {
         let _span = tracy_client::span!("ResolvedLayerRules::compute");
 
-        let mut resolved = ResolvedLayerRules::empty();
+        let mut resolved = ResolvedLayerRules::default();
 
         for rule in rules {
             let matches = |m: &Match| {

@@ -9,7 +9,7 @@ use niri::layout::{
 use niri::render_helpers::offscreen::OffscreenData;
 use niri::render_helpers::renderer::NiriRenderer;
 use niri::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
-use niri::render_helpers::{RenderTarget, SplitElements};
+use niri::render_helpers::RenderTarget;
 use niri::utils::transaction::Transaction;
 use niri::window::ResolvedWindowRules;
 use smithay::backend::renderer::element::Kind;
@@ -149,36 +149,30 @@ impl LayoutElement for TestWindow {
         false
     }
 
-    fn render<R: NiriRenderer>(
+    fn render_normal<R: NiriRenderer>(
         &self,
         _renderer: &mut R,
         location: Point<f64, Logical>,
         _scale: Scale<f64>,
         alpha: f32,
         _target: RenderTarget,
-    ) -> SplitElements<LayoutElementRenderElement<R>> {
+        push: &mut dyn FnMut(LayoutElementRenderElement<R>),
+    ) {
         let inner = self.inner.borrow();
 
-        SplitElements {
-            normal: vec![
-                SolidColorRenderElement::from_buffer(
-                    &inner.buffer,
-                    location,
-                    alpha,
-                    Kind::Unspecified,
-                )
+        push(
+            SolidColorRenderElement::from_buffer(&inner.buffer, location, alpha, Kind::Unspecified)
                 .into(),
-                SolidColorRenderElement::from_buffer(
-                    &inner.csd_shadow_buffer,
-                    location
-                        - Point::from((inner.csd_shadow_width, inner.csd_shadow_width)).to_f64(),
-                    alpha,
-                    Kind::Unspecified,
-                )
-                .into(),
-            ],
-            popups: vec![],
-        }
+        );
+        push(
+            SolidColorRenderElement::from_buffer(
+                &inner.csd_shadow_buffer,
+                location - Point::from((inner.csd_shadow_width, inner.csd_shadow_width)).to_f64(),
+                alpha,
+                Kind::Unspecified,
+            )
+            .into(),
+        );
     }
 
     fn request_size(

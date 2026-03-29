@@ -12,7 +12,7 @@ systemctl --user add-wants niri.service dms
 Arch Linux (via [paru](https://github.com/morganamilo/paru)):
 ```
 sudo pacman -Syu niri xwayland-satellite xdg-desktop-portal-gnome xdg-desktop-portal-gtk alacritty
-paru -S dms-shell-bin matugen wl-clipboard cliphist cava qt6-multimedia-ffmpeg
+paru -S dms-shell-bin matugen cava qt6-multimedia-ffmpeg
 systemctl --user add-wants niri.service dms
 ```
 
@@ -28,6 +28,8 @@ Or, if not using a display manager, run `niri-session` on a TTY.
 
 The default niri config will run Waybar, so you might get two bars on screen.
 To fix this, stop Waybar with `pkill waybar` command, then open `~/.config/niri/config.kdl` and delete the `spawn-at-startup "waybar"` line.
+
+Check the DankMaterialShell's [compositor setup page](https://danklinux.com/docs/dankmaterialshell/compositors#niri-configuration) to learn how to configure DMS-specific binds and other niri integrations.
 
 ## Slower and more considered start
 
@@ -223,7 +225,7 @@ This defaults to `/usr/bin/niri`.
 | `resources/niri.service` (systemd) | `/etc/systemd/user/` |
 | `resources/niri-shutdown.target` (systemd) | `/etc/systemd/user/` |
 | `resources/dinit/niri` (dinit) | `/etc/dinit.d/user/` |
-| `resources/dinit/niri-shutdown` (dinit) | `/etc/dinit.d/user/` |
+| `resources/dinit/niri.target` (dinit) | `/etc/dinit.d/user/` |
 
 [Alacritty]: https://github.com/alacritty/alacritty
 [fuzzel]: https://codeberg.org/dnkl/fuzzel

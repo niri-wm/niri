@@ -60,7 +60,7 @@ SourceLicense:  GPL-3.0-or-later
 License:        ((MIT OR Apache-2.0) AND BSD-3-Clause) AND ((MIT OR Apache-2.0) AND Unicode-3.0) AND (0BSD OR MIT OR Apache-2.0) AND (Apache-2.0) AND (Apache-2.0 AND MIT) AND (Apache-2.0 OR BSL-1.0) AND (Apache-2.0 OR MIT) AND (Apache-2.0 OR MIT OR Unlicense) AND (Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT) AND (BSD-2-Clause) AND (BSD-2-Clause OR Apache-2.0 OR MIT) AND (BSD-3-Clause OR MIT OR Apache-2.0) AND (GPL-3.0-or-later) AND (ISC) AND (MIT) AND (MIT OR Apache-2.0) AND (MIT OR Apache-2.0 OR LGPL-2.1-or-later) AND (MIT OR Apache-2.0 OR Zlib) AND (MIT OR Zlib OR Apache-2.0) AND (MPL-2.0) AND (Unicode-3.0) AND (Unlicense OR MIT) AND (Zlib) AND (Zlib OR Apache-2.0 OR MIT)
 # LICENSE.dependencies contains a full license breakdown
 
-URL:            https://github.com/YaLTeR/niri
+URL:            https://github.com/niri-wm/niri
 VCS:            {{{ git_dir_vcs }}}
 Source:         {{{ git_dir_pack }}}
 
@@ -84,6 +84,9 @@ BuildRequires:  mesa-libEGL
 
 Requires:       mesa-dri-drivers
 Requires:       mesa-libEGL
+
+# Loaded through dlopen
+Requires:       libwayland-server
 
 # Integrated Xwayland support. Not packaged on EPEL
 %if 0%{?fedora}

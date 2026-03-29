@@ -9,7 +9,7 @@
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 
-use crate::{Event, KeyboardLayouts, Window, Workspace};
+use crate::{Cast, Event, KeyboardLayouts, Window, Workspace};
 
 /// Part of the state communicated via the event stream.
 pub trait EventStreamStatePart {
@@ -46,6 +46,9 @@ pub struct EventStreamState {
 
     /// State of the config.
     pub config: ConfigState,
+
+    /// State of screencasts.
+    pub casts: CastsState,
 }
 
 /// The workspaces state communicated over the event stream.
@@ -83,6 +86,13 @@ pub struct ConfigState {
     pub failed: bool,
 }
 
+/// The casts state communicated over the event stream.
+#[derive(Debug, Default)]
+pub struct CastsState {
+    /// Map from a stream id to the screencast.
+    pub casts: HashMap<u64, Cast>,
+}
+
 impl EventStreamStatePart for EventStreamState {
     fn replicate(&self) -> Vec<Event> {
         let mut events = Vec::new();
@@ -91,6 +101,7 @@ impl EventStreamStatePart for EventStreamState {
         events.extend(self.keyboard_layouts.replicate());
         events.extend(self.overview.replicate());
         events.extend(self.config.replicate());
+        events.extend(self.casts.replicate());
         events
     }
 
@@ -100,6 +111,7 @@ impl EventStreamStatePart for EventStreamState {
         let event = self.keyboard_layouts.apply(event)?;
         let event = self.overview.apply(event)?;
         let event = self.config.apply(event)?;
+        let event = self.casts.apply(event)?;
         Some(event)
     }
 }
@@ -279,6 +291,30 @@ impl EventStreamStatePart for ConfigState {
         match event {
             Event::ConfigLoaded { failed } => {
                 self.failed = failed;
+            }
+            event => return Some(event),
+        }
+        None
+    }
+}
+
+impl EventStreamStatePart for CastsState {
+    fn replicate(&self) -> Vec<Event> {
+        let casts = self.casts.values().cloned().collect();
+        vec![Event::CastsChanged { casts }]
+    }
+
+    fn apply(&mut self, event: Event) -> Option<Event> {
+        match event {
+            Event::CastsChanged { casts } => {
+                self.casts = casts.into_iter().map(|c| (c.stream_id, c)).collect();
+            }
+            Event::CastStartedOrChanged { cast } => {
+                self.casts.insert(cast.stream_id, cast);
+            }
+            Event::CastStopped { stream_id } => {
+                let cast = self.casts.remove(&stream_id);
+                cast.expect("stopped cast was missing from the map");
             }
             event => return Some(event),
         }

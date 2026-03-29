@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::rc::Rc;
 
 use anyhow::Context as _;
 use glam::{Mat3, Vec2};
@@ -229,14 +230,14 @@ impl ClosingWindow {
                 None,
                 scale.x as f32,
                 1.,
-                vec![
+                Rc::new([
                     mat3_uniform("niri_input_to_geo", input_to_geo),
                     Uniform::new("niri_geo_size", geo_size.to_array()),
                     mat3_uniform("niri_geo_to_tex", geo_to_tex),
                     Uniform::new("niri_progress", progress as f32),
                     Uniform::new("niri_clamped_progress", clamped_progress as f32),
                     Uniform::new("niri_random_seed", self.random_seed),
-                ],
+                ]),
                 HashMap::from([(String::from("niri_tex"), buffer.texture().clone())]),
                 Kind::Unspecified,
             )

@@ -14,7 +14,7 @@ use crate::render_helpers::shaders::Shaders;
 pub struct GradientFadeTextureRenderElement {
     inner: TextureRenderElement<GlesTexture>,
     program: GradientFadeShader,
-    uniforms: Vec<Uniform<'static>>,
+    cutoff: (f32, f32),
 }
 
 #[derive(Debug, Clone)]
@@ -33,11 +33,10 @@ impl GradientFadeTextureRenderElement {
             // Texture is displayed full-size, no cutoff necessary.
             (1., 1.)
         };
-        let uniforms = vec![Uniform::new("cutoff", cutoff)];
         Self {
             inner: texture,
             program,
-            uniforms,
+            cutoff,
         }
     }
 
@@ -98,7 +97,8 @@ impl RenderElement<GlesRenderer> for GradientFadeTextureRenderElement {
         damage: &[Rectangle<i32, Physical>],
         opaque_regions: &[Rectangle<i32, Physical>],
     ) -> Result<(), GlesError> {
-        frame.override_default_tex_program(self.program.0.clone(), self.uniforms.clone());
+        let uniforms = vec![Uniform::new("cutoff", self.cutoff)];
+        frame.override_default_tex_program(self.program.0.clone(), uniforms);
         RenderElement::<GlesRenderer>::draw(&self.inner, frame, src, dst, damage, opaque_regions)?;
         frame.clear_tex_program_override();
         Ok(())

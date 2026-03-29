@@ -1,12 +1,13 @@
 use std::cell::RefCell;
+use std::cmp::min;
 use std::collections::HashMap;
 use std::io::Cursor;
 use std::iter::zip;
-use std::mem;
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd};
 use std::ptr::NonNull;
 use std::rc::Rc;
 use std::time::Duration;
+use std::{mem, slice};
 
 use anyhow::Context as _;
 use calloop::timer::{TimeoutAction, Timer};
@@ -29,30 +30,45 @@ use pipewire::spa::utils::{
 };
 use pipewire::spa::{self};
 use pipewire::stream::{Stream, StreamFlags, StreamListener, StreamRc, StreamState};
-use pipewire::sys::{pw_buffer, pw_stream_queue_buffer};
+use pipewire::sys::{pw_buffer, pw_check_library_version, pw_stream_queue_buffer};
 use smithay::backend::allocator::dmabuf::{AsDmabuf, Dmabuf};
 use smithay::backend::allocator::format::FormatSet;
 use smithay::backend::allocator::gbm::{GbmBuffer, GbmBufferFlags, GbmDevice};
 use smithay::backend::allocator::{Format, Fourcc};
 use smithay::backend::drm::DrmDeviceFd;
 use smithay::backend::renderer::damage::OutputDamageTracker;
-use smithay::backend::renderer::element::RenderElement;
+use smithay::backend::renderer::element::utils::{Relocate, RelocateRenderElement};
+use smithay::backend::renderer::element::{Element, RenderElement};
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::renderer::sync::SyncPoint;
+use smithay::backend::renderer::ExportMem;
 use smithay::output::{Output, OutputModeSource};
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::{Interest, LoopHandle, Mode, PostAction};
 use smithay::reexports::gbm::Modifier;
-use smithay::utils::{Physical, Scale, Size, Transform};
+use smithay::utils::{Logical, Physical, Point, Scale, Size, Transform};
 use zbus::object_server::SignalEmitter;
 
 use crate::dbus::mutter_screen_cast::{self, CursorMode};
 use crate::niri::{CastTarget, State};
-use crate::render_helpers::{clear_dmabuf, render_to_dmabuf};
-use crate::utils::get_monotonic_time;
+use crate::render_helpers::{
+    clear_dmabuf, encompassing_geo, render_and_download, render_to_dmabuf,
+};
+use crate::screencasting::CastRenderElement;
+use crate::utils::{get_monotonic_time, CastSessionId, CastStreamId};
 
 // Give a 0.1 ms allowance for presentation time errors.
 const CAST_DELAY_ALLOWANCE: Duration = Duration::from_micros(100);
+
+const CURSOR_FORMAT: spa_video_format = SPA_VIDEO_FORMAT_BGRA;
+const CURSOR_BPP: u32 = 4;
+const CURSOR_WIDTH: u32 = 384;
+const CURSOR_HEIGHT: u32 = 384;
+const CURSOR_BITMAP_SIZE: usize = (CURSOR_WIDTH * CURSOR_HEIGHT * CURSOR_BPP) as usize;
+const CURSOR_META_SIZE: usize =
+    mem::size_of::<spa_meta_cursor>() + mem::size_of::<spa_meta_bitmap>() + CURSOR_BITMAP_SIZE;
+const BITMAP_META_OFFSET: usize = mem::size_of::<spa_meta_cursor>();
+const BITMAP_DATA_OFFSET: usize = mem::size_of::<spa_meta_bitmap>();
 
 pub struct PipeWire {
     _context: ContextRc,
@@ -63,22 +79,23 @@ pub struct PipeWire {
 }
 
 pub enum PwToNiri {
-    StopCast { session_id: usize },
-    Redraw { stream_id: usize },
+    StopCast { session_id: CastSessionId },
+    Redraw { stream_id: CastStreamId },
     FatalError,
 }
 
 pub struct Cast {
     event_loop: LoopHandle<'static, State>,
-    pub session_id: usize,
-    pub stream_id: usize,
-    pub stream: StreamRc,
+    pub session_id: CastSessionId,
+    pub stream_id: CastStreamId,
+    // Listener is dropped before Stream to prevent a use-after-free.
     _listener: StreamListener<()>,
+    pub stream: StreamRc,
     pub target: CastTarget,
     pub dynamic_target: bool,
     formats: FormatSet,
     offer_alpha: bool,
-    pub cursor_mode: CursorMode,
+    cursor_mode: CursorMode,
     pub last_frame_time: Duration,
     scheduled_redraw: Option<RegistrationToken>,
     // Incremented once per successful frame, stored in buffer meta.
@@ -123,6 +140,8 @@ enum CastState {
         plane_count: i32,
         // Lazily-initialized to keep the initialization to a single place.
         damage_tracker: Option<OutputDamageTracker>,
+        cursor_damage_tracker: Option<OutputDamageTracker>,
+        last_cursor_location: Option<Point<i32, Physical>>,
     },
 }
 
@@ -130,6 +149,49 @@ enum CastState {
 pub enum CastSizeChange {
     Ready,
     Pending,
+}
+
+/// Data for drawing a cursor either as metadata or embedded.
+///
+/// We have weird borrowed references here in order to support both metadata and embedded cases.
+/// The cursor damage tracker needs a slice of impl Element at (0, 0), so we pass it `relocated`
+/// (luckily, &impl Element also impls Element). Then, if we need to embed the cursor, we chain the
+/// elements to the main video buffer elements, so we need the same type. We use `original` for
+/// this; `E` is expected to match the type of the main video buffer elements.
+#[derive(Debug)]
+pub struct CursorData<'a, E> {
+    /// Cursor elements at their original location.
+    original: &'a [E],
+    /// Cursor elements relocated to (0, 0).
+    relocated: Vec<RelocateRenderElement<&'a E>>,
+    /// Location of the cursor's hotspot in the video buffer.
+    location: Point<i32, Physical>,
+    /// Location of the cursor's hotspot on the cursor bitmap.
+    hotspot: Point<i32, Physical>,
+    /// Size of the elements' encompassing geo.
+    size: Size<i32, Physical>,
+    /// Scale the elements should be rendered at.
+    scale: Scale<f64>,
+}
+
+impl<'a, E: Element> CursorData<'a, E> {
+    pub fn compute(elements: &'a [E], location: Point<f64, Logical>, scale: Scale<f64>) -> Self {
+        let location = location.to_physical_precise_round(scale);
+
+        let geo = encompassing_geo(scale, elements.iter());
+        let relocated = Vec::from_iter(elements.iter().map(|elem| {
+            RelocateRenderElement::from_element(elem, geo.loc.upscale(-1), Relocate::Relative)
+        }));
+
+        Self {
+            original: elements,
+            relocated,
+            location,
+            hotspot: location - geo.loc,
+            size: geo.size,
+            scale,
+        }
+    }
 }
 
 macro_rules! make_params {
@@ -207,14 +269,13 @@ impl PipeWire {
         &self,
         gbm: GbmDevice<DrmDeviceFd>,
         formats: FormatSet,
-        session_id: usize,
-        stream_id: usize,
+        session_id: CastSessionId,
+        stream_id: CastStreamId,
         target: CastTarget,
-        dynamic_target: bool,
         size: Size<i32, Physical>,
         refresh: u32,
         alpha: bool,
-        cursor_mode: CursorMode,
+        mut cursor_mode: CursorMode,
         signal_ctx: SignalEmitter<'static>,
     ) -> anyhow::Result<Cast> {
         let _span = tracy_client::span!("PipeWire::start_cast");
@@ -222,13 +283,13 @@ impl PipeWire {
         let to_niri_ = self.to_niri.clone();
         let stop_cast = move || {
             if let Err(err) = to_niri_.send(PwToNiri::StopCast { session_id }) {
-                warn!(session_id, "error sending StopCast to niri: {err:?}");
+                warn!(%session_id, "error sending StopCast to niri: {err:?}");
             }
         };
         let to_niri_ = self.to_niri.clone();
         let redraw = move || {
             if let Err(err) = to_niri_.send(PwToNiri::Redraw { stream_id }) {
-                warn!(stream_id, "error sending Redraw to niri: {err:?}");
+                warn!(%stream_id, "error sending Redraw to niri: {err:?}");
             }
         };
         let redraw_ = redraw.clone();
@@ -239,6 +300,14 @@ impl PipeWire {
             PropertiesBox::new(),
         )
         .context("error creating Stream")?;
+
+        if cursor_mode == CursorMode::Metadata && !pw_version_supports_cursor_metadata() {
+            debug!(
+                "metadata cursor mode requested, but PipeWire is too old (need >= 1.4.8); \
+                 switching to embedded cursor"
+            );
+            cursor_mode = CursorMode::Embedded;
+        }
 
         let pending_size = Size::from((size.w as u32, size.h as u32));
 
@@ -259,7 +328,8 @@ impl PipeWire {
                 let inner = inner.clone();
                 let stop_cast = stop_cast.clone();
                 move |stream, (), old, new| {
-                    debug!(stream_id, "pw stream: state changed: {old:?} -> {new:?}");
+                    let _span = debug_span!("state_changed", %stream_id).entered();
+                    debug!("{old:?} -> {new:?}");
                     let mut inner = inner.borrow_mut();
 
                     match new {
@@ -267,7 +337,7 @@ impl PipeWire {
                             if inner.node_id.is_none() {
                                 let id = stream.node_id();
                                 inner.node_id = Some(id);
-                                debug!(stream_id, "pw stream: sending signal with {id}");
+                                debug!("sending signal with {id}");
 
                                 let _span = tracy_client::span!("sending PipeWireStreamAdded");
                                 async_io::block_on(async {
@@ -278,10 +348,7 @@ impl PipeWire {
                                     .await;
 
                                     if let Err(err) = res {
-                                        warn!(
-                                            stream_id,
-                                            "error sending PipeWireStreamAdded: {err:?}"
-                                        );
+                                        warn!("error sending PipeWireStreamAdded: {err:?}");
                                         stop_cast();
                                     }
                                 });
@@ -311,7 +378,7 @@ impl PipeWire {
                 let formats = formats.clone();
                 move |stream, (), id, pod| {
                     let id = ParamType::from_raw(id);
-                    trace!(stream_id, ?id, "pw stream: param_changed");
+                    trace!(%stream_id, ?id, "param_changed");
                     let mut inner = inner.borrow_mut();
                     let inner = &mut *inner;
 
@@ -319,12 +386,14 @@ impl PipeWire {
                         return;
                     }
 
+                    let _span = debug_span!("param_changed", %stream_id).entered();
+
                     let Some(pod) = pod else { return };
 
                     let (m_type, m_subtype) = match parse_format(pod) {
                         Ok(x) => x,
                         Err(err) => {
-                            warn!(stream_id, "pw stream: error parsing format: {err:?}");
+                            warn!("error parsing format: {err:?}");
                             return;
                         }
                     };
@@ -335,19 +404,19 @@ impl PipeWire {
 
                     let mut format = VideoInfoRaw::new();
                     format.parse(pod).unwrap();
-                    debug!(stream_id, "pw stream: got format = {format:?}");
+                    debug!("got format = {format:?}");
 
                     let format_size = Size::from((format.size().width, format.size().height));
 
                     let state = &mut inner.state;
                     if format_size != state.expected_format_size() {
                         if !matches!(&*state, CastState::ResizePending { .. }) {
-                            warn!(stream_id, "pw stream: wrong size, but we're not resizing");
+                            warn!("wrong size, but we're not resizing");
                             stop_cast();
                             return;
                         }
 
-                        debug!(stream_id, "pw stream: wrong size, waiting");
+                        debug!("wrong size, waiting");
                         return;
                     }
 
@@ -368,25 +437,25 @@ impl PipeWire {
                     let Some(prop_modifier) =
                         object.find_prop(spa::utils::Id(FormatProperties::VideoModifier.0))
                     else {
-                        warn!(stream_id, "pw stream: modifier prop missing");
+                        warn!("modifier prop missing");
                         stop_cast();
                         return;
                     };
 
                     if prop_modifier.flags().contains(PodPropFlags::DONT_FIXATE) {
-                        debug!(stream_id, "pw stream: fixating the modifier");
+                        debug!("fixating the modifier");
 
                         let pod_modifier = prop_modifier.value();
                         let Ok((_, modifiers)) = PodDeserializer::deserialize_from::<Choice<i64>>(
                             pod_modifier.as_bytes(),
                         ) else {
-                            warn!(stream_id, "pw stream: wrong modifier property type");
+                            warn!("wrong modifier property type");
                             stop_cast();
                             return;
                         };
 
                         let ChoiceEnum::Enum { alternatives, .. } = modifiers.1 else {
-                            warn!(stream_id, "pw stream: wrong modifier choice type");
+                            warn!("wrong modifier choice type");
                             stop_cast();
                             return;
                         };
@@ -399,18 +468,14 @@ impl PipeWire {
                         ) {
                             Ok(x) => x,
                             Err(err) => {
-                                warn!(
-                                    stream_id,
-                                    "pw stream: couldn't find preferred modifier: {err:?}"
-                                );
+                                warn!("couldn't find preferred modifier: {err:?}");
                                 stop_cast();
                                 return;
                             }
                         };
 
                         debug!(
-                            stream_id,
-                            "pw stream: allocation successful \
+                            "allocation successful \
                              (modifier={modifier:?}, plane_count={plane_count}), \
                              moving to confirmation pending"
                         );
@@ -447,7 +512,7 @@ impl PipeWire {
                         let mut params = [pod1, make_pod(&mut b2, o2)];
 
                         if let Err(err) = stream.update_params(&mut params) {
-                            warn!(stream_id, "error updating stream params: {err:?}");
+                            warn!("error updating stream params: {err:?}");
                             stop_cast();
                         }
 
@@ -476,14 +541,19 @@ impl PipeWire {
                             let modifier = *modifier;
                             let plane_count = *plane_count;
 
-                            let damage_tracker =
-                                if let CastState::Ready { damage_tracker, .. } = &mut *state {
-                                    damage_tracker.take()
+                            let (damage_tracker, cursor_damage_tracker) =
+                                if let CastState::Ready {
+                                    damage_tracker,
+                                    cursor_damage_tracker,
+                                    ..
+                                } = &mut *state
+                                {
+                                    (damage_tracker.take(), cursor_damage_tracker.take())
                                 } else {
-                                    None
+                                    (None, None)
                                 };
 
-                            debug!(stream_id, "pw stream: moving to ready state");
+                            debug!("moving to ready state");
 
                             *state = CastState::Ready {
                                 size,
@@ -491,6 +561,8 @@ impl PipeWire {
                                 modifier,
                                 plane_count,
                                 damage_tracker,
+                                cursor_damage_tracker,
+                                last_cursor_location: None,
                             };
 
                             plane_count
@@ -506,15 +578,14 @@ impl PipeWire {
                             ) {
                                 Ok(x) => x,
                                 Err(err) => {
-                                    warn!(stream_id, "pw stream: test allocation failed: {err:?}");
+                                    warn!("test allocation failed: {err:?}");
                                     stop_cast();
                                     return;
                                 }
                             };
 
                             debug!(
-                                stream_id,
-                                "pw stream: allocation successful \
+                                "allocation successful \
                                  (modifier={modifier:?}, plane_count={plane_count}), \
                                  moving to ready"
                             );
@@ -525,6 +596,8 @@ impl PipeWire {
                                 modifier,
                                 plane_count: plane_count as i32,
                                 damage_tracker: None,
+                                cursor_damage_tracker: None,
+                                last_cursor_location: None,
                             };
 
                             plane_count as i32
@@ -543,7 +616,7 @@ impl PipeWire {
                             pod::Value::Choice(ChoiceValue::Int(Choice(
                                 ChoiceFlags::empty(),
                                 ChoiceEnum::Range {
-                                    default: 16,
+                                    default: 8,
                                     min: 2,
                                     max: 16
                                 }
@@ -562,8 +635,6 @@ impl PipeWire {
                         ),
                     );
 
-                    // FIXME: Hidden / embedded / metadata cursor
-
                     let o2 = pod::object!(
                         SpaTypes::ObjectParamMeta,
                         ParamType::Meta,
@@ -578,10 +649,27 @@ impl PipeWire {
                     );
                     let mut b1 = vec![];
                     let mut b2 = vec![];
-                    let mut params = [make_pod(&mut b1, o1), make_pod(&mut b2, o2)];
+                    let mut params = vec![make_pod(&mut b1, o1), make_pod(&mut b2, o2)];
+
+                    let mut b_cursor = vec![];
+                    if cursor_mode == CursorMode::Metadata {
+                        let o_cursor = pod::object!(
+                            SpaTypes::ObjectParamMeta,
+                            ParamType::Meta,
+                            Property::new(
+                                SPA_PARAM_META_type,
+                                pod::Value::Id(spa::utils::Id(SPA_META_Cursor))
+                            ),
+                            Property::new(
+                                SPA_PARAM_META_size,
+                                pod::Value::Int(CURSOR_META_SIZE as i32)
+                            ),
+                        );
+                        params.push(make_pod(&mut b_cursor, o_cursor));
+                    }
 
                     if let Err(err) = stream.update_params(&mut params) {
-                        warn!(stream_id, "error updating stream params: {err:?}");
+                        warn!("error updating stream params: {err:?}");
                         stop_cast();
                     }
                 }
@@ -590,6 +678,7 @@ impl PipeWire {
                 let inner = inner.clone();
                 let stop_cast = stop_cast.clone();
                 move |stream, (), buffer| {
+                    let _span = debug_span!("add_buffer", %stream_id).entered();
                     let mut inner = inner.borrow_mut();
 
                     let (size, alpha, modifier) = if let CastState::Ready {
@@ -601,15 +690,11 @@ impl PipeWire {
                     {
                         (*size, *alpha, *modifier)
                     } else {
-                        trace!(stream_id, "pw stream: add buffer, but not ready yet");
+                        trace!("add_buffer, but not ready yet");
                         return;
                     };
 
-                    trace!(
-                        stream_id,
-                        "pw stream: add_buffer, size={size:?}, alpha={alpha}, \
-                         modifier={modifier:?}"
-                    );
+                    trace!("size={size:?}, alpha={alpha}, modifier={modifier:?}");
 
                     unsafe {
                         let spa_buffer = (*buffer).buffer;
@@ -623,7 +708,7 @@ impl PipeWire {
                         let dmabuf = match allocate_dmabuf(&gbm, size, fourcc, modifier) {
                             Ok(dmabuf) => dmabuf,
                             Err(err) => {
-                                warn!(stream_id, "error allocating dmabuf: {err:?}");
+                                warn!("error allocating dmabuf: {err:?}");
                                 stop_cast();
                                 return;
                             }
@@ -654,7 +739,6 @@ impl PipeWire {
                             (*chunk).offset = offset;
 
                             trace!(
-                                stream_id,
                                 "pw buffer plane: fd={}, stride={stride}, offset={offset}",
                                 (*spa_data).fd
                             );
@@ -674,7 +758,7 @@ impl PipeWire {
             .remove_buffer({
                 let inner = inner.clone();
                 move |_stream, (), buffer| {
-                    trace!(stream_id, "pw stream: remove_buffer");
+                    trace!(%stream_id, "remove_buffer");
                     let mut inner = inner.borrow_mut();
 
                     inner
@@ -695,7 +779,7 @@ impl PipeWire {
             .unwrap();
 
         trace!(
-            stream_id,
+            %stream_id,
             "starting pw stream with size={pending_size:?}, refresh={refresh:?}"
         );
 
@@ -717,7 +801,7 @@ impl PipeWire {
             stream,
             _listener: listener,
             target,
-            dynamic_target,
+            dynamic_target: false,
             formats,
             offer_alpha: alpha,
             cursor_mode,
@@ -733,6 +817,10 @@ impl PipeWire {
 impl Cast {
     pub fn is_active(&self) -> bool {
         self.inner.borrow().is_active
+    }
+
+    pub fn node_id(&self) -> Option<u32> {
+        self.inner.borrow().node_id
     }
 
     pub fn ensure_size(&self, size: Size<i32, Physical>) -> anyhow::Result<CastSizeChange> {
@@ -947,7 +1035,7 @@ impl Cast {
                 let source = Generic::new(sync_fd, Interest::READ, Mode::OneShot);
                 self.event_loop
                     .insert_source(source, move |_, _, state| {
-                        for cast in &mut state.niri.casts {
+                        for cast in &mut state.niri.casting.casts {
                             if cast.stream_id == stream_id {
                                 cast.queue_completed_buffers();
                             }
@@ -960,21 +1048,36 @@ impl Cast {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn dequeue_buffer_and_render(
         &mut self,
         renderer: &mut GlesRenderer,
-        elements: &[impl RenderElement<GlesRenderer>],
+        elements: &[CastRenderElement<GlesRenderer>],
+        cursor_data: &CursorData<CastRenderElement<GlesRenderer>>,
         size: Size<i32, Physical>,
         scale: Scale<f64>,
     ) -> bool {
         let mut inner = self.inner.borrow_mut();
 
-        let CastState::Ready { damage_tracker, .. } = &mut inner.state else {
+        let CastState::Ready {
+            damage_tracker,
+            cursor_damage_tracker,
+            last_cursor_location,
+            ..
+        } = &mut inner.state
+        else {
             error!("cast must be in Ready state to render");
             return false;
         };
         let damage_tracker = damage_tracker
             .get_or_insert_with(|| OutputDamageTracker::new(size, scale, Transform::Normal));
+        let cursor_damage_tracker = cursor_damage_tracker.get_or_insert_with(|| {
+            OutputDamageTracker::new(
+                Size::from((CURSOR_WIDTH as _, CURSOR_HEIGHT as _)),
+                scale,
+                Transform::Normal,
+            )
+        });
 
         // Size change will drop the damage tracker, but scale change won't, so check it here.
         let OutputModeSource::Static { scale: t_scale, .. } = damage_tracker.mode() else {
@@ -982,13 +1085,31 @@ impl Cast {
         };
         if *t_scale != scale {
             *damage_tracker = OutputDamageTracker::new(size, scale, Transform::Normal);
+            *cursor_damage_tracker = OutputDamageTracker::new(
+                Size::from((CURSOR_WIDTH as _, CURSOR_HEIGHT as _)),
+                scale,
+                Transform::Normal,
+            );
         }
 
         let (damage, _states) = damage_tracker.damage_output(1, elements).unwrap();
-        if damage.is_none() {
+
+        let mut has_cursor_update = false;
+        let mut redraw_cursor = false;
+        if self.cursor_mode != CursorMode::Hidden {
+            let (damage, _states) = cursor_damage_tracker
+                .damage_output(1, &cursor_data.relocated)
+                .unwrap();
+            redraw_cursor = damage.is_some();
+            has_cursor_update =
+                redraw_cursor || *last_cursor_location != Some(cursor_data.location);
+        }
+
+        if damage.is_none() && !has_cursor_update {
             trace!("no damage, skipping frame");
             return false;
         }
+        *last_cursor_location = Some(cursor_data.location);
         drop(inner);
 
         let Some(pw_buffer) = self.dequeue_available_buffer() else {
@@ -1000,6 +1121,19 @@ impl Cast {
         unsafe {
             let spa_buffer = (*buffer).buffer;
 
+            let mut pointer_elements = None;
+            if self.cursor_mode == CursorMode::Metadata {
+                add_cursor_metadata(renderer, spa_buffer, cursor_data, redraw_cursor);
+            } else if self.cursor_mode != CursorMode::Hidden {
+                // Embed the cursor into the main render.
+                pointer_elements = Some(cursor_data.original.iter());
+            }
+            let pointer_elements = pointer_elements.into_iter().flatten();
+            let elements = pointer_elements.chain(elements);
+
+            // FIXME: would be good to skip rendering the full frame if only the pointer changed.
+            // Unfortunately, I think the OBS PipeWire code needs to be updated first to cleanly
+            // allow for that codepath.
             let fd = (*(*spa_buffer).datas).fd;
             let dmabuf = self.inner.borrow().dmabufs[&fd].clone();
 
@@ -1009,7 +1143,7 @@ impl Cast {
                 size,
                 scale,
                 Transform::Normal,
-                elements.iter().rev(),
+                elements.rev(),
             ) {
                 Ok(sync_point) => {
                     mark_buffer_as_good(pw_buffer, &mut self.sequence_counter);
@@ -1030,8 +1164,14 @@ impl Cast {
         let mut inner = self.inner.borrow_mut();
 
         // Clear out the damage tracker if we're in Ready state.
-        if let CastState::Ready { damage_tracker, .. } = &mut inner.state {
+        if let CastState::Ready {
+            damage_tracker,
+            cursor_damage_tracker,
+            ..
+        } = &mut inner.state
+        {
             *damage_tracker = None;
+            *cursor_damage_tracker = None;
         };
         drop(inner);
 
@@ -1043,6 +1183,10 @@ impl Cast {
 
         unsafe {
             let spa_buffer = (*buffer).buffer;
+
+            if self.cursor_mode == CursorMode::Metadata {
+                add_invisible_cursor(spa_buffer);
+            }
 
             let fd = (*(*spa_buffer).datas).fd;
             let dmabuf = self.inner.borrow().dmabufs[&fd].clone();
@@ -1080,6 +1224,12 @@ impl CastState {
             CastState::Ready { size, .. } => *size,
         }
     }
+}
+
+fn pw_version_supports_cursor_metadata() -> bool {
+    // This PipeWire version fixed a critical memory issue with cursor metadata:
+    // https://gitlab.freedesktop.org/pipewire/pipewire/-/merge_requests/2538
+    unsafe { pw_check_library_version(1, 4, 8) }
 }
 
 fn make_video_params(
@@ -1277,4 +1427,147 @@ unsafe fn mark_buffer_as_good(pw_buffer: NonNull<pw_buffer>, sequence: &mut u64)
 unsafe fn find_meta_header(buffer: *mut spa_buffer) -> Option<NonNull<spa_meta_header>> {
     let p = spa_buffer_find_meta_data(buffer, SPA_META_Header, size_of::<spa_meta_header>()).cast();
     NonNull::new(p)
+}
+
+unsafe fn add_invisible_cursor(spa_buffer: *mut spa_buffer) {
+    unsafe {
+        let cursor_meta_ptr: *mut spa_meta_cursor = spa_buffer_find_meta_data(
+            spa_buffer,
+            SPA_META_Cursor,
+            mem::size_of::<spa_meta_cursor>(),
+        )
+        .cast();
+        let Some(cursor_meta) = cursor_meta_ptr.as_mut() else {
+            return;
+        };
+
+        // The cursor is present but invisible.
+        cursor_meta.id = 1;
+        cursor_meta.position.x = 0;
+        cursor_meta.position.y = 0;
+        cursor_meta.hotspot.x = 0;
+        cursor_meta.hotspot.y = 0;
+        cursor_meta.bitmap_offset = BITMAP_META_OFFSET as _;
+
+        let bitmap_meta_ptr = cursor_meta_ptr
+            .byte_add(BITMAP_META_OFFSET)
+            .cast::<spa_meta_bitmap>();
+        let bitmap_meta = &mut *bitmap_meta_ptr;
+
+        // HACK: PipeWire docs say offset = 0 means invisible.
+        //
+        // Unfortunately, OBS doesn't actually check that, instead it checks that size isn't zero:
+        // https://github.com/obsproject/obs-studio/blob/f4aaa5f0417c5ec40a3799551e125129fce1e007/plugins/linux-pipewire/pipewire.c#L900
+        //
+        // Unfortunately, libwebrtc, on top of ignoring offset, also treats size = 0 as "preserve
+        // previous cursor":
+        // https://webrtc.googlesource.com/src/+/97b46e12582606a238d4f0c8524365cf5bdcb411/modules/desktop_capture/linux/wayland/shared_screencast_stream.cc#765
+        //
+        // So, send a 1x1 transparent pixel instead...
+        bitmap_meta.offset = BITMAP_DATA_OFFSET as _;
+        bitmap_meta.size.width = 1;
+        bitmap_meta.size.height = 1;
+        bitmap_meta.stride = CURSOR_BPP as i32;
+        bitmap_meta.format = CURSOR_FORMAT;
+
+        let bitmap_data = bitmap_meta_ptr.cast::<u8>().add(BITMAP_DATA_OFFSET);
+        let bitmap_slice = slice::from_raw_parts_mut(bitmap_data, CURSOR_BITMAP_SIZE);
+        bitmap_slice[..4].copy_from_slice(&[0, 0, 0, 0]);
+    }
+}
+
+unsafe fn add_cursor_metadata(
+    renderer: &mut GlesRenderer,
+    spa_buffer: *mut spa_buffer,
+    cursor_data: &CursorData<impl RenderElement<GlesRenderer>>,
+    redraw: bool,
+) {
+    unsafe {
+        let cursor_meta_ptr: *mut spa_meta_cursor = spa_buffer_find_meta_data(
+            spa_buffer,
+            SPA_META_Cursor,
+            mem::size_of::<spa_meta_cursor>(),
+        )
+        .cast();
+        let Some(cursor_meta) = cursor_meta_ptr.as_mut() else {
+            return;
+        };
+
+        cursor_meta.id = 1;
+        cursor_meta.position.x = cursor_data.location.x;
+        cursor_meta.position.y = cursor_data.location.y;
+        cursor_meta.hotspot.x = cursor_data.hotspot.x;
+        cursor_meta.hotspot.y = cursor_data.hotspot.y;
+
+        if !redraw {
+            trace!("cursor not damaged, skipping rerendering");
+            cursor_meta.bitmap_offset = 0;
+            return;
+        }
+
+        cursor_meta.bitmap_offset = BITMAP_META_OFFSET as _;
+
+        let bitmap_meta_ptr = cursor_meta_ptr
+            .byte_add(BITMAP_META_OFFSET)
+            .cast::<spa_meta_bitmap>();
+        let bitmap_meta = &mut *bitmap_meta_ptr;
+
+        // Start with a 1x1 transparent pixel; see comment in add_invisible_cursor().
+        bitmap_meta.offset = BITMAP_DATA_OFFSET as _;
+        bitmap_meta.size.width = 1;
+        bitmap_meta.size.height = 1;
+        bitmap_meta.stride = CURSOR_BPP as i32;
+        bitmap_meta.format = CURSOR_FORMAT;
+
+        let bitmap_data = bitmap_meta_ptr.cast::<u8>().add(BITMAP_DATA_OFFSET);
+        let bitmap_slice = slice::from_raw_parts_mut(bitmap_data, CURSOR_BITMAP_SIZE);
+        bitmap_slice[..4].copy_from_slice(&[0, 0, 0, 0]);
+
+        let size = Size::new(
+            min(cursor_data.size.w, CURSOR_WIDTH as i32),
+            min(cursor_data.size.h, CURSOR_HEIGHT as i32),
+        );
+        if size.w == 0 || size.h == 0 {
+            trace!("cursor is invisible, skipping rendering");
+            return;
+        }
+
+        let _span = tracy_client::span!("add_cursor_metadata render cursor");
+
+        // FIXME: use a reliable buffer whenever we're rendering the cursor.
+        //
+        // PipeWire buffers are not normally guaranteed to reach the destination, so our buffer
+        // with the rendered cursor bitmap may not reach the consumer.
+        //
+        // Reliable buffers should be available starting from 1.6.0:
+        // https://gitlab.freedesktop.org/pipewire/pipewire/-/issues/4885
+        let mapping = match render_and_download(
+            renderer,
+            size,
+            cursor_data.scale,
+            Transform::Normal,
+            Fourcc::Argb8888,
+            cursor_data.relocated.iter().rev(),
+        ) {
+            Ok(mapping) => mapping,
+            Err(err) => {
+                warn!("error rendering cursor: {err:?}");
+                return;
+            }
+        };
+        let pixels = match renderer.map_texture(&mapping) {
+            Ok(pixels) => pixels,
+            Err(err) => {
+                warn!("error mapping cursor texture: {err:?}");
+                return;
+            }
+        };
+
+        bitmap_slice[..pixels.len()].copy_from_slice(pixels);
+
+        // Fill the metadata now that everything succeeded.
+        bitmap_meta.size.width = size.w as _;
+        bitmap_meta.size.height = size.h as _;
+        bitmap_meta.stride = size.w * CURSOR_BPP as i32;
+    }
 }
