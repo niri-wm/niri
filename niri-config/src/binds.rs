@@ -875,7 +875,7 @@ where
             .parse::<Key>()
             .map_err(|e| DecodeError::conversion(&node.node_name, e.wrap_err("invalid keybind")))?;
 
-        let mut repeat = true;
+        let mut repeat: Option<bool> = None;
         let mut cooldown = None;
         let mut allow_when_locked = false;
         let mut allow_when_locked_node = None;
@@ -886,7 +886,7 @@ where
         for (name, val) in &node.properties {
             match &***name {
                 "repeat" => {
-                    repeat = knuffel::traits::DecodeScalar::decode(val, ctx)?;
+                    repeat = Some(knuffel::traits::DecodeScalar::decode(val, ctx)?);
                 }
                 "cooldown-ms" => {
                     cooldown = Some(Duration::from_millis(
@@ -1077,6 +1077,11 @@ where
         {
             allow_inhibiting = false;
         }
+
+        let repeat = match repeat {
+            Some(value) => value,
+            None => !release_action.is_some(),
+        };
 
         Ok(Self {
             key,
