@@ -48,7 +48,7 @@ pub use crate::animations::{Animation, Animations};
 pub use crate::appearance::*;
 pub use crate::binds::*;
 pub use crate::debug::Debug;
-pub use crate::error::{ConfigIncludeError, ConfigParseResult};
+pub use crate::error::{format_error_report, ConfigIncludeError, ConfigParseResult};
 pub use crate::gestures::Gestures;
 pub use crate::input::{Input, ModKey, ScrollMethod, TrackLayout, WarpMouseToFocusMode, Xkb};
 pub use crate::layer_rule::LayerRule;

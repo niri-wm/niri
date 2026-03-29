@@ -152,7 +152,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .config
         .as_ref()
         .err()
-        .map(|err| format!("{err:?}"));
+        .map(niri_config::format_error_report);
     let config_errored = config_error_report.is_some();
     let mut config = config_load_result.config.unwrap_or_else(|err| {
         warn!("{err:?}");

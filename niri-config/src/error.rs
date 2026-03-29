@@ -2,7 +2,7 @@ use std::error::Error;
 use std::fmt;
 use std::path::PathBuf;
 
-use miette::Diagnostic;
+use miette::{Diagnostic, NarratableReportHandler};
 
 #[derive(Debug)]
 pub struct ConfigParseResult<T, E> {
@@ -42,6 +42,14 @@ impl<T, E> ConfigParseResult<T, E> {
             includes: self.includes,
         }
     }
+}
+
+pub fn format_error_report(err: &miette::Report) -> String {
+    let mut report = String::new();
+    NarratableReportHandler::new()
+        .render_report(&mut report, err.as_ref())
+        .expect("writing into a String should never fail");
+    report.trim_end().to_owned()
 }
 
 impl fmt::Display for ConfigIncludeError {

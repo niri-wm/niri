@@ -190,7 +190,7 @@ pub fn setup(state: &mut State, config_path: &ConfigPath, includes: Vec<PathBuf>
         path.load().map_config_res(|res| {
             res.map_err(|err| {
                 warn!("{err:?}");
-                format!("{err:?}")
+                niri_config::format_error_report(&err)
             })
         })
     };
