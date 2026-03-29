@@ -1841,6 +1841,7 @@ impl State {
         self.modify_output_config(name, move |config| match action {
             niri_ipc::OutputAction::Off => config.off = true,
             niri_ipc::OutputAction::On => config.off = false,
+            niri_ipc::OutputAction::Toggle => config.off = !config.off,
             niri_ipc::OutputAction::Mode { mode } => {
                 config.mode = match mode {
                     niri_ipc::ModeToSet::Automatic => None,
