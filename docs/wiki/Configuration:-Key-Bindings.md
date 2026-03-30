@@ -96,29 +96,35 @@ binds {
     Mod { release { toggle-overview; } }
 
     // Trigger on both press and release with different actions
-    Mod+Shift+Q repeat=false {
+    Mod+Shift+Q {
         press { spawn "notify-send" "Pressed"; }
         release { spawn "notify-send" "Released"; }
     }
+
+    // Toggleable behavior like push-to-talk can be implemented by putting the same toggle command on the press and release action
+    Control_R {
+        press { spawn "toggle-command"; }
+        release { spawn "toggle-command"; }
+    }
+
+    // For multi-key modifier-only bindings, use Ctrl/Alt/etc. for the modifier keys and Control_L/Control_R/Alt_L/Alt_R/etc. for the trigger key
+    Ctrl+Alt_L {
+        press { spawn "notify-send" "Pressed"; }
+        release { spawn "notify-send" "Released"; }
+    }
+
 }
 ```
 
 Release bindings are mostly useful when you want to bind a modifier key to an action, as it avoids unwanted triggering when you're trying to use other binds involving that modifier.
+
+By default, any key binding that includes a release action will have repeat turned off for its press action. This can be overridden with `repeat=true` if desired.
 
 Release binds will normally only trigger if no other keys were released and no keys or mouse buttons were pressed after the bound key was pressed. If you want a release bind to always trigger regardless, set `allow-invalidation=false`:
 
 ```kdl
 binds {
     Mod allow-invalidation=false { release { toggle-overview; } }
-}
-```
-
-Note that the modifier state is updated before binds are evaluated, so if you want to configure a modifier key as both a normal bind and a release bind the entries are slightly different.
-
-```kdl
-binds {
-    Alt+Ctrl+Control_L repeat=false { spawn "wpctl" "set-mute" "@DEFAULT_AUDIO_SOURCE@" "0"; }
-    Alt+Control_L allow-invalidation=false { release { spawn "wpctl" "set-mute" "@DEFAULT_AUDIO_SOURCE@" "1"; } }
 }
 ```
 
