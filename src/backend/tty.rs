@@ -1272,12 +1272,20 @@ impl Tty {
         let disable_monitor_names = self.config.borrow().debug.disable_monitor_names;
         let output_name = device.known_crtc_name(&crtc, &connector, disable_monitor_names);
 
-        let non_desktop = find_drm_property(&device.drm, connector.handle(), "non-desktop")
+        let non_desktop_prop = find_drm_property(&device.drm, connector.handle(), "non-desktop")
             .and_then(|(_, info, value)| info.value_type().convert_value(value).as_boolean())
             .unwrap_or(false);
 
-        if non_desktop {
+        let config_drm_lease = self
+            .config
+            .borrow()
+            .outputs
+            .find(&output_name)
+            .is_some_and(|o| o.drm_lease);
+
+        if non_desktop_prop || config_drm_lease {
             debug!("output is non desktop");
+
             let description = output_name.format_description();
             if let Some(lease_state) = &mut device.drm_lease_state {
                 lease_state.add_connector::<State>(connector.handle(), connector_name, description);
@@ -2461,6 +2469,16 @@ impl Tty {
                     continue;
                 };
 
+                if config.drm_lease {
+                    debug!(
+                        "output {:?}: drm-lease enabled, reinitializing for leasing",
+                        surface.name.connector
+                    );
+                    to_disconnect.push((node, crtc));
+                    to_connect.push((node, connector.clone(), crtc, surface.name.clone()));
+                    continue;
+                }
+
                 let mut mode = None;
                 if let Some(modeline) = &config.modeline {
                     match calculate_drm_mode_from_modeline(modeline) {
@@ -2575,6 +2593,43 @@ impl Tty {
 
             let config = self.config.borrow();
             let disable_monitor_names = config.debug.disable_monitor_names;
+
+            // stop leasing connectors iff presently leased & no longer configured for lease
+            for &(conn, crtc) in &device.non_desktop_connectors {
+                let Some(connector) = device.drm_scanner.connectors().get(&conn) else {
+                    continue;
+                };
+
+                let output_name = device.known_crtc_name(&crtc, connector, disable_monitor_names);
+                let output_config = config.outputs.find(&output_name);
+
+                // Check if the output was disabled in the config.
+                let off = output_config.is_some_and(|c| c.off);
+                if off || should_disable(&output_name.connector) {
+                    to_disconnect.push((node, crtc));
+                    continue;
+                }
+
+                let non_desktop_prop = find_drm_property(&device.drm, conn, "non-desktop")
+                    .and_then(|(_, info, value)| {
+                        info.value_type().convert_value(value).as_boolean()
+                    })
+                    .unwrap_or(false);
+                if non_desktop_prop {
+                    continue; // always lease connectors w/ non-desktop prop
+                }
+
+                if output_config.is_some_and(|c| c.drm_lease) {
+                    continue;
+                }
+
+                debug!(
+                    "output {:?}: drm-lease disabled, reinitializing as desktop output",
+                    output_name.connector
+                );
+                to_disconnect.push((node, crtc));
+                to_connect.push((node, connector.clone(), crtc, output_name));
+            }
 
             for (connector, crtc) in device.drm_scanner.crtcs() {
                 // Check if connected.
