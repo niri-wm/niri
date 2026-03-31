@@ -103,8 +103,6 @@ Controls the window previews in the switcher.
 
 - `off`: switches from thumbnail previews to a compact vertical list of window titles.
 
-- `off`: switches from thumbnail previews to a compact vertical list of window titles.
-
 - `max-scale`: maximum scale of the window previews.
 Windows cannot be scaled bigger than this value.
 - `max-height`: maximum height of the window previews.
