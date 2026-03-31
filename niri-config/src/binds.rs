@@ -51,6 +51,8 @@ pub enum Trigger {
     TouchpadScrollUp,
     TouchpadScrollLeft,
     TouchpadScrollRight,
+    TabletStylusPrimary,
+    TabletStylusSecondary,
 }
 
 bitflags! {
@@ -1012,6 +1014,10 @@ impl FromStr for Key {
             Trigger::TouchpadScrollLeft
         } else if key.eq_ignore_ascii_case("TouchpadScrollRight") {
             Trigger::TouchpadScrollRight
+        } else if key.eq_ignore_ascii_case("TabletStylusPrimary") {
+            Trigger::TabletStylusPrimary
+        } else if key.eq_ignore_ascii_case("TabletStylusSecondary") {
+            Trigger::TabletStylusSecondary
         } else {
             let mut keysym = keysym_from_name(key, KEYSYM_CASE_INSENSITIVE);
             // The keyboard event handling code can receive either
