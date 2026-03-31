@@ -1466,13 +1466,13 @@ impl Inner {
                 return working_y - center_top;
             }
 
-            compute_view_offset(
+            return compute_view_offset(
                 self.view_pos.target() + working_y,
                 working_height,
                 current_geo.loc.y,
                 current_geo.size.h,
             ) + current_geo.loc.y
-                - working_y
+                - working_y;
         }
 
         let working_x = STRUT + GAP;
@@ -1506,18 +1506,20 @@ impl Inner {
 
     fn update_window(&mut self, layout: &Layout<Mapped>, id: MappedId) {
         let previews_off = self.config.borrow().recent_windows.previews.off;
-        let mut output_size = Size::new(0., 0.);
+        let mut out_size = Size::new(0., 0.);
         let mut scale = 1.;
         let mut prev_size = None;
         if !previews_off {
-            let output_size = output_size(&self.output);
-            let scale = self.output.current_scale().fractional_scale();
+            let new_output_size = output_size(&self.output);
+            let new_scale = self.output.current_scale().fractional_scale();
 
             // If the updated window is to the left of the currently selected one, we need to
             // offset the view position to compensate for the change in size.
             let left = self.wmru.thumbnail_left_of_current(id);
-            let prev_size = left.map(|thumbnail| thumbnail.preview_size(output_size, scale));
-            (output_size, scale, prev_size) = (output_size, scale, prev_size);
+            let new_prev_size = left.map(|thumbnail| thumbnail.preview_size(new_output_size, new_scale));
+            out_size = new_output_size;
+            scale = new_scale;
+            prev_size = new_prev_size;
         }
 
         let Some(thumbnail) = self.wmru.thumbnails.iter_mut().find(|t| t.id == id) else {
@@ -1532,7 +1534,7 @@ impl Inner {
         thumbnail.update_window(mapped);
 
         if let Some(prev) = prev_size {
-            let new = thumbnail.preview_size(output_size, scale);
+            let new = thumbnail.preview_size(out_size, scale);
             let delta = new.w - prev.w;
             self.view_pos.offset(delta);
         }
