@@ -2234,7 +2234,6 @@ mod tests {
                 on: false,
                 debounce_ms: 750,
                 open_delay_ms: 150,
-                layout: Previews,
                 highlight: MruHighlight {
                     active_color: Color {
                         r: 0.0,
@@ -2252,6 +2251,7 @@ mod tests {
                     corner_radius: 0.0,
                 },
                 previews: MruPreviews {
+                    off: false,
                     max_height: 960.0,
                     max_scale: 0.5,
                 },

@@ -1417,7 +1417,11 @@ impl Inner {
     }
 
     fn layout_mode(&self) -> MruLayout {
-        self.config.borrow().recent_windows.layout
+        if self.config.borrow().recent_windows.previews.off {
+            MruLayout::List
+        } else {
+            MruLayout::Previews
+        }
     }
 
     fn item_gap(&self, scale: f64) -> f64 {
@@ -1857,7 +1861,11 @@ impl Inner {
         let bob_y = round_logical_in_physical(scale, bob_y);
 
         let config = self.config.borrow();
-        let layout = config.recent_windows.layout;
+        let layout = if config.recent_windows.previews.off {
+            MruLayout::List
+        } else {
+            MruLayout::Previews
+        };
 
         for (thumbnail, geo) in self.thumbnails_in_view_render().into_iter() {
             let id = thumbnail.id;
