@@ -39,8 +39,6 @@ pub struct RecentWindowsPart {
     pub debounce_ms: Option<u16>,
     #[knuffel(child, unwrap(argument))]
     pub open_delay_ms: Option<u16>,
-    #[knuffel(child, unwrap(argument))]
-    pub layout: Option<MruLayout>,
     #[knuffel(child)]
     pub highlight: Option<MruHighlightPart>,
     #[knuffel(child)]
@@ -58,10 +56,6 @@ impl MergeWith<RecentWindowsPart> for RecentWindows {
 
         merge_clone!((self, part), debounce_ms, open_delay_ms);
 
-        if let Some(layout) = part.layout {
-            self.previews.off = matches!(layout, MruLayout::List);
-        }
-
         merge!((self, part), highlight, previews);
 
         if let Some(part) = &part.binds {
@@ -72,15 +66,6 @@ impl MergeWith<RecentWindowsPart> for RecentWindows {
             self.binds.extend(part.0.iter().cloned().map(Bind::from));
         }
     }
-}
-
-#[derive(knuffel::DecodeScalar, Clone, Copy, Debug, Default, PartialEq)]
-pub enum MruLayout {
-    /// Existing thumbnail switcher UI.
-    #[default]
-    Previews,
-    /// Compact vertical list with window titles.
-    List,
 }
 
 #[derive(Debug, PartialEq)]

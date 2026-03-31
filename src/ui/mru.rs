@@ -8,7 +8,7 @@ use std::time::Duration;
 use anyhow::ensure;
 use niri_config::{
     Action, Bind, Color, Config, CornerRadius, GradientInterpolation, Key, Modifiers, MruDirection,
-    MruFilter, MruLayout, MruScope, Trigger,
+    MruFilter, MruScope, Trigger,
 };
 use pango::FontDescription;
 use pangocairo::cairo::{self, ImageSurface};
@@ -29,6 +29,8 @@ use crate::layout::{Layout, LayoutElement as _, LayoutElementRenderElement};
 use crate::niri::Niri;
 use crate::niri_render_elements;
 use crate::render_helpers::border::BorderRenderElement;
+
+/// Internal layout mode derived from `previews.off`.
 use crate::render_helpers::clipped_surface::ClippedSurfaceRenderElement;
 use crate::render_helpers::gradient_fade_texture::GradientFadeTextureRenderElement;
 use crate::render_helpers::offscreen::{OffscreenBuffer, OffscreenRenderElement};
@@ -1416,23 +1418,14 @@ impl Inner {
             .animate_from_with_config(from, config, self.clock.clone());
     }
 
-    fn layout_mode(&self) -> MruLayout {
-        if self.config.borrow().recent_windows.previews.off {
-            MruLayout::List
-        } else {
-            MruLayout::Previews
-        }
-    }
-
     fn item_gap(&self, scale: f64) -> f64 {
         let round = move |logical: f64| round_logical_in_physical(scale, logical);
-        match self.layout_mode() {
-            MruLayout::Previews => {
-                let padding = self.config.borrow().recent_windows.highlight.padding;
-                let padding = round(padding) + round(BORDER);
-                padding + round(GAP) + padding
-            }
-            MruLayout::List => round(LIST_GAP),
+        if self.config.borrow().recent_windows.previews.off {
+            round(LIST_GAP)
+        } else {
+            let padding = self.config.borrow().recent_windows.highlight.padding;
+            let padding = round(padding) + round(BORDER);
+            padding + round(GAP) + padding
         }
     }
 
@@ -1449,72 +1442,69 @@ impl Inner {
         let output_size = output_size(&self.output);
         let thumbnails = self.thumbnails();
 
-        match self.layout_mode() {
-            MruLayout::Previews => {
-                let working_x = STRUT + GAP;
-                let working_width = (output_size.w - working_x * 2.).max(0.);
+        if self.config.borrow().recent_windows.previews.off {
+            let scale = self.output.current_scale().fractional_scale();
+            let working_y = self.list_start_y(scale);
+            let working_height = (output_size.h - working_y - LIST_GAP * 2.).max(0.);
 
-                let mut current_geo = Rectangle::default();
-                let mut strip_width = 0.;
-                for (thumbnail, geo) in thumbnails {
-                    if thumbnail.id == current_id {
-                        current_geo = geo;
-                    }
-                    strip_width = geo.loc.x + geo.size.w;
-
-                    if current_geo.size.w != 0. && strip_width > working_width {
-                        break;
-                    }
+            let mut current_geo = Rectangle::default();
+            let mut list_height = 0.;
+            for (thumbnail, geo) in thumbnails {
+                if thumbnail.id == current_id {
+                    current_geo = geo;
                 }
+                list_height = geo.loc.y + geo.size.h - working_y;
 
-                if strip_width <= working_width {
-                    return -(output_size.w - strip_width) / 2.;
+                if current_geo.size.h != 0. && list_height > working_height {
+                    break;
                 }
-
-                compute_view_offset(
-                    self.view_pos.target() + working_x,
-                    working_width,
-                    current_geo.loc.x,
-                    current_geo.size.w,
-                ) + current_geo.loc.x
-                    - working_x
             }
-            MruLayout::List => {
-                let scale = self.output.current_scale().fractional_scale();
-                let working_y = self.list_start_y(scale);
-                let working_height = (output_size.h - working_y - LIST_GAP * 2.).max(0.);
 
-                let mut current_geo = Rectangle::default();
-                let mut list_height = 0.;
-                for (thumbnail, geo) in thumbnails {
-                    if thumbnail.id == current_id {
-                        current_geo = geo;
-                    }
-                    list_height = geo.loc.y + geo.size.h - working_y;
-
-                    if current_geo.size.h != 0. && list_height > working_height {
-                        break;
-                    }
-                }
-
-                if list_height <= working_height {
-                    let center_top = (output_size.h - list_height) / 2.;
-                    return working_y - center_top;
-                }
-
-                compute_view_offset(
-                    self.view_pos.target() + working_y,
-                    working_height,
-                    current_geo.loc.y,
-                    current_geo.size.h,
-                ) + current_geo.loc.y
-                    - working_y
+            if list_height <= working_height {
+                let center_top = (output_size.h - list_height) / 2.;
+                return working_y - center_top;
             }
+
+            compute_view_offset(
+                self.view_pos.target() + working_y,
+                working_height,
+                current_geo.loc.y,
+                current_geo.size.h,
+            ) + current_geo.loc.y
+                - working_y
+        } else {
+            let working_x = STRUT + GAP;
+            let working_width = (output_size.w - working_x * 2.).max(0.);
+
+            let mut current_geo = Rectangle::default();
+            let mut strip_width = 0.;
+            for (thumbnail, geo) in thumbnails {
+                if thumbnail.id == current_id {
+                    current_geo = geo;
+                }
+                strip_width = geo.loc.x + geo.size.w;
+
+                if current_geo.size.w != 0. && strip_width > working_width {
+                    break;
+                }
+            }
+
+            if strip_width <= working_width {
+                return -(output_size.w - strip_width) / 2.;
+            }
+
+            compute_view_offset(
+                self.view_pos.target() + working_x,
+                working_width,
+                current_geo.loc.x,
+                current_geo.size.w,
+            ) + current_geo.loc.x
+                - working_x
         }
     }
 
     fn update_window(&mut self, layout: &Layout<Mapped>, id: MappedId) {
-        if self.layout_mode() == MruLayout::List {
+        if self.config.borrow().recent_windows.previews.off {
             if let Some(thumbnail) = self.wmru.thumbnails.iter_mut().find(|t| t.id == id) {
                 if let Some((_, mapped)) = layout.windows().find(|(_, m)| m.id() == id) {
                     thumbnail.update_window(mapped);
@@ -1563,17 +1553,12 @@ impl Inner {
             let output_size = output_size(&self.output);
             let scale = self.output.current_scale().fractional_scale();
             let gap = self.item_gap(scale);
-            let layout = self.layout_mode();
-
-            let delta = match layout {
-                MruLayout::Previews => {
-                    let prev_size = self.wmru.thumbnails[idx].preview_size(output_size, scale);
-                    prev_size.w + gap
-                }
-                MruLayout::List => {
-                    let prev_size = self.wmru.thumbnails[idx].list_item_size(output_size, scale);
-                    prev_size.h + gap
-                }
+            let delta = if self.config.borrow().recent_windows.previews.off {
+                let prev_size = self.wmru.thumbnails[idx].list_item_size(output_size, scale);
+                prev_size.h + gap
+            } else {
+                let prev_size = self.wmru.thumbnails[idx].preview_size(output_size, scale);
+                prev_size.w + gap
             };
 
             let config = self.config.borrow().animations.window_movement.0;
@@ -1645,8 +1630,7 @@ impl Inner {
         let output_size = output_size(&self.output);
         let scale = self.output.current_scale().fractional_scale();
         let gap = self.item_gap(scale);
-        let layout = self.layout_mode();
-
+        let previews_off = self.config.borrow().recent_windows.previews.off;
         let config = self.config.borrow().animations.window_movement.0;
 
         let mut delta = 0.;
@@ -1654,16 +1638,18 @@ impl Inner {
             match (matches_old(t), matches_new(t)) {
                 (true, true) => t.animate_move_from_with_config(delta, config),
                 (true, false) => {
-                    let size = match layout {
-                        MruLayout::Previews => t.preview_size(output_size, scale).w,
-                        MruLayout::List => t.list_item_size(output_size, scale).h,
+                    let size = if previews_off {
+                        t.list_item_size(output_size, scale).h
+                    } else {
+                        t.preview_size(output_size, scale).w
                     };
                     delta += size + gap;
                 }
                 (false, true) => {
-                    let size = match layout {
-                        MruLayout::Previews => t.preview_size(output_size, scale).w,
-                        MruLayout::List => t.list_item_size(output_size, scale).h,
+                    let size = if previews_off {
+                        t.list_item_size(output_size, scale).h
+                    } else {
+                        t.preview_size(output_size, scale).w
                     };
                     delta -= size + gap;
                 }
@@ -1676,16 +1662,18 @@ impl Inner {
             match (matches_old(t), matches_new(t)) {
                 (true, true) => t.animate_move_from_with_config(-delta, config),
                 (true, false) => {
-                    let size = match layout {
-                        MruLayout::Previews => t.preview_size(output_size, scale).w,
-                        MruLayout::List => t.list_item_size(output_size, scale).h,
+                    let size = if previews_off {
+                        t.list_item_size(output_size, scale).h
+                    } else {
+                        t.preview_size(output_size, scale).w
                     };
                     delta += size + gap;
                 }
                 (false, true) => {
-                    let size = match layout {
-                        MruLayout::Previews => t.preview_size(output_size, scale).w,
-                        MruLayout::List => t.list_item_size(output_size, scale).h,
+                    let size = if previews_off {
+                        t.list_item_size(output_size, scale).h
+                    } else {
+                        t.preview_size(output_size, scale).w
                     };
                     delta -= size + gap;
                 }
@@ -1701,43 +1689,32 @@ impl Inner {
         let scale = self.output.current_scale().fractional_scale();
         let round = move |logical: f64| round_logical_in_physical(scale, logical);
 
-        match self.layout_mode() {
-            MruLayout::Previews => {
-                let gap = self.item_gap(scale);
-                let mut x = 0.;
-                self.wmru
-                    .thumbnails()
-                    .map(move |thumbnail| {
-                        let size = thumbnail.preview_size(output_size, scale);
-                        let y = round((output_size.h - size.h) / 2.);
-
-                        let loc = Point::new(x, y);
-                        x += size.w + gap;
-
-                        let geo = Rectangle::new(loc, size);
-                        (thumbnail, geo)
-                    })
-                    .collect()
-            }
-            MruLayout::List => {
-                let gap = self.item_gap(scale);
-                let start_y = self.list_start_y(scale);
-                let mut y = start_y;
-
-                self.wmru
-                    .thumbnails()
-                    .map(move |thumbnail| {
-                        let size = thumbnail.list_item_size(output_size, scale);
-                        let x = round((output_size.w - size.w) / 2.);
-
-                        let loc = Point::new(x, y);
-                        y += size.h + gap;
-
-                        let geo = Rectangle::new(loc, size);
-                        (thumbnail, geo)
-                    })
-                    .collect()
-            }
+        let gap = self.item_gap(scale);
+        if self.config.borrow().recent_windows.previews.off {
+            let start_y = self.list_start_y(scale);
+            let mut y = start_y;
+            self.wmru
+                .thumbnails()
+                .map(move |thumbnail| {
+                    let size = thumbnail.list_item_size(output_size, scale);
+                    let x = round((output_size.w - size.w) / 2.);
+                    let loc = Point::new(x, y);
+                    y += size.h + gap;
+                    (thumbnail, Rectangle::new(loc, size))
+                })
+                .collect()
+        } else {
+            let mut x = 0.;
+            self.wmru
+                .thumbnails()
+                .map(move |thumbnail| {
+                    let size = thumbnail.preview_size(output_size, scale);
+                    let y = round((output_size.h - size.h) / 2.);
+                    let loc = Point::new(x, y);
+                    x += size.w + gap;
+                    (thumbnail, Rectangle::new(loc, size))
+                })
+                .collect()
         }
     }
 
@@ -1748,41 +1725,34 @@ impl Inner {
 
         let view_pos = round(self.view_pos.current());
 
-        match self.layout_mode() {
-            MruLayout::Previews => {
-                let leftmost = view_pos;
-                let rightmost = view_pos + output_size.w;
-
-                self.thumbnails()
-                    .into_iter()
-                    .skip_while(move |(_, geo)| geo.loc.x + geo.size.w <= leftmost)
-                    .map_while(move |(thumbnail, mut geo)| {
-                        if rightmost <= geo.loc.x {
-                            return None;
-                        }
-
-                        geo.loc.x -= view_pos;
-                        Some((thumbnail, geo))
-                    })
-                    .collect()
-            }
-            MruLayout::List => {
-                let top = view_pos;
-                let bottom = view_pos + output_size.h;
-
-                self.thumbnails()
-                    .into_iter()
-                    .skip_while(move |(_, geo)| geo.loc.y + geo.size.h <= top)
-                    .map_while(move |(thumbnail, mut geo)| {
-                        if bottom <= geo.loc.y {
-                            return None;
-                        }
-
-                        geo.loc.y -= view_pos;
-                        Some((thumbnail, geo))
-                    })
-                    .collect()
-            }
+        if self.config.borrow().recent_windows.previews.off {
+            let top = view_pos;
+            let bottom = view_pos + output_size.h;
+            self.thumbnails()
+                .into_iter()
+                .skip_while(move |(_, geo)| geo.loc.y + geo.size.h <= top)
+                .map_while(move |(thumbnail, mut geo)| {
+                    if bottom <= geo.loc.y {
+                        return None;
+                    }
+                    geo.loc.y -= view_pos;
+                    Some((thumbnail, geo))
+                })
+                .collect()
+        } else {
+            let leftmost = view_pos;
+            let rightmost = view_pos + output_size.w;
+            self.thumbnails()
+                .into_iter()
+                .skip_while(move |(_, geo)| geo.loc.x + geo.size.w <= leftmost)
+                .map_while(move |(thumbnail, mut geo)| {
+                    if rightmost <= geo.loc.x {
+                        return None;
+                    }
+                    geo.loc.x -= view_pos;
+                    Some((thumbnail, geo))
+                })
+                .collect()
         }
     }
 
@@ -1793,35 +1763,30 @@ impl Inner {
 
         let view_pos = round(self.view_pos.current());
 
-        match self.layout_mode() {
-            MruLayout::Previews => self
-                .thumbnails()
-                .into_iter()
-                .filter_map(move |(thumbnail, mut geo)| {
-                    geo.loc.x -= view_pos;
-                    geo.loc.x += round(thumbnail.render_offset());
-
-                    if geo.loc.x + geo.size.w < 0. || output_size.w < geo.loc.x {
-                        return None;
-                    }
-
-                    Some((thumbnail, geo))
-                })
-                .collect(),
-            MruLayout::List => self
-                .thumbnails()
+        if self.config.borrow().recent_windows.previews.off {
+            self.thumbnails()
                 .into_iter()
                 .filter_map(move |(thumbnail, mut geo)| {
                     geo.loc.y -= view_pos;
                     geo.loc.y += round(thumbnail.render_offset());
-
                     if geo.loc.y + geo.size.h < 0. || output_size.h < geo.loc.y {
                         return None;
                     }
-
                     Some((thumbnail, geo))
                 })
-                .collect(),
+                .collect()
+        } else {
+            self.thumbnails()
+                .into_iter()
+                .filter_map(move |(thumbnail, mut geo)| {
+                    geo.loc.x -= view_pos;
+                    geo.loc.x += round(thumbnail.render_offset());
+                    if geo.loc.x + geo.size.w < 0. || output_size.w < geo.loc.x {
+                        return None;
+                    }
+                    Some((thumbnail, geo))
+                })
+                .collect()
         }
     }
 
@@ -1861,11 +1826,7 @@ impl Inner {
         let bob_y = round_logical_in_physical(scale, bob_y);
 
         let config = self.config.borrow();
-        let layout = if config.recent_windows.previews.off {
-            MruLayout::List
-        } else {
-            MruLayout::Previews
-        };
+        let previews_off = config.recent_windows.previews.off;
 
         for (thumbnail, geo) in self.thumbnails_in_view_render().into_iter() {
             let id = thumbnail.id;
@@ -1877,13 +1838,14 @@ impl Inner {
             let config = &config.recent_windows;
 
             let is_active = Some(id) == current_id;
-            match layout {
-                MruLayout::Previews => thumbnail.render(
-                    renderer, config, mapped, geo, scale, is_active, bob_y, target, push,
-                ),
-                MruLayout::List => thumbnail.render_list_item(
+            if previews_off {
+                thumbnail.render_list_item(
                     renderer, config, mapped, geo, scale, is_active, target, push,
-                ),
+                )
+            } else {
+                thumbnail.render(
+                    renderer, config, mapped, geo, scale, is_active, bob_y, target, push,
+                )
             }
         }
     }
