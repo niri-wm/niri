@@ -331,7 +331,7 @@ impl Thumbnail {
         size.to_physical_precise_round(scale).to_logical(scale)
     }
 
-    fn list_item_size(&self, output_size: Size<f64, Logical>, scale: f64) -> Size<f64, Logical> {
+    fn list_item_size(output_size: Size<f64, Logical>, scale: f64) -> Size<f64, Logical> {
         let width = (output_size.w * LIST_WIDTH_FACTOR).clamp(280., 960.);
         let width = round_logical_in_physical(scale, width);
         let height = round_logical_in_physical(scale, LIST_ITEM_HEIGHT);
@@ -602,15 +602,16 @@ impl Thumbnail {
         let radius = CornerRadius::from(config.highlight.corner_radius as f32);
 
         let is_urgent = mapped.is_urgent();
-        let (bg_color, border_color) = if is_urgent {
-            (config.highlight.urgent_color * 0.35, config.highlight.urgent_color)
-        } else if is_active {
-            (config.highlight.active_color * 0.35, config.highlight.active_color)
-        } else {
-            (
+        let (bg_color, border_color) = match (is_urgent, is_active) {
+            (true, _) => (config.highlight.urgent_color * 0.35, config.highlight.urgent_color),
+            (false, true) => (
+                config.highlight.active_color * 0.35,
+                config.highlight.active_color,
+            ),
+            (false, false) => (
                 Color::new_unpremul(0.1, 0.1, 0.1, 0.75),
                 config.highlight.active_color * 0.35,
-            )
+            ),
         };
 
         let mut background = self.background.borrow_mut();
@@ -936,7 +937,9 @@ impl WindowMru {
             if Some(thumbnail.id) == self.current_id {
                 // We found the current window first, so the queried one is *not* to the left.
                 return None;
-            } else if thumbnail.id == id {
+            }
+
+            if thumbnail.id == id {
                 // We found the queried window first, so the current one is to the right of it.
                 return Some(thumbnail);
             }
@@ -1502,22 +1505,20 @@ impl Inner {
     }
 
     fn update_window(&mut self, layout: &Layout<Mapped>, id: MappedId) {
-        if self.config.borrow().recent_windows.previews.off {
-            if let Some(thumbnail) = self.wmru.thumbnails.iter_mut().find(|t| t.id == id) {
-                if let Some((_, mapped)) = layout.windows().find(|(_, m)| m.id() == id) {
-                    thumbnail.update_window(mapped);
-                }
-            }
-            return;
-        }
+        let previews_off = self.config.borrow().recent_windows.previews.off;
+        let (output_size, scale, prev_size) = if previews_off {
+            (Size::new(0., 0.), 1., None)
+        } else {
+            let output_size = output_size(&self.output);
+            let scale = self.output.current_scale().fractional_scale();
 
-        let output_size = output_size(&self.output);
-        let scale = self.output.current_scale().fractional_scale();
+            // If the updated window is to the left of the currently selected one, we need to
+            // offset the view position to compensate for the change in size.
+            let left = self.wmru.thumbnail_left_of_current(id);
+            let prev_size = left.map(|thumbnail| thumbnail.preview_size(output_size, scale));
 
-        // If the updated window is to the left of the currently selected one, we need to offset
-        // the view position to compensate for the change in size.
-        let left = self.wmru.thumbnail_left_of_current(id);
-        let prev_size = left.map(|thumbnail| thumbnail.preview_size(output_size, scale));
+            (output_size, scale, prev_size)
+        };
 
         let Some(thumbnail) = self.wmru.thumbnails.iter_mut().find(|t| t.id == id) else {
             return;
@@ -1551,8 +1552,9 @@ impl Inner {
             let output_size = output_size(&self.output);
             let scale = self.output.current_scale().fractional_scale();
             let gap = self.item_gap(scale);
-            let delta = if self.config.borrow().recent_windows.previews.off {
-                let prev_size = self.wmru.thumbnails[idx].list_item_size(output_size, scale);
+            let previews_off = self.config.borrow().recent_windows.previews.off;
+            let delta = if previews_off {
+                let prev_size = Thumbnail::list_item_size(output_size, scale);
                 prev_size.h + gap
             } else {
                 let prev_size = self.wmru.thumbnails[idx].preview_size(output_size, scale);
@@ -1630,25 +1632,24 @@ impl Inner {
         let gap = self.item_gap(scale);
         let previews_off = self.config.borrow().recent_windows.previews.off;
         let config = self.config.borrow().animations.window_movement.0;
+        let item_extent = |t: &Thumbnail| {
+            if previews_off {
+                Thumbnail::list_item_size(output_size, scale).h
+            } else {
+                t.preview_size(output_size, scale).w
+            }
+        };
 
         let mut delta = 0.;
         for t in &mut self.wmru.thumbnails[idx + 1..] {
             match (matches_old(t), matches_new(t)) {
                 (true, true) => t.animate_move_from_with_config(delta, config),
                 (true, false) => {
-                    let size = if previews_off {
-                        t.list_item_size(output_size, scale).h
-                    } else {
-                        t.preview_size(output_size, scale).w
-                    };
+                    let size = item_extent(t);
                     delta += size + gap;
                 }
                 (false, true) => {
-                    let size = if previews_off {
-                        t.list_item_size(output_size, scale).h
-                    } else {
-                        t.preview_size(output_size, scale).w
-                    };
+                    let size = item_extent(t);
                     delta -= size + gap;
                 }
                 (false, false) => (),
@@ -1660,19 +1661,11 @@ impl Inner {
             match (matches_old(t), matches_new(t)) {
                 (true, true) => t.animate_move_from_with_config(-delta, config),
                 (true, false) => {
-                    let size = if previews_off {
-                        t.list_item_size(output_size, scale).h
-                    } else {
-                        t.preview_size(output_size, scale).w
-                    };
+                    let size = item_extent(t);
                     delta += size + gap;
                 }
                 (false, true) => {
-                    let size = if previews_off {
-                        t.list_item_size(output_size, scale).h
-                    } else {
-                        t.preview_size(output_size, scale).w
-                    };
+                    let size = item_extent(t);
                     delta -= size + gap;
                 }
                 (false, false) => (),
@@ -1686,15 +1679,16 @@ impl Inner {
         let output_size = output_size(&self.output);
         let scale = self.output.current_scale().fractional_scale();
         let round = move |logical: f64| round_logical_in_physical(scale, logical);
+        let previews_off = self.config.borrow().recent_windows.previews.off;
 
         let gap = self.item_gap(scale);
-        if self.config.borrow().recent_windows.previews.off {
+        if previews_off {
             let start_y = self.list_start_y(scale);
             let mut y = start_y;
             self.wmru
                 .thumbnails()
                 .map(move |thumbnail| {
-                    let size = thumbnail.list_item_size(output_size, scale);
+                    let size = Thumbnail::list_item_size(output_size, scale);
                     let x = round((output_size.w - size.w) / 2.);
                     let loc = Point::new(x, y);
                     y += size.h + gap;
@@ -1855,19 +1849,23 @@ impl Inner {
         let padding = round(padding) + round(BORDER);
         let padding = Point::new(padding, padding);
         let title_gap = round(TITLE_GAP);
+        let previews_off = self.config.borrow().recent_windows.previews.off;
 
         for (thumbnail, mut geo) in self.thumbnails_in_view_static().into_iter() {
             geo.loc -= padding;
             geo.size += padding.to_size().upscale(2.);
 
-            // It doesn't really matter all that much if the title texture is stale here, and it
-            // would be annoying to thread the rendering into this function. The texture might be
-            // one frame stale or so.
-            if let Some(texture) = thumbnail.title_texture.borrow().get_stale() {
-                let title_size = texture.logical_size();
-                geo.size.h += title_gap + title_size.h;
-                // Subtract half the padding so it looks more balanced visually.
-                geo.size.h -= round(padding.y / 2.);
+            // Only preview mode adds title text below the preview card.
+            if !previews_off {
+                // It doesn't really matter all that much if the title texture is stale here, and
+                // it would be annoying to thread the rendering into this function. The texture
+                // might be one frame stale or so.
+                if let Some(texture) = thumbnail.title_texture.borrow().get_stale() {
+                    let title_size = texture.logical_size();
+                    geo.size.h += title_gap + title_size.h;
+                    // Subtract half the padding so it looks more balanced visually.
+                    geo.size.h -= round(padding.y / 2.);
+                }
             }
 
             if geo.contains(pos) {
