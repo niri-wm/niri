@@ -13,6 +13,8 @@ recent-windows {
 
     open-delay-ms 150
 
+    layout "previews"
+
     highlight {
         active-color "#999999ff"
         urgent-color "#ff9999ff"
@@ -75,6 +77,23 @@ The switcher is delayed by default so that quickly tapping Alt-Tab to switch win
 recent-windows {
     // Make the switcher appear instantly.
     open-delay-ms 0
+}
+```
+
+### `layout`
+
+Controls the visual style of the switcher.
+
+- `"previews"` (default): the existing large window preview thumbnails.
+- `"list"`: a compact vertical list of window titles.
+
+This setting only changes presentation. The same switching logic, binds, filters and scopes keep
+working in both modes.
+
+```kdl
+recent-windows {
+    // Use a compact list instead of big thumbnails.
+    layout "list"
 }
 ```
 

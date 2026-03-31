@@ -56,7 +56,9 @@ pub use crate::layout::*;
 pub use crate::misc::*;
 pub use crate::output::{Output, OutputName, Outputs, Position, Vrr};
 use crate::recent_windows::RecentWindowsPart;
-pub use crate::recent_windows::{MruDirection, MruFilter, MruPreviews, MruScope, RecentWindows};
+pub use crate::recent_windows::{
+    MruDirection, MruFilter, MruLayout, MruPreviews, MruScope, RecentWindows,
+};
 pub use crate::utils::FloatOrInt;
 use crate::utils::{Flag, MergeWith as _};
 pub use crate::window_rule::{FloatingPosition, RelativeTo, WindowRule};
@@ -2232,6 +2234,7 @@ mod tests {
                 on: false,
                 debounce_ms: 750,
                 open_delay_ms: 150,
+                layout: Previews,
                 highlight: MruHighlight {
                     active_color: Color {
                         r: 0.0,
