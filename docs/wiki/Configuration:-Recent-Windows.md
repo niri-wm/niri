@@ -99,7 +99,7 @@ recent-windows {
 
 ### `previews`
 
-Controls the switcher item style and preview sizing.
+Controls the window previews in the switcher.
 
 - `off`: switches from thumbnail previews to a compact vertical list of window titles.
 
