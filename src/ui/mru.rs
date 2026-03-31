@@ -1422,12 +1422,12 @@ impl Inner {
     fn item_gap(&self, scale: f64) -> f64 {
         let round = move |logical: f64| round_logical_in_physical(scale, logical);
         if self.config.borrow().recent_windows.previews.off {
-            round(LIST_GAP)
-        } else {
-            let padding = self.config.borrow().recent_windows.highlight.padding;
-            let padding = round(padding) + round(BORDER);
-            padding + round(GAP) + padding
+            return round(LIST_GAP);
         }
+
+        let padding = self.config.borrow().recent_windows.highlight.padding;
+        let padding = round(padding) + round(BORDER);
+        padding + round(GAP) + padding
     }
 
     fn list_start_y(&self, scale: f64) -> f64 {
@@ -1473,42 +1473,43 @@ impl Inner {
                 current_geo.size.h,
             ) + current_geo.loc.y
                 - working_y
-        } else {
-            let working_x = STRUT + GAP;
-            let working_width = (output_size.w - working_x * 2.).max(0.);
-
-            let mut current_geo = Rectangle::default();
-            let mut strip_width = 0.;
-            for (thumbnail, geo) in thumbnails {
-                if thumbnail.id == current_id {
-                    current_geo = geo;
-                }
-                strip_width = geo.loc.x + geo.size.w;
-
-                if current_geo.size.w != 0. && strip_width > working_width {
-                    break;
-                }
-            }
-
-            if strip_width <= working_width {
-                return -(output_size.w - strip_width) / 2.;
-            }
-
-            compute_view_offset(
-                self.view_pos.target() + working_x,
-                working_width,
-                current_geo.loc.x,
-                current_geo.size.w,
-            ) + current_geo.loc.x
-                - working_x
         }
+
+        let working_x = STRUT + GAP;
+        let working_width = (output_size.w - working_x * 2.).max(0.);
+
+        let mut current_geo = Rectangle::default();
+        let mut strip_width = 0.;
+        for (thumbnail, geo) in thumbnails {
+            if thumbnail.id == current_id {
+                current_geo = geo;
+            }
+            strip_width = geo.loc.x + geo.size.w;
+
+            if current_geo.size.w != 0. && strip_width > working_width {
+                break;
+            }
+        }
+
+        if strip_width <= working_width {
+            return -(output_size.w - strip_width) / 2.;
+        }
+
+        compute_view_offset(
+            self.view_pos.target() + working_x,
+            working_width,
+            current_geo.loc.x,
+            current_geo.size.w,
+        ) + current_geo.loc.x
+            - working_x
     }
 
     fn update_window(&mut self, layout: &Layout<Mapped>, id: MappedId) {
         let previews_off = self.config.borrow().recent_windows.previews.off;
-        let (output_size, scale, prev_size) = if previews_off {
-            (Size::new(0., 0.), 1., None)
-        } else {
+        let mut output_size = Size::new(0., 0.);
+        let mut scale = 1.;
+        let mut prev_size = None;
+        if !previews_off {
             let output_size = output_size(&self.output);
             let scale = self.output.current_scale().fractional_scale();
 
@@ -1516,9 +1517,8 @@ impl Inner {
             // offset the view position to compensate for the change in size.
             let left = self.wmru.thumbnail_left_of_current(id);
             let prev_size = left.map(|thumbnail| thumbnail.preview_size(output_size, scale));
-
-            (output_size, scale, prev_size)
-        };
+            (output_size, scale, prev_size) = (output_size, scale, prev_size);
+        }
 
         let Some(thumbnail) = self.wmru.thumbnails.iter_mut().find(|t| t.id == id) else {
             return;
@@ -1553,26 +1553,29 @@ impl Inner {
             let scale = self.output.current_scale().fractional_scale();
             let gap = self.item_gap(scale);
             let previews_off = self.config.borrow().recent_windows.previews.off;
-            let delta = if previews_off {
-                let prev_size = Thumbnail::list_item_size(output_size, scale);
-                prev_size.h + gap
-            } else {
+            let mut delta = {
                 let prev_size = self.wmru.thumbnails[idx].preview_size(output_size, scale);
                 prev_size.w + gap
             };
+            if previews_off {
+                let prev_size = Thumbnail::list_item_size(output_size, scale);
+                delta = prev_size.h + gap;
+            }
 
             let config = self.config.borrow().animations.window_movement.0;
 
             // If the removed window is to the left of the currently selected one, we need to offset
             // the view position to compensate for the change.
-            if self.wmru.thumbnail_left_of_current(id).is_some() {
+            let left_of_current = self.wmru.thumbnail_left_of_current(id).is_some();
+            if left_of_current {
                 self.view_pos.offset(-delta);
 
                 // And animate movement of windows left of it.
                 for thumbnail in self.wmru.thumbnails_mut().take_while(|t| t.id != id) {
                     thumbnail.animate_move_from_with_config(-delta, config);
                 }
-            } else {
+            }
+            if !left_of_current {
                 // Otherwise, animate movement of windows right of it.
                 for thumbnail in self.wmru.thumbnails_mut().rev().take_while(|t| t.id != id) {
                     thumbnail.animate_move_from_with_config(delta, config);
@@ -1632,11 +1635,11 @@ impl Inner {
         let gap = self.item_gap(scale);
         let previews_off = self.config.borrow().recent_windows.previews.off;
         let config = self.config.borrow().animations.window_movement.0;
+        let list_item_extent = Thumbnail::list_item_size(output_size, scale).h;
         let item_extent = |t: &Thumbnail| {
-            if previews_off {
-                Thumbnail::list_item_size(output_size, scale).h
-            } else {
-                t.preview_size(output_size, scale).w
+            match previews_off {
+                true => list_item_extent,
+                false => t.preview_size(output_size, scale).w,
             }
         };
 
@@ -1685,7 +1688,7 @@ impl Inner {
         if previews_off {
             let start_y = self.list_start_y(scale);
             let mut y = start_y;
-            self.wmru
+            return self.wmru
                 .thumbnails()
                 .map(move |thumbnail| {
                     let size = Thumbnail::list_item_size(output_size, scale);
@@ -1695,19 +1698,19 @@ impl Inner {
                     (thumbnail, Rectangle::new(loc, size))
                 })
                 .collect()
-        } else {
-            let mut x = 0.;
-            self.wmru
-                .thumbnails()
-                .map(move |thumbnail| {
-                    let size = thumbnail.preview_size(output_size, scale);
-                    let y = round((output_size.h - size.h) / 2.);
-                    let loc = Point::new(x, y);
-                    x += size.w + gap;
-                    (thumbnail, Rectangle::new(loc, size))
-                })
-                .collect()
         }
+
+        let mut x = 0.;
+        self.wmru
+            .thumbnails()
+            .map(move |thumbnail| {
+                let size = thumbnail.preview_size(output_size, scale);
+                let y = round((output_size.h - size.h) / 2.);
+                let loc = Point::new(x, y);
+                x += size.w + gap;
+                (thumbnail, Rectangle::new(loc, size))
+            })
+            .collect()
     }
 
     fn thumbnails_in_view_static(&self) -> Vec<(&Thumbnail, Rectangle<f64, Logical>)> {
@@ -1720,7 +1723,7 @@ impl Inner {
         if self.config.borrow().recent_windows.previews.off {
             let top = view_pos;
             let bottom = view_pos + output_size.h;
-            self.thumbnails()
+            return self.thumbnails()
                 .into_iter()
                 .skip_while(move |(_, geo)| geo.loc.y + geo.size.h <= top)
                 .map_while(move |(thumbnail, mut geo)| {
@@ -1731,21 +1734,21 @@ impl Inner {
                     Some((thumbnail, geo))
                 })
                 .collect()
-        } else {
-            let leftmost = view_pos;
-            let rightmost = view_pos + output_size.w;
-            self.thumbnails()
-                .into_iter()
-                .skip_while(move |(_, geo)| geo.loc.x + geo.size.w <= leftmost)
-                .map_while(move |(thumbnail, mut geo)| {
-                    if rightmost <= geo.loc.x {
-                        return None;
-                    }
-                    geo.loc.x -= view_pos;
-                    Some((thumbnail, geo))
-                })
-                .collect()
         }
+
+        let leftmost = view_pos;
+        let rightmost = view_pos + output_size.w;
+        self.thumbnails()
+            .into_iter()
+            .skip_while(move |(_, geo)| geo.loc.x + geo.size.w <= leftmost)
+            .map_while(move |(thumbnail, mut geo)| {
+                if rightmost <= geo.loc.x {
+                    return None;
+                }
+                geo.loc.x -= view_pos;
+                Some((thumbnail, geo))
+            })
+            .collect()
     }
 
     fn thumbnails_in_view_render(&self) -> Vec<(&Thumbnail, Rectangle<f64, Logical>)> {
@@ -1756,7 +1759,7 @@ impl Inner {
         let view_pos = round(self.view_pos.current());
 
         if self.config.borrow().recent_windows.previews.off {
-            self.thumbnails()
+            return self.thumbnails()
                 .into_iter()
                 .filter_map(move |(thumbnail, mut geo)| {
                     geo.loc.y -= view_pos;
@@ -1767,19 +1770,19 @@ impl Inner {
                     Some((thumbnail, geo))
                 })
                 .collect()
-        } else {
-            self.thumbnails()
-                .into_iter()
-                .filter_map(move |(thumbnail, mut geo)| {
-                    geo.loc.x -= view_pos;
-                    geo.loc.x += round(thumbnail.render_offset());
-                    if geo.loc.x + geo.size.w < 0. || output_size.w < geo.loc.x {
-                        return None;
-                    }
-                    Some((thumbnail, geo))
-                })
-                .collect()
         }
+
+        self.thumbnails()
+            .into_iter()
+            .filter_map(move |(thumbnail, mut geo)| {
+                geo.loc.x -= view_pos;
+                geo.loc.x += round(thumbnail.render_offset());
+                if geo.loc.x + geo.size.w < 0. || output_size.w < geo.loc.x {
+                    return None;
+                }
+                Some((thumbnail, geo))
+            })
+            .collect()
     }
 
     fn render<R: NiriRenderer>(
@@ -1833,12 +1836,13 @@ impl Inner {
             if previews_off {
                 thumbnail.render_list_item(
                     renderer, config, mapped, geo, scale, is_active, target, push,
-                )
-            } else {
-                thumbnail.render(
-                    renderer, config, mapped, geo, scale, is_active, bob_y, target, push,
-                )
+                );
+                continue;
             }
+
+            thumbnail.render(
+                renderer, config, mapped, geo, scale, is_active, bob_y, target, push,
+            );
         }
     }
 
