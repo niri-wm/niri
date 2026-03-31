@@ -55,7 +55,6 @@ impl MergeWith<RecentWindowsPart> for RecentWindows {
         }
 
         merge_clone!((self, part), debounce_ms, open_delay_ms);
-
         merge!((self, part), highlight, previews);
 
         if let Some(part) = &part.binds {
