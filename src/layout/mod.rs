@@ -208,6 +208,7 @@ pub trait LayoutElement {
         _clip_to_geometry: bool,
         _surface_anim_scale: Scale<f64>,
         _radius: CornerRadius,
+        _exponent: f32,
         _xray_pos: XrayPos,
         _push: &mut dyn FnMut(BackgroundEffectElement),
     ) {

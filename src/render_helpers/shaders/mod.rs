@@ -10,6 +10,27 @@ use super::renderer::NiriRenderer;
 use super::shader_element::ShaderProgram;
 use crate::render_helpers::blur::BlurProgram;
 
+const ROUNDING_ALPHA_IMPL_PLACEHOLDER: &str = "@ROUNDING_ALPHA_IMPL@";
+const EXPONENT_SHADOW_X_IMPL_PLACEHOLDER: &str = "@EXPONENT_SHADOW_X_IMPL@";
+
+const ROUNDING_ALPHA_IMPL: &str = include_str!("rounding_alpha_superellipse.frag");
+const EXPONENT_SHADOW_X_IMPL: &str = "
+float normalized = (-delta) / max(corner, 0.0001);
+float remaining = max(0.0, 1.0 - pow(normalized, exponent));
+curved = halfSize.x - corner + corner * pow(remaining, 1.0 / exponent);";
+
+const ROUNDING_ALPHA_IMPL_FALLBACK: &str = "
+float niri_rounding_alpha_impl(vec2 coords, vec2 center, float radius, float corner_exponent) {
+    float dist = distance(coords, center);
+
+    // Manual smoothstep() between radius - half_px and radius + half_px
+    // to avoid a division in clamp().
+    float t = clamp((dist - radius) * niri_scale + 0.5, 0.0, 1.0);
+    return 1.0 - t * t * (3.0 - 2.0 * t);
+}";
+const EXPONENT_SHADOW_X_IMPL_FALLBACK: &str =
+    "curved = halfSize.x - corner + sqrt(max(0.0, corner * corner - delta * delta));";
+
 pub struct Shaders {
     pub border: Option<ShaderProgram>,
     pub shadow: Option<ShaderProgram>,
@@ -32,11 +53,82 @@ pub enum ProgramType {
     Open,
 }
 
+fn try_compile_shader(
+    shader_name: &str,
+    renderer: &mut GlesRenderer,
+    src: &str,
+    additional_uniforms: &[UniformName<'_>],
+    texture_uniforms: &[&str],
+) -> Option<ShaderProgram> {
+    let replaced_src = src
+        .replace(ROUNDING_ALPHA_IMPL_PLACEHOLDER, ROUNDING_ALPHA_IMPL)
+        .replace(EXPONENT_SHADOW_X_IMPL_PLACEHOLDER, EXPONENT_SHADOW_X_IMPL);
+    match ShaderProgram::compile(
+        renderer,
+        &replaced_src,
+        additional_uniforms,
+        texture_uniforms,
+    ) {
+        Ok(p) => Some(p),
+        Err(err) => {
+            warn!("error compiling {shader_name} shader with support for corner radius exponent: {err:?}");
+            let fallback_src = src
+                .replace(
+                    ROUNDING_ALPHA_IMPL_PLACEHOLDER,
+                    ROUNDING_ALPHA_IMPL_FALLBACK,
+                )
+                .replace(
+                    EXPONENT_SHADOW_X_IMPL_PLACEHOLDER,
+                    EXPONENT_SHADOW_X_IMPL_FALLBACK,
+                );
+            ShaderProgram::compile(
+                renderer,
+                &fallback_src,
+                additional_uniforms,
+                texture_uniforms,
+            )
+            .inspect_err(|e| warn!("error compiling fallback {shader_name} shader: {e:?}"))
+            .ok()
+        }
+    }
+}
+
+fn try_compile_custom_texture_shader(
+    shader_name: &str,
+    renderer: &mut GlesRenderer,
+    src: &str,
+    additional_uniforms: &[UniformName<'_>],
+) -> Option<GlesTexProgram> {
+    let replaced_src = src
+        .replace(ROUNDING_ALPHA_IMPL_PLACEHOLDER, ROUNDING_ALPHA_IMPL)
+        .replace(EXPONENT_SHADOW_X_IMPL_PLACEHOLDER, EXPONENT_SHADOW_X_IMPL);
+    match renderer.compile_custom_texture_shader(replaced_src, additional_uniforms) {
+        Ok(s) => Some(s),
+        Err(err) => {
+            warn!("error compiling {shader_name} shader with support for corner radius exponent: {err:?}");
+            let fallback_src = src
+                .replace(
+                    ROUNDING_ALPHA_IMPL_PLACEHOLDER,
+                    ROUNDING_ALPHA_IMPL_FALLBACK,
+                )
+                .replace(
+                    EXPONENT_SHADOW_X_IMPL_PLACEHOLDER,
+                    EXPONENT_SHADOW_X_IMPL_FALLBACK,
+                );
+            renderer
+                .compile_custom_texture_shader(fallback_src, additional_uniforms)
+                .inspect_err(|e| warn!("error compiling fallback {shader_name} shader: {e:?}"))
+                .ok()
+        }
+    }
+}
+
 impl Shaders {
     fn compile(renderer: &mut GlesRenderer) -> Self {
         let _span = tracy_client::span!("Shaders::compile");
 
-        let border = ShaderProgram::compile(
+        let border = try_compile_shader(
+            "border",
             renderer,
             concat!(
                 include_str!("border.frag"),
@@ -53,16 +145,14 @@ impl Shaders {
                 UniformName::new("input_to_geo", UniformType::Matrix3x3),
                 UniformName::new("geo_size", UniformType::_2f),
                 UniformName::new("outer_radius", UniformType::_4f),
+                UniformName::new("corner_exponent", UniformType::_1f),
                 UniformName::new("border_width", UniformType::_1f),
             ],
             &[],
-        )
-        .map_err(|err| {
-            warn!("error compiling border shader: {err:?}");
-        })
-        .ok();
+        );
 
-        let shadow = ShaderProgram::compile(
+        let shadow = try_compile_shader(
+            "shadow",
             renderer,
             concat!(
                 include_str!("shadow.frag"),
@@ -74,57 +164,51 @@ impl Shaders {
                 UniformName::new("input_to_geo", UniformType::Matrix3x3),
                 UniformName::new("geo_size", UniformType::_2f),
                 UniformName::new("corner_radius", UniformType::_4f),
+                UniformName::new("corner_exponent", UniformType::_1f),
                 UniformName::new("window_input_to_geo", UniformType::Matrix3x3),
                 UniformName::new("window_geo_size", UniformType::_2f),
                 UniformName::new("window_corner_radius", UniformType::_4f),
+                UniformName::new("window_corner_exponent", UniformType::_1f),
             ],
             &[],
-        )
-        .map_err(|err| {
-            warn!("error compiling shadow shader: {err:?}");
-        })
-        .ok();
+        );
 
-        let clipped_surface = renderer
-            .compile_custom_texture_shader(
-                concat!(
-                    include_str!("clipped_surface.frag"),
-                    include_str!("rounding_alpha.frag"),
-                    "\nvec4 postprocess(vec4 color) { return color; }",
-                ),
-                &[
-                    UniformName::new("niri_scale", UniformType::_1f),
-                    UniformName::new("geo_size", UniformType::_2f),
-                    UniformName::new("corner_radius", UniformType::_4f),
-                    UniformName::new("input_to_geo", UniformType::Matrix3x3),
-                ],
-            )
-            .map_err(|err| {
-                warn!("error compiling clipped surface shader: {err:?}");
-            })
-            .ok();
+        let clipped_surface = try_compile_custom_texture_shader(
+            "clipped surface",
+            renderer,
+            concat!(
+                include_str!("clipped_surface.frag"),
+                include_str!("rounding_alpha.frag"),
+                "\nvec4 postprocess(vec4 color) { return color; }",
+            ),
+            &[
+                UniformName::new("niri_scale", UniformType::_1f),
+                UniformName::new("geo_size", UniformType::_2f),
+                UniformName::new("corner_radius", UniformType::_4f),
+                UniformName::new("corner_exponent", UniformType::_1f),
+                UniformName::new("input_to_geo", UniformType::Matrix3x3),
+            ],
+        );
 
-        let postprocess_and_clip = renderer
-            .compile_custom_texture_shader(
-                concat!(
-                    include_str!("clipped_surface.frag"),
-                    include_str!("rounding_alpha.frag"),
-                    include_str!("postprocess.frag"),
-                ),
-                &[
-                    UniformName::new("niri_scale", UniformType::_1f),
-                    UniformName::new("geo_size", UniformType::_2f),
-                    UniformName::new("corner_radius", UniformType::_4f),
-                    UniformName::new("input_to_geo", UniformType::Matrix3x3),
-                    UniformName::new("noise", UniformType::_1f),
-                    UniformName::new("saturation", UniformType::_1f),
-                    UniformName::new("bg_color", UniformType::_4f),
-                ],
-            )
-            .map_err(|err| {
-                warn!("error compiling postprocess_and_clip shader: {err:?}");
-            })
-            .ok();
+        let postprocess_and_clip = try_compile_custom_texture_shader(
+            "postprocess_and_clip",
+            renderer,
+            concat!(
+                include_str!("clipped_surface.frag"),
+                include_str!("rounding_alpha.frag"),
+                include_str!("postprocess.frag"),
+            ),
+            &[
+                UniformName::new("niri_scale", UniformType::_1f),
+                UniformName::new("geo_size", UniformType::_2f),
+                UniformName::new("corner_radius", UniformType::_4f),
+                UniformName::new("corner_exponent", UniformType::_1f),
+                UniformName::new("input_to_geo", UniformType::Matrix3x3),
+                UniformName::new("noise", UniformType::_1f),
+                UniformName::new("saturation", UniformType::_1f),
+                UniformName::new("bg_color", UniformType::_4f),
+            ],
+        );
 
         let resize = compile_resize_program(renderer, include_str!("resize.frag"))
             .map_err(|err| {
@@ -223,28 +307,53 @@ fn compile_resize_program(
     renderer: &mut GlesRenderer,
     src: &str,
 ) -> Result<ShaderProgram, GlesError> {
+    let additional_uniforms = &[
+        UniformName::new("niri_input_to_curr_geo", UniformType::Matrix3x3),
+        UniformName::new("niri_curr_geo_to_prev_geo", UniformType::Matrix3x3),
+        UniformName::new("niri_curr_geo_to_next_geo", UniformType::Matrix3x3),
+        UniformName::new("niri_curr_geo_size", UniformType::_2f),
+        UniformName::new("niri_geo_to_tex_prev", UniformType::Matrix3x3),
+        UniformName::new("niri_geo_to_tex_next", UniformType::Matrix3x3),
+        UniformName::new("niri_progress", UniformType::_1f),
+        UniformName::new("niri_clamped_progress", UniformType::_1f),
+        UniformName::new("niri_corner_radius", UniformType::_4f),
+        UniformName::new("niri_corner_exponent", UniformType::_1f),
+        UniformName::new("niri_clip_to_geometry", UniformType::_1f),
+    ];
+    let texture_uniforms = &["niri_tex_prev", "niri_tex_next"];
+
     let mut program = include_str!("resize_prelude.frag").to_string();
     program.push_str(src);
     program.push_str(include_str!("resize_epilogue.frag"));
-    program.push_str(include_str!("rounding_alpha.frag"));
 
-    ShaderProgram::compile(
+    let replaced_program = program.clone()
+        + "\n".into()
+        + &include_str!("rounding_alpha.frag")
+            .replace(ROUNDING_ALPHA_IMPL_PLACEHOLDER, ROUNDING_ALPHA_IMPL);
+
+    match ShaderProgram::compile(
         renderer,
-        &program,
-        &[
-            UniformName::new("niri_input_to_curr_geo", UniformType::Matrix3x3),
-            UniformName::new("niri_curr_geo_to_prev_geo", UniformType::Matrix3x3),
-            UniformName::new("niri_curr_geo_to_next_geo", UniformType::Matrix3x3),
-            UniformName::new("niri_curr_geo_size", UniformType::_2f),
-            UniformName::new("niri_geo_to_tex_prev", UniformType::Matrix3x3),
-            UniformName::new("niri_geo_to_tex_next", UniformType::Matrix3x3),
-            UniformName::new("niri_progress", UniformType::_1f),
-            UniformName::new("niri_clamped_progress", UniformType::_1f),
-            UniformName::new("niri_corner_radius", UniformType::_4f),
-            UniformName::new("niri_clip_to_geometry", UniformType::_1f),
-        ],
-        &["niri_tex_prev", "niri_tex_next"],
-    )
+        &replaced_program,
+        additional_uniforms,
+        texture_uniforms,
+    ) {
+        Ok(p) => Ok(p),
+        Err(err) => {
+            warn!("error compiling resize shader with support for corner radius exponent: {err:?}");
+            let fallback_program = program
+                + "\n".into()
+                + &include_str!("rounding_alpha.frag").replace(
+                    ROUNDING_ALPHA_IMPL_PLACEHOLDER,
+                    ROUNDING_ALPHA_IMPL_FALLBACK,
+                );
+            ShaderProgram::compile(
+                renderer,
+                &fallback_program,
+                additional_uniforms,
+                texture_uniforms,
+            )
+        }
+    }
 }
 
 pub fn set_custom_resize_program(renderer: &mut GlesRenderer, src: Option<&str>) {

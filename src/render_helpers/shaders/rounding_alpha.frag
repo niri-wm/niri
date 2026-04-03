@@ -1,4 +1,6 @@
-float niri_rounding_alpha(vec2 coords, vec2 size, vec4 corner_radius) {
+@ROUNDING_ALPHA_IMPL@
+
+float niri_rounding_alpha(vec2 coords, vec2 size, vec4 corner_radius, float corner_exponent) {
     vec2 center;
     float radius;
 
@@ -18,10 +20,5 @@ float niri_rounding_alpha(vec2 coords, vec2 size, vec4 corner_radius) {
         return 1.0;
     }
 
-    float dist = distance(coords, center);
-
-    // Manual smoothstep() between radius - half_px and radius + half_px
-    // to avoid a division in clamp().
-    float t = clamp((dist - radius) * niri_scale + 0.5, 0.0, 1.0);
-    return 1.0 - t * t * (3.0 - 2.0 * t);
+    return niri_rounding_alpha_impl(coords, center, radius, corner_exponent);
 }

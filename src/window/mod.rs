@@ -101,6 +101,8 @@ pub struct ResolvedWindowRules {
 
     /// Corner radius to assume this window has.
     pub geometry_corner_radius: Option<CornerRadius>,
+    /// Exponent to use for corner rounding.
+    pub geometry_corner_radius_exponent: Option<f32>,
 
     /// Whether to clip this window to its geometry, including the corner radius.
     pub clip_to_geometry: Option<bool>,
@@ -283,6 +285,9 @@ impl ResolvedWindowRules {
                 }
                 if let Some(x) = rule.geometry_corner_radius {
                     resolved.geometry_corner_radius = Some(x);
+                }
+                if let Some(x) = rule.geometry_corner_radius_exponent {
+                    resolved.geometry_corner_radius_exponent = Some(x.0 as f32);
                 }
                 if let Some(x) = rule.clip_to_geometry {
                     resolved.clip_to_geometry = Some(x);

@@ -811,6 +811,7 @@ window-rule {
 
     tab-indicator {
         inactive-color "darkred"
+        corner-radius-exponent 4
     }
 }
 ```
@@ -846,6 +847,23 @@ window-rule {
 This way, you can match GTK 3 applications which have square bottom corners:
 
 ![A screenshot showing a window with only the top corners rounded](./img/different-corner-radius.png)
+
+#### `geometry-corner-radius-exponent`
+
+<sup>Since: next release</sup>
+
+Sets the exponent used for corner rounding, using the superellipse equation `x^n + y^n = 1`.
+
+- 2 is the default circular rounding.
+- Values greater than 2 produce "squircle" corners.
+- Values closer to 1 produce chamfer-like corners.
+
+```kdl
+window-rule {
+    geometry-corner-radius 12
+    geometry-corner-radius-exponent 4
+}
+```
 
 #### `clip-to-geometry`
 
@@ -994,6 +1012,7 @@ window-rule {
     popups {
         // Matches the default libadwaita pop-up corner radius.
         geometry-corner-radius 15
+        geometry-corner-radius-exponent 2
 
         // Note: it'll look better to set background opacity
         // through your GTK theme CSS and not here.
