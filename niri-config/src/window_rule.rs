@@ -60,6 +60,8 @@ pub struct WindowRule {
     #[knuffel(child)]
     pub geometry_corner_radius: Option<CornerRadius>,
     #[knuffel(child, unwrap(argument))]
+    pub geometry_corner_radius_exponent: Option<FloatOrInt<1, { i32::MAX }>>,
+    #[knuffel(child, unwrap(argument))]
     pub clip_to_geometry: Option<bool>,
     #[knuffel(child, unwrap(argument))]
     pub baba_is_float: Option<bool>,
@@ -88,6 +90,8 @@ pub struct PopupsRule {
     pub opacity: Option<f32>,
     #[knuffel(child)]
     pub geometry_corner_radius: Option<CornerRadius>,
+    #[knuffel(child, unwrap(argument))]
+    pub geometry_corner_radius_exponent: Option<FloatOrInt<1, { i32::MAX }>>,
     #[knuffel(child, default)]
     pub background_effect: BackgroundEffectRule,
 }
@@ -100,6 +104,8 @@ pub struct ResolvedPopupsRules {
 
     /// Corner radius to assume the popups have.
     pub geometry_corner_radius: Option<CornerRadius>,
+    /// Exponent to use for popup corner rounding.
+    pub geometry_corner_radius_exponent: Option<f32>,
 
     /// Background effect configuration for popups.
     pub background_effect: BackgroundEffect,
@@ -112,6 +118,9 @@ impl MergeWith<PopupsRule> for ResolvedPopupsRules {
         }
         if let Some(x) = part.geometry_corner_radius {
             self.geometry_corner_radius = Some(x);
+        }
+        if let Some(x) = part.geometry_corner_radius_exponent {
+            self.geometry_corner_radius_exponent = Some(x.0 as f32);
         }
         self.background_effect.merge_with(&part.background_effect);
     }

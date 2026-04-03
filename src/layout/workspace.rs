@@ -5,6 +5,7 @@ use std::time::Duration;
 use niri_config::utils::MergeWith as _;
 use niri_config::{
     CenterFocusedColumn, CornerRadius, OutputName, PresetSize, Workspace as WorkspaceConfig,
+    DEFAULT_CORNER_RADIUS_EXPONENT,
 };
 use niri_ipc::{ColumnDisplay, PositionChange, SizeChange, WindowLayout};
 use smithay::backend::renderer::element::Kind;
@@ -387,6 +388,7 @@ impl<W: LayoutElement> Workspace<W> {
             self.view_size,
             true,
             CornerRadius::default(),
+            DEFAULT_CORNER_RADIUS_EXPONENT,
             self.scale.fractional_scale(),
             1.,
         );

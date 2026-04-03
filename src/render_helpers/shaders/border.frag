@@ -21,6 +21,7 @@ uniform vec2 grad_vec;
 uniform mat3 input_to_geo;
 uniform vec2 geo_size;
 uniform vec4 outer_radius;
+uniform float corner_exponent;
 uniform float border_width;
 
 vec4 premul_rect(vec4 color) {
@@ -208,12 +209,13 @@ vec4 gradient_color(vec2 coords) {
     return color_mix(color_from, color_to, frac);
 }
 
-float niri_rounding_alpha(vec2 coords, vec2 size, vec4 corner_radius);
+float niri_rounding_alpha(vec2 coords, vec2 size, vec4 corner_radius, float corner_exponent);
+
 
 void main() {
     vec3 coords_geo = input_to_geo * vec3(niri_v_coords, 1.0);
     vec4 color = gradient_color(coords_geo.xy);
-    color = color * niri_rounding_alpha(coords_geo.xy, geo_size, outer_radius);
+    color = color * niri_rounding_alpha(coords_geo.xy, geo_size, outer_radius, corner_exponent);
 
     if (border_width > 0.0) {
         coords_geo -= vec3(border_width);
@@ -222,7 +224,7 @@ void main() {
                 && 0.0 <= coords_geo.y && coords_geo.y <= inner_geo_size.y)
         {
             vec4 inner_radius = max(outer_radius - vec4(border_width), 0.0);
-            color = color * (1.0 - niri_rounding_alpha(coords_geo.xy, inner_geo_size, inner_radius));
+            color = color * (1.0 - niri_rounding_alpha(coords_geo.xy, inner_geo_size, inner_radius, corner_exponent));
         }
     }
 
