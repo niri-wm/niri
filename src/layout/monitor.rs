@@ -1002,6 +1002,24 @@ impl<W: LayoutElement> Monitor<W> {
         self.activate_workspace(new_idx);
     }
 
+    pub fn switch_workspace_down_or_first(&mut self) {
+        let new_idx = if self.active_workspace_idx + 1 >= self.workspaces.len() {
+            0 // wrap to first
+        } else {
+            self.active_workspace_idx + 1
+        };
+        self.activate_workspace(new_idx);
+    }
+
+    pub fn switch_workspace_up_or_last(&mut self) {
+        let new_idx = if self.active_workspace_idx == 0 {
+            self.workspaces.len() - 1 // wrap to last
+        } else {
+            self.active_workspace_idx - 1
+        };
+        self.activate_workspace(new_idx);
+    }
+
     fn previous_workspace_idx(&self) -> Option<usize> {
         let id = self.previous_workspace_id?;
         self.workspaces.iter().position(|w| w.id() == id)
