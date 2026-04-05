@@ -11,6 +11,7 @@ pub mod gnome_shell_introspect;
 pub mod gnome_shell_screenshot;
 pub mod mutter_display_config;
 pub mod mutter_service_channel;
+pub mod net_hadess_sensorproxy;
 
 #[cfg(feature = "xdp-gnome-screencast")]
 pub mod mutter_screen_cast;
@@ -39,6 +40,7 @@ pub struct DBusServers {
     pub conn_login1: Option<Connection>,
     pub conn_locale1: Option<Connection>,
     pub conn_keyboard_monitor: Option<Connection>,
+    pub conn_sensorproxy: Option<Connection>,
 }
 
 impl DBusServers {
