@@ -12,6 +12,16 @@ pub fn start(
 
     let async_conn = conn.inner().clone();
     let future = async move {
+        let _ = async_conn
+            .call_method(
+                Some("net.hadess.SensorProxy"),
+                "/net/hadess/SensorProxy",
+                Some("net.hadess.SensorProxy"),
+                "ClaimAccelerometer",
+                &(),
+            )
+            .await;
+
         let proxy = fdo::PropertiesProxy::new(
             &async_conn,
             "net.hadess.SensorProxy",
