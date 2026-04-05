@@ -57,6 +57,8 @@ pub struct Output {
     pub scale: Option<FloatOrInt<0, 10>>,
     #[knuffel(child, unwrap(argument, str), default = Transform::Normal)]
     pub transform: Transform,
+    #[knuffel(child)] 
+    pub auto_rotate: bool,
     #[knuffel(child)]
     pub position: Option<Position>,
     #[knuffel(child)]
@@ -100,6 +102,7 @@ impl Default for Output {
             name: String::new(),
             scale: None,
             transform: Transform::Normal,
+            auto_rotate: false,
             position: None,
             mode: None,
             modeline: None,
