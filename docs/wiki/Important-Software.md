@@ -16,15 +16,46 @@ Portals **require** [running niri as a session](./Getting-Started.md), which mea
 
 Then systemd should start them on-demand automatically. These particular portals are configured in `niri-portals.conf` which [must be installed](./Getting-Started.md#manual-installation) in the correct location.
 
+#### Configuration File Location
+
+For most distributions, this file is located at `/usr/share/xdg-desktop-portal/niri-portals.conf` or `~/.config/xdg-desktop-portal/niri-portals.conf`.
+
+On NixOS, if you enable niri via the [NixOS module](https://search.nixos.org/options?query=programs.niri.enable) (`programs.niri.enable = true`), [the portals are configured automatically by default](https://github.com/NixOS/nixpkgs/blob/e4bae1bd10c9c57b2cf517953ab70060a828ee6f/nixos/modules/programs/wayland/niri.nix#L43-L62).
+
+If you are configuring manually or need to override the defaults, you can add the following to your `configuration.nix`:
+
+```nix
+xdg.portal = {
+  enable = true;
+  extraPortals = [ pkgs.xdg-desktop-portal-gnome pkgs.xdg-desktop-portal-gtk ];
+  config.niri.default = [ "gnome" "gtk" ];
+};
+
+```
+
 Since we're using `xdg-desktop-portal-gnome`, Flatpak apps will read the GNOME UI settings. For example, to enable the dark style, run:
 
 ```
 dconf write /org/gnome/desktop/interface/color-scheme '"prefer-dark"'
 ```
 
-Note that if you're using the provided `resources/niri-portals.conf`, you also need to install the `nautilus` file manager in order for file chooser dialogues to work properly. This is necessary because xdg-desktop-portal-gnome uses nautilus as the file chooser by default starting from version 47.0.
+#### File Chooser Details
 
-If you do not want to install `nautilus` (say you use `nemo` instead), you can set `org.freedesktop.impl.portal.FileChooser=gtk;` in `niri-portals.conf` to use the GTK portal for file chooser dialogues.
+Note that if you're using the provided `resources/niri-portals.conf` (or the NixOS config above), you also need to install the `nautilus` file manager in order for file chooser dialogues to work properly. This is necessary because `xdg-desktop-portal-gnome` uses nautilus as the file chooser by default starting from version 47.0.
+
+On NixOS, the module installs `nautilus` by default via the [`programs.niri.useNautilus`](https://search.nixos.org/options?query=programs.niri.useNautilus) option. You only need to install it manually if you have disabled this option.
+
+If you do not want to install `nautilus` (say you use `kde` or `nemo` instead), you can override the file picker backend in `niri-portals.conf`:
+
+```ini
+[preferred]
+default=gnome;gtk;
+# Use the KDE portal for file picking, or "gtk;" for the GTK portal
+org.freedesktop.impl.portal.FileChooser=kde;
+
+```
+
+On **NixOS**, this override is done by adding `"org.freedesktop.impl.portal.FileChooser" = [ "kde" ];` (or `"gtk"`) into the `xdg.portal.config.niri` set.
 
 > [!WARNING]
 > Do not set the `GDK_BACKEND` environment variable globally as this will break the screencast portal.
