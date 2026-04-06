@@ -251,7 +251,7 @@ impl State {
                     let (threshold, ov_enabled, ov_fingers, ws_enabled, ws_fingers,
                          vs_enabled, vs_fingers) = {
                         let config = self.niri.config.borrow();
-                        let touch = &config.input.touch;
+                        let touch = &config.input.touchscreen;
                         (
                             touch.gesture_threshold(),
                             touch.overview_toggle_enabled(),
@@ -324,7 +324,7 @@ impl State {
                 let (ws_natural, ws_sensitivity, vs_natural, vs_sensitivity,
                      ov_natural, ov_sensitivity) = {
                     let config = self.niri.config.borrow();
-                    let touch = &config.input.touch;
+                    let touch = &config.input.touchscreen;
                     (
                         touch.workspace_switch_natural_scroll(),
                         touch.workspace_switch_sensitivity(),

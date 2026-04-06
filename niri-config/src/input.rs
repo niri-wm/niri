@@ -16,7 +16,7 @@ pub struct Input {
     pub trackpoint: Trackpoint,
     pub trackball: Trackball,
     pub tablet: Tablet,
-    pub touch: Touch,
+    pub touchscreen: Touchscreen,
     pub disable_power_key_handling: bool,
     pub warp_mouse_to_focus: Option<WarpMouseToFocus>,
     pub focus_follows_mouse: Option<FocusFollowsMouse>,
@@ -40,7 +40,7 @@ pub struct InputPart {
     #[knuffel(child)]
     pub tablet: Option<Tablet>,
     #[knuffel(child)]
-    pub touch: Option<Touch>,
+    pub touchscreen: Option<Touchscreen>,
     #[knuffel(child)]
     pub disable_power_key_handling: Option<Flag>,
     #[knuffel(child)]
@@ -71,7 +71,7 @@ impl MergeWith<InputPart> for Input {
             trackpoint,
             trackball,
             tablet,
-            touch,
+            touchscreen,
         );
 
         merge_clone_opt!(
@@ -221,6 +221,107 @@ pub struct Touchpad {
     pub middle_emulation: bool,
     #[knuffel(child)]
     pub scroll_factor: Option<ScrollFactor>,
+    #[knuffel(child)]
+    pub gestures: Option<TouchpadGesturesConfig>,
+}
+
+impl Touchpad {
+    pub fn gesture_threshold(&self) -> f64 {
+        self.gestures
+            .as_ref()
+            .and_then(|g| g.recognition_threshold)
+            .unwrap_or(16.0)
+    }
+
+    pub fn workspace_switch_enabled(&self) -> bool {
+        self.gestures
+            .as_ref()
+            .and_then(|g| g.workspace_switch.as_ref())
+            .map_or(true, |a| !a.off)
+    }
+
+    pub fn workspace_switch_fingers(&self) -> usize {
+        self.gestures
+            .as_ref()
+            .and_then(|g| g.workspace_switch.as_ref())
+            .and_then(|a| a.finger_count)
+            .unwrap_or(3) as usize
+    }
+
+    pub fn workspace_switch_sensitivity(&self) -> f64 {
+        self.gestures
+            .as_ref()
+            .and_then(|g| g.workspace_switch.as_ref())
+            .and_then(|a| a.sensitivity)
+            .unwrap_or(1.0)
+    }
+
+    pub fn workspace_switch_natural_scroll(&self) -> bool {
+        self.gestures
+            .as_ref()
+            .and_then(|g| g.workspace_switch.as_ref())
+            .map_or(self.natural_scroll, |a| a.natural_scroll || self.natural_scroll)
+    }
+
+    pub fn view_scroll_enabled(&self) -> bool {
+        self.gestures
+            .as_ref()
+            .and_then(|g| g.view_scroll.as_ref())
+            .map_or(true, |a| !a.off)
+    }
+
+    pub fn view_scroll_fingers(&self) -> usize {
+        self.gestures
+            .as_ref()
+            .and_then(|g| g.view_scroll.as_ref())
+            .and_then(|a| a.finger_count)
+            .unwrap_or(3) as usize
+    }
+
+    pub fn view_scroll_sensitivity(&self) -> f64 {
+        self.gestures
+            .as_ref()
+            .and_then(|g| g.view_scroll.as_ref())
+            .and_then(|a| a.sensitivity)
+            .unwrap_or(1.0)
+    }
+
+    pub fn view_scroll_natural_scroll(&self) -> bool {
+        self.gestures
+            .as_ref()
+            .and_then(|g| g.view_scroll.as_ref())
+            .map_or(self.natural_scroll, |a| a.natural_scroll || self.natural_scroll)
+    }
+
+    pub fn overview_toggle_enabled(&self) -> bool {
+        self.gestures
+            .as_ref()
+            .and_then(|g| g.overview_toggle.as_ref())
+            .map_or(true, |a| !a.off)
+    }
+
+    pub fn overview_toggle_fingers(&self) -> usize {
+        self.gestures
+            .as_ref()
+            .and_then(|g| g.overview_toggle.as_ref())
+            .and_then(|a| a.finger_count)
+            .unwrap_or(4) as usize
+    }
+
+    pub fn overview_toggle_sensitivity(&self) -> f64 {
+        self.gestures
+            .as_ref()
+            .and_then(|g| g.overview_toggle.as_ref())
+            .and_then(|a| a.sensitivity)
+            .unwrap_or(1.0)
+    }
+
+    pub fn overview_toggle_natural_scroll(&self) -> bool {
+        self.gestures
+            .as_ref()
+            .and_then(|g| g.overview_toggle.as_ref())
+            .map_or(self.natural_scroll, |a| a.natural_scroll || self.natural_scroll)
+    }
 }
 
 #[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]
@@ -368,7 +469,7 @@ pub struct Tablet {
 }
 
 #[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]
-pub struct Touch {
+pub struct Touchscreen {
     #[knuffel(child)]
     pub off: bool,
     #[knuffel(child)]
@@ -378,10 +479,10 @@ pub struct Touch {
     #[knuffel(child, unwrap(argument))]
     pub map_to_output: Option<String>,
     #[knuffel(child)]
-    pub gestures: Option<TouchGesturesConfig>,
+    pub gestures: Option<TouchscreenGesturesConfig>,
 }
 
-impl Touch {
+impl Touchscreen {
     pub fn gesture_threshold(&self) -> f64 {
         self.gestures
             .as_ref()
@@ -481,19 +582,43 @@ impl Touch {
 }
 
 #[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]
-pub struct TouchGesturesConfig {
+pub struct TouchscreenGesturesConfig {
     #[knuffel(child)]
-    pub workspace_switch: Option<TouchGestureActionConfig>,
+    pub workspace_switch: Option<TouchscreenGestureActionConfig>,
     #[knuffel(child)]
-    pub view_scroll: Option<TouchGestureActionConfig>,
+    pub view_scroll: Option<TouchscreenGestureActionConfig>,
     #[knuffel(child)]
-    pub overview_toggle: Option<TouchGestureActionConfig>,
+    pub overview_toggle: Option<TouchscreenGestureActionConfig>,
     #[knuffel(child, unwrap(argument))]
     pub recognition_threshold: Option<f64>,
 }
 
 #[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]
-pub struct TouchGestureActionConfig {
+pub struct TouchscreenGestureActionConfig {
+    #[knuffel(child)]
+    pub off: bool,
+    #[knuffel(child, unwrap(argument))]
+    pub finger_count: Option<u8>,
+    #[knuffel(child, unwrap(argument))]
+    pub sensitivity: Option<f64>,
+    #[knuffel(child)]
+    pub natural_scroll: bool,
+}
+
+#[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]
+pub struct TouchpadGesturesConfig {
+    #[knuffel(child)]
+    pub workspace_switch: Option<TouchpadGestureActionConfig>,
+    #[knuffel(child)]
+    pub view_scroll: Option<TouchpadGestureActionConfig>,
+    #[knuffel(child)]
+    pub overview_toggle: Option<TouchpadGestureActionConfig>,
+    #[knuffel(child, unwrap(argument))]
+    pub recognition_threshold: Option<f64>,
+}
+
+#[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]
+pub struct TouchpadGestureActionConfig {
     #[knuffel(child)]
     pub off: bool,
     #[knuffel(child, unwrap(argument))]
