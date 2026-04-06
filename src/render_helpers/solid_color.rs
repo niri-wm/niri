@@ -114,6 +114,24 @@ impl SolidColorRenderElement {
     pub fn geo(&self) -> Rectangle<f64, Logical> {
         self.geometry
     }
+
+    /// Return a copy of this element with a different geometry (physical integer rectangle).
+    ///
+    /// Used to produce pixel-exact geometry when independent rounding of `loc` and `size` in
+    /// `RescaleRenderElement` would otherwise create 1-pixel gaps at element boundaries.
+    pub fn with_geometry_physical(
+        &self,
+        geometry: Rectangle<i32, Physical>,
+        scale: Scale<f64>,
+    ) -> Self {
+        SolidColorRenderElement {
+            id: self.id.clone(),
+            geometry: geometry.to_f64().to_logical(scale),
+            commit: self.commit,
+            color: self.color,
+            kind: self.kind,
+        }
+    }
 }
 
 impl Element for SolidColorRenderElement {

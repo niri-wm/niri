@@ -8,7 +8,7 @@ use niri_config::{Config, OutputName};
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::gles::GlesRenderer;
-use smithay::backend::renderer::{DebugFlags, ImportDma, ImportEgl, Renderer};
+use smithay::backend::renderer::{DebugFlags, ImportDma, ImportEgl, Renderer, TextureFilter};
 use smithay::backend::winit::{self, WinitEvent, WinitGraphicsBackend};
 use smithay::output::{Mode, Output, PhysicalProperties, Subpixel};
 use smithay::reexports::calloop::LoopHandle;
@@ -180,6 +180,19 @@ impl Winit {
 
     pub fn render(&mut self, niri: &mut Niri, output: &Output) -> RenderResult {
         let _span = tracy_client::span!("Winit::render");
+
+        let zoom_level = niri.layout.zoom_level_for_output(output);
+
+        // Apply filter temporarily before rendering
+        // based on this output's zoom level
+        let filter = match zoom_level {
+            z if z < 2.0 => TextureFilter::Linear,
+            _ => TextureFilter::Nearest,
+        };
+
+        let renderer = self.backend.renderer();
+        let _ = renderer.upscale_filter(filter);
+        let _ = renderer.downscale_filter(filter);
 
         // Render the elements.
         let ctx = RenderCtx {
