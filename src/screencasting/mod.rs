@@ -598,7 +598,13 @@ impl Niri {
                     target: RenderTarget::Screencast,
                     xray: None,
                 };
-                self.render(ctx, output, false, &mut |elem| elements.push(elem.into()));
+                self.render(ctx, output, false, &mut |elem| {
+                    // Apply zoom to the elements here since that's what the pointer will be
+                    // rendered on top of, and OBS will sample from the elements for the pointer
+                    // position regardless.
+                    let elem = self.zoomed_element(elem, output);
+                    elements.push(elem.into())
+                });
 
                 cursor_data = Some(CursorData::compute(
                     &elements,

@@ -8,7 +8,7 @@ use niri_config::OutputName;
 use niri_ipc::socket::Socket;
 use niri_ipc::{
     Action, Cast, CastKind, CastTarget, Event, KeyboardLayouts, LogicalOutput, Mode, Output,
-    OutputConfigChanged, Overview, Request, Response, Transform, Window, WindowLayout,
+    OutputConfigChanged, Overview, Request, Response, Transform, Window, WindowLayout, Zoom,
 };
 use serde_json::json;
 
@@ -49,6 +49,7 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
         Msg::RequestError => Request::ReturnError,
         Msg::OverviewState => Request::OverviewState,
         Msg::Casts => Request::Casts,
+        Msg::ZoomState => Request::ZoomState,
     };
 
     let mut socket = Socket::connect().context("error connecting to the niri socket")?;
@@ -547,6 +548,25 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
             casts.sort_by_key(|c| (c.session_id, c.stream_id));
             for cast in casts {
                 print_cast(&cast);
+                println!();
+            }
+        }
+        Msg::ZoomState => {
+            let Response::ZoomState(zoom_states) = response else {
+                bail!("unexpected response: expected ZoomState, got {response:?}");
+            };
+
+            if json {
+                let zoom_states =
+                    serde_json::to_string(&zoom_states).context("error formatting response")?;
+                println!("{zoom_states}");
+                return Ok(());
+            }
+
+            for (output_name, Zoom { level, is_locked }) in zoom_states {
+                println!("Output \"{output_name}\":");
+                println!("  Zoom level: {:.2}", level);
+                println!("  Zoom locked: {}", if is_locked { "yes" } else { "no" });
                 println!();
             }
         }
