@@ -2,7 +2,7 @@
 
 In this section you can configure input devices like keyboard and mouse, and some input-related options.
 
-There's a section for each device type: `keyboard`, `touchpad`, `mouse`, `trackpoint`, `trackball`, `tablet`, `touch`.
+There's a section for each device type: `keyboard`, `touchpad`, `mouse`, `trackpoint`, `trackball`, `tablet`, `touchscreen`.
 Settings in those sections will apply to every device of that type.
 Currently, there's no way to configure specific devices individually (but that is planned).
 
@@ -93,7 +93,7 @@ input {
         // calibration-matrix 1.0 0.0 0.0 0.0 1.0 0.0
     }
 
-    touch {
+    touchscreen {
         // off
         map-to-output "eDP-1"
         // natural-scroll
@@ -280,16 +280,16 @@ Settings specific to `touchpad` and `mouse`:
 
     <sup>Since: 25.08</sup> You can also override horizontal and vertical scroll factor separately like so: `scroll-factor horizontal=2.0 vertical=-1.0`
 
-Settings specific to `tablet` and `touch`:
+Settings specific to `tablet` and `touchscreen`:
 
 - `calibration-matrix`: set to six floating point numbers to change the calibration matrix. See the [`LIBINPUT_CALIBRATION_MATRIX` documentation](https://wayland.freedesktop.org/libinput/doc/latest/device-configuration-via-udev.html) for examples.
     - <sup>Since: 25.02</sup> for `tablet`
-    - <sup>Since: 25.11</sup> for `touch`
+    - <sup>Since: 25.11</sup> for `touchscreen`
 
-Settings specific to `touch`:
+Settings specific to `touchscreen`:
 
 - `natural-scroll`: <sup>Since: next</sup> if set, inverts the scrolling direction for touchscreen gestures (workspace switching and view scrolling).
-- `gestures {}`: <sup>Since: next</sup> configure touchscreen multi-finger gestures:
+- `gestures {}`: <sup>Since: next</sup> configure multi-finger gestures:
   - `workspace-switch {}`: 3-finger vertical swipe to switch workspaces.
     - `off`: disable this gesture.
     - `finger-count <int>`: number of fingers required (default: 3).
@@ -315,7 +315,7 @@ input {
         map-to-output "eDP-1"
     }
 
-    touch {
+    touchscreen {
         map-to-output "eDP-1"
     }
 }

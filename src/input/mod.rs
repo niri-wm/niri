@@ -3744,16 +3744,28 @@ impl State {
             return;
         }
 
-        if event.fingers() == 3 {
-            self.niri.gesture_swipe_3f_cumulative = Some((0., 0.));
+        let fingers = event.fingers() as usize;
+        let config = self.niri.config.borrow();
+        let touchpad = &config.input.touchpad;
 
-            // We handled this event.
+        let ws_fingers = touchpad.workspace_switch_fingers();
+        let vs_fingers = touchpad.view_scroll_fingers();
+        let ov_fingers = touchpad.overview_toggle_fingers();
+        let ws_enabled = touchpad.workspace_switch_enabled();
+        let vs_enabled = touchpad.view_scroll_enabled();
+        let ov_enabled = touchpad.overview_toggle_enabled();
+        drop(config);
+
+        // Check if this finger count matches workspace-switch or view-scroll.
+        if (ws_enabled && fingers == ws_fingers) || (vs_enabled && fingers == vs_fingers) {
+            self.niri.gesture_swipe_3f_cumulative = Some((0., 0.));
             return;
-        } else if event.fingers() == 4 {
+        }
+
+        // Check if this finger count matches overview-toggle.
+        if ov_enabled && fingers == ov_fingers {
             self.niri.layout.overview_gesture_begin();
             self.niri.queue_redraw_all();
-
-            // We handled this event.
             return;
         }
 
@@ -3792,6 +3804,18 @@ impl State {
 
         let uninverted_delta_y = delta_y;
 
+        // Read touchpad gesture config.
+        let config = self.niri.config.borrow();
+        let touchpad = &config.input.touchpad;
+        let threshold = touchpad.gesture_threshold();
+        let ws_enabled = touchpad.workspace_switch_enabled();
+        let vs_enabled = touchpad.view_scroll_enabled();
+        let ws_sensitivity = touchpad.workspace_switch_sensitivity();
+        let vs_sensitivity = touchpad.view_scroll_sensitivity();
+        let ov_sensitivity = touchpad.overview_toggle_sensitivity();
+        drop(config);
+
+        // Apply natural scroll from device (for direction detection during cumulative phase).
         let device = event.device();
         if let Some(device) = (&device as &dyn Any).downcast_ref::<input::Device>() {
             if device.config_scroll_natural_scroll_enabled() {
@@ -3806,18 +3830,15 @@ impl State {
             *cx += delta_x;
             *cy += delta_y;
 
-            // Check if the gesture moved far enough to decide. Threshold copied from GNOME Shell.
             let (cx, cy) = (*cx, *cy);
-            if cx * cx + cy * cy >= 16. * 16. {
+            if cx * cx + cy * cy >= threshold * threshold {
                 self.niri.gesture_swipe_3f_cumulative = None;
 
                 if let Some(output) = self.niri.output_under_cursor() {
-                    if cx.abs() > cy.abs() {
+                    if cx.abs() > cy.abs() && vs_enabled {
                         let output_ws = if is_overview_open {
                             self.niri.workspace_under_cursor(true)
                         } else {
-                            // We don't want to accidentally "catch" the wrong workspace during
-                            // animations.
                             self.niri.output_under_cursor().and_then(|output| {
                                 let mon = self.niri.layout.monitor_for_output(&output)?;
                                 Some((output, mon.active_workspace_ref()))
@@ -3830,7 +3851,7 @@ impl State {
                                 .layout
                                 .view_offset_gesture_begin(&output, Some(ws_idx), true);
                         }
-                    } else {
+                    } else if cx.abs() <= cy.abs() && ws_enabled {
                         self.niri
                             .layout
                             .workspace_switch_gesture_begin(&output, true);
@@ -3841,11 +3862,18 @@ impl State {
 
         let timestamp = Duration::from_micros(event.time());
 
+        // Apply sensitivity only — natural scroll is already handled by libinput device setting.
+        // The device has already inverted delta_x/delta_y if natural-scroll is enabled.
+        // Overview uses uninverted_delta_y (raw) to match upstream touchpad behaviour.
+        let ws_delta_y = delta_y * ws_sensitivity;
+        let vs_delta_x = delta_x * vs_sensitivity;
+        let ov_delta_y = -uninverted_delta_y * ov_sensitivity;
+
         let mut handled = false;
         let res = self
             .niri
             .layout
-            .workspace_switch_gesture_update(delta_y, timestamp, true);
+            .workspace_switch_gesture_update(ws_delta_y, timestamp, true);
         if let Some(output) = res {
             if let Some(output) = output {
                 self.niri.queue_redraw(&output);
@@ -3856,7 +3884,7 @@ impl State {
         let res = self
             .niri
             .layout
-            .view_offset_gesture_update(delta_x, timestamp, true);
+            .view_offset_gesture_update(vs_delta_x, timestamp, true);
         if let Some(output) = res {
             if let Some(output) = output {
                 self.niri.queue_redraw(&output);
@@ -3867,7 +3895,7 @@ impl State {
         let res = self
             .niri
             .layout
-            .overview_gesture_update(-uninverted_delta_y, timestamp);
+            .overview_gesture_update(ov_delta_y, timestamp);
         if let Some(redraw) = res {
             if redraw {
                 self.niri.queue_redraw_all();
@@ -4715,7 +4743,7 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
 
     let is_touch = device.has_capability(input::DeviceCapability::Touch);
     if is_touch {
-        let c = &config.touch;
+        let c = &config.touchscreen;
         let _ = device.config_send_events_set_mode(if c.off {
             input::SendEventsMode::DISABLED
         } else {
