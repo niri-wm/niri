@@ -1336,7 +1336,8 @@ impl<W: LayoutElement> Tile<W> {
         // being outside the monitor or obscured by a solid colored bar, but it is visible under
         // semitransparent bars in maximized state (which is a bit weird) and in the overview (also
         // a bit weird).
-        if focus_ring && expanded_progress < 1. {
+        let has_focus_ring_fade = self.focus_ring_anim.as_ref().is_some_and(|a| !a.is_done());
+        if (focus_ring || has_focus_ring_fade) && expanded_progress < 1. {
             self.focus_ring
                 .render(renderer, location, &mut |elem| push(elem.into()));
         }
