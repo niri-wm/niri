@@ -14,6 +14,7 @@ use smithay::utils::{Logical, Physical, Point, Scale, Size, Transform};
 
 use crate::niri::State;
 use crate::render_helpers::{render_and_download, RenderCtx, RenderTarget};
+use crate::zoom::zoom_display_cursor_logical;
 
 pub struct PickColorGrab {
     start_data: PointerGrabStartData<State>,
@@ -39,6 +40,22 @@ impl PickColorGrab {
         let (output, pos_within_output) = data.niri.output_under(location)?;
         let output = output.clone();
 
+        // When zoom is active, the cursor is visually clamped to the zoom viewport.
+        // Compute the display position on-the-fly from viewport math.
+        let pos_within_output = if data.niri.layout.zoom_is_active_for_output(&output) {
+            let mode_size = output.current_mode().map(|m| m.size).unwrap_or_default();
+            let scale = output.current_scale().fractional_scale();
+            let output_size = mode_size.to_f64().to_logical(scale);
+            zoom_display_cursor_logical(
+                pos_within_output,
+                output_size,
+                data.niri.layout.zoom_level_for_output(&output),
+                data.niri.layout.zoom_focal_for_output(&output),
+            )
+        } else {
+            pos_within_output
+        };
+
         data.backend
             .with_primary_renderer(|renderer| {
                 data.niri.update_render_elements(Some(&output));
@@ -49,13 +66,17 @@ impl PickColorGrab {
                 let pos = pos_within_output.to_physical_precise_floor(scale);
                 let size = Size::<i32, Physical>::from((1, 1));
 
+                let mut elements = Vec::new();
                 let ctx = RenderCtx {
                     renderer,
                     // This is an interactive operation so we can render without blocking out.
                     target: RenderTarget::Output,
                     xray: None,
                 };
-                let elements = data.niri.render_to_vec(ctx, &output, false);
+                data.niri.render(ctx, &output, false, &mut |elem| {
+                    // Use un-zoomed elements and sample at logical position.
+                    elements.push(elem)
+                });
 
                 let mapping = match render_and_download(
                     renderer,
