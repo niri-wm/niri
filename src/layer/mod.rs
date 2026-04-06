@@ -1,7 +1,8 @@
 use niri_config::layer_rule::{LayerRule, Match};
 use niri_config::utils::MergeWith as _;
-use niri_config::{BlockOutFrom, CornerRadius, ShadowRule};
+use niri_config::{BackgroundEffect, BlockOutFrom, CornerRadius, ShadowRule};
 use smithay::desktop::LayerSurface;
+use smithay::wayland::shell::wlr_layer::Layer;
 
 pub mod mapped;
 pub use mapped::MappedLayer;
@@ -26,6 +27,9 @@ pub struct ResolvedLayerRules {
 
     /// Whether to bob this window up and down.
     pub baba_is_float: bool,
+
+    /// Background effect configuration.
+    pub background_effect: BackgroundEffect,
 }
 
 impl ResolvedLayerRules {
@@ -70,6 +74,10 @@ impl ResolvedLayerRules {
             }
 
             resolved.shadow.merge_with(&rule.shadow);
+
+            resolved
+                .background_effect
+                .merge_with(&rule.background_effect);
         }
 
         resolved
@@ -79,6 +87,18 @@ impl ResolvedLayerRules {
 fn surface_matches(surface: &LayerSurface, m: &Match) -> bool {
     if let Some(namespace_re) = &m.namespace {
         if !namespace_re.0.is_match(surface.namespace()) {
+            return false;
+        }
+    }
+
+    if let Some(layer) = m.layer {
+        let surface_layer = match surface.layer() {
+            Layer::Background => niri_ipc::Layer::Background,
+            Layer::Bottom => niri_ipc::Layer::Bottom,
+            Layer::Top => niri_ipc::Layer::Top,
+            Layer::Overlay => niri_ipc::Layer::Overlay,
+        };
+        if layer != surface_layer {
             return false;
         }
     }
