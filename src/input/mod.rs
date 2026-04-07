@@ -3753,11 +3753,18 @@ impl State {
         let ov_enabled = touchpad.overview_toggle_enabled();
         drop(config);
 
+        // Check if this finger count matches a swipe bind (Mod+Swipe).
+        let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
+        let modifiers = modifiers_from_state(mods);
+        let has_swipe_bind = !modifiers.is_empty()
+            && self.niri.mods_with_swipe_binds.contains(&modifiers);
+
         // Check if this finger count matches workspace-switch or view-scroll.
         let ws_valid = ws_enabled && fingers == ws_fingers;
         let vs_valid = vs_enabled && fingers == vs_fingers;
-        if ws_valid || vs_valid {
-            self.niri.gesture_swipe_3f_cumulative = Some((0., 0., ws_valid, vs_valid));
+        if ws_valid || vs_valid || (has_swipe_bind && (3..=5).contains(&fingers)) {
+            self.niri.gesture_swipe_3f_cumulative =
+                Some((0., 0., ws_valid, vs_valid, fingers));
             return;
         }
 
@@ -3823,13 +3830,39 @@ impl State {
 
         let is_overview_open = self.niri.layout.is_overview_open();
 
-        if let Some((cx, cy, ws_valid, vs_valid)) = &mut self.niri.gesture_swipe_3f_cumulative {
+        if let Some((cx, cy, ws_valid, vs_valid, fingers)) =
+            &mut self.niri.gesture_swipe_3f_cumulative
+        {
             *cx += delta_x;
             *cy += delta_y;
 
-            let (cx, cy, ws_valid, vs_valid) = (*cx, *cy, *ws_valid, *vs_valid);
+            let (cx, cy, ws_valid, vs_valid, fingers) =
+                (*cx, *cy, *ws_valid, *vs_valid, *fingers);
             if cx * cx + cy * cy >= threshold * threshold {
                 self.niri.gesture_swipe_3f_cumulative = None;
+
+                // Check for discrete swipe binds (Mod+Swipe).
+                let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
+                let modifiers = modifiers_from_state(mods);
+                if !modifiers.is_empty()
+                    && self.niri.mods_with_swipe_binds.contains(&modifiers)
+                {
+                    let is_horizontal = cx.abs() > cy.abs();
+                    let trigger = swipe_trigger(fingers, is_horizontal, cx, cy);
+                    if let Some(trigger) = trigger {
+                        let mod_key = self.backend.mod_key(&self.niri.config.borrow());
+                        let config = self.niri.config.borrow();
+                        let bindings =
+                            make_binds_iter(&config, &mut self.niri.window_mru_ui, modifiers);
+                        let bind =
+                            find_configured_bind(bindings, mod_key, trigger, mods);
+                        drop(config);
+                        if let Some(bind) = bind {
+                            self.handle_bind(bind);
+                            return;
+                        }
+                    }
+                }
 
                 if let Some(output) = self.niri.output_under_cursor() {
                     if cx.abs() > cy.abs() && vs_valid {
@@ -4828,6 +4861,46 @@ pub fn mods_with_finger_scroll_binds(mod_key: ModKey, binds: &Binds) -> HashSet<
             Trigger::TouchpadScrollDown,
             Trigger::TouchpadScrollLeft,
             Trigger::TouchpadScrollRight,
+        ],
+    )
+}
+
+fn swipe_trigger(fingers: usize, is_horizontal: bool, cx: f64, cy: f64) -> Option<Trigger> {
+    let trigger = match (fingers, is_horizontal) {
+        (3, true) if cx > 0. => Trigger::TouchpadSwipe3Right,
+        (3, true) => Trigger::TouchpadSwipe3Left,
+        (3, false) if cy > 0. => Trigger::TouchpadSwipe3Down,
+        (3, false) => Trigger::TouchpadSwipe3Up,
+        (4, true) if cx > 0. => Trigger::TouchpadSwipe4Right,
+        (4, true) => Trigger::TouchpadSwipe4Left,
+        (4, false) if cy > 0. => Trigger::TouchpadSwipe4Down,
+        (4, false) => Trigger::TouchpadSwipe4Up,
+        (5, true) if cx > 0. => Trigger::TouchpadSwipe5Right,
+        (5, true) => Trigger::TouchpadSwipe5Left,
+        (5, false) if cy > 0. => Trigger::TouchpadSwipe5Down,
+        (5, false) => Trigger::TouchpadSwipe5Up,
+        _ => return None,
+    };
+    Some(trigger)
+}
+
+pub fn mods_with_swipe_binds(mod_key: ModKey, binds: &Binds) -> HashSet<Modifiers> {
+    mods_with_binds(
+        mod_key,
+        binds,
+        &[
+            Trigger::TouchpadSwipe3Up,
+            Trigger::TouchpadSwipe3Down,
+            Trigger::TouchpadSwipe3Left,
+            Trigger::TouchpadSwipe3Right,
+            Trigger::TouchpadSwipe4Up,
+            Trigger::TouchpadSwipe4Down,
+            Trigger::TouchpadSwipe4Left,
+            Trigger::TouchpadSwipe4Right,
+            Trigger::TouchpadSwipe5Up,
+            Trigger::TouchpadSwipe5Down,
+            Trigger::TouchpadSwipe5Left,
+            Trigger::TouchpadSwipe5Right,
         ],
     )
 }

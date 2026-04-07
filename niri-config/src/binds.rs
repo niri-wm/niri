@@ -52,6 +52,18 @@ pub enum Trigger {
     TouchpadScrollUp,
     TouchpadScrollLeft,
     TouchpadScrollRight,
+    TouchpadSwipe3Up,
+    TouchpadSwipe3Down,
+    TouchpadSwipe3Left,
+    TouchpadSwipe3Right,
+    TouchpadSwipe4Up,
+    TouchpadSwipe4Down,
+    TouchpadSwipe4Left,
+    TouchpadSwipe4Right,
+    TouchpadSwipe5Up,
+    TouchpadSwipe5Down,
+    TouchpadSwipe5Left,
+    TouchpadSwipe5Right,
 }
 
 bitflags! {
@@ -1000,6 +1012,30 @@ impl FromStr for Key {
             Trigger::TouchpadScrollLeft
         } else if key.eq_ignore_ascii_case("TouchpadScrollRight") {
             Trigger::TouchpadScrollRight
+        } else if key.eq_ignore_ascii_case("TouchpadSwipe3Up") {
+            Trigger::TouchpadSwipe3Up
+        } else if key.eq_ignore_ascii_case("TouchpadSwipe3Down") {
+            Trigger::TouchpadSwipe3Down
+        } else if key.eq_ignore_ascii_case("TouchpadSwipe3Left") {
+            Trigger::TouchpadSwipe3Left
+        } else if key.eq_ignore_ascii_case("TouchpadSwipe3Right") {
+            Trigger::TouchpadSwipe3Right
+        } else if key.eq_ignore_ascii_case("TouchpadSwipe4Up") {
+            Trigger::TouchpadSwipe4Up
+        } else if key.eq_ignore_ascii_case("TouchpadSwipe4Down") {
+            Trigger::TouchpadSwipe4Down
+        } else if key.eq_ignore_ascii_case("TouchpadSwipe4Left") {
+            Trigger::TouchpadSwipe4Left
+        } else if key.eq_ignore_ascii_case("TouchpadSwipe4Right") {
+            Trigger::TouchpadSwipe4Right
+        } else if key.eq_ignore_ascii_case("TouchpadSwipe5Up") {
+            Trigger::TouchpadSwipe5Up
+        } else if key.eq_ignore_ascii_case("TouchpadSwipe5Down") {
+            Trigger::TouchpadSwipe5Down
+        } else if key.eq_ignore_ascii_case("TouchpadSwipe5Left") {
+            Trigger::TouchpadSwipe5Left
+        } else if key.eq_ignore_ascii_case("TouchpadSwipe5Right") {
+            Trigger::TouchpadSwipe5Right
         } else {
             let mut keysym = keysym_from_name(key, KEYSYM_CASE_INSENSITIVE);
             // The keyboard event handling code can receive either
