@@ -195,7 +195,12 @@ impl CompositorHandler for State {
                     // The mapped pre-commit hook deals with dma-bufs on its own.
                     self.remove_default_dmabuf_pre_commit_hook(surface);
                     let hook = add_mapped_toplevel_pre_commit_hook(toplevel);
-                    let mapped = Mapped::new(window, rules, hook);
+                    let open_windowed_fullscreen = rules.open_windowed_fullscreen == Some(true);
+                    let mut mapped = Mapped::new(window, rules, hook);
+                    if open_windowed_fullscreen {
+                        mapped.request_windowed_fullscreen(true);
+                    }
+
                     let window = mapped.window.clone();
 
                     let target = if let Some(p) = &parent {
