@@ -1364,6 +1364,19 @@ impl<W: LayoutElement> Tile<W> {
         }
     }
 
+    /// Render the tile for a screenshot, including decorations (border, focus ring, shadow,
+    /// rounded corners) but without animation wrappers.
+    pub fn render_for_screenshot<R: NiriRenderer>(
+        &self,
+        renderer: &mut R,
+        location: Point<f64, Logical>,
+        focus_ring: bool,
+        target: RenderTarget,
+        push: &mut dyn FnMut(TileRenderElement<R>),
+    ) {
+        self.render_inner(renderer, location, focus_ring, target, push);
+    }
+
     pub fn store_unmap_snapshot_if_empty(&mut self, renderer: &mut GlesRenderer) {
         if self.unmap_snapshot.is_some() {
             return;
