@@ -1,0 +1,2214 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+        <link rel="canonical" href="https://niri-wm.github.io/niri/Configuration%3A-Debug-Options.html">
+      
+      
+        <link rel="prev" href="Configuration%3A-Recent-Windows.html">
+      
+      
+        <link rel="next" href="Configuration%3A-Include.html">
+      
+      
+      <link rel="icon" href="_assets/icons/logo.svg">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.6.15">
+    
+    
+      
+        <title>Debug Options - niri</title>
+      
+    
+    
+      <link rel="stylesheet" href="assets/stylesheets/main.342714a4.min.css">
+      
+        
+        <link rel="stylesheet" href="assets/stylesheets/palette.06af60db.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="_assets/stylesheets/niri.css">
+    
+    <script>__md_scope=new URL(".",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#overview" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="." title="niri" class="md-header__button md-logo" aria-label="niri" data-md-component="logo">
+      
+  <img src="_assets/icons/logo.svg" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            niri
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Debug Options
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m14.3 16-.7-2h-3.2l-.7 2H7.8L11 7h2l3.2 9zM20 8.69V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12zm-9.15 3.96h2.3L12 9z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_2" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="indigo"  aria-label="Switch to system preference"  type="radio" name="__palette" id="__palette_2">
+    
+      <label class="md-header__button md-icon" title="Switch to system preference" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/niri-wm/niri" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M439.55 236.05 244 40.45a28.87 28.87 0 0 0-40.81 0l-40.66 40.63 51.52 51.52c27.06-9.14 52.68 16.77 43.39 43.68l49.66 49.66c34.23-11.8 61.18 31 35.47 56.69-26.49 26.49-70.21-2.87-56-37.34L240.22 199v121.85c25.3 12.54 22.26 41.85 9.08 55a34.34 34.34 0 0 1-48.55 0c-17.57-17.6-11.07-46.91 11.25-56v-123c-20.8-8.51-24.6-30.74-18.64-45L142.57 101 8.45 235.14a28.86 28.86 0 0 0 0 40.81l195.61 195.6a28.86 28.86 0 0 0 40.8 0l194.69-194.69a28.86 28.86 0 0 0 0-40.81"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="." title="niri" class="md-nav__button md-logo" aria-label="niri" data-md-component="logo">
+      
+  <img src="_assets/icons/logo.svg" alt="logo">
+
+    </a>
+    niri
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/niri-wm/niri" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M439.55 236.05 244 40.45a28.87 28.87 0 0 0-40.81 0l-40.66 40.63 51.52 51.52c27.06-9.14 52.68 16.77 43.39 43.68l49.66 49.66c34.23-11.8 61.18 31 35.47 56.69-26.49 26.49-70.21-2.87-56-37.34L240.22 199v121.85c25.3 12.54 22.26 41.85 9.08 55a34.34 34.34 0 0 1-48.55 0c-17.57-17.6-11.07-46.91 11.25-56v-123c-20.8-8.51-24.6-30.74-18.64-45L142.57 101 8.45 235.14a28.86 28.86 0 0 0 0 40.81l195.61 195.6a28.86 28.86 0 0 0 40.8 0l194.69-194.69a28.86 28.86 0 0 0 0-40.81"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1" >
+        
+          
+          <label class="md-nav__link" for="__nav_1" id="__nav_1_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    Usage
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_1">
+            <span class="md-nav__icon md-icon"></span>
+            Usage
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Getting-Started.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Getting Started
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Example-systemd-Setup.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Example systemd Setup
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Important-Software.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Important Software
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Workspaces.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Workspaces
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Floating-Windows.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Floating Windows
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Tabs.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Tabs
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Overview.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Overview
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Screencasting.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Screencasting
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Layer%E2%80%90Shell-Components.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Layer‐Shell Components
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="IPC.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    IPC, niri msg
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Application-Issues.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Application-Specific Issues
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Nvidia.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Nvidia
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Xwayland.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Xwayland
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Gestures.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Gestures
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Fullscreen-and-Maximize.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Fullscreen and Maximize
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Packaging-niri.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Packaging niri
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Integrating-niri.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Integrating niri
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Accessibility.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Accessibility
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Name-and-Logo.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Name and Logo
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="FAQ.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    FAQ
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    Configuration
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            Configuration
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Configuration%3A-Introduction.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Introduction
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Configuration%3A-Input.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Input
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Configuration%3A-Outputs.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Outputs
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Configuration%3A-Key-Bindings.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Key Bindings
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Configuration%3A-Switch-Events.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Switch Events
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Configuration%3A-Layout.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Layout
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Configuration%3A-Named-Workspaces.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Named Workspaces
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Configuration%3A-Miscellaneous.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Miscellaneous
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Configuration%3A-Window-Rules.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Window Rules
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Configuration%3A-Layer-Rules.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Layer Rules
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Configuration%3A-Animations.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Animations
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Configuration%3A-Gestures.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Gestures
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Configuration%3A-Recent-Windows.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Recent Windows
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    Debug Options
+    
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="Configuration%3A-Debug-Options.html" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    Debug Options
+    
+  </span>
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      Overview
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#preview-render" class="md-nav__link">
+    <span class="md-ellipsis">
+      preview-render
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#enable-overlay-planes" class="md-nav__link">
+    <span class="md-ellipsis">
+      enable-overlay-planes
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#disable-cursor-plane" class="md-nav__link">
+    <span class="md-ellipsis">
+      disable-cursor-plane
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#disable-direct-scanout" class="md-nav__link">
+    <span class="md-ellipsis">
+      disable-direct-scanout
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#restrict-primary-scanout-to-matching-format" class="md-nav__link">
+    <span class="md-ellipsis">
+      restrict-primary-scanout-to-matching-format
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#force-disable-connectors-on-resume" class="md-nav__link">
+    <span class="md-ellipsis">
+      force-disable-connectors-on-resume
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#render-drm-device" class="md-nav__link">
+    <span class="md-ellipsis">
+      render-drm-device
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ignore-drm-device" class="md-nav__link">
+    <span class="md-ellipsis">
+      ignore-drm-device
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#force-pipewire-invalid-modifier" class="md-nav__link">
+    <span class="md-ellipsis">
+      force-pipewire-invalid-modifier
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#dbus-interfaces-in-non-session-instances" class="md-nav__link">
+    <span class="md-ellipsis">
+      dbus-interfaces-in-non-session-instances
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#wait-for-frame-completion-before-queueing" class="md-nav__link">
+    <span class="md-ellipsis">
+      wait-for-frame-completion-before-queueing
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#emulate-zero-presentation-time" class="md-nav__link">
+    <span class="md-ellipsis">
+      emulate-zero-presentation-time
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#disable-resize-throttling" class="md-nav__link">
+    <span class="md-ellipsis">
+      disable-resize-throttling
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#disable-transactions" class="md-nav__link">
+    <span class="md-ellipsis">
+      disable-transactions
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#keep-laptop-panel-on-when-lid-is-closed" class="md-nav__link">
+    <span class="md-ellipsis">
+      keep-laptop-panel-on-when-lid-is-closed
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#disable-monitor-names" class="md-nav__link">
+    <span class="md-ellipsis">
+      disable-monitor-names
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#strict-new-window-focus-policy" class="md-nav__link">
+    <span class="md-ellipsis">
+      strict-new-window-focus-policy
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#honor-xdg-activation-with-invalid-serial" class="md-nav__link">
+    <span class="md-ellipsis">
+      honor-xdg-activation-with-invalid-serial
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#skip-cursor-only-updates-during-vrr" class="md-nav__link">
+    <span class="md-ellipsis">
+      skip-cursor-only-updates-during-vrr
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#deactivate-unfocused-windows" class="md-nav__link">
+    <span class="md-ellipsis">
+      deactivate-unfocused-windows
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#keep-max-bpc-unchanged" class="md-nav__link">
+    <span class="md-ellipsis">
+      keep-max-bpc-unchanged
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#key-bindings" class="md-nav__link">
+    <span class="md-ellipsis">
+      Key Bindings
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Key Bindings">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#toggle-debug-tint" class="md-nav__link">
+    <span class="md-ellipsis">
+      toggle-debug-tint
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#debug-toggle-opaque-regions" class="md-nav__link">
+    <span class="md-ellipsis">
+      debug-toggle-opaque-regions
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#debug-toggle-damage" class="md-nav__link">
+    <span class="md-ellipsis">
+      debug-toggle-damage
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Configuration%3A-Include.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Include
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    Development
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            Development
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Development%3A-Design-Principles.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Design Principles
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Development%3A-Developing-niri.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Developing niri
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Development%3A-Documenting-niri.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Documenting niri
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Development%3A-Fractional-Layout.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Fractional Layout
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Development%3A-Redraw-Loop.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Redraw Loop
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Development%3A-Animation-Timing.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Animation Timing
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      Overview
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#preview-render" class="md-nav__link">
+    <span class="md-ellipsis">
+      preview-render
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#enable-overlay-planes" class="md-nav__link">
+    <span class="md-ellipsis">
+      enable-overlay-planes
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#disable-cursor-plane" class="md-nav__link">
+    <span class="md-ellipsis">
+      disable-cursor-plane
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#disable-direct-scanout" class="md-nav__link">
+    <span class="md-ellipsis">
+      disable-direct-scanout
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#restrict-primary-scanout-to-matching-format" class="md-nav__link">
+    <span class="md-ellipsis">
+      restrict-primary-scanout-to-matching-format
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#force-disable-connectors-on-resume" class="md-nav__link">
+    <span class="md-ellipsis">
+      force-disable-connectors-on-resume
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#render-drm-device" class="md-nav__link">
+    <span class="md-ellipsis">
+      render-drm-device
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ignore-drm-device" class="md-nav__link">
+    <span class="md-ellipsis">
+      ignore-drm-device
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#force-pipewire-invalid-modifier" class="md-nav__link">
+    <span class="md-ellipsis">
+      force-pipewire-invalid-modifier
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#dbus-interfaces-in-non-session-instances" class="md-nav__link">
+    <span class="md-ellipsis">
+      dbus-interfaces-in-non-session-instances
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#wait-for-frame-completion-before-queueing" class="md-nav__link">
+    <span class="md-ellipsis">
+      wait-for-frame-completion-before-queueing
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#emulate-zero-presentation-time" class="md-nav__link">
+    <span class="md-ellipsis">
+      emulate-zero-presentation-time
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#disable-resize-throttling" class="md-nav__link">
+    <span class="md-ellipsis">
+      disable-resize-throttling
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#disable-transactions" class="md-nav__link">
+    <span class="md-ellipsis">
+      disable-transactions
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#keep-laptop-panel-on-when-lid-is-closed" class="md-nav__link">
+    <span class="md-ellipsis">
+      keep-laptop-panel-on-when-lid-is-closed
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#disable-monitor-names" class="md-nav__link">
+    <span class="md-ellipsis">
+      disable-monitor-names
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#strict-new-window-focus-policy" class="md-nav__link">
+    <span class="md-ellipsis">
+      strict-new-window-focus-policy
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#honor-xdg-activation-with-invalid-serial" class="md-nav__link">
+    <span class="md-ellipsis">
+      honor-xdg-activation-with-invalid-serial
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#skip-cursor-only-updates-during-vrr" class="md-nav__link">
+    <span class="md-ellipsis">
+      skip-cursor-only-updates-during-vrr
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#deactivate-unfocused-windows" class="md-nav__link">
+    <span class="md-ellipsis">
+      deactivate-unfocused-windows
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#keep-max-bpc-unchanged" class="md-nav__link">
+    <span class="md-ellipsis">
+      keep-max-bpc-unchanged
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#key-bindings" class="md-nav__link">
+    <span class="md-ellipsis">
+      Key Bindings
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Key Bindings">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#toggle-debug-tint" class="md-nav__link">
+    <span class="md-ellipsis">
+      toggle-debug-tint
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#debug-toggle-opaque-regions" class="md-nav__link">
+    <span class="md-ellipsis">
+      debug-toggle-opaque-regions
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#debug-toggle-damage" class="md-nav__link">
+    <span class="md-ellipsis">
+      debug-toggle-damage
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/niri-wm/niri/edit/main/docs/wiki/Configuration:-Debug-Options.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+  <h1>Debug Options</h1>
+
+<h3 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">#</a></h3>
+<p>Niri has several options that are only useful for debugging, or are experimental and have known issues.
+They are not meant for normal use.</p>
+<div class="admonition danger">
+<p class="admonition-title">Caution</p>
+<p>These options are <strong>not</strong> covered by the <a href="Configuration%3A-Introduction.html#breaking-change-policy">config breaking change policy</a>.
+They can change or stop working at any point with little notice.</p>
+</div>
+<p>Here are all the options at a glance:</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nl">debug</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nl">    preview-render</span><span class="w"> </span><span class="s">&quot;screencast&quot;</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">    </span><span class="c1">// preview-render &quot;screen-capture&quot;</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="nl">    enable-overlay-planes</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="nl">    disable-cursor-plane</span>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="nl">    disable-direct-scanout</span>
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="nl">    restrict-primary-scanout-to-matching-format</span>
+</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="nl">    force-disable-connectors-on-resume</span>
+</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="nl">    render-drm-device</span><span class="w"> </span><span class="s">&quot;/dev/dri/renderD129&quot;</span>
+</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="nl">    ignore-drm-device</span><span class="w"> </span><span class="s">&quot;/dev/dri/renderD128&quot;</span>
+</span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="nl">    ignore-drm-device</span><span class="w"> </span><span class="s">&quot;/dev/dri/renderD130&quot;</span>
+</span><span id="__span-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="nl">    force-pipewire-invalid-modifier</span>
+</span><span id="__span-0-13"><a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="nl">    dbus-interfaces-in-non-session-instances</span>
+</span><span id="__span-0-14"><a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="nl">    wait-for-frame-completion-before-queueing</span>
+</span><span id="__span-0-15"><a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a><span class="nl">    emulate-zero-presentation-time</span>
+</span><span id="__span-0-16"><a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a><span class="nl">    disable-resize-throttling</span>
+</span><span id="__span-0-17"><a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a><span class="nl">    disable-transactions</span>
+</span><span id="__span-0-18"><a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a><span class="nl">    keep-laptop-panel-on-when-lid-is-closed</span>
+</span><span id="__span-0-19"><a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a><span class="nl">    disable-monitor-names</span>
+</span><span id="__span-0-20"><a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a><span class="nl">    strict-new-window-focus-policy</span>
+</span><span id="__span-0-21"><a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a><span class="nl">    honor-xdg-activation-with-invalid-serial</span>
+</span><span id="__span-0-22"><a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a><span class="nl">    skip-cursor-only-updates-during-vrr</span>
+</span><span id="__span-0-23"><a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a><span class="nl">    deactivate-unfocused-windows</span>
+</span><span id="__span-0-24"><a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a><span class="o">}</span>
+</span><span id="__span-0-25"><a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a>
+</span><span id="__span-0-26"><a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a><span class="nl">binds</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-0-27"><a id="__codelineno-0-27" name="__codelineno-0-27" href="#__codelineno-0-27"></a><span class="nl">    Mod+Shift+Ctrl+T</span><span class="w"> </span><span class="o">{</span><span class="nl"> toggle-debug-tint</span><span class="o">;</span><span class="w"> </span><span class="o">}</span>
+</span><span id="__span-0-28"><a id="__codelineno-0-28" name="__codelineno-0-28" href="#__codelineno-0-28"></a><span class="nl">    Mod+Shift+Ctrl+O</span><span class="w"> </span><span class="o">{</span><span class="nl"> debug-toggle-opaque-regions</span><span class="o">;</span><span class="w"> </span><span class="o">}</span>
+</span><span id="__span-0-29"><a id="__codelineno-0-29" name="__codelineno-0-29" href="#__codelineno-0-29"></a><span class="nl">    Mod+Shift+Ctrl+D</span><span class="w"> </span><span class="o">{</span><span class="nl"> debug-toggle-damage</span><span class="o">;</span><span class="w"> </span><span class="o">}</span>
+</span><span id="__span-0-30"><a id="__codelineno-0-30" name="__codelineno-0-30" href="#__codelineno-0-30"></a><span class="o">}</span>
+</span></code></pre></div>
+<h3 id="preview-render"><code>preview-render</code><a class="headerlink" href="#preview-render" title="Permanent link">#</a></h3>
+<p>Make niri render the monitors the same way as for a screencast or a screen capture.</p>
+<p>Useful for previewing the <code>block-out-from</code> window rule.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nl">debug</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="nl">    preview-render</span><span class="w"> </span><span class="s">&quot;screencast&quot;</span>
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">    </span><span class="c1">// preview-render &quot;screen-capture&quot;</span>
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="o">}</span>
+</span></code></pre></div>
+<h3 id="enable-overlay-planes"><code>enable-overlay-planes</code><a class="headerlink" href="#enable-overlay-planes" title="Permanent link">#</a></h3>
+<p>Enable direct scanout into overlay planes.
+May cause frame drops during some animations on some hardware (which is why it is not the default).</p>
+<p>Direct scanout into the primary plane is always enabled.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nl">debug</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nl">    enable-overlay-planes</span>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="o">}</span>
+</span></code></pre></div>
+<h3 id="disable-cursor-plane"><code>disable-cursor-plane</code><a class="headerlink" href="#disable-cursor-plane" title="Permanent link">#</a></h3>
+<p>Disable the use of the cursor plane.
+The cursor will be rendered together with the rest of the frame.</p>
+<p>Useful to work around driver bugs on specific hardware.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nl">debug</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="nl">    disable-cursor-plane</span>
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="o">}</span>
+</span></code></pre></div>
+<h3 id="disable-direct-scanout"><code>disable-direct-scanout</code><a class="headerlink" href="#disable-direct-scanout" title="Permanent link">#</a></h3>
+<p>Disable direct scanout to both the primary plane and the overlay planes.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nl">debug</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="nl">    disable-direct-scanout</span>
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="o">}</span>
+</span></code></pre></div>
+<h3 id="restrict-primary-scanout-to-matching-format"><code>restrict-primary-scanout-to-matching-format</code><a class="headerlink" href="#restrict-primary-scanout-to-matching-format" title="Permanent link">#</a></h3>
+<p>Restricts direct scanout to the primary plane to when the window buffer exactly matches the composition swapchain format.</p>
+<p>This flag may prevent unexpected bandwidth changes when going between composition and scanout.
+The plan is to make it default in the future, when we implement a way to tell the clients the composition swapchain format.
+As is, it may prevent some clients (mpv on my machine) from scanning out to the primary plane.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nl">debug</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="nl">    restrict-primary-scanout-to-matching-format</span>
+</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="o">}</span>
+</span></code></pre></div>
+<h3 id="force-disable-connectors-on-resume"><code>force-disable-connectors-on-resume</code><a class="headerlink" href="#force-disable-connectors-on-resume" title="Permanent link">#</a></h3>
+<p>Force-disables all outputs upon resuming niri (TTY switch or waking up from suspend).
+This causes a modeset/screen blank on all outputs.</p>
+<p>If niri rendering is corrupted, or monitors don't light up after a TTY switch, you can try this flag.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="nl">debug</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="nl">    force-disable-connectors-on-resume</span>
+</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="o">}</span>
+</span></code></pre></div>
+<h3 id="render-drm-device"><code>render-drm-device</code><a class="headerlink" href="#render-drm-device" title="Permanent link">#</a></h3>
+<p>Override the DRM device that niri will use for all rendering.</p>
+<p>You can set this to make niri use a different primary GPU than the default one.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="nl">debug</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="nl">    render-drm-device</span><span class="w"> </span><span class="s">&quot;/dev/dri/renderD129&quot;</span>
+</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="o">}</span>
+</span></code></pre></div>
+<h3 id="ignore-drm-device"><code>ignore-drm-device</code><a class="headerlink" href="#ignore-drm-device" title="Permanent link">#</a></h3>
+<p><span class="badge"><a href="https://github.com/niri-wm/niri/releases/tag/v25.11">Since: 25.11</a></span></p>
+<p>List DRM devices that niri will ignore.
+Useful for GPU passthrough when you don't want niri to open a certain device.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="nl">debug</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="nl">    ignore-drm-device</span><span class="w"> </span><span class="s">&quot;/dev/dri/renderD128&quot;</span>
+</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="nl">    ignore-drm-device</span><span class="w"> </span><span class="s">&quot;/dev/dri/renderD130&quot;</span>
+</span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="o">}</span>
+</span></code></pre></div>
+<h3 id="force-pipewire-invalid-modifier"><code>force-pipewire-invalid-modifier</code><a class="headerlink" href="#force-pipewire-invalid-modifier" title="Permanent link">#</a></h3>
+<p><span class="badge"><a href="https://github.com/niri-wm/niri/releases/tag/v25.01">Since: 25.01</a></span></p>
+<p>Forces PipeWire screencasting to use the invalid modifier, even when DRM offers more modifiers.</p>
+<p>Useful for testing the invalid modifier code path that is hit by drivers that don't support modifiers.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="nl">debug</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="nl">    force-pipewire-invalid-modifier</span>
+</span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="o">}</span>
+</span></code></pre></div>
+<h3 id="dbus-interfaces-in-non-session-instances"><code>dbus-interfaces-in-non-session-instances</code><a class="headerlink" href="#dbus-interfaces-in-non-session-instances" title="Permanent link">#</a></h3>
+<p>Make niri create its D-Bus interfaces even if it's not running as a <code>--session</code>.</p>
+<p>Useful for testing screencasting changes without having to relogin.</p>
+<p>The main niri instance will <em>not</em> currently take back the interfaces when you close the test instance, so you will need to relogin in the end to make screencasting work again.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="nl">debug</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="nl">    dbus-interfaces-in-non-session-instances</span>
+</span><span id="__span-10-3"><a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="o">}</span>
+</span></code></pre></div>
+<h3 id="wait-for-frame-completion-before-queueing"><code>wait-for-frame-completion-before-queueing</code><a class="headerlink" href="#wait-for-frame-completion-before-queueing" title="Permanent link">#</a></h3>
+<p>Wait until every frame is done rendering before handing it over to DRM.</p>
+<p>Useful for diagnosing certain synchronization and performance problems.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="nl">debug</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-11-2"><a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="nl">    wait-for-frame-completion-before-queueing</span>
+</span><span id="__span-11-3"><a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="o">}</span>
+</span></code></pre></div>
+<h3 id="emulate-zero-presentation-time"><code>emulate-zero-presentation-time</code><a class="headerlink" href="#emulate-zero-presentation-time" title="Permanent link">#</a></h3>
+<p>Emulate zero (unknown) presentation time returned from DRM.</p>
+<p>This is a thing on NVIDIA proprietary drivers, so this flag can be used to test that niri doesn't break too hard on those systems.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="nl">debug</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-12-2"><a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="nl">    emulate-zero-presentation-time</span>
+</span><span id="__span-12-3"><a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a><span class="o">}</span>
+</span></code></pre></div>
+<h3 id="disable-resize-throttling"><code>disable-resize-throttling</code><a class="headerlink" href="#disable-resize-throttling" title="Permanent link">#</a></h3>
+<p><span class="badge"><a href="https://github.com/niri-wm/niri/releases/tag/v0.1.9">Since: 0.1.9</a></span></p>
+<p>Disable throttling resize events sent to windows.</p>
+<p>By default, when resizing quickly (e.g. interactively), a window will only receive the next size once it has made a commit for the previously requested size.
+This is required for resize transactions to work properly, and it also helps certain clients which don't batch incoming resizes from the compositor.</p>
+<p>Disabling resize throttling will send resizes to windows as fast as possible, which is potentially very fast (for example, on a 1000 Hz mouse).</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="nl">debug</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-13-2"><a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a><span class="nl">    disable-resize-throttling</span>
+</span><span id="__span-13-3"><a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a><span class="o">}</span>
+</span></code></pre></div>
+<h3 id="disable-transactions"><code>disable-transactions</code><a class="headerlink" href="#disable-transactions" title="Permanent link">#</a></h3>
+<p><span class="badge"><a href="https://github.com/niri-wm/niri/releases/tag/v0.1.9">Since: 0.1.9</a></span></p>
+<p>Disable transactions (resize and close).</p>
+<p>By default, windows which must resize together, do resize together.
+For example, all windows in a column must resize at the same time to maintain the combined column height equal to the screen height, and to maintain the same window width.</p>
+<p>Transactions make niri wait until all windows finish resizing before showing them all on screen in one, synchronized frame.
+For them to work properly, resize throttling shouldn't be disabled (with the previous debug flag).</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-14-1"><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="nl">debug</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-14-2"><a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a><span class="nl">    disable-transactions</span>
+</span><span id="__span-14-3"><a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a><span class="o">}</span>
+</span></code></pre></div>
+<h3 id="keep-laptop-panel-on-when-lid-is-closed"><code>keep-laptop-panel-on-when-lid-is-closed</code><a class="headerlink" href="#keep-laptop-panel-on-when-lid-is-closed" title="Permanent link">#</a></h3>
+<p><span class="badge"><a href="https://github.com/niri-wm/niri/releases/tag/v0.1.10">Since: 0.1.10</a></span></p>
+<p>By default, niri will disable the internal laptop monitor when the laptop lid is closed.
+This flag turns off this behavior and will leave the internal laptop monitor on.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-15-1"><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="nl">debug</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-15-2"><a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a><span class="nl">    keep-laptop-panel-on-when-lid-is-closed</span>
+</span><span id="__span-15-3"><a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a><span class="o">}</span>
+</span></code></pre></div>
+<h3 id="disable-monitor-names"><code>disable-monitor-names</code><a class="headerlink" href="#disable-monitor-names" title="Permanent link">#</a></h3>
+<p><span class="badge"><a href="https://github.com/niri-wm/niri/releases/tag/v0.1.10">Since: 0.1.10</a></span></p>
+<p>Disables the make/model/serial monitor names, as if niri fails to read them from the EDID.</p>
+<p>Use this flag to work around a crash present in 0.1.9 and 0.1.10 when connecting two monitors with matching make/model/serial.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-16-1"><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="nl">debug</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-16-2"><a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a><span class="nl">    disable-monitor-names</span>
+</span><span id="__span-16-3"><a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a><span class="o">}</span>
+</span></code></pre></div>
+<h3 id="strict-new-window-focus-policy"><code>strict-new-window-focus-policy</code><a class="headerlink" href="#strict-new-window-focus-policy" title="Permanent link">#</a></h3>
+<p><span class="badge"><a href="https://github.com/niri-wm/niri/releases/tag/v25.01">Since: 25.01</a></span></p>
+<p>Disables heuristic automatic focusing for new windows.
+Only windows that activate themselves with a valid xdg-activation token will be focused.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-17-1"><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a><span class="nl">debug</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-17-2"><a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a><span class="nl">    strict-new-window-focus-policy</span>
+</span><span id="__span-17-3"><a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a><span class="o">}</span>
+</span></code></pre></div>
+<h3 id="honor-xdg-activation-with-invalid-serial"><code>honor-xdg-activation-with-invalid-serial</code><a class="headerlink" href="#honor-xdg-activation-with-invalid-serial" title="Permanent link">#</a></h3>
+<p><span class="badge"><a href="https://github.com/niri-wm/niri/releases/tag/v25.05">Since: 25.05</a></span></p>
+<p>Widely-used clients such as Discord and Telegram make fresh xdg-activation tokens upon clicking on their tray icon or on their notification.
+Most of the time, these fresh tokens will have invalid serials, because the app needs to be focused to get a valid serial, and if the user clicks on a tray icon or a notification, it is usually because the app <em>isn't</em> focused, and the user wants to focus it.</p>
+<p>By default, niri ignores xdg-activation tokens with invalid serials, to prevent windows from randomly stealing focus.
+This debug flag makes niri honor such tokens, making the aforementioned widely-used apps get focus when clicking on their tray icon or notification.</p>
+<p>Amusingly, clicking on a notification sends the app a perfectly valid activation token from the notification daemon, but these apps seem to simply ignore it.
+Maybe in the future these apps/toolkits (Electron, Qt) are fixed, making this debug flag unnecessary.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-18-1"><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a><span class="nl">debug</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-18-2"><a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a><span class="nl">    honor-xdg-activation-with-invalid-serial</span>
+</span><span id="__span-18-3"><a id="__codelineno-18-3" name="__codelineno-18-3" href="#__codelineno-18-3"></a><span class="o">}</span>
+</span></code></pre></div>
+<h3 id="skip-cursor-only-updates-during-vrr"><code>skip-cursor-only-updates-during-vrr</code><a class="headerlink" href="#skip-cursor-only-updates-during-vrr" title="Permanent link">#</a></h3>
+<p><span class="badge"><a href="https://github.com/niri-wm/niri/releases/tag/v25.08">Since: 25.08</a></span></p>
+<p>Skips redrawing the screen from cursor input while variable refresh rate is active.</p>
+<p>Useful for games where the cursor isn't drawn internally to prevent erratic VRR shifts in response to cursor movement.</p>
+<p>Note that the current implementation has some issues, for example when there's nothing redrawing the screen (like a game), the rendering will appear to completely freeze (since cursor movements won't cause redraws).</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-19-1"><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a><span class="nl">debug</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-19-2"><a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a><span class="nl">    skip-cursor-only-updates-during-vrr</span>
+</span><span id="__span-19-3"><a id="__codelineno-19-3" name="__codelineno-19-3" href="#__codelineno-19-3"></a><span class="o">}</span>
+</span></code></pre></div>
+<h3 id="deactivate-unfocused-windows"><code>deactivate-unfocused-windows</code><a class="headerlink" href="#deactivate-unfocused-windows" title="Permanent link">#</a></h3>
+<p><span class="badge"><a href="https://github.com/niri-wm/niri/releases/tag/v25.08">Since: 25.08</a></span></p>
+<p>Some clients (notably, Chromium- and Electron-based, like Teams or Slack) erroneously use the Activated xdg window state instead of keyboard focus for things like deciding whether to send notifications for new messages, or for picking where to show an IME popup.
+Niri keeps the Activated state on unfocused workspaces and invisible tabbed windows (to reduce unwanted animations), surfacing bugs in these applications.</p>
+<p>Set this debug flag to work around these problems.
+It will cause niri to drop the Activated state for all unfocused windows.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-20-1"><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a><span class="nl">debug</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-20-2"><a id="__codelineno-20-2" name="__codelineno-20-2" href="#__codelineno-20-2"></a><span class="nl">    deactivate-unfocused-windows</span>
+</span><span id="__span-20-3"><a id="__codelineno-20-3" name="__codelineno-20-3" href="#__codelineno-20-3"></a><span class="o">}</span>
+</span></code></pre></div>
+<h3 id="keep-max-bpc-unchanged"><code>keep-max-bpc-unchanged</code><a class="headerlink" href="#keep-max-bpc-unchanged" title="Permanent link">#</a></h3>
+<p><span class="badge"><a href="https://github.com/niri-wm/niri/releases/tag/v25.08">Since: 25.08</a></span></p>
+<p>When connecting monitors, niri sets their max bpc to 8 in order to reduce display bandwidth and to potentially allow more monitors to be connected at once.
+Restricting bpc to 8 is not a problem since we don't support HDR or color management yet and can't really make use of higher bpc.</p>
+<p>Apparently, setting max bpc to 8 breaks some displays driven by AMDGPU.
+If this happens to you, set this debug flag, which will prevent niri from changing max bpc.
+AMDGPU bug report: <a href="https://gitlab.freedesktop.org/drm/amd/-/issues/4487">https://gitlab.freedesktop.org/drm/amd/-/issues/4487</a>.</p>
+<p><span class="badge"><a href="https://github.com/niri-wm/niri/releases/tag/v25.11">Since: 25.11</a></span>
+This setting is deprecated and does nothing: niri no longer sets max bpc.
+The old niri behavior with this setting enabled matches the new behavior.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-21-1"><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a><span class="nl">debug</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-21-2"><a id="__codelineno-21-2" name="__codelineno-21-2" href="#__codelineno-21-2"></a><span class="nl">    keep-max-bpc-unchanged</span>
+</span><span id="__span-21-3"><a id="__codelineno-21-3" name="__codelineno-21-3" href="#__codelineno-21-3"></a><span class="o">}</span>
+</span></code></pre></div>
+<h3 id="key-bindings">Key Bindings<a class="headerlink" href="#key-bindings" title="Permanent link">#</a></h3>
+<p>These are not debug options, but rather key bindings.</p>
+<h4 id="toggle-debug-tint"><code>toggle-debug-tint</code><a class="headerlink" href="#toggle-debug-tint" title="Permanent link">#</a></h4>
+<p>Tints all surfaces green, unless they are being directly scanned out.</p>
+<p>Useful to check if direct scanout is working.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-22-1"><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a><span class="nl">binds</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-22-2"><a id="__codelineno-22-2" name="__codelineno-22-2" href="#__codelineno-22-2"></a><span class="nl">    Mod+Shift+Ctrl+T</span><span class="w"> </span><span class="o">{</span><span class="nl"> toggle-debug-tint</span><span class="o">;</span><span class="w"> </span><span class="o">}</span>
+</span><span id="__span-22-3"><a id="__codelineno-22-3" name="__codelineno-22-3" href="#__codelineno-22-3"></a><span class="o">}</span>
+</span></code></pre></div>
+<h4 id="debug-toggle-opaque-regions"><code>debug-toggle-opaque-regions</code><a class="headerlink" href="#debug-toggle-opaque-regions" title="Permanent link">#</a></h4>
+<p><span class="badge"><a href="https://github.com/niri-wm/niri/releases/tag/v0.1.6">Since: 0.1.6</a></span></p>
+<p>Tints regions marked as opaque with blue and the rest of the render elements with red.</p>
+<p>Useful to check how Wayland surfaces and internal render elements mark their parts as opaque, which is a rendering performance optimization.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-23-1"><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a><span class="nl">binds</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-23-2"><a id="__codelineno-23-2" name="__codelineno-23-2" href="#__codelineno-23-2"></a><span class="nl">    Mod+Shift+Ctrl+O</span><span class="w"> </span><span class="o">{</span><span class="nl"> debug-toggle-opaque-regions</span><span class="o">;</span><span class="w"> </span><span class="o">}</span>
+</span><span id="__span-23-3"><a id="__codelineno-23-3" name="__codelineno-23-3" href="#__codelineno-23-3"></a><span class="o">}</span>
+</span></code></pre></div>
+<h4 id="debug-toggle-damage"><code>debug-toggle-damage</code><a class="headerlink" href="#debug-toggle-damage" title="Permanent link">#</a></h4>
+<p><span class="badge"><a href="https://github.com/niri-wm/niri/releases/tag/v0.1.6">Since: 0.1.6</a></span></p>
+<p>Tints damaged regions with red.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-24-1"><a id="__codelineno-24-1" name="__codelineno-24-1" href="#__codelineno-24-1"></a><span class="nl">binds</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-24-2"><a id="__codelineno-24-2" name="__codelineno-24-2" href="#__codelineno-24-2"></a><span class="nl">    Mod+Shift+Ctrl+D</span><span class="w"> </span><span class="o">{</span><span class="nl"> debug-toggle-damage</span><span class="o">;</span><span class="w"> </span><span class="o">}</span>
+</span><span id="__span-24-3"><a id="__codelineno-24-3" name="__codelineno-24-3" href="#__codelineno-24-3"></a><span class="o">}</span>
+</span></code></pre></div>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      <script id="__config" type="application/json">{"base": ".", "features": ["navigation.instant", "search.suggest", "content.code.copy", "content.action.edit"], "search": "assets/javascripts/workers/search.d50fe291.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="assets/javascripts/bundle.56ea9cef.min.js"></script>
+      
+    
+  </body>
+</html>

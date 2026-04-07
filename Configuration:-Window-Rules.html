@@ -1,0 +1,2875 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+        <link rel="canonical" href="https://niri-wm.github.io/niri/Configuration%3A-Window-Rules.html">
+      
+      
+        <link rel="prev" href="Configuration%3A-Miscellaneous.html">
+      
+      
+        <link rel="next" href="Configuration%3A-Layer-Rules.html">
+      
+      
+      <link rel="icon" href="_assets/icons/logo.svg">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.6.15">
+    
+    
+      
+        <title>Window Rules - niri</title>
+      
+    
+    
+      <link rel="stylesheet" href="assets/stylesheets/main.342714a4.min.css">
+      
+        
+        <link rel="stylesheet" href="assets/stylesheets/palette.06af60db.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="_assets/stylesheets/niri.css">
+    
+    <script>__md_scope=new URL(".",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#overview" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="." title="niri" class="md-header__button md-logo" aria-label="niri" data-md-component="logo">
+      
+  <img src="_assets/icons/logo.svg" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            niri
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Window Rules
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m14.3 16-.7-2h-3.2l-.7 2H7.8L11 7h2l3.2 9zM20 8.69V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12zm-9.15 3.96h2.3L12 9z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_2" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="indigo"  aria-label="Switch to system preference"  type="radio" name="__palette" id="__palette_2">
+    
+      <label class="md-header__button md-icon" title="Switch to system preference" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/niri-wm/niri" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M439.55 236.05 244 40.45a28.87 28.87 0 0 0-40.81 0l-40.66 40.63 51.52 51.52c27.06-9.14 52.68 16.77 43.39 43.68l49.66 49.66c34.23-11.8 61.18 31 35.47 56.69-26.49 26.49-70.21-2.87-56-37.34L240.22 199v121.85c25.3 12.54 22.26 41.85 9.08 55a34.34 34.34 0 0 1-48.55 0c-17.57-17.6-11.07-46.91 11.25-56v-123c-20.8-8.51-24.6-30.74-18.64-45L142.57 101 8.45 235.14a28.86 28.86 0 0 0 0 40.81l195.61 195.6a28.86 28.86 0 0 0 40.8 0l194.69-194.69a28.86 28.86 0 0 0 0-40.81"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="." title="niri" class="md-nav__button md-logo" aria-label="niri" data-md-component="logo">
+      
+  <img src="_assets/icons/logo.svg" alt="logo">
+
+    </a>
+    niri
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/niri-wm/niri" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M439.55 236.05 244 40.45a28.87 28.87 0 0 0-40.81 0l-40.66 40.63 51.52 51.52c27.06-9.14 52.68 16.77 43.39 43.68l49.66 49.66c34.23-11.8 61.18 31 35.47 56.69-26.49 26.49-70.21-2.87-56-37.34L240.22 199v121.85c25.3 12.54 22.26 41.85 9.08 55a34.34 34.34 0 0 1-48.55 0c-17.57-17.6-11.07-46.91 11.25-56v-123c-20.8-8.51-24.6-30.74-18.64-45L142.57 101 8.45 235.14a28.86 28.86 0 0 0 0 40.81l195.61 195.6a28.86 28.86 0 0 0 40.8 0l194.69-194.69a28.86 28.86 0 0 0 0-40.81"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1" >
+        
+          
+          <label class="md-nav__link" for="__nav_1" id="__nav_1_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    Usage
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_1">
+            <span class="md-nav__icon md-icon"></span>
+            Usage
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Getting-Started.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Getting Started
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Example-systemd-Setup.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Example systemd Setup
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Important-Software.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Important Software
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Workspaces.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Workspaces
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Floating-Windows.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Floating Windows
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Tabs.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Tabs
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Overview.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Overview
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Screencasting.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Screencasting
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Layer%E2%80%90Shell-Components.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Layer‐Shell Components
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="IPC.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    IPC, niri msg
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Application-Issues.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Application-Specific Issues
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Nvidia.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Nvidia
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Xwayland.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Xwayland
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Gestures.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Gestures
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Fullscreen-and-Maximize.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Fullscreen and Maximize
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Packaging-niri.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Packaging niri
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Integrating-niri.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Integrating niri
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Accessibility.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Accessibility
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Name-and-Logo.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Name and Logo
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="FAQ.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    FAQ
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    Configuration
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            Configuration
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Configuration%3A-Introduction.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Introduction
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Configuration%3A-Input.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Input
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Configuration%3A-Outputs.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Outputs
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Configuration%3A-Key-Bindings.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Key Bindings
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Configuration%3A-Switch-Events.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Switch Events
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Configuration%3A-Layout.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Layout
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Configuration%3A-Named-Workspaces.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Named Workspaces
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Configuration%3A-Miscellaneous.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Miscellaneous
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    Window Rules
+    
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="Configuration%3A-Window-Rules.html" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    Window Rules
+    
+  </span>
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      Overview
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#window-matching" class="md-nav__link">
+    <span class="md-ellipsis">
+      Window Matching
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Window Matching">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#title-and-app-id" class="md-nav__link">
+    <span class="md-ellipsis">
+      title and app-id
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#is-active" class="md-nav__link">
+    <span class="md-ellipsis">
+      is-active
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#is-focused" class="md-nav__link">
+    <span class="md-ellipsis">
+      is-focused
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#is-active-in-column" class="md-nav__link">
+    <span class="md-ellipsis">
+      is-active-in-column
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#is-floating" class="md-nav__link">
+    <span class="md-ellipsis">
+      is-floating
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#is-window-cast-target" class="md-nav__link">
+    <span class="md-ellipsis">
+      is-window-cast-target
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#is-urgent" class="md-nav__link">
+    <span class="md-ellipsis">
+      is-urgent
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#at-startup" class="md-nav__link">
+    <span class="md-ellipsis">
+      at-startup
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#window-opening-properties" class="md-nav__link">
+    <span class="md-ellipsis">
+      Window Opening Properties
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Window Opening Properties">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#default-column-width" class="md-nav__link">
+    <span class="md-ellipsis">
+      default-column-width
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#default-window-height" class="md-nav__link">
+    <span class="md-ellipsis">
+      default-window-height
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#open-on-output" class="md-nav__link">
+    <span class="md-ellipsis">
+      open-on-output
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#open-on-workspace" class="md-nav__link">
+    <span class="md-ellipsis">
+      open-on-workspace
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#open-maximized" class="md-nav__link">
+    <span class="md-ellipsis">
+      open-maximized
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#open-maximized-to-edges" class="md-nav__link">
+    <span class="md-ellipsis">
+      open-maximized-to-edges
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#open-fullscreen" class="md-nav__link">
+    <span class="md-ellipsis">
+      open-fullscreen
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#open-floating" class="md-nav__link">
+    <span class="md-ellipsis">
+      open-floating
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#open-focused" class="md-nav__link">
+    <span class="md-ellipsis">
+      open-focused
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#dynamic-properties" class="md-nav__link">
+    <span class="md-ellipsis">
+      Dynamic Properties
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Dynamic Properties">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#block-out-from" class="md-nav__link">
+    <span class="md-ellipsis">
+      block-out-from
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#opacity" class="md-nav__link">
+    <span class="md-ellipsis">
+      opacity
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#variable-refresh-rate" class="md-nav__link">
+    <span class="md-ellipsis">
+      variable-refresh-rate
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#default-column-display" class="md-nav__link">
+    <span class="md-ellipsis">
+      default-column-display
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#default-floating-position" class="md-nav__link">
+    <span class="md-ellipsis">
+      default-floating-position
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#scroll-factor" class="md-nav__link">
+    <span class="md-ellipsis">
+      scroll-factor
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#draw-border-with-background" class="md-nav__link">
+    <span class="md-ellipsis">
+      draw-border-with-background
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#focus-ring-and-border" class="md-nav__link">
+    <span class="md-ellipsis">
+      focus-ring and border
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#shadow" class="md-nav__link">
+    <span class="md-ellipsis">
+      shadow
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tab-indicator" class="md-nav__link">
+    <span class="md-ellipsis">
+      tab-indicator
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#geometry-corner-radius" class="md-nav__link">
+    <span class="md-ellipsis">
+      geometry-corner-radius
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#clip-to-geometry" class="md-nav__link">
+    <span class="md-ellipsis">
+      clip-to-geometry
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tiled-state" class="md-nav__link">
+    <span class="md-ellipsis">
+      tiled-state
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#baba-is-float" class="md-nav__link">
+    <span class="md-ellipsis">
+      baba-is-float
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#size-overrides" class="md-nav__link">
+    <span class="md-ellipsis">
+      Size Overrides
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Configuration%3A-Layer-Rules.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Layer Rules
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Configuration%3A-Animations.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Animations
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Configuration%3A-Gestures.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Gestures
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Configuration%3A-Recent-Windows.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Recent Windows
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Configuration%3A-Debug-Options.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Debug Options
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Configuration%3A-Include.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Include
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    Development
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            Development
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Development%3A-Design-Principles.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Design Principles
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Development%3A-Developing-niri.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Developing niri
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Development%3A-Documenting-niri.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Documenting niri
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Development%3A-Fractional-Layout.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Fractional Layout
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Development%3A-Redraw-Loop.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Redraw Loop
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Development%3A-Animation-Timing.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Animation Timing
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      Overview
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#window-matching" class="md-nav__link">
+    <span class="md-ellipsis">
+      Window Matching
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Window Matching">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#title-and-app-id" class="md-nav__link">
+    <span class="md-ellipsis">
+      title and app-id
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#is-active" class="md-nav__link">
+    <span class="md-ellipsis">
+      is-active
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#is-focused" class="md-nav__link">
+    <span class="md-ellipsis">
+      is-focused
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#is-active-in-column" class="md-nav__link">
+    <span class="md-ellipsis">
+      is-active-in-column
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#is-floating" class="md-nav__link">
+    <span class="md-ellipsis">
+      is-floating
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#is-window-cast-target" class="md-nav__link">
+    <span class="md-ellipsis">
+      is-window-cast-target
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#is-urgent" class="md-nav__link">
+    <span class="md-ellipsis">
+      is-urgent
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#at-startup" class="md-nav__link">
+    <span class="md-ellipsis">
+      at-startup
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#window-opening-properties" class="md-nav__link">
+    <span class="md-ellipsis">
+      Window Opening Properties
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Window Opening Properties">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#default-column-width" class="md-nav__link">
+    <span class="md-ellipsis">
+      default-column-width
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#default-window-height" class="md-nav__link">
+    <span class="md-ellipsis">
+      default-window-height
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#open-on-output" class="md-nav__link">
+    <span class="md-ellipsis">
+      open-on-output
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#open-on-workspace" class="md-nav__link">
+    <span class="md-ellipsis">
+      open-on-workspace
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#open-maximized" class="md-nav__link">
+    <span class="md-ellipsis">
+      open-maximized
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#open-maximized-to-edges" class="md-nav__link">
+    <span class="md-ellipsis">
+      open-maximized-to-edges
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#open-fullscreen" class="md-nav__link">
+    <span class="md-ellipsis">
+      open-fullscreen
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#open-floating" class="md-nav__link">
+    <span class="md-ellipsis">
+      open-floating
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#open-focused" class="md-nav__link">
+    <span class="md-ellipsis">
+      open-focused
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#dynamic-properties" class="md-nav__link">
+    <span class="md-ellipsis">
+      Dynamic Properties
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Dynamic Properties">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#block-out-from" class="md-nav__link">
+    <span class="md-ellipsis">
+      block-out-from
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#opacity" class="md-nav__link">
+    <span class="md-ellipsis">
+      opacity
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#variable-refresh-rate" class="md-nav__link">
+    <span class="md-ellipsis">
+      variable-refresh-rate
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#default-column-display" class="md-nav__link">
+    <span class="md-ellipsis">
+      default-column-display
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#default-floating-position" class="md-nav__link">
+    <span class="md-ellipsis">
+      default-floating-position
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#scroll-factor" class="md-nav__link">
+    <span class="md-ellipsis">
+      scroll-factor
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#draw-border-with-background" class="md-nav__link">
+    <span class="md-ellipsis">
+      draw-border-with-background
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#focus-ring-and-border" class="md-nav__link">
+    <span class="md-ellipsis">
+      focus-ring and border
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#shadow" class="md-nav__link">
+    <span class="md-ellipsis">
+      shadow
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tab-indicator" class="md-nav__link">
+    <span class="md-ellipsis">
+      tab-indicator
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#geometry-corner-radius" class="md-nav__link">
+    <span class="md-ellipsis">
+      geometry-corner-radius
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#clip-to-geometry" class="md-nav__link">
+    <span class="md-ellipsis">
+      clip-to-geometry
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tiled-state" class="md-nav__link">
+    <span class="md-ellipsis">
+      tiled-state
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#baba-is-float" class="md-nav__link">
+    <span class="md-ellipsis">
+      baba-is-float
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#size-overrides" class="md-nav__link">
+    <span class="md-ellipsis">
+      Size Overrides
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/niri-wm/niri/edit/main/docs/wiki/Configuration:-Window-Rules.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+  <h1>Window Rules</h1>
+
+<h3 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">#</a></h3>
+<p>Window rules let you adjust behavior for individual windows.
+They have <code>match</code> and <code>exclude</code> directives that control which windows the rule should apply to, and a number of properties that you can set.</p>
+<p>Window rules are processed in order of appearance in the config file.
+This means that you can put more generic rules first, then override them for specific windows later.
+For example:</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1">// Set open-maximized to true for all windows.</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nl">window-rule</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="nl">    open-maximized</span><span class="w"> </span><span class="s">true</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="o">}</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="c1">// Then, for Alacritty, set open-maximized back to false.</span>
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="nl">window-rule</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="nl">    match</span><span class="w"> </span><span class="na">app-id=</span><span class="s">&quot;Alacritty&quot;</span>
+</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="nl">    open-maximized</span><span class="w"> </span><span class="s">false</span>
+</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="o">}</span>
+</span></code></pre></div>
+<div class="admonition tip">
+<p class="admonition-title">Tip</p>
+<p>In general, you cannot "unset" a property in a later rule, only set it to a different value.
+Use the <code>exclude</code> directives to avoid applying a rule for specific windows.</p>
+</div>
+<p>Here are all matchers and properties that a window rule could have:</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nl">window-rule</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="nl">    match</span><span class="w"> </span><span class="na">title=</span><span class="s">&quot;Firefox&quot;</span>
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="nl">    match</span><span class="w"> </span><span class="na">app-id=</span><span class="s">&quot;Alacritty&quot;</span>
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="nl">    match</span><span class="w"> </span><span class="na">is-active=</span><span class="s">true</span>
+</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="nl">    match</span><span class="w"> </span><span class="na">is-focused=</span><span class="s">false</span>
+</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="nl">    match</span><span class="w"> </span><span class="na">is-active-in-column=</span><span class="s">true</span>
+</span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="nl">    match</span><span class="w"> </span><span class="na">is-floating=</span><span class="s">true</span>
+</span><span id="__span-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="nl">    match</span><span class="w"> </span><span class="na">is-window-cast-target=</span><span class="s">true</span>
+</span><span id="__span-1-9"><a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="nl">    match</span><span class="w"> </span><span class="na">is-urgent=</span><span class="s">true</span>
+</span><span id="__span-1-10"><a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="nl">    match</span><span class="w"> </span><span class="na">at-startup=</span><span class="s">true</span>
+</span><span id="__span-1-11"><a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>
+</span><span id="__span-1-12"><a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="w">    </span><span class="c1">// Properties that apply once upon window opening.</span>
+</span><span id="__span-1-13"><a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a><span class="nl">    default-column-width</span><span class="w"> </span><span class="o">{</span><span class="nl"> proportion</span><span class="w"> </span><span class="mf">0.75</span><span class="o">;</span><span class="w"> </span><span class="o">}</span>
+</span><span id="__span-1-14"><a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a><span class="nl">    default-window-height</span><span class="w"> </span><span class="o">{</span><span class="nl"> fixed</span><span class="w"> </span><span class="m m-Decimal">500</span><span class="o">;</span><span class="w"> </span><span class="o">}</span>
+</span><span id="__span-1-15"><a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a><span class="nl">    open-on-output</span><span class="w"> </span><span class="s">&quot;Some Company CoolMonitor 1234&quot;</span>
+</span><span id="__span-1-16"><a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a><span class="nl">    open-on-workspace</span><span class="w"> </span><span class="s">&quot;chat&quot;</span>
+</span><span id="__span-1-17"><a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a><span class="nl">    open-maximized</span><span class="w"> </span><span class="s">true</span>
+</span><span id="__span-1-18"><a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a><span class="nl">    open-maximized-to-edges</span><span class="w"> </span><span class="s">true</span>
+</span><span id="__span-1-19"><a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a><span class="nl">    open-fullscreen</span><span class="w"> </span><span class="s">true</span>
+</span><span id="__span-1-20"><a id="__codelineno-1-20" name="__codelineno-1-20" href="#__codelineno-1-20"></a><span class="nl">    open-floating</span><span class="w"> </span><span class="s">true</span>
+</span><span id="__span-1-21"><a id="__codelineno-1-21" name="__codelineno-1-21" href="#__codelineno-1-21"></a><span class="nl">    open-focused</span><span class="w"> </span><span class="s">false</span>
+</span><span id="__span-1-22"><a id="__codelineno-1-22" name="__codelineno-1-22" href="#__codelineno-1-22"></a>
+</span><span id="__span-1-23"><a id="__codelineno-1-23" name="__codelineno-1-23" href="#__codelineno-1-23"></a><span class="w">    </span><span class="c1">// Properties that apply continuously.</span>
+</span><span id="__span-1-24"><a id="__codelineno-1-24" name="__codelineno-1-24" href="#__codelineno-1-24"></a><span class="nl">    draw-border-with-background</span><span class="w"> </span><span class="s">false</span>
+</span><span id="__span-1-25"><a id="__codelineno-1-25" name="__codelineno-1-25" href="#__codelineno-1-25"></a><span class="nl">    opacity</span><span class="w"> </span><span class="mf">0.5</span>
+</span><span id="__span-1-26"><a id="__codelineno-1-26" name="__codelineno-1-26" href="#__codelineno-1-26"></a><span class="nl">    block-out-from</span><span class="w"> </span><span class="s">&quot;screencast&quot;</span>
+</span><span id="__span-1-27"><a id="__codelineno-1-27" name="__codelineno-1-27" href="#__codelineno-1-27"></a><span class="w">    </span><span class="c1">// block-out-from &quot;screen-capture&quot;</span>
+</span><span id="__span-1-28"><a id="__codelineno-1-28" name="__codelineno-1-28" href="#__codelineno-1-28"></a><span class="nl">    variable-refresh-rate</span><span class="w"> </span><span class="s">true</span>
+</span><span id="__span-1-29"><a id="__codelineno-1-29" name="__codelineno-1-29" href="#__codelineno-1-29"></a><span class="nl">    default-column-display</span><span class="w"> </span><span class="s">&quot;tabbed&quot;</span>
+</span><span id="__span-1-30"><a id="__codelineno-1-30" name="__codelineno-1-30" href="#__codelineno-1-30"></a><span class="nl">    default-floating-position</span><span class="w"> </span><span class="na">x=</span><span class="m m-Decimal">100</span><span class="w"> </span><span class="na">y=</span><span class="m m-Decimal">200</span><span class="w"> </span><span class="na">relative-to=</span><span class="s">&quot;bottom-left&quot;</span>
+</span><span id="__span-1-31"><a id="__codelineno-1-31" name="__codelineno-1-31" href="#__codelineno-1-31"></a><span class="nl">    scroll-factor</span><span class="w"> </span><span class="mf">0.75</span>
+</span><span id="__span-1-32"><a id="__codelineno-1-32" name="__codelineno-1-32" href="#__codelineno-1-32"></a>
+</span><span id="__span-1-33"><a id="__codelineno-1-33" name="__codelineno-1-33" href="#__codelineno-1-33"></a><span class="nl">    focus-ring</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-1-34"><a id="__codelineno-1-34" name="__codelineno-1-34" href="#__codelineno-1-34"></a><span class="w">        </span><span class="c1">// off</span>
+</span><span id="__span-1-35"><a id="__codelineno-1-35" name="__codelineno-1-35" href="#__codelineno-1-35"></a><span class="nl">        on</span>
+</span><span id="__span-1-36"><a id="__codelineno-1-36" name="__codelineno-1-36" href="#__codelineno-1-36"></a><span class="nl">        width</span><span class="w"> </span><span class="m m-Decimal">4</span>
+</span><span id="__span-1-37"><a id="__codelineno-1-37" name="__codelineno-1-37" href="#__codelineno-1-37"></a><span class="nl">        active-color</span><span class="w"> </span><span class="s">&quot;#7fc8ff&quot;</span>
+</span><span id="__span-1-38"><a id="__codelineno-1-38" name="__codelineno-1-38" href="#__codelineno-1-38"></a><span class="nl">        inactive-color</span><span class="w"> </span><span class="s">&quot;#505050&quot;</span>
+</span><span id="__span-1-39"><a id="__codelineno-1-39" name="__codelineno-1-39" href="#__codelineno-1-39"></a><span class="nl">        urgent-color</span><span class="w"> </span><span class="s">&quot;#9b0000&quot;</span>
+</span><span id="__span-1-40"><a id="__codelineno-1-40" name="__codelineno-1-40" href="#__codelineno-1-40"></a><span class="w">        </span><span class="c1">// active-gradient from=&quot;#80c8ff&quot; to=&quot;#bbddff&quot; angle=45</span>
+</span><span id="__span-1-41"><a id="__codelineno-1-41" name="__codelineno-1-41" href="#__codelineno-1-41"></a><span class="w">        </span><span class="c1">// inactive-gradient from=&quot;#505050&quot; to=&quot;#808080&quot; angle=45 relative-to=&quot;workspace-view&quot;</span>
+</span><span id="__span-1-42"><a id="__codelineno-1-42" name="__codelineno-1-42" href="#__codelineno-1-42"></a><span class="w">        </span><span class="c1">// urgent-gradient from=&quot;#800&quot; to=&quot;#a33&quot; angle=45</span>
+</span><span id="__span-1-43"><a id="__codelineno-1-43" name="__codelineno-1-43" href="#__codelineno-1-43"></a><span class="w">    </span><span class="o">}</span>
+</span><span id="__span-1-44"><a id="__codelineno-1-44" name="__codelineno-1-44" href="#__codelineno-1-44"></a>
+</span><span id="__span-1-45"><a id="__codelineno-1-45" name="__codelineno-1-45" href="#__codelineno-1-45"></a><span class="nl">    border</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-1-46"><a id="__codelineno-1-46" name="__codelineno-1-46" href="#__codelineno-1-46"></a><span class="w">        </span><span class="c1">// Same as focus-ring.</span>
+</span><span id="__span-1-47"><a id="__codelineno-1-47" name="__codelineno-1-47" href="#__codelineno-1-47"></a><span class="w">    </span><span class="o">}</span>
+</span><span id="__span-1-48"><a id="__codelineno-1-48" name="__codelineno-1-48" href="#__codelineno-1-48"></a>
+</span><span id="__span-1-49"><a id="__codelineno-1-49" name="__codelineno-1-49" href="#__codelineno-1-49"></a><span class="nl">    shadow</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-1-50"><a id="__codelineno-1-50" name="__codelineno-1-50" href="#__codelineno-1-50"></a><span class="w">        </span><span class="c1">// on</span>
+</span><span id="__span-1-51"><a id="__codelineno-1-51" name="__codelineno-1-51" href="#__codelineno-1-51"></a><span class="nl">        off</span>
+</span><span id="__span-1-52"><a id="__codelineno-1-52" name="__codelineno-1-52" href="#__codelineno-1-52"></a><span class="nl">        softness</span><span class="w"> </span><span class="m m-Decimal">40</span>
+</span><span id="__span-1-53"><a id="__codelineno-1-53" name="__codelineno-1-53" href="#__codelineno-1-53"></a><span class="nl">        spread</span><span class="w"> </span><span class="m m-Decimal">5</span>
+</span><span id="__span-1-54"><a id="__codelineno-1-54" name="__codelineno-1-54" href="#__codelineno-1-54"></a><span class="nl">        offset</span><span class="w"> </span><span class="na">x=</span><span class="m m-Decimal">0</span><span class="w"> </span><span class="na">y=</span><span class="m m-Decimal">5</span>
+</span><span id="__span-1-55"><a id="__codelineno-1-55" name="__codelineno-1-55" href="#__codelineno-1-55"></a><span class="nl">        draw-behind-window</span><span class="w"> </span><span class="s">true</span>
+</span><span id="__span-1-56"><a id="__codelineno-1-56" name="__codelineno-1-56" href="#__codelineno-1-56"></a><span class="nl">        color</span><span class="w"> </span><span class="s">&quot;#00000064&quot;</span>
+</span><span id="__span-1-57"><a id="__codelineno-1-57" name="__codelineno-1-57" href="#__codelineno-1-57"></a><span class="w">        </span><span class="c1">// inactive-color &quot;#00000064&quot;</span>
+</span><span id="__span-1-58"><a id="__codelineno-1-58" name="__codelineno-1-58" href="#__codelineno-1-58"></a><span class="w">    </span><span class="o">}</span>
+</span><span id="__span-1-59"><a id="__codelineno-1-59" name="__codelineno-1-59" href="#__codelineno-1-59"></a>
+</span><span id="__span-1-60"><a id="__codelineno-1-60" name="__codelineno-1-60" href="#__codelineno-1-60"></a><span class="nl">    tab-indicator</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-1-61"><a id="__codelineno-1-61" name="__codelineno-1-61" href="#__codelineno-1-61"></a><span class="nl">        active-color</span><span class="w"> </span><span class="s">&quot;red&quot;</span>
+</span><span id="__span-1-62"><a id="__codelineno-1-62" name="__codelineno-1-62" href="#__codelineno-1-62"></a><span class="nl">        inactive-color</span><span class="w"> </span><span class="s">&quot;gray&quot;</span>
+</span><span id="__span-1-63"><a id="__codelineno-1-63" name="__codelineno-1-63" href="#__codelineno-1-63"></a><span class="nl">        urgent-color</span><span class="w"> </span><span class="s">&quot;blue&quot;</span>
+</span><span id="__span-1-64"><a id="__codelineno-1-64" name="__codelineno-1-64" href="#__codelineno-1-64"></a><span class="w">        </span><span class="c1">// active-gradient from=&quot;#80c8ff&quot; to=&quot;#bbddff&quot; angle=45</span>
+</span><span id="__span-1-65"><a id="__codelineno-1-65" name="__codelineno-1-65" href="#__codelineno-1-65"></a><span class="w">        </span><span class="c1">// inactive-gradient from=&quot;#505050&quot; to=&quot;#808080&quot; angle=45 relative-to=&quot;workspace-view&quot;</span>
+</span><span id="__span-1-66"><a id="__codelineno-1-66" name="__codelineno-1-66" href="#__codelineno-1-66"></a><span class="w">        </span><span class="c1">// urgent-gradient from=&quot;#800&quot; to=&quot;#a33&quot; angle=45</span>
+</span><span id="__span-1-67"><a id="__codelineno-1-67" name="__codelineno-1-67" href="#__codelineno-1-67"></a><span class="w">    </span><span class="o">}</span>
+</span><span id="__span-1-68"><a id="__codelineno-1-68" name="__codelineno-1-68" href="#__codelineno-1-68"></a>
+</span><span id="__span-1-69"><a id="__codelineno-1-69" name="__codelineno-1-69" href="#__codelineno-1-69"></a><span class="nl">    geometry-corner-radius</span><span class="w"> </span><span class="m m-Decimal">12</span>
+</span><span id="__span-1-70"><a id="__codelineno-1-70" name="__codelineno-1-70" href="#__codelineno-1-70"></a><span class="nl">    clip-to-geometry</span><span class="w"> </span><span class="s">true</span>
+</span><span id="__span-1-71"><a id="__codelineno-1-71" name="__codelineno-1-71" href="#__codelineno-1-71"></a><span class="nl">    tiled-state</span><span class="w"> </span><span class="s">true</span>
+</span><span id="__span-1-72"><a id="__codelineno-1-72" name="__codelineno-1-72" href="#__codelineno-1-72"></a><span class="nl">    baba-is-float</span><span class="w"> </span><span class="s">true</span>
+</span><span id="__span-1-73"><a id="__codelineno-1-73" name="__codelineno-1-73" href="#__codelineno-1-73"></a>
+</span><span id="__span-1-74"><a id="__codelineno-1-74" name="__codelineno-1-74" href="#__codelineno-1-74"></a><span class="nl">    min-width</span><span class="w"> </span><span class="m m-Decimal">100</span>
+</span><span id="__span-1-75"><a id="__codelineno-1-75" name="__codelineno-1-75" href="#__codelineno-1-75"></a><span class="nl">    max-width</span><span class="w"> </span><span class="m m-Decimal">200</span>
+</span><span id="__span-1-76"><a id="__codelineno-1-76" name="__codelineno-1-76" href="#__codelineno-1-76"></a><span class="nl">    min-height</span><span class="w"> </span><span class="m m-Decimal">300</span>
+</span><span id="__span-1-77"><a id="__codelineno-1-77" name="__codelineno-1-77" href="#__codelineno-1-77"></a><span class="nl">    max-height</span><span class="w"> </span><span class="m m-Decimal">300</span>
+</span><span id="__span-1-78"><a id="__codelineno-1-78" name="__codelineno-1-78" href="#__codelineno-1-78"></a><span class="o">}</span>
+</span></code></pre></div>
+<h3 id="window-matching">Window Matching<a class="headerlink" href="#window-matching" title="Permanent link">#</a></h3>
+<p>Each window rule can have several <code>match</code> and <code>exclude</code> directives.
+In order for the rule to apply, a window needs to match <em>any</em> of the <code>match</code> directives, and <em>none</em> of the <code>exclude</code> directives.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nl">window-rule</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">    </span><span class="c1">// Match all Telegram windows...</span>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="nl">    match</span><span class="w"> </span><span class="na">app-id=</span><span class="s">r#&quot;^org\.telegram\.desktop$&quot;#</span>
+</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>
+</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">    </span><span class="c1">// ...except the media viewer window.</span>
+</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="nl">    exclude</span><span class="w"> </span><span class="na">title=</span><span class="s">&quot;^Media viewer$&quot;</span>
+</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>
+</span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">    </span><span class="c1">// Properties to apply.</span>
+</span><span id="__span-2-9"><a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="nl">    open-on-output</span><span class="w"> </span><span class="s">&quot;HDMI-A-1&quot;</span>
+</span><span id="__span-2-10"><a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="o">}</span>
+</span></code></pre></div>
+<p>Match and exclude directives have the same syntax.
+There can be multiple <em>matchers</em> in one directive, then the window should match all of them for the directive to apply.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nl">window-rule</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">    </span><span class="c1">// Match Firefox windows with Gmail in title.</span>
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="nl">    match</span><span class="w"> </span><span class="na">app-id=</span><span class="s">&quot;firefox&quot;</span><span class="w"> </span><span class="na">title=</span><span class="s">&quot;Gmail&quot;</span>
+</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="o">}</span>
+</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>
+</span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="nl">window-rule</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-3-7"><a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="w">    </span><span class="c1">// Match Firefox, but only when it is active...</span>
+</span><span id="__span-3-8"><a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="nl">    match</span><span class="w"> </span><span class="na">app-id=</span><span class="s">&quot;firefox&quot;</span><span class="w"> </span><span class="na">is-active=</span><span class="s">true</span>
+</span><span id="__span-3-9"><a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>
+</span><span id="__span-3-10"><a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="w">    </span><span class="c1">// ...or match Telegram...</span>
+</span><span id="__span-3-11"><a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a><span class="nl">    match</span><span class="w"> </span><span class="na">app-id=</span><span class="s">r#&quot;^org\.telegram\.desktop$&quot;#</span>
+</span><span id="__span-3-12"><a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a>
+</span><span id="__span-3-13"><a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a><span class="w">    </span><span class="c1">// ...but don&#39;t match the Telegram media viewer.</span>
+</span><span id="__span-3-14"><a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a><span class="w">    </span><span class="c1">// If you open a tab in Firefox titled &quot;Media viewer&quot;,</span>
+</span><span id="__span-3-15"><a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a><span class="w">    </span><span class="c1">// it will not be excluded because it doesn&#39;t match the app-id</span>
+</span><span id="__span-3-16"><a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a><span class="w">    </span><span class="c1">// of this exclude directive.</span>
+</span><span id="__span-3-17"><a id="__codelineno-3-17" name="__codelineno-3-17" href="#__codelineno-3-17"></a><span class="nl">    exclude</span><span class="w"> </span><span class="na">app-id=</span><span class="s">r#&quot;^org\.telegram\.desktop$&quot;#</span><span class="w"> </span><span class="na">title=</span><span class="s">&quot;Media viewer&quot;</span>
+</span><span id="__span-3-18"><a id="__codelineno-3-18" name="__codelineno-3-18" href="#__codelineno-3-18"></a><span class="o">}</span>
+</span></code></pre></div>
+<p>Let's look at the matchers in more detail.</p>
+<h4 id="title-and-app-id"><code>title</code> and <code>app-id</code><a class="headerlink" href="#title-and-app-id" title="Permanent link">#</a></h4>
+<p>These are regular expressions that should match anywhere in the window title and app ID respectively.
+You can read about the supported regular expression syntax <a href="https://docs.rs/regex/latest/regex/#syntax">here</a>.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="c1">// Match windows with title containing &quot;Mozilla Firefox&quot;,</span>
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="c1">// or windows with app ID containing &quot;Alacritty&quot;.</span>
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="nl">window-rule</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="nl">    match</span><span class="w"> </span><span class="na">title=</span><span class="s">&quot;Mozilla Firefox&quot;</span>
+</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="nl">    match</span><span class="w"> </span><span class="na">app-id=</span><span class="s">&quot;Alacritty&quot;</span>
+</span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="o">}</span>
+</span></code></pre></div>
+<p>Raw KDL strings can be helpful for writing out regular expressions:</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nl">window-rule</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="nl">    exclude</span><span class="w"> </span><span class="na">app-id=</span><span class="s">r#&quot;^org\.keepassxc\.KeePassXC$&quot;#</span>
+</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="o">}</span>
+</span></code></pre></div>
+<p>You can find the title and the app ID of a window by running <code>niri msg pick-window</code> and clicking on the window in question.</p>
+<div class="admonition tip">
+<p class="admonition-title">Tip</p>
+<p>Another way to find the window title and app ID is to configure the <code>wlr/taskbar</code> module in <a href="https://github.com/Alexays/Waybar">Waybar</a> to include them in the tooltip:</p>
+<div class="language-json highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="nt">&quot;wlr/taskbar&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">    </span><span class="nt">&quot;tooltip-format&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;{title} | {app_id}&quot;</span><span class="p">,</span>
+</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="p">}</span>
+</span></code></pre></div>
+</div>
+<h4 id="is-active"><code>is-active</code><a class="headerlink" href="#is-active" title="Permanent link">#</a></h4>
+<p>Can be <code>true</code> or <code>false</code>.
+Matches active windows (same windows that have the active border / focus ring color).</p>
+<p>Every workspace on the focused monitor will have one active window.
+This means that you will usually have multiple active windows (one per workspace), and when you switch between workspaces, you can see two active windows at once.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="nl">window-rule</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="nl">    match</span><span class="w"> </span><span class="na">is-active=</span><span class="s">true</span>
+</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="o">}</span>
+</span></code></pre></div>
+<h4 id="is-focused"><code>is-focused</code><a class="headerlink" href="#is-focused" title="Permanent link">#</a></h4>
+<p>Can be <code>true</code> or <code>false</code>.
+Matches the window that has the keyboard focus.</p>
+<p>Contrary to <code>is-active</code>, there can only be a single focused window.
+Also, when opening a layer-shell application launcher or pop-up menu, the keyboard focus goes to layer-shell.
+While layer-shell has the keyboard focus, windows will not match this rule.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="nl">window-rule</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="nl">    match</span><span class="w"> </span><span class="na">is-focused=</span><span class="s">true</span>
+</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="o">}</span>
+</span></code></pre></div>
+<h4 id="is-active-in-column"><code>is-active-in-column</code><a class="headerlink" href="#is-active-in-column" title="Permanent link">#</a></h4>
+<p><span class="badge"><a href="https://github.com/niri-wm/niri/releases/tag/v0.1.6">Since: 0.1.6</a></span></p>
+<p>Can be <code>true</code> or <code>false</code>.
+Matches the window that is the "active" window in its column.</p>
+<p>Contrary to <code>is-active</code>, there is always one <code>is-active-in-column</code> window in each column.
+It is the window that was last focused in the column, i.e. the one that will gain focus if this column is focused.</p>
+<p><span class="badge"><a href="https://github.com/niri-wm/niri/releases/tag/v25.01">Since: 25.01</a></span> This rule will match <code>true</code> during the initial window opening.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="nl">window-rule</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="nl">    match</span><span class="w"> </span><span class="na">is-active-in-column=</span><span class="s">true</span>
+</span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="o">}</span>
+</span></code></pre></div>
+<h4 id="is-floating"><code>is-floating</code><a class="headerlink" href="#is-floating" title="Permanent link">#</a></h4>
+<p><span class="badge"><a href="https://github.com/niri-wm/niri/releases/tag/v25.01">Since: 25.01</a></span></p>
+<p>Can be <code>true</code> or <code>false</code>.
+Matches floating windows.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>This matcher will apply only after the window is already open.
+This means that you cannot use it to change the window opening properties like <code>default-window-height</code> or <code>open-on-workspace</code>.</p>
+</div>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="nl">window-rule</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="nl">    match</span><span class="w"> </span><span class="na">is-floating=</span><span class="s">true</span>
+</span><span id="__span-10-3"><a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="o">}</span>
+</span></code></pre></div>
+<h4 id="is-window-cast-target"><code>is-window-cast-target</code><a class="headerlink" href="#is-window-cast-target" title="Permanent link">#</a></h4>
+<p><span class="badge"><a href="https://github.com/niri-wm/niri/releases/tag/v25.02">Since: 25.02</a></span></p>
+<p>Can be <code>true</code> or <code>false</code>.
+Matches <code>true</code> for windows that are target of an ongoing window screencast.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>This only matches individual-window screencasts.
+It will not match windows that happen to be visible in a monitor screencast, for example.</p>
+</div>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="c1">// Indicate screencasted windows with red colors.</span>
+</span><span id="__span-11-2"><a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="nl">window-rule</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-11-3"><a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="nl">    match</span><span class="w"> </span><span class="na">is-window-cast-target=</span><span class="s">true</span>
+</span><span id="__span-11-4"><a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a>
+</span><span id="__span-11-5"><a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a><span class="nl">    focus-ring</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-11-6"><a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a><span class="nl">        active-color</span><span class="w"> </span><span class="s">&quot;#f38ba8&quot;</span>
+</span><span id="__span-11-7"><a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a><span class="nl">        inactive-color</span><span class="w"> </span><span class="s">&quot;#7d0d2d&quot;</span>
+</span><span id="__span-11-8"><a id="__codelineno-11-8" name="__codelineno-11-8" href="#__codelineno-11-8"></a><span class="w">    </span><span class="o">}</span>
+</span><span id="__span-11-9"><a id="__codelineno-11-9" name="__codelineno-11-9" href="#__codelineno-11-9"></a>
+</span><span id="__span-11-10"><a id="__codelineno-11-10" name="__codelineno-11-10" href="#__codelineno-11-10"></a><span class="nl">    border</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-11-11"><a id="__codelineno-11-11" name="__codelineno-11-11" href="#__codelineno-11-11"></a><span class="nl">        inactive-color</span><span class="w"> </span><span class="s">&quot;#7d0d2d&quot;</span>
+</span><span id="__span-11-12"><a id="__codelineno-11-12" name="__codelineno-11-12" href="#__codelineno-11-12"></a><span class="w">    </span><span class="o">}</span>
+</span><span id="__span-11-13"><a id="__codelineno-11-13" name="__codelineno-11-13" href="#__codelineno-11-13"></a>
+</span><span id="__span-11-14"><a id="__codelineno-11-14" name="__codelineno-11-14" href="#__codelineno-11-14"></a><span class="nl">    shadow</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-11-15"><a id="__codelineno-11-15" name="__codelineno-11-15" href="#__codelineno-11-15"></a><span class="nl">        color</span><span class="w"> </span><span class="s">&quot;#7d0d2d70&quot;</span>
+</span><span id="__span-11-16"><a id="__codelineno-11-16" name="__codelineno-11-16" href="#__codelineno-11-16"></a><span class="w">    </span><span class="o">}</span>
+</span><span id="__span-11-17"><a id="__codelineno-11-17" name="__codelineno-11-17" href="#__codelineno-11-17"></a>
+</span><span id="__span-11-18"><a id="__codelineno-11-18" name="__codelineno-11-18" href="#__codelineno-11-18"></a><span class="nl">    tab-indicator</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-11-19"><a id="__codelineno-11-19" name="__codelineno-11-19" href="#__codelineno-11-19"></a><span class="nl">        active-color</span><span class="w"> </span><span class="s">&quot;#f38ba8&quot;</span>
+</span><span id="__span-11-20"><a id="__codelineno-11-20" name="__codelineno-11-20" href="#__codelineno-11-20"></a><span class="nl">        inactive-color</span><span class="w"> </span><span class="s">&quot;#7d0d2d&quot;</span>
+</span><span id="__span-11-21"><a id="__codelineno-11-21" name="__codelineno-11-21" href="#__codelineno-11-21"></a><span class="w">    </span><span class="o">}</span>
+</span><span id="__span-11-22"><a id="__codelineno-11-22" name="__codelineno-11-22" href="#__codelineno-11-22"></a><span class="o">}</span>
+</span></code></pre></div>
+<p>Example:</p>
+<p><img alt="A screenshot showing that only the is-window-cast-target=true windows receive the special border colors" src="https://github.com/user-attachments/assets/375b381e-3a87-4e94-8676-44404971d893" /></p>
+<h4 id="is-urgent"><code>is-urgent</code><a class="headerlink" href="#is-urgent" title="Permanent link">#</a></h4>
+<p><span class="badge"><a href="https://github.com/niri-wm/niri/releases/tag/v25.05">Since: 25.05</a></span></p>
+<p>Can be <code>true</code> or <code>false</code>.
+Matches windows that request the user's attention.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="nl">window-rule</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-12-2"><a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="nl">    match</span><span class="w"> </span><span class="na">is-urgent=</span><span class="s">true</span>
+</span><span id="__span-12-3"><a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a><span class="o">}</span>
+</span></code></pre></div>
+<h4 id="at-startup"><code>at-startup</code><a class="headerlink" href="#at-startup" title="Permanent link">#</a></h4>
+<p><span class="badge"><a href="https://github.com/niri-wm/niri/releases/tag/v0.1.6">Since: 0.1.6</a></span></p>
+<p>Can be <code>true</code> or <code>false</code>.
+Matches during the first 60 seconds after starting niri.</p>
+<p>This is useful for properties like <code>open-on-output</code> which you may want to apply only right after starting niri.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="c1">// Open windows on the HDMI-A-1 monitor at niri startup, but not afterwards.</span>
+</span><span id="__span-13-2"><a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a><span class="nl">window-rule</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-13-3"><a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a><span class="nl">    match</span><span class="w"> </span><span class="na">at-startup=</span><span class="s">true</span>
+</span><span id="__span-13-4"><a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a><span class="nl">    open-on-output</span><span class="w"> </span><span class="s">&quot;HDMI-A-1&quot;</span>
+</span><span id="__span-13-5"><a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a><span class="o">}</span>
+</span></code></pre></div>
+<h3 id="window-opening-properties">Window Opening Properties<a class="headerlink" href="#window-opening-properties" title="Permanent link">#</a></h3>
+<p>These properties apply once, when a window first opens.</p>
+<p>To be precise, they apply at the point when niri sends the initial configure request to the window.</p>
+<h4 id="default-column-width"><code>default-column-width</code><a class="headerlink" href="#default-column-width" title="Permanent link">#</a></h4>
+<p>Set the default width for the new window.</p>
+<p>This works for floating windows too, despite the word "column" in the name.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-14-1"><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="c1">// Give Blender and GIMP some guaranteed width on opening.</span>
+</span><span id="__span-14-2"><a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a><span class="nl">window-rule</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-14-3"><a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a><span class="nl">    match</span><span class="w"> </span><span class="na">app-id=</span><span class="s">&quot;^blender$&quot;</span>
+</span><span id="__span-14-4"><a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a>
+</span><span id="__span-14-5"><a id="__codelineno-14-5" name="__codelineno-14-5" href="#__codelineno-14-5"></a><span class="w">    </span><span class="c1">// GIMP app ID contains the version like &quot;gimp-2.99&quot;,</span>
+</span><span id="__span-14-6"><a id="__codelineno-14-6" name="__codelineno-14-6" href="#__codelineno-14-6"></a><span class="w">    </span><span class="c1">// so we only match the beginning (with ^) and not the end.</span>
+</span><span id="__span-14-7"><a id="__codelineno-14-7" name="__codelineno-14-7" href="#__codelineno-14-7"></a><span class="nl">    match</span><span class="w"> </span><span class="na">app-id=</span><span class="s">&quot;^gimp&quot;</span>
+</span><span id="__span-14-8"><a id="__codelineno-14-8" name="__codelineno-14-8" href="#__codelineno-14-8"></a>
+</span><span id="__span-14-9"><a id="__codelineno-14-9" name="__codelineno-14-9" href="#__codelineno-14-9"></a><span class="nl">    default-column-width</span><span class="w"> </span><span class="o">{</span><span class="nl"> fixed</span><span class="w"> </span><span class="m m-Decimal">1200</span><span class="o">;</span><span class="w"> </span><span class="o">}</span>
+</span><span id="__span-14-10"><a id="__codelineno-14-10" name="__codelineno-14-10" href="#__codelineno-14-10"></a><span class="o">}</span>
+</span></code></pre></div>
+<h4 id="default-window-height"><code>default-window-height</code><a class="headerlink" href="#default-window-height" title="Permanent link">#</a></h4>
+<p><span class="badge"><a href="https://github.com/niri-wm/niri/releases/tag/v25.01">Since: 25.01</a></span></p>
+<p>Set the default height for the new window.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-15-1"><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="c1">// Open the Firefox picture-in-picture window as floating with 480×270 size.</span>
+</span><span id="__span-15-2"><a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a><span class="nl">window-rule</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-15-3"><a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a><span class="nl">    match</span><span class="w"> </span><span class="na">app-id=</span><span class="s">&quot;firefox$&quot;</span><span class="w"> </span><span class="na">title=</span><span class="s">&quot;^Picture-in-Picture$&quot;</span>
+</span><span id="__span-15-4"><a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a>
+</span><span id="__span-15-5"><a id="__codelineno-15-5" name="__codelineno-15-5" href="#__codelineno-15-5"></a><span class="nl">    open-floating</span><span class="w"> </span><span class="s">true</span>
+</span><span id="__span-15-6"><a id="__codelineno-15-6" name="__codelineno-15-6" href="#__codelineno-15-6"></a><span class="nl">    default-column-width</span><span class="w"> </span><span class="o">{</span><span class="nl"> fixed</span><span class="w"> </span><span class="m m-Decimal">480</span><span class="o">;</span><span class="w"> </span><span class="o">}</span>
+</span><span id="__span-15-7"><a id="__codelineno-15-7" name="__codelineno-15-7" href="#__codelineno-15-7"></a><span class="nl">    default-window-height</span><span class="w"> </span><span class="o">{</span><span class="nl"> fixed</span><span class="w"> </span><span class="m m-Decimal">270</span><span class="o">;</span><span class="w"> </span><span class="o">}</span>
+</span><span id="__span-15-8"><a id="__codelineno-15-8" name="__codelineno-15-8" href="#__codelineno-15-8"></a><span class="o">}</span>
+</span></code></pre></div>
+<h4 id="open-on-output"><code>open-on-output</code><a class="headerlink" href="#open-on-output" title="Permanent link">#</a></h4>
+<p>Make the window open on a specific output.</p>
+<p>If such an output does not exist, the window will open on the currently focused output as usual.</p>
+<p>If the window opens on an output that is not currently focused, the window will not be automatically focused.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-16-1"><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="c1">// Open Firefox and Telegram (but not its Media Viewer)</span>
+</span><span id="__span-16-2"><a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a><span class="c1">// on a specific monitor.</span>
+</span><span id="__span-16-3"><a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a><span class="nl">window-rule</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-16-4"><a id="__codelineno-16-4" name="__codelineno-16-4" href="#__codelineno-16-4"></a><span class="nl">    match</span><span class="w"> </span><span class="na">app-id=</span><span class="s">&quot;firefox$&quot;</span>
+</span><span id="__span-16-5"><a id="__codelineno-16-5" name="__codelineno-16-5" href="#__codelineno-16-5"></a><span class="nl">    match</span><span class="w"> </span><span class="na">app-id=</span><span class="s">r#&quot;^org\.telegram\.desktop$&quot;#</span>
+</span><span id="__span-16-6"><a id="__codelineno-16-6" name="__codelineno-16-6" href="#__codelineno-16-6"></a><span class="nl">    exclude</span><span class="w"> </span><span class="na">app-id=</span><span class="s">r#&quot;^org\.telegram\.desktop$&quot;#</span><span class="w"> </span><span class="na">title=</span><span class="s">&quot;^Media viewer$&quot;</span>
+</span><span id="__span-16-7"><a id="__codelineno-16-7" name="__codelineno-16-7" href="#__codelineno-16-7"></a>
+</span><span id="__span-16-8"><a id="__codelineno-16-8" name="__codelineno-16-8" href="#__codelineno-16-8"></a><span class="nl">    open-on-output</span><span class="w"> </span><span class="s">&quot;HDMI-A-1&quot;</span>
+</span><span id="__span-16-9"><a id="__codelineno-16-9" name="__codelineno-16-9" href="#__codelineno-16-9"></a><span class="w">    </span><span class="c1">// Or:</span>
+</span><span id="__span-16-10"><a id="__codelineno-16-10" name="__codelineno-16-10" href="#__codelineno-16-10"></a><span class="w">    </span><span class="c1">// open-on-output &quot;Some Company CoolMonitor 1234&quot;</span>
+</span><span id="__span-16-11"><a id="__codelineno-16-11" name="__codelineno-16-11" href="#__codelineno-16-11"></a><span class="o">}</span>
+</span></code></pre></div>
+<p><span class="badge"><a href="https://github.com/niri-wm/niri/releases/tag/v0.1.9">Since: 0.1.9</a></span> <code>open-on-output</code> can now use monitor manufacturer, model, and serial.
+Before, it could only use the connector name.</p>
+<h4 id="open-on-workspace"><code>open-on-workspace</code><a class="headerlink" href="#open-on-workspace" title="Permanent link">#</a></h4>
+<p><span class="badge"><a href="https://github.com/niri-wm/niri/releases/tag/v0.1.6">Since: 0.1.6</a></span></p>
+<p>Make the window open on a specific <a href="Configuration%3A-Named-Workspaces.html">named workspace</a>.</p>
+<p>If such a workspace does not exist, the window will open on the currently focused workspace as usual.</p>
+<p>If the window opens on an output that is not currently focused, the window will not be automatically focused.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-17-1"><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a><span class="c1">// Open Fractal on the &quot;chat&quot; workspace.</span>
+</span><span id="__span-17-2"><a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a><span class="nl">window-rule</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-17-3"><a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a><span class="nl">    match</span><span class="w"> </span><span class="na">app-id=</span><span class="s">r#&quot;^org\.gnome\.Fractal$&quot;#</span>
+</span><span id="__span-17-4"><a id="__codelineno-17-4" name="__codelineno-17-4" href="#__codelineno-17-4"></a>
+</span><span id="__span-17-5"><a id="__codelineno-17-5" name="__codelineno-17-5" href="#__codelineno-17-5"></a><span class="nl">    open-on-workspace</span><span class="w"> </span><span class="s">&quot;chat&quot;</span>
+</span><span id="__span-17-6"><a id="__codelineno-17-6" name="__codelineno-17-6" href="#__codelineno-17-6"></a><span class="o">}</span>
+</span></code></pre></div>
+<h4 id="open-maximized"><code>open-maximized</code><a class="headerlink" href="#open-maximized" title="Permanent link">#</a></h4>
+<p>Make the window open as a maximized column.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-18-1"><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a><span class="c1">// Maximize Firefox by default.</span>
+</span><span id="__span-18-2"><a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a><span class="nl">window-rule</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-18-3"><a id="__codelineno-18-3" name="__codelineno-18-3" href="#__codelineno-18-3"></a><span class="nl">    match</span><span class="w"> </span><span class="na">app-id=</span><span class="s">&quot;firefox$&quot;</span>
+</span><span id="__span-18-4"><a id="__codelineno-18-4" name="__codelineno-18-4" href="#__codelineno-18-4"></a>
+</span><span id="__span-18-5"><a id="__codelineno-18-5" name="__codelineno-18-5" href="#__codelineno-18-5"></a><span class="nl">    open-maximized</span><span class="w"> </span><span class="s">true</span>
+</span><span id="__span-18-6"><a id="__codelineno-18-6" name="__codelineno-18-6" href="#__codelineno-18-6"></a><span class="o">}</span>
+</span></code></pre></div>
+<h4 id="open-maximized-to-edges"><code>open-maximized-to-edges</code><a class="headerlink" href="#open-maximized-to-edges" title="Permanent link">#</a></h4>
+<p><span class="badge"><a href="https://github.com/niri-wm/niri/releases/tag/v25.11">Since: 25.11</a></span></p>
+<p>Make the window open <a href="Fullscreen-and-Maximize.html">maximized to edges</a>.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-19-1"><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a><span class="nl">window-rule</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-19-2"><a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a><span class="nl">    open-maximized-to-edges</span><span class="w"> </span><span class="s">true</span>
+</span><span id="__span-19-3"><a id="__codelineno-19-3" name="__codelineno-19-3" href="#__codelineno-19-3"></a><span class="o">}</span>
+</span></code></pre></div>
+<p>You can also set this to <code>false</code> to <em>prevent</em> a window from opening maximized to edges.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-20-1"><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a><span class="nl">window-rule</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-20-2"><a id="__codelineno-20-2" name="__codelineno-20-2" href="#__codelineno-20-2"></a><span class="nl">    open-maximized-to-edges</span><span class="w"> </span><span class="s">false</span>
+</span><span id="__span-20-3"><a id="__codelineno-20-3" name="__codelineno-20-3" href="#__codelineno-20-3"></a><span class="o">}</span>
+</span></code></pre></div>
+<h4 id="open-fullscreen"><code>open-fullscreen</code><a class="headerlink" href="#open-fullscreen" title="Permanent link">#</a></h4>
+<p>Make the window open <a href="Fullscreen-and-Maximize.html">fullscreen</a>.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-21-1"><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a><span class="nl">window-rule</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-21-2"><a id="__codelineno-21-2" name="__codelineno-21-2" href="#__codelineno-21-2"></a><span class="nl">    open-fullscreen</span><span class="w"> </span><span class="s">true</span>
+</span><span id="__span-21-3"><a id="__codelineno-21-3" name="__codelineno-21-3" href="#__codelineno-21-3"></a><span class="o">}</span>
+</span></code></pre></div>
+<p>You can also set this to <code>false</code> to <em>prevent</em> a window from opening fullscreen.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-22-1"><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a><span class="c1">// Make the Telegram media viewer open in windowed mode.</span>
+</span><span id="__span-22-2"><a id="__codelineno-22-2" name="__codelineno-22-2" href="#__codelineno-22-2"></a><span class="nl">window-rule</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-22-3"><a id="__codelineno-22-3" name="__codelineno-22-3" href="#__codelineno-22-3"></a><span class="nl">    match</span><span class="w"> </span><span class="na">app-id=</span><span class="s">r#&quot;^org\.telegram\.desktop$&quot;#</span><span class="w"> </span><span class="na">title=</span><span class="s">&quot;^Media viewer$&quot;</span>
+</span><span id="__span-22-4"><a id="__codelineno-22-4" name="__codelineno-22-4" href="#__codelineno-22-4"></a>
+</span><span id="__span-22-5"><a id="__codelineno-22-5" name="__codelineno-22-5" href="#__codelineno-22-5"></a><span class="nl">    open-fullscreen</span><span class="w"> </span><span class="s">false</span>
+</span><span id="__span-22-6"><a id="__codelineno-22-6" name="__codelineno-22-6" href="#__codelineno-22-6"></a><span class="o">}</span>
+</span></code></pre></div>
+<h4 id="open-floating"><code>open-floating</code><a class="headerlink" href="#open-floating" title="Permanent link">#</a></h4>
+<p><span class="badge"><a href="https://github.com/niri-wm/niri/releases/tag/v25.01">Since: 25.01</a></span></p>
+<p>Make the window open in the floating layout.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-23-1"><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a><span class="c1">// Open the Firefox picture-in-picture window as floating.</span>
+</span><span id="__span-23-2"><a id="__codelineno-23-2" name="__codelineno-23-2" href="#__codelineno-23-2"></a><span class="nl">window-rule</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-23-3"><a id="__codelineno-23-3" name="__codelineno-23-3" href="#__codelineno-23-3"></a><span class="nl">    match</span><span class="w"> </span><span class="na">app-id=</span><span class="s">&quot;firefox$&quot;</span><span class="w"> </span><span class="na">title=</span><span class="s">&quot;^Picture-in-Picture$&quot;</span>
+</span><span id="__span-23-4"><a id="__codelineno-23-4" name="__codelineno-23-4" href="#__codelineno-23-4"></a>
+</span><span id="__span-23-5"><a id="__codelineno-23-5" name="__codelineno-23-5" href="#__codelineno-23-5"></a><span class="nl">    open-floating</span><span class="w"> </span><span class="s">true</span>
+</span><span id="__span-23-6"><a id="__codelineno-23-6" name="__codelineno-23-6" href="#__codelineno-23-6"></a><span class="o">}</span>
+</span></code></pre></div>
+<p>You can also set this to <code>false</code> to <em>prevent</em> a window from opening in the floating layout.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-24-1"><a id="__codelineno-24-1" name="__codelineno-24-1" href="#__codelineno-24-1"></a><span class="c1">// Open all windows in the tiling layout, overriding any auto-floating logic.</span>
+</span><span id="__span-24-2"><a id="__codelineno-24-2" name="__codelineno-24-2" href="#__codelineno-24-2"></a><span class="nl">window-rule</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-24-3"><a id="__codelineno-24-3" name="__codelineno-24-3" href="#__codelineno-24-3"></a><span class="nl">    open-floating</span><span class="w"> </span><span class="s">false</span>
+</span><span id="__span-24-4"><a id="__codelineno-24-4" name="__codelineno-24-4" href="#__codelineno-24-4"></a><span class="o">}</span>
+</span></code></pre></div>
+<h4 id="open-focused"><code>open-focused</code><a class="headerlink" href="#open-focused" title="Permanent link">#</a></h4>
+<p><span class="badge"><a href="https://github.com/niri-wm/niri/releases/tag/v25.01">Since: 25.01</a></span></p>
+<p>Set this to <code>false</code> to prevent this window from being automatically focused upon opening.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-25-1"><a id="__codelineno-25-1" name="__codelineno-25-1" href="#__codelineno-25-1"></a><span class="c1">// Don&#39;t give focus to the GIMP startup splash screen.</span>
+</span><span id="__span-25-2"><a id="__codelineno-25-2" name="__codelineno-25-2" href="#__codelineno-25-2"></a><span class="nl">window-rule</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-25-3"><a id="__codelineno-25-3" name="__codelineno-25-3" href="#__codelineno-25-3"></a><span class="nl">    match</span><span class="w"> </span><span class="na">app-id=</span><span class="s">&quot;^gimp&quot;</span><span class="w"> </span><span class="na">title=</span><span class="s">&quot;^GIMP Startup$&quot;</span>
+</span><span id="__span-25-4"><a id="__codelineno-25-4" name="__codelineno-25-4" href="#__codelineno-25-4"></a>
+</span><span id="__span-25-5"><a id="__codelineno-25-5" name="__codelineno-25-5" href="#__codelineno-25-5"></a><span class="nl">    open-focused</span><span class="w"> </span><span class="s">false</span>
+</span><span id="__span-25-6"><a id="__codelineno-25-6" name="__codelineno-25-6" href="#__codelineno-25-6"></a><span class="o">}</span>
+</span></code></pre></div>
+<p>You can also set this to <code>true</code> to focus the window, even if normally it wouldn't get auto-focused.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-26-1"><a id="__codelineno-26-1" name="__codelineno-26-1" href="#__codelineno-26-1"></a><span class="c1">// Always focus the KeePassXC-Browser unlock dialog.</span>
+</span><span id="__span-26-2"><a id="__codelineno-26-2" name="__codelineno-26-2" href="#__codelineno-26-2"></a><span class="c1">//</span>
+</span><span id="__span-26-3"><a id="__codelineno-26-3" name="__codelineno-26-3" href="#__codelineno-26-3"></a><span class="c1">// This dialog opens parented to the KeePassXC window rather than the browser,</span>
+</span><span id="__span-26-4"><a id="__codelineno-26-4" name="__codelineno-26-4" href="#__codelineno-26-4"></a><span class="c1">// so it doesn&#39;t get auto-focused by default.</span>
+</span><span id="__span-26-5"><a id="__codelineno-26-5" name="__codelineno-26-5" href="#__codelineno-26-5"></a><span class="nl">window-rule</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-26-6"><a id="__codelineno-26-6" name="__codelineno-26-6" href="#__codelineno-26-6"></a><span class="nl">    match</span><span class="w"> </span><span class="na">app-id=</span><span class="s">r#&quot;^org\.keepassxc\.KeePassXC$&quot;#</span><span class="w"> </span><span class="na">title=</span><span class="s">&quot;^Unlock Database - KeePassXC$&quot;</span>
+</span><span id="__span-26-7"><a id="__codelineno-26-7" name="__codelineno-26-7" href="#__codelineno-26-7"></a>
+</span><span id="__span-26-8"><a id="__codelineno-26-8" name="__codelineno-26-8" href="#__codelineno-26-8"></a><span class="nl">    open-focused</span><span class="w"> </span><span class="s">true</span>
+</span><span id="__span-26-9"><a id="__codelineno-26-9" name="__codelineno-26-9" href="#__codelineno-26-9"></a><span class="o">}</span>
+</span></code></pre></div>
+<h3 id="dynamic-properties">Dynamic Properties<a class="headerlink" href="#dynamic-properties" title="Permanent link">#</a></h3>
+<p>These properties apply continuously to open windows.</p>
+<h4 id="block-out-from"><code>block-out-from</code><a class="headerlink" href="#block-out-from" title="Permanent link">#</a></h4>
+<p>You can block out windows from xdg-desktop-portal screencasts.
+They will be replaced with solid black rectangles.</p>
+<p>This can be useful for password managers or messenger windows, etc.
+For layer-shell notification pop-ups and the like, you can use a <a href="Configuration%3A-Layer-Rules.html#block-out-from"><code>block-out-from</code> layer rule</a>.</p>
+<p><img alt="Screenshot showing a window visible normally, but blocked out on OBS." src="img/block-out-from-screencast.png" /></p>
+<p>To preview and set up this rule, check the <code>preview-render</code> option in the debug section of the config.</p>
+<div class="admonition danger">
+<p class="admonition-title">Caution</p>
+<p>The window is <strong>not</strong> blocked out from third-party screenshot tools.
+If you open some screenshot tool with preview while screencasting, blocked out windows <strong>will be visible</strong> on the screencast.</p>
+</div>
+<p>The built-in screenshot UI is not affected by this problem though.
+If you open the screenshot UI while screencasting, you will be able to select the area to screenshot while seeing all windows normally, but on a screencast the selection UI will display with windows blocked out.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-27-1"><a id="__codelineno-27-1" name="__codelineno-27-1" href="#__codelineno-27-1"></a><span class="c1">// Block out password managers from screencasts.</span>
+</span><span id="__span-27-2"><a id="__codelineno-27-2" name="__codelineno-27-2" href="#__codelineno-27-2"></a><span class="nl">window-rule</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-27-3"><a id="__codelineno-27-3" name="__codelineno-27-3" href="#__codelineno-27-3"></a><span class="nl">    match</span><span class="w"> </span><span class="na">app-id=</span><span class="s">r#&quot;^org\.keepassxc\.KeePassXC$&quot;#</span>
+</span><span id="__span-27-4"><a id="__codelineno-27-4" name="__codelineno-27-4" href="#__codelineno-27-4"></a><span class="nl">    match</span><span class="w"> </span><span class="na">app-id=</span><span class="s">r#&quot;^org\.gnome\.World\.Secrets$&quot;#</span>
+</span><span id="__span-27-5"><a id="__codelineno-27-5" name="__codelineno-27-5" href="#__codelineno-27-5"></a>
+</span><span id="__span-27-6"><a id="__codelineno-27-6" name="__codelineno-27-6" href="#__codelineno-27-6"></a><span class="nl">    block-out-from</span><span class="w"> </span><span class="s">&quot;screencast&quot;</span>
+</span><span id="__span-27-7"><a id="__codelineno-27-7" name="__codelineno-27-7" href="#__codelineno-27-7"></a><span class="o">}</span>
+</span></code></pre></div>
+<p>Alternatively, you can block out the window out of <em>all</em> screen captures, including third-party screenshot tools.
+This way you avoid accidentally showing the window on a screencast when opening a third-party screenshot preview.</p>
+<p>This setting will still let you use the interactive built-in screenshot UI, but it will block out the window from the fully automatic screenshot actions, such as <code>screenshot-screen</code> and <code>screenshot-window</code>.
+The reasoning is that with an interactive selection, you can make sure that you avoid screenshotting sensitive content.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-28-1"><a id="__codelineno-28-1" name="__codelineno-28-1" href="#__codelineno-28-1"></a><span class="nl">window-rule</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-28-2"><a id="__codelineno-28-2" name="__codelineno-28-2" href="#__codelineno-28-2"></a><span class="nl">    block-out-from</span><span class="w"> </span><span class="s">&quot;screen-capture&quot;</span>
+</span><span id="__span-28-3"><a id="__codelineno-28-3" name="__codelineno-28-3" href="#__codelineno-28-3"></a><span class="o">}</span>
+</span></code></pre></div>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>Be careful when blocking out windows based on a dynamically changing window title.</p>
+<p>For example, you might try to block out specific Firefox tabs like this:</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-29-1"><a id="__codelineno-29-1" name="__codelineno-29-1" href="#__codelineno-29-1"></a><span class="nl">window-rule</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-29-2"><a id="__codelineno-29-2" name="__codelineno-29-2" href="#__codelineno-29-2"></a><span class="w">    </span><span class="c1">// Doesn&#39;t quite work! Try to block out the Gmail tab.</span>
+</span><span id="__span-29-3"><a id="__codelineno-29-3" name="__codelineno-29-3" href="#__codelineno-29-3"></a><span class="nl">    match</span><span class="w"> </span><span class="na">app-id=</span><span class="s">&quot;firefox$&quot;</span><span class="w"> </span><span class="na">title=</span><span class="s">&quot;- Gmail &quot;</span>
+</span><span id="__span-29-4"><a id="__codelineno-29-4" name="__codelineno-29-4" href="#__codelineno-29-4"></a>
+</span><span id="__span-29-5"><a id="__codelineno-29-5" name="__codelineno-29-5" href="#__codelineno-29-5"></a><span class="nl">    block-out-from</span><span class="w"> </span><span class="s">&quot;screencast&quot;</span>
+</span><span id="__span-29-6"><a id="__codelineno-29-6" name="__codelineno-29-6" href="#__codelineno-29-6"></a><span class="o">}</span>
+</span></code></pre></div>
+<p>It will work, but when switching from a sensitive tab to a regular tab, the contents of the sensitive tab <strong>will show up on a screencast</strong> for an instant.</p>
+<p>This is because window title (and app ID) are not double-buffered in the Wayland protocol, so they are not tied to specific window contents.
+There's no robust way for Firefox to synchronize visibly showing a different tab and changing the window title.</p>
+</div>
+<h4 id="opacity"><code>opacity</code><a class="headerlink" href="#opacity" title="Permanent link">#</a></h4>
+<p>Set the opacity of the window.
+<code>0.0</code> is fully transparent, <code>1.0</code> is fully opaque.
+This is applied on top of the window's own opacity, so semitransparent windows will become even more transparent.</p>
+<p>Opacity is applied to every surface of the window individually, so subsurfaces and pop-up menus will show window content behind them.</p>
+<p><img alt="Screenshot showing Adwaita Demo with a semitransparent pop-up menu." src="img/opacity-popup.png" /></p>
+<p>Also, focus ring and border with background will show through semitransparent windows (see <code>prefer-no-csd</code> and the <code>draw-border-with-background</code> window rule below).</p>
+<p>Opacity can be toggled on or off for a window using the <a href="Configuration%3A-Key-Bindings.html#toggle-window-rule-opacity"><code>toggle-window-rule-opacity</code></a> action.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-30-1"><a id="__codelineno-30-1" name="__codelineno-30-1" href="#__codelineno-30-1"></a><span class="c1">// Make inactive windows semitransparent.</span>
+</span><span id="__span-30-2"><a id="__codelineno-30-2" name="__codelineno-30-2" href="#__codelineno-30-2"></a><span class="nl">window-rule</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-30-3"><a id="__codelineno-30-3" name="__codelineno-30-3" href="#__codelineno-30-3"></a><span class="nl">    match</span><span class="w"> </span><span class="na">is-active=</span><span class="s">false</span>
+</span><span id="__span-30-4"><a id="__codelineno-30-4" name="__codelineno-30-4" href="#__codelineno-30-4"></a>
+</span><span id="__span-30-5"><a id="__codelineno-30-5" name="__codelineno-30-5" href="#__codelineno-30-5"></a><span class="nl">    opacity</span><span class="w"> </span><span class="mf">0.95</span>
+</span><span id="__span-30-6"><a id="__codelineno-30-6" name="__codelineno-30-6" href="#__codelineno-30-6"></a><span class="o">}</span>
+</span></code></pre></div>
+<h4 id="variable-refresh-rate"><code>variable-refresh-rate</code><a class="headerlink" href="#variable-refresh-rate" title="Permanent link">#</a></h4>
+<p><span class="badge"><a href="https://github.com/niri-wm/niri/releases/tag/v0.1.9">Since: 0.1.9</a></span></p>
+<p>If set to true, whenever this window displays on an output with on-demand VRR, it will enable VRR on that output.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-31-1"><a id="__codelineno-31-1" name="__codelineno-31-1" href="#__codelineno-31-1"></a><span class="c1">// Configure some output with on-demand VRR.</span>
+</span><span id="__span-31-2"><a id="__codelineno-31-2" name="__codelineno-31-2" href="#__codelineno-31-2"></a><span class="nl">output</span><span class="w"> </span><span class="s">&quot;HDMI-A-1&quot;</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-31-3"><a id="__codelineno-31-3" name="__codelineno-31-3" href="#__codelineno-31-3"></a><span class="nl">    variable-refresh-rate</span><span class="w"> </span><span class="na">on-demand=</span><span class="s">true</span>
+</span><span id="__span-31-4"><a id="__codelineno-31-4" name="__codelineno-31-4" href="#__codelineno-31-4"></a><span class="o">}</span>
+</span><span id="__span-31-5"><a id="__codelineno-31-5" name="__codelineno-31-5" href="#__codelineno-31-5"></a>
+</span><span id="__span-31-6"><a id="__codelineno-31-6" name="__codelineno-31-6" href="#__codelineno-31-6"></a><span class="c1">// Enable on-demand VRR when mpv displays on the output.</span>
+</span><span id="__span-31-7"><a id="__codelineno-31-7" name="__codelineno-31-7" href="#__codelineno-31-7"></a><span class="nl">window-rule</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-31-8"><a id="__codelineno-31-8" name="__codelineno-31-8" href="#__codelineno-31-8"></a><span class="nl">    match</span><span class="w"> </span><span class="na">app-id=</span><span class="s">&quot;^mpv$&quot;</span>
+</span><span id="__span-31-9"><a id="__codelineno-31-9" name="__codelineno-31-9" href="#__codelineno-31-9"></a>
+</span><span id="__span-31-10"><a id="__codelineno-31-10" name="__codelineno-31-10" href="#__codelineno-31-10"></a><span class="nl">    variable-refresh-rate</span><span class="w"> </span><span class="s">true</span>
+</span><span id="__span-31-11"><a id="__codelineno-31-11" name="__codelineno-31-11" href="#__codelineno-31-11"></a><span class="o">}</span>
+</span></code></pre></div>
+<h4 id="default-column-display"><code>default-column-display</code><a class="headerlink" href="#default-column-display" title="Permanent link">#</a></h4>
+<p><span class="badge"><a href="https://github.com/niri-wm/niri/releases/tag/v25.02">Since: 25.02</a></span></p>
+<p>Set the default display mode for columns created from this window.
+Can be <code>normal</code> or <code>tabbed</code>.</p>
+<p>This is used any time a window goes into its own column.
+For example:
+- Opening a new window.
+- Expelling a window into its own column.
+- Moving a window from the floating layout to the tiling layout.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-32-1"><a id="__codelineno-32-1" name="__codelineno-32-1" href="#__codelineno-32-1"></a><span class="c1">// Make Evince windows open as tabbed columns.</span>
+</span><span id="__span-32-2"><a id="__codelineno-32-2" name="__codelineno-32-2" href="#__codelineno-32-2"></a><span class="nl">window-rule</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-32-3"><a id="__codelineno-32-3" name="__codelineno-32-3" href="#__codelineno-32-3"></a><span class="nl">    match</span><span class="w"> </span><span class="na">app-id=</span><span class="s">&quot;^evince$&quot;</span>
+</span><span id="__span-32-4"><a id="__codelineno-32-4" name="__codelineno-32-4" href="#__codelineno-32-4"></a>
+</span><span id="__span-32-5"><a id="__codelineno-32-5" name="__codelineno-32-5" href="#__codelineno-32-5"></a><span class="nl">    default-column-display</span><span class="w"> </span><span class="s">&quot;tabbed&quot;</span>
+</span><span id="__span-32-6"><a id="__codelineno-32-6" name="__codelineno-32-6" href="#__codelineno-32-6"></a><span class="o">}</span>
+</span></code></pre></div>
+<h4 id="default-floating-position"><code>default-floating-position</code><a class="headerlink" href="#default-floating-position" title="Permanent link">#</a></h4>
+<p><span class="badge"><a href="https://github.com/niri-wm/niri/releases/tag/v25.01">Since: 25.01</a></span></p>
+<p>Set the initial position for this window when it opens on, or moves to the floating layout.</p>
+<p>Afterward, the window will remember its last floating position.</p>
+<p>By default, new floating windows open at the center of the screen, and windows from the tiling layout open close to their visual screen position.</p>
+<p>The position uses logical coordinates relative to the working area.
+By default, they are relative to the top-left corner of the working area, but you can change this by setting <code>relative-to</code> to one of these values: <code>top-left</code>, <code>top-right</code>, <code>bottom-left</code>, <code>bottom-right</code>, <code>top</code>, <code>bottom</code>, <code>left</code>, or <code>right</code>.</p>
+<p>For example, if you have a bar at the top, then <code>x=0 y=0</code> will put the top-left corner of the window directly below the bar.
+If instead you write <code>x=0 y=0 relative-to="top-right"</code>, then the top-right corner of the window will align with the top-right corner of the workspace, also directly below the bar.
+When only one side is specified (e.g. top) the window will align to the center of that side.</p>
+<p>The coordinates change direction based on <code>relative-to</code>.
+For example, by default (top-left), <code>x=100 y=200</code> will put the window 100 pixels to the right and 200 pixels down from the top-left corner.
+If you use <code>x=100 y=200 relative-to="bottom-left"</code>, it will put the window 100 pixels to the right and 200 pixels <em>up</em> from the bottom-left corner.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-33-1"><a id="__codelineno-33-1" name="__codelineno-33-1" href="#__codelineno-33-1"></a><span class="c1">// Open the Firefox picture-in-picture window at the bottom-left corner of the screen</span>
+</span><span id="__span-33-2"><a id="__codelineno-33-2" name="__codelineno-33-2" href="#__codelineno-33-2"></a><span class="c1">// with a small gap.</span>
+</span><span id="__span-33-3"><a id="__codelineno-33-3" name="__codelineno-33-3" href="#__codelineno-33-3"></a><span class="nl">window-rule</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-33-4"><a id="__codelineno-33-4" name="__codelineno-33-4" href="#__codelineno-33-4"></a><span class="nl">    match</span><span class="w"> </span><span class="na">app-id=</span><span class="s">&quot;firefox$&quot;</span><span class="w"> </span><span class="na">title=</span><span class="s">&quot;^Picture-in-Picture$&quot;</span>
+</span><span id="__span-33-5"><a id="__codelineno-33-5" name="__codelineno-33-5" href="#__codelineno-33-5"></a>
+</span><span id="__span-33-6"><a id="__codelineno-33-6" name="__codelineno-33-6" href="#__codelineno-33-6"></a><span class="nl">    default-floating-position</span><span class="w"> </span><span class="na">x=</span><span class="m m-Decimal">32</span><span class="w"> </span><span class="na">y=</span><span class="m m-Decimal">32</span><span class="w"> </span><span class="na">relative-to=</span><span class="s">&quot;bottom-left&quot;</span>
+</span><span id="__span-33-7"><a id="__codelineno-33-7" name="__codelineno-33-7" href="#__codelineno-33-7"></a><span class="o">}</span>
+</span></code></pre></div>
+<p>You can use single-side <code>relative-to</code> to get a dropdown-like effect.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-34-1"><a id="__codelineno-34-1" name="__codelineno-34-1" href="#__codelineno-34-1"></a><span class="c1">// Example: a &quot;dropdown&quot; terminal.</span>
+</span><span id="__span-34-2"><a id="__codelineno-34-2" name="__codelineno-34-2" href="#__codelineno-34-2"></a><span class="nl">window-rule</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-34-3"><a id="__codelineno-34-3" name="__codelineno-34-3" href="#__codelineno-34-3"></a><span class="w">    </span><span class="c1">// Match by &quot;dropdown&quot; app ID.</span>
+</span><span id="__span-34-4"><a id="__codelineno-34-4" name="__codelineno-34-4" href="#__codelineno-34-4"></a><span class="w">    </span><span class="c1">// You need to set this app ID when running your terminal, e.g.:</span>
+</span><span id="__span-34-5"><a id="__codelineno-34-5" name="__codelineno-34-5" href="#__codelineno-34-5"></a><span class="w">    </span><span class="c1">// spawn &quot;alacritty&quot; &quot;--class&quot; &quot;dropdown&quot;</span>
+</span><span id="__span-34-6"><a id="__codelineno-34-6" name="__codelineno-34-6" href="#__codelineno-34-6"></a><span class="nl">    match</span><span class="w"> </span><span class="na">app-id=</span><span class="s">&quot;^dropdown$&quot;</span>
+</span><span id="__span-34-7"><a id="__codelineno-34-7" name="__codelineno-34-7" href="#__codelineno-34-7"></a>
+</span><span id="__span-34-8"><a id="__codelineno-34-8" name="__codelineno-34-8" href="#__codelineno-34-8"></a><span class="w">    </span><span class="c1">// Open it as floating.</span>
+</span><span id="__span-34-9"><a id="__codelineno-34-9" name="__codelineno-34-9" href="#__codelineno-34-9"></a><span class="nl">    open-floating</span><span class="w"> </span><span class="s">true</span>
+</span><span id="__span-34-10"><a id="__codelineno-34-10" name="__codelineno-34-10" href="#__codelineno-34-10"></a><span class="w">    </span><span class="c1">// Anchor to the top edge of the screen.</span>
+</span><span id="__span-34-11"><a id="__codelineno-34-11" name="__codelineno-34-11" href="#__codelineno-34-11"></a><span class="nl">    default-floating-position</span><span class="w"> </span><span class="na">x=</span><span class="m m-Decimal">0</span><span class="w"> </span><span class="na">y=</span><span class="m m-Decimal">0</span><span class="w"> </span><span class="na">relative-to=</span><span class="s">&quot;top&quot;</span>
+</span><span id="__span-34-12"><a id="__codelineno-34-12" name="__codelineno-34-12" href="#__codelineno-34-12"></a><span class="w">    </span><span class="c1">// Half of the screen high.</span>
+</span><span id="__span-34-13"><a id="__codelineno-34-13" name="__codelineno-34-13" href="#__codelineno-34-13"></a><span class="nl">    default-window-height</span><span class="w"> </span><span class="o">{</span><span class="nl"> proportion</span><span class="w"> </span><span class="mf">0.5</span><span class="o">;</span><span class="w"> </span><span class="o">}</span>
+</span><span id="__span-34-14"><a id="__codelineno-34-14" name="__codelineno-34-14" href="#__codelineno-34-14"></a><span class="w">    </span><span class="c1">// 80% of the screen wide.</span>
+</span><span id="__span-34-15"><a id="__codelineno-34-15" name="__codelineno-34-15" href="#__codelineno-34-15"></a><span class="nl">    default-column-width</span><span class="w"> </span><span class="o">{</span><span class="nl"> proportion</span><span class="w"> </span><span class="mf">0.8</span><span class="o">;</span><span class="w"> </span><span class="o">}</span>
+</span><span id="__span-34-16"><a id="__codelineno-34-16" name="__codelineno-34-16" href="#__codelineno-34-16"></a><span class="o">}</span>
+</span></code></pre></div>
+<h4 id="scroll-factor"><code>scroll-factor</code><a class="headerlink" href="#scroll-factor" title="Permanent link">#</a></h4>
+<p><span class="badge"><a href="https://github.com/niri-wm/niri/releases/tag/v25.02">Since: 25.02</a></span></p>
+<p>Set a scroll factor for all scroll events sent to a window.</p>
+<p>This will be multiplied with the scroll factor set for your input device in the <a href="Configuration%3A-Input.html#pointing-devices">input section</a>.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-35-1"><a id="__codelineno-35-1" name="__codelineno-35-1" href="#__codelineno-35-1"></a><span class="c1">// Make scrolling in Firefox a bit slower.</span>
+</span><span id="__span-35-2"><a id="__codelineno-35-2" name="__codelineno-35-2" href="#__codelineno-35-2"></a><span class="nl">window-rule</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-35-3"><a id="__codelineno-35-3" name="__codelineno-35-3" href="#__codelineno-35-3"></a><span class="nl">    match</span><span class="w"> </span><span class="na">app-id=</span><span class="s">&quot;firefox$&quot;</span>
+</span><span id="__span-35-4"><a id="__codelineno-35-4" name="__codelineno-35-4" href="#__codelineno-35-4"></a>
+</span><span id="__span-35-5"><a id="__codelineno-35-5" name="__codelineno-35-5" href="#__codelineno-35-5"></a><span class="nl">    scroll-factor</span><span class="w"> </span><span class="mf">0.75</span>
+</span><span id="__span-35-6"><a id="__codelineno-35-6" name="__codelineno-35-6" href="#__codelineno-35-6"></a><span class="o">}</span>
+</span></code></pre></div>
+<h4 id="draw-border-with-background"><code>draw-border-with-background</code><a class="headerlink" href="#draw-border-with-background" title="Permanent link">#</a></h4>
+<p>Override whether the border and the focus ring draw with a background.</p>
+<p>Set this to <code>true</code> to draw them as solid colored rectangles even for windows which agreed to omit their client-side decorations.
+Set this to <code>false</code> to draw them as borders around the window even for windows which use client-side decorations.</p>
+<p>This property can be useful for rectangular windows that do not support the xdg-decoration protocol.</p>
+<table>
+<thead>
+<tr>
+<th>With Background</th>
+<th>Without Background</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><img alt="A screenshot displaying a window with draw-border-with-background set to true" src="img/simple-egl-border-with-background.png" /></td>
+<td><img alt="A screenshot displaying a window with draw-border-with-background set to false" src="img/simple-egl-border-without-background.png" /></td>
+</tr>
+</tbody>
+</table>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-36-1"><a id="__codelineno-36-1" name="__codelineno-36-1" href="#__codelineno-36-1"></a><span class="nl">window-rule</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-36-2"><a id="__codelineno-36-2" name="__codelineno-36-2" href="#__codelineno-36-2"></a><span class="nl">    draw-border-with-background</span><span class="w"> </span><span class="s">false</span>
+</span><span id="__span-36-3"><a id="__codelineno-36-3" name="__codelineno-36-3" href="#__codelineno-36-3"></a><span class="o">}</span>
+</span></code></pre></div>
+<h4 id="focus-ring-and-border"><code>focus-ring</code> and <code>border</code><a class="headerlink" href="#focus-ring-and-border" title="Permanent link">#</a></h4>
+<p><span class="badge"><a href="https://github.com/niri-wm/niri/releases/tag/v0.1.6">Since: 0.1.6</a></span></p>
+<p>Override the focus ring and border options for the window.</p>
+<p>These rules have the same options as the normal <a href="Configuration%3A-Layout.html#focus-ring-and-border"><code>focus-ring</code> and <code>border</code> config in the layout section</a>, so check the documentation there.</p>
+<p>However, in addition to <code>off</code> to disable the border/focus ring, this window rule has an <code>on</code> flag that enables the border/focus ring for the window even if it was otherwise disabled.
+The <code>on</code> flag has precedence over the <code>off</code> flag, in case both are set.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-37-1"><a id="__codelineno-37-1" name="__codelineno-37-1" href="#__codelineno-37-1"></a><span class="nl">window-rule</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-37-2"><a id="__codelineno-37-2" name="__codelineno-37-2" href="#__codelineno-37-2"></a><span class="nl">    focus-ring</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-37-3"><a id="__codelineno-37-3" name="__codelineno-37-3" href="#__codelineno-37-3"></a><span class="nl">        off</span>
+</span><span id="__span-37-4"><a id="__codelineno-37-4" name="__codelineno-37-4" href="#__codelineno-37-4"></a><span class="nl">        width</span><span class="w"> </span><span class="m m-Decimal">2</span>
+</span><span id="__span-37-5"><a id="__codelineno-37-5" name="__codelineno-37-5" href="#__codelineno-37-5"></a><span class="w">    </span><span class="o">}</span>
+</span><span id="__span-37-6"><a id="__codelineno-37-6" name="__codelineno-37-6" href="#__codelineno-37-6"></a><span class="o">}</span>
+</span><span id="__span-37-7"><a id="__codelineno-37-7" name="__codelineno-37-7" href="#__codelineno-37-7"></a>
+</span><span id="__span-37-8"><a id="__codelineno-37-8" name="__codelineno-37-8" href="#__codelineno-37-8"></a><span class="nl">window-rule</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-37-9"><a id="__codelineno-37-9" name="__codelineno-37-9" href="#__codelineno-37-9"></a><span class="nl">    border</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-37-10"><a id="__codelineno-37-10" name="__codelineno-37-10" href="#__codelineno-37-10"></a><span class="nl">        on</span>
+</span><span id="__span-37-11"><a id="__codelineno-37-11" name="__codelineno-37-11" href="#__codelineno-37-11"></a><span class="nl">        width</span><span class="w"> </span><span class="m m-Decimal">8</span>
+</span><span id="__span-37-12"><a id="__codelineno-37-12" name="__codelineno-37-12" href="#__codelineno-37-12"></a><span class="w">    </span><span class="o">}</span>
+</span><span id="__span-37-13"><a id="__codelineno-37-13" name="__codelineno-37-13" href="#__codelineno-37-13"></a><span class="o">}</span>
+</span></code></pre></div>
+<h4 id="shadow"><code>shadow</code><a class="headerlink" href="#shadow" title="Permanent link">#</a></h4>
+<p><span class="badge"><a href="https://github.com/niri-wm/niri/releases/tag/v25.02">Since: 25.02</a></span></p>
+<p>Override the shadow options for the window.</p>
+<p>This rule has the same options as the normal <a href="Configuration%3A-Layout.html#shadow"><code>shadow</code> config in the layout section</a>, so check the documentation there.</p>
+<p>However, in addition to <code>on</code> to enable the shadow, this window rule has an <code>off</code> flag that disables the shadow for the window even if it was otherwise enabled.
+The <code>on</code> flag has precedence over the <code>off</code> flag, in case both are set.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-38-1"><a id="__codelineno-38-1" name="__codelineno-38-1" href="#__codelineno-38-1"></a><span class="c1">// Turn on shadows for floating windows.</span>
+</span><span id="__span-38-2"><a id="__codelineno-38-2" name="__codelineno-38-2" href="#__codelineno-38-2"></a><span class="nl">window-rule</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-38-3"><a id="__codelineno-38-3" name="__codelineno-38-3" href="#__codelineno-38-3"></a><span class="nl">    match</span><span class="w"> </span><span class="na">is-floating=</span><span class="s">true</span>
+</span><span id="__span-38-4"><a id="__codelineno-38-4" name="__codelineno-38-4" href="#__codelineno-38-4"></a>
+</span><span id="__span-38-5"><a id="__codelineno-38-5" name="__codelineno-38-5" href="#__codelineno-38-5"></a><span class="nl">    shadow</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-38-6"><a id="__codelineno-38-6" name="__codelineno-38-6" href="#__codelineno-38-6"></a><span class="nl">        on</span>
+</span><span id="__span-38-7"><a id="__codelineno-38-7" name="__codelineno-38-7" href="#__codelineno-38-7"></a><span class="w">    </span><span class="o">}</span>
+</span><span id="__span-38-8"><a id="__codelineno-38-8" name="__codelineno-38-8" href="#__codelineno-38-8"></a><span class="o">}</span>
+</span></code></pre></div>
+<h4 id="tab-indicator"><code>tab-indicator</code><a class="headerlink" href="#tab-indicator" title="Permanent link">#</a></h4>
+<p><span class="badge"><a href="https://github.com/niri-wm/niri/releases/tag/v25.02">Since: 25.02</a></span></p>
+<p>Override the tab indicator options for the window.</p>
+<p>Options in this rule match the same options as the normal <a href="Configuration%3A-Layout.html#tab-indicator"><code>tab-indicator</code> config in the layout section</a>, so check the documentation there.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-39-1"><a id="__codelineno-39-1" name="__codelineno-39-1" href="#__codelineno-39-1"></a><span class="c1">// Make KeePassXC tab have a dark red inactive color.</span>
+</span><span id="__span-39-2"><a id="__codelineno-39-2" name="__codelineno-39-2" href="#__codelineno-39-2"></a><span class="nl">window-rule</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-39-3"><a id="__codelineno-39-3" name="__codelineno-39-3" href="#__codelineno-39-3"></a><span class="nl">    match</span><span class="w"> </span><span class="na">app-id=</span><span class="s">r#&quot;^org\.keepassxc\.KeePassXC$&quot;#</span>
+</span><span id="__span-39-4"><a id="__codelineno-39-4" name="__codelineno-39-4" href="#__codelineno-39-4"></a>
+</span><span id="__span-39-5"><a id="__codelineno-39-5" name="__codelineno-39-5" href="#__codelineno-39-5"></a><span class="nl">    tab-indicator</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-39-6"><a id="__codelineno-39-6" name="__codelineno-39-6" href="#__codelineno-39-6"></a><span class="nl">        inactive-color</span><span class="w"> </span><span class="s">&quot;darkred&quot;</span>
+</span><span id="__span-39-7"><a id="__codelineno-39-7" name="__codelineno-39-7" href="#__codelineno-39-7"></a><span class="w">    </span><span class="o">}</span>
+</span><span id="__span-39-8"><a id="__codelineno-39-8" name="__codelineno-39-8" href="#__codelineno-39-8"></a><span class="o">}</span>
+</span></code></pre></div>
+<h4 id="geometry-corner-radius"><code>geometry-corner-radius</code><a class="headerlink" href="#geometry-corner-radius" title="Permanent link">#</a></h4>
+<p><span class="badge"><a href="https://github.com/niri-wm/niri/releases/tag/v0.1.6">Since: 0.1.6</a></span></p>
+<p>Set the corner radius of the window.</p>
+<p>On its own, this setting will only affect the border and the focus ring—they will round their corners to match the geometry corner radius.
+If you'd like to force-round the corners of the window itself, set <a href="#clip-to-geometry"><code>clip-to-geometry true</code></a> in addition to this setting.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-40-1"><a id="__codelineno-40-1" name="__codelineno-40-1" href="#__codelineno-40-1"></a><span class="nl">window-rule</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-40-2"><a id="__codelineno-40-2" name="__codelineno-40-2" href="#__codelineno-40-2"></a><span class="nl">    geometry-corner-radius</span><span class="w"> </span><span class="m m-Decimal">12</span>
+</span><span id="__span-40-3"><a id="__codelineno-40-3" name="__codelineno-40-3" href="#__codelineno-40-3"></a><span class="o">}</span>
+</span></code></pre></div>
+<p>The radius is set in logical pixels, and controls the radius of the window itself, that is, the inner radius of the border:</p>
+<p><img alt="A screenshot showing a window with every corner rounded" src="img/geometry-corner-radius.png" /></p>
+<p>Instead of one radius, you can set four, for each corner.
+The order is the same as in CSS: top-left, top-right, bottom-right, bottom-left.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-41-1"><a id="__codelineno-41-1" name="__codelineno-41-1" href="#__codelineno-41-1"></a><span class="nl">window-rule</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-41-2"><a id="__codelineno-41-2" name="__codelineno-41-2" href="#__codelineno-41-2"></a><span class="nl">    geometry-corner-radius</span><span class="w"> </span><span class="m m-Decimal">8</span><span class="w"> </span><span class="m m-Decimal">8</span><span class="w"> </span><span class="m m-Decimal">0</span><span class="w"> </span><span class="m m-Decimal">0</span>
+</span><span id="__span-41-3"><a id="__codelineno-41-3" name="__codelineno-41-3" href="#__codelineno-41-3"></a><span class="o">}</span>
+</span></code></pre></div>
+<p>This way, you can match GTK 3 applications which have square bottom corners:</p>
+<p><img alt="A screenshot showing a window with only the top corners rounded" src="img/different-corner-radius.png" /></p>
+<h4 id="clip-to-geometry"><code>clip-to-geometry</code><a class="headerlink" href="#clip-to-geometry" title="Permanent link">#</a></h4>
+<p><span class="badge"><a href="https://github.com/niri-wm/niri/releases/tag/v0.1.6">Since: 0.1.6</a></span></p>
+<p>Clips the window to its visual geometry.</p>
+<p>This will cut out any client-side window shadows, and also round window corners according to <code>geometry-corner-radius</code>.</p>
+<p><img alt="A screenshot showing a window with rounded corners, clipped to the visual geometry" src="img/clip-to-geometry.png" /></p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-42-1"><a id="__codelineno-42-1" name="__codelineno-42-1" href="#__codelineno-42-1"></a><span class="nl">window-rule</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-42-2"><a id="__codelineno-42-2" name="__codelineno-42-2" href="#__codelineno-42-2"></a><span class="nl">    clip-to-geometry</span><span class="w"> </span><span class="s">true</span>
+</span><span id="__span-42-3"><a id="__codelineno-42-3" name="__codelineno-42-3" href="#__codelineno-42-3"></a><span class="o">}</span>
+</span></code></pre></div>
+<p>Enable border, set <a href="#geometry-corner-radius"><code>geometry-corner-radius</code></a> and <code>clip-to-geometry</code>, and you've got a classic setup:</p>
+<p><img alt="A screenshot showing a window with rounded corners, and a border" src="img/border-radius-clip.png" /></p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-43-1"><a id="__codelineno-43-1" name="__codelineno-43-1" href="#__codelineno-43-1"></a><span class="nl">prefer-no-csd</span>
+</span><span id="__span-43-2"><a id="__codelineno-43-2" name="__codelineno-43-2" href="#__codelineno-43-2"></a>
+</span><span id="__span-43-3"><a id="__codelineno-43-3" name="__codelineno-43-3" href="#__codelineno-43-3"></a><span class="nl">layout</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-43-4"><a id="__codelineno-43-4" name="__codelineno-43-4" href="#__codelineno-43-4"></a><span class="nl">    focus-ring</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-43-5"><a id="__codelineno-43-5" name="__codelineno-43-5" href="#__codelineno-43-5"></a><span class="nl">        off</span>
+</span><span id="__span-43-6"><a id="__codelineno-43-6" name="__codelineno-43-6" href="#__codelineno-43-6"></a><span class="w">    </span><span class="o">}</span>
+</span><span id="__span-43-7"><a id="__codelineno-43-7" name="__codelineno-43-7" href="#__codelineno-43-7"></a>
+</span><span id="__span-43-8"><a id="__codelineno-43-8" name="__codelineno-43-8" href="#__codelineno-43-8"></a><span class="nl">    border</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-43-9"><a id="__codelineno-43-9" name="__codelineno-43-9" href="#__codelineno-43-9"></a><span class="nl">        width</span><span class="w"> </span><span class="m m-Decimal">2</span>
+</span><span id="__span-43-10"><a id="__codelineno-43-10" name="__codelineno-43-10" href="#__codelineno-43-10"></a><span class="w">    </span><span class="o">}</span>
+</span><span id="__span-43-11"><a id="__codelineno-43-11" name="__codelineno-43-11" href="#__codelineno-43-11"></a><span class="o">}</span>
+</span><span id="__span-43-12"><a id="__codelineno-43-12" name="__codelineno-43-12" href="#__codelineno-43-12"></a>
+</span><span id="__span-43-13"><a id="__codelineno-43-13" name="__codelineno-43-13" href="#__codelineno-43-13"></a><span class="nl">window-rule</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-43-14"><a id="__codelineno-43-14" name="__codelineno-43-14" href="#__codelineno-43-14"></a><span class="nl">    geometry-corner-radius</span><span class="w"> </span><span class="m m-Decimal">12</span>
+</span><span id="__span-43-15"><a id="__codelineno-43-15" name="__codelineno-43-15" href="#__codelineno-43-15"></a><span class="nl">    clip-to-geometry</span><span class="w"> </span><span class="s">true</span>
+</span><span id="__span-43-16"><a id="__codelineno-43-16" name="__codelineno-43-16" href="#__codelineno-43-16"></a><span class="o">}</span>
+</span></code></pre></div>
+<h4 id="tiled-state"><code>tiled-state</code><a class="headerlink" href="#tiled-state" title="Permanent link">#</a></h4>
+<p><span class="badge"><a href="https://github.com/niri-wm/niri/releases/tag/v25.05">Since: 25.05</a></span></p>
+<p>Informs the window that it is tiled.
+Usually, windows will react by becoming rectangular and hiding their client-side shadows.
+Windows that snap their size to a grid (e.g. terminals like <a href="https://codeberg.org/dnkl/foot">foot</a>) will usually disable this snapping when they are tiled.</p>
+<p>By default, niri will set the tiled state to <code>true</code> together with <a href="Configuration%3A-Miscellaneous.html#prefer-no-csd"><code>prefer-no-csd</code></a> in order to improve behavior for apps that don't support server-side decorations.
+You can use this window rule to override this, for example to get rectangular windows with CSD.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-44-1"><a id="__codelineno-44-1" name="__codelineno-44-1" href="#__codelineno-44-1"></a><span class="c1">// Make tiled windows rectangular while using CSD.</span>
+</span><span id="__span-44-2"><a id="__codelineno-44-2" name="__codelineno-44-2" href="#__codelineno-44-2"></a><span class="nl">window-rule</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-44-3"><a id="__codelineno-44-3" name="__codelineno-44-3" href="#__codelineno-44-3"></a><span class="nl">    match</span><span class="w"> </span><span class="na">is-floating=</span><span class="s">false</span>
+</span><span id="__span-44-4"><a id="__codelineno-44-4" name="__codelineno-44-4" href="#__codelineno-44-4"></a>
+</span><span id="__span-44-5"><a id="__codelineno-44-5" name="__codelineno-44-5" href="#__codelineno-44-5"></a><span class="nl">    tiled-state</span><span class="w"> </span><span class="s">true</span>
+</span><span id="__span-44-6"><a id="__codelineno-44-6" name="__codelineno-44-6" href="#__codelineno-44-6"></a><span class="o">}</span>
+</span></code></pre></div>
+<h4 id="baba-is-float"><code>baba-is-float</code><a class="headerlink" href="#baba-is-float" title="Permanent link">#</a></h4>
+<p><span class="badge"><a href="https://github.com/niri-wm/niri/releases/tag/v25.02">Since: 25.02</a></span></p>
+<p>Make your windows FLOAT up and down.</p>
+<p>This is an April Fools' 2025 feature.</p>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-45-1"><a id="__codelineno-45-1" name="__codelineno-45-1" href="#__codelineno-45-1"></a><span class="nl">window-rule</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-45-2"><a id="__codelineno-45-2" name="__codelineno-45-2" href="#__codelineno-45-2"></a><span class="nl">    match</span><span class="w"> </span><span class="na">is-floating=</span><span class="s">true</span>
+</span><span id="__span-45-3"><a id="__codelineno-45-3" name="__codelineno-45-3" href="#__codelineno-45-3"></a>
+</span><span id="__span-45-4"><a id="__codelineno-45-4" name="__codelineno-45-4" href="#__codelineno-45-4"></a><span class="nl">    baba-is-float</span><span class="w"> </span><span class="s">true</span>
+</span><span id="__span-45-5"><a id="__codelineno-45-5" name="__codelineno-45-5" href="#__codelineno-45-5"></a><span class="o">}</span>
+</span></code></pre></div>
+<video controls src="https://github.com/user-attachments/assets/3f4cb1a4-40b2-4766-98b7-eec014c19509">
+
+https://github.com/user-attachments/assets/3f4cb1a4-40b2-4766-98b7-eec014c19509
+
+</video>
+
+<h4 id="size-overrides">Size Overrides<a class="headerlink" href="#size-overrides" title="Permanent link">#</a></h4>
+<p>You can amend the window's minimum and maximum size in logical pixels.</p>
+<p>Keep in mind that the window itself always has a final say in its size.
+These values instruct niri to never ask the window to be smaller than the minimum you set, or to be bigger than the maximum you set.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p><code>max-height</code> will only apply to automatically-sized windows if it is equal to <code>min-height</code>.
+Either set it equal to <code>min-height</code>, or change the window height manually after opening it with <code>set-window-height</code>.</p>
+<p>This is a limitation of niri's window height distribution algorithm.</p>
+</div>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-46-1"><a id="__codelineno-46-1" name="__codelineno-46-1" href="#__codelineno-46-1"></a><span class="nl">window-rule</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-46-2"><a id="__codelineno-46-2" name="__codelineno-46-2" href="#__codelineno-46-2"></a><span class="nl">    min-width</span><span class="w"> </span><span class="m m-Decimal">100</span>
+</span><span id="__span-46-3"><a id="__codelineno-46-3" name="__codelineno-46-3" href="#__codelineno-46-3"></a><span class="nl">    max-width</span><span class="w"> </span><span class="m m-Decimal">200</span>
+</span><span id="__span-46-4"><a id="__codelineno-46-4" name="__codelineno-46-4" href="#__codelineno-46-4"></a><span class="nl">    min-height</span><span class="w"> </span><span class="m m-Decimal">300</span>
+</span><span id="__span-46-5"><a id="__codelineno-46-5" name="__codelineno-46-5" href="#__codelineno-46-5"></a><span class="nl">    max-height</span><span class="w"> </span><span class="m m-Decimal">300</span>
+</span><span id="__span-46-6"><a id="__codelineno-46-6" name="__codelineno-46-6" href="#__codelineno-46-6"></a><span class="o">}</span>
+</span></code></pre></div>
+<div class="language-kdl highlight"><pre><span></span><code><span id="__span-47-1"><a id="__codelineno-47-1" name="__codelineno-47-1" href="#__codelineno-47-1"></a><span class="c1">// Fix OBS with server-side decorations missing a minimum width.</span>
+</span><span id="__span-47-2"><a id="__codelineno-47-2" name="__codelineno-47-2" href="#__codelineno-47-2"></a><span class="nl">window-rule</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-47-3"><a id="__codelineno-47-3" name="__codelineno-47-3" href="#__codelineno-47-3"></a><span class="nl">    match</span><span class="w"> </span><span class="na">app-id=</span><span class="s">r#&quot;^com\.obsproject\.Studio$&quot;#</span>
+</span><span id="__span-47-4"><a id="__codelineno-47-4" name="__codelineno-47-4" href="#__codelineno-47-4"></a>
+</span><span id="__span-47-5"><a id="__codelineno-47-5" name="__codelineno-47-5" href="#__codelineno-47-5"></a><span class="nl">    min-width</span><span class="w"> </span><span class="m m-Decimal">876</span>
+</span><span id="__span-47-6"><a id="__codelineno-47-6" name="__codelineno-47-6" href="#__codelineno-47-6"></a><span class="o">}</span>
+</span></code></pre></div>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      <script id="__config" type="application/json">{"base": ".", "features": ["navigation.instant", "search.suggest", "content.code.copy", "content.action.edit"], "search": "assets/javascripts/workers/search.d50fe291.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="assets/javascripts/bundle.56ea9cef.min.js"></script>
+      
+    
+  </body>
+</html>
