@@ -72,6 +72,7 @@ pub struct Config {
     pub spawn_sh_at_startup: Vec<SpawnShAtStartup>,
     pub layout: Layout,
     pub prefer_no_csd: bool,
+    pub prevent_idle_inhibit: bool,
     pub cursor: Cursor,
     pub screenshot_path: ScreenshotPath,
     pub clipboard: Clipboard,
@@ -232,6 +233,10 @@ where
 
                 "prefer-no-csd" => {
                     config.borrow_mut().prefer_no_csd = Flag::decode_node(node, ctx)?.0
+                }
+
+                "prevent-idle-inhibit" => {
+                    config.borrow_mut().prevent_idle_inhibit = Flag::decode_node(node, ctx)?.0
                 }
 
                 "screenshot-path" => {
@@ -804,6 +809,7 @@ mod tests {
             spawn-sh-at-startup "qs -c ~/source/qs/MyAwesomeShell"
 
             prefer-no-csd
+            prevent-idle-inhibit
 
             cursor {
                 xcursor-theme "breeze_cursors"
@@ -1453,6 +1459,7 @@ mod tests {
                 },
             },
             prefer_no_csd: true,
+            prevent_idle_inhibit: true,
             cursor: Cursor {
                 xcursor_theme: "breeze_cursors",
                 xcursor_size: 16,
