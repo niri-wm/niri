@@ -6,10 +6,11 @@ use niri::layout::{
     ConfigureIntent, InteractiveResizeData, LayoutElement, LayoutElementRenderElement,
     LayoutElementRenderSnapshot, SizingMode,
 };
+use niri::zoom::OutputZoomState;
 use niri::render_helpers::offscreen::OffscreenData;
 use niri::render_helpers::renderer::NiriRenderer;
 use niri::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
-use niri::render_helpers::RenderTarget;
+use niri::render_helpers::RenderCtx;
 use niri::utils::transaction::Transaction;
 use niri::window::ResolvedWindowRules;
 use smithay::backend::renderer::element::Kind;
@@ -151,11 +152,10 @@ impl LayoutElement for TestWindow {
 
     fn render_normal<R: NiriRenderer>(
         &self,
-        _renderer: &mut R,
+        _ctx: RenderCtx<R>,
         location: Point<f64, Logical>,
         _scale: Scale<f64>,
         alpha: f32,
-        _target: RenderTarget,
         push: &mut dyn FnMut(LayoutElementRenderElement<R>),
     ) {
         let inner = self.inner.borrow();
@@ -198,7 +198,17 @@ impl LayoutElement for TestWindow {
         false
     }
 
-    fn set_preferred_scale_transform(&self, _scale: output::Scale, _transform: Transform) {}
+    fn wl_surface(&self) -> Option<WlSurface> {
+        None
+    }
+
+    fn set_preferred_scale_transform(
+        &self,
+        _scale: output::Scale,
+        _transform: Transform,
+        _zoom_state: Option<&OutputZoomState>,
+    ) {
+    }
 
     fn has_ssd(&self) -> bool {
         false

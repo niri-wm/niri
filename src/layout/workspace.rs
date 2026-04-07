@@ -32,7 +32,7 @@ use crate::niri_render_elements;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::shadow::ShadowRenderElement;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
-use crate::render_helpers::RenderTarget;
+use crate::render_helpers::RenderCtx;
 use crate::utils::id::IdCounter;
 use crate::utils::transaction::{Transaction, TransactionBlocker};
 use crate::utils::{
@@ -516,7 +516,7 @@ impl<W: LayoutElement> Workspace<W> {
 
     fn enter_output_for_window(&self, window: &W) {
         if let Some(output) = &self.output {
-            window.set_preferred_scale_transform(self.scale, self.transform);
+            window.set_preferred_scale_transform(self.scale, self.transform, None);
             window.output_enter(output);
         }
     }
@@ -578,7 +578,7 @@ impl<W: LayoutElement> Workspace<W> {
 
         if scale_transform_changed {
             for window in self.windows() {
-                window.set_preferred_scale_transform(self.scale, self.transform);
+                window.set_preferred_scale_transform(self.scale, self.transform, None);
             }
         }
     }
@@ -853,7 +853,7 @@ impl<W: LayoutElement> Workspace<W> {
         rules: &ResolvedWindowRules,
     ) {
         window.with_surfaces(|surface, data| {
-            send_scale_transform(surface, data, self.scale, self.transform);
+            send_scale_transform(surface, data, self.scale, self.transform, None);
         });
 
         let toplevel = window.toplevel().expect("no x11 support");
@@ -1626,22 +1626,18 @@ impl<W: LayoutElement> Workspace<W> {
 
     pub fn render_scrolling<R: NiriRenderer>(
         &self,
-        renderer: &mut R,
-        target: RenderTarget,
+        ctx: RenderCtx<R>,
         focus_ring: bool,
         push: &mut dyn FnMut(WorkspaceRenderElement<R>),
     ) {
         let scrolling_focus_ring = focus_ring && !self.floating_is_active();
         self.scrolling
-            .render(renderer, target, scrolling_focus_ring, &mut |elem| {
-                push(elem.into())
-            });
+            .render(ctx, scrolling_focus_ring, &mut |elem| push(elem.into()));
     }
 
     pub fn render_floating<R: NiriRenderer>(
         &self,
-        renderer: &mut R,
-        target: RenderTarget,
+        ctx: RenderCtx<R>,
         focus_ring: bool,
         push: &mut dyn FnMut(WorkspaceRenderElement<R>),
     ) {
@@ -1651,13 +1647,10 @@ impl<W: LayoutElement> Workspace<W> {
 
         let view_rect = Rectangle::from_size(self.view_size);
         let floating_focus_ring = focus_ring && self.floating_is_active();
-        self.floating.render(
-            renderer,
-            view_rect,
-            target,
-            floating_focus_ring,
-            &mut |elem| push(elem.into()),
-        );
+        self.floating
+            .render(ctx, view_rect, floating_focus_ring, &mut |elem| {
+                push(elem.into())
+            });
     }
 
     pub fn render_shadow<R: NiriRenderer>(

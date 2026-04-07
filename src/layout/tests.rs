@@ -15,6 +15,7 @@ use super::*;
 
 mod animations;
 mod fullscreen;
+mod zoom;
 
 impl<W: LayoutElement> Default for Layout<W> {
     fn default() -> Self {
@@ -197,7 +198,17 @@ impl LayoutElement for TestWindow {
         false
     }
 
-    fn set_preferred_scale_transform(&self, _scale: output::Scale, _transform: Transform) {}
+    fn wl_surface(&self) -> Option<WlSurface> {
+        None
+    }
+
+    fn set_preferred_scale_transform(
+        &self,
+        _scale: output::Scale,
+        _transform: Transform,
+        _zoom_state: Option<&OutputZoomState>,
+    ) {
+    }
 
     fn has_ssd(&self) -> bool {
         false

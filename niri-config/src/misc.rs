@@ -14,12 +14,85 @@ pub struct SpawnShAtStartup {
     pub command: String,
 }
 
+#[derive(knuffel::DecodeScalar, Default, Clone, Debug, PartialEq)]
+pub enum ZoomMovementMode {
+    #[default]
+    CursorFollow,
+    Centered,
+    OnEdge,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, knuffel::DecodeScalar)]
+pub enum ZoomIncrementType {
+    #[default]
+    Linear,
+    Exponential,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct Zoom {
+    pub movement_mode: ZoomMovementMode,
+    pub increment_type: ZoomIncrementType,
+    pub pinch_sensitivity: f64,
+    pub max_zoom: f64,
+    pub use_fractional_scale: bool,
+    pub max_fractional_scale: f64,
+    pub scale_sensitivity: f64,
+}
+
+impl Default for Zoom {
+    fn default() -> Self {
+        Self {
+            movement_mode: ZoomMovementMode::CursorFollow,
+            increment_type: ZoomIncrementType::Linear,
+            pinch_sensitivity: 1.0,
+            max_zoom: 10.0,
+            use_fractional_scale: false,
+            max_fractional_scale: 5.0,
+            scale_sensitivity: 1.0,
+        }
+    }
+}
+
+#[derive(knuffel::Decode, Debug, PartialEq)]
+pub struct ZoomPart {
+    #[knuffel(child, unwrap(argument))]
+    pub movement_mode: Option<ZoomMovementMode>,
+    #[knuffel(child, unwrap(argument))]
+    pub increment_type: Option<ZoomIncrementType>,
+    #[knuffel(child, unwrap(argument))]
+    pub pinch_sensitivity: Option<f64>,
+    #[knuffel(child, unwrap(argument))]
+    pub max_zoom: Option<f64>,
+    #[knuffel(child)]
+    pub use_fractional_scale: Option<Flag>,
+    #[knuffel(child, unwrap(argument))]
+    pub max_fractional_scale: Option<f64>,
+    #[knuffel(child, unwrap(argument))]
+    pub scale_sensitivity: Option<f64>,
+}
+
+impl MergeWith<ZoomPart> for Zoom {
+    fn merge_with(&mut self, part: &ZoomPart) {
+        merge_clone!(
+            (self, part),
+            movement_mode,
+            increment_type,
+            pinch_sensitivity,
+            max_zoom
+        );
+        merge!((self, part), use_fractional_scale);
+        merge_clone!((self, part), max_fractional_scale, scale_sensitivity);
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub struct Cursor {
     pub xcursor_theme: String,
     pub xcursor_size: u8,
     pub hide_when_typing: bool,
     pub hide_after_inactive_ms: Option<u32>,
+    pub scale_with_zoom: bool,
 }
 
 impl Default for Cursor {
@@ -29,6 +102,7 @@ impl Default for Cursor {
             xcursor_size: 24,
             hide_when_typing: false,
             hide_after_inactive_ms: None,
+            scale_with_zoom: false,
         }
     }
 }
@@ -43,12 +117,14 @@ pub struct CursorPart {
     pub hide_when_typing: Option<Flag>,
     #[knuffel(child, unwrap(argument))]
     pub hide_after_inactive_ms: Option<u32>,
+    #[knuffel(child)]
+    pub scale_with_zoom: Option<Flag>,
 }
 
 impl MergeWith<CursorPart> for Cursor {
     fn merge_with(&mut self, part: &CursorPart) {
         merge_clone!((self, part), xcursor_theme, xcursor_size);
-        merge!((self, part), hide_when_typing);
+        merge!((self, part), hide_when_typing, scale_with_zoom);
         merge_clone_opt!((self, part), hide_after_inactive_ms);
     }
 }

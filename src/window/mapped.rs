@@ -36,7 +36,7 @@ use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderEleme
 use crate::render_helpers::surface::{
     push_elements_from_surface_tree, render_snapshot_from_surface_tree,
 };
-use crate::render_helpers::{BakedBuffer, RenderTarget};
+use crate::render_helpers::{BakedBuffer, RenderCtx, RenderTarget};
 use crate::utils::id::IdCounter;
 use crate::utils::transaction::Transaction;
 use crate::utils::{
@@ -44,6 +44,7 @@ use crate::utils::{
     with_toplevel_last_uncommitted_configure, with_toplevel_role, with_toplevel_role_and_current,
     ResizeEdge,
 };
+use crate::zoom::OutputZoomState;
 
 #[derive(Debug)]
 pub struct Mapped {
@@ -520,11 +521,13 @@ impl Mapped {
         };
 
         self.render(
-            renderer,
+            RenderCtx {
+                renderer,
+                target: RenderTarget::Screencast,
+            },
             location,
             scale,
             1.,
-            RenderTarget::Screencast,
             &mut |elem| push(use_border(elem)),
         );
     }
@@ -613,14 +616,13 @@ impl LayoutElement for Mapped {
 
     fn render_normal<R: NiriRenderer>(
         &self,
-        renderer: &mut R,
+        ctx: RenderCtx<R>,
         location: Point<f64, Logical>,
         scale: Scale<f64>,
         alpha: f32,
-        target: RenderTarget,
         push: &mut dyn FnMut(LayoutElementRenderElement<R>),
     ) {
-        if target.should_block_out(self.rules.block_out_from) {
+        if ctx.target.should_block_out(self.rules.block_out_from) {
             let mut buffer = self.block_out_buffer.borrow_mut();
             buffer.resize(self.window.geometry().size.to_f64());
             let elem =
@@ -631,7 +633,7 @@ impl LayoutElement for Mapped {
             let surface = self.toplevel().wl_surface();
             let mut push = |elem: WaylandSurfaceRenderElement<R>| push(elem.into());
             push_elements_from_surface_tree(
-                renderer,
+                ctx.renderer,
                 surface,
                 buf_pos.to_physical_precise_round(scale),
                 scale,
@@ -644,14 +646,13 @@ impl LayoutElement for Mapped {
 
     fn render_popups<R: NiriRenderer>(
         &self,
-        renderer: &mut R,
+        ctx: RenderCtx<R>,
         location: Point<f64, Logical>,
         scale: Scale<f64>,
         alpha: f32,
-        target: RenderTarget,
         push: &mut dyn FnMut(LayoutElementRenderElement<R>),
     ) {
-        if target.should_block_out(self.rules.block_out_from) {
+        if ctx.target.should_block_out(self.rules.block_out_from) {
             return;
         }
 
@@ -662,7 +663,7 @@ impl LayoutElement for Mapped {
             let offset = self.window.geometry().loc + popup_offset - popup.geometry().loc;
 
             push_elements_from_surface_tree(
-                renderer,
+                ctx.renderer,
                 popup.wl_surface(),
                 (buf_pos + offset.to_f64()).to_physical_precise_round(scale),
                 scale,
@@ -825,9 +826,18 @@ impl LayoutElement for Mapped {
         self.toplevel().wl_surface() == wl_surface
     }
 
-    fn set_preferred_scale_transform(&self, scale: output::Scale, transform: Transform) {
+    fn wl_surface(&self) -> Option<WlSurface> {
+        Some(self.toplevel().wl_surface().clone())
+    }
+
+    fn set_preferred_scale_transform(
+        &self,
+        scale: output::Scale,
+        transform: Transform,
+        zoom_state: Option<&OutputZoomState>,
+    ) {
         self.window.with_surfaces(|surface, data| {
-            send_scale_transform(surface, data, scale, transform);
+            send_scale_transform(surface, data, scale, transform, zoom_state);
         });
     }
 

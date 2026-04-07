@@ -44,8 +44,9 @@ impl CompositorHandler for State {
         if let Some(output) = self.niri.output_for_root(&root) {
             let scale = output.current_scale();
             let transform = output.current_transform();
+            let zoom_state = self.niri.layout.zoom_state_for_output(output).cloned();
             with_states(surface, |data| {
-                send_scale_transform(surface, data, scale, transform);
+                send_scale_transform(surface, data, scale, transform, zoom_state.as_ref());
             });
         }
     }

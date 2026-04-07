@@ -14,7 +14,7 @@ use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::shadow::ShadowRenderElement;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
 use crate::render_helpers::surface::push_elements_from_surface_tree;
-use crate::render_helpers::RenderTarget;
+use crate::render_helpers::RenderCtx;
 use crate::utils::{baba_is_float_offset, round_logical_in_physical};
 
 #[derive(Debug)]
@@ -157,16 +157,15 @@ impl MappedLayer {
 
     pub fn render_normal<R: NiriRenderer>(
         &self,
-        renderer: &mut R,
+        ctx: RenderCtx<R>,
         location: Point<f64, Logical>,
-        target: RenderTarget,
         push: &mut dyn FnMut(LayerSurfaceRenderElement<R>),
     ) {
         let scale = Scale::from(self.scale);
         let alpha = self.rules.opacity.unwrap_or(1.).clamp(0., 1.);
         let location = location + self.bob_offset();
 
-        if target.should_block_out(self.rules.block_out_from) {
+        if ctx.target.should_block_out(self.rules.block_out_from) {
             // Round to physical pixels.
             let location = location.to_physical_precise_round(scale).to_logical(scale);
 
@@ -184,7 +183,7 @@ impl MappedLayer {
 
             let surface = self.surface.wl_surface();
             push_elements_from_surface_tree(
-                renderer,
+                ctx.renderer,
                 surface,
                 buf_pos.to_physical_precise_round(scale),
                 scale,
@@ -196,21 +195,20 @@ impl MappedLayer {
 
         let location = location.to_physical_precise_round(scale).to_logical(scale);
         self.shadow
-            .render(renderer, location, &mut |elem| push(elem.into()));
+            .render(ctx.renderer, location, &mut |elem| push(elem.into()));
     }
 
     pub fn render_popups<R: NiriRenderer>(
         &self,
-        renderer: &mut R,
+        ctx: RenderCtx<R>,
         location: Point<f64, Logical>,
-        target: RenderTarget,
         push: &mut dyn FnMut(LayerSurfaceRenderElement<R>),
     ) {
         let scale = Scale::from(self.scale);
         let alpha = self.rules.opacity.unwrap_or(1.).clamp(0., 1.);
         let location = location + self.bob_offset();
 
-        if target.should_block_out(self.rules.block_out_from) {
+        if ctx.target.should_block_out(self.rules.block_out_from) {
             return;
         }
 
@@ -223,7 +221,7 @@ impl MappedLayer {
             let offset = popup_offset - popup.geometry().loc;
 
             push_elements_from_surface_tree(
-                renderer,
+                ctx.renderer,
                 popup.wl_surface(),
                 (buf_pos + offset.to_f64()).to_physical_precise_round(scale),
                 scale,
