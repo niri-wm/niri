@@ -13,6 +13,7 @@ output "eDP-1" {
     transform "90"
     position x=1280 y=0
     variable-refresh-rate // on-demand=true
+    // drm-lease
     focus-at-startup
     backdrop-color "#001100"
 
@@ -222,6 +223,18 @@ This is helpful to avoid various issues with VRR, since it can be disabled most 
 ```kdl
 output "HDMI-A-1" {
     variable-refresh-rate on-demand=true
+}
+```
+
+### `drm-lease`
+
+Force this output to be offered for [DRM leasing](https://wayland.app/protocols/drm-lease-v1) instead of being used as a regular monitor.
+
+Normally, niri automatically offers connectors with the `non-desktop` DRM property for DRM leasing (e.g. VR headsets). However, some drivers (notably NVIDIA) do not always set this property. In that case, you can use `drm-lease` to manually mark the output for leasing.
+
+```kdl
+output "Your VR Headset Name" {
+    drm-lease
 }
 ```
 

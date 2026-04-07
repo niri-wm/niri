@@ -1225,12 +1225,20 @@ impl Tty {
         let disable_monitor_names = self.config.borrow().debug.disable_monitor_names;
         let output_name = device.known_crtc_name(&crtc, &connector, disable_monitor_names);
 
-        let non_desktop = find_drm_property(&device.drm, connector.handle(), "non-desktop")
+        let non_desktop_prop = find_drm_property(&device.drm, connector.handle(), "non-desktop")
             .and_then(|(_, info, value)| info.value_type().convert_value(value).as_boolean())
             .unwrap_or(false);
 
-        if non_desktop {
+        let config_drm_lease = self
+            .config
+            .borrow()
+            .outputs
+            .find(&output_name)
+            .is_some_and(|o| o.drm_lease);
+
+        if non_desktop_prop || config_drm_lease {
             debug!("output is non desktop");
+
             let description = output_name.format_description();
             if let Some(lease_state) = &mut device.drm_lease_state {
                 lease_state.add_connector::<State>(connector.handle(), connector_name, description);
