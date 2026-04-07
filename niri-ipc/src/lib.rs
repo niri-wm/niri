@@ -1228,6 +1228,10 @@ pub struct Output {
     ///
     /// `None` if the output is not mapped to any logical output (for example, if it is disabled).
     pub logical: Option<LogicalOutput>,
+    /// Maximum bit per color  (bit depth), if known.
+    pub max_bpc: Option<u8>,
+    /// Pixel format for framebuffers, if known.
+    pub format: Option<String>,
 }
 
 /// Output mode.

@@ -59,6 +59,8 @@ pub struct Output {
     pub transform: Transform,
     #[knuffel(child)]
     pub position: Option<Position>,
+    #[knuffel(child, unwrap(argument))]
+    pub bpc: Option<Bpc>,
     #[knuffel(child)]
     pub mode: Option<Mode>,
     #[knuffel(child)]
@@ -101,6 +103,7 @@ impl Default for Output {
             scale: None,
             transform: Transform::Normal,
             position: None,
+            bpc: None,
             mode: None,
             modeline: None,
             variable_refresh_rate: None,
@@ -126,6 +129,13 @@ pub struct Position {
     pub x: i32,
     #[knuffel(property)]
     pub y: i32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Bpc {
+    _8 = 8,
+    #[default]
+    _10 = 10,
 }
 
 #[derive(knuffel::Decode, Debug, Clone, PartialEq, Default)]
@@ -253,6 +263,52 @@ impl OutputName {
                 .then_with(|| self.model.cmp(&other.model))
                 .then_with(|| self.serial.cmp(&other.serial))
                 .then_with(|| self.connector.cmp(&other.connector)),
+        }
+    }
+}
+
+impl TryFrom<u8> for Bpc {
+    type Error = &'static str;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            8 => Ok(Bpc::_8),
+            10 => Ok(Bpc::_10),
+            _ => Err(r#"invalid bpc, can be 8 or 10"#),
+        }
+    }
+}
+
+impl<S: ErrorSpan> knuffel::DecodeScalar<S> for Bpc {
+    fn type_check(
+        type_name: &Option<knuffel::span::Spanned<knuffel::ast::TypeName, S>>,
+        ctx: &mut Context<S>,
+    ) {
+        if let Some(type_name) = &type_name {
+            ctx.emit_error(DecodeError::unexpected(
+                type_name,
+                "type name",
+                "no type name expected for this node",
+            ));
+        }
+    }
+
+    fn raw_decode(
+        value: &knuffel::span::Spanned<knuffel::ast::Literal, S>,
+        ctx: &mut Context<S>,
+    ) -> Result<Self, DecodeError<S>> {
+        match &**value {
+            knuffel::ast::Literal::Int(ref val) => match u8::try_from(val) {
+                Ok(v) => Bpc::try_from(v).map_err(|e| DecodeError::conversion(value, e)),
+                Err(e) => {
+                    ctx.emit_error(DecodeError::conversion(value, e));
+                    Ok(Self::default())
+                }
+            },
+            _ => {
+                ctx.emit_error(DecodeError::scalar_kind(knuffel::decode::Kind::Int, value));
+                Ok(Self::default())
+            }
         }
     }
 }
