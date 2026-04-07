@@ -76,6 +76,7 @@ pub struct Config {
     pub screenshot_path: ScreenshotPath,
     pub clipboard: Clipboard,
     pub hotkey_overlay: HotkeyOverlay,
+    pub spawn_overlay: SpawnOverlay,
     pub config_notification: ConfigNotification,
     pub animations: Animations,
     pub gestures: Gestures,
@@ -192,6 +193,7 @@ where
                 "cursor" => m_merge!(cursor),
                 "clipboard" => m_merge!(clipboard),
                 "hotkey-overlay" => m_merge!(hotkey_overlay),
+                "spawn-overlay" => m_merge!(spawn_overlay),
                 "config-notification" => m_merge!(config_notification),
                 "animations" => m_merge!(animations),
                 "gestures" => m_merge!(gestures),
@@ -1472,6 +1474,9 @@ mod tests {
             hotkey_overlay: HotkeyOverlay {
                 skip_at_startup: true,
                 hide_not_bound: false,
+            },
+            spawn_overlay: SpawnOverlay {
+                enable: false,
             },
             config_notification: ConfigNotification {
                 disable_failed: false,
