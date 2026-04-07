@@ -177,7 +177,7 @@ layout {
 ### `preset-column-widths`
 
 Set the widths that the `switch-preset-column-width` action (Mod+R) toggles between.
-<sup>Since: 25.08</sup> Use `switch-preset-column-width-back` action (Unbound) to toggle in reverse.
+<sup>Since: 25.08</sup> You can use the `switch-preset-column-width-back` action (not bound by default) to toggle in reverse.
 
 `proportion` sets the width as a fraction of the output width, taking gaps into account.
 For example, you can perfectly fit four windows sized `proportion 0.25` on an output, regardless of the gaps setting.
