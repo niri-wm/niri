@@ -52,6 +52,9 @@ Usually, the built-in monitor in laptops will be called `eDP-1`.
 <sup>Since: 0.1.9</sup> Outputs can be matched by manufacturer, model, and serial.
 Before, they could be matched only by the connector name.
 
+> [!NOTE]
+> Some laptops have the dedicated GPU wired directly to a connector, which may give worse performance when niri is rendered on the integrated GPU and the connector is used. You can set the [`render-drm-device` debug flag](./Configuration:-Debug-Options.md#render-drm-device) to the dedicated GPU to fix this, at the cost of substantially more battery usage.
+
 ### `off`
 
 This flag turns off that output entirely.
