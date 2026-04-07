@@ -3754,8 +3754,10 @@ impl State {
         drop(config);
 
         // Check if this finger count matches workspace-switch or view-scroll.
-        if (ws_enabled && fingers == ws_fingers) || (vs_enabled && fingers == vs_fingers) {
-            self.niri.gesture_swipe_3f_cumulative = Some((0., 0.));
+        let ws_valid = ws_enabled && fingers == ws_fingers;
+        let vs_valid = vs_enabled && fingers == vs_fingers;
+        if ws_valid || vs_valid {
+            self.niri.gesture_swipe_3f_cumulative = Some((0., 0., ws_valid, vs_valid));
             return;
         }
 
@@ -3805,8 +3807,6 @@ impl State {
         let config = self.niri.config.borrow();
         let touchpad = &config.input.touchpad;
         let threshold = touchpad.gesture_threshold();
-        let ws_enabled = touchpad.workspace_switch_enabled();
-        let vs_enabled = touchpad.view_scroll_enabled();
         let ws_sensitivity = touchpad.workspace_switch_sensitivity();
         let vs_sensitivity = touchpad.view_scroll_sensitivity();
         let ov_sensitivity = touchpad.overview_toggle_sensitivity();
@@ -3823,16 +3823,16 @@ impl State {
 
         let is_overview_open = self.niri.layout.is_overview_open();
 
-        if let Some((cx, cy)) = &mut self.niri.gesture_swipe_3f_cumulative {
+        if let Some((cx, cy, ws_valid, vs_valid)) = &mut self.niri.gesture_swipe_3f_cumulative {
             *cx += delta_x;
             *cy += delta_y;
 
-            let (cx, cy) = (*cx, *cy);
+            let (cx, cy, ws_valid, vs_valid) = (*cx, *cy, *ws_valid, *vs_valid);
             if cx * cx + cy * cy >= threshold * threshold {
                 self.niri.gesture_swipe_3f_cumulative = None;
 
                 if let Some(output) = self.niri.output_under_cursor() {
-                    if cx.abs() > cy.abs() && vs_enabled {
+                    if cx.abs() > cy.abs() && vs_valid {
                         let output_ws = if is_overview_open {
                             self.niri.workspace_under_cursor(true)
                         } else {
@@ -3848,7 +3848,7 @@ impl State {
                                 .layout
                                 .view_offset_gesture_begin(&output, Some(ws_idx), true);
                         }
-                    } else if cx.abs() <= cy.abs() && ws_enabled {
+                    } else if cx.abs() <= cy.abs() && ws_valid {
                         self.niri
                             .layout
                             .workspace_switch_gesture_begin(&output, true);
