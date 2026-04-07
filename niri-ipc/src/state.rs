@@ -224,6 +224,14 @@ impl EventStreamStatePart for WindowsState {
                     }
                 }
             }
+            Event::WindowPinnedChanged { id, pinned } => {
+                for win in self.windows.values_mut() {
+                    if win.id == id {
+                        win.is_pinned = pinned;
+                        break;
+                    }
+                }
+            }
             Event::WindowLayoutsChanged { changes } => {
                 for (id, update) in changes {
                     let win = self.windows.get_mut(&id);
