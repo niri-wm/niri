@@ -16,7 +16,7 @@ use smithay::backend::input::{
     InputEvent, KeyState, KeyboardKeyEvent, Keycode, MouseButton, PointerAxisEvent,
     PointerButtonEvent, PointerMotionEvent, ProximityState, Switch, SwitchState, SwitchToggleEvent,
     TabletToolButtonEvent, TabletToolEvent, TabletToolProximityEvent, TabletToolTipEvent,
-    TabletToolTipState, TouchEvent,
+    TabletToolTipState,
 };
 use smithay::backend::libinput::LibinputInputBackend;
 use smithay::input::dnd::DnDGrab;
@@ -27,9 +27,7 @@ use smithay::input::pointer::{
     GestureSwipeBeginEvent, GestureSwipeEndEvent, GestureSwipeUpdateEvent,
     GrabStartData as PointerGrabStartData, MotionEvent, PointerGrab, RelativeMotionEvent,
 };
-use smithay::input::touch::{
-    DownEvent, GrabStartData as TouchGrabStartData, MotionEvent as TouchMotionEvent, UpEvent,
-};
+use smithay::input::touch::GrabStartData as TouchGrabStartData;
 use smithay::input::SeatHandler;
 use smithay::output::Output;
 use smithay::reexports::wayland_server::protocol::wl_data_source::WlDataSource;
@@ -38,8 +36,6 @@ use smithay::utils::{Logical, Point, Rectangle, Transform, SERIAL_COUNTER};
 use smithay::wayland::keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitor;
 use smithay::wayland::pointer_constraints::{with_pointer_constraint, PointerConstraint};
 use smithay::wayland::tablet_manager::{TabletDescriptor, TabletSeatTrait};
-use touch_overview_grab::TouchOverviewGrab;
-
 use self::move_grab::MoveGrab;
 use self::resize_grab::ResizeGrab;
 use self::spatial_movement_grab::SpatialMovementGrab;
@@ -3862,9 +3858,8 @@ impl State {
 
         let timestamp = Duration::from_micros(event.time());
 
-        // Apply sensitivity only — natural scroll is already handled by libinput device setting.
-        // The device has already inverted delta_x/delta_y if natural-scroll is enabled.
-        // Overview uses uninverted_delta_y (raw) to match upstream touchpad behaviour.
+        // Apply sensitivity only — natural scroll is inherited from device setting.
+        // libinput already inverted delta_x/delta_y if natural-scroll is enabled.
         let ws_delta_y = delta_y * ws_sensitivity;
         let vs_delta_x = delta_x * vs_sensitivity;
         let ov_delta_y = -uninverted_delta_y * ov_sensitivity;

@@ -256,13 +256,6 @@ impl Touchpad {
             .unwrap_or(1.0)
     }
 
-    pub fn workspace_switch_natural_scroll(&self) -> bool {
-        self.gestures
-            .as_ref()
-            .and_then(|g| g.workspace_switch.as_ref())
-            .map_or(self.natural_scroll, |a| a.natural_scroll || self.natural_scroll)
-    }
-
     pub fn view_scroll_enabled(&self) -> bool {
         self.gestures
             .as_ref()
@@ -286,13 +279,6 @@ impl Touchpad {
             .unwrap_or(1.0)
     }
 
-    pub fn view_scroll_natural_scroll(&self) -> bool {
-        self.gestures
-            .as_ref()
-            .and_then(|g| g.view_scroll.as_ref())
-            .map_or(self.natural_scroll, |a| a.natural_scroll || self.natural_scroll)
-    }
-
     pub fn overview_toggle_enabled(&self) -> bool {
         self.gestures
             .as_ref()
@@ -314,13 +300,6 @@ impl Touchpad {
             .and_then(|g| g.overview_toggle.as_ref())
             .and_then(|a| a.sensitivity)
             .unwrap_or(1.0)
-    }
-
-    pub fn overview_toggle_natural_scroll(&self) -> bool {
-        self.gestures
-            .as_ref()
-            .and_then(|g| g.overview_toggle.as_ref())
-            .map_or(self.natural_scroll, |a| a.natural_scroll || self.natural_scroll)
     }
 }
 
@@ -517,7 +496,7 @@ impl Touchscreen {
         self.gestures
             .as_ref()
             .and_then(|g| g.workspace_switch.as_ref())
-            .map_or(self.natural_scroll, |a| a.natural_scroll || self.natural_scroll)
+            .map_or(self.natural_scroll, |a| a.natural_scroll)
     }
 
     pub fn view_scroll_enabled(&self) -> bool {
@@ -547,7 +526,7 @@ impl Touchscreen {
         self.gestures
             .as_ref()
             .and_then(|g| g.view_scroll.as_ref())
-            .map_or(self.natural_scroll, |a| a.natural_scroll || self.natural_scroll)
+            .map_or(self.natural_scroll, |a| a.natural_scroll)
     }
 
     pub fn overview_toggle_enabled(&self) -> bool {
@@ -577,7 +556,7 @@ impl Touchscreen {
         self.gestures
             .as_ref()
             .and_then(|g| g.overview_toggle.as_ref())
-            .map_or(self.natural_scroll, |a| a.natural_scroll || self.natural_scroll)
+            .map_or(self.natural_scroll, |a| a.natural_scroll)
     }
 }
 
@@ -625,8 +604,6 @@ pub struct TouchpadGestureActionConfig {
     pub finger_count: Option<u8>,
     #[knuffel(child, unwrap(argument))]
     pub sensitivity: Option<f64>,
-    #[knuffel(child)]
-    pub natural_scroll: bool,
 }
 
 #[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
