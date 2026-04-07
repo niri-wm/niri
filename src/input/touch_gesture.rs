@@ -13,7 +13,7 @@ use smithay::input::touch::{
 };
 use smithay::utils::SERIAL_COUNTER;
 
-use super::backend_ext::{NiriInputBackend as InputBackend, NiriInputDevice as _};
+use super::backend_ext::NiriInputBackend as InputBackend;
 use super::move_grab::MoveGrab;
 use super::touch_overview_grab::TouchOverviewGrab;
 use super::{modifiers_from_state, PointerOrTouchStartData};
@@ -320,7 +320,6 @@ impl State {
                 }
 
                 // Read config for per-gesture natural scroll and sensitivity.
-                // Extract all values upfront to drop the borrow before mutable calls.
                 let (ws_natural, ws_sensitivity, vs_natural, vs_sensitivity,
                      ov_natural, ov_sensitivity) = {
                     let config = self.niri.config.borrow();
@@ -335,8 +334,7 @@ impl State {
                     )
                 };
 
-                // Continue ongoing gesture animations with per-gesture sensitivity
-                // and per-gesture natural scroll.
+                // Apply per-gesture natural scroll inversion.
                 let ws_delta_y = if ws_natural { -delta_y } else { delta_y };
                 if self
                     .niri
