@@ -368,7 +368,9 @@ pub struct Niri {
     pub notified_activity_this_iteration: bool,
     pub pointer_inside_hot_corner: bool,
     pub tablet_cursor_location: Option<Point<f64, Logical>>,
-    pub gesture_swipe_3f_cumulative: Option<(f64, f64)>,
+    /// Cumulative (x, y) delta, plus which gestures are valid for this finger count.
+    /// (cx, cy, workspace_switch_valid, view_scroll_valid)
+    pub gesture_swipe_3f_cumulative: Option<(f64, f64, bool, bool)>,
     /// Active touch points for multi-finger gesture detection.
     pub touch_gesture_points: HashMap<Option<TouchSlot>, Point<f64, Logical>>,
     /// Cumulative delta when tracking a 2+ finger touch gesture.
