@@ -558,6 +558,67 @@ impl Touchscreen {
             .and_then(|g| g.overview_toggle.as_ref())
             .map_or(self.natural_scroll, |a| a.natural_scroll)
     }
+
+    pub fn edge_threshold(&self) -> f64 {
+        self.gestures
+            .as_ref()
+            .and_then(|g| g.edge_threshold)
+            .unwrap_or(20.0)
+    }
+
+    pub fn edge_swipe_config(&self, edge: ScreenEdge) -> Option<&EdgeSwipeConfig> {
+        let gestures = self.gestures.as_ref()?;
+        match edge {
+            ScreenEdge::Left => gestures.edge_swipe_left.as_ref(),
+            ScreenEdge::Right => gestures.edge_swipe_right.as_ref(),
+            ScreenEdge::Top => gestures.edge_swipe_top.as_ref(),
+            ScreenEdge::Bottom => gestures.edge_swipe_bottom.as_ref(),
+        }
+    }
+
+    pub fn edge_swipe_enabled(&self, edge: ScreenEdge) -> bool {
+        self.edge_swipe_config(edge)
+            .map_or(false, |c| !c.off && c.action.is_some())
+    }
+
+    pub fn edge_swipe_action(&self, edge: ScreenEdge) -> Option<EdgeSwipeAction> {
+        let config = self.edge_swipe_config(edge)?;
+        if config.off {
+            return None;
+        }
+        config.action
+    }
+
+    pub fn edge_swipe_sensitivity(&self, edge: ScreenEdge) -> f64 {
+        self.edge_swipe_config(edge)
+            .and_then(|c| c.sensitivity)
+            .unwrap_or(0.4)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScreenEdge {
+    Left,
+    Right,
+    Top,
+    Bottom,
+}
+
+#[derive(knuffel::DecodeScalar, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EdgeSwipeAction {
+    ViewScroll,
+    WorkspaceSwitch,
+    OverviewToggle,
+}
+
+#[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]
+pub struct EdgeSwipeConfig {
+    #[knuffel(argument)]
+    pub action: Option<EdgeSwipeAction>,
+    #[knuffel(child)]
+    pub off: bool,
+    #[knuffel(child, unwrap(argument))]
+    pub sensitivity: Option<f64>,
 }
 
 #[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]
@@ -570,6 +631,16 @@ pub struct TouchscreenGesturesConfig {
     pub overview_toggle: Option<TouchscreenGestureActionConfig>,
     #[knuffel(child, unwrap(argument))]
     pub recognition_threshold: Option<f64>,
+    #[knuffel(child)]
+    pub edge_swipe_left: Option<EdgeSwipeConfig>,
+    #[knuffel(child)]
+    pub edge_swipe_right: Option<EdgeSwipeConfig>,
+    #[knuffel(child)]
+    pub edge_swipe_top: Option<EdgeSwipeConfig>,
+    #[knuffel(child)]
+    pub edge_swipe_bottom: Option<EdgeSwipeConfig>,
+    #[knuffel(child, unwrap(argument))]
+    pub edge_threshold: Option<f64>,
 }
 
 #[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]

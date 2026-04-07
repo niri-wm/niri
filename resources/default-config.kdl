@@ -82,6 +82,14 @@ input {
     //     //         sensitivity 0.4
     //     //     }
     //     //     recognition-threshold 16.0
+    //     //
+    //     //     // Edge swipe gestures trigger when swiping from a screen edge.
+    //     //     // The action can be "view-scroll", "workspace-switch", or "overview-toggle".
+    //     //     edge-threshold 20.0
+    //     //     // edge-swipe-left "view-scroll"
+    //     //     // edge-swipe-right "view-scroll"
+    //     //     // edge-swipe-top "workspace-switch"
+    //     //     // edge-swipe-bottom "overview-toggle"
     //     // }
     // }
 
