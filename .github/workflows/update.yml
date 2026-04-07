@@ -1,0 +1,17 @@
+name: Update lockfile
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 0 * * 2"
+
+jobs:
+  lockfile:
+    name: "Update lockfile"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@v19
+      - name: Update flake.lock
+        id: update
+        uses: DeterminateSystems/update-flake-lock@v27
