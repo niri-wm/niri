@@ -14,6 +14,7 @@ use _server_decoration::server::org_kde_kwin_server_decoration_manager::Mode as 
 use anyhow::{bail, ensure, Context};
 use calloop::futures::Scheduler;
 use niri_config::debug::PreviewRender;
+use niri_config::input::{EdgeSwipeAction, ScreenEdge};
 use niri_config::{
     Config, FloatOrInt, Key, Modifiers, OutputName, TrackLayout, WarpMouseToFocusMode,
     WorkspaceReference, Xkb,
@@ -189,6 +190,23 @@ const CLEAR_COLOR_LOCKED: [f32; 4] = [0.3, 0.1, 0.1, 1.];
 // second, so with the worst timing the maximum interval between two frame callbacks for a surface
 // should be ~1.995 seconds.
 const FRAME_CALLBACK_THROTTLE: Option<Duration> = Some(Duration::from_millis(995));
+
+/// State for touchscreen edge swipe gesture detection.
+pub enum TouchEdgeSwipeState {
+    /// First touch landed in edge zone; waiting for motion to confirm swipe.
+    Pending {
+        edge: ScreenEdge,
+        action: EdgeSwipeAction,
+        cumulative: (f64, f64),
+        slot: Option<TouchSlot>,
+    },
+    /// Swipe recognized; gesture animation is active.
+    Active {
+        edge: ScreenEdge,
+        action: EdgeSwipeAction,
+        slot: Option<TouchSlot>,
+    },
+}
 
 pub struct Niri {
     pub config: Rc<RefCell<Config>>,
@@ -378,6 +396,12 @@ pub struct Niri {
     /// Set to Some((0, 0)) when gesture recognition starts (2nd finger down),
     /// cleared when gesture completes or is cancelled.
     pub touch_gesture_cumulative: Option<(f64, f64)>,
+    /// Edge swipe gesture state for touchscreen.
+    pub touch_edge_swipe: Option<TouchEdgeSwipeState>,
+    /// Set when a multi-finger touch gesture is locked (direction decided).
+    /// While locked, all touch events are suppressed from clients until
+    /// all fingers are lifted, preventing leaked inputs mid-gesture.
+    pub touch_gesture_locked: bool,
     pub overview_scroll_swipe_gesture: ScrollSwipeGesture,
     pub vertical_wheel_tracker: ScrollTracker,
     pub horizontal_wheel_tracker: ScrollTracker,
@@ -2587,6 +2611,8 @@ impl Niri {
             gesture_swipe_3f_cumulative: None,
             touch_gesture_points: HashMap::new(),
             touch_gesture_cumulative: None,
+            touch_edge_swipe: None,
+            touch_gesture_locked: false,
             overview_scroll_swipe_gesture: ScrollSwipeGesture::new(),
             vertical_wheel_tracker: ScrollTracker::new(120),
             horizontal_wheel_tracker: ScrollTracker::new(120),
