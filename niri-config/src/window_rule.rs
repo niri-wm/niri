@@ -80,6 +80,8 @@ pub struct Match {
     pub app_id: Option<RegexEq>,
     #[knuffel(property, str)]
     pub title: Option<RegexEq>,
+    #[knuffel(property, str)]
+    pub cgroup: Option<RegexEq>,
     #[knuffel(property)]
     pub is_active: Option<bool>,
     #[knuffel(property)]

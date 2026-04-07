@@ -30,6 +30,7 @@ Here are all matchers and properties that a window rule could have:
 window-rule {
     match title="Firefox"
     match app-id="Alacritty"
+    match cgroup="browsing"
     match is-active=true
     match is-focused=false
     match is-active-in-column=true
@@ -183,6 +184,28 @@ You can find the title and the app ID of a window by running `niri msg pick-wind
 >     "tooltip-format": "{title} | {app_id}",
 > }
 > ```
+
+#### `cgroup`
+
+<sup>Since: TODO</sup>
+
+A regular expression that should match anywhere in the cgroup path of the process that created the window.
+
+> [!NOTE]
+> This matcher will apply only after the window is already open.
+> This means that you cannot use it to change the window opening properties like `default-window-height` or `open-on-workspace`.
+
+```kdl
+window-rule {
+    match cgroup="my-slice"
+}
+```
+
+You can find the cgroup of a window by reading `/proc/<pid>/cgroup`, where the PID can be fetched by first running `niri msg pick-window` and clicking on the window in question.
+
+> [!NOTE]
+> This matcher assumes cgroup v2 is in use.
+> For legacy systems with cgroup v1, matching is done for the first line only.
 
 #### `is-active`
 

@@ -1,4 +1,5 @@
 use std::cmp::{max, min};
+use std::fs;
 
 use niri_config::utils::MergeWith as _;
 use niri_config::window_rule::{Match, WindowRule};
@@ -13,6 +14,7 @@ use smithay::wayland::compositor::with_states;
 use smithay::wayland::shell::xdg::{
     SurfaceCachedState, ToplevelSurface, XdgToplevelSurfaceRoleAttributes,
 };
+use wayland_backend::server::Credentials;
 
 use crate::utils::with_toplevel_role;
 
@@ -169,6 +171,13 @@ impl<'a> WindowRef<'a> {
         match self {
             WindowRef::Unmapped(_) => false,
             WindowRef::Mapped(mapped) => mapped.is_window_cast_target(),
+        }
+    }
+
+    pub fn credentials(self) -> Option<&'a Credentials> {
+        match self {
+            WindowRef::Unmapped(_) => None,
+            WindowRef::Mapped(mapped) => mapped.credentials(),
         }
     }
 }
@@ -415,6 +424,18 @@ fn window_matches(window: WindowRef, role: &XdgToplevelSurfaceRoleAttributes, m:
         }
     }
 
+    if let Some(cgroup_re) = &m.cgroup {
+        let cgroup = window
+            .credentials()
+            .and_then(|creds| read_cgroup(creds.pid));
+        let Some(cgroup) = cgroup else {
+            return false;
+        };
+        if !cgroup_re.0.is_match(&cgroup) {
+            return false;
+        }
+    }
+
     if let Some(is_active_in_column) = m.is_active_in_column {
         if window.is_active_in_column() != is_active_in_column {
             return false;
@@ -434,4 +455,12 @@ fn window_matches(window: WindowRef, role: &XdgToplevelSurfaceRoleAttributes, m:
     }
 
     true
+}
+
+fn read_cgroup(pid: i32) -> Option<String> {
+    let path = format!("/proc/{pid}/cgroup");
+    let content = fs::read_to_string(path).ok()?;
+    let line = content.lines().next()?;
+    let cgroup_path = line.rsplit_once(':')?.1;
+    Some(cgroup_path.to_owned())
 }
