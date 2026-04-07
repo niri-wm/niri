@@ -130,7 +130,7 @@ use crate::input::scroll_swipe_gesture::ScrollSwipeGesture;
 use crate::input::scroll_tracker::ScrollTracker;
 use crate::input::{
     apply_libinput_settings, mods_with_finger_scroll_binds, mods_with_mouse_binds,
-    mods_with_wheel_binds, TabletData,
+    mods_with_swipe_binds, mods_with_wheel_binds, TabletData,
 };
 use crate::ipc::server::IpcServer;
 use crate::layer::mapped::LayerSurfaceRenderElement;
@@ -363,9 +363,10 @@ pub struct Niri {
     pub notified_activity_this_iteration: bool,
     pub pointer_inside_hot_corner: bool,
     pub tablet_cursor_location: Option<Point<f64, Logical>>,
-    /// Cumulative (x, y) delta, plus which gestures are valid for this finger count.
-    /// (cx, cy, workspace_switch_valid, view_scroll_valid)
-    pub gesture_swipe_3f_cumulative: Option<(f64, f64, bool, bool)>,
+    /// Cumulative (x, y) delta, plus which gestures are valid for this finger count,
+    /// and the finger count itself.
+    /// (cx, cy, workspace_switch_valid, view_scroll_valid, fingers)
+    pub gesture_swipe_3f_cumulative: Option<(f64, f64, bool, bool, usize)>,
     /// Active touch points for multi-finger gesture detection.
     pub touch_gesture_points: HashMap<Option<TouchSlot>, Point<f64, Logical>>,
     /// Cumulative delta when tracking a 2+ finger touch gesture.
@@ -380,6 +381,7 @@ pub struct Niri {
     pub vertical_finger_scroll_tracker: ScrollTracker,
     pub horizontal_finger_scroll_tracker: ScrollTracker,
     pub mods_with_finger_scroll_binds: HashSet<Modifiers>,
+    pub mods_with_swipe_binds: HashSet<Modifiers>,
 
     pub lock_state: LockState,
 
@@ -1526,6 +1528,8 @@ impl State {
             self.niri.mods_with_wheel_binds = mods_with_wheel_binds(new_mod_key, &config.binds);
             self.niri.mods_with_finger_scroll_binds =
                 mods_with_finger_scroll_binds(new_mod_key, &config.binds);
+            self.niri.mods_with_swipe_binds =
+                mods_with_swipe_binds(new_mod_key, &config.binds);
         }
 
         if config.window_rules != old_config.window_rules {
@@ -2350,6 +2354,7 @@ impl Niri {
         let mods_with_mouse_binds = mods_with_mouse_binds(mod_key, &config_.binds);
         let mods_with_wheel_binds = mods_with_wheel_binds(mod_key, &config_.binds);
         let mods_with_finger_scroll_binds = mods_with_finger_scroll_binds(mod_key, &config_.binds);
+        let mods_with_swipe_binds = mods_with_swipe_binds(mod_key, &config_.binds);
 
         let screenshot_ui = ScreenshotUi::new(animation_clock.clone(), config.clone());
         let window_mru_ui = WindowMruUi::new(config.clone());
@@ -2537,6 +2542,7 @@ impl Niri {
             vertical_finger_scroll_tracker: ScrollTracker::new(10),
             horizontal_finger_scroll_tracker: ScrollTracker::new(10),
             mods_with_finger_scroll_binds,
+            mods_with_swipe_binds,
 
             lock_state: LockState::Unlocked,
             locked_hint: None,
