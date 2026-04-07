@@ -383,22 +383,22 @@ impl State {
 
     pub fn on_screen_cast_msg(&mut self, msg: ScreenCastToNiri) {
         match msg {
-            ScreenCastToNiri::StartCast {
+            ScreenCastToNiri::StartStream {
                 session_id,
                 stream_id,
                 target,
                 cursor_mode,
                 signal_ctx,
             } => {
-                let _span = tracy_client::span!("StartCast");
-                let _span = debug_span!("StartCast", %session_id, %stream_id).entered();
+                let _span = tracy_client::span!("StartStream");
+                let _span = debug_span!("StartStream", %session_id, %stream_id).entered();
 
                 let (target, size, refresh, alpha) = match target {
                     StreamTargetId::Output { name } => {
                         let global_space = &self.niri.global_space;
                         let output = global_space.outputs().find(|out| out.name() == name);
                         let Some(output) = output else {
-                            warn!("error starting screencast: requested output is missing");
+                            warn!("error starting screencast stream: requested output is missing");
                             self.niri.stop_cast(session_id);
                             return;
                         };
@@ -420,7 +420,7 @@ impl State {
                     }
                     StreamTargetId::Window { id } => {
                         let Some((size, refresh)) = self.niri.cast_params_for_window(id) else {
-                            warn!("error starting screencast: requested window is missing");
+                            warn!("error starting screencast stream: requested window is missing");
                             self.niri.stop_cast(session_id);
                             return;
                         };
@@ -431,7 +431,7 @@ impl State {
                 let (gbm, render_formats) = match self.prepare_pw_cast() {
                     Ok(x) => x,
                     Err(err) => {
-                        warn!("error starting screencast: {err:?}");
+                        warn!("error starting screencast stream: {err:?}");
                         self.niri.stop_cast(session_id);
                         return;
                     }
@@ -455,12 +455,15 @@ impl State {
                         self.niri.casting.casts.push(cast);
                     }
                     Err(err) => {
-                        warn!("error starting screencast: {err:?}");
+                        warn!("error starting screencast stream: {err:?}");
                         self.niri.stop_cast(session_id);
                     }
                 }
             }
-            ScreenCastToNiri::StopCast { session_id } => self.niri.stop_cast(session_id),
+            ScreenCastToNiri::StopCast { session_id, reason } => {
+                debug!(%session_id, ?reason, "Handling ScreenCastToNiri::StopCast");
+                self.niri.stop_cast(session_id)
+            }
         }
     }
 }
@@ -726,8 +729,8 @@ impl Niri {
 
             async_io::block_on(async move {
                 iface
-                    .get()
-                    .stop(server.inner(), iface.signal_emitter().clone())
+                    .get_mut()
+                    .stop_from_stopcast(server.inner(), &iface.signal_emitter().clone())
                     .await
             });
         }
