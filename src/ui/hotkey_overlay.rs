@@ -560,6 +560,18 @@ fn key_name(screen_reader: bool, mod_key: ModKey, key: &Key) -> String {
         Trigger::TouchpadScrollUp => String::from("Touchpad Scroll Up"),
         Trigger::TouchpadScrollLeft => String::from("Touchpad Scroll Left"),
         Trigger::TouchpadScrollRight => String::from("Touchpad Scroll Right"),
+        Trigger::TouchpadSwipe3Up => String::from("Touchpad 3-Finger Swipe Up"),
+        Trigger::TouchpadSwipe3Down => String::from("Touchpad 3-Finger Swipe Down"),
+        Trigger::TouchpadSwipe3Left => String::from("Touchpad 3-Finger Swipe Left"),
+        Trigger::TouchpadSwipe3Right => String::from("Touchpad 3-Finger Swipe Right"),
+        Trigger::TouchpadSwipe4Up => String::from("Touchpad 4-Finger Swipe Up"),
+        Trigger::TouchpadSwipe4Down => String::from("Touchpad 4-Finger Swipe Down"),
+        Trigger::TouchpadSwipe4Left => String::from("Touchpad 4-Finger Swipe Left"),
+        Trigger::TouchpadSwipe4Right => String::from("Touchpad 4-Finger Swipe Right"),
+        Trigger::TouchpadSwipe5Up => String::from("Touchpad 5-Finger Swipe Up"),
+        Trigger::TouchpadSwipe5Down => String::from("Touchpad 5-Finger Swipe Down"),
+        Trigger::TouchpadSwipe5Left => String::from("Touchpad 5-Finger Swipe Left"),
+        Trigger::TouchpadSwipe5Right => String::from("Touchpad 5-Finger Swipe Right"),
     };
     name.push_str(&pretty);
 
