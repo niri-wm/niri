@@ -1,8 +1,16 @@
-//! Touchscreen multi-finger gesture handling.
+//! Touchscreen gesture handling.
 //!
-//! Processes 3+ finger touch gestures for workspace switching, view scrolling,
-//! and overview toggling. Gesture recognition, sensitivity, finger count, and
-//! natural scroll are all configurable per-gesture.
+//! This file handles **touchscreen** (finger-on-screen) gestures only.
+//! Touchpad/trackpad gestures are handled separately in `input/mod.rs`
+//! via `on_gesture_swipe_*` using libinput gesture events.
+//!
+//! Naming convention (follows upstream niri):
+//!   `touch_*` fields on Niri  → touchscreen
+//!   `gesture_swipe_*` fields  → touchpad/trackpad
+//!
+//! Two gesture types:
+//!   - Multi-finger (3+): workspace switch, view scroll, overview toggle
+//!   - Edge swipe (1+): touch starts in screen edge zone, any direction
 
 use std::cmp::min;
 use std::time::Duration;
@@ -17,7 +25,9 @@ use super::backend_ext::NiriInputBackend as InputBackend;
 use super::move_grab::MoveGrab;
 use super::touch_overview_grab::TouchOverviewGrab;
 use super::{modifiers_from_state, PointerOrTouchStartData};
-use crate::niri::{PointerVisibility, State};
+use niri_config::input::{EdgeSwipeAction, ScreenEdge};
+
+use crate::niri::{PointerVisibility, State, TouchEdgeSwipeState};
 
 impl State {
     pub(super) fn on_touch_down<I: InputBackend>(&mut self, evt: I::TouchDownEvent) {
@@ -30,19 +40,44 @@ impl State {
         let slot = evt.slot();
 
         // Track touch point for multi-finger gesture detection.
+        let was_empty = self.niri.touch_gesture_points.is_empty();
         let was_single = self.niri.touch_gesture_points.len() == 1;
         self.niri.touch_gesture_points.insert(Some(slot), pos);
 
-        // When second finger arrives, start cumulative tracking for gesture recognition.
-        // Actual gestures (workspace/view/scroll) require 3+ fingers and are processed
-        // in on_touch_motion once the third finger arrives and moves.
-        if was_single && self.niri.touch_gesture_points.len() == 2 {
+        // First finger: check if it's in a screen edge zone for edge swipe detection.
+        if was_empty && self.niri.touch_edge_swipe.is_none() {
+            if let Some((output, pos_within_output)) = self.niri.output_under(pos) {
+                let size = self.niri.global_space.output_geometry(output).unwrap().size;
+                let config = self.niri.config.borrow();
+                let threshold = config.input.touchscreen.edge_threshold();
+                if let Some(edge) = detect_edge(pos_within_output, size, threshold) {
+                    if let Some(action) = config.input.touchscreen.edge_swipe_action(edge) {
+                        self.niri.touch_edge_swipe = Some(TouchEdgeSwipeState::Pending {
+                            edge,
+                            action,
+                            cumulative: (0., 0.),
+                            slot: Some(slot),
+                        });
+                    }
+                }
+            }
+        }
+
+        // When second finger arrives, start cumulative tracking for gesture recognition
+        // (unless an edge swipe is pending/active — edge swipe takes priority).
+        if was_single
+            && self.niri.touch_gesture_points.len() == 2
+            && self.niri.touch_edge_swipe.is_none()
+        {
             self.niri.touch_gesture_cumulative = Some((0., 0.));
         }
 
-        // Check if we're tracking a multi-finger gesture (2+ fingers).
-        // If so, we should not forward events to clients.
-        let tracking_gesture = self.niri.touch_gesture_points.len() > 2;
+        // Check if we're tracking a multi-finger gesture (2+ fingers),
+        // a locked gesture (direction decided), or an edge swipe.
+        // If so, don't forward events to clients.
+        let tracking_gesture = self.niri.touch_gesture_points.len() > 2
+            || self.niri.touch_gesture_locked;
+        let in_edge_zone = self.niri.touch_edge_swipe.is_some();
 
         let serial = SERIAL_COUNTER.next_serial();
 
@@ -50,7 +85,10 @@ impl State {
 
         let mod_key = self.backend.mod_key(&self.niri.config.borrow());
 
-        if self.niri.screenshot_ui.is_open() {
+        if in_edge_zone {
+            // Edge zone touch — skip window activation and client forwarding.
+            // The gesture will either activate (swipe) or cancel (lift = no-op).
+        } else if self.niri.screenshot_ui.is_open() {
             if let Some(output) = under.output.clone() {
                 let geom = self.niri.global_space.output_geometry(&output).unwrap();
                 let mut point = (pos - geom.loc.to_f64())
@@ -152,8 +190,8 @@ impl State {
             self.niri.focus_layer_surface_if_on_demand(under.layer);
         };
 
-        // Only forward to client if not tracking a multi-finger gesture.
-        if !tracking_gesture {
+        // Only forward to client if not tracking a multi-finger gesture or edge swipe.
+        if !tracking_gesture && !in_edge_zone {
             handle.down(
                 self,
                 under.surface,
@@ -176,15 +214,37 @@ impl State {
         };
         let slot = evt.slot();
 
+        // Handle edge swipe state on finger lift.
+        if let Some(ref state) = self.niri.touch_edge_swipe {
+            match state {
+                TouchEdgeSwipeState::Pending { slot: edge_slot, .. } => {
+                    if Some(slot) == *edge_slot {
+                        // Finger lifted before threshold — normal tap, clear state.
+                        self.niri.touch_edge_swipe = None;
+                    }
+                }
+                TouchEdgeSwipeState::Active { action, .. } => {
+                    let action = *action;
+                    self.niri.touch_edge_swipe = None;
+                    // End the gesture animation.
+                    end_edge_swipe_gesture(self, action);
+                    self.niri.touch_gesture_points.remove(&Some(slot));
+                    return;
+                }
+            }
+        }
+
         // Check if we're tracking a multi-finger gesture before removing this touch point.
-        let tracking_gesture = self.niri.touch_gesture_points.len() > 2;
+        let tracking_gesture = self.niri.touch_gesture_points.len() > 2
+            || self.niri.touch_gesture_locked;
 
         // Remove touch point from gesture tracking.
         self.niri.touch_gesture_points.remove(&Some(slot));
 
-        // End gesture when fewer than 2 fingers remain.
-        if self.niri.touch_gesture_points.len() < 2 {
+        // End gesture when all fingers are lifted.
+        if self.niri.touch_gesture_points.is_empty() {
             self.niri.touch_gesture_cumulative = None;
+            self.niri.touch_gesture_locked = false;
 
             // End any ongoing gesture animations.
             if let Some(output) = self.niri.layout.workspace_switch_gesture_end(Some(true)) {
@@ -237,8 +297,111 @@ impl State {
             // Update stored position.
             self.niri.touch_gesture_points.insert(Some(slot), pos);
 
-            // Process gesture if we're tracking (3+ fingers).
-            if self.niri.touch_gesture_points.len() >= 3 {
+            // Handle edge swipe gesture (takes priority over multi-finger gestures).
+            // Extract state to avoid borrow conflicts with self.
+            enum EdgeAction {
+                None,
+                PendingAccumulate {
+                    edge: ScreenEdge,
+                    action: EdgeSwipeAction,
+                    cx: f64,
+                    cy: f64,
+                    edge_slot: Option<smithay::backend::input::TouchSlot>,
+                },
+                ActiveFeed {
+                    action: EdgeSwipeAction,
+                    sensitivity: f64,
+                    natural: bool,
+                },
+            }
+
+            let edge_action = match &mut self.niri.touch_edge_swipe {
+                Some(TouchEdgeSwipeState::Pending {
+                    edge,
+                    action,
+                    cumulative,
+                    slot: edge_slot,
+                }) if Some(slot) == *edge_slot => {
+                    cumulative.0 += delta_x;
+                    cumulative.1 += delta_y;
+                    EdgeAction::PendingAccumulate {
+                        edge: *edge,
+                        action: *action,
+                        cx: cumulative.0,
+                        cy: cumulative.1,
+                        edge_slot: *edge_slot,
+                    }
+                }
+                Some(TouchEdgeSwipeState::Active { action, edge, .. }) => {
+                    let (sensitivity, natural) = {
+                        let config = self.niri.config.borrow();
+                        let touch = &config.input.touchscreen;
+                        (
+                            touch.edge_swipe_sensitivity(*edge),
+                            match action {
+                                EdgeSwipeAction::WorkspaceSwitch => {
+                                    touch.workspace_switch_natural_scroll()
+                                }
+                                EdgeSwipeAction::ViewScroll => {
+                                    touch.view_scroll_natural_scroll()
+                                }
+                                EdgeSwipeAction::OverviewToggle => {
+                                    touch.overview_toggle_natural_scroll()
+                                }
+                            },
+                        )
+                    };
+                    EdgeAction::ActiveFeed {
+                        action: *action,
+                        sensitivity,
+                        natural,
+                    }
+                }
+                _ => EdgeAction::None,
+            };
+
+            match edge_action {
+                EdgeAction::PendingAccumulate {
+                    edge, action, cx, cy, edge_slot,
+                } => {
+                    let threshold = {
+                        let config = self.niri.config.borrow();
+                        config.input.touchscreen.gesture_threshold()
+                    };
+
+                    if cx * cx + cy * cy >= threshold * threshold {
+                        // Edge zone is the activation area — any swipe direction
+                        // triggers the gesture. The action determines which axis
+                        // matters (overview needs vertical, view-scroll needs
+                        // horizontal, etc.).
+                        self.niri.touch_edge_swipe =
+                            Some(TouchEdgeSwipeState::Active {
+                                edge,
+                                action,
+                                slot: edge_slot,
+                            });
+                        handle.cancel(self);
+                        begin_edge_swipe_gesture(self, pos, edge, action);
+                        self.niri.queue_redraw_all();
+                    }
+                    // During Pending, don't suppress client motion events.
+                }
+                EdgeAction::ActiveFeed {
+                    action, sensitivity, natural, ..
+                } => {
+                    let timestamp = Duration::from_micros(evt.time());
+                    feed_edge_swipe_gesture(
+                        self, action, delta_x, delta_y, sensitivity, natural, timestamp,
+                    );
+                    gesture_handled = true;
+                }
+                EdgeAction::None => {}
+            }
+
+            // Process gesture if tracking (3+ fingers or locked) and no edge swipe active.
+            let gesture_active = self.niri.touch_gesture_points.len() >= 3
+                || self.niri.touch_gesture_locked;
+            if gesture_active && self.niri.touch_edge_swipe.is_none() {
                 let timestamp = Duration::from_micros(evt.time());
                 gesture_handled = true;
 
@@ -269,6 +432,14 @@ impl State {
                         self.niri.touch_gesture_cumulative = None;
 
                         let finger_count = self.niri.touch_gesture_points.len();
+
+                        // Lock the gesture — suppress client events until all
+                        // fingers are lifted, even if count drops below 3.
+                        // Cancel the client's touch sequence since we already
+                        // forwarded touch-down for fingers 1 and 2.
+                        self.niri.touch_gesture_locked = true;
+                        let handle = self.niri.seat.get_touch().unwrap();
+                        handle.cancel(self);
 
                         if ov_enabled && finger_count >= ov_fingers {
                             // Overview toggle gesture.
@@ -434,6 +605,8 @@ impl State {
         // Clear all touch gesture state.
         self.niri.touch_gesture_points.clear();
         self.niri.touch_gesture_cumulative = None;
+        self.niri.touch_edge_swipe = None;
+        self.niri.touch_gesture_locked = false;
 
         // Cancel any ongoing gesture animations.
         self.niri.layout.workspace_switch_gesture_end(Some(false));
@@ -441,5 +614,164 @@ impl State {
         self.niri.layout.overview_gesture_end();
 
         handle.cancel(self);
+    }
+}
+
+/// Detect which screen edge a touch position is near, if any.
+fn detect_edge(
+    pos: smithay::utils::Point<f64, smithay::utils::Logical>,
+    size: smithay::utils::Size<i32, smithay::utils::Logical>,
+    threshold: f64,
+) -> Option<ScreenEdge> {
+    let x = pos.x;
+    let y = pos.y;
+    let w = size.w as f64;
+    let h = size.h as f64;
+
+    let left = x;
+    let right = w - x;
+    let top = y;
+    let bottom = h - y;
+
+    // Find the closest edge within threshold.
+    let mut closest: Option<(ScreenEdge, f64)> = None;
+    for (edge, dist) in [
+        (ScreenEdge::Left, left),
+        (ScreenEdge::Right, right),
+        (ScreenEdge::Top, top),
+        (ScreenEdge::Bottom, bottom),
+    ] {
+        if dist < threshold {
+            if closest.map_or(true, |(_, d)| dist < d) {
+                closest = Some((edge, dist));
+            }
+        }
+    }
+
+    closest.map(|(edge, _)| edge)
+}
+
+/// Start the appropriate gesture animation for an edge swipe.
+fn begin_edge_swipe_gesture(
+    state: &mut State,
+    pos: smithay::utils::Point<f64, smithay::utils::Logical>,
+    _edge: ScreenEdge,
+    action: niri_config::input::EdgeSwipeAction,
+) {
+    use niri_config::input::EdgeSwipeAction;
+
+    match action {
+        EdgeSwipeAction::OverviewToggle => {
+            state.niri.layout.overview_gesture_begin();
+        }
+        EdgeSwipeAction::WorkspaceSwitch => {
+            if let Some((output, _)) = state.niri.output_under(pos) {
+                let output = output.clone();
+                state
+                    .niri
+                    .layout
+                    .workspace_switch_gesture_begin(&output, true);
+            }
+        }
+        EdgeSwipeAction::ViewScroll => {
+            if let Some((output, _)) = state.niri.output_under(pos) {
+                let output = output.clone();
+                let is_overview_open = state.niri.layout.is_overview_open();
+
+                let output_ws = if is_overview_open {
+                    state.niri.workspace_under(true, pos)
+                } else {
+                    state
+                        .niri
+                        .layout
+                        .monitor_for_output(&output)
+                        .map(|mon| (output.clone(), mon.active_workspace_ref()))
+                };
+
+                if let Some((output, ws)) = output_ws {
+                    let ws_idx = state
+                        .niri
+                        .layout
+                        .find_workspace_by_id(ws.id())
+                        .unwrap()
+                        .0;
+                    state
+                        .niri
+                        .layout
+                        .view_offset_gesture_begin(&output, Some(ws_idx), true);
+                }
+            }
+        }
+    }
+}
+
+/// Feed delta to the active edge swipe gesture.
+fn feed_edge_swipe_gesture(
+    state: &mut State,
+    action: niri_config::input::EdgeSwipeAction,
+    delta_x: f64,
+    delta_y: f64,
+    sensitivity: f64,
+    natural: bool,
+    timestamp: Duration,
+) {
+    use niri_config::input::EdgeSwipeAction;
+
+    match action {
+        EdgeSwipeAction::WorkspaceSwitch => {
+            let dy = if natural { -delta_y } else { delta_y };
+            if state
+                .niri
+                .layout
+                .workspace_switch_gesture_update(dy * sensitivity, timestamp, true)
+                .is_some()
+            {
+                state.niri.queue_redraw_all();
+            }
+        }
+        EdgeSwipeAction::ViewScroll => {
+            let dx = if natural { -delta_x } else { delta_x };
+            if state
+                .niri
+                .layout
+                .view_offset_gesture_update(dx * sensitivity, timestamp, true)
+                .is_some()
+            {
+                state.niri.queue_redraw_all();
+            }
+        }
+        EdgeSwipeAction::OverviewToggle => {
+            let dy = if natural { delta_y } else { -delta_y };
+            if let Some(redraw) = state
+                .niri
+                .layout
+                .overview_gesture_update(dy * sensitivity, timestamp)
+            {
+                if redraw {
+                    state.niri.queue_redraw_all();
+                }
+            }
+        }
+    }
+}
+
+/// End the edge swipe gesture animation.
+fn end_edge_swipe_gesture(state: &mut State, action: niri_config::input::EdgeSwipeAction) {
+    use niri_config::input::EdgeSwipeAction;
+
+    match action {
+        EdgeSwipeAction::WorkspaceSwitch => {
+            if let Some(output) = state.niri.layout.workspace_switch_gesture_end(Some(true)) {
+                state.niri.queue_redraw(&output);
+            }
+        }
+        EdgeSwipeAction::ViewScroll => {
+            if let Some(output) = state.niri.layout.view_offset_gesture_end(Some(true)) {
+                state.niri.queue_redraw(&output);
+            }
+        }
+        EdgeSwipeAction::OverviewToggle => {
+            state.niri.layout.overview_gesture_end();
+        }
     }
 }
