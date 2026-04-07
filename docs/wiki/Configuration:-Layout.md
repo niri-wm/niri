@@ -230,8 +230,7 @@ layout {
 <sup>Since: 0.1.9</sup>
 
 Set the heights that the `switch-preset-window-height` action (Mod+Shift+R) toggles between.
-<sup>Since: 25.08</sup> Use `switch-preset-window-height-back` action (Unbound) to toggle in reverse.
-
+<sup>Since: 25.08</sup> You can use the `switch-preset-column-width-back` action (not bound by default) to toggle in reverse.
 
 `proportion` sets the height as a fraction of the output height, taking gaps into account.
 The default preset heights are <sup>1</sup>&frasl;<sub>3</sub>, <sup>1</sup>&frasl;<sub>2</sub> and <sup>2</sup>&frasl;<sub>3</sub> of the output.
