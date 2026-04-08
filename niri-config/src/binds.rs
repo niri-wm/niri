@@ -167,6 +167,8 @@ pub enum Action {
     FocusColumnLast,
     FocusColumnRightOrFirst,
     FocusColumnLeftOrLast,
+    FocusColumnLeftWrapping,
+    FocusColumnRightWrapping,
     FocusColumn(#[knuffel(argument)] usize),
     FocusWindowOrMonitorUp,
     FocusWindowOrMonitorDown,
