@@ -27,7 +27,11 @@ impl WlrLayerShellHandler for State {
         namespace: String,
     ) {
         let output = if let Some(wl_output) = &wl_output {
+            // There might be a race where a client sends an already removed output.
+            // So instead of just accepting the output check the output against the
+            // known outputs.
             Output::from_resource(wl_output)
+                .filter(|output| self.niri.layout.outputs().any(|o| o == output))
         } else {
             self.niri.layout.active_output().cloned()
         };
