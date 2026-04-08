@@ -12,6 +12,8 @@ pub struct ResolvedLayerRules {
     /// Extra opacity to draw this layer surface with.
     pub opacity: Option<f32>,
 
+    pub priority: i32,
+
     /// Whether to block out this layer surface from certain render targets.
     pub block_out_from: Option<BlockOutFrom>,
 
@@ -55,6 +57,9 @@ impl ResolvedLayerRules {
 
             if let Some(x) = rule.opacity {
                 resolved.opacity = Some(x);
+            }
+            if let Some(x) = rule.priority {
+                resolved.priority = x;
             }
             if let Some(x) = rule.block_out_from {
                 resolved.block_out_from = Some(x);
