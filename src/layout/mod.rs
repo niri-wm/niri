@@ -1918,6 +1918,20 @@ impl<W: LayoutElement> Layout<W> {
         workspace.focus_column_left_or_last();
     }
 
+    pub fn focus_left_wrapping(&mut self) {
+        let Some(workspace) = self.active_workspace_mut() else {
+            return;
+        };
+        workspace.focus_left_wrapping();
+    }
+
+    pub fn focus_right_wrapping(&mut self) {
+        let Some(workspace) = self.active_workspace_mut() else {
+            return;
+        };
+        workspace.focus_right_wrapping();
+    }
+
     pub fn focus_column(&mut self, index: usize) {
         let Some(workspace) = self.active_workspace_mut() else {
             return;

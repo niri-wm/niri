@@ -1564,6 +1564,94 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         true
     }
 
+    pub fn focus_left_wrapping(&mut self) -> bool {
+        if self.columns.len() < 2 {
+            return false;
+        }
+
+        if self.active_column_idx > 0 {
+            self.activate_column(self.active_column_idx - 1);
+        } else {
+            // Wrap from first to last, faking the offset so it looks like a
+            // single-column scroll to the left.
+            let target_idx = self.columns.len() - 1;
+            self.activate_column_wrapping(target_idx, false);
+        }
+        true
+    }
+
+    pub fn focus_right_wrapping(&mut self) -> bool {
+        if self.columns.len() < 2 {
+            return false;
+        }
+
+        if self.active_column_idx + 1 < self.columns.len() {
+            self.activate_column(self.active_column_idx + 1);
+        } else {
+            // Wrap from last to first, faking the offset so it looks like a
+            // single-column scroll to the right.
+            self.activate_column_wrapping(0, true);
+        }
+        true
+    }
+
+    /// Activates the target column with a view offset that makes the scroll
+    /// look as though the target is adjacent to the current column (cylinder
+    /// wrap). `forward` is true when wrapping right (last→first).
+    fn activate_column_wrapping(&mut self, target_idx: usize, forward: bool) {
+        let config = self.options.animations.horizontal_view_movement.0;
+        let new_view_offset = self.compute_new_view_offset_for_column(
+            None,
+            target_idx,
+            Some(self.active_column_idx),
+        );
+
+        // Normal activate_column calls animate_view_offset_with_config which
+        // uses the real column_x delta.  We instead compute a fake delta that
+        // equals one adjacent column step so the animation distance is small.
+        let gap = self.options.layout.gaps;
+        let adjacent_distance = if forward {
+            // Wrapping right: pretend column 0 is just to the right of the
+            // last column.
+            self.columns[self.active_column_idx].width() + gap
+        } else {
+            // Wrapping left: pretend the last column is just to the left.
+            self.columns[target_idx].width() + gap
+        };
+
+        let fake_offset_delta = if forward {
+            // Moving right: the old column is to the left of the new one, so
+            // the offset goes negative.
+            -adjacent_distance
+        } else {
+            // Moving left: the old column is to the right of the new one, so
+            // the offset goes positive.
+            adjacent_distance
+        };
+
+        // Apply the fake delta instead of the real column-position difference.
+        self.view_offset.offset(fake_offset_delta);
+
+        let pixel = 1. / self.scale;
+        let to_diff = new_view_offset - self.view_offset.target();
+        if to_diff.abs() < pixel {
+            self.view_offset.offset(to_diff);
+        } else {
+            self.view_offset = ViewOffset::Animation(Animation::new(
+                self.clock.clone(),
+                self.view_offset.current(),
+                new_view_offset,
+                0.,
+                config,
+            ));
+        }
+
+        self.active_column_idx = target_idx;
+        self.activate_prev_column_on_removal = None;
+        self.view_offset_to_restore = None;
+        self.interactive_resize = None;
+    }
+
     pub fn focus_column_first(&mut self) {
         self.activate_column(0);
     }
