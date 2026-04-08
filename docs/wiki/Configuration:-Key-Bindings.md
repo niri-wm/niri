@@ -62,6 +62,51 @@ For this reason, most of the default keys use the `Mod` modifier.
 > When resolving latin keys, niri will search for the *first* configured XKB layout that has the latin key.
 > So for example with US QWERTY and RU layouts configured, US QWERTY will be used for latin binds.
 
+### Layout-Independent Binds
+
+<sup>Since: 25.11</sup>
+
+You can make binds match by physical key instead of by the currently produced symbol.
+This is useful if you want a bind like `Mod+/` to keep working even when the active layout puts `.`
+or some non-latin symbol on that key.
+
+Layout-independent binds still use the normal symbolic syntax in the config, but they are resolved
+against a reference XKB keymap declared in the `binds` section.
+
+```kdl
+binds {
+    layout-independent true
+
+    xkb {
+        layout "us"
+    }
+
+    Mod+T { spawn "alacritty"; }
+    Mod+Slash { show-hotkey-overlay; }
+    Mod+Q layout-independent=false { close-window; }
+}
+```
+
+Rules:
+
+- `layout-independent true` sets the default for all binds in the section.
+- Individual binds can override it with `layout-independent=true` or `layout-independent=false`.
+- `xkb {}` uses the same fields as `input.keyboard.xkb`.
+- Layout-independent binds resolve against the declared reference keymap from `binds.xkb`.
+- If `binds.xkb.file` is set, that file is used as the reference keymap directly.
+- Otherwise, the bind `xkb {}` must describe exactly one reference layout.
+- The symbolic key in a layout-independent bind must resolve to a unique physical key in the reference keymap.
+- Extra modifiers that are needed to type that symbol in the reference keymap, such as `Shift` or `ISO_Level3_Shift`, also become part of the bind.
+- For example, if `/` is on the same physical key as `7` in the reference keymap, then `Mod+Slash` will match `Mod+Shift+7`, not plain `Mod+7`.
+- If the symbol is missing from the reference keymap, or ambiguous there, config loading fails.
+- If multiple config files contribute `binds {}` sections, the section-level `layout-independent`
+  and `xkb {}` values follow the normal merge rules: the last `binds {}` section wins.
+- If two layout-independent binds resolve to the same physical key combination, config loading
+  fails.
+- If a layout-independent bind and a normal keysym bind would both match the same key event, the
+  layout-independent bind takes precedence.
+- Normal binds continue to match by keysym as before.
+
 <sup>Since: 0.1.8</sup> Binds will repeat by default (i.e. holding down a bind will make it trigger repeatedly).
 You can disable that for specific binds with `repeat=false`:
 
