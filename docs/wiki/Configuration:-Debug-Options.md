@@ -17,6 +17,7 @@ debug {
     disable-cursor-plane
     disable-direct-scanout
     restrict-primary-scanout-to-matching-format
+    force-disable-connectors-on-resume
     render-drm-device "/dev/dri/renderD129"
     ignore-drm-device "/dev/dri/renderD128"
     ignore-drm-device "/dev/dri/renderD130"
@@ -104,6 +105,19 @@ debug {
 }
 ```
 
+### `force-disable-connectors-on-resume`
+
+Force-disables all outputs upon resuming niri (TTY switch or waking up from suspend).
+This causes a modeset/screen blank on all outputs.
+
+If niri rendering is corrupted, or monitors don't light up after a TTY switch, you can try this flag.
+
+```kdl
+debug {
+    force-disable-connectors-on-resume
+}
+```
+
 ### `render-drm-device`
 
 Override the DRM device that niri will use for all rendering.
@@ -118,7 +132,7 @@ debug {
 
 ### `ignore-drm-device`
 
-<sup>Since: next release</sup>
+<sup>Since: 25.11</sup>
 
 List DRM devices that niri will ignore.
 Useful for GPU passthrough when you don't want niri to open a certain device.
@@ -319,7 +333,7 @@ Apparently, setting max bpc to 8 breaks some displays driven by AMDGPU.
 If this happens to you, set this debug flag, which will prevent niri from changing max bpc.
 AMDGPU bug report: https://gitlab.freedesktop.org/drm/amd/-/issues/4487.
 
-<sup>Since: next release</sup>
+<sup>Since: 25.11</sup>
 This setting is deprecated and does nothing: niri no longer sets max bpc.
 The old niri behavior with this setting enabled matches the new behavior.
 

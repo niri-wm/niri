@@ -64,7 +64,7 @@ use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::snapshot::RenderSnapshot;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
 use crate::render_helpers::texture::TextureBuffer;
-use crate::render_helpers::{BakedBuffer, RenderTarget, SplitElements};
+use crate::render_helpers::{BakedBuffer, RenderTarget};
 use crate::rubber_band::RubberBand;
 use crate::utils::transaction::{Transaction, TransactionBlocker};
 use crate::utils::{
@@ -159,7 +159,11 @@ pub trait LayoutElement {
         scale: Scale<f64>,
         alpha: f32,
         target: RenderTarget,
-    ) -> SplitElements<LayoutElementRenderElement<R>>;
+        push: &mut dyn FnMut(LayoutElementRenderElement<R>),
+    ) {
+        self.render_popups(renderer, location, scale, alpha, target, push);
+        self.render_normal(renderer, location, scale, alpha, target, push);
+    }
 
     /// Renders the non-popup parts of the element.
     fn render_normal<R: NiriRenderer>(
@@ -169,8 +173,9 @@ pub trait LayoutElement {
         scale: Scale<f64>,
         alpha: f32,
         target: RenderTarget,
-    ) -> Vec<LayoutElementRenderElement<R>> {
-        self.render(renderer, location, scale, alpha, target).normal
+        push: &mut dyn FnMut(LayoutElementRenderElement<R>),
+    ) {
+        let _ = (renderer, location, scale, alpha, target, push);
     }
 
     /// Renders the popups of the element.
@@ -181,8 +186,9 @@ pub trait LayoutElement {
         scale: Scale<f64>,
         alpha: f32,
         target: RenderTarget,
-    ) -> Vec<LayoutElementRenderElement<R>> {
-        self.render(renderer, location, scale, alpha, target).popups
+        push: &mut dyn FnMut(LayoutElementRenderElement<R>),
+    ) {
+        let _ = (renderer, location, scale, alpha, target, push);
     }
 
     /// Requests the element to change its size.
@@ -498,6 +504,7 @@ pub enum HitType {
 enum OverviewProgress {
     Animation(Animation),
     Gesture(OverviewGesture),
+    Open,
 }
 
 #[derive(Debug)]
@@ -628,6 +635,7 @@ impl OverviewProgress {
         match self {
             OverviewProgress::Animation(anim) => anim.value(),
             OverviewProgress::Gesture(gesture) => gesture.value,
+            OverviewProgress::Open => 1.,
         }
     }
 
@@ -2648,9 +2656,11 @@ impl<W: LayoutElement> Layout<W> {
             }
         }
 
-        if !self.overview_open {
-            if let Some(OverviewProgress::Animation(anim)) = &mut self.overview_progress {
-                if anim.is_done() {
+        if let Some(OverviewProgress::Animation(anim)) = &mut self.overview_progress {
+            if anim.is_done() {
+                if self.overview_open {
+                    self.overview_progress = Some(OverviewProgress::Open);
+                } else {
                     self.overview_progress = None;
                 }
             }
@@ -2674,19 +2684,19 @@ impl<W: LayoutElement> Layout<W> {
     pub fn are_animations_ongoing(&self, output: Option<&Output>) -> bool {
         // Keep advancing animations if we might need to scroll the view.
         if let Some(dnd) = &self.dnd {
-            if output.map_or(true, |output| *output == dnd.output) {
+            if output.is_none_or(|output| *output == dnd.output) {
                 return true;
             }
         }
 
         if let Some(InteractiveMoveState::Moving(move_)) = &self.interactive_move {
-            if output.map_or(true, |output| *output == move_.output) {
+            if output.is_none_or(|output| *output == move_.output) {
                 if move_.tile.are_animations_ongoing() {
                     return true;
                 }
 
                 // Keep advancing animations if we might need to scroll the view.
-                if !move_.is_floating {
+                if !move_.is_floating || self.overview_open {
                     return true;
                 }
             }
@@ -2720,7 +2730,7 @@ impl<W: LayoutElement> Layout<W> {
 
         let zoom = self.overview_zoom();
         if let Some(InteractiveMoveState::Moving(move_)) = &mut self.interactive_move {
-            if output.map_or(true, |output| move_.output == *output) {
+            if output.is_none_or(|output| move_.output == *output) {
                 let pos_within_output = move_.tile_render_location(zoom);
                 let view_rect =
                     Rectangle::new(pos_within_output.upscale(-1.), output_size(&move_.output));
@@ -2741,7 +2751,7 @@ impl<W: LayoutElement> Layout<W> {
         };
 
         for (idx, mon) in monitors.iter_mut().enumerate() {
-            if output.map_or(true, |output| mon.output == *output) {
+            if output.is_none_or(|output| mon.output == *output) {
                 let is_active = self.is_active
                     && idx == *active_monitor_idx
                     && !matches!(self.interactive_move, Some(InteractiveMoveState::Moving(_)));
@@ -3271,7 +3281,7 @@ impl<W: LayoutElement> Layout<W> {
 
             let mon = &mut monitors[mon_idx];
             let activate = activate.map_smart(|| {
-                window.map_or(true, |win| {
+                window.is_none_or(|win| {
                     mon_idx == *active_monitor_idx
                         && mon.active_window().map(|win| win.id()) == Some(win)
                 })
@@ -4709,38 +4719,37 @@ impl<W: LayoutElement> Layout<W> {
         }
     }
 
-    pub fn render_interactive_move_for_output<'a, R: NiriRenderer + 'a>(
-        &'a self,
+    pub fn render_interactive_move_for_output<R: NiriRenderer>(
+        &self,
         renderer: &mut R,
         output: &Output,
         target: RenderTarget,
-    ) -> impl Iterator<Item = RescaleRenderElement<TileRenderElement<R>>> + 'a {
+        push: &mut dyn FnMut(RescaleRenderElement<TileRenderElement<R>>),
+    ) {
         if self.update_render_elements_time != self.clock.now() {
             error!("clock moved between updating render elements and rendering");
         }
 
-        let mut rv = None;
+        let Some(InteractiveMoveState::Moving(move_)) = &self.interactive_move else {
+            return;
+        };
 
-        if let Some(InteractiveMoveState::Moving(move_)) = &self.interactive_move {
-            if &move_.output == output {
-                let scale = Scale::from(move_.output.current_scale().fractional_scale());
-                let zoom = self.overview_zoom();
-                let location = move_.tile_render_location(zoom);
-                let iter = move_
-                    .tile
-                    .render(renderer, location, true, target)
-                    .map(move |elem| {
-                        RescaleRenderElement::from_element(
-                            elem,
-                            location.to_physical_precise_round(scale),
-                            zoom,
-                        )
-                    });
-                rv = Some(iter);
-            }
+        if &move_.output != output {
+            return;
         }
 
-        rv.into_iter().flatten()
+        let scale = Scale::from(move_.output.current_scale().fractional_scale());
+        let zoom = self.overview_zoom();
+        let location = move_.tile_render_location(zoom);
+        move_
+            .tile
+            .render(renderer, location, true, target, &mut |elem| {
+                push(RescaleRenderElement::from_element(
+                    elem,
+                    location.to_physical_precise_round(scale),
+                    zoom,
+                ));
+            });
     }
 
     pub fn refresh(&mut self, is_active: bool) {

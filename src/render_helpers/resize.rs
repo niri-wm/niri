@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::rc::Rc;
 
 use glam::{Mat3, Vec2};
 use niri_config::CornerRadius;
@@ -6,6 +7,7 @@ use smithay::backend::renderer::element::{Element, Id, Kind, RenderElement, Unde
 use smithay::backend::renderer::gles::{GlesError, GlesFrame, GlesRenderer, GlesTexture, Uniform};
 use smithay::backend::renderer::utils::{CommitCounter, DamageSet, OpaqueRegions};
 use smithay::backend::renderer::Texture as _;
+use smithay::gpu_span_location;
 use smithay::utils::{Buffer, Logical, Physical, Rectangle, Scale, Size, Transform};
 
 use super::renderer::{AsGlesFrame, NiriRenderer};
@@ -90,7 +92,7 @@ impl ResizeRenderElement {
                 None,
                 scale.x,
                 result_alpha,
-                vec![
+                Rc::new([
                     mat3_uniform("niri_input_to_curr_geo", input_to_curr_geo),
                     mat3_uniform("niri_curr_geo_to_prev_geo", curr_geo_to_prev_geo),
                     mat3_uniform("niri_curr_geo_to_next_geo", curr_geo_to_next_geo),
@@ -101,7 +103,7 @@ impl ResizeRenderElement {
                     Uniform::new("niri_clamped_progress", clamped_progress),
                     Uniform::new("niri_corner_radius", <[f32; 4]>::from(corner_radius)),
                     Uniform::new("niri_clip_to_geometry", clip_to_geometry),
-                ],
+                ]),
                 HashMap::from([
                     (String::from("niri_tex_prev"), texture_prev),
                     (String::from("niri_tex_next"), texture_next),
@@ -170,8 +172,10 @@ impl RenderElement<GlesRenderer> for ResizeRenderElement {
         damage: &[Rectangle<i32, Physical>],
         opaque_regions: &[Rectangle<i32, Physical>],
     ) -> Result<(), GlesError> {
-        RenderElement::<GlesRenderer>::draw(&self.0, frame, src, dst, damage, opaque_regions)?;
-        Ok(())
+        let _span = tracy_client::span!("ResizeRenderElement::draw");
+        frame.with_gpu_span(gpu_span_location!("ResizeRenderElement::draw"), |frame| {
+            RenderElement::<GlesRenderer>::draw(&self.0, frame, src, dst, damage, opaque_regions)
+        })
     }
 
     fn underlying_storage(&self, renderer: &mut GlesRenderer) -> Option<UnderlyingStorage<'_>> {
@@ -188,8 +192,8 @@ impl<'render> RenderElement<TtyRenderer<'render>> for ResizeRenderElement {
         damage: &[Rectangle<i32, Physical>],
         opaque_regions: &[Rectangle<i32, Physical>],
     ) -> Result<(), TtyRendererError<'render>> {
-        let gles_frame = frame.as_gles_frame();
-        RenderElement::<GlesRenderer>::draw(&self.0, gles_frame, src, dst, damage, opaque_regions)?;
+        let frame = frame.as_gles_frame();
+        RenderElement::<GlesRenderer>::draw(self, frame, src, dst, damage, opaque_regions)?;
         Ok(())
     }
 

@@ -20,6 +20,7 @@
       rust-overlay,
     }:
     let
+      revision = self.shortRev or self.dirtyShortRev or "unknown";
       niri-package =
         {
           lib,
@@ -46,7 +47,7 @@
 
         rustPlatform.buildRustPackage {
           pname = "niri";
-          version = self.shortRev or self.dirtyShortRev or "unknown";
+          version = revision;
 
           src = lib.fileset.toSource {
             root = ./.;
@@ -64,7 +65,7 @@
           postPatch = ''
             patchShebangs resources/niri-session
             substituteInPlace resources/niri.service \
-              --replace-fail '/usr/bin' "$out/bin"
+              --replace-fail 'ExecStart=niri' "ExecStart=$out/bin/niri"
           '';
 
           cargoLock = {
@@ -107,7 +108,7 @@
           buildNoDefaultFeatures = true;
 
           # ever since this commit:
-          # https://github.com/YaLTeR/niri/commit/771ea1e81557ffe7af9cbdbec161601575b64d81
+          # https://github.com/niri-wm/niri/commit/771ea1e81557ffe7af9cbdbec161601575b64d81
           # niri now runs an actual instance of the real compositor (with a mock backend) during tests
           # and thus creates a real socket file in the runtime dir.
           # this is fine for our build, we just need to make sure it has a directory to write to.
@@ -148,6 +149,7 @@
                 "-Wl,--pop-state"
               ]
             );
+            NIRI_BUILD_COMMIT = revision;
           };
 
           passthru = {
@@ -156,7 +158,7 @@
 
           meta = {
             description = "Scrollable-tiling Wayland compositor";
-            homepage = "https://github.com/YaLTeR/niri";
+            homepage = "https://github.com/niri-wm/niri";
             license = lib.licenses.gpl3Only;
             mainProgram = "niri";
             platforms = lib.platforms.linux;

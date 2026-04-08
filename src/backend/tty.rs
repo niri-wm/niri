@@ -434,6 +434,7 @@ impl Tty {
             .unwrap();
 
         let mut libinput = Libinput::new_with_udev(LibinputSessionInterface::from(session.clone()));
+        unsafe { init_libinput_plugin_system(&libinput) };
         {
             let _span = tracy_client::span!("Libinput::udev_assign_seat");
             libinput.udev_assign_seat(&seat_name)
@@ -646,7 +647,16 @@ impl Tty {
 
                     // It hasn't been removed, update its state as usual.
                     let device = self.devices.get_mut(&node).unwrap();
-                    if let Err(err) = device.drm.activate(false) {
+
+                    // Someone on an old device hit what seems to be a driver bug without this:
+                    // https://github.com/niri-wm/niri/issues/3048
+                    let force_disable = self
+                        .config
+                        .borrow()
+                        .debug
+                        .force_disable_connectors_on_resume;
+
+                    if let Err(err) = device.drm.activate(force_disable) {
                         warn!("error activating DRM device: {err:?}");
                     }
                     if let Some(lease_state) = &mut device.drm_lease_state {
@@ -969,6 +979,32 @@ impl Tty {
                 } => {
                     removed.push(crtc);
                 }
+                // Emitted when the list of connector modes changes at runtime.
+                //
+                // Some devices, notably USB-C docks with DP-MST/alt-mode, report Connected before
+                // the EDID has been read, with an empty mode list. Then, at a later point, the
+                // modes will be populated, at which point we'll get this Changed event.
+                DrmScanEvent::Changed {
+                    connector,
+                    crtc: Some(crtc),
+                } => {
+                    let connector_name = format_connector_name(&connector);
+                    let name = make_output_name(&device.drm, connector.handle(), connector_name);
+                    debug!(
+                        "connector changed: {} \"{}\"",
+                        &name.connector,
+                        name.format_make_model_serial(),
+                    );
+
+                    if !device.known_crtcs.contains_key(&crtc) {
+                        // I guess this can happen if the connector initially wasn't mapped to a
+                        // CRTC but then got mapped before being changed.
+                        warn!("changed connector missing from known crtcs");
+                    }
+
+                    // We don't actually need to do anything here; on_output_config_changed() will
+                    // take care of picking a new mode if needed.
+                }
                 _ => (),
             }
         }
@@ -1055,6 +1091,7 @@ impl Tty {
                 if let Err(err) = surface.compositor.reset_state() {
                     warn!("error resetting DrmCompositor state: {err:?}");
                 }
+                surface.compositor.reset_buffers();
             }
         }
 
@@ -1666,8 +1703,8 @@ impl Tty {
                 // This is an error!() because it shouldn't happen, but on some systems it somehow
                 // does. Kernel sending rogue vblank events?
                 //
-                // https://github.com/YaLTeR/niri/issues/556
-                // https://github.com/YaLTeR/niri/issues/615
+                // https://github.com/niri-wm/niri/issues/556
+                // https://github.com/niri-wm/niri/issues/615
                 error!(
                     "unexpected redraw state for output {name} (should be WaitingForVBlank); \
                      can happen when resuming from sleep or powering on monitors: {state:?}"
@@ -3324,6 +3361,50 @@ fn make_output_name(
     }
 }
 
+/// Initializes the libinput plugin system.
+///
+/// # Safety
+///
+/// This function must be called before libinput iterates through the devices, i.e. before
+/// libinput_udev_assign_seat() or the first call to libinput_path_add_device().
+unsafe fn init_libinput_plugin_system(libinput: &Libinput) {
+    #[cfg(have_libinput_plugin_system)]
+    unsafe {
+        use std::ffi::{c_char, c_int, CString};
+        use std::os::unix::ffi::OsStringExt;
+
+        use directories::BaseDirs;
+        use input::ffi::libinput;
+        use input::AsRaw as _;
+
+        extern "C" {
+            fn libinput_plugin_system_append_path(libinput: *const libinput, path: *const c_char);
+            fn libinput_plugin_system_append_default_paths(libinput: *const libinput);
+            fn libinput_plugin_system_load_plugins(
+                libinput: *const libinput,
+                flags: c_int,
+            ) -> c_int;
+        }
+        const LIBINPUT_PLUGIN_SYSTEM_FLAG_NONE: c_int = 0;
+        let libinput = libinput.as_raw();
+
+        // Also load plugins from $XDG_CONFIG_HOME/libinput/plugins.
+        if let Some(dirs) = BaseDirs::new() {
+            let mut plugins_dir = dirs.config_dir().to_path_buf();
+            plugins_dir.push("libinput");
+            plugins_dir.push("plugins");
+            if let Ok(plugins_dir) = CString::new(plugins_dir.into_os_string().into_vec()) {
+                libinput_plugin_system_append_path(libinput, plugins_dir.as_ptr());
+            }
+        }
+
+        libinput_plugin_system_append_default_paths(libinput);
+        libinput_plugin_system_load_plugins(libinput, LIBINPUT_PLUGIN_SYSTEM_FLAG_NONE);
+    }
+    #[cfg(not(have_libinput_plugin_system))]
+    let _ = libinput;
+}
+
 #[cfg(test)]
 mod tests {
     use insta::assert_debug_snapshot;
@@ -3347,30 +3428,32 @@ mod tests {
             hsync_polarity: HSyncPolarity::NHSync,
             vsync_polarity: VSyncPolarity::PVSync,
         };
-        assert_debug_snapshot!(calculate_drm_mode_from_modeline(&modeline1).unwrap(), @"Mode {
-    name: \"1920x1080@59.96\",
-    clock: 173000,
-    size: (
-        1920,
-        1080,
-    ),
-    hsync: (
-        2048,
-        2248,
-        2576,
-    ),
-    vsync: (
-        1083,
-        1088,
-        1120,
-    ),
-    hskew: 0,
-    vscan: 0,
-    vrefresh: 60,
-    mode_type: ModeTypeFlags(
-        USERDEF,
-    ),
-}");
+        assert_debug_snapshot!(calculate_drm_mode_from_modeline(&modeline1).unwrap(), @r#"
+        Mode {
+            name: "1920x1080@59.96",
+            clock: 173000,
+            size: (
+                1920,
+                1080,
+            ),
+            hsync: (
+                2048,
+                2248,
+                2576,
+            ),
+            vsync: (
+                1083,
+                1088,
+                1120,
+            ),
+            hskew: 0,
+            vscan: 0,
+            vrefresh: 60,
+            mode_type: ModeTypeFlags(
+                USERDEF,
+            ),
+        }
+        "#);
         let modeline2 = Modeline {
             clock: 452.5,
             hdisplay: 1920,
@@ -3384,82 +3467,88 @@ mod tests {
             hsync_polarity: HSyncPolarity::NHSync,
             vsync_polarity: VSyncPolarity::PVSync,
         };
-        assert_debug_snapshot!(calculate_drm_mode_from_modeline(&modeline2).unwrap(), @"Mode {
-    name: \"1920x1080@143.88\",
-    clock: 452500,
-    size: (
-        1920,
-        1080,
-    ),
-    hsync: (
-        2088,
-        2296,
-        2672,
-    ),
-    vsync: (
-        1083,
-        1088,
-        1177,
-    ),
-    hskew: 0,
-    vscan: 0,
-    vrefresh: 144,
-    mode_type: ModeTypeFlags(
-        USERDEF,
-    ),
-}");
+        assert_debug_snapshot!(calculate_drm_mode_from_modeline(&modeline2).unwrap(), @r#"
+        Mode {
+            name: "1920x1080@143.88",
+            clock: 452500,
+            size: (
+                1920,
+                1080,
+            ),
+            hsync: (
+                2088,
+                2296,
+                2672,
+            ),
+            vsync: (
+                1083,
+                1088,
+                1177,
+            ),
+            hskew: 0,
+            vscan: 0,
+            vrefresh: 144,
+            mode_type: ModeTypeFlags(
+                USERDEF,
+            ),
+        }
+        "#);
     }
 
     #[test]
     fn test_calc_cvt() {
         // Crosschecked with other calculators like the cvt commandline utility.
-        assert_debug_snapshot!(calculate_mode_cvt(1920, 1080, 60.0), @"Mode {
-    name: \"1920x1080@59.96\",
-    clock: 173000,
-    size: (
-        1920,
-        1080,
-    ),
-    hsync: (
-        2048,
-        2248,
-        2576,
-    ),
-    vsync: (
-        1083,
-        1088,
-        1120,
-    ),
-    hskew: 0,
-    vscan: 0,
-    vrefresh: 60,
-    mode_type: ModeTypeFlags(
-        USERDEF,
-    ),
-}");
-        assert_debug_snapshot!(calculate_mode_cvt(1920, 1080, 144.0), @"Mode {
-    name: \"1920x1080@143.88\",
-    clock: 452500,
-    size: (
-        1920,
-        1080,
-    ),
-    hsync: (
-        2088,
-        2296,
-        2672,
-    ),
-    vsync: (
-        1083,
-        1088,
-        1177,
-    ),
-    hskew: 0,
-    vscan: 0,
-    vrefresh: 144,
-    mode_type: ModeTypeFlags(
-        USERDEF,
-    ),
-}");
+        assert_debug_snapshot!(calculate_mode_cvt(1920, 1080, 60.0), @r#"
+        Mode {
+            name: "1920x1080@59.96",
+            clock: 173000,
+            size: (
+                1920,
+                1080,
+            ),
+            hsync: (
+                2048,
+                2248,
+                2576,
+            ),
+            vsync: (
+                1083,
+                1088,
+                1120,
+            ),
+            hskew: 0,
+            vscan: 0,
+            vrefresh: 60,
+            mode_type: ModeTypeFlags(
+                USERDEF,
+            ),
+        }
+        "#);
+        assert_debug_snapshot!(calculate_mode_cvt(1920, 1080, 144.0), @r#"
+        Mode {
+            name: "1920x1080@143.88",
+            clock: 452500,
+            size: (
+                1920,
+                1080,
+            ),
+            hsync: (
+                2088,
+                2296,
+                2672,
+            ),
+            vsync: (
+                1083,
+                1088,
+                1177,
+            ),
+            hskew: 0,
+            vscan: 0,
+            vrefresh: 144,
+            mode_type: ModeTypeFlags(
+                USERDEF,
+            ),
+        }
+        "#);
     }
 }

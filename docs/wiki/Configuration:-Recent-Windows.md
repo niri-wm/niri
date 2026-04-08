@@ -1,6 +1,6 @@
 ### Overview
 
-<sup>Since: next release</sup>
+<sup>Since: 25.11</sup>
 
 In this section you can configure the recent windows switcher (Alt-Tab).
 

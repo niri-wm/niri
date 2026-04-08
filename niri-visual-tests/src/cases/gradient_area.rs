@@ -89,11 +89,8 @@ impl TestCase for GradientArea {
             1.,
             1.,
         );
-        rv.extend(
-            self.border
-                .render(renderer, g_loc)
-                .map(|elem| Box::new(elem) as _),
-        );
+        self.border
+            .render(renderer, g_loc, &mut |elem| rv.push(Box::new(elem) as _));
 
         rv.extend(
             [BorderRenderElement::new(

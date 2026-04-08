@@ -1,4 +1,4 @@
-<sup>Since: next release</sup>
+<sup>Since: 25.11</sup>
 
 You can include other files at the top level of the config.
 
@@ -113,6 +113,30 @@ window-rule {
     open-maximized true
 }
 ```
+
+### Optional includes
+
+<sup>Since: next release</sup>
+
+By default, including a nonexistent file will cause an error.
+You can allow nonexistent includes by setting `optional=true`:
+
+```kdl,must-fail
+// Won't fail if this file doesn't exist.
+include optional=true "optional-config.kdl"
+
+// Regular include, will fail if the file doesn't exist.
+include "required-config.kdl"
+```
+
+When an optional include file is missing, niri will emit a warning in the logs on every config reload.
+This reminds you that the file is missing while still loading the config successfully.
+
+The optional file is still watched for changes, so if you create it later, the config will automatically reload and apply the new settings.
+
+Note that `optional` only affects whether a missing file causes an error.
+If the file exists but contains invalid syntax or other errors, those errors will still cause a parsing failure.
+
 
 ### Merging
 
