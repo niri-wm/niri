@@ -13,10 +13,22 @@ use smithay::input::keyboard::xkb::{keysym_from_name, KEYSYM_CASE_INSENSITIVE, K
 use smithay::input::keyboard::Keysym;
 
 use crate::recent_windows::{MruDirection, MruFilter, MruScope};
-use crate::utils::{expect_only_children, MergeWith};
+use crate::utils::{Flag, MergeWith};
+use crate::Xkb;
 
 #[derive(Debug, Default, PartialEq)]
-pub struct Binds(pub Vec<Bind>);
+pub struct Binds {
+    pub binds: Vec<Bind>,
+    pub layout_independent: bool,
+    pub xkb: Option<Xkb>,
+}
+
+#[derive(Debug, Default, PartialEq)]
+pub struct BindsPart {
+    pub binds: Vec<Bind>,
+    pub layout_independent: Option<bool>,
+    pub xkb: Option<Xkb>,
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Bind {
@@ -27,6 +39,7 @@ pub struct Bind {
     pub allow_when_locked: bool,
     pub allow_inhibiting: bool,
     pub hotkey_overlay_title: Option<Option<String>>,
+    pub layout_independent: Option<bool>,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
@@ -759,7 +772,116 @@ impl<S: knuffel::traits::ErrorSpan> knuffel::DecodeScalar<S> for WorkspaceRefere
     }
 }
 
-impl<S> knuffel::Decode<S> for Binds
+impl MergeWith<BindsPart> for Binds {
+    fn merge_with(&mut self, part: &BindsPart) {
+        self.binds
+            .retain(|bind| !part.binds.iter().any(|new| new.key == bind.key));
+        self.binds.extend(part.binds.iter().cloned());
+
+        if let Some(layout_independent) = part.layout_independent {
+            self.layout_independent = layout_independent;
+        }
+        if let Some(xkb) = &part.xkb {
+            self.xkb = Some(xkb.clone());
+        }
+    }
+}
+
+fn validate_layout_independent_xkb<S>(
+    xkb: &Xkb,
+    node: &knuffel::ast::SpannedNode<S>,
+    ctx: &mut knuffel::decode::Context<S>,
+) where
+    S: knuffel::traits::ErrorSpan,
+{
+    if xkb.file.is_some() {
+        return;
+    }
+
+    if xkb
+        .layout
+        .split(',')
+        .find(|part| !part.trim().is_empty())
+        .is_none()
+    {
+        ctx.emit_error(DecodeError::conversion(
+            node,
+            "binds xkb must specify either a file or exactly one layout",
+        ));
+    }
+
+    let has_multiple_layouts = xkb
+        .layout
+        .split(',')
+        .filter(|part| !part.trim().is_empty())
+        .nth(1)
+        .is_some();
+    if has_multiple_layouts {
+        ctx.emit_error(DecodeError::conversion(
+            node,
+            "binds xkb layout must contain exactly one layout, but multiple were found",
+        ));
+    }
+
+    let has_multiple_variants = xkb
+        .variant
+        .split(',')
+        .filter(|part| !part.trim().is_empty())
+        .nth(1)
+        .is_some();
+    if has_multiple_variants {
+        ctx.emit_error(DecodeError::conversion(
+            node,
+            "binds xkb variant must contain exactly one variant",
+        ));
+    }
+}
+
+fn effective_layout_independent(binds: &Binds, bind: &Bind) -> bool {
+    bind.layout_independent.unwrap_or(binds.layout_independent)
+}
+
+fn validate_layout_independent_trigger<S>(
+    bind: &Bind,
+    layout_independent: bool,
+    node: &knuffel::ast::SpannedNode<S>,
+    ctx: &mut knuffel::decode::Context<S>,
+) where
+    S: knuffel::traits::ErrorSpan,
+{
+    if layout_independent && !matches!(bind.key.trigger, Trigger::Keysym(_)) {
+        ctx.emit_error(DecodeError::conversion(
+            node,
+            "layout-independent=true can only be used with keysym binds",
+        ));
+    }
+}
+
+pub fn validate_final_binds_config<S>(
+    binds: &Binds,
+    node: &knuffel::ast::SpannedNode<S>,
+    ctx: &mut knuffel::decode::Context<S>,
+) where
+    S: knuffel::traits::ErrorSpan,
+{
+    let has_layout_independent = binds
+        .binds
+        .iter()
+        .any(|bind| effective_layout_independent(binds, bind));
+
+    if let Some(xkb) = &binds.xkb {
+        validate_layout_independent_xkb(xkb, node, ctx);
+    }
+
+    if has_layout_independent && binds.xkb.is_none() {
+        ctx.emit_error(DecodeError::missing(
+            node,
+            "binds.xkb is required when any bind is layout-independent",
+        ));
+    }
+}
+
+impl<S> knuffel::Decode<S> for BindsPart
 where
     S: knuffel::traits::ErrorSpan,
 {
@@ -767,57 +889,126 @@ where
         node: &knuffel::ast::SpannedNode<S>,
         ctx: &mut knuffel::decode::Context<S>,
     ) -> Result<Self, DecodeError<S>> {
-        expect_only_children(node, ctx);
+        if let Some(type_name) = &node.type_name {
+            ctx.emit_error(DecodeError::unexpected(
+                type_name,
+                "type name",
+                "no type name expected for this node",
+            ));
+        }
+
+        for val in node.arguments.iter() {
+            ctx.emit_error(DecodeError::unexpected(
+                &val.literal,
+                "argument",
+                "no arguments expected for this node",
+            ));
+        }
+
+        for name in node.properties.keys() {
+            ctx.emit_error(DecodeError::unexpected(
+                name,
+                "property",
+                "no properties expected for this node",
+            ));
+        }
 
         let mut seen_keys = HashSet::new();
+        let mut saw_layout_independent = false;
+        let mut saw_xkb = false;
 
         let mut binds = Vec::new();
+        let mut bind_nodes = Vec::new();
+        let mut layout_independent = None;
+        let mut xkb = None;
 
         for child in node.children() {
-            match Bind::decode_node(child, ctx) {
-                Err(e) => {
-                    ctx.emit_error(e);
-                }
-                Ok(bind) => {
-                    if seen_keys.insert(bind.key) {
-                        binds.push(bind);
-                    } else {
-                        // ideally, this error should point to the previous instance of this keybind
-                        //
-                        // i (sodiboo) have tried to implement this in various ways:
-                        // miette!(), #[derive(Diagnostic)]
-                        // DecodeError::Custom, DecodeError::Conversion
-                        // nothing seems to work, and i suspect it's not possible.
-                        //
-                        // DecodeError is fairly restrictive.
-                        // even DecodeError::Custom just wraps a std::error::Error
-                        // and this erases all rich information from miette. (why???)
-                        //
-                        // why does knuffel do this?
-                        // from what i can tell, it doesn't even use DecodeError for much.
-                        // it only ever converts them to a Report anyways!
-                        // https://github.com/tailhook/knuffel/blob/c44c6b0c0f31ea6d1174d5d2ed41064922ea44ca/src/wrappers.rs#L55-L58
-                        //
-                        // besides like, allowing downstream users (such as us!)
-                        // to match on parse failure, i don't understand why
-                        // it doesn't just use a generic error type
-                        //
-                        // even the matching isn't consistent,
-                        // because errors can also be omitted as ctx.emit_error.
-                        // why does *that one* especially, require a DecodeError?
-                        //
-                        // anyways if you can make it format nicely, definitely do fix this
+            match child.node_name.as_ref() {
+                "layout-independent" => {
+                    if saw_layout_independent {
                         ctx.emit_error(DecodeError::unexpected(
                             &child.node_name,
-                            "keybind",
-                            "duplicate keybind",
+                            "node",
+                            "duplicate node `layout-independent`, single node expected",
                         ));
+                        continue;
                     }
+                    let value = Flag::decode_node(child, ctx)?.0;
+                    saw_layout_independent = true;
+                    layout_independent = Some(value);
                 }
+                "xkb" => {
+                    if saw_xkb {
+                        ctx.emit_error(DecodeError::unexpected(
+                            &child.node_name,
+                            "node",
+                            "duplicate node `xkb`, single node expected",
+                        ));
+                        continue;
+                    }
+                    let value = Xkb::decode_node(child, ctx)?;
+                    validate_layout_independent_xkb(&value, child, ctx);
+                    saw_xkb = true;
+                    xkb = Some(value);
+                }
+                _ => match Bind::decode_node(child, ctx) {
+                    Err(e) => {
+                        ctx.emit_error(e);
+                    }
+                    Ok(bind) => {
+                        if seen_keys.insert(bind.key) {
+                            bind_nodes.push(child);
+                            binds.push(bind);
+                        } else {
+                            // ideally, this error should point to the previous instance of this
+                            // keybind
+                            //
+                            // i (sodiboo) have tried to implement this in various ways:
+                            // miette!(), #[derive(Diagnostic)]
+                            // DecodeError::Custom, DecodeError::Conversion
+                            // nothing seems to work, and i suspect it's not possible.
+                            //
+                            // DecodeError is fairly restrictive.
+                            // even DecodeError::Custom just wraps a std::error::Error
+                            // and this erases all rich information from miette. (why???)
+                            //
+                            // why does knuffel do this?
+                            // from what i can tell, it doesn't even use DecodeError for much.
+                            // it only ever converts them to a Report anyways!
+                            // https://github.com/tailhook/knuffel/blob/c44c6b0c0f31ea6d1174d5d2ed41064922ea44ca/src/wrappers.rs#L55-L58
+                            //
+                            // besides like, allowing downstream users (such as us!)
+                            // to match on parse failure, i don't understand why
+                            // it doesn't just use a generic error type
+                            //
+                            // even the matching isn't consistent,
+                            // because errors can also be omitted as ctx.emit_error.
+                            // why does *that one* especially, require a DecodeError?
+                            //
+                            // anyways if you can make it format nicely, definitely do fix this
+                            ctx.emit_error(DecodeError::unexpected(
+                                &child.node_name,
+                                "keybind",
+                                "duplicate keybind",
+                            ));
+                        }
+                    }
+                },
             }
         }
 
-        Ok(Self(binds))
+        for (bind, bind_node) in binds.iter().zip(bind_nodes) {
+            let effective_layout_independent = bind
+                .layout_independent
+                .unwrap_or(layout_independent.unwrap_or(false));
+            validate_layout_independent_trigger(bind, effective_layout_independent, bind_node, ctx);
+        }
+
+        Ok(Self {
+            binds,
+            layout_independent,
+            xkb,
+        })
     }
 }
 
@@ -856,6 +1047,7 @@ where
         let mut allow_when_locked_node = None;
         let mut allow_inhibiting = true;
         let mut hotkey_overlay_title = None;
+        let mut layout_independent = None;
         for (name, val) in &node.properties {
             match &***name {
                 "repeat" => {
@@ -875,6 +1067,9 @@ where
                 }
                 "hotkey-overlay-title" => {
                     hotkey_overlay_title = Some(knuffel::traits::DecodeScalar::decode(val, ctx)?);
+                }
+                "layout-independent" => {
+                    layout_independent = Some(knuffel::traits::DecodeScalar::decode(val, ctx)?);
                 }
                 name_str => {
                     ctx.emit_error(DecodeError::unexpected(
@@ -899,6 +1094,7 @@ where
             allow_when_locked: false,
             allow_inhibiting: true,
             hotkey_overlay_title: None,
+            layout_independent: None,
         };
 
         if let Some(child) = children.next() {
@@ -935,6 +1131,7 @@ where
                         allow_when_locked,
                         allow_inhibiting,
                         hotkey_overlay_title,
+                        layout_independent,
                     })
                 }
                 Err(e) => {

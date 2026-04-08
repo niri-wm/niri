@@ -1844,6 +1844,7 @@ fn make_preset_opened_binds() -> Vec<Bind> {
             allow_when_locked: false,
             allow_inhibiting: false,
             hotkey_overlay_title: None,
+            layout_independent: None,
         })
     };
 
@@ -1885,7 +1886,7 @@ fn make_preset_opened_binds() -> Vec<Bind> {
 fn make_dynamic_opened_binds(config: &Config) -> Vec<Bind> {
     let mut binds: HashMap<Trigger, Vec<Bind>> = HashMap::new();
 
-    for bind in &config.binds.0 {
+    for bind in &config.binds.binds {
         let action = match &bind.action {
             Action::FocusColumnRight
             | Action::FocusColumnRightOrFirst

@@ -3122,6 +3122,7 @@ impl State {
                                 allow_when_locked: false,
                                 allow_inhibiting: false,
                                 hotkey_overlay_title: None,
+                                layout_independent: None,
                             });
                             let bind_right = Some(Bind {
                                 key: Key {
@@ -3134,6 +3135,7 @@ impl State {
                                 allow_when_locked: false,
                                 allow_inhibiting: false,
                                 hotkey_overlay_title: None,
+                                layout_independent: None,
                             });
                             (bind_left, bind_right)
                         } else {
@@ -3183,6 +3185,7 @@ impl State {
                             allow_when_locked: false,
                             allow_inhibiting: false,
                             hotkey_overlay_title: None,
+                            layout_independent: None,
                         });
                         let bind_down = Some(Bind {
                             key: Key {
@@ -3195,6 +3198,7 @@ impl State {
                             allow_when_locked: false,
                             allow_inhibiting: false,
                             hotkey_overlay_title: None,
+                            layout_independent: None,
                         });
                         (bind_up, bind_down)
                     } else if should_handle_in_overview && modifiers == Modifiers::SHIFT {
@@ -3209,6 +3213,7 @@ impl State {
                             allow_when_locked: false,
                             allow_inhibiting: false,
                             hotkey_overlay_title: None,
+                            layout_independent: None,
                         });
                         let bind_down = Some(Bind {
                             key: Key {
@@ -3221,6 +3226,7 @@ impl State {
                             allow_when_locked: false,
                             allow_inhibiting: false,
                             hotkey_overlay_title: None,
+                            layout_independent: None,
                         });
                         (bind_up, bind_down)
                     } else {
@@ -4359,6 +4365,7 @@ fn should_intercept_key<'a>(
                     // inhibited.
                     allow_inhibiting: false,
                     hotkey_overlay_title: None,
+                    layout_independent: None,
                 });
             }
         }
@@ -4418,13 +4425,12 @@ fn find_bind<'a>(
             repeat: true,
             cooldown: None,
             allow_when_locked: false,
-            // In a worst-case scenario, the user has no way to unlock the compositor and a
-            // misbehaving client has a keyboard shortcuts inhibitor, "jailing" the user.
-            // The user must always be able to change VTs to recover from such a situation.
+            // Hardcoded binds never honor shortcuts inhibition.
             // It also makes no sense to inhibit the default power key handling.
             // Hardcoded binds must never be inhibited.
             allow_inhibiting: false,
             hotkey_overlay_title: None,
+            layout_independent: None,
         });
     }
 
@@ -4634,16 +4640,12 @@ fn hardcoded_overview_bind(raw: Keysym, mods: ModifiersState) -> Option<Bind> {
         return None;
     }
 
-    let mut repeat = true;
-    let action = match raw {
-        Keysym::Escape | Keysym::Return => {
-            repeat = false;
-            Action::ToggleOverview
-        }
-        Keysym::Left => Action::FocusColumnLeft,
-        Keysym::Right => Action::FocusColumnRight,
-        Keysym::Up => Action::FocusWindowOrWorkspaceUp,
-        Keysym::Down => Action::FocusWindowOrWorkspaceDown,
+    let (action, repeat) = match raw {
+        Keysym::Escape | Keysym::Return => (Action::ToggleOverview, false),
+        Keysym::Left => (Action::FocusColumnLeft, true),
+        Keysym::Right => (Action::FocusColumnRight, true),
+        Keysym::Up => (Action::FocusWindowOrWorkspaceUp, true),
+        Keysym::Down => (Action::FocusWindowOrWorkspaceDown, true),
         _ => {
             return None;
         }
@@ -4660,6 +4662,7 @@ fn hardcoded_overview_bind(raw: Keysym, mods: ModifiersState) -> Option<Bind> {
         allow_when_locked: false,
         allow_inhibiting: false,
         hotkey_overlay_title: None,
+        layout_independent: None,
     })
 }
 
@@ -4951,7 +4954,7 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
 
 pub fn mods_with_binds(mod_key: ModKey, binds: &Binds, triggers: &[Trigger]) -> HashSet<Modifiers> {
     let mut rv = HashSet::new();
-    for bind in &binds.0 {
+    for bind in &binds.binds {
         if !triggers.contains(&bind.key.trigger) {
             continue;
         }
@@ -5042,7 +5045,7 @@ fn make_binds_iter<'a>(
     mods: Modifiers,
 ) -> impl Iterator<Item = &'a Bind> + Clone {
     // Figure out the binds to use depending on whether the MRU is enabled and/or open.
-    let general_binds = (!mru.is_open()).then_some(config.binds.0.iter());
+    let general_binds = (!mru.is_open()).then_some(config.binds.binds.iter());
     let general_binds = general_binds.into_iter().flatten();
 
     let mru_binds =
@@ -5066,18 +5069,23 @@ mod tests {
     #[test]
     fn bindings_suppress_keys() {
         let close_keysym = Keysym::q;
-        let bindings = Binds(vec![Bind {
-            key: Key {
-                trigger: Trigger::Keysym(close_keysym),
-                modifiers: Modifiers::COMPOSITOR | Modifiers::CTRL,
-            },
-            action: Action::CloseWindow,
-            repeat: true,
-            cooldown: None,
-            allow_when_locked: false,
-            allow_inhibiting: true,
-            hotkey_overlay_title: None,
-        }]);
+        let bindings = Binds {
+            binds: vec![Bind {
+                key: Key {
+                    trigger: Trigger::Keysym(close_keysym),
+                    modifiers: Modifiers::COMPOSITOR | Modifiers::CTRL,
+                },
+                action: Action::CloseWindow,
+                repeat: true,
+                cooldown: None,
+                allow_when_locked: false,
+                allow_inhibiting: true,
+                hotkey_overlay_title: None,
+                layout_independent: None,
+            }],
+            layout_independent: false,
+            xkb: None,
+        };
 
         let comp_mod = ModKey::Super;
         let mut suppressed_keys = HashSet::new();
@@ -5093,7 +5101,7 @@ mod tests {
         let close_key_event = |suppr: &mut HashSet<Keycode>, mods: ModifiersState, pressed| {
             should_intercept_key(
                 suppr,
-                &bindings.0,
+                &bindings.binds,
                 comp_mod,
                 close_key_code,
                 close_keysym,
@@ -5110,7 +5118,7 @@ mod tests {
         let none_key_event = |suppr: &mut HashSet<Keycode>, mods: ModifiersState, pressed| {
             should_intercept_key(
                 suppr,
-                &bindings.0,
+                &bindings.binds,
                 comp_mod,
                 Keycode::from(Keysym::l.raw() + 8),
                 Keysym::l,
@@ -5251,72 +5259,81 @@ mod tests {
 
     #[test]
     fn comp_mod_handling() {
-        let bindings = Binds(vec![
-            Bind {
-                key: Key {
-                    trigger: Trigger::Keysym(Keysym::q),
-                    modifiers: Modifiers::COMPOSITOR,
+        let bindings = Binds {
+            binds: vec![
+                Bind {
+                    key: Key {
+                        trigger: Trigger::Keysym(Keysym::q),
+                        modifiers: Modifiers::COMPOSITOR,
+                    },
+                    action: Action::CloseWindow,
+                    repeat: true,
+                    cooldown: None,
+                    allow_when_locked: false,
+                    allow_inhibiting: true,
+                    hotkey_overlay_title: None,
+                    layout_independent: None,
                 },
-                action: Action::CloseWindow,
-                repeat: true,
-                cooldown: None,
-                allow_when_locked: false,
-                allow_inhibiting: true,
-                hotkey_overlay_title: None,
-            },
-            Bind {
-                key: Key {
-                    trigger: Trigger::Keysym(Keysym::h),
-                    modifiers: Modifiers::SUPER,
+                Bind {
+                    key: Key {
+                        trigger: Trigger::Keysym(Keysym::h),
+                        modifiers: Modifiers::SUPER,
+                    },
+                    action: Action::CloseWindow,
+                    repeat: true,
+                    cooldown: None,
+                    allow_when_locked: false,
+                    allow_inhibiting: true,
+                    hotkey_overlay_title: None,
+                    layout_independent: None,
                 },
-                action: Action::FocusColumnLeft,
-                repeat: true,
-                cooldown: None,
-                allow_when_locked: false,
-                allow_inhibiting: true,
-                hotkey_overlay_title: None,
-            },
-            Bind {
-                key: Key {
-                    trigger: Trigger::Keysym(Keysym::j),
-                    modifiers: Modifiers::empty(),
+                Bind {
+                    key: Key {
+                        trigger: Trigger::Keysym(Keysym::j),
+                        modifiers: Modifiers::empty(),
+                    },
+                    action: Action::CloseWindow,
+                    repeat: true,
+                    cooldown: None,
+                    allow_when_locked: false,
+                    allow_inhibiting: true,
+                    hotkey_overlay_title: None,
+                    layout_independent: None,
                 },
-                action: Action::FocusWindowDown,
-                repeat: true,
-                cooldown: None,
-                allow_when_locked: false,
-                allow_inhibiting: true,
-                hotkey_overlay_title: None,
-            },
-            Bind {
-                key: Key {
-                    trigger: Trigger::Keysym(Keysym::k),
-                    modifiers: Modifiers::COMPOSITOR | Modifiers::SUPER,
+                Bind {
+                    key: Key {
+                        trigger: Trigger::Keysym(Keysym::k),
+                        modifiers: Modifiers::COMPOSITOR | Modifiers::SUPER,
+                    },
+                    action: Action::CloseWindow,
+                    repeat: true,
+                    cooldown: None,
+                    allow_when_locked: false,
+                    allow_inhibiting: true,
+                    hotkey_overlay_title: None,
+                    layout_independent: None,
                 },
-                action: Action::FocusWindowUp,
-                repeat: true,
-                cooldown: None,
-                allow_when_locked: false,
-                allow_inhibiting: true,
-                hotkey_overlay_title: None,
-            },
-            Bind {
-                key: Key {
-                    trigger: Trigger::Keysym(Keysym::l),
-                    modifiers: Modifiers::SUPER | Modifiers::ALT,
+                Bind {
+                    key: Key {
+                        trigger: Trigger::Keysym(Keysym::l),
+                        modifiers: Modifiers::SUPER | Modifiers::ALT,
+                    },
+                    action: Action::CloseWindow,
+                    repeat: true,
+                    cooldown: None,
+                    allow_when_locked: false,
+                    allow_inhibiting: true,
+                    hotkey_overlay_title: None,
+                    layout_independent: None,
                 },
-                action: Action::FocusColumnRight,
-                repeat: true,
-                cooldown: None,
-                allow_when_locked: false,
-                allow_inhibiting: true,
-                hotkey_overlay_title: None,
-            },
-        ]);
+            ],
+            layout_independent: false,
+            xkb: None,
+        };
 
         assert_eq!(
             find_configured_bind(
-                &bindings.0,
+                &bindings.binds,
                 ModKey::Super,
                 Trigger::Keysym(Keysym::q),
                 ModifiersState {
@@ -5325,11 +5342,11 @@ mod tests {
                 }
             )
             .as_ref(),
-            Some(&bindings.0[0])
+            Some(&bindings.binds[0])
         );
         assert_eq!(
             find_configured_bind(
-                &bindings.0,
+                &bindings.binds,
                 ModKey::Super,
                 Trigger::Keysym(Keysym::q),
                 ModifiersState::default(),
@@ -5339,7 +5356,7 @@ mod tests {
 
         assert_eq!(
             find_configured_bind(
-                &bindings.0,
+                &bindings.binds,
                 ModKey::Super,
                 Trigger::Keysym(Keysym::h),
                 ModifiersState {
@@ -5348,11 +5365,11 @@ mod tests {
                 }
             )
             .as_ref(),
-            Some(&bindings.0[1])
+            Some(&bindings.binds[1])
         );
         assert_eq!(
             find_configured_bind(
-                &bindings.0,
+                &bindings.binds,
                 ModKey::Super,
                 Trigger::Keysym(Keysym::h),
                 ModifiersState::default(),
@@ -5362,7 +5379,7 @@ mod tests {
 
         assert_eq!(
             find_configured_bind(
-                &bindings.0,
+                &bindings.binds,
                 ModKey::Super,
                 Trigger::Keysym(Keysym::j),
                 ModifiersState {
@@ -5374,18 +5391,18 @@ mod tests {
         );
         assert_eq!(
             find_configured_bind(
-                &bindings.0,
+                &bindings.binds,
                 ModKey::Super,
                 Trigger::Keysym(Keysym::j),
                 ModifiersState::default(),
             )
             .as_ref(),
-            Some(&bindings.0[2])
+            Some(&bindings.binds[2])
         );
 
         assert_eq!(
             find_configured_bind(
-                &bindings.0,
+                &bindings.binds,
                 ModKey::Super,
                 Trigger::Keysym(Keysym::k),
                 ModifiersState {
@@ -5394,11 +5411,11 @@ mod tests {
                 }
             )
             .as_ref(),
-            Some(&bindings.0[3])
+            Some(&bindings.binds[3])
         );
         assert_eq!(
             find_configured_bind(
-                &bindings.0,
+                &bindings.binds,
                 ModKey::Super,
                 Trigger::Keysym(Keysym::k),
                 ModifiersState::default(),
@@ -5408,7 +5425,7 @@ mod tests {
 
         assert_eq!(
             find_configured_bind(
-                &bindings.0,
+                &bindings.binds,
                 ModKey::Super,
                 Trigger::Keysym(Keysym::l),
                 ModifiersState {
@@ -5418,11 +5435,11 @@ mod tests {
                 }
             )
             .as_ref(),
-            Some(&bindings.0[4])
+            Some(&bindings.binds[4])
         );
         assert_eq!(
             find_configured_bind(
-                &bindings.0,
+                &bindings.binds,
                 ModKey::Super,
                 Trigger::Keysym(Keysym::l),
                 ModifiersState {
