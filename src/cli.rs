@@ -109,6 +109,12 @@ pub enum Msg {
     OverviewState,
     /// List screencasts.
     Casts,
+    /// List window labels
+    WindowLabels {
+        /// Window id
+        #[arg()]
+        id: u64,
+    },
 }
 
 #[derive(Clone, Debug, clap::ValueEnum)]
