@@ -739,6 +739,21 @@ impl<W: LayoutElement> FloatingSpace<W> {
         self.interactive_resize_end(Some(&id));
     }
 
+    fn should_skip_redundant_size_request(win: &W, win_size: Size<i32, Logical>) -> bool {
+        // Skip a same-size floating resize only when the concrete window size already matches and
+        // there is no other configure-worthy state change pending. That avoids redundant
+        // configures without suppressing the re-request path after a stale commit.
+        win_size.w > 0
+            && win_size.h > 0
+            && win.size() == win_size
+            && win.sizing_mode().is_normal()
+            && win.pending_sizing_mode().is_normal()
+            && matches!(
+                win.configure_intent(),
+                ConfigureIntent::NotNeeded | ConfigureIntent::Throttled
+            )
+    }
+
     pub fn set_window_width(&mut self, id: Option<&W::Id>, change: SizeChange, animate: bool) {
         let Some(id) = id.or(self.active_window_id.as_ref()) else {
             return;
@@ -783,6 +798,9 @@ impl<W: LayoutElement> FloatingSpace<W> {
         let win_height = ensure_min_max_size(win_height, min_size.h, max_size.h);
 
         let win_size = Size::from((win_width, win_height));
+        if Self::should_skip_redundant_size_request(win, win_size) {
+            return;
+        }
         win.request_size_once(win_size, animate);
     }
 
@@ -830,6 +848,9 @@ impl<W: LayoutElement> FloatingSpace<W> {
         let win_width = ensure_min_max_size(win_width, min_size.w, max_size.w);
 
         let win_size = Size::from((win_width, win_height));
+        if Self::should_skip_redundant_size_request(win, win_size) {
+            return;
+        }
         win.request_size_once(win_size, animate);
     }
 
