@@ -15,6 +15,9 @@ pub struct ResolvedLayerRules {
     /// Whether to block out this layer surface from certain render targets.
     pub block_out_from: Option<BlockOutFrom>,
 
+    /// Whether to hide this layer surface from certain render targets.
+    pub hide_from: Option<BlockOutFrom>,
+
     /// Shadow overrides.
     pub shadow: ShadowRule,
 
@@ -58,6 +61,9 @@ impl ResolvedLayerRules {
             }
             if let Some(x) = rule.block_out_from {
                 resolved.block_out_from = Some(x);
+            }
+            if let Some(x) = rule.hide_from {
+                resolved.hide_from = Some(x);
             }
             if let Some(x) = rule.geometry_corner_radius {
                 resolved.geometry_corner_radius = Some(x);

@@ -78,6 +78,14 @@ impl RenderTarget {
             Some(BlockOutFrom::ScreenCapture) => self != RenderTarget::Output,
         }
     }
+
+    pub fn should_hide(self, hide_from: Option<BlockOutFrom>) -> bool {
+        match hide_from {
+            None => false,
+            Some(BlockOutFrom::Screencast) => self == RenderTarget::Screencast,
+            Some(BlockOutFrom::ScreenCapture) => self != RenderTarget::Output,
+        }
+    }
 }
 
 impl ToRenderElement for BakedBuffer<TextureBuffer<GlesTexture>> {

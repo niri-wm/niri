@@ -111,6 +111,9 @@ pub struct ResolvedWindowRules {
     /// Whether to block out this window from certain render targets.
     pub block_out_from: Option<BlockOutFrom>,
 
+    /// Whether to hide this window from certain render targets.
+    pub hide_from: Option<BlockOutFrom>,
+
     /// Whether to enable VRR on this window's primary output if it is on-demand.
     pub variable_refresh_rate: Option<bool>,
 
@@ -286,6 +289,9 @@ impl ResolvedWindowRules {
                 }
                 if let Some(x) = rule.block_out_from {
                     resolved.block_out_from = Some(x);
+                }
+                if let Some(x) = rule.hide_from {
+                    resolved.hide_from = Some(x);
                 }
                 if let Some(x) = rule.variable_refresh_rate {
                     resolved.variable_refresh_rate = Some(x);

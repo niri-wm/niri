@@ -2909,6 +2909,9 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         // Draw the closing windows on top of the other windows.
         let view_rect = Rectangle::new(Point::from((self.view_pos(), 0.)), self.view_size);
         for closing in self.closing_windows.iter().rev() {
+            if closing.should_hide(target) {
+                continue;
+            }
             let elem = closing.render(renderer.as_gles_renderer(), view_rect, scale, target);
             push(elem.into());
         }
