@@ -8,9 +8,13 @@
 //!   `touch_*` fields on Niri  → touchscreen
 //!   `gesture_swipe_*` fields  → touchpad/trackpad
 //!
-//! Two gesture types:
-//!   - Multi-finger (3+): workspace switch, view scroll, overview toggle
-//!   - Edge swipe (1+): touch starts in screen edge zone, any direction
+//! Gesture types:
+//!   - Multi-finger (3+): any action via touch-binds (swipe, pinch)
+//!   - Edge swipe (1+): touch starts in screen edge zone
+//!
+//! Actions are mapped via `touch-binds` in the KDL config.
+//! The compositor infers whether an action is continuous (drives an
+//! animation that tracks the finger) or discrete (fires once).
 
 use std::cmp::min;
 use std::time::Duration;
@@ -25,9 +29,10 @@ use super::backend_ext::NiriInputBackend as InputBackend;
 use super::move_grab::MoveGrab;
 use super::touch_overview_grab::TouchOverviewGrab;
 use super::{modifiers_from_state, PointerOrTouchStartData};
-use niri_config::input::{EdgeSwipeAction, ScreenEdge};
+use niri_config::input::ScreenEdge;
+use niri_config::touch_binds::{ContinuousGestureKind, TouchGestureType};
 
-use crate::niri::{PointerVisibility, State, TouchEdgeSwipeState};
+use crate::niri::{ActiveTouchBind, PointerVisibility, State, TouchEdgeSwipeState};
 
 impl State {
     pub(super) fn on_touch_down<I: InputBackend>(&mut self, evt: I::TouchDownEvent) {
@@ -44,6 +49,28 @@ impl State {
         let was_single = self.niri.touch_gesture_points.len() == 1;
         self.niri.touch_gesture_points.insert(Some(slot), pos);
 
+        // When ANY new finger arrives, reset cumulative and spread so
+        // detection is based on movement with the current finger count.
+        // If the gesture was already locked (direction decided with fewer
+        // fingers), unlock and re-evaluate — this allows 5-finger gestures
+        // to override a 3-finger decision when more fingers land.
+        if !was_empty {
+            if self.niri.touch_gesture_locked {
+                // Unlock: end current gesture animations, restart recognition.
+                self.niri.touch_gesture_locked = false;
+                self.niri.touch_active_bind = None;
+                self.niri.touch_pinch_active = false;
+                self.niri.layout.workspace_switch_gesture_end(Some(false));
+                self.niri.layout.view_offset_gesture_end(Some(false));
+                self.niri.layout.overview_gesture_end();
+            }
+            self.niri.touch_gesture_cumulative = Some((0., 0.));
+            if self.niri.touch_gesture_points.len() >= 3 {
+                self.niri.touch_gesture_initial_spread =
+                    Some(calculate_spread(&self.niri.touch_gesture_points));
+            }
+        }
+
         // First finger: check if it's in a screen edge zone for edge swipe detection.
         if was_empty && self.niri.touch_edge_swipe.is_none() {
             if let Some((output, pos_within_output)) = self.niri.output_under(pos) {
@@ -51,10 +78,18 @@ impl State {
                 let config = self.niri.config.borrow();
                 let threshold = config.input.touchscreen.edge_threshold();
                 if let Some(edge) = detect_edge(pos_within_output, size, threshold) {
-                    if let Some(action) = config.input.touchscreen.edge_swipe_action(edge) {
+                    // Check if there's a bind for this edge.
+                    let has_bind = config
+                        .input
+                        .touchscreen
+                        .touch_binds()
+                        .map_or(false, |binds| {
+                            let gesture_type = edge_to_gesture_type(edge);
+                            binds.find_bind(gesture_type, 1).is_some()
+                        });
+                    if has_bind {
                         self.niri.touch_edge_swipe = Some(TouchEdgeSwipeState::Pending {
                             edge,
-                            action,
                             cumulative: (0., 0.),
                             slot: Some(slot),
                         });
@@ -223,11 +258,11 @@ impl State {
                         self.niri.touch_edge_swipe = None;
                     }
                 }
-                TouchEdgeSwipeState::Active { action, .. } => {
-                    let action = *action;
+                TouchEdgeSwipeState::Active { kind, .. } => {
+                    let kind = *kind;
                     self.niri.touch_edge_swipe = None;
                     // End the gesture animation.
-                    end_edge_swipe_gesture(self, action);
+                    end_continuous_gesture(self, kind);
                     self.niri.touch_gesture_points.remove(&Some(slot));
                     return;
                 }
@@ -245,6 +280,9 @@ impl State {
         if self.niri.touch_gesture_points.is_empty() {
             self.niri.touch_gesture_cumulative = None;
             self.niri.touch_gesture_locked = false;
+            self.niri.touch_active_bind = None;
+            self.niri.touch_gesture_initial_spread = None;
+            self.niri.touch_pinch_active = false;
 
             // End any ongoing gesture animations.
             if let Some(output) = self.niri.layout.workspace_switch_gesture_end(Some(true)) {
@@ -303,13 +341,12 @@ impl State {
                 None,
                 PendingAccumulate {
                     edge: ScreenEdge,
-                    action: EdgeSwipeAction,
                     cx: f64,
                     cy: f64,
                     edge_slot: Option<smithay::backend::input::TouchSlot>,
                 },
                 ActiveFeed {
-                    action: EdgeSwipeAction,
+                    kind: ContinuousGestureKind,
                     sensitivity: f64,
                     natural: bool,
                 },
@@ -318,7 +355,6 @@ impl State {
             let edge_action = match &mut self.niri.touch_edge_swipe {
                 Some(TouchEdgeSwipeState::Pending {
                     edge,
-                    action,
                     cumulative,
                     slot: edge_slot,
                 }) if Some(slot) == *edge_slot => {
@@ -326,43 +362,24 @@ impl State {
                     cumulative.1 += delta_y;
                     EdgeAction::PendingAccumulate {
                         edge: *edge,
-                        action: *action,
                         cx: cumulative.0,
                         cy: cumulative.1,
                         edge_slot: *edge_slot,
                     }
                 }
-                Some(TouchEdgeSwipeState::Active { action, edge, .. }) => {
-                    let (sensitivity, natural) = {
-                        let config = self.niri.config.borrow();
-                        let touch = &config.input.touchscreen;
-                        (
-                            touch.edge_swipe_sensitivity(*edge),
-                            match action {
-                                EdgeSwipeAction::WorkspaceSwitch => {
-                                    touch.workspace_switch_natural_scroll()
-                                }
-                                EdgeSwipeAction::ViewScroll => {
-                                    touch.view_scroll_natural_scroll()
-                                }
-                                EdgeSwipeAction::OverviewToggle => {
-                                    touch.overview_toggle_natural_scroll()
-                                }
-                            },
-                        )
-                    };
-                    EdgeAction::ActiveFeed {
-                        action: *action,
-                        sensitivity,
-                        natural,
-                    }
-                }
+                Some(TouchEdgeSwipeState::Active {
+                    kind, sensitivity, natural_scroll, ..
+                }) => EdgeAction::ActiveFeed {
+                    kind: *kind,
+                    sensitivity: *sensitivity,
+                    natural: *natural_scroll,
+                },
                 _ => EdgeAction::None,
             };
 
             match edge_action {
                 EdgeAction::PendingAccumulate {
-                    edge, action, cx, cy, edge_slot,
+                    edge, cx, cy, edge_slot,
                 } => {
                     let threshold = {
                         let config = self.niri.config.borrow();
@@ -370,28 +387,56 @@ impl State {
                     };
 
                     if cx * cx + cy * cy >= threshold * threshold {
-                        // Edge zone is the activation area — any swipe direction
-                        // triggers the gesture. The action determines which axis
-                        // matters (overview needs vertical, view-scroll needs
-                        // horizontal, etc.).
-                        self.niri.touch_edge_swipe =
-                            Some(TouchEdgeSwipeState::Active {
-                                edge,
-                                action,
-                                slot: edge_slot,
-                            });
-                        handle.cancel(self);
-                        begin_edge_swipe_gesture(self, pos, edge, action);
-                        self.niri.queue_redraw_all();
+                        // Look up the bind for this edge.
+                        let bind_info = {
+                            let config = self.niri.config.borrow();
+                            let gesture_type = edge_to_gesture_type(edge);
+                            config
+                                .input
+                                .touchscreen
+                                .touch_binds()
+                                .and_then(|binds| binds.find_bind(gesture_type, 1))
+                                .map(|bind| {
+                                    let kind = bind.continuous_kind();
+                                    let sensitivity = bind.sensitivity.unwrap_or(0.4);
+                                    let natural_scroll = bind.natural_scroll;
+                                    let action = bind.action.clone();
+                                    (kind, sensitivity, natural_scroll, action)
+                                })
+                        };
+
+                        if let Some((kind, sensitivity, natural_scroll, action)) = bind_info {
+                            if let Some(kind) = kind {
+                                // Continuous edge swipe gesture.
+                                self.niri.touch_edge_swipe =
+                                    Some(TouchEdgeSwipeState::Active {
+                                        edge,
+                                        kind,
+                                        sensitivity,
+                                        natural_scroll,
+                                        slot: edge_slot,
+                                    });
+                                handle.cancel(self);
+                                begin_continuous_gesture(self, kind, pos);
+                                self.niri.queue_redraw_all();
+                            } else {
+                                // Discrete edge swipe action — fire once and clear.
+                                handle.cancel(self);
+                                self.do_action(action, false);
+                                self.niri.touch_edge_swipe = None;
+                            }
+                        } else {
+                            self.niri.touch_edge_swipe = None;
+                        }
                     }
                     // During Pending, don't suppress client motion events.
                 }
                 EdgeAction::ActiveFeed {
-                    action, sensitivity, natural, ..
+                    kind, sensitivity, natural, ..
                 } => {
                     let timestamp = Duration::from_micros(evt.time());
-                    feed_edge_swipe_gesture(
-                        self, action, delta_x, delta_y, sensitivity, natural, timestamp,
+                    feed_continuous_gesture(
+                        self, kind, delta_x, delta_y, sensitivity, natural, timestamp,
                     );
                     gesture_handled = true;
                 }
@@ -399,150 +444,165 @@ impl State {
             }
 
             // Process gesture if tracking (3+ fingers or locked) and no edge swipe active.
-            let gesture_active = self.niri.touch_gesture_points.len() >= 3
-                || self.niri.touch_gesture_locked;
+            let finger_count = self.niri.touch_gesture_points.len();
+            let gesture_active = finger_count >= 3 || self.niri.touch_gesture_locked;
             if gesture_active && self.niri.touch_edge_swipe.is_none() {
                 let timestamp = Duration::from_micros(evt.time());
                 gesture_handled = true;
 
-                // Check if we're still in recognition phase.
-                if let Some((cx, cy)) = &mut self.niri.touch_gesture_cumulative {
+                // Feed ongoing continuous gesture if one is active.
+                if let Some(ref active) = self.niri.touch_active_bind {
+                    let kind = active.kind;
+                    let sensitivity = active.sensitivity;
+                    let natural = active.natural_scroll;
+                    feed_continuous_gesture(
+                        self, kind, delta_x, delta_y, sensitivity, natural, timestamp,
+                    );
+                } else if self.niri.touch_pinch_active {
+                    // Feed pinch spread delta to overview gesture.
+                    // NOTE: Continuous pinch → overview works but feels jittery
+                    // compared to swipe → overview, because the spread delta
+                    // (radial finger movement) maps poorly to the linear
+                    // overview animation. For best UX, bind pinch to discrete
+                    // open-overview / close-overview instead of continuous
+                    // toggle-overview.
+                    let config = self.niri.config.borrow();
+                    let pinch_sensitivity = config.input.touchscreen.pinch_sensitivity();
+                    drop(config);
+                    let current_spread = calculate_spread(&self.niri.touch_gesture_points);
+                    let initial = self.niri.touch_gesture_initial_spread.unwrap_or(current_spread);
+                    let spread_delta = current_spread - initial;
+                    // Pinch in = negative spread = open overview (positive delta).
+                    let ov_delta = -spread_delta * pinch_sensitivity;
+                    if let Some(redraw) = self
+                        .niri
+                        .layout
+                        .overview_gesture_update(ov_delta, timestamp)
+                    {
+                        if redraw {
+                            self.niri.queue_redraw_all();
+                        }
+                    }
+                    // Update initial spread so delta is incremental.
+                    self.niri.touch_gesture_initial_spread = Some(current_spread);
+                } else if let Some((cx, cy)) = &mut self.niri.touch_gesture_cumulative {
+                    // Recognition phase: accumulate raw deltas.
                     *cx += delta_x;
                     *cy += delta_y;
 
-                    // Extract config values upfront to avoid borrow conflicts.
-                    let (threshold, ov_enabled, ov_fingers, ws_enabled, ws_fingers,
-                         vs_enabled, vs_fingers) = {
+                    // Normalize by finger count at read time — 5 fingers each
+                    // moving 5px shouldn't count as 25px of movement.
+                    let finger_count_f = finger_count.max(1) as f64;
+                    let (cx, cy) = (*cx / finger_count_f, *cy / finger_count_f);
+                    let swipe_distance = (cx * cx + cy * cy).sqrt();
+
+                    // Scale threshold by finger count — more fingers need more
+                    // deliberate movement. This works because unlock-on-new-finger
+                    // resets cumulative on EVERY new finger landing, so the user
+                    // starts fresh with the correct finger count each time.
+                    let (threshold, pinch_threshold, pinch_ratio) = {
                         let config = self.niri.config.borrow();
-                        let touch = &config.input.touchscreen;
                         (
-                            touch.gesture_threshold(),
-                            touch.overview_toggle_enabled(),
-                            touch.overview_toggle_fingers(),
-                            touch.workspace_switch_enabled(),
-                            touch.workspace_switch_fingers(),
-                            touch.view_scroll_enabled(),
-                            touch.view_scroll_fingers(),
+                            config.input.touchscreen.scaled_threshold(finger_count),
+                            config.input.touchscreen.pinch_threshold(),
+                            config.input.touchscreen.pinch_ratio(),
                         )
                     };
 
-                    // Check if gesture moved far enough to decide direction.
-                    let (cx, cy) = (*cx, *cy);
-                    if cx * cx + cy * cy >= threshold * threshold {
+                    // Check if we've moved far enough for either swipe or pinch.
+                    let current_spread = calculate_spread(&self.niri.touch_gesture_points);
+                    let initial_spread =
+                        self.niri.touch_gesture_initial_spread.unwrap_or(current_spread);
+                    let spread_change = (current_spread - initial_spread).abs();
+
+                    // Pinch detection: spread change must exceed both the
+                    // pinch_threshold AND the swipe distance * pinch_ratio.
+                    // This ensures pinch only fires when spread movement
+                    // dominates over linear swipe movement.
+                    let is_pinch = spread_change > pinch_threshold
+                        && spread_change > swipe_distance * pinch_ratio;
+
+                    // Also detect pinch when spread change is large enough on
+                    // its own, even if swipe distance is also high. This handles
+                    // the case where a pinch gesture also has a linear component
+                    // (fingers moving inward AND slightly down).
+                    let is_pinch = is_pinch
+                        || (spread_change > pinch_threshold
+                            && spread_change > swipe_distance);
+
+                    // Entry: swipe crossed threshold, or pinch conditions met
+                    // with spread_change also exceeding threshold (prevents wobble).
+                    if swipe_distance >= threshold
+                        || (is_pinch && spread_change >= threshold)
+                    {
+                        // Gesture recognized — clear cumulative.
                         self.niri.touch_gesture_cumulative = None;
 
-                        let finger_count = self.niri.touch_gesture_points.len();
-
-                        // Lock the gesture — suppress client events until all
-                        // fingers are lifted, even if count drops below 3.
-                        // Cancel the client's touch sequence since we already
-                        // forwarded touch-down for fingers 1 and 2.
+                        // Lock the gesture.
                         self.niri.touch_gesture_locked = true;
                         let handle = self.niri.seat.get_touch().unwrap();
                         handle.cancel(self);
 
-                        if ov_enabled && finger_count >= ov_fingers {
-                            // Overview toggle gesture.
-                            self.niri.layout.overview_gesture_begin();
-                        } else if let Some((output, _pos_within_output)) =
-                            self.niri.output_under(pos)
-                        {
-                            let output = output.clone();
-                            let is_overview_open = self.niri.layout.is_overview_open();
+                        // Determine gesture type.
+                        let gesture_type = if is_pinch {
+                            if current_spread < initial_spread {
+                                TouchGestureType::PinchIn
+                            } else {
+                                TouchGestureType::PinchOut
+                            }
+                        } else if cx.abs() > cy.abs() {
+                            if cx > 0.0 {
+                                TouchGestureType::SwipeRight
+                            } else {
+                                TouchGestureType::SwipeLeft
+                            }
+                        } else {
+                            if cy > 0.0 {
+                                TouchGestureType::SwipeDown
+                            } else {
+                                TouchGestureType::SwipeUp
+                            }
+                        };
 
-                            if cx.abs() > cy.abs() {
-                                // Horizontal gesture: view offset (scroll within workspace).
-                                if vs_enabled && finger_count >= vs_fingers {
-                                    let output_ws = if is_overview_open {
-                                        self.niri.workspace_under(true, pos)
-                                    } else {
-                                        self.niri
-                                            .layout
-                                            .monitor_for_output(&output)
-                                            .map(|mon| {
-                                                (output.clone(), mon.active_workspace_ref())
-                                            })
-                                    };
+                        // Look up matching bind.
+                        let bind_info = {
+                            let config = self.niri.config.borrow();
+                            config
+                                .input
+                                .touchscreen
+                                .touch_binds()
+                                .and_then(|binds| {
+                                    binds.find_bind(gesture_type, finger_count as u8)
+                                })
+                                .map(|bind| {
+                                    let kind = bind.continuous_kind();
+                                    let sensitivity = bind.sensitivity.unwrap_or(0.4);
+                                    let natural_scroll = bind.natural_scroll;
+                                    let action = bind.action.clone();
+                                    (kind, sensitivity, natural_scroll, action)
+                                })
+                        };
 
-                                    if let Some((output, ws)) = output_ws {
-                                        let ws_idx = self
-                                            .niri
-                                            .layout
-                                            .find_workspace_by_id(ws.id())
-                                            .unwrap()
-                                            .0;
-                                        self.niri.layout.view_offset_gesture_begin(
-                                            &output,
-                                            Some(ws_idx),
-                                            true,
-                                        );
-                                    }
+                        if let Some((kind, sensitivity, natural_scroll, action)) = bind_info {
+                            if let Some(kind) = kind {
+                                // Continuous gesture — begin animation and store active bind.
+                                if is_pinch {
+                                    // Pinch uses a special continuous feed path.
+                                    begin_continuous_gesture(self, kind, pos);
+                                    self.niri.touch_pinch_active = true;
+                                } else {
+                                    begin_continuous_gesture(self, kind, pos);
+                                    self.niri.touch_active_bind = Some(ActiveTouchBind {
+                                        kind,
+                                        sensitivity,
+                                        natural_scroll,
+                                    });
                                 }
                             } else {
-                                // Vertical gesture: workspace switch.
-                                if ws_enabled && finger_count >= ws_fingers {
-                                    self.niri
-                                        .layout
-                                        .workspace_switch_gesture_begin(&output, true);
-                                }
+                                // Discrete action — fire once.
+                                self.do_action(action, false);
                             }
                         }
-                    }
-                }
-
-                // Read config for per-gesture natural scroll and sensitivity.
-                let (ws_natural, ws_sensitivity, vs_natural, vs_sensitivity,
-                     ov_natural, ov_sensitivity) = {
-                    let config = self.niri.config.borrow();
-                    let touch = &config.input.touchscreen;
-                    (
-                        touch.workspace_switch_natural_scroll(),
-                        touch.workspace_switch_sensitivity(),
-                        touch.view_scroll_natural_scroll(),
-                        touch.view_scroll_sensitivity(),
-                        touch.overview_toggle_natural_scroll(),
-                        touch.overview_toggle_sensitivity(),
-                    )
-                };
-
-                // Apply per-gesture natural scroll inversion.
-                let ws_delta_y = if ws_natural { -delta_y } else { delta_y };
-                if self
-                    .niri
-                    .layout
-                    .workspace_switch_gesture_update(
-                        ws_delta_y * ws_sensitivity,
-                        timestamp,
-                        true,
-                    )
-                    .is_some()
-                {
-                    self.niri.queue_redraw_all();
-                }
-
-                let vs_delta_x = if vs_natural { -delta_x } else { delta_x };
-                if self
-                    .niri
-                    .layout
-                    .view_offset_gesture_update(
-                        vs_delta_x * vs_sensitivity,
-                        timestamp,
-                        true,
-                    )
-                    .is_some()
-                {
-                    self.niri.queue_redraw_all();
-                }
-
-                // Overview gesture uses vertical delta like touchpad.
-                let ov_delta_y = if ov_natural { delta_y } else { -delta_y };
-                if let Some(redraw) = self
-                    .niri
-                    .layout
-                    .overview_gesture_update(ov_delta_y * ov_sensitivity, timestamp)
-                {
-                    if redraw {
-                        self.niri.queue_redraw_all();
                     }
                 }
             }
@@ -607,6 +667,9 @@ impl State {
         self.niri.touch_gesture_cumulative = None;
         self.niri.touch_edge_swipe = None;
         self.niri.touch_gesture_locked = false;
+        self.niri.touch_active_bind = None;
+        self.niri.touch_gesture_initial_spread = None;
+        self.niri.touch_pinch_active = false;
 
         // Cancel any ongoing gesture animations.
         self.niri.layout.workspace_switch_gesture_end(Some(false));
@@ -614,6 +677,16 @@ impl State {
         self.niri.layout.overview_gesture_end();
 
         handle.cancel(self);
+    }
+}
+
+/// Convert a screen edge to the corresponding edge swipe gesture type.
+fn edge_to_gesture_type(edge: ScreenEdge) -> TouchGestureType {
+    match edge {
+        ScreenEdge::Left => TouchGestureType::EdgeSwipeLeft,
+        ScreenEdge::Right => TouchGestureType::EdgeSwipeRight,
+        ScreenEdge::Top => TouchGestureType::EdgeSwipeTop,
+        ScreenEdge::Bottom => TouchGestureType::EdgeSwipeBottom,
     }
 }
 
@@ -651,20 +724,17 @@ fn detect_edge(
     closest.map(|(edge, _)| edge)
 }
 
-/// Start the appropriate gesture animation for an edge swipe.
-fn begin_edge_swipe_gesture(
+/// Begin a continuous gesture animation.
+fn begin_continuous_gesture(
     state: &mut State,
+    kind: ContinuousGestureKind,
     pos: smithay::utils::Point<f64, smithay::utils::Logical>,
-    _edge: ScreenEdge,
-    action: niri_config::input::EdgeSwipeAction,
 ) {
-    use niri_config::input::EdgeSwipeAction;
-
-    match action {
-        EdgeSwipeAction::OverviewToggle => {
+    match kind {
+        ContinuousGestureKind::OverviewToggle => {
             state.niri.layout.overview_gesture_begin();
         }
-        EdgeSwipeAction::WorkspaceSwitch => {
+        ContinuousGestureKind::WorkspaceSwitch => {
             if let Some((output, _)) = state.niri.output_under(pos) {
                 let output = output.clone();
                 state
@@ -673,7 +743,7 @@ fn begin_edge_swipe_gesture(
                     .workspace_switch_gesture_begin(&output, true);
             }
         }
-        EdgeSwipeAction::ViewScroll => {
+        ContinuousGestureKind::ViewScroll => {
             if let Some((output, _)) = state.niri.output_under(pos) {
                 let output = output.clone();
                 let is_overview_open = state.niri.layout.is_overview_open();
@@ -705,20 +775,18 @@ fn begin_edge_swipe_gesture(
     }
 }
 
-/// Feed delta to the active edge swipe gesture.
-fn feed_edge_swipe_gesture(
+/// Feed delta to an active continuous gesture.
+fn feed_continuous_gesture(
     state: &mut State,
-    action: niri_config::input::EdgeSwipeAction,
+    kind: ContinuousGestureKind,
     delta_x: f64,
     delta_y: f64,
     sensitivity: f64,
     natural: bool,
     timestamp: Duration,
 ) {
-    use niri_config::input::EdgeSwipeAction;
-
-    match action {
-        EdgeSwipeAction::WorkspaceSwitch => {
+    match kind {
+        ContinuousGestureKind::WorkspaceSwitch => {
             let dy = if natural { -delta_y } else { delta_y };
             if state
                 .niri
@@ -729,7 +797,7 @@ fn feed_edge_swipe_gesture(
                 state.niri.queue_redraw_all();
             }
         }
-        EdgeSwipeAction::ViewScroll => {
+        ContinuousGestureKind::ViewScroll => {
             let dx = if natural { -delta_x } else { delta_x };
             if state
                 .niri
@@ -740,7 +808,7 @@ fn feed_edge_swipe_gesture(
                 state.niri.queue_redraw_all();
             }
         }
-        EdgeSwipeAction::OverviewToggle => {
+        ContinuousGestureKind::OverviewToggle => {
             let dy = if natural { delta_y } else { -delta_y };
             if let Some(redraw) = state
                 .niri
@@ -755,23 +823,48 @@ fn feed_edge_swipe_gesture(
     }
 }
 
-/// End the edge swipe gesture animation.
-fn end_edge_swipe_gesture(state: &mut State, action: niri_config::input::EdgeSwipeAction) {
-    use niri_config::input::EdgeSwipeAction;
-
-    match action {
-        EdgeSwipeAction::WorkspaceSwitch => {
+/// End a continuous gesture animation.
+fn end_continuous_gesture(state: &mut State, kind: ContinuousGestureKind) {
+    match kind {
+        ContinuousGestureKind::WorkspaceSwitch => {
             if let Some(output) = state.niri.layout.workspace_switch_gesture_end(Some(true)) {
                 state.niri.queue_redraw(&output);
             }
         }
-        EdgeSwipeAction::ViewScroll => {
+        ContinuousGestureKind::ViewScroll => {
             if let Some(output) = state.niri.layout.view_offset_gesture_end(Some(true)) {
                 state.niri.queue_redraw(&output);
             }
         }
-        EdgeSwipeAction::OverviewToggle => {
+        ContinuousGestureKind::OverviewToggle => {
             state.niri.layout.overview_gesture_end();
         }
     }
+}
+
+/// Calculate the average spread of touch points (average distance from centroid).
+fn calculate_spread(
+    points: &std::collections::HashMap<
+        Option<smithay::backend::input::TouchSlot>,
+        smithay::utils::Point<f64, smithay::utils::Logical>,
+    >,
+) -> f64 {
+    if points.len() < 2 {
+        return 0.0;
+    }
+
+    let n = points.len() as f64;
+    let (sum_x, sum_y) = points.values().fold((0.0, 0.0), |(sx, sy), p| {
+        (sx + p.x, sy + p.y)
+    });
+    let centroid_x = sum_x / n;
+    let centroid_y = sum_y / n;
+
+    let total_dist: f64 = points.values().map(|p| {
+        let dx = p.x - centroid_x;
+        let dy = p.y - centroid_y;
+        (dx * dx + dy * dy).sqrt()
+    }).sum();
+
+    total_dist / n
 }
