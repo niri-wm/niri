@@ -471,96 +471,6 @@ impl Touchscreen {
             .unwrap_or(16.0)
     }
 
-    pub fn workspace_switch_enabled(&self) -> bool {
-        self.gestures
-            .as_ref()
-            .and_then(|g| g.workspace_switch.as_ref())
-            .map_or(true, |a| !a.off)
-    }
-
-    pub fn workspace_switch_fingers(&self) -> usize {
-        self.gestures
-            .as_ref()
-            .and_then(|g| g.workspace_switch.as_ref())
-            .and_then(|a| a.finger_count)
-            .unwrap_or(3) as usize
-    }
-
-    pub fn workspace_switch_sensitivity(&self) -> f64 {
-        self.gestures
-            .as_ref()
-            .and_then(|g| g.workspace_switch.as_ref())
-            .and_then(|a| a.sensitivity)
-            .unwrap_or(0.4)
-    }
-
-    pub fn workspace_switch_natural_scroll(&self) -> bool {
-        self.gestures
-            .as_ref()
-            .and_then(|g| g.workspace_switch.as_ref())
-            .map_or(self.natural_scroll, |a| a.natural_scroll)
-    }
-
-    pub fn view_scroll_enabled(&self) -> bool {
-        self.gestures
-            .as_ref()
-            .and_then(|g| g.view_scroll.as_ref())
-            .map_or(true, |a| !a.off)
-    }
-
-    pub fn view_scroll_fingers(&self) -> usize {
-        self.gestures
-            .as_ref()
-            .and_then(|g| g.view_scroll.as_ref())
-            .and_then(|a| a.finger_count)
-            .unwrap_or(3) as usize
-    }
-
-    pub fn view_scroll_sensitivity(&self) -> f64 {
-        self.gestures
-            .as_ref()
-            .and_then(|g| g.view_scroll.as_ref())
-            .and_then(|a| a.sensitivity)
-            .unwrap_or(0.4)
-    }
-
-    pub fn view_scroll_natural_scroll(&self) -> bool {
-        self.gestures
-            .as_ref()
-            .and_then(|g| g.view_scroll.as_ref())
-            .map_or(self.natural_scroll, |a| a.natural_scroll)
-    }
-
-    pub fn overview_toggle_enabled(&self) -> bool {
-        self.gestures
-            .as_ref()
-            .and_then(|g| g.overview_toggle.as_ref())
-            .map_or(true, |a| !a.off)
-    }
-
-    pub fn overview_toggle_fingers(&self) -> usize {
-        self.gestures
-            .as_ref()
-            .and_then(|g| g.overview_toggle.as_ref())
-            .and_then(|a| a.finger_count)
-            .unwrap_or(4) as usize
-    }
-
-    pub fn overview_toggle_sensitivity(&self) -> f64 {
-        self.gestures
-            .as_ref()
-            .and_then(|g| g.overview_toggle.as_ref())
-            .and_then(|a| a.sensitivity)
-            .unwrap_or(0.4)
-    }
-
-    pub fn overview_toggle_natural_scroll(&self) -> bool {
-        self.gestures
-            .as_ref()
-            .and_then(|g| g.overview_toggle.as_ref())
-            .map_or(self.natural_scroll, |a| a.natural_scroll)
-    }
-
     pub fn edge_threshold(&self) -> f64 {
         self.gestures
             .as_ref()
@@ -568,33 +478,47 @@ impl Touchscreen {
             .unwrap_or(20.0)
     }
 
-    pub fn edge_swipe_config(&self, edge: ScreenEdge) -> Option<&EdgeSwipeConfig> {
-        let gestures = self.gestures.as_ref()?;
-        match edge {
-            ScreenEdge::Left => gestures.edge_swipe_left.as_ref(),
-            ScreenEdge::Right => gestures.edge_swipe_right.as_ref(),
-            ScreenEdge::Top => gestures.edge_swipe_top.as_ref(),
-            ScreenEdge::Bottom => gestures.edge_swipe_bottom.as_ref(),
-        }
+    pub fn pinch_threshold(&self) -> f64 {
+        self.gestures
+            .as_ref()
+            .and_then(|g| g.pinch_threshold)
+            .unwrap_or(30.0)
     }
 
-    pub fn edge_swipe_enabled(&self, edge: ScreenEdge) -> bool {
-        self.edge_swipe_config(edge)
-            .map_or(false, |c| !c.off && c.action.is_some())
+    pub fn pinch_ratio(&self) -> f64 {
+        self.gestures
+            .as_ref()
+            .and_then(|g| g.pinch_ratio)
+            .unwrap_or(2.0)
     }
 
-    pub fn edge_swipe_action(&self, edge: ScreenEdge) -> Option<EdgeSwipeAction> {
-        let config = self.edge_swipe_config(edge)?;
-        if config.off {
-            return None;
-        }
-        config.action
+    pub fn pinch_sensitivity(&self) -> f64 {
+        self.gestures
+            .as_ref()
+            .and_then(|g| g.pinch_sensitivity)
+            .unwrap_or(0.005)
     }
 
-    pub fn edge_swipe_sensitivity(&self, edge: ScreenEdge) -> f64 {
-        self.edge_swipe_config(edge)
-            .and_then(|c| c.sensitivity)
-            .unwrap_or(0.4)
+    pub fn finger_threshold_scale(&self) -> f64 {
+        self.gestures
+            .as_ref()
+            .and_then(|g| g.finger_threshold_scale)
+            .unwrap_or(1.5)
+    }
+
+    /// Returns the scaled recognition threshold for a given finger count.
+    /// Extra fingers above 3 increase the threshold by the scale factor.
+    pub fn scaled_threshold(&self, finger_count: usize) -> f64 {
+        let base = self.gesture_threshold();
+        let scale = self.finger_threshold_scale();
+        let extra = finger_count.saturating_sub(3) as f64;
+        base * (1.0 + extra * (scale - 1.0))
+    }
+
+    pub fn touch_binds(&self) -> Option<&crate::touch_binds::TouchBinds> {
+        self.gestures
+            .as_ref()
+            .and_then(|g| g.touch_binds.as_ref())
     }
 }
 
@@ -606,55 +530,22 @@ pub enum ScreenEdge {
     Bottom,
 }
 
-#[derive(knuffel::DecodeScalar, Debug, Clone, Copy, PartialEq, Eq)]
-pub enum EdgeSwipeAction {
-    ViewScroll,
-    WorkspaceSwitch,
-    OverviewToggle,
-}
-
-#[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]
-pub struct EdgeSwipeConfig {
-    #[knuffel(argument)]
-    pub action: Option<EdgeSwipeAction>,
-    #[knuffel(child)]
-    pub off: bool,
-    #[knuffel(child, unwrap(argument))]
-    pub sensitivity: Option<f64>,
-}
-
 #[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]
 pub struct TouchscreenGesturesConfig {
-    #[knuffel(child)]
-    pub workspace_switch: Option<TouchscreenGestureActionConfig>,
-    #[knuffel(child)]
-    pub view_scroll: Option<TouchscreenGestureActionConfig>,
-    #[knuffel(child)]
-    pub overview_toggle: Option<TouchscreenGestureActionConfig>,
     #[knuffel(child, unwrap(argument))]
     pub recognition_threshold: Option<f64>,
-    #[knuffel(child)]
-    pub edge_swipe_left: Option<EdgeSwipeConfig>,
-    #[knuffel(child)]
-    pub edge_swipe_right: Option<EdgeSwipeConfig>,
-    #[knuffel(child)]
-    pub edge_swipe_top: Option<EdgeSwipeConfig>,
-    #[knuffel(child)]
-    pub edge_swipe_bottom: Option<EdgeSwipeConfig>,
     #[knuffel(child, unwrap(argument))]
     pub edge_threshold: Option<f64>,
-}
-
-#[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]
-pub struct TouchscreenGestureActionConfig {
-    #[knuffel(child)]
-    pub off: bool,
     #[knuffel(child, unwrap(argument))]
-    pub finger_count: Option<u8>,
+    pub pinch_threshold: Option<f64>,
     #[knuffel(child, unwrap(argument))]
-    pub sensitivity: Option<f64>,
+    pub pinch_ratio: Option<f64>,
+    #[knuffel(child, unwrap(argument))]
+    pub pinch_sensitivity: Option<f64>,
+    #[knuffel(child, unwrap(argument))]
+    pub finger_threshold_scale: Option<f64>,
     #[knuffel(child)]
-    pub natural_scroll: bool,
+    pub touch_binds: Option<crate::touch_binds::TouchBinds>,
 }
 
 #[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]

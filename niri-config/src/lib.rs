@@ -40,6 +40,7 @@ pub mod layout;
 pub mod misc;
 pub mod output;
 pub mod recent_windows;
+pub mod touch_binds;
 pub mod utils;
 pub mod window_rule;
 pub mod workspace;
