@@ -55,8 +55,8 @@ impl Watcher {
     pub fn new(
         path: ConfigPath,
         includes: Vec<PathBuf>,
-        mut process: impl FnMut(&ConfigPath) -> ConfigParseResult<Config, ()> + Send + 'static,
-        changed: SyncSender<Result<Config, ()>>,
+        mut process: impl FnMut(&ConfigPath) -> ConfigParseResult<Config, String> + Send + 'static,
+        changed: SyncSender<Result<Config, String>>,
     ) -> Self {
         let (load_config, load_config_rx) = mpsc::channel();
 
@@ -190,6 +190,7 @@ pub fn setup(state: &mut State, config_path: &ConfigPath, includes: Vec<PathBuf>
         path.load().map_config_res(|res| {
             res.map_err(|err| {
                 warn!("{err:?}");
+                niri_config::format_error_report(&err)
             })
         })
     };
@@ -200,7 +201,7 @@ pub fn setup(state: &mut State, config_path: &ConfigPath, includes: Vec<PathBuf>
         .event_loop
         .insert_source(
             rx,
-            |event: calloop::channel::Event<Result<Config, ()>>, _, state| match event {
+            |event: calloop::channel::Event<Result<Config, String>>, _, state| match event {
                 calloop::channel::Event::Msg(config) => {
                     let failed = config.is_err();
                     state.reload_config(config);
