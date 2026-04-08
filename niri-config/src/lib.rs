@@ -2158,20 +2158,24 @@ mod tests {
                 lid_close: None,
                 tablet_mode_on: Some(
                     SwitchAction {
-                        spawn: [
-                            "bash",
-                            "-c",
-                            "gsettings set org.gnome.desktop.a11y.applications screen-keyboard-enabled true",
-                        ],
+                        action: Spawn(
+                            [
+                                "bash",
+                                "-c",
+                                "gsettings set org.gnome.desktop.a11y.applications screen-keyboard-enabled true",
+                            ],
+                        ),
                     },
                 ),
                 tablet_mode_off: Some(
                     SwitchAction {
-                        spawn: [
-                            "bash",
-                            "-c",
-                            "gsettings set org.gnome.desktop.a11y.applications screen-keyboard-enabled false",
-                        ],
+                        action: Spawn(
+                            [
+                                "bash",
+                                "-c",
+                                "gsettings set org.gnome.desktop.a11y.applications screen-keyboard-enabled false",
+                            ],
+                        ),
                     },
                 ),
             },
@@ -2404,5 +2408,94 @@ mod tests {
         +                0.66667,
         "#,
         );
+    }
+
+    #[test]
+    fn switch_events_spawn() {
+        let config = do_parse(
+            r#"
+            switch-events {
+                lid-open { spawn "notify-send" "lid open"; }
+                lid-close { spawn "notify-send" "lid close"; }
+                tablet-mode-on { spawn "notify-send" "tablet on"; }
+                tablet-mode-off { spawn "notify-send" "tablet off"; }
+            }
+            "#,
+        );
+        assert_eq!(
+            config.switch_events,
+            SwitchBinds {
+                lid_open: Some(SwitchAction {
+                    action: Action::Spawn(vec!["notify-send".to_owned(), "lid open".to_owned()]),
+                }),
+                lid_close: Some(SwitchAction {
+                    action: Action::Spawn(vec!["notify-send".to_owned(), "lid close".to_owned()]),
+                }),
+                tablet_mode_on: Some(SwitchAction {
+                    action: Action::Spawn(vec!["notify-send".to_owned(), "tablet on".to_owned()]),
+                }),
+                tablet_mode_off: Some(SwitchAction {
+                    action: Action::Spawn(vec!["notify-send".to_owned(), "tablet off".to_owned()]),
+                }),
+            }
+        );
+    }
+
+    #[test]
+    fn switch_events_spawn_sh() {
+        let config = do_parse(
+            r#"
+            switch-events {
+                lid-open { spawn-sh "echo open"; }
+                lid-close { spawn-sh "echo close"; }
+                tablet-mode-on { spawn-sh "echo tablet on"; }
+                tablet-mode-off { spawn-sh "echo tablet off"; }
+            }
+            "#,
+        );
+        assert_eq!(
+            config.switch_events,
+            SwitchBinds {
+                lid_open: Some(SwitchAction {
+                    action: Action::SpawnSh("echo open".to_owned()),
+                }),
+                lid_close: Some(SwitchAction {
+                    action: Action::SpawnSh("echo close".to_owned()),
+                }),
+                tablet_mode_on: Some(SwitchAction {
+                    action: Action::SpawnSh("echo tablet on".to_owned()),
+                }),
+                tablet_mode_off: Some(SwitchAction {
+                    action: Action::SpawnSh("echo tablet off".to_owned()),
+                }),
+            }
+        );
+    }
+
+    #[test]
+    fn switch_events_empty_block_is_error() {
+        assert!(Config::parse_mem(
+            r#"
+            switch-events {
+                lid-close { }
+            }
+            "#,
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn switch_events_both_spawn_and_spawn_sh_is_error() {
+        assert!(Config::parse_mem(
+            r#"
+            switch-events {
+                lid-close {
+                    spawn "foo"
+                    spawn-sh "bar"
+                }
+            }
+            "#,
+        )
+        .is_err());
     }
 }
