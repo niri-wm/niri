@@ -14,7 +14,8 @@ use _server_decoration::server::org_kde_kwin_server_decoration_manager::Mode as 
 use anyhow::{bail, ensure, Context};
 use calloop::futures::Scheduler;
 use niri_config::debug::PreviewRender;
-use niri_config::input::{EdgeSwipeAction, ScreenEdge};
+use niri_config::input::ScreenEdge;
+use niri_config::touch_binds::ContinuousGestureKind;
 use niri_config::{
     Config, FloatOrInt, Key, Modifiers, OutputName, TrackLayout, WarpMouseToFocusMode,
     WorkspaceReference, Xkb,
@@ -196,16 +197,24 @@ pub enum TouchEdgeSwipeState {
     /// First touch landed in edge zone; waiting for motion to confirm swipe.
     Pending {
         edge: ScreenEdge,
-        action: EdgeSwipeAction,
         cumulative: (f64, f64),
         slot: Option<TouchSlot>,
     },
-    /// Swipe recognized; gesture animation is active.
+    /// Swipe recognized; gesture animation is active (continuous gesture).
     Active {
         edge: ScreenEdge,
-        action: EdgeSwipeAction,
+        kind: ContinuousGestureKind,
+        sensitivity: f64,
+        natural_scroll: bool,
         slot: Option<TouchSlot>,
     },
+}
+
+/// State for an active multi-finger touch gesture (after bind matched).
+pub struct ActiveTouchBind {
+    pub kind: ContinuousGestureKind,
+    pub sensitivity: f64,
+    pub natural_scroll: bool,
 }
 
 pub struct Niri {
@@ -402,6 +411,12 @@ pub struct Niri {
     /// While locked, all touch events are suppressed from clients until
     /// all fingers are lifted, preventing leaked inputs mid-gesture.
     pub touch_gesture_locked: bool,
+    /// Active touch gesture bind (after direction decided and bind matched).
+    pub touch_active_bind: Option<ActiveTouchBind>,
+    /// Initial spread (average distance from centroid) when 3+ fingers first tracked.
+    pub touch_gesture_initial_spread: Option<f64>,
+    /// Whether a pinch gesture is actively feeding the overview animation.
+    pub touch_pinch_active: bool,
     pub overview_scroll_swipe_gesture: ScrollSwipeGesture,
     pub vertical_wheel_tracker: ScrollTracker,
     pub horizontal_wheel_tracker: ScrollTracker,
@@ -2613,6 +2628,9 @@ impl Niri {
             touch_gesture_cumulative: None,
             touch_edge_swipe: None,
             touch_gesture_locked: false,
+            touch_active_bind: None,
+            touch_gesture_initial_spread: None,
+            touch_pinch_active: false,
             overview_scroll_swipe_gesture: ScrollSwipeGesture::new(),
             vertical_wheel_tracker: ScrollTracker::new(120),
             horizontal_wheel_tracker: ScrollTracker::new(120),
