@@ -15,7 +15,7 @@ use anyhow::{bail, ensure, Context};
 use calloop::futures::Scheduler;
 use niri_config::debug::PreviewRender;
 use niri_config::{
-    Config, FloatOrInt, Key, Modifiers, OutputName, TrackLayout, WarpMouseToFocusMode,
+    Config, FloatOrInt, Modifiers, OutputName, TrackLayout, WarpMouseToFocusMode,
     WorkspaceReference, Xkb,
 };
 use smithay::backend::allocator::Fourcc;
@@ -130,7 +130,7 @@ use crate::input::scroll_swipe_gesture::ScrollSwipeGesture;
 use crate::input::scroll_tracker::ScrollTracker;
 use crate::input::{
     apply_libinput_settings, mods_with_finger_scroll_binds, mods_with_mouse_binds,
-    mods_with_wheel_binds, TabletData,
+    mods_with_wheel_binds, CompiledBind, CompiledKey, TabletData,
 };
 use crate::ipc::server::IpcServer;
 use crate::layer::mapped::LayerSurfaceRenderElement;
@@ -320,7 +320,8 @@ pub struct Niri {
     pub suppressed_keys: HashSet<Keycode>,
     /// Button codes of the mouse buttons to suppress.
     pub suppressed_buttons: HashSet<u32>,
-    pub bind_cooldown_timers: HashMap<Key, RegistrationToken>,
+    pub compiled_binds: Vec<CompiledBind>,
+    pub bind_cooldown_timers: HashMap<CompiledKey, RegistrationToken>,
     pub bind_repeat_timer: Option<RegistrationToken>,
     pub keyboard_focus: KeyboardFocus,
     pub layer_shell_on_demand_focus: Option<LayerSurface>,
@@ -1514,6 +1515,15 @@ impl State {
             self.niri
                 .hotkey_overlay
                 .on_hotkey_config_updated(new_mod_key);
+            if binds_changed {
+                self.niri.compiled_binds = config
+                    .binds
+                    .binds
+                    .iter()
+                    .cloned()
+                    .map(CompiledBind::from)
+                    .collect();
+            }
             self.niri.mods_with_mouse_binds = mods_with_mouse_binds(new_mod_key, &config.binds);
             self.niri.mods_with_wheel_binds = mods_with_wheel_binds(new_mod_key, &config.binds);
             self.niri.mods_with_finger_scroll_binds =
@@ -1659,7 +1669,9 @@ impl State {
         }
 
         if binds_changed {
-            self.niri.window_mru_ui.update_binds();
+            self.niri
+                .window_mru_ui
+                .update_binds(&self.niri.compiled_binds);
         }
 
         if recent_windows_changed {
@@ -2339,12 +2351,19 @@ impl Niri {
             CursorManager::new(&config_.cursor.xcursor_theme, config_.cursor.xcursor_size);
 
         let mod_key = backend.mod_key(&config.borrow());
+        let compiled_binds = config_
+            .binds
+            .binds
+            .iter()
+            .cloned()
+            .map(CompiledBind::from)
+            .collect::<Vec<_>>();
         let mods_with_mouse_binds = mods_with_mouse_binds(mod_key, &config_.binds);
         let mods_with_wheel_binds = mods_with_wheel_binds(mod_key, &config_.binds);
         let mods_with_finger_scroll_binds = mods_with_finger_scroll_binds(mod_key, &config_.binds);
 
         let screenshot_ui = ScreenshotUi::new(animation_clock.clone(), config.clone());
-        let window_mru_ui = WindowMruUi::new(config.clone());
+        let window_mru_ui = WindowMruUi::new(config.clone(), &compiled_binds);
         let config_error_notification =
             ConfigErrorNotification::new(animation_clock.clone(), config.clone());
 
@@ -2488,6 +2507,7 @@ impl Niri {
             popup_grab: None,
             suppressed_keys: HashSet::new(),
             suppressed_buttons: HashSet::new(),
+            compiled_binds,
             bind_cooldown_timers: HashMap::new(),
             bind_repeat_timer: Option::default(),
             presentation_state,
