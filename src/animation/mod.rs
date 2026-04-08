@@ -238,6 +238,19 @@ impl Animation {
         self.clock.now() >= self.start_time + self.duration
     }
 
+    /// Returns whether the animation is done as seen from a custom time `at`.
+    ///
+    /// Useful for delayed animations that derive their effective clock time from an offset
+    /// (e.g. `clock.now().saturating_sub(delay)`). Handles `should_complete_instantly`
+    /// the same way as `is_done`.
+    pub fn is_done_at(&self, at: Duration) -> bool {
+        if self.clock.should_complete_instantly() {
+            return true;
+        }
+
+        at >= self.start_time + self.duration
+    }
+
     pub fn is_clamped_done(&self) -> bool {
         if self.clock.should_complete_instantly() {
             return true;
