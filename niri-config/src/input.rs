@@ -364,6 +364,8 @@ pub struct Tablet {
     #[knuffel(child, unwrap(argument))]
     pub map_to_output: Option<String>,
     #[knuffel(child)]
+    pub map_to_active_output: bool,
+    #[knuffel(child)]
     pub left_handed: bool,
 }
 
