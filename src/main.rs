@@ -20,7 +20,7 @@ use niri::cli::{Cli, CompletionShell, Sub};
 use niri::dbus;
 use niri::input::compile_binds;
 use niri::ipc::client::handle_msg;
-use niri::niri::State;
+use niri::niri::{SessionOptions, State};
 use niri::utils::spawning::{
     spawn, spawn_sh, store_and_increase_nofile_rlimit, CHILD_DISPLAY, CHILD_ENV,
     REMOVE_ENV_RUST_BACKTRACE, REMOVE_ENV_RUST_LIB_BACKTRACE,
@@ -192,8 +192,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         event_loop.get_signal(),
         display,
         false,
-        true,
-        cli.session,
+        SessionOptions {
+            create_wayland_socket: true,
+            is_session_instance: cli.session,
+        },
     )
     .unwrap();
 

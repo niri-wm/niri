@@ -19,15 +19,11 @@ use crate::Xkb;
 #[derive(Debug, Default, PartialEq)]
 pub struct Binds {
     pub binds: Vec<Bind>,
-    pub layout_independent: bool,
-    pub xkb: Option<Xkb>,
 }
 
 #[derive(Debug, Default, PartialEq)]
 pub struct BindsPart {
     pub binds: Vec<Bind>,
-    pub layout_independent: Option<bool>,
-    pub xkb: Option<Xkb>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -40,6 +36,7 @@ pub struct Bind {
     pub allow_inhibiting: bool,
     pub hotkey_overlay_title: Option<Option<String>>,
     pub layout_independent: Option<bool>,
+    pub xkb: Option<Xkb>,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
@@ -777,13 +774,6 @@ impl MergeWith<BindsPart> for Binds {
         self.binds
             .retain(|bind| !part.binds.iter().any(|new| new.key == bind.key));
         self.binds.extend(part.binds.iter().cloned());
-
-        if let Some(layout_independent) = part.layout_independent {
-            self.layout_independent = layout_independent;
-        }
-        if let Some(xkb) = &part.xkb {
-            self.xkb = Some(xkb.clone());
-        }
     }
 }
 
@@ -837,10 +827,6 @@ fn validate_layout_independent_xkb<S>(
     }
 }
 
-fn effective_layout_independent(binds: &Binds, bind: &Bind) -> bool {
-    bind.layout_independent.unwrap_or(binds.layout_independent)
-}
-
 fn validate_layout_independent_trigger<S>(
     bind: &Bind,
     layout_independent: bool,
@@ -856,31 +842,6 @@ fn validate_layout_independent_trigger<S>(
         ));
     }
 }
-
-pub fn validate_final_binds_config<S>(
-    binds: &Binds,
-    node: &knuffel::ast::SpannedNode<S>,
-    ctx: &mut knuffel::decode::Context<S>,
-) where
-    S: knuffel::traits::ErrorSpan,
-{
-    let has_layout_independent = binds
-        .binds
-        .iter()
-        .any(|bind| effective_layout_independent(binds, bind));
-
-    if let Some(xkb) = &binds.xkb {
-        validate_layout_independent_xkb(xkb, node, ctx);
-    }
-
-    if has_layout_independent && binds.xkb.is_none() {
-        ctx.emit_error(DecodeError::missing(
-            node,
-            "binds.xkb is required when any bind is layout-independent",
-        ));
-    }
-}
-
 impl<S> knuffel::Decode<S> for BindsPart
 where
     S: knuffel::traits::ErrorSpan,
@@ -918,7 +879,6 @@ where
         let mut saw_xkb = false;
 
         let mut binds = Vec::new();
-        let mut bind_nodes = Vec::new();
         let mut layout_independent = None;
         let mut xkb = None;
 
@@ -957,8 +917,7 @@ where
                     }
                     Ok(bind) => {
                         if seen_keys.insert(bind.key) {
-                            bind_nodes.push(child);
-                            binds.push(bind);
+                            binds.push((child, bind));
                         } else {
                             // ideally, this error should point to the previous instance of this
                             // keybind
@@ -997,18 +956,37 @@ where
             }
         }
 
-        for (bind, bind_node) in binds.iter().zip(bind_nodes) {
-            let effective_layout_independent = bind
-                .layout_independent
-                .unwrap_or(layout_independent.unwrap_or(false));
-            validate_layout_independent_trigger(bind, effective_layout_independent, bind_node, ctx);
-        }
+        let binds = binds
+            .into_iter()
+            .map(|(child, mut bind)| {
+                let bind_layout_independent = bind
+                    .layout_independent
+                    .unwrap_or(layout_independent.unwrap_or(false));
+                validate_layout_independent_trigger(
+                    &bind,
+                    bind_layout_independent,
+                    child,
+                    ctx,
+                );
+                if bind.layout_independent.is_some() || layout_independent.is_some() {
+                    bind.layout_independent = Some(bind_layout_independent);
+                }
+                if bind_layout_independent {
+                    if xkb.is_none() {
+                        ctx.emit_error(DecodeError::missing(
+                            child,
+                            "binds.xkb is required when any bind in this binds block is layout-independent",
+                        ));
+                    } else {
+                        bind.xkb = xkb.clone();
+                    }
+                }
 
-        Ok(Self {
-            binds,
-            layout_independent,
-            xkb,
-        })
+                bind
+            })
+            .collect();
+
+        Ok(Self { binds })
     }
 }
 
@@ -1095,6 +1073,7 @@ where
             allow_inhibiting: true,
             hotkey_overlay_title: None,
             layout_independent: None,
+            xkb: None, // Populated by BindsPart post-processing.
         };
 
         if let Some(child) = children.next() {
@@ -1132,6 +1111,7 @@ where
                         allow_inhibiting,
                         hotkey_overlay_title,
                         layout_independent,
+                        xkb: None, // Populated by BindsPart post-processing.
                     })
                 }
                 Err(e) => {

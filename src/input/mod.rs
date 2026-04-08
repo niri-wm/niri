@@ -2,6 +2,7 @@ use std::any::Any;
 use std::cmp::min;
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
+use std::fmt;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -105,6 +106,113 @@ pub enum CompiledTrigger {
     TouchpadScrollUp,
     TouchpadScrollLeft,
     TouchpadScrollRight,
+}
+
+struct ModifierNameEntry {
+    modifier: Option<Modifiers>,
+    display_name: Option<&'static str>,
+    xkb_names: &'static [&'static str],
+}
+
+fn modifier_name_entries() -> &'static [ModifierNameEntry] {
+    &[
+        ModifierNameEntry {
+            modifier: Some(Modifiers::COMPOSITOR),
+            display_name: Some("Compositor"),
+            xkb_names: &[],
+        },
+        ModifierNameEntry {
+            modifier: Some(Modifiers::SUPER),
+            display_name: Some("Super"),
+            xkb_names: &[xkb::MOD_NAME_LOGO, "Logo", "Super", "Meta", "Win"],
+        },
+        ModifierNameEntry {
+            modifier: Some(Modifiers::CTRL),
+            display_name: Some("Ctrl"),
+            xkb_names: &[xkb::MOD_NAME_CTRL, "Ctrl"],
+        },
+        ModifierNameEntry {
+            modifier: Some(Modifiers::SHIFT),
+            display_name: Some("Shift"),
+            xkb_names: &[xkb::MOD_NAME_SHIFT],
+        },
+        ModifierNameEntry {
+            modifier: Some(Modifiers::ALT),
+            display_name: Some("Alt"),
+            xkb_names: &[xkb::MOD_NAME_ALT, "Alt"],
+        },
+        ModifierNameEntry {
+            modifier: Some(Modifiers::ISO_LEVEL3_SHIFT),
+            display_name: Some("ISO_Level3_Shift"),
+            xkb_names: &[
+                xkb::MOD_NAME_ISO_LEVEL3_SHIFT,
+                "ISO_Level3_Shift",
+                "LevelThree",
+                "AltGr",
+            ],
+        },
+        ModifierNameEntry {
+            modifier: Some(Modifiers::ISO_LEVEL5_SHIFT),
+            display_name: Some("ISO_Level5_Shift"),
+            xkb_names: &[xkb::MOD_NAME_MOD3, "ISO_Level5_Shift", "LevelFive"],
+        },
+        ModifierNameEntry {
+            modifier: None,
+            display_name: None,
+            xkb_names: &[xkb::MOD_NAME_CAPS, "Caps", "CapsLock"],
+        },
+        ModifierNameEntry {
+            modifier: None,
+            display_name: None,
+            xkb_names: &[xkb::MOD_NAME_NUM, "Num", "NumLock"],
+        },
+    ]
+}
+
+impl fmt::Display for CompiledTrigger {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Keysym(keysym) => f.write_str(&xkb::keysym_get_name(*keysym)),
+            Self::PhysicalKey(keycode) => write!(f, "keycode {}", keycode.raw()),
+            Self::MouseLeft => f.write_str("Mouse Left"),
+            Self::MouseRight => f.write_str("Mouse Right"),
+            Self::MouseMiddle => f.write_str("Mouse Middle"),
+            Self::MouseBack => f.write_str("Mouse Back"),
+            Self::MouseForward => f.write_str("Mouse Forward"),
+            Self::WheelScrollDown => f.write_str("Wheel Scroll Down"),
+            Self::WheelScrollUp => f.write_str("Wheel Scroll Up"),
+            Self::WheelScrollLeft => f.write_str("Wheel Scroll Left"),
+            Self::WheelScrollRight => f.write_str("Wheel Scroll Right"),
+            Self::TouchpadScrollDown => f.write_str("Touchpad Scroll Down"),
+            Self::TouchpadScrollUp => f.write_str("Touchpad Scroll Up"),
+            Self::TouchpadScrollLeft => f.write_str("Touchpad Scroll Left"),
+            Self::TouchpadScrollRight => f.write_str("Touchpad Scroll Right"),
+        }
+    }
+}
+
+impl fmt::Display for CompiledKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut wrote_modifier = false;
+        for entry in modifier_name_entries() {
+            let (Some(modifier), Some(name)) = (entry.modifier, entry.display_name) else {
+                continue;
+            };
+
+            if !self.modifiers.contains(modifier) {
+                continue;
+            }
+
+            write!(f, "{name}+")?;
+            wrote_modifier = true;
+        }
+
+        if !wrote_modifier {
+            return write!(f, "{}", self.trigger);
+        }
+
+        write!(f, "{}", self.trigger)
+    }
 }
 
 impl From<Trigger> for CompiledTrigger {
@@ -4611,10 +4719,6 @@ fn configured_bind_matches(
     bind_modifiers == modifiers
 }
 
-fn effective_layout_independent(binds: &Binds, bind: &ConfigBind) -> bool {
-    bind.layout_independent.unwrap_or(binds.layout_independent)
-}
-
 fn load_bind_keymap_from_file(path: &str) -> anyhow::Result<xkb::Keymap> {
     let path = PathBuf::from(path);
     let path = match expand_home(&path).context("failed to expand `~` in binds.xkb.file")? {
@@ -4654,50 +4758,13 @@ fn load_bind_keymap(xkb_config: &niri_config::Xkb) -> anyhow::Result<xkb::Keymap
 }
 
 fn modifier_from_xkb_name(name: &str) -> Option<Option<Modifiers>> {
-    canonical_modifier_from_xkb_name(name).or_else(|| modifier_from_xkb_alias(name))
-}
-
-fn canonical_modifier_from_xkb_name(name: &str) -> Option<Option<Modifiers>> {
-    [
-        (xkb::MOD_NAME_CTRL, Some(Modifiers::CTRL)),
-        (xkb::MOD_NAME_ALT, Some(Modifiers::ALT)),
-        (xkb::MOD_NAME_SHIFT, Some(Modifiers::SHIFT)),
-        (xkb::MOD_NAME_LOGO, Some(Modifiers::SUPER)),
-        (
-            xkb::MOD_NAME_ISO_LEVEL3_SHIFT,
-            Some(Modifiers::ISO_LEVEL3_SHIFT),
-        ),
-        (xkb::MOD_NAME_MOD3, Some(Modifiers::ISO_LEVEL5_SHIFT)),
-        (xkb::MOD_NAME_CAPS, None),
-        (xkb::MOD_NAME_NUM, None),
-    ]
-    .into_iter()
-    .find_map(|(canonical_name, modifier)| {
-        name.eq_ignore_ascii_case(canonical_name)
-            .then_some(modifier)
+    modifier_name_entries().iter().find_map(|entry| {
+        entry
+            .xkb_names
+            .iter()
+            .any(|candidate| name.eq_ignore_ascii_case(candidate))
+            .then_some(entry.modifier)
     })
-}
-
-fn modifier_from_xkb_alias(name: &str) -> Option<Option<Modifiers>> {
-    [
-        ("Ctrl", Some(Modifiers::CTRL)),
-        ("Alt", Some(Modifiers::ALT)),
-        ("Logo", Some(Modifiers::SUPER)),
-        ("Super", Some(Modifiers::SUPER)),
-        ("Meta", Some(Modifiers::SUPER)),
-        ("Win", Some(Modifiers::SUPER)),
-        ("ISO_Level3_Shift", Some(Modifiers::ISO_LEVEL3_SHIFT)),
-        ("LevelThree", Some(Modifiers::ISO_LEVEL3_SHIFT)),
-        ("AltGr", Some(Modifiers::ISO_LEVEL3_SHIFT)),
-        ("ISO_Level5_Shift", Some(Modifiers::ISO_LEVEL5_SHIFT)),
-        ("LevelFive", Some(Modifiers::ISO_LEVEL5_SHIFT)),
-        ("Caps", None),
-        ("CapsLock", None),
-        ("Num", None),
-        ("NumLock", None),
-    ]
-    .into_iter()
-    .find_map(|(alias, modifier)| name.eq_ignore_ascii_case(alias).then_some(modifier))
 }
 
 fn modifiers_from_xkb_mask(
@@ -4820,7 +4887,7 @@ pub fn compile_binds(binds: &Binds) -> anyhow::Result<Vec<CompiledBind>> {
     let needs_layout_independent = binds
         .binds
         .iter()
-        .any(|bind| effective_layout_independent(binds, bind));
+        .any(|bind| bind.layout_independent.unwrap_or(false));
 
     if !needs_layout_independent {
         return Ok(binds
@@ -4831,36 +4898,57 @@ pub fn compile_binds(binds: &Binds) -> anyhow::Result<Vec<CompiledBind>> {
             .collect());
     }
 
-    let xkb_config = binds
-        .xkb
-        .as_ref()
-        .context("layout-independent binds requested, but binds.xkb is missing")?;
-    let keymap = load_bind_keymap(xkb_config)?;
+    let mut keymaps: Vec<(niri_config::Xkb, xkb::Keymap)> = Vec::new();
     let mut errors = Vec::new();
 
     let compiled: Vec<_> = binds
         .binds
         .iter()
-        .cloned()
-        .map(|bind| {
-            let is_layout_independent = effective_layout_independent(binds, &bind);
-            let mut bind = CompiledBind::from(bind);
+        .map(|source_bind| {
+            let mut bind = CompiledBind::from(source_bind.clone());
 
-            if !is_layout_independent {
+            if !source_bind.layout_independent.unwrap_or(false) {
                 return bind;
             }
+
+            let Some(xkb_config) = source_bind.xkb.as_ref() else {
+                errors.push(format!(
+                    "failed to compile layout-independent bind {}: binds.xkb is missing",
+                    bind.key
+                ));
+                return bind;
+            };
+
+            let keymap =
+                if let Some((_, keymap)) = keymaps.iter().find(|(xkb, _)| xkb == xkb_config) {
+                    keymap
+                } else {
+                    match load_bind_keymap(xkb_config) {
+                        Ok(keymap) => {
+                            keymaps.push((xkb_config.clone(), keymap));
+                            &keymaps.last().unwrap().1
+                        }
+                        Err(err) => {
+                            errors.push(format!(
+                                "failed to compile layout-independent bind {}: {err:#}",
+                                bind.key
+                            ));
+                            return bind;
+                        }
+                    }
+                };
 
             let CompiledTrigger::Keysym(keysym) = bind.key.trigger else {
                 return bind;
             };
 
-            match resolve_bind_key(&keymap, keysym) {
+            match resolve_bind_key(keymap, keysym) {
                 Ok(key) => {
                     bind.key.trigger = key.trigger;
                     bind.key.modifiers |= key.modifiers;
                 }
                 Err(err) => errors.push(format!(
-                    "failed to compile layout-independent bind {:?}: {err:#}",
+                    "failed to compile layout-independent bind {}: {err:#}",
                     bind.key
                 )),
             }
@@ -4889,7 +4977,7 @@ fn duplicate_compiled_bind_errors(binds: &[CompiledBind]) -> Vec<String> {
             }
             Entry::Occupied(entry) => {
                 errors.push(format!(
-                    "duplicate compiled keybind after layout-independent resolution: key={:?}, first_action={:?}, duplicate_action={:?}",
+                    "duplicate compiled keybind after layout-independent resolution: key={}, first_action={:?}, duplicate_action={:?}",
                     bind.key,
                     entry.get().action,
                     bind.action,
@@ -5510,12 +5598,7 @@ mod tests {
     use crate::animation::Clock;
 
     fn test_binds(binds: Vec<SourceBind>) -> Vec<CompiledBind> {
-        compile_binds(&Binds {
-            binds,
-            layout_independent: false,
-            xkb: None,
-        })
-        .unwrap()
+        compile_binds(&Binds { binds }).unwrap()
     }
 
     struct TestTempDir(PathBuf);
@@ -5558,6 +5641,7 @@ mod tests {
             allow_inhibiting: true,
             hotkey_overlay_title: None,
             layout_independent: None,
+            xkb: None,
         }]);
 
         let comp_mod = ModKey::Super;
@@ -5792,6 +5876,7 @@ mod tests {
                 allow_inhibiting: true,
                 hotkey_overlay_title: None,
                 layout_independent: None,
+                xkb: None,
             },
             SourceBind {
                 key: Key {
@@ -5805,6 +5890,7 @@ mod tests {
                 allow_inhibiting: true,
                 hotkey_overlay_title: None,
                 layout_independent: None,
+                xkb: None,
             },
             SourceBind {
                 key: Key {
@@ -5818,6 +5904,7 @@ mod tests {
                 allow_inhibiting: true,
                 hotkey_overlay_title: None,
                 layout_independent: None,
+                xkb: None,
             },
             SourceBind {
                 key: Key {
@@ -5831,6 +5918,7 @@ mod tests {
                 allow_inhibiting: true,
                 hotkey_overlay_title: None,
                 layout_independent: None,
+                xkb: None,
             },
             SourceBind {
                 key: Key {
@@ -5844,6 +5932,7 @@ mod tests {
                 allow_inhibiting: true,
                 hotkey_overlay_title: None,
                 layout_independent: None,
+                xkb: None,
             },
         ]);
 
@@ -6010,16 +6099,15 @@ mod tests {
                 allow_inhibiting: true,
                 hotkey_overlay_title: None,
                 layout_independent: Some(true),
+                xkb: Some(niri_config::Xkb {
+                    layout: String::from("us"),
+                    ..Default::default()
+                }),
             }],
-            layout_independent: false,
-            xkb: Some(niri_config::Xkb {
-                layout: String::from("us"),
-                ..Default::default()
-            }),
         };
 
         let compiled = compile_binds(&binds).unwrap();
-        let keymap = load_bind_keymap(binds.xkb.as_ref().unwrap()).unwrap();
+        let keymap = load_bind_keymap(binds.binds[0].xkb.as_ref().unwrap()).unwrap();
         let keycode = match resolve_bind_key(&keymap, Keysym::slash).unwrap().trigger {
             CompiledTrigger::PhysicalKey(keycode) => keycode,
             _ => unreachable!(),
@@ -6062,16 +6150,15 @@ mod tests {
                 allow_inhibiting: true,
                 hotkey_overlay_title: None,
                 layout_independent: Some(true),
+                xkb: Some(niri_config::Xkb {
+                    layout: String::from("us"),
+                    ..Default::default()
+                }),
             }],
-            layout_independent: false,
-            xkb: Some(niri_config::Xkb {
-                layout: String::from("us"),
-                ..Default::default()
-            }),
         };
 
         let compiled = compile_binds(&binds).unwrap();
-        let keymap = load_bind_keymap(binds.xkb.as_ref().unwrap()).unwrap();
+        let keymap = load_bind_keymap(binds.binds[0].xkb.as_ref().unwrap()).unwrap();
         let exclam = match resolve_bind_key(&keymap, Keysym::exclam).unwrap().trigger {
             CompiledTrigger::PhysicalKey(keycode) => keycode,
             _ => unreachable!(),
@@ -6138,6 +6225,10 @@ mod tests {
                     allow_inhibiting: true,
                     hotkey_overlay_title: None,
                     layout_independent: Some(true),
+                    xkb: Some(niri_config::Xkb {
+                        layout: String::from("us"),
+                        ..Default::default()
+                    }),
                 },
                 SourceBind {
                     key: Key {
@@ -6151,17 +6242,13 @@ mod tests {
                     allow_inhibiting: true,
                     hotkey_overlay_title: None,
                     layout_independent: Some(false),
+                    xkb: None,
                 },
             ],
-            layout_independent: false,
-            xkb: Some(niri_config::Xkb {
-                layout: String::from("us"),
-                ..Default::default()
-            }),
         };
 
         let compiled = compile_binds(&binds).unwrap();
-        let keymap = load_bind_keymap(binds.xkb.as_ref().unwrap()).unwrap();
+        let keymap = load_bind_keymap(binds.binds[0].xkb.as_ref().unwrap()).unwrap();
         let slash_keycode = match resolve_bind_key(&keymap, Keysym::slash).unwrap().trigger {
             CompiledTrigger::PhysicalKey(keycode) => keycode,
             _ => unreachable!(),
@@ -6220,16 +6307,15 @@ mod tests {
                 allow_inhibiting: true,
                 hotkey_overlay_title: None,
                 layout_independent: Some(true),
+                xkb: Some(niri_config::Xkb {
+                    layout: String::from("us"),
+                    ..Default::default()
+                }),
             }],
-            layout_independent: false,
-            xkb: Some(niri_config::Xkb {
-                layout: String::from("us"),
-                ..Default::default()
-            }),
         };
 
         let compiled = compile_binds(&binds).unwrap();
-        let keymap = load_bind_keymap(binds.xkb.as_ref().unwrap()).unwrap();
+        let keymap = load_bind_keymap(binds.binds[0].xkb.as_ref().unwrap()).unwrap();
         let keycode = match resolve_bind_key(&keymap, Keysym::slash).unwrap().trigger {
             CompiledTrigger::PhysicalKey(keycode) => keycode,
             _ => unreachable!(),
@@ -6268,6 +6354,10 @@ mod tests {
                     allow_inhibiting: true,
                     hotkey_overlay_title: None,
                     layout_independent: Some(true),
+                    xkb: Some(niri_config::Xkb {
+                        layout: String::from("us"),
+                        ..Default::default()
+                    }),
                 },
                 SourceBind {
                     key: Key {
@@ -6281,18 +6371,17 @@ mod tests {
                     allow_inhibiting: true,
                     hotkey_overlay_title: None,
                     layout_independent: Some(true),
+                    xkb: Some(niri_config::Xkb {
+                        layout: String::from("us"),
+                        ..Default::default()
+                    }),
                 },
             ],
-            layout_independent: false,
-            xkb: Some(niri_config::Xkb {
-                layout: String::from("us"),
-                ..Default::default()
-            }),
         };
 
         let err = compile_binds(&binds).unwrap_err().to_string();
         assert!(err.contains("duplicate compiled keybind after layout-independent resolution"));
-        assert!(err.contains("PhysicalKey"));
+        assert!(err.contains("keycode "));
     }
 
     #[test]

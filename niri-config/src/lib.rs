@@ -428,18 +428,6 @@ where
             }
         }
 
-        if recursion == 0 {
-            let config_ref = config.borrow();
-            if let Some(node) = nodes
-                .iter()
-                .rev()
-                .find(|node| node.node_name.as_ref() == "binds")
-                .or_else(|| nodes.last())
-            {
-                validate_final_binds_config(&config_ref.binds, node, ctx);
-            }
-        }
-
         Ok(Self)
     }
 }
@@ -1932,6 +1920,7 @@ mod tests {
                             ),
                         ),
                         layout_independent: None,
+                        xkb: None,
                     },
                     Bind {
                         key: Key {
@@ -1949,6 +1938,7 @@ mod tests {
                         allow_inhibiting: false,
                         hotkey_overlay_title: None,
                         layout_independent: None,
+                        xkb: None,
                     },
                     Bind {
                         key: Key {
@@ -1970,6 +1960,7 @@ mod tests {
                         allow_inhibiting: true,
                         hotkey_overlay_title: None,
                         layout_independent: None,
+                        xkb: None,
                     },
                     Bind {
                         key: Key {
@@ -1989,6 +1980,7 @@ mod tests {
                             None,
                         ),
                         layout_independent: None,
+                        xkb: None,
                     },
                     Bind {
                         key: Key {
@@ -2006,6 +1998,7 @@ mod tests {
                         allow_inhibiting: true,
                         hotkey_overlay_title: None,
                         layout_independent: None,
+                        xkb: None,
                     },
                     Bind {
                         key: Key {
@@ -2025,6 +2018,7 @@ mod tests {
                         allow_inhibiting: true,
                         hotkey_overlay_title: None,
                         layout_independent: None,
+                        xkb: None,
                     },
                     Bind {
                         key: Key {
@@ -2042,6 +2036,7 @@ mod tests {
                         allow_inhibiting: true,
                         hotkey_overlay_title: None,
                         layout_independent: None,
+                        xkb: None,
                     },
                     Bind {
                         key: Key {
@@ -2061,6 +2056,7 @@ mod tests {
                         allow_inhibiting: true,
                         hotkey_overlay_title: None,
                         layout_independent: None,
+                        xkb: None,
                     },
                     Bind {
                         key: Key {
@@ -2080,6 +2076,7 @@ mod tests {
                         allow_inhibiting: true,
                         hotkey_overlay_title: None,
                         layout_independent: None,
+                        xkb: None,
                     },
                     Bind {
                         key: Key {
@@ -2097,6 +2094,7 @@ mod tests {
                         allow_inhibiting: true,
                         hotkey_overlay_title: None,
                         layout_independent: None,
+                        xkb: None,
                     },
                     Bind {
                         key: Key {
@@ -2118,6 +2116,7 @@ mod tests {
                         allow_inhibiting: true,
                         hotkey_overlay_title: None,
                         layout_independent: None,
+                        xkb: None,
                     },
                     Bind {
                         key: Key {
@@ -2139,6 +2138,7 @@ mod tests {
                         allow_inhibiting: true,
                         hotkey_overlay_title: None,
                         layout_independent: None,
+                        xkb: None,
                     },
                     Bind {
                         key: Key {
@@ -2158,6 +2158,7 @@ mod tests {
                         allow_inhibiting: false,
                         hotkey_overlay_title: None,
                         layout_independent: None,
+                        xkb: None,
                     },
                     Bind {
                         key: Key {
@@ -2175,6 +2176,7 @@ mod tests {
                         allow_inhibiting: true,
                         hotkey_overlay_title: None,
                         layout_independent: None,
+                        xkb: None,
                     },
                     Bind {
                         key: Key {
@@ -2194,10 +2196,9 @@ mod tests {
                         allow_inhibiting: true,
                         hotkey_overlay_title: None,
                         layout_independent: None,
+                        xkb: None,
                     },
                 ],
-                layout_independent: false,
-                xkb: None,
             },
             switch_events: SwitchBinds {
                 lid_open: None,
@@ -2321,6 +2322,7 @@ mod tests {
                         allow_inhibiting: true,
                         hotkey_overlay_title: None,
                         layout_independent: None,
+                        xkb: None,
                     },
                     Bind {
                         key: Key {
@@ -2344,6 +2346,7 @@ mod tests {
                         allow_inhibiting: true,
                         hotkey_overlay_title: None,
                         layout_independent: None,
+                        xkb: None,
                     },
                     Bind {
                         key: Key {
@@ -2369,6 +2372,7 @@ mod tests {
                         allow_inhibiting: true,
                         hotkey_overlay_title: None,
                         layout_independent: None,
+                        xkb: None,
                     },
                 ],
             },
@@ -2394,22 +2398,51 @@ mod tests {
             "#,
         );
 
-        assert!(parsed.binds.layout_independent);
+        assert_eq!(parsed.binds.binds.len(), 2);
+        assert_eq!(parsed.binds.binds[0].layout_independent, Some(true));
         assert_eq!(
-            parsed.binds.xkb,
+            parsed.binds.binds[0].xkb,
             Some(Xkb {
                 layout: String::from("us"),
                 variant: String::from("colemak"),
                 ..Default::default()
             })
         );
-        assert_eq!(parsed.binds.binds.len(), 2);
-        assert_eq!(parsed.binds.binds[0].layout_independent, None);
         assert_eq!(parsed.binds.binds[1].layout_independent, Some(false));
+        assert_eq!(parsed.binds.binds[1].xkb, None);
     }
 
     #[test]
-    fn layout_independent_binds_can_split_xkb_and_default_across_includes() {
+    fn parse_layout_independent_binds_is_order_independent_within_block() {
+        let parsed = do_parse(
+            r#"
+            binds {
+                Mod+T { close-window; }
+
+                xkb {
+                    layout "us"
+                    variant "colemak"
+                }
+
+                layout-independent true
+            }
+            "#,
+        );
+
+        assert_eq!(parsed.binds.binds.len(), 1);
+        assert_eq!(parsed.binds.binds[0].layout_independent, Some(true));
+        assert_eq!(
+            parsed.binds.binds[0].xkb,
+            Some(Xkb {
+                layout: String::from("us"),
+                variant: String::from("colemak"),
+                ..Default::default()
+            })
+        );
+    }
+
+    #[test]
+    fn layout_independent_settings_do_not_apply_across_binds_blocks() {
         let dir = test_tempdir();
         let main = dir.path().join("config.kdl");
         let part1 = dir.path().join("binds-1.kdl");
@@ -2424,7 +2457,7 @@ mod tests {
                     layout "us"
                 }
 
-                Mod+T { close-window; }
+                Mod+T layout-independent=true { close-window; }
             }
             "#,
         )
@@ -2434,17 +2467,14 @@ mod tests {
             r#"
             binds {
                 layout-independent
+                Mod+Q { close-window; }
             }
             "#,
         )
         .unwrap();
 
-        let parsed = Config::load(&main).config.unwrap();
-        assert!(parsed.binds.layout_independent);
-        assert_eq!(
-            parsed.binds.xkb.as_ref().map(|xkb| xkb.layout.as_str()),
-            Some("us")
-        );
+        let err = format!("{:?}", Config::load(&main).config.unwrap_err());
+        assert!(err.contains("binds.xkb is required"));
     }
 
     #[test]
@@ -2466,7 +2496,7 @@ mod tests {
         .unwrap();
 
         let err = format!("{:?}", Config::load(&main).config.unwrap_err());
-        assert!(err.contains("binds.xkb is required when any bind is layout-independent"));
+        assert!(err.contains("binds.xkb is required"));
     }
 
     #[test]
@@ -2489,14 +2519,8 @@ mod tests {
         .unwrap();
 
         let parsed = Config::load(&main).config.unwrap();
-        assert_eq!(
-            parsed.binds.xkb,
-            Some(Xkb {
-                layout: String::from("us"),
-                ..Default::default()
-            })
-        );
-        assert!(!parsed.binds.layout_independent);
+        assert_eq!(parsed.binds.binds[0].xkb, None);
+        assert_eq!(parsed.binds.binds[0].layout_independent, None);
     }
 
     #[test]
@@ -2516,9 +2540,8 @@ mod tests {
         .unwrap();
 
         let parsed = Config::load(&main).config.unwrap();
-        assert!(parsed.binds.layout_independent);
         assert_eq!(parsed.binds.binds[0].layout_independent, Some(false));
-        assert_eq!(parsed.binds.xkb, None);
+        assert_eq!(parsed.binds.binds[0].xkb, None);
     }
 
     #[test]
@@ -2537,9 +2560,9 @@ mod tests {
             "#,
         );
 
-        assert!(parsed.binds.layout_independent);
+        assert_eq!(parsed.binds.binds[0].layout_independent, Some(true));
         assert_eq!(
-            parsed.binds.xkb,
+            parsed.binds.binds[0].xkb,
             Some(Xkb {
                 file: Some(String::from("/tmp/layout.xkb")),
                 ..Default::default()

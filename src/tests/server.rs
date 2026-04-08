@@ -5,7 +5,7 @@ use niri_config::Config;
 use smithay::reexports::wayland_server::Display;
 
 use crate::input::compile_binds;
-use crate::niri::State;
+use crate::niri::{SessionOptions, State};
 
 pub struct Server {
     pub event_loop: EventLoop<'static, State>,
@@ -25,8 +25,10 @@ impl Server {
             event_loop.get_signal(),
             display,
             true,
-            false,
-            false,
+            SessionOptions {
+                create_wayland_socket: false,
+                is_session_instance: false,
+            },
         )
         .unwrap();
 

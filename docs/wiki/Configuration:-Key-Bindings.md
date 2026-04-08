@@ -89,18 +89,18 @@ binds {
 
 Rules:
 
-- `layout-independent true` sets the default for all binds in the section.
-- Individual binds can override it with `layout-independent=true` or `layout-independent=false`.
+- `layout-independent true` sets the default only for binds declared in the same `binds {}` block.
+- Individual binds in that block can override it with `layout-independent=true` or `layout-independent=false`.
 - `xkb {}` uses the same fields as `input.keyboard.xkb`.
-- Layout-independent binds resolve against the declared reference keymap from `binds.xkb`.
+- Layout-independent binds resolve against the declared reference keymap from the same `binds.xkb` block.
 - If `binds.xkb.file` is set, that file is used as the reference keymap directly.
-- Otherwise, the bind `xkb {}` must describe exactly one reference layout.
+- Otherwise, that `xkb {}` block must describe exactly one reference layout.
 - The symbolic key in a layout-independent bind must resolve to a unique physical key in the reference keymap.
 - Extra modifiers that are needed to type that symbol in the reference keymap, such as `Shift` or `ISO_Level3_Shift`, also become part of the bind.
 - For example, if `/` is on the same physical key as `7` in the reference keymap, then `Mod+Slash` will match `Mod+Shift+7`, not plain `Mod+7`.
 - If the symbol is missing from the reference keymap, or ambiguous there, config loading fails.
-- If multiple config files contribute `binds {}` sections, the section-level `layout-independent`
-  and `xkb {}` values follow the normal merge rules: the last `binds {}` section wins.
+- If multiple config files contribute `binds {}` sections, `layout-independent` and `xkb {}` do not
+  carry across block boundaries. They only apply to binds declared in the same block.
 - If two layout-independent binds resolve to the same physical key combination, config loading
   fails.
 - If a layout-independent bind and a normal keysym bind would both match the same key event, the

@@ -692,6 +692,12 @@ pub struct State {
     pub niri: Niri,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct SessionOptions {
+    pub create_wayland_socket: bool,
+    pub is_session_instance: bool,
+}
+
 impl State {
     pub fn new(
         config: Config,
@@ -700,8 +706,7 @@ impl State {
         stop_signal: LoopSignal,
         display: Display<State>,
         headless: bool,
-        create_wayland_socket: bool,
-        is_session_instance: bool,
+        session_options: SessionOptions,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let _span = tracy_client::span!("State::new");
 
@@ -730,8 +735,7 @@ impl State {
             stop_signal,
             display,
             &backend,
-            create_wayland_socket,
-            is_session_instance,
+            session_options,
         );
         backend.init(&mut niri);
 
@@ -2196,8 +2200,7 @@ impl Niri {
         stop_signal: LoopSignal,
         display: Display<State>,
         backend: &Backend,
-        create_wayland_socket: bool,
-        is_session_instance: bool,
+        session_options: SessionOptions,
     ) -> Self {
         let _span = tracy_client::span!("Niri::new");
 
@@ -2397,7 +2400,7 @@ impl Niri {
             )
             .unwrap();
 
-        let socket_name = create_wayland_socket.then(|| {
+        let socket_name = session_options.create_wayland_socket.then(|| {
             let socket_source = ListeningSocketSource::new_auto().unwrap();
             let socket_name = socket_source.socket_name().to_os_string();
             event_loop
@@ -2458,7 +2461,7 @@ impl Niri {
             stop_signal,
             socket_name,
             display_handle,
-            is_session_instance,
+            is_session_instance: session_options.is_session_instance,
             start_time: Instant::now(),
             is_at_startup: true,
             clock: animation_clock,
