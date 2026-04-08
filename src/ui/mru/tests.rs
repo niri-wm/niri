@@ -4,27 +4,6 @@ use smithay::backend::input::Keycode;
 
 use super::*;
 
-#[test]
-fn dynamic_opened_binds_keep_compiled_triggers() {
-    let trigger = CompiledTrigger::PhysicalKey(Keycode::from(61u32));
-    let binds = vec![CompiledBind {
-        key: CompiledKey {
-            trigger,
-            modifiers: Modifiers::COMPOSITOR,
-        },
-        action: Action::CloseWindow,
-        repeat: true,
-        cooldown: None,
-        allow_when_locked: false,
-        allow_inhibiting: true,
-    }];
-
-    let opened = make_dynamic_opened_binds(&binds);
-    assert_eq!(opened.len(), 1);
-    assert_eq!(opened[0].key.trigger, trigger);
-    assert_eq!(opened[0].action, Action::MruCloseCurrentWindow);
-}
-
 fn create_thumbnail() -> Thumbnail {
     Thumbnail {
         id: MappedId::next(),
@@ -57,6 +36,27 @@ fn remove_last_window_out_of_two() {
     };
 
     check_ops(&mut mru, &ops);
+}
+
+#[test]
+fn dynamic_opened_binds_keep_compiled_triggers() {
+    let trigger = CompiledTrigger::PhysicalKey(Keycode::from(61u32));
+    let binds = vec![CompiledBind {
+        key: CompiledKey {
+            trigger,
+            modifiers: Modifiers::COMPOSITOR,
+        },
+        action: Action::CloseWindow,
+        repeat: true,
+        cooldown: None,
+        allow_when_locked: false,
+        allow_inhibiting: true,
+    }];
+
+    let opened = make_dynamic_opened_binds(&binds);
+    assert_eq!(opened.len(), 1);
+    assert_eq!(opened[0].key.trigger, trigger);
+    assert_eq!(opened[0].action, Action::MruCloseCurrentWindow);
 }
 
 fn arbitrary_scope() -> impl Strategy<Value = MruScope> {

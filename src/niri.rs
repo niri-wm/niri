@@ -129,7 +129,7 @@ use crate::input::pick_color_grab::PickColorGrab;
 use crate::input::scroll_swipe_gesture::ScrollSwipeGesture;
 use crate::input::scroll_tracker::ScrollTracker;
 use crate::input::{
-    apply_libinput_settings, mods_with_finger_scroll_binds, mods_with_mouse_binds,
+    apply_libinput_settings, compile_binds, mods_with_finger_scroll_binds, mods_with_mouse_binds,
     mods_with_wheel_binds, CompiledBind, CompiledKey, TabletData,
 };
 use crate::ipc::server::IpcServer;
@@ -695,6 +695,7 @@ pub struct State {
 impl State {
     pub fn new(
         config: Config,
+        compiled_binds: Vec<CompiledBind>,
         event_loop: LoopHandle<'static, State>,
         stop_signal: LoopSignal,
         display: Display<State>,
@@ -724,6 +725,7 @@ impl State {
 
         let mut niri = Niri::new(
             config.clone(),
+            compiled_binds,
             event_loop,
             stop_signal,
             display,
@@ -1418,11 +1420,44 @@ impl State {
             }
         };
 
+        let mut reload_xkb = None;
+        let mut libinput_config_changed = false;
+        let mut output_config_changed = false;
+        let mut preserved_output_config = None;
+        let mut window_rules_changed = false;
+        let mut layer_rules_changed = false;
+        let mut shaders_changed = false;
+        let mut cursor_inactivity_timeout_changed = false;
+        let mut recent_windows_changed = false;
+        let mut xwls_changed = false;
+        let binds_changed = {
+            let old_config = self.niri.config.borrow();
+            config.binds != old_config.binds
+        };
+        let compiled_binds = if binds_changed {
+            match compile_binds(&config.binds) {
+                Ok(compiled_binds) => Some(compiled_binds),
+                Err(err) => {
+                    warn!("error compiling layout-independent binds: {err:#}");
+                    self.niri.config_error_notification.show();
+                    self.niri.queue_redraw_all();
+
+                    #[cfg(feature = "dbus")]
+                    self.niri.a11y_announce_config_error();
+
+                    return;
+                }
+            }
+        } else {
+            None
+        };
+
         self.niri.config_error_notification.hide();
+        let mut old_config = self.niri.config.borrow_mut();
 
         // Find & orphan removed named workspaces.
         let mut removed_workspaces: Vec<String> = vec![];
-        for ws in &self.niri.config.borrow().workspaces {
+        for ws in &old_config.workspaces {
             if !config.workspaces.iter().any(|w| w.name == ws.name) {
                 removed_workspaces.push(ws.name.0.clone());
             }
@@ -1448,18 +1483,6 @@ impl State {
             .set_complete_instantly(config.animations.off);
 
         *CHILD_ENV.write().unwrap() = mem::take(&mut config.environment);
-
-        let mut reload_xkb = None;
-        let mut libinput_config_changed = false;
-        let mut output_config_changed = false;
-        let mut preserved_output_config = None;
-        let mut window_rules_changed = false;
-        let mut layer_rules_changed = false;
-        let mut shaders_changed = false;
-        let mut cursor_inactivity_timeout_changed = false;
-        let mut recent_windows_changed = false;
-        let mut xwls_changed = false;
-        let mut old_config = self.niri.config.borrow_mut();
 
         // Reload the cursor.
         if config.cursor != old_config.cursor {
@@ -1509,20 +1532,13 @@ impl State {
             preserved_output_config = Some(mem::take(&mut old_config.outputs));
         }
 
-        let binds_changed = config.binds != old_config.binds;
         let new_mod_key = self.backend.mod_key(&config);
         if new_mod_key != self.backend.mod_key(&old_config) || binds_changed {
             self.niri
                 .hotkey_overlay
                 .on_hotkey_config_updated(new_mod_key);
-            if binds_changed {
-                self.niri.compiled_binds = config
-                    .binds
-                    .binds
-                    .iter()
-                    .cloned()
-                    .map(CompiledBind::from)
-                    .collect();
+            if let Some(compiled_binds) = compiled_binds {
+                self.niri.compiled_binds = compiled_binds;
             }
             self.niri.mods_with_mouse_binds = mods_with_mouse_binds(new_mod_key, &config.binds);
             self.niri.mods_with_wheel_binds = mods_with_wheel_binds(new_mod_key, &config.binds);
@@ -2175,6 +2191,7 @@ impl State {
 impl Niri {
     pub fn new(
         config: Rc<RefCell<Config>>,
+        compiled_binds: Vec<CompiledBind>,
         event_loop: LoopHandle<'static, State>,
         stop_signal: LoopSignal,
         display: Display<State>,
@@ -2351,13 +2368,6 @@ impl Niri {
             CursorManager::new(&config_.cursor.xcursor_theme, config_.cursor.xcursor_size);
 
         let mod_key = backend.mod_key(&config.borrow());
-        let compiled_binds = config_
-            .binds
-            .binds
-            .iter()
-            .cloned()
-            .map(CompiledBind::from)
-            .collect::<Vec<_>>();
         let mods_with_mouse_binds = mods_with_mouse_binds(mod_key, &config_.binds);
         let mods_with_wheel_binds = mods_with_wheel_binds(mod_key, &config_.binds);
         let mods_with_finger_scroll_binds = mods_with_finger_scroll_binds(mod_key, &config_.binds);
