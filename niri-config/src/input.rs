@@ -232,75 +232,6 @@ impl Touchpad {
             .and_then(|g| g.recognition_threshold)
             .unwrap_or(16.0)
     }
-
-    pub fn workspace_switch_enabled(&self) -> bool {
-        self.gestures
-            .as_ref()
-            .and_then(|g| g.workspace_switch.as_ref())
-            .map_or(true, |a| !a.off)
-    }
-
-    pub fn workspace_switch_fingers(&self) -> usize {
-        self.gestures
-            .as_ref()
-            .and_then(|g| g.workspace_switch.as_ref())
-            .and_then(|a| a.finger_count)
-            .unwrap_or(3) as usize
-    }
-
-    pub fn workspace_switch_sensitivity(&self) -> f64 {
-        self.gestures
-            .as_ref()
-            .and_then(|g| g.workspace_switch.as_ref())
-            .and_then(|a| a.sensitivity)
-            .unwrap_or(1.0)
-    }
-
-    pub fn view_scroll_enabled(&self) -> bool {
-        self.gestures
-            .as_ref()
-            .and_then(|g| g.view_scroll.as_ref())
-            .map_or(true, |a| !a.off)
-    }
-
-    pub fn view_scroll_fingers(&self) -> usize {
-        self.gestures
-            .as_ref()
-            .and_then(|g| g.view_scroll.as_ref())
-            .and_then(|a| a.finger_count)
-            .unwrap_or(3) as usize
-    }
-
-    pub fn view_scroll_sensitivity(&self) -> f64 {
-        self.gestures
-            .as_ref()
-            .and_then(|g| g.view_scroll.as_ref())
-            .and_then(|a| a.sensitivity)
-            .unwrap_or(1.0)
-    }
-
-    pub fn overview_toggle_enabled(&self) -> bool {
-        self.gestures
-            .as_ref()
-            .and_then(|g| g.overview_toggle.as_ref())
-            .map_or(true, |a| !a.off)
-    }
-
-    pub fn overview_toggle_fingers(&self) -> usize {
-        self.gestures
-            .as_ref()
-            .and_then(|g| g.overview_toggle.as_ref())
-            .and_then(|a| a.finger_count)
-            .unwrap_or(4) as usize
-    }
-
-    pub fn overview_toggle_sensitivity(&self) -> f64 {
-        self.gestures
-            .as_ref()
-            .and_then(|g| g.overview_toggle.as_ref())
-            .and_then(|a| a.sensitivity)
-            .unwrap_or(1.0)
-    }
 }
 
 #[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]
@@ -541,24 +472,8 @@ pub struct TouchscreenGesturesConfig {
 
 #[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]
 pub struct TouchpadGesturesConfig {
-    #[knuffel(child)]
-    pub workspace_switch: Option<TouchpadGestureActionConfig>,
-    #[knuffel(child)]
-    pub view_scroll: Option<TouchpadGestureActionConfig>,
-    #[knuffel(child)]
-    pub overview_toggle: Option<TouchpadGestureActionConfig>,
     #[knuffel(child, unwrap(argument))]
     pub recognition_threshold: Option<f64>,
-}
-
-#[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]
-pub struct TouchpadGestureActionConfig {
-    #[knuffel(child)]
-    pub off: bool,
-    #[knuffel(child, unwrap(argument))]
-    pub finger_count: Option<u8>,
-    #[knuffel(child, unwrap(argument))]
-    pub sensitivity: Option<f64>,
 }
 
 #[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
