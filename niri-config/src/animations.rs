@@ -1,8 +1,14 @@
+use std::cell::RefCell;
+use std::fs;
+use std::path::PathBuf;
+use std::rc::Rc;
+
+use knuffel::ast::SpannedNode;
 use knuffel::errors::DecodeError;
 use knuffel::Decode as _;
 
 use crate::utils::{expect_only_children, parse_arg_node, MergeWith};
-use crate::FloatOrInt;
+use crate::{BasePath, FloatOrInt, Includes};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Animations {
@@ -149,6 +155,56 @@ impl Default for WorkspaceSwitchAnim {
             }),
         })
     }
+}
+
+fn parse_custom_shader_path<S: knuffel::traits::ErrorSpan>(
+    spanned: &SpannedNode<S>,
+    ctx: &mut knuffel::decode::Context<S>,
+) -> Result<String, DecodeError<S>> {
+    let mut shader_text = None;
+
+    for (name, val) in &spanned.properties {
+        if **name == "path".into() {
+            let shader_path: PathBuf = knuffel::traits::DecodeScalar::decode(val, ctx)?;
+            let base = ctx.get::<BasePath>().unwrap();
+            let includes = ctx.get::<Rc<RefCell<Includes>>>().unwrap();
+            let path = base.0.join(shader_path);
+
+            includes.borrow_mut().0.push(path.to_path_buf());
+
+            match fs::read_to_string(&path) {
+                Ok(text) => shader_text = Some(text),
+                Err(e) => ctx.emit_error(DecodeError::missing(
+                    spanned,
+                    format!("failed to read custom shader from {path:?}: {e}"),
+                )),
+            }
+        } else {
+            ctx.emit_error(DecodeError::unexpected(
+                &val.literal,
+                "property",
+                format!("unexpected property `{}`", name.escape_default()),
+            ));
+        }
+    }
+
+    for arg in &spanned.arguments {
+        ctx.emit_error(DecodeError::unexpected(
+            &arg.literal,
+            "argument",
+            "unexpected argument",
+        ));
+    }
+
+    for child in spanned.children() {
+        ctx.emit_error(DecodeError::unexpected(
+            child,
+            "child",
+            "unexpected children",
+        ));
+    }
+
+    shader_text.ok_or_else(|| DecodeError::missing(spanned, "custom shader path missing"))
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -383,7 +439,11 @@ where
         let mut custom_shader = None;
         let anim = Animation::decode_node(node, ctx, default, |child, ctx| {
             if &**child.node_name == "custom-shader" {
-                custom_shader = parse_arg_node("custom-shader", child, ctx)?;
+                custom_shader = if child.properties.is_empty() {
+                    Some(parse_arg_node("custom-shader", child, ctx)?)
+                } else {
+                    Some(parse_custom_shader_path(child, ctx)?)
+                };
                 Ok(true)
             } else {
                 Ok(false)
@@ -409,7 +469,11 @@ where
         let mut custom_shader = None;
         let anim = Animation::decode_node(node, ctx, default, |child, ctx| {
             if &**child.node_name == "custom-shader" {
-                custom_shader = parse_arg_node("custom-shader", child, ctx)?;
+                custom_shader = if child.properties.is_empty() {
+                    Some(parse_arg_node("custom-shader", child, ctx)?)
+                } else {
+                    Some(parse_custom_shader_path(child, ctx)?)
+                };
                 Ok(true)
             } else {
                 Ok(false)
@@ -435,7 +499,11 @@ where
         let mut custom_shader = None;
         let anim = Animation::decode_node(node, ctx, default, |child, ctx| {
             if &**child.node_name == "custom-shader" {
-                custom_shader = parse_arg_node("custom-shader", child, ctx)?;
+                custom_shader = if child.properties.is_empty() {
+                    Some(parse_arg_node("custom-shader", child, ctx)?)
+                } else {
+                    Some(parse_custom_shader_path(child, ctx)?)
+                };
                 Ok(true)
             } else {
                 Ok(false)
