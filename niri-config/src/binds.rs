@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use bitflags::bitflags;
 use knuffel::errors::DecodeError;
+use knuffel::Decode;
 use miette::miette;
 use niri_ipc::{
     ColumnDisplay, LayoutSwitchTarget, PositionChange, SizeChange, WorkspaceReferenceArg,
@@ -35,7 +36,8 @@ pub struct Bind {
     pub allow_when_locked: bool,
     pub allow_inhibiting: bool,
     pub hotkey_overlay_title: Option<Option<String>>,
-    pub layout_independent: Option<bool>,
+    // When present, this bind is matched layout-independently using this reference keymap.
+    // When absent, this bind is matched by keysym as usual.
     pub xkb: Option<Xkb>,
 }
 
@@ -829,13 +831,13 @@ fn validate_layout_independent_xkb<S>(
 
 fn validate_layout_independent_trigger<S>(
     bind: &Bind,
-    layout_independent: bool,
+    enabled: bool,
     node: &knuffel::ast::SpannedNode<S>,
     ctx: &mut knuffel::decode::Context<S>,
 ) where
     S: knuffel::traits::ErrorSpan,
 {
-    if layout_independent && !matches!(bind.key.trigger, Trigger::Keysym(_)) {
+    if enabled && !matches!(bind.key.trigger, Trigger::Keysym(_)) {
         ctx.emit_error(DecodeError::conversion(
             node,
             "layout-independent=true can only be used with keysym binds",
@@ -878,8 +880,11 @@ where
         let mut saw_layout_independent = false;
         let mut saw_xkb = false;
 
+        // `layout-independent` is resolved entirely within a single binds block.
+        // It does not persist on the final `Bind`; instead, `bind.xkb = Some(...)`
+        // means layout-independent matching is enabled for that bind.
         let mut binds = Vec::new();
-        let mut layout_independent = None;
+        let mut block_layout_independent = None;
         let mut xkb = None;
 
         for child in node.children() {
@@ -895,7 +900,7 @@ where
                     }
                     let value = Flag::decode_node(child, ctx)?.0;
                     saw_layout_independent = true;
-                    layout_independent = Some(value);
+                    block_layout_independent = Some(value);
                 }
                 "xkb" => {
                     if saw_xkb {
@@ -911,13 +916,13 @@ where
                     saw_xkb = true;
                     xkb = Some(value);
                 }
-                _ => match Bind::decode_node(child, ctx) {
+                _ => match decode_bind_node(child, ctx) {
                     Err(e) => {
                         ctx.emit_error(e);
                     }
-                    Ok(bind) => {
+                    Ok((bind, bind_layout_independent_override)) => {
                         if seen_keys.insert(bind.key) {
-                            binds.push((child, bind));
+                            binds.push((child, bind, bind_layout_independent_override));
                         } else {
                             // ideally, this error should point to the previous instance of this
                             // keybind
@@ -958,19 +963,15 @@ where
 
         let binds = binds
             .into_iter()
-            .map(|(child, mut bind)| {
-                let bind_layout_independent = bind
-                    .layout_independent
-                    .unwrap_or(layout_independent.unwrap_or(false));
+            .map(|(child, mut bind, bind_layout_independent_override)| {
+                let bind_layout_independent = bind_layout_independent_override
+                    .unwrap_or(block_layout_independent.unwrap_or(false));
                 validate_layout_independent_trigger(
                     &bind,
                     bind_layout_independent,
                     child,
                     ctx,
                 );
-                if bind.layout_independent.is_some() || layout_independent.is_some() {
-                    bind.layout_independent = Some(bind_layout_independent);
-                }
                 if bind_layout_independent {
                     if xkb.is_none() {
                         ctx.emit_error(DecodeError::missing(
@@ -990,119 +991,118 @@ where
     }
 }
 
-impl<S> knuffel::Decode<S> for Bind
+fn decode_bind_node<S>(
+    node: &knuffel::ast::SpannedNode<S>,
+    ctx: &mut knuffel::decode::Context<S>,
+) -> Result<(Bind, Option<bool>), DecodeError<S>>
 where
     S: knuffel::traits::ErrorSpan,
 {
-    fn decode_node(
-        node: &knuffel::ast::SpannedNode<S>,
-        ctx: &mut knuffel::decode::Context<S>,
-    ) -> Result<Self, DecodeError<S>> {
-        if let Some(type_name) = &node.type_name {
-            ctx.emit_error(DecodeError::unexpected(
-                type_name,
-                "type name",
-                "no type name expected for this node",
-            ));
-        }
+    if let Some(type_name) = &node.type_name {
+        ctx.emit_error(DecodeError::unexpected(
+            type_name,
+            "type name",
+            "no type name expected for this node",
+        ));
+    }
 
-        for val in node.arguments.iter() {
-            ctx.emit_error(DecodeError::unexpected(
-                &val.literal,
-                "argument",
-                "no arguments expected for this node",
-            ));
-        }
+    for val in node.arguments.iter() {
+        ctx.emit_error(DecodeError::unexpected(
+            &val.literal,
+            "argument",
+            "no arguments expected for this node",
+        ));
+    }
 
-        let key = node
-            .node_name
-            .parse::<Key>()
-            .map_err(|e| DecodeError::conversion(&node.node_name, e.wrap_err("invalid keybind")))?;
+    let key = node
+        .node_name
+        .parse::<Key>()
+        .map_err(|e| DecodeError::conversion(&node.node_name, e.wrap_err("invalid keybind")))?;
 
-        let mut repeat = true;
-        let mut cooldown = None;
-        let mut allow_when_locked = false;
-        let mut allow_when_locked_node = None;
-        let mut allow_inhibiting = true;
-        let mut hotkey_overlay_title = None;
-        let mut layout_independent = None;
-        for (name, val) in &node.properties {
-            match &***name {
-                "repeat" => {
-                    repeat = knuffel::traits::DecodeScalar::decode(val, ctx)?;
-                }
-                "cooldown-ms" => {
-                    cooldown = Some(Duration::from_millis(
-                        knuffel::traits::DecodeScalar::decode(val, ctx)?,
-                    ));
-                }
-                "allow-when-locked" => {
-                    allow_when_locked = knuffel::traits::DecodeScalar::decode(val, ctx)?;
-                    allow_when_locked_node = Some(name);
-                }
-                "allow-inhibiting" => {
-                    allow_inhibiting = knuffel::traits::DecodeScalar::decode(val, ctx)?;
-                }
-                "hotkey-overlay-title" => {
-                    hotkey_overlay_title = Some(knuffel::traits::DecodeScalar::decode(val, ctx)?);
-                }
-                "layout-independent" => {
-                    layout_independent = Some(knuffel::traits::DecodeScalar::decode(val, ctx)?);
-                }
-                name_str => {
-                    ctx.emit_error(DecodeError::unexpected(
-                        name,
-                        "property",
-                        format!("unexpected property `{}`", name_str.escape_default()),
-                    ));
-                }
+    let mut repeat = true;
+    let mut cooldown = None;
+    let mut allow_when_locked = false;
+    let mut allow_when_locked_node = None;
+    let mut allow_inhibiting = true;
+    let mut hotkey_overlay_title = None;
+    let mut layout_independent = None;
+    for (name, val) in &node.properties {
+        match &***name {
+            "repeat" => {
+                repeat = knuffel::traits::DecodeScalar::decode(val, ctx)?;
             }
-        }
-
-        let mut children = node.children();
-
-        // If the action is invalid but the key is fine, we still want to return something.
-        // That way, the parent can handle the existence of duplicate keybinds,
-        // even if their contents are not valid.
-        let dummy = Self {
-            key,
-            action: Action::Spawn(vec![]),
-            repeat: true,
-            cooldown: None,
-            allow_when_locked: false,
-            allow_inhibiting: true,
-            hotkey_overlay_title: None,
-            layout_independent: None,
-            xkb: None, // Populated by BindsPart post-processing.
-        };
-
-        if let Some(child) = children.next() {
-            for unwanted_child in children {
-                ctx.emit_error(DecodeError::unexpected(
-                    unwanted_child,
-                    "node",
-                    "only one action is allowed per keybind",
+            "cooldown-ms" => {
+                cooldown = Some(Duration::from_millis(
+                    knuffel::traits::DecodeScalar::decode(val, ctx)?,
                 ));
             }
-            match Action::decode_node(child, ctx) {
-                Ok(action) => {
-                    if !matches!(action, Action::Spawn(_) | Action::SpawnSh(_)) {
-                        if let Some(node) = allow_when_locked_node {
-                            ctx.emit_error(DecodeError::unexpected(
-                                node,
-                                "property",
-                                "allow-when-locked can only be set on spawn binds",
-                            ));
-                        }
-                    }
+            "allow-when-locked" => {
+                allow_when_locked = knuffel::traits::DecodeScalar::decode(val, ctx)?;
+                allow_when_locked_node = Some(name);
+            }
+            "allow-inhibiting" => {
+                allow_inhibiting = knuffel::traits::DecodeScalar::decode(val, ctx)?;
+            }
+            "hotkey-overlay-title" => {
+                hotkey_overlay_title = Some(knuffel::traits::DecodeScalar::decode(val, ctx)?);
+            }
+            "layout-independent" => {
+                layout_independent = Some(knuffel::traits::DecodeScalar::decode(val, ctx)?);
+            }
+            name_str => {
+                ctx.emit_error(DecodeError::unexpected(
+                    name,
+                    "property",
+                    format!("unexpected property `{}`", name_str.escape_default()),
+                ));
+            }
+        }
+    }
 
-                    // The toggle-inhibit action must always be uninhibitable.
-                    // Otherwise, it would be impossible to trigger it.
-                    if matches!(action, Action::ToggleKeyboardShortcutsInhibit) {
-                        allow_inhibiting = false;
-                    }
+    let mut children = node.children();
 
-                    Ok(Self {
+    // If the action is invalid but the key is fine, we still want to return something.
+    // That way, the parent can handle the existence of duplicate keybinds,
+    // even if their contents are not valid.
+    let dummy = Bind {
+        key,
+        action: Action::Spawn(vec![]),
+        repeat: true,
+        cooldown: None,
+        allow_when_locked: false,
+        allow_inhibiting: true,
+        hotkey_overlay_title: None,
+        xkb: None, // Populated by BindsPart post-processing.
+    };
+
+    if let Some(child) = children.next() {
+        for unwanted_child in children {
+            ctx.emit_error(DecodeError::unexpected(
+                unwanted_child,
+                "node",
+                "only one action is allowed per keybind",
+            ));
+        }
+        match Action::decode_node(child, ctx) {
+            Ok(action) => {
+                if !matches!(action, Action::Spawn(_) | Action::SpawnSh(_)) {
+                    if let Some(node) = allow_when_locked_node {
+                        ctx.emit_error(DecodeError::unexpected(
+                            node,
+                            "property",
+                            "allow-when-locked can only be set on spawn binds",
+                        ));
+                    }
+                }
+
+                // The toggle-inhibit action must always be uninhibitable.
+                // Otherwise, it would be impossible to trigger it.
+                if matches!(action, Action::ToggleKeyboardShortcutsInhibit) {
+                    allow_inhibiting = false;
+                }
+
+                Ok((
+                    Bind {
                         key,
                         action,
                         repeat,
@@ -1110,22 +1110,22 @@ where
                         allow_when_locked,
                         allow_inhibiting,
                         hotkey_overlay_title,
-                        layout_independent,
                         xkb: None, // Populated by BindsPart post-processing.
-                    })
-                }
-                Err(e) => {
-                    ctx.emit_error(e);
-                    Ok(dummy)
-                }
+                    },
+                    layout_independent,
+                ))
             }
-        } else {
-            ctx.emit_error(DecodeError::missing(
-                node,
-                "expected an action for this keybind",
-            ));
-            Ok(dummy)
+            Err(e) => {
+                ctx.emit_error(e);
+                Ok((dummy, layout_independent))
+            }
         }
+    } else {
+        ctx.emit_error(DecodeError::missing(
+            node,
+            "expected an action for this keybind",
+        ));
+        Ok((dummy, layout_independent))
     }
 }
 

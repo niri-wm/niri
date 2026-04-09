@@ -4884,10 +4884,7 @@ fn resolve_bind_key(keymap: &xkb::Keymap, keysym: Keysym) -> anyhow::Result<Comp
 }
 
 pub fn compile_binds(binds: &Binds) -> anyhow::Result<Vec<CompiledBind>> {
-    let needs_layout_independent = binds
-        .binds
-        .iter()
-        .any(|bind| bind.layout_independent.unwrap_or(false));
+    let needs_layout_independent = binds.binds.iter().any(|bind| bind.xkb.is_some());
 
     if !needs_layout_independent {
         return Ok(binds
@@ -4907,7 +4904,7 @@ pub fn compile_binds(binds: &Binds) -> anyhow::Result<Vec<CompiledBind>> {
         .map(|source_bind| {
             let mut bind = CompiledBind::from(source_bind.clone());
 
-            if !source_bind.layout_independent.unwrap_or(false) {
+            if source_bind.xkb.is_none() {
                 return bind;
             }
 
@@ -5640,7 +5637,6 @@ mod tests {
             allow_when_locked: false,
             allow_inhibiting: true,
             hotkey_overlay_title: None,
-            layout_independent: None,
             xkb: None,
         }]);
 
@@ -5875,7 +5871,6 @@ mod tests {
                 allow_when_locked: false,
                 allow_inhibiting: true,
                 hotkey_overlay_title: None,
-                layout_independent: None,
                 xkb: None,
             },
             SourceBind {
@@ -5889,7 +5884,6 @@ mod tests {
                 allow_when_locked: false,
                 allow_inhibiting: true,
                 hotkey_overlay_title: None,
-                layout_independent: None,
                 xkb: None,
             },
             SourceBind {
@@ -5903,7 +5897,6 @@ mod tests {
                 allow_when_locked: false,
                 allow_inhibiting: true,
                 hotkey_overlay_title: None,
-                layout_independent: None,
                 xkb: None,
             },
             SourceBind {
@@ -5917,7 +5910,6 @@ mod tests {
                 allow_when_locked: false,
                 allow_inhibiting: true,
                 hotkey_overlay_title: None,
-                layout_independent: None,
                 xkb: None,
             },
             SourceBind {
@@ -5931,7 +5923,6 @@ mod tests {
                 allow_when_locked: false,
                 allow_inhibiting: true,
                 hotkey_overlay_title: None,
-                layout_independent: None,
                 xkb: None,
             },
         ]);
@@ -6098,7 +6089,6 @@ mod tests {
                 allow_when_locked: false,
                 allow_inhibiting: true,
                 hotkey_overlay_title: None,
-                layout_independent: Some(true),
                 xkb: Some(niri_config::Xkb {
                     layout: String::from("us"),
                     ..Default::default()
@@ -6149,7 +6139,6 @@ mod tests {
                 allow_when_locked: false,
                 allow_inhibiting: true,
                 hotkey_overlay_title: None,
-                layout_independent: Some(true),
                 xkb: Some(niri_config::Xkb {
                     layout: String::from("us"),
                     ..Default::default()
@@ -6224,7 +6213,6 @@ mod tests {
                     allow_when_locked: false,
                     allow_inhibiting: true,
                     hotkey_overlay_title: None,
-                    layout_independent: Some(true),
                     xkb: Some(niri_config::Xkb {
                         layout: String::from("us"),
                         ..Default::default()
@@ -6241,7 +6229,6 @@ mod tests {
                     allow_when_locked: false,
                     allow_inhibiting: true,
                     hotkey_overlay_title: None,
-                    layout_independent: Some(false),
                     xkb: None,
                 },
             ],
@@ -6306,7 +6293,6 @@ mod tests {
                 allow_when_locked: false,
                 allow_inhibiting: true,
                 hotkey_overlay_title: None,
-                layout_independent: Some(true),
                 xkb: Some(niri_config::Xkb {
                     layout: String::from("us"),
                     ..Default::default()
@@ -6353,7 +6339,6 @@ mod tests {
                     allow_when_locked: false,
                     allow_inhibiting: true,
                     hotkey_overlay_title: None,
-                    layout_independent: Some(true),
                     xkb: Some(niri_config::Xkb {
                         layout: String::from("us"),
                         ..Default::default()
@@ -6370,7 +6355,6 @@ mod tests {
                     allow_when_locked: false,
                     allow_inhibiting: true,
                     hotkey_overlay_title: None,
-                    layout_independent: Some(true),
                     xkb: Some(niri_config::Xkb {
                         layout: String::from("us"),
                         ..Default::default()

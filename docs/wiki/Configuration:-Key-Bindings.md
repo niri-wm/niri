@@ -71,7 +71,7 @@ This is useful if you want a bind like `Mod+/` to keep working even when the act
 or some non-latin symbol on that key.
 
 Layout-independent binds still use the normal symbolic syntax in the config, but they are resolved
-against a reference XKB keymap declared in the `binds` section.
+against a reference XKB keymap declared in the same `binds {}` block.
 
 ```kdl
 binds {
@@ -91,10 +91,12 @@ Rules:
 
 - `layout-independent true` sets the default only for binds declared in the same `binds {}` block.
 - Individual binds in that block can override it with `layout-independent=true` or `layout-independent=false`.
+- After parsing, a bind is layout-independent if and only if it resolved to using that block's `xkb {}`.
 - `xkb {}` uses the same fields as `input.keyboard.xkb`.
-- Layout-independent binds resolve against the declared reference keymap from the same `binds.xkb` block.
+- Layout-independent binds resolve against the reference keymap declared by the same `binds.xkb` block.
 - If `binds.xkb.file` is set, that file is used as the reference keymap directly.
 - Otherwise, that `xkb {}` block must describe exactly one reference layout.
+- Normal binds do not keep any `xkb` association and continue to match by keysym as before.
 - The symbolic key in a layout-independent bind must resolve to a unique physical key in the reference keymap.
 - Extra modifiers that are needed to type that symbol in the reference keymap, such as `Shift` or `ISO_Level3_Shift`, also become part of the bind.
 - For example, if `/` is on the same physical key as `7` in the reference keymap, then `Mod+Slash` will match `Mod+Shift+7`, not plain `Mod+7`.
@@ -105,7 +107,6 @@ Rules:
   fails.
 - If a layout-independent bind and a normal keysym bind would both match the same key event, the
   layout-independent bind takes precedence.
-- Normal binds continue to match by keysym as before.
 
 <sup>Since: 0.1.8</sup> Binds will repeat by default (i.e. holding down a bind will make it trigger repeatedly).
 You can disable that for specific binds with `repeat=false`:

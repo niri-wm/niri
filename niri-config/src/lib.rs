@@ -1919,7 +1919,6 @@ mod tests {
                                 "Inhibit",
                             ),
                         ),
-                        layout_independent: None,
                         xkb: None,
                     },
                     Bind {
@@ -1937,7 +1936,6 @@ mod tests {
                         allow_when_locked: false,
                         allow_inhibiting: false,
                         hotkey_overlay_title: None,
-                        layout_independent: None,
                         xkb: None,
                     },
                     Bind {
@@ -1959,7 +1957,6 @@ mod tests {
                         allow_when_locked: true,
                         allow_inhibiting: true,
                         hotkey_overlay_title: None,
-                        layout_independent: None,
                         xkb: None,
                     },
                     Bind {
@@ -1979,7 +1976,6 @@ mod tests {
                         hotkey_overlay_title: Some(
                             None,
                         ),
-                        layout_independent: None,
                         xkb: None,
                     },
                     Bind {
@@ -1997,7 +1993,6 @@ mod tests {
                         allow_when_locked: false,
                         allow_inhibiting: true,
                         hotkey_overlay_title: None,
-                        layout_independent: None,
                         xkb: None,
                     },
                     Bind {
@@ -2017,7 +2012,6 @@ mod tests {
                         allow_when_locked: false,
                         allow_inhibiting: true,
                         hotkey_overlay_title: None,
-                        layout_independent: None,
                         xkb: None,
                     },
                     Bind {
@@ -2035,7 +2029,6 @@ mod tests {
                         allow_when_locked: false,
                         allow_inhibiting: true,
                         hotkey_overlay_title: None,
-                        layout_independent: None,
                         xkb: None,
                     },
                     Bind {
@@ -2055,7 +2048,6 @@ mod tests {
                         allow_when_locked: false,
                         allow_inhibiting: true,
                         hotkey_overlay_title: None,
-                        layout_independent: None,
                         xkb: None,
                     },
                     Bind {
@@ -2075,7 +2067,6 @@ mod tests {
                         allow_when_locked: false,
                         allow_inhibiting: true,
                         hotkey_overlay_title: None,
-                        layout_independent: None,
                         xkb: None,
                     },
                     Bind {
@@ -2093,7 +2084,6 @@ mod tests {
                         allow_when_locked: false,
                         allow_inhibiting: true,
                         hotkey_overlay_title: None,
-                        layout_independent: None,
                         xkb: None,
                     },
                     Bind {
@@ -2115,7 +2105,6 @@ mod tests {
                         allow_when_locked: false,
                         allow_inhibiting: true,
                         hotkey_overlay_title: None,
-                        layout_independent: None,
                         xkb: None,
                     },
                     Bind {
@@ -2137,7 +2126,6 @@ mod tests {
                         allow_when_locked: false,
                         allow_inhibiting: true,
                         hotkey_overlay_title: None,
-                        layout_independent: None,
                         xkb: None,
                     },
                     Bind {
@@ -2157,7 +2145,6 @@ mod tests {
                         allow_when_locked: false,
                         allow_inhibiting: false,
                         hotkey_overlay_title: None,
-                        layout_independent: None,
                         xkb: None,
                     },
                     Bind {
@@ -2175,7 +2162,6 @@ mod tests {
                         allow_when_locked: false,
                         allow_inhibiting: true,
                         hotkey_overlay_title: None,
-                        layout_independent: None,
                         xkb: None,
                     },
                     Bind {
@@ -2195,7 +2181,6 @@ mod tests {
                         allow_when_locked: true,
                         allow_inhibiting: true,
                         hotkey_overlay_title: None,
-                        layout_independent: None,
                         xkb: None,
                     },
                 ],
@@ -2321,7 +2306,6 @@ mod tests {
                         allow_when_locked: false,
                         allow_inhibiting: true,
                         hotkey_overlay_title: None,
-                        layout_independent: None,
                         xkb: None,
                     },
                     Bind {
@@ -2345,7 +2329,6 @@ mod tests {
                         allow_when_locked: false,
                         allow_inhibiting: true,
                         hotkey_overlay_title: None,
-                        layout_independent: None,
                         xkb: None,
                     },
                     Bind {
@@ -2371,7 +2354,6 @@ mod tests {
                         allow_when_locked: false,
                         allow_inhibiting: true,
                         hotkey_overlay_title: None,
-                        layout_independent: None,
                         xkb: None,
                     },
                 ],
@@ -2399,7 +2381,6 @@ mod tests {
         );
 
         assert_eq!(parsed.binds.binds.len(), 2);
-        assert_eq!(parsed.binds.binds[0].layout_independent, Some(true));
         assert_eq!(
             parsed.binds.binds[0].xkb,
             Some(Xkb {
@@ -2408,7 +2389,6 @@ mod tests {
                 ..Default::default()
             })
         );
-        assert_eq!(parsed.binds.binds[1].layout_independent, Some(false));
         assert_eq!(parsed.binds.binds[1].xkb, None);
     }
 
@@ -2430,7 +2410,6 @@ mod tests {
         );
 
         assert_eq!(parsed.binds.binds.len(), 1);
-        assert_eq!(parsed.binds.binds[0].layout_independent, Some(true));
         assert_eq!(
             parsed.binds.binds[0].xkb,
             Some(Xkb {
@@ -2520,7 +2499,6 @@ mod tests {
 
         let parsed = Config::load(&main).config.unwrap();
         assert_eq!(parsed.binds.binds[0].xkb, None);
-        assert_eq!(parsed.binds.binds[0].layout_independent, None);
     }
 
     #[test]
@@ -2540,7 +2518,6 @@ mod tests {
         .unwrap();
 
         let parsed = Config::load(&main).config.unwrap();
-        assert_eq!(parsed.binds.binds[0].layout_independent, Some(false));
         assert_eq!(parsed.binds.binds[0].xkb, None);
     }
 
@@ -2560,7 +2537,6 @@ mod tests {
             "#,
         );
 
-        assert_eq!(parsed.binds.binds[0].layout_independent, Some(true));
         assert_eq!(
             parsed.binds.binds[0].xkb,
             Some(Xkb {
