@@ -213,17 +213,8 @@ where
 
                 // Single-part sections.
                 "binds" => {
-                    let part = Binds::decode_node(node, ctx)?;
-
-                    // We replace conflicting binds, rather than error, to support the use-case
-                    // where you import some preconfigured-dots.kdl, then override some binds with
-                    // your own.
-                    let mut config = config.borrow_mut();
-                    let binds = &mut config.binds.0;
-                    // Remove existing binds matching any new bind.
-                    binds.retain(|bind| !part.0.iter().any(|new| new.key == bind.key));
-                    // Add all new binds.
-                    binds.extend(part.0);
+                    let part = BindsPart::decode_node(node, ctx)?;
+                    config.borrow_mut().binds.merge_with(&part);
                 }
                 "environment" => {
                     let part = Environment::decode_node(node, ctx)?;
@@ -613,10 +604,36 @@ impl ConfigPath {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
     use insta::{assert_debug_snapshot, assert_snapshot};
     use pretty_assertions::assert_eq;
 
     use super::*;
+
+    struct TestTempDir(PathBuf);
+
+    impl TestTempDir {
+        fn path(&self) -> &Path {
+            &self.0
+        }
+    }
+
+    impl Drop for TestTempDir {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn test_tempdir() -> TestTempDir {
+        static COUNTER: AtomicUsize = AtomicUsize::new(0);
+
+        let suffix = COUNTER.fetch_add(1, Ordering::Relaxed);
+        let pid = std::process::id();
+        let path = std::env::temp_dir().join(format!("niri-config-test-{pid}-{suffix}"));
+        fs::create_dir_all(&path).unwrap();
+        TestTempDir(path)
+    }
 
     #[test]
     fn can_create_default_config() {
@@ -837,7 +854,7 @@ mod tests {
                 window-open { off; }
 
                 window-close {
-                    curve "cubic-bezier" 0.05 0.7 0.1 1  
+                    curve "cubic-bezier" 0.05 0.7 0.1 1
                 }
 
                 recent-windows-close {
@@ -1881,8 +1898,8 @@ mod tests {
                     baba_is_float: None,
                 },
             ],
-            binds: Binds(
-                [
+            binds: Binds {
+                binds: [
                     Bind {
                         key: Key {
                             trigger: Keysym(
@@ -1902,6 +1919,7 @@ mod tests {
                                 "Inhibit",
                             ),
                         ),
+                        xkb: None,
                     },
                     Bind {
                         key: Key {
@@ -1918,6 +1936,7 @@ mod tests {
                         allow_when_locked: false,
                         allow_inhibiting: false,
                         hotkey_overlay_title: None,
+                        xkb: None,
                     },
                     Bind {
                         key: Key {
@@ -1938,6 +1957,7 @@ mod tests {
                         allow_when_locked: true,
                         allow_inhibiting: true,
                         hotkey_overlay_title: None,
+                        xkb: None,
                     },
                     Bind {
                         key: Key {
@@ -1956,6 +1976,7 @@ mod tests {
                         hotkey_overlay_title: Some(
                             None,
                         ),
+                        xkb: None,
                     },
                     Bind {
                         key: Key {
@@ -1972,6 +1993,7 @@ mod tests {
                         allow_when_locked: false,
                         allow_inhibiting: true,
                         hotkey_overlay_title: None,
+                        xkb: None,
                     },
                     Bind {
                         key: Key {
@@ -1990,6 +2012,7 @@ mod tests {
                         allow_when_locked: false,
                         allow_inhibiting: true,
                         hotkey_overlay_title: None,
+                        xkb: None,
                     },
                     Bind {
                         key: Key {
@@ -2006,6 +2029,7 @@ mod tests {
                         allow_when_locked: false,
                         allow_inhibiting: true,
                         hotkey_overlay_title: None,
+                        xkb: None,
                     },
                     Bind {
                         key: Key {
@@ -2024,6 +2048,7 @@ mod tests {
                         allow_when_locked: false,
                         allow_inhibiting: true,
                         hotkey_overlay_title: None,
+                        xkb: None,
                     },
                     Bind {
                         key: Key {
@@ -2042,6 +2067,7 @@ mod tests {
                         allow_when_locked: false,
                         allow_inhibiting: true,
                         hotkey_overlay_title: None,
+                        xkb: None,
                     },
                     Bind {
                         key: Key {
@@ -2058,6 +2084,7 @@ mod tests {
                         allow_when_locked: false,
                         allow_inhibiting: true,
                         hotkey_overlay_title: None,
+                        xkb: None,
                     },
                     Bind {
                         key: Key {
@@ -2078,6 +2105,7 @@ mod tests {
                         allow_when_locked: false,
                         allow_inhibiting: true,
                         hotkey_overlay_title: None,
+                        xkb: None,
                     },
                     Bind {
                         key: Key {
@@ -2098,6 +2126,7 @@ mod tests {
                         allow_when_locked: false,
                         allow_inhibiting: true,
                         hotkey_overlay_title: None,
+                        xkb: None,
                     },
                     Bind {
                         key: Key {
@@ -2116,6 +2145,7 @@ mod tests {
                         allow_when_locked: false,
                         allow_inhibiting: false,
                         hotkey_overlay_title: None,
+                        xkb: None,
                     },
                     Bind {
                         key: Key {
@@ -2132,6 +2162,7 @@ mod tests {
                         allow_when_locked: false,
                         allow_inhibiting: true,
                         hotkey_overlay_title: None,
+                        xkb: None,
                     },
                     Bind {
                         key: Key {
@@ -2150,9 +2181,10 @@ mod tests {
                         allow_when_locked: true,
                         allow_inhibiting: true,
                         hotkey_overlay_title: None,
+                        xkb: None,
                     },
                 ],
-            ),
+            },
             switch_events: SwitchBinds {
                 lid_open: None,
                 lid_close: None,
@@ -2274,6 +2306,7 @@ mod tests {
                         allow_when_locked: false,
                         allow_inhibiting: true,
                         hotkey_overlay_title: None,
+                        xkb: None,
                     },
                     Bind {
                         key: Key {
@@ -2296,6 +2329,7 @@ mod tests {
                         allow_when_locked: false,
                         allow_inhibiting: true,
                         hotkey_overlay_title: None,
+                        xkb: None,
                     },
                     Bind {
                         key: Key {
@@ -2320,11 +2354,219 @@ mod tests {
                         allow_when_locked: false,
                         allow_inhibiting: true,
                         hotkey_overlay_title: None,
+                        xkb: None,
                     },
                 ],
             },
         }
         "#);
+    }
+
+    #[test]
+    fn parse_layout_independent_binds() {
+        let parsed = do_parse(
+            r#"
+            binds {
+                layout-independent
+
+                xkb {
+                    layout "us"
+                    variant "colemak"
+                }
+
+                Mod+T { close-window; }
+                Mod+Q layout-independent=false { close-window; }
+            }
+            "#,
+        );
+
+        assert_eq!(parsed.binds.binds.len(), 2);
+        assert_eq!(
+            parsed.binds.binds[0].xkb,
+            Some(Xkb {
+                layout: String::from("us"),
+                variant: String::from("colemak"),
+                ..Default::default()
+            })
+        );
+        assert_eq!(parsed.binds.binds[1].xkb, None);
+    }
+
+    #[test]
+    fn parse_layout_independent_binds_is_order_independent_within_block() {
+        let parsed = do_parse(
+            r#"
+            binds {
+                Mod+T { close-window; }
+
+                xkb {
+                    layout "us"
+                    variant "colemak"
+                }
+
+                layout-independent true
+            }
+            "#,
+        );
+
+        assert_eq!(parsed.binds.binds.len(), 1);
+        assert_eq!(
+            parsed.binds.binds[0].xkb,
+            Some(Xkb {
+                layout: String::from("us"),
+                variant: String::from("colemak"),
+                ..Default::default()
+            })
+        );
+    }
+
+    #[test]
+    fn layout_independent_settings_do_not_apply_across_binds_blocks() {
+        let dir = test_tempdir();
+        let main = dir.path().join("config.kdl");
+        let part1 = dir.path().join("binds-1.kdl");
+        let part2 = dir.path().join("binds-2.kdl");
+
+        fs::write(&main, "include \"binds-1.kdl\"\ninclude \"binds-2.kdl\"\n").unwrap();
+        fs::write(
+            &part1,
+            r#"
+            binds {
+                xkb {
+                    layout "us"
+                }
+
+                Mod+T layout-independent=true { close-window; }
+            }
+            "#,
+        )
+        .unwrap();
+        fs::write(
+            &part2,
+            r#"
+            binds {
+                layout-independent
+                Mod+Q { close-window; }
+            }
+            "#,
+        )
+        .unwrap();
+
+        let err = format!("{:?}", Config::load(&main).config.unwrap_err());
+        assert!(err.contains("binds.xkb is required"));
+    }
+
+    #[test]
+    fn layout_independent_binds_require_xkb_after_merge() {
+        let dir = test_tempdir();
+        let main = dir.path().join("config.kdl");
+        let part = dir.path().join("binds.kdl");
+
+        fs::write(&main, "include \"binds.kdl\"\n").unwrap();
+        fs::write(
+            &part,
+            r#"
+            binds {
+                layout-independent
+                Mod+T { close-window; }
+            }
+            "#,
+        )
+        .unwrap();
+
+        let err = format!("{:?}", Config::load(&main).config.unwrap_err());
+        assert!(err.contains("binds.xkb is required"));
+    }
+
+    #[test]
+    fn binds_xkb_without_layout_independent_is_allowed_after_merge() {
+        let dir = test_tempdir();
+        let main = dir.path().join("config.kdl");
+
+        fs::write(
+            &main,
+            r#"
+            binds {
+                xkb {
+                    layout "us"
+                }
+
+                Mod+T { close-window; }
+            }
+            "#,
+        )
+        .unwrap();
+
+        let parsed = Config::load(&main).config.unwrap();
+        assert_eq!(parsed.binds.binds[0].xkb, None);
+    }
+
+    #[test]
+    fn bind_level_false_override_disables_xkb_requirement() {
+        let dir = test_tempdir();
+        let main = dir.path().join("config.kdl");
+
+        fs::write(
+            &main,
+            r#"
+            binds {
+                layout-independent true
+                Mod+T layout-independent=false { close-window; }
+            }
+            "#,
+        )
+        .unwrap();
+
+        let parsed = Config::load(&main).config.unwrap();
+        assert_eq!(parsed.binds.binds[0].xkb, None);
+    }
+
+    #[test]
+    fn layout_independent_binds_accept_xkb_file_without_single_layout() {
+        let parsed = do_parse(
+            r#"
+            binds {
+                layout-independent
+
+                xkb {
+                    file "/tmp/layout.xkb"
+                }
+
+                Mod+T { close-window; }
+            }
+            "#,
+        );
+
+        assert_eq!(
+            parsed.binds.binds[0].xkb,
+            Some(Xkb {
+                file: Some(String::from("/tmp/layout.xkb")),
+                ..Default::default()
+            })
+        );
+    }
+
+    #[test]
+    fn layout_independent_non_keysym_binds_emit_an_error() {
+        let err = format!(
+            "{:?}",
+            Config::parse_mem(
+                r#"
+                binds {
+                    layout-independent
+
+                    xkb {
+                        layout "us"
+                    }
+
+                    Mod+WheelScrollDown { focus-workspace-down; }
+                }
+                "#,
+            )
+            .unwrap_err()
+        );
+
+        assert!(err.contains("layout-independent=true can only be used with keysym binds"));
     }
 
     fn diff_lines(expected: &str, actual: &str) -> String {
@@ -2371,7 +2613,7 @@ mod tests {
         // Some notable omissions: the default config has some window rules, and an empty config
         // will not have any binds. Clear them out so they don't spam the diff.
         default_config.window_rules.clear();
-        default_config.binds.0.clear();
+        default_config.binds.binds.clear();
 
         assert_snapshot!(
             diff_lines(

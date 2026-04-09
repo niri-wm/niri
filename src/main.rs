@@ -18,8 +18,9 @@ use directories::ProjectDirs;
 use niri::cli::{Cli, CompletionShell, Sub};
 #[cfg(feature = "dbus")]
 use niri::dbus;
+use niri::input::compile_binds;
 use niri::ipc::client::handle_msg;
-use niri::niri::State;
+use niri::niri::{SessionOptions, State};
 use niri::utils::spawning::{
     spawn, spawn_sh, store_and_increase_nofile_rlimit, CHILD_DISPLAY, CHILD_ENV,
     REMOVE_ENV_RUST_BACKTRACE, REMOVE_ENV_RUST_LIB_BACKTRACE,
@@ -101,7 +102,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Sub::Validate { config } => {
                 tracy_client::Client::start();
 
-                config_path(config).load().config?;
+                let config = config_path(config).load().config?;
+                compile_binds(&config.binds)?;
                 info!("config is valid");
                 return Ok(());
             }
@@ -148,11 +150,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config_path = config_path(cli.config);
     env::remove_var("NIRI_CONFIG");
     let (config_created_at, config_load_result) = config_path.load_or_create();
-    let config_errored = config_load_result.config.is_err();
+    let mut config_errored = config_load_result.config.is_err();
     let mut config = config_load_result.config.unwrap_or_else(|err| {
         warn!("{err:?}");
         Config::load_default()
     });
+    let compiled_binds = match compile_binds(&config.binds) {
+        Ok(compiled_binds) => compiled_binds,
+        Err(err) => {
+            warn!("error compiling layout-independent binds in startup config: {err:#}");
+            config_errored = true;
+            config = Config::load_default();
+            compile_binds(&config.binds)
+                .expect("default config layout-independent binds must compile")
+        }
+    };
     let config_includes = config_load_result.includes;
 
     let spawn_at_startup = mem::take(&mut config.spawn_at_startup);
@@ -175,12 +187,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut state = State::new(
         config,
+        compiled_binds,
         event_loop.handle(),
         event_loop.get_signal(),
         display,
         false,
-        true,
-        cli.session,
+        SessionOptions {
+            create_wayland_socket: true,
+            is_session_instance: cli.session,
+        },
     )
     .unwrap();
 

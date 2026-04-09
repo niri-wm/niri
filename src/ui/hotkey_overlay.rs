@@ -133,7 +133,7 @@ impl HotkeyOverlay {
         writeln!(&mut buf, "{TITLE}").unwrap();
 
         for action in actions {
-            let Some((key, action)) = format_bind(&config.binds.0, action) else {
+            let Some((key, action)) = format_bind(&config.binds.binds, action) else {
                 continue;
             };
 
@@ -195,7 +195,7 @@ fn format_bind(binds: &[Bind], action: &Action) -> Option<(Option<Key>, String)>
 }
 
 fn collect_actions(config: &Config) -> Vec<&Action> {
-    let binds = &config.binds.0;
+    let binds = &config.binds.binds;
 
     // Collect actions that we want to show.
     let mut actions = vec![&Action::ShowHotkeyOverlay];
@@ -323,7 +323,7 @@ fn render(
 
     let strings = collect_actions(config)
         .into_iter()
-        .filter_map(|action| format_bind(&config.binds.0, action))
+        .filter_map(|action| format_bind(&config.binds.binds, action))
         .map(|(key, action)| {
             let key = key.map(|key| key_name(false, mod_key, &key));
             let key = key.as_deref().unwrap_or("(not bound)");
@@ -615,7 +615,7 @@ mod tests {
     #[track_caller]
     fn check(config: &str, action: Action) -> String {
         let config = Config::parse_mem(config).unwrap();
-        if let Some((key, title)) = format_bind(&config.binds.0, &action) {
+        if let Some((key, title)) = format_bind(&config.binds.binds, &action) {
             let key = key.map(|key| key_name(false, ModKey::Super, &key));
             let key = key.as_deref().unwrap_or("(not bound)");
             format!(" {key} : {title}")

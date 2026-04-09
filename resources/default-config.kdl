@@ -356,6 +356,16 @@ binds {
     //
     // Most actions that you can bind here can also be invoked programmatically with
     // `niri msg action do-something`.
+    //
+    // You can also make keyboard binds layout-independent by enabling:
+    //
+    // layout-independent true
+    // xkb {
+    //     layout "us"
+    // }
+    //
+    // This keeps binds like Mod+Slash matching the same physical key even after
+    // switching to another keyboard layout.
 
     // Mod-Shift-/, which is usually the same as Mod-?,
     // shows a list of important hotkeys.

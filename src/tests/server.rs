@@ -4,7 +4,8 @@ use calloop::EventLoop;
 use niri_config::Config;
 use smithay::reexports::wayland_server::Display;
 
-use crate::niri::State;
+use crate::input::compile_binds;
+use crate::niri::{SessionOptions, State};
 
 pub struct Server {
     pub event_loop: EventLoop<'static, State>,
@@ -16,14 +17,18 @@ impl Server {
         let event_loop = EventLoop::try_new().unwrap();
         let handle = event_loop.handle();
         let display = Display::new().unwrap();
+        let compiled_binds = compile_binds(&config.binds).unwrap();
         let state = State::new(
             config,
+            compiled_binds,
             handle.clone(),
             event_loop.get_signal(),
             display,
             true,
-            false,
-            false,
+            SessionOptions {
+                create_wayland_socket: false,
+                is_session_instance: false,
+            },
         )
         .unwrap();
 
