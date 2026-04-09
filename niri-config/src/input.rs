@@ -232,6 +232,13 @@ impl Touchpad {
             .and_then(|g| g.recognition_threshold)
             .unwrap_or(16.0)
     }
+
+    pub fn gesture_progress_distance(&self) -> f64 {
+        self.gestures
+            .as_ref()
+            .and_then(|g| g.gesture_progress_distance)
+            .unwrap_or(40.0)
+    }
 }
 
 #[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]
@@ -435,6 +442,13 @@ impl Touchscreen {
             .unwrap_or(1.5)
     }
 
+    pub fn gesture_progress_distance(&self) -> f64 {
+        self.gestures
+            .as_ref()
+            .and_then(|g| g.gesture_progress_distance)
+            .unwrap_or(200.0)
+    }
+
     /// Returns the scaled recognition threshold for a given finger count.
     /// Extra fingers above 3 increase the threshold by the scale factor.
     pub fn scaled_threshold(&self, finger_count: usize) -> f64 {
@@ -468,12 +482,18 @@ pub struct TouchscreenGesturesConfig {
     pub pinch_sensitivity: Option<f64>,
     #[knuffel(child, unwrap(argument))]
     pub finger_threshold_scale: Option<f64>,
+    /// Pixels of finger movement for IPC progress to reach 1.0 (screen pixels).
+    #[knuffel(child, unwrap(argument))]
+    pub gesture_progress_distance: Option<f64>,
 }
 
 #[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]
 pub struct TouchpadGesturesConfig {
     #[knuffel(child, unwrap(argument))]
     pub recognition_threshold: Option<f64>,
+    /// Libinput delta units of movement for IPC progress to reach 1.0 (acceleration-adjusted units).
+    #[knuffel(child, unwrap(argument))]
+    pub gesture_progress_distance: Option<f64>,
 }
 
 #[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
