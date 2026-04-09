@@ -28,9 +28,12 @@ use smithay::utils::SERIAL_COUNTER;
 use super::backend_ext::NiriInputBackend as InputBackend;
 use super::move_grab::MoveGrab;
 use super::touch_overview_grab::TouchOverviewGrab;
-use super::{modifiers_from_state, PointerOrTouchStartData};
+use super::{find_configured_bind, modifiers_from_state, PointerOrTouchStartData};
+use niri_config::binds::Trigger;
 use niri_config::input::ScreenEdge;
-use niri_config::touch_binds::{ContinuousGestureKind, TouchGestureType};
+use niri_config::touch_binds::{
+    continuous_gesture_kind, ContinuousGestureKind, TouchGestureType,
+};
 
 use crate::niri::{ActiveTouchBind, PointerVisibility, State, TouchEdgeSwipeState};
 
@@ -78,15 +81,17 @@ impl State {
                 let config = self.niri.config.borrow();
                 let threshold = config.input.touchscreen.edge_threshold();
                 if let Some(edge) = detect_edge(pos_within_output, size, threshold) {
-                    // Check if there's a bind for this edge.
-                    let has_bind = config
-                        .input
-                        .touchscreen
-                        .touch_binds()
-                        .map_or(false, |binds| {
-                            let gesture_type = edge_to_gesture_type(edge);
-                            binds.find_bind(gesture_type, 1).is_some()
-                        });
+                    // Check if there's a bind for this edge in main binds {}.
+                    let trigger = edge_to_trigger(edge);
+                    let mod_key = self.backend.mod_key(&config);
+                    let mods = self.niri.seat.get_keyboard().unwrap()
+                        .modifier_state();
+                    let has_bind = find_configured_bind(
+                        config.binds.0.iter(),
+                        mod_key,
+                        trigger,
+                        mods,
+                    ).is_some();
                     if has_bind {
                         self.niri.touch_edge_swipe = Some(TouchEdgeSwipeState::Pending {
                             edge,
@@ -387,23 +392,27 @@ impl State {
                     };
 
                     if cx * cx + cy * cy >= threshold * threshold {
-                        // Look up the bind for this edge.
+                        // Look up the bind for this edge in main binds {}.
                         let bind_info = {
                             let config = self.niri.config.borrow();
-                            let gesture_type = edge_to_gesture_type(edge);
-                            config
-                                .input
-                                .touchscreen
-                                .touch_binds()
-                                .and_then(|binds| binds.find_bind(gesture_type, 1))
-                                .map(|bind| {
-                                    let kind = bind.continuous_kind();
-                                    let sensitivity = bind.sensitivity.unwrap_or(0.4);
-                                    let natural_scroll = bind.natural_scroll;
-                                    let action = bind.action.clone();
-                                    (kind, sensitivity, natural_scroll, action)
-                                })
+                            let trigger = edge_to_trigger(edge);
+                            let mod_key = self.backend.mod_key(&config);
+                            let mods = self.niri.seat.get_keyboard().unwrap()
+                                .modifier_state();
+                            find_configured_bind(
+                                config.binds.0.iter(),
+                                mod_key,
+                                trigger,
+                                mods,
+                            )
                         };
+                        let bind_info = bind_info.map(|bind| {
+                            let kind = continuous_gesture_kind(&bind.action);
+                            let sensitivity = bind.sensitivity.unwrap_or(0.4);
+                            let natural_scroll = bind.natural_scroll;
+                            let action = bind.action;
+                            (kind, sensitivity, natural_scroll, action)
+                        });
 
                         if let Some((kind, sensitivity, natural_scroll, action)) = bind_info {
                             if let Some(kind) = kind {
@@ -564,24 +573,33 @@ impl State {
                             }
                         };
 
-                        // Look up matching bind.
+                        // Look up matching bind in the main binds {} block.
                         let bind_info = {
                             let config = self.niri.config.borrow();
-                            config
-                                .input
-                                .touchscreen
-                                .touch_binds()
-                                .and_then(|binds| {
-                                    binds.find_bind(gesture_type, finger_count as u8)
-                                })
-                                .map(|bind| {
-                                    let kind = bind.continuous_kind();
-                                    let sensitivity = bind.sensitivity.unwrap_or(0.4);
-                                    let natural_scroll = bind.natural_scroll;
-                                    let action = bind.action.clone();
-                                    (kind, sensitivity, natural_scroll, action)
-                                })
+                            let trigger = touch_gesture_to_trigger(
+                                gesture_type,
+                                finger_count as u8,
+                            );
+                            let mod_key = self.backend.mod_key(&config);
+                            // Check current keyboard modifiers for Mod+Touch combos.
+                            let mods = self.niri.seat.get_keyboard().unwrap()
+                                .modifier_state();
+                            trigger.and_then(|t| {
+                                find_configured_bind(
+                                    config.binds.0.iter(),
+                                    mod_key,
+                                    t,
+                                    mods,
+                                )
+                            })
                         };
+                        let bind_info = bind_info.map(|bind| {
+                            let kind = continuous_gesture_kind(&bind.action);
+                            let sensitivity = bind.sensitivity.unwrap_or(0.4);
+                            let natural_scroll = bind.natural_scroll;
+                            let action = bind.action;
+                            (kind, sensitivity, natural_scroll, action)
+                        });
 
                         if let Some((kind, sensitivity, natural_scroll, action)) = bind_info {
                             if let Some(kind) = kind {
@@ -680,13 +698,43 @@ impl State {
     }
 }
 
-/// Convert a screen edge to the corresponding edge swipe gesture type.
-fn edge_to_gesture_type(edge: ScreenEdge) -> TouchGestureType {
+/// Convert a TouchGestureType + finger count to a Trigger for bind lookup.
+fn touch_gesture_to_trigger(gesture: TouchGestureType, finger_count: u8) -> Option<Trigger> {
+    use TouchGestureType::*;
+    match (gesture, finger_count) {
+        (SwipeUp, 3) => Some(Trigger::TouchSwipe3Up),
+        (SwipeDown, 3) => Some(Trigger::TouchSwipe3Down),
+        (SwipeLeft, 3) => Some(Trigger::TouchSwipe3Left),
+        (SwipeRight, 3) => Some(Trigger::TouchSwipe3Right),
+        (SwipeUp, 4) => Some(Trigger::TouchSwipe4Up),
+        (SwipeDown, 4) => Some(Trigger::TouchSwipe4Down),
+        (SwipeLeft, 4) => Some(Trigger::TouchSwipe4Left),
+        (SwipeRight, 4) => Some(Trigger::TouchSwipe4Right),
+        (SwipeUp, 5) => Some(Trigger::TouchSwipe5Up),
+        (SwipeDown, 5) => Some(Trigger::TouchSwipe5Down),
+        (SwipeLeft, 5) => Some(Trigger::TouchSwipe5Left),
+        (SwipeRight, 5) => Some(Trigger::TouchSwipe5Right),
+        (PinchIn, 3) => Some(Trigger::TouchPinch3In),
+        (PinchOut, 3) => Some(Trigger::TouchPinch3Out),
+        (PinchIn, 4) => Some(Trigger::TouchPinch4In),
+        (PinchOut, 4) => Some(Trigger::TouchPinch4Out),
+        (PinchIn, 5) => Some(Trigger::TouchPinch5In),
+        (PinchOut, 5) => Some(Trigger::TouchPinch5Out),
+        (EdgeSwipeLeft, _) => Some(Trigger::TouchEdgeLeft),
+        (EdgeSwipeRight, _) => Some(Trigger::TouchEdgeRight),
+        (EdgeSwipeTop, _) => Some(Trigger::TouchEdgeTop),
+        (EdgeSwipeBottom, _) => Some(Trigger::TouchEdgeBottom),
+        _ => None,
+    }
+}
+
+/// Convert a screen edge to a Trigger for bind lookup.
+fn edge_to_trigger(edge: ScreenEdge) -> Trigger {
     match edge {
-        ScreenEdge::Left => TouchGestureType::EdgeSwipeLeft,
-        ScreenEdge::Right => TouchGestureType::EdgeSwipeRight,
-        ScreenEdge::Top => TouchGestureType::EdgeSwipeTop,
-        ScreenEdge::Bottom => TouchGestureType::EdgeSwipeBottom,
+        ScreenEdge::Left => Trigger::TouchEdgeLeft,
+        ScreenEdge::Right => Trigger::TouchEdgeRight,
+        ScreenEdge::Top => Trigger::TouchEdgeTop,
+        ScreenEdge::Bottom => Trigger::TouchEdgeBottom,
     }
 }
 

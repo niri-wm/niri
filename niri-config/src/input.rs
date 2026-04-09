@@ -513,11 +513,6 @@ impl Touchscreen {
         base * (1.0 + extra * (scale - 1.0))
     }
 
-    pub fn touch_binds(&self) -> Option<&crate::touch_binds::TouchBinds> {
-        self.gestures
-            .as_ref()
-            .and_then(|g| g.touch_binds.as_ref())
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -542,8 +537,6 @@ pub struct TouchscreenGesturesConfig {
     pub pinch_sensitivity: Option<f64>,
     #[knuffel(child, unwrap(argument))]
     pub finger_threshold_scale: Option<f64>,
-    #[knuffel(child)]
-    pub touch_binds: Option<crate::touch_binds::TouchBinds>,
 }
 
 #[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]

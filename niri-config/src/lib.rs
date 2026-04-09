@@ -1919,6 +1919,8 @@ mod tests {
                         allow_when_locked: false,
                         allow_inhibiting: false,
                         hotkey_overlay_title: None,
+                        sensitivity: None,
+                        natural_scroll: false,
                     },
                     Bind {
                         key: Key {
@@ -1939,6 +1941,8 @@ mod tests {
                         allow_when_locked: true,
                         allow_inhibiting: true,
                         hotkey_overlay_title: None,
+                        sensitivity: None,
+                        natural_scroll: false,
                     },
                     Bind {
                         key: Key {
@@ -1973,6 +1977,8 @@ mod tests {
                         allow_when_locked: false,
                         allow_inhibiting: true,
                         hotkey_overlay_title: None,
+                        sensitivity: None,
+                        natural_scroll: false,
                     },
                     Bind {
                         key: Key {
@@ -1991,6 +1997,8 @@ mod tests {
                         allow_when_locked: false,
                         allow_inhibiting: true,
                         hotkey_overlay_title: None,
+                        sensitivity: None,
+                        natural_scroll: false,
                     },
                     Bind {
                         key: Key {
@@ -2007,6 +2015,8 @@ mod tests {
                         allow_when_locked: false,
                         allow_inhibiting: true,
                         hotkey_overlay_title: None,
+                        sensitivity: None,
+                        natural_scroll: false,
                     },
                     Bind {
                         key: Key {
@@ -2025,6 +2035,8 @@ mod tests {
                         allow_when_locked: false,
                         allow_inhibiting: true,
                         hotkey_overlay_title: None,
+                        sensitivity: None,
+                        natural_scroll: false,
                     },
                     Bind {
                         key: Key {
@@ -2043,6 +2055,8 @@ mod tests {
                         allow_when_locked: false,
                         allow_inhibiting: true,
                         hotkey_overlay_title: None,
+                        sensitivity: None,
+                        natural_scroll: false,
                     },
                     Bind {
                         key: Key {
@@ -2059,6 +2073,8 @@ mod tests {
                         allow_when_locked: false,
                         allow_inhibiting: true,
                         hotkey_overlay_title: None,
+                        sensitivity: None,
+                        natural_scroll: false,
                     },
                     Bind {
                         key: Key {
@@ -2079,6 +2095,8 @@ mod tests {
                         allow_when_locked: false,
                         allow_inhibiting: true,
                         hotkey_overlay_title: None,
+                        sensitivity: None,
+                        natural_scroll: false,
                     },
                     Bind {
                         key: Key {
@@ -2099,6 +2117,8 @@ mod tests {
                         allow_when_locked: false,
                         allow_inhibiting: true,
                         hotkey_overlay_title: None,
+                        sensitivity: None,
+                        natural_scroll: false,
                     },
                     Bind {
                         key: Key {
@@ -2117,6 +2137,8 @@ mod tests {
                         allow_when_locked: false,
                         allow_inhibiting: false,
                         hotkey_overlay_title: None,
+                        sensitivity: None,
+                        natural_scroll: false,
                     },
                     Bind {
                         key: Key {
@@ -2133,6 +2155,8 @@ mod tests {
                         allow_when_locked: false,
                         allow_inhibiting: true,
                         hotkey_overlay_title: None,
+                        sensitivity: None,
+                        natural_scroll: false,
                     },
                     Bind {
                         key: Key {
@@ -2151,6 +2175,8 @@ mod tests {
                         allow_when_locked: true,
                         allow_inhibiting: true,
                         hotkey_overlay_title: None,
+                        sensitivity: None,
+                        natural_scroll: false,
                     },
                 ],
             ),
@@ -2275,6 +2301,8 @@ mod tests {
                         allow_when_locked: false,
                         allow_inhibiting: true,
                         hotkey_overlay_title: None,
+                        sensitivity: None,
+                        natural_scroll: false,
                     },
                     Bind {
                         key: Key {
@@ -2297,6 +2325,8 @@ mod tests {
                         allow_when_locked: false,
                         allow_inhibiting: true,
                         hotkey_overlay_title: None,
+                        sensitivity: None,
+                        natural_scroll: false,
                     },
                     Bind {
                         key: Key {
@@ -2321,6 +2351,8 @@ mod tests {
                         allow_when_locked: false,
                         allow_inhibiting: true,
                         hotkey_overlay_title: None,
+                        sensitivity: None,
+                        natural_scroll: false,
                     },
                 ],
             },
