@@ -63,10 +63,13 @@ const GAP: f64 = 16.;
 const LIST_GAP: f64 = 8.;
 
 /// Height of one list item in compact list mode.
-const LIST_ITEM_HEIGHT: f64 = 46.;
+const LIST_ITEM_HEIGHT: f64 = 32.;
 
 /// Width multiplier for compact list mode.
 const LIST_WIDTH_FACTOR: f64 = 0.6;
+
+/// Horizontal padding inside a list item.
+const LIST_ITEM_HPAD: f64 = 8.;
 
 /// How much of the next window will always peek from the side of the screen.
 const STRUT: f64 = 192.;
@@ -598,7 +601,7 @@ impl Thumbnail {
         push: &mut dyn FnMut(WindowMruUiRenderElement<R>),
     ) {
         let round = move |logical: f64| round_logical_in_physical(scale, logical);
-        let hpad = round(14.);
+        let hpad = round(LIST_ITEM_HPAD);
         let radius = CornerRadius::from(config.highlight.corner_radius as f32);
 
         let is_urgent = mapped.is_urgent();
@@ -658,6 +661,7 @@ impl Thumbnail {
         }
 
         let should_block_out = target.should_block_out(mapped.rules().block_out_from);
+
         let title_texture = self
             .title_texture(renderer.as_gles_renderer(), mapped, scale)
             .filter(|_| !should_block_out);
