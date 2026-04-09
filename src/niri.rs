@@ -205,6 +205,8 @@ pub enum TouchEdgeSwipeState {
         slot: Option<TouchSlot>,
         /// IPC tag for gesture events.
         tag: Option<String>,
+        /// Accumulated progress for IPC (0.0 = start, 1.0 = one unit).
+        ipc_progress: f64,
     },
 }
 
