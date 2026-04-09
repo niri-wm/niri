@@ -61,8 +61,7 @@ use smithay_drm_extras::drm_scanner::{DrmScanEvent, DrmScanner};
 use wayland_protocols::wp::linux_dmabuf::zv1::server::zwp_linux_dmabuf_feedback_v1::TrancheFlags;
 use wayland_protocols::wp::presentation_time::server::wp_presentation_feedback;
 
-use super::{IpcOutputMap, RenderResult};
-use crate::backend::OutputId;
+use super::{virtual_output, IpcOutputMap, OutputId, RenderResult, VirtualOutputMarker};
 use crate::frame_clock::FrameClock;
 use crate::niri::{Niri, RedrawState, State};
 use crate::render_helpers::debug::draw_damage;
@@ -103,6 +102,16 @@ pub struct Tty {
     // Whether the debug tinting is enabled.
     debug_tint: bool,
     ipc_outputs: Arc<Mutex<IpcOutputMap>>,
+    // Virtual outputs that we manage and mirror to IPC, indexed by output name.
+    virtual_outputs: VirtualOutputs,
+}
+
+/// State related to managing virtual outputs (e.g. HEADLESS-* outputs).
+struct VirtualOutputs {
+    /// Counter for generating unique virtual output names and IDs.
+    counter: u32,
+    /// Virtual outputs indexed by output name.
+    outputs: HashMap<String, (Output, OutputId)>,
 }
 
 pub type TtyRenderer<'render> = MultiRenderer<
@@ -434,7 +443,7 @@ impl Tty {
             .unwrap();
 
         let mut libinput = Libinput::new_with_udev(LibinputSessionInterface::from(session.clone()));
-        unsafe { init_libinput_plugin_system(&libinput) };
+        unsafe { super::libinput_plugins::init_libinput_plugin_system(&libinput) };
         {
             let _span = tracy_client::span!("Libinput::udev_assign_seat");
             libinput.udev_assign_seat(&seat_name)
@@ -507,6 +516,10 @@ impl Tty {
             update_ignored_nodes_on_resume: false,
             debug_tint: false,
             ipc_outputs: Arc::new(Mutex::new(HashMap::new())),
+            virtual_outputs: VirtualOutputs {
+                counter: 0,
+                outputs: HashMap::new(),
+            },
         })
     }
 
@@ -1804,7 +1817,12 @@ impl Tty {
         if output_state.unfinished_animations_remain {
             niri.queue_redraw(&output);
         } else {
-            niri.send_frame_callbacks(&output);
+            let is_virtual = VirtualOutputMarker::is_virtual(&output);
+            if is_virtual {
+                niri.send_frame_callbacks_for_virtual_output(&output);
+            } else {
+                niri.send_frame_callbacks(&output);
+            }
         }
     }
 
@@ -1832,6 +1850,11 @@ impl Tty {
         let span = tracy_client::span!("Tty::render");
 
         let mut rv = RenderResult::Skipped;
+
+        let is_virtual = VirtualOutputMarker::is_virtual(output);
+        if is_virtual {
+            return self.render_virtual_output(niri, output, target_presentation_time);
+        }
 
         let tty_state: &TtyOutputState = output.user_data().get().unwrap();
         let Some(device) = self.devices.get_mut(&tty_state.node) else {
@@ -2162,7 +2185,14 @@ impl Tty {
                     .global_space
                     .outputs()
                     .find(|output| {
-                        let tty_state: &TtyOutputState = output.user_data().get().unwrap();
+                        if VirtualOutputMarker::is_virtual(output) {
+                            return false;
+                        }
+
+                        let Some(tty_state) = output.user_data().get::<TtyOutputState>() else {
+                            return false;
+                        };
+
                         tty_state.node == *node && tty_state.crtc == crtc
                     })
                     .map(logical_output);
@@ -2191,6 +2221,45 @@ impl Tty {
             }
         }
 
+        // Since these are not DRM connectors, the loop above does not include them.
+        // If we drop them here, `niri msg outputs` will act as if they are disconnected and
+        // subsequent `niri msg output HEADLESS-* ...` commands will report "not connected".
+        for (name, (output, output_id)) in &self.virtual_outputs.outputs {
+            let current_mode = output.current_mode();
+            let Some(mode) = current_mode else {
+                continue;
+            };
+
+            let logical = niri
+                .global_space
+                .outputs()
+                .find(|o| o.name() == *name)
+                .map(logical_output);
+
+            let physical_properties = output.physical_properties();
+
+            let ipc_output = niri_ipc::Output {
+                name: name.clone(),
+                make: physical_properties.make,
+                model: physical_properties.model,
+                serial: None,
+                physical_size: None,
+                modes: vec![niri_ipc::Mode {
+                    width: mode.size.w as u16,
+                    height: mode.size.h as u16,
+                    refresh_rate: mode.refresh as u32,
+                    is_preferred: true,
+                }],
+                current_mode: Some(0),
+                is_custom_mode: true,
+                vrr_supported: false,
+                vrr_enabled: false,
+                logical,
+            };
+
+            ipc_outputs.insert(*output_id, ipc_output);
+        }
+
         let mut guard = self.ipc_outputs.lock().unwrap();
         *guard = ipc_outputs;
         niri.ipc_outputs_changed = true;
@@ -2198,6 +2267,75 @@ impl Tty {
 
     pub fn ipc_outputs(&self) -> Arc<Mutex<IpcOutputMap>> {
         self.ipc_outputs.clone()
+    }
+
+    /// Render a virtual output (no actual rendering, just presentation feedback).
+    fn render_virtual_output(
+        &mut self,
+        niri: &mut Niri,
+        output: &Output,
+        target_presentation_time: Duration,
+    ) -> RenderResult {
+        use smithay::backend::renderer::element::RenderElementStates;
+        use smithay::wayland::presentation::Refresh;
+
+        let now = get_monotonic_time();
+
+        let states = RenderElementStates::default();
+        let mut presentation_feedbacks = niri.take_presentation_feedbacks(output, &states);
+        presentation_feedbacks.presented::<_, smithay::utils::Monotonic>(
+            now,
+            Refresh::Unknown,
+            0,
+            wp_presentation_feedback::Kind::empty(),
+        );
+
+        // Update the frame clock so animation timing works correctly.
+        let output_state = niri.output_state.get_mut(output).unwrap();
+        output_state.frame_clock.presented(now);
+
+        // Use the estimated vblank timer to pace redraws, just like physical outputs.
+        queue_estimated_vblank_timer(niri, output.clone(), target_presentation_time);
+
+        RenderResult::Submitted
+    }
+
+    pub fn create_virtual_output(
+        &mut self,
+        niri: &mut Niri,
+        width: u16,
+        height: u16,
+        refresh_rate: u32,
+    ) -> String {
+        let built = virtual_output::build_headless_virtual_output(
+            &mut self.virtual_outputs.counter,
+            width,
+            height,
+            refresh_rate,
+        );
+
+        self.ipc_outputs
+            .lock()
+            .unwrap()
+            .insert(built.output_id, built.ipc_output);
+
+        self.virtual_outputs
+            .outputs
+            .insert(built.name.clone(), (built.output.clone(), built.output_id));
+
+        niri.add_output(built.output, Some(built.refresh_interval), false);
+
+        built.name
+    }
+
+    pub fn remove_virtual_output(&mut self, niri: &mut Niri, name: &str) -> Result<(), String> {
+        virtual_output::remove_virtual_output_from_map(
+            niri,
+            &self.ipc_outputs,
+            &mut self.virtual_outputs.outputs,
+            name,
+            "virtual output",
+        )
     }
 
     #[cfg(feature = "xdp-gnome-screencast")]
@@ -2235,6 +2373,14 @@ impl Tty {
     pub fn set_output_on_demand_vrr(&mut self, niri: &mut Niri, output: &Output, enable_vrr: bool) {
         let _span = tracy_client::span!("Tty::set_output_on_demand_vrr");
 
+        if VirtualOutputMarker::is_virtual(output) {
+            return;
+        }
+
+        let Some(tty_state) = output.user_data().get::<TtyOutputState>() else {
+            return;
+        };
+
         let output_state = niri.output_state.get_mut(output).unwrap();
         output_state.on_demand_vrr_enabled = enable_vrr;
         if output_state.frame_clock.vrr() == enable_vrr {
@@ -2242,7 +2388,6 @@ impl Tty {
         }
         for (&node, device) in self.devices.iter_mut() {
             for (&crtc, surface) in device.surfaces.iter_mut() {
-                let tty_state: &TtyOutputState = output.user_data().get().unwrap();
                 if tty_state.node == node && tty_state.crtc == crtc {
                     let word = if enable_vrr { "enabling" } else { "disabling" };
                     if let Err(err) = surface.compositor.use_vrr(enable_vrr) {
@@ -2522,6 +2667,17 @@ impl Tty {
             if let Err(err) = self.connector_connected(niri, node, connector, crtc) {
                 warn!("error connecting connector: {err:?}");
             }
+        }
+
+        // Apply config changes to virtual outputs (HEADLESS-*).
+        {
+            let config = self.config.clone();
+            virtual_output::apply_config_to_managed_virtual_outputs(
+                niri,
+                &mut self.virtual_outputs.outputs,
+                None,
+                &config,
+            );
         }
 
         self.refresh_ipc_outputs(niri);
@@ -3359,50 +3515,6 @@ fn make_output_name(
         model: info.as_ref().and_then(|info| info.model()),
         serial: info.as_ref().and_then(|info| info.serial()),
     }
-}
-
-/// Initializes the libinput plugin system.
-///
-/// # Safety
-///
-/// This function must be called before libinput iterates through the devices, i.e. before
-/// libinput_udev_assign_seat() or the first call to libinput_path_add_device().
-unsafe fn init_libinput_plugin_system(libinput: &Libinput) {
-    #[cfg(have_libinput_plugin_system)]
-    unsafe {
-        use std::ffi::{c_char, c_int, CString};
-        use std::os::unix::ffi::OsStringExt;
-
-        use directories::BaseDirs;
-        use input::ffi::libinput;
-        use input::AsRaw as _;
-
-        extern "C" {
-            fn libinput_plugin_system_append_path(libinput: *const libinput, path: *const c_char);
-            fn libinput_plugin_system_append_default_paths(libinput: *const libinput);
-            fn libinput_plugin_system_load_plugins(
-                libinput: *const libinput,
-                flags: c_int,
-            ) -> c_int;
-        }
-        const LIBINPUT_PLUGIN_SYSTEM_FLAG_NONE: c_int = 0;
-        let libinput = libinput.as_raw();
-
-        // Also load plugins from $XDG_CONFIG_HOME/libinput/plugins.
-        if let Some(dirs) = BaseDirs::new() {
-            let mut plugins_dir = dirs.config_dir().to_path_buf();
-            plugins_dir.push("libinput");
-            plugins_dir.push("plugins");
-            if let Ok(plugins_dir) = CString::new(plugins_dir.into_os_string().into_vec()) {
-                libinput_plugin_system_append_path(libinput, plugins_dir.as_ptr());
-            }
-        }
-
-        libinput_plugin_system_append_default_paths(libinput);
-        libinput_plugin_system_load_plugins(libinput, LIBINPUT_PLUGIN_SYSTEM_FLAG_NONE);
-    }
-    #[cfg(not(have_libinput_plugin_system))]
-    let _ = libinput;
 }
 
 #[cfg(test)]
