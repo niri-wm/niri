@@ -67,7 +67,7 @@ You can also configure them in your `config.kdl` file:
 ```kdl
 output "HEADLESS-1" {
     scale 1.25
-    transform 90
+    transform "90"
     position x=1920 y=0
 }
 ```
@@ -133,9 +133,9 @@ XDG_SEAT=seat0 NIRI_BACKEND=headless niri --session
 
 The Wayland `wl_seat` name exposed by niri matches this seat string (`XDG_SEAT` / `seat0`).
 If niri can’t access any input devices (permissions, container, etc.), it will still start; you’ll
-just have no *local* input.
+just have no _local_ input.
 
-This section is mostly about *local* kernel input devices. If you’re using a remote client that
+This section is mostly about _local_ kernel input devices. If you’re using a remote client that
 injects input over Wayland (like wayvnc), niri doesn’t need access to `/dev/input` for that.
 
 ## Using with wayvnc

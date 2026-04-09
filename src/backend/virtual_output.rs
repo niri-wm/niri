@@ -1,11 +1,10 @@
-use std::collections::HashMap;
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use niri_config::Config;
-use niri_config::OutputName;
+use niri_config::{Config, OutputName};
 use smithay::output::{Mode, Output, PhysicalProperties, Subpixel};
 use smithay::utils::Size;
 
@@ -151,9 +150,7 @@ pub(super) fn apply_config_to_managed_virtual_outputs(
         let new_mode = output_config.and_then(|config| {
             config.mode.as_ref().map(|mode_config| {
                 let refresh_hz = mode_config.mode.refresh.unwrap_or(60.0);
-                let refresh_mhz = (refresh_hz * 1000.0)
-                    .round()
-                    .clamp(1.0, i32::MAX as f64) as i32;
+                let refresh_mhz = (refresh_hz * 1000.0).round().clamp(1.0, i32::MAX as f64) as i32;
                 Mode {
                     size: Size::from((
                         i32::from(mode_config.mode.width),

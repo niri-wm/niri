@@ -8,32 +8,32 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use anyhow::Context as _;
-#[cfg(feature = "xdp-gnome-screencast")]
-use smithay::backend::allocator::gbm::GbmDevice;
-use smithay::backend::libinput::LibinputInputBackend;
 use niri_config::OutputName;
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::allocator::format::FormatSet;
+#[cfg(feature = "xdp-gnome-screencast")]
+use smithay::backend::allocator::gbm::GbmDevice;
 use smithay::backend::allocator::Buffer;
 #[cfg(feature = "xdp-gnome-screencast")]
 use smithay::backend::drm::DrmDeviceFd;
 use smithay::backend::drm::DrmNode;
-use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
-use smithay::reexports::calloop::LoopHandle;
-use smithay::reexports::input;
-use smithay::reexports::input::Libinput;
 use smithay::backend::egl::native::EGLSurfacelessDisplay;
 use smithay::backend::egl::{EGLContext, EGLDevice, EGLDisplay};
+use smithay::backend::libinput::LibinputInputBackend;
 use smithay::backend::renderer::element::RenderElementStates;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::renderer::{ImportDma, ImportEgl};
 use smithay::output::{Mode, Output, PhysicalProperties, Subpixel};
+use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
+use smithay::reexports::calloop::LoopHandle;
+use smithay::reexports::input;
+use smithay::reexports::input::Libinput;
 use smithay::reexports::wayland_protocols::wp::presentation_time::server::wp_presentation_feedback;
+#[cfg(feature = "xdp-gnome-screencast")]
+use smithay::utils::DeviceFd;
 use smithay::utils::Size;
 use smithay::wayland::dmabuf::{DmabufFeedbackBuilder, DmabufGlobal};
 use smithay::wayland::presentation::Refresh;
-#[cfg(feature = "xdp-gnome-screencast")]
-use smithay::utils::DeviceFd;
 
 use super::{virtual_output, IpcOutputMap, OutputId, RenderResult, VirtualOutputMarker};
 use crate::niri::{Niri, RedrawState, State};
@@ -122,7 +122,10 @@ impl Headless {
                 // importable by the renderer.
                 let render_formats = renderer.egl_context().dmabuf_render_formats();
                 let import_formats: FormatSet = renderer.dmabuf_formats().into_iter().collect();
-                let formats: FormatSet = render_formats.intersection(&import_formats).copied().collect();
+                let formats: FormatSet = render_formats
+                    .intersection(&import_formats)
+                    .copied()
+                    .collect();
 
                 if formats.iter().next().is_none() {
                     warn!(
@@ -297,8 +300,12 @@ impl Headless {
         height: u16,
         refresh_rate: u32,
     ) -> String {
-        let built =
-            virtual_output::build_headless_virtual_output(&mut self.output_counter, width, height, refresh_rate);
+        let built = virtual_output::build_headless_virtual_output(
+            &mut self.output_counter,
+            width,
+            height,
+            refresh_rate,
+        );
 
         self.ipc_outputs
             .lock()
@@ -388,7 +395,8 @@ impl Headless {
                 if output_state.unfinished_animations_remain {
                     data.niri.queue_redraw(&output_clone);
                 } else {
-                    data.niri.send_frame_callbacks_for_virtual_output(&output_clone);
+                    data.niri
+                        .send_frame_callbacks_for_virtual_output(&output_clone);
                 }
                 TimeoutAction::Drop
             })
@@ -413,8 +421,7 @@ impl Headless {
         if !render_formats.contains(&format) || !import_formats.contains(&format) {
             debug!(
                 "import_dmabuf: unsupported format code={:?} modifier={:?}",
-                format.code,
-                format.modifier
+                format.code, format.modifier
             );
             return false;
         }
@@ -526,9 +533,7 @@ fn init_headless_libinput(event_loop: LoopHandle<'static, State>, seat: &str) ->
     unsafe { super::libinput_plugins::init_libinput_plugin_system(&libinput) };
 
     if libinput.udev_assign_seat(seat).is_err() {
-        debug!(
-            "headless: failed to assign libinput seat {seat:?}; input will be unavailable"
-        );
+        debug!("headless: failed to assign libinput seat {seat:?}; input will be unavailable");
         return None;
     }
 

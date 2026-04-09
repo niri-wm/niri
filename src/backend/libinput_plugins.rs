@@ -20,8 +20,10 @@ pub(super) unsafe fn init_libinput_plugin_system(libinput: &Libinput) {
         extern "C" {
             fn libinput_plugin_system_append_path(libinput: *const libinput, path: *const c_char);
             fn libinput_plugin_system_append_default_paths(libinput: *const libinput);
-            fn libinput_plugin_system_load_plugins(libinput: *const libinput, flags: c_int)
-                -> c_int;
+            fn libinput_plugin_system_load_plugins(
+                libinput: *const libinput,
+                flags: c_int,
+            ) -> c_int;
         }
         const LIBINPUT_PLUGIN_SYSTEM_FLAG_NONE: c_int = 0;
         let libinput = libinput.as_raw();

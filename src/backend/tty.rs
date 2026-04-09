@@ -3517,8 +3517,6 @@ fn make_output_name(
     }
 }
 
-
-
 #[cfg(test)]
 mod tests {
     use insta::assert_debug_snapshot;
