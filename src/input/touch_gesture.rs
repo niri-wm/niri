@@ -464,6 +464,7 @@ impl State {
                                         natural_scroll,
                                         slot: edge_slot,
                                         tag,
+                                        ipc_progress: 0.0,
                                     });
                                 handle.cancel(self);
                                 begin_continuous_gesture(self, kind, pos);
@@ -905,6 +906,9 @@ fn begin_continuous_gesture(
                 }
             }
         }
+        ContinuousGestureKind::Noop => {
+            // No compositor animation — IPC events are emitted by the caller.
+        }
     }
 }
 
@@ -958,6 +962,9 @@ fn feed_continuous_gesture(
                 }
             }
         }
+        ContinuousGestureKind::Noop => {
+            // No compositor animation — IPC progress is emitted below.
+        }
     }
 
     // Emit IPC GestureProgress if this bind has a tag.
@@ -972,14 +979,26 @@ fn feed_continuous_gesture(
                 let dx = if natural { -delta_x } else { delta_x };
                 dx * sensitivity
             }
+            ContinuousGestureKind::Noop => {
+                // Use the dominant axis
+                let dy = if natural { -delta_y } else { delta_y };
+                let dx = if natural { -delta_x } else { delta_x };
+                if dy.abs() > dx.abs() { dy * sensitivity } else { dx * sensitivity }
+            }
         };
 
-        // Update accumulated progress on the active touch bind if available.
+        // Update accumulated progress on the active touch bind or edge swipe.
         let progress = if let Some(ref mut active) = state.niri.touch_active_bind {
             active.ipc_progress += adjusted_delta / PROGRESS_UNIT;
             active.ipc_progress
+        } else if let Some(TouchEdgeSwipeState::Active {
+            ref mut ipc_progress, ..
+        }) = state.niri.touch_edge_swipe
+        {
+            *ipc_progress += adjusted_delta / PROGRESS_UNIT;
+            *ipc_progress
         } else {
-            // Edge swipe or pinch — no ActiveTouchBind, compute from delta alone.
+            // Pinch or other — no accumulator, compute from delta alone.
             adjusted_delta / PROGRESS_UNIT
         };
 
@@ -1003,6 +1022,9 @@ fn end_continuous_gesture(state: &mut State, kind: ContinuousGestureKind) {
         }
         ContinuousGestureKind::OverviewToggle => {
             state.niri.layout.overview_gesture_end();
+        }
+        ContinuousGestureKind::Noop => {
+            // No compositor animation to end.
         }
     }
 }

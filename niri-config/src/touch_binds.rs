@@ -28,6 +28,8 @@ pub enum ContinuousGestureKind {
     WorkspaceSwitch,
     ViewScroll,
     OverviewToggle,
+    /// No compositor animation — only emits IPC progress events for external tools.
+    Noop,
 }
 
 /// Returns the continuous gesture kind for an action, or None if discrete.
@@ -40,6 +42,7 @@ pub fn continuous_gesture_kind(action: &Action) -> Option<ContinuousGestureKind>
             Some(ContinuousGestureKind::ViewScroll)
         }
         Action::ToggleOverview => Some(ContinuousGestureKind::OverviewToggle),
+        Action::Noop => Some(ContinuousGestureKind::Noop),
         _ => None,
     }
 }
