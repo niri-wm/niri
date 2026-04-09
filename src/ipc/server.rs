@@ -942,4 +942,60 @@ impl State {
         state.apply(event.clone());
         server.send_event(event);
     }
+
+    /// Emit a GestureBegin IPC event for a tagged bind.
+    pub fn ipc_gesture_begin(
+        &mut self,
+        tag: String,
+        trigger: String,
+        finger_count: u8,
+        is_continuous: bool,
+    ) {
+        let Some(server) = &self.niri.ipc_server else {
+            return;
+        };
+        let mut state = server.event_stream_state.borrow_mut();
+        let event = Event::GestureBegin {
+            tag,
+            trigger,
+            finger_count,
+            is_continuous,
+        };
+        state.apply(event.clone());
+        server.send_event(event);
+    }
+
+    /// Emit a GestureProgress IPC event for a tagged continuous gesture.
+    pub fn ipc_gesture_progress(
+        &mut self,
+        tag: String,
+        progress: f64,
+        delta_x: f64,
+        delta_y: f64,
+        timestamp_ms: u32,
+    ) {
+        let Some(server) = &self.niri.ipc_server else {
+            return;
+        };
+        let event = Event::GestureProgress {
+            tag,
+            progress,
+            delta_x,
+            delta_y,
+            timestamp_ms,
+        };
+        // No state.apply needed — progress doesn't change tracked state.
+        server.send_event(event);
+    }
+
+    /// Emit a GestureEnd IPC event for a tagged bind.
+    pub fn ipc_gesture_end(&mut self, tag: String, completed: bool) {
+        let Some(server) = &self.niri.ipc_server else {
+            return;
+        };
+        let mut state = server.event_stream_state.borrow_mut();
+        let event = Event::GestureEnd { tag, completed };
+        state.apply(event.clone());
+        server.send_event(event);
+    }
 }

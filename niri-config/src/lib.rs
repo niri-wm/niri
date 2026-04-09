@@ -1981,6 +1981,7 @@ mod tests {
                         hotkey_overlay_title: None,
                         sensitivity: None,
                         natural_scroll: false,
+                        tag: None,
                     },
                     Bind {
                         key: Key {
@@ -2003,6 +2004,7 @@ mod tests {
                         hotkey_overlay_title: None,
                         sensitivity: None,
                         natural_scroll: false,
+                        tag: None,
                     },
                     Bind {
                         key: Key {
@@ -2039,6 +2041,7 @@ mod tests {
                         hotkey_overlay_title: None,
                         sensitivity: None,
                         natural_scroll: false,
+                        tag: None,
                     },
                     Bind {
                         key: Key {
@@ -2059,6 +2062,7 @@ mod tests {
                         hotkey_overlay_title: None,
                         sensitivity: None,
                         natural_scroll: false,
+                        tag: None,
                     },
                     Bind {
                         key: Key {
@@ -2077,6 +2081,7 @@ mod tests {
                         hotkey_overlay_title: None,
                         sensitivity: None,
                         natural_scroll: false,
+                        tag: None,
                     },
                     Bind {
                         key: Key {
@@ -2097,6 +2102,7 @@ mod tests {
                         hotkey_overlay_title: None,
                         sensitivity: None,
                         natural_scroll: false,
+                        tag: None,
                     },
                     Bind {
                         key: Key {
@@ -2117,6 +2123,7 @@ mod tests {
                         hotkey_overlay_title: None,
                         sensitivity: None,
                         natural_scroll: false,
+                        tag: None,
                     },
                     Bind {
                         key: Key {
@@ -2135,6 +2142,7 @@ mod tests {
                         hotkey_overlay_title: None,
                         sensitivity: None,
                         natural_scroll: false,
+                        tag: None,
                     },
                     Bind {
                         key: Key {
@@ -2157,6 +2165,7 @@ mod tests {
                         hotkey_overlay_title: None,
                         sensitivity: None,
                         natural_scroll: false,
+                        tag: None,
                     },
                     Bind {
                         key: Key {
@@ -2179,6 +2188,7 @@ mod tests {
                         hotkey_overlay_title: None,
                         sensitivity: None,
                         natural_scroll: false,
+                        tag: None,
                     },
                     Bind {
                         key: Key {
@@ -2199,6 +2209,7 @@ mod tests {
                         hotkey_overlay_title: None,
                         sensitivity: None,
                         natural_scroll: false,
+                        tag: None,
                     },
                     Bind {
                         key: Key {
@@ -2217,6 +2228,7 @@ mod tests {
                         hotkey_overlay_title: None,
                         sensitivity: None,
                         natural_scroll: false,
+                        tag: None,
                     },
                     Bind {
                         key: Key {
@@ -2237,6 +2249,7 @@ mod tests {
                         hotkey_overlay_title: None,
                         sensitivity: None,
                         natural_scroll: false,
+                        tag: None,
                     },
                 ],
             ),
@@ -2363,6 +2376,7 @@ mod tests {
                         hotkey_overlay_title: None,
                         sensitivity: None,
                         natural_scroll: false,
+                        tag: None,
                     },
                     Bind {
                         key: Key {
@@ -2387,6 +2401,7 @@ mod tests {
                         hotkey_overlay_title: None,
                         sensitivity: None,
                         natural_scroll: false,
+                        tag: None,
                     },
                     Bind {
                         key: Key {
@@ -2413,6 +2428,7 @@ mod tests {
                         hotkey_overlay_title: None,
                         sensitivity: None,
                         natural_scroll: false,
+                        tag: None,
                     },
                 ],
             },

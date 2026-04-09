@@ -156,6 +156,7 @@ impl From<MruBind> for Bind {
             hotkey_overlay_title: x.hotkey_overlay_title,
             sensitivity: None,
             natural_scroll: false,
+            tag: None,
         }
     }
 }
