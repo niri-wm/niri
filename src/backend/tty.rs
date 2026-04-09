@@ -2894,14 +2894,32 @@ fn refresh_interval(mode: DrmMode) -> Duration {
 fn suspend() -> anyhow::Result<()> {
     let conn = zbus::blocking::Connection::system().context("error connecting to system bus")?;
 
-    conn.call_method(
-        Some("org.freedesktop.login1"),
+    let proxy = zbus::blocking::fdo::PropertiesProxy::new(
+        &conn,
+        "org.freedesktop.login1",
         "/org/freedesktop/login1",
-        Some("org.freedesktop.login1.Manager"),
-        "Suspend",
-        &(true),
-    )
-    .context("error suspending")?;
+    )?;
+
+    let manager = zbus::names::InterfaceName::try_from("org.freedesktop.login1.Manager").unwrap();
+
+    let is_preparing_sleep: bool = proxy.get(manager, "PreparingForSleep")
+    .context("Fail to get PreparingForSleep property from login1.Manager")
+    .and_then(|value| Ok(bool::try_from(value)?))?
+    ;
+
+
+    if is_preparing_sleep {
+        warn!("Refusing to sleep, I just woke up (or going to sleep)");
+    } else {
+        conn.call_method(
+            Some("org.freedesktop.login1"),
+            "/org/freedesktop/login1",
+            Some("org.freedesktop.login1.Manager"),
+            "Suspend",
+            &(true),
+        )
+        .context("error suspending")?;
+    }
 
     Ok(())
 }
