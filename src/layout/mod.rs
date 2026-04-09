@@ -3215,8 +3215,7 @@ impl<W: LayoutElement> Layout<W> {
     }
 
     pub fn zoom_locked_for_output(&self, output: &Output) -> bool {
-        self.zoom_state_for_output(output)
-            .map_or(false, |z| z.locked)
+        self.zoom_state_for_output(output).is_some_and(|z| z.locked)
     }
 
     pub fn has_zoom_for_output(&self, output: &Output) -> bool {

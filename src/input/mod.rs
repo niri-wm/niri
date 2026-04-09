@@ -114,7 +114,12 @@ impl State {
     fn active_zoom_output(&self, requested_output: Option<&str>) -> Option<Output> {
         let output = match requested_output {
             Some(name) => self.niri.output_by_name_match(name).cloned(),
-            None => self.niri.layout.active_output().cloned(),
+            None => self
+                .niri
+                .screenshot_ui
+                .selection_output()
+                .cloned()
+                .or_else(|| self.niri.layout.active_output().cloned()),
         }?;
         self.niri
             .layout
@@ -4805,6 +4810,8 @@ fn allowed_during_screenshot(action: &Action) -> bool {
             | Action::SetWindowWidth(_)
             | Action::SetWindowHeight(_)
             | Action::SetColumnWidth(_)
+            | Action::SetZoomLevel(_, _)
+            | Action::ToggleZoomLock(_)
     )
 }
 
