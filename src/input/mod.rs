@@ -3896,6 +3896,9 @@ impl State {
                                         }
                                     }
                                 }
+                                ContinuousGestureKind::Noop => {
+                                    // No compositor animation.
+                                }
                             }
                             self.niri.gesture_swipe_bind = Some((kind, sensitivity, tag));
                         } else {
@@ -3953,6 +3956,10 @@ impl State {
                         }
                         handled = true;
                     }
+                }
+                ContinuousGestureKind::Noop => {
+                    // No compositor animation — just emit IPC progress below.
+                    handled = true;
                 }
             }
             // Emit IPC GestureProgress for tagged touchpad gestures.
