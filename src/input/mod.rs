@@ -4807,7 +4807,10 @@ fn modifiers_from_xkb_mask(
     }
 }
 
-fn resolve_bind_key(keymap: &xkb::Keymap, keysym: Keysym) -> anyhow::Result<CompiledKey> {
+fn resolve_bind_physical_keys(
+    keymap: &xkb::Keymap,
+    keysym: Keysym,
+) -> anyhow::Result<Vec<CompiledKey>> {
     let mut matching_keys = Vec::new();
     let mut masks = [xkb::ModMask::default(); 32];
     let mut unsupported_modifiers = Vec::new();
@@ -4868,18 +4871,7 @@ fn resolve_bind_key(keymap: &xkb::Keymap, keysym: Keysym) -> anyhow::Result<Comp
                 )
             }
         }
-        [key] => Ok(*key),
-        _ => {
-            let keys = matching_keys
-                .iter()
-                .map(|key| format!("{key:?}"))
-                .collect::<Vec<_>>()
-                .join(", ");
-            anyhow::bail!(
-                "keysym {} is ambiguous in the reference binds.xkb keymap; matching keys: {keys}",
-                xkb::keysym_get_name(keysym)
-            );
-        }
+        _ => Ok(matching_keys),
     }
 }
 
@@ -4898,61 +4890,58 @@ pub fn compile_binds(binds: &Binds) -> anyhow::Result<Vec<CompiledBind>> {
     let mut keymaps: Vec<(niri_config::Xkb, xkb::Keymap)> = Vec::new();
     let mut errors = Vec::new();
 
-    let compiled: Vec<_> = binds
-        .binds
-        .iter()
-        .map(|source_bind| {
-            let mut bind = CompiledBind::from(source_bind.clone());
+    let mut compiled = Vec::new();
 
-            if source_bind.xkb.is_none() {
-                return bind;
+    for source_bind in &binds.binds {
+        let bind = CompiledBind::from(source_bind.clone());
+
+        if source_bind.xkb.is_none() {
+            compiled.push(bind);
+            continue;
+        }
+
+        let xkb_config = source_bind.xkb.as_ref().unwrap();
+
+        let keymap = if let Some((_, keymap)) = keymaps.iter().find(|(xkb, _)| xkb == xkb_config) {
+            keymap
+        } else {
+            match load_bind_keymap(xkb_config) {
+                Ok(keymap) => {
+                    keymaps.push((xkb_config.clone(), keymap));
+                    &keymaps.last().unwrap().1
+                }
+                Err(err) => {
+                    errors.push(format!(
+                        "failed to compile layout-independent bind {}: {err:#}",
+                        bind.key
+                    ));
+                    continue;
+                }
             }
+        };
 
-            let Some(xkb_config) = source_bind.xkb.as_ref() else {
-                errors.push(format!(
-                    "failed to compile layout-independent bind {}: binds.xkb is missing",
-                    bind.key
-                ));
-                return bind;
-            };
+        let CompiledTrigger::Keysym(keysym) = bind.key.trigger else {
+            compiled.push(bind);
+            continue;
+        };
 
-            let keymap =
-                if let Some((_, keymap)) = keymaps.iter().find(|(xkb, _)| xkb == xkb_config) {
-                    keymap
-                } else {
-                    match load_bind_keymap(xkb_config) {
-                        Ok(keymap) => {
-                            keymaps.push((xkb_config.clone(), keymap));
-                            &keymaps.last().unwrap().1
-                        }
-                        Err(err) => {
-                            errors.push(format!(
-                                "failed to compile layout-independent bind {}: {err:#}",
-                                bind.key
-                            ));
-                            return bind;
-                        }
-                    }
-                };
-
-            let CompiledTrigger::Keysym(keysym) = bind.key.trigger else {
-                return bind;
-            };
-
-            match resolve_bind_key(keymap, keysym) {
-                Ok(key) => {
+        match resolve_bind_physical_keys(keymap, keysym) {
+            Ok(keys) => {
+                // Ambiguous symbols intentionally expand to every physical key that produces them
+                // in the reference keymap. We reject only if the expanded bindings collide later.
+                for key in keys {
+                    let mut bind = bind.clone();
                     bind.key.trigger = key.trigger;
                     bind.key.modifiers |= key.modifiers;
+                    compiled.push(bind);
                 }
-                Err(err) => errors.push(format!(
-                    "failed to compile layout-independent bind {}: {err:#}",
-                    bind.key
-                )),
             }
-
-            bind
-        })
-        .collect();
+            Err(err) => errors.push(format!(
+                "failed to compile layout-independent bind {}: {err:#}",
+                bind.key
+            )),
+        }
+    }
 
     errors.extend(duplicate_compiled_bind_errors(&compiled));
 
@@ -6098,7 +6087,7 @@ mod tests {
 
         let compiled = compile_binds(&binds).unwrap();
         let keymap = load_bind_keymap(binds.binds[0].xkb.as_ref().unwrap()).unwrap();
-        let keycode = match resolve_bind_key(&keymap, Keysym::slash).unwrap().trigger {
+        let keycode = match resolve_bind_physical_keys(&keymap, Keysym::slash).unwrap()[0].trigger {
             CompiledTrigger::PhysicalKey(keycode) => keycode,
             _ => unreachable!(),
         };
@@ -6148,11 +6137,11 @@ mod tests {
 
         let compiled = compile_binds(&binds).unwrap();
         let keymap = load_bind_keymap(binds.binds[0].xkb.as_ref().unwrap()).unwrap();
-        let exclam = match resolve_bind_key(&keymap, Keysym::exclam).unwrap().trigger {
+        let exclam = match resolve_bind_physical_keys(&keymap, Keysym::exclam).unwrap()[0].trigger {
             CompiledTrigger::PhysicalKey(keycode) => keycode,
             _ => unreachable!(),
         };
-        let one = match resolve_bind_key(&keymap, Keysym::_1).unwrap().trigger {
+        let one = match resolve_bind_physical_keys(&keymap, Keysym::_1).unwrap()[0].trigger {
             CompiledTrigger::PhysicalKey(keycode) => keycode,
             _ => unreachable!(),
         };
@@ -6236,11 +6225,12 @@ mod tests {
 
         let compiled = compile_binds(&binds).unwrap();
         let keymap = load_bind_keymap(binds.binds[0].xkb.as_ref().unwrap()).unwrap();
-        let slash_keycode = match resolve_bind_key(&keymap, Keysym::slash).unwrap().trigger {
-            CompiledTrigger::PhysicalKey(keycode) => keycode,
-            _ => unreachable!(),
-        };
-        let q_keycode = match resolve_bind_key(&keymap, Keysym::q).unwrap().trigger {
+        let slash_keycode =
+            match resolve_bind_physical_keys(&keymap, Keysym::slash).unwrap()[0].trigger {
+                CompiledTrigger::PhysicalKey(keycode) => keycode,
+                _ => unreachable!(),
+            };
+        let q_keycode = match resolve_bind_physical_keys(&keymap, Keysym::q).unwrap()[0].trigger {
             CompiledTrigger::PhysicalKey(keycode) => keycode,
             _ => unreachable!(),
         };
@@ -6302,7 +6292,7 @@ mod tests {
 
         let compiled = compile_binds(&binds).unwrap();
         let keymap = load_bind_keymap(binds.binds[0].xkb.as_ref().unwrap()).unwrap();
-        let keycode = match resolve_bind_key(&keymap, Keysym::slash).unwrap().trigger {
+        let keycode = match resolve_bind_physical_keys(&keymap, Keysym::slash).unwrap()[0].trigger {
             CompiledTrigger::PhysicalKey(keycode) => keycode,
             _ => unreachable!(),
         };
@@ -6369,7 +6359,7 @@ mod tests {
     }
 
     #[test]
-    fn config_with_ambiguous_reference_keymap_file_fails_bind_compilation() {
+    fn ambiguous_reference_keymap_file_expands_bind_to_multiple_physical_keys() {
         let dir = test_tempdir();
         let config_path = dir.path().join("config.kdl");
         let keymap_path = dir.path().join("ambiguous.xkb");
@@ -6411,7 +6401,64 @@ mod tests {
         .unwrap();
 
         let config = Config::load(&config_path).config.unwrap();
+        let keymap = load_bind_keymap_from_file(keymap_path.to_str().unwrap()).unwrap();
+        let keys = resolve_bind_physical_keys(&keymap, Keysym::exclam).unwrap();
+        let compiled = compile_binds(&config.binds).unwrap();
+
+        assert_eq!(keys.len(), 2);
+        assert_eq!(compiled.len(), keys.len());
+        for (bind, key) in compiled.iter().zip(keys) {
+            assert_eq!(bind.action, Action::CloseWindow);
+            assert_eq!(bind.key.trigger, key.trigger);
+            assert_eq!(bind.key.modifiers, Modifiers::COMPOSITOR | key.modifiers);
+        }
+    }
+
+    #[test]
+    fn ambiguous_reference_keymap_file_still_fails_on_expanded_collisions() {
+        let dir = test_tempdir();
+        let config_path = dir.path().join("config.kdl");
+        let keymap_path = dir.path().join("ambiguous.xkb");
+
+        let context = xkb::Context::new(xkb::CONTEXT_NO_FLAGS);
+        let keymap =
+            xkb::Keymap::new_from_names(&context, "", "", "us", "", None, xkb::COMPILE_NO_FLAGS)
+                .unwrap();
+        let keymap = keymap
+            .get_as_string(xkb::KEYMAP_FORMAT_TEXT_V1)
+            .lines()
+            .map(|line| {
+                if line.contains("key <AE02>") {
+                    "\tkey <AE02>               {\t[               2,          exclam ] };"
+                        .to_owned()
+                } else {
+                    line.to_owned()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        fs::write(&keymap_path, keymap).unwrap();
+
+        fs::write(
+            &config_path,
+            format!(
+                r#"
+                binds {{
+                    xkb {{
+                        file "{}"
+                    }}
+
+                    Mod+exclam layout-independent=true {{ close-window; }}
+                    Mod+Shift+1 layout-independent=true {{ quit; }}
+                }}
+                "#,
+                keymap_path.display()
+            ),
+        )
+        .unwrap();
+
+        let config = Config::load(&config_path).config.unwrap();
         let err = compile_binds(&config.binds).unwrap_err().to_string();
-        assert!(err.contains("keysym exclam is ambiguous in the reference binds.xkb keymap"));
+        assert!(err.contains("duplicate compiled keybind after layout-independent resolution"));
     }
 }

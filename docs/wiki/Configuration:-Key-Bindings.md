@@ -95,12 +95,14 @@ Rules:
 - `xkb {}` uses the same fields as `input.keyboard.xkb`.
 - Layout-independent binds resolve against the reference keymap declared by the same `binds.xkb` block.
 - If `binds.xkb.file` is set, that file is used as the reference keymap directly.
+- With `binds.xkb.file`, matching checks every physical key in the compiled keymap from that file, and for each key uses the first group/layout and level that produces the requested symbol.
 - Otherwise, that `xkb {}` block must describe exactly one reference layout.
 - Normal binds do not keep any `xkb` association and continue to match by keysym as before.
-- The symbolic key in a layout-independent bind must resolve to a unique physical key in the reference keymap.
+- The symbolic key in a layout-independent bind must resolve to at least one physical key in the reference keymap.
 - Extra modifiers that are needed to type that symbol in the reference keymap, such as `Shift` or `ISO_Level3_Shift`, also become part of the bind.
 - For example, if `/` is on the same physical key as `7` in the reference keymap, then `Mod+Slash` will match `Mod+Shift+7`, not plain `Mod+7`.
-- If the symbol is missing from the reference keymap, or ambiguous there, config loading fails.
+- If the symbol appears on multiple physical keys in the reference keymap, the bind will match all of them.
+- If the symbol is missing from the reference keymap, config loading fails.
 - If multiple config files contribute `binds {}` sections, `layout-independent` and `xkb {}` do not
   carry across block boundaries. They only apply to binds declared in the same block.
 - If two layout-independent binds resolve to the same physical key combination, config loading
