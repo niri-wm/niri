@@ -28,6 +28,10 @@ pub struct Bind {
     pub allow_when_locked: bool,
     pub allow_inhibiting: bool,
     pub hotkey_overlay_title: Option<Option<String>>,
+    /// Sensitivity multiplier for touch gesture binds.
+    pub sensitivity: Option<f64>,
+    /// Natural scroll for touchscreen gesture binds.
+    pub natural_scroll: bool,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
@@ -64,6 +68,31 @@ pub enum Trigger {
     TouchpadSwipe5Down,
     TouchpadSwipe5Left,
     TouchpadSwipe5Right,
+    // Touchscreen swipe gestures
+    TouchSwipe3Up,
+    TouchSwipe3Down,
+    TouchSwipe3Left,
+    TouchSwipe3Right,
+    TouchSwipe4Up,
+    TouchSwipe4Down,
+    TouchSwipe4Left,
+    TouchSwipe4Right,
+    TouchSwipe5Up,
+    TouchSwipe5Down,
+    TouchSwipe5Left,
+    TouchSwipe5Right,
+    // Touchscreen pinch gestures
+    TouchPinch3In,
+    TouchPinch3Out,
+    TouchPinch4In,
+    TouchPinch4Out,
+    TouchPinch5In,
+    TouchPinch5Out,
+    // Touchscreen edge swipes
+    TouchEdgeLeft,
+    TouchEdgeRight,
+    TouchEdgeTop,
+    TouchEdgeBottom,
 }
 
 bitflags! {
@@ -856,6 +885,8 @@ where
         let mut allow_when_locked_node = None;
         let mut allow_inhibiting = true;
         let mut hotkey_overlay_title = None;
+        let mut sensitivity = None;
+        let mut natural_scroll = false;
         for (name, val) in &node.properties {
             match &***name {
                 "repeat" => {
@@ -875,6 +906,12 @@ where
                 }
                 "hotkey-overlay-title" => {
                     hotkey_overlay_title = Some(knuffel::traits::DecodeScalar::decode(val, ctx)?);
+                }
+                "sensitivity" => {
+                    sensitivity = Some(knuffel::traits::DecodeScalar::decode(val, ctx)?);
+                }
+                "natural-scroll" => {
+                    natural_scroll = knuffel::traits::DecodeScalar::decode(val, ctx)?;
                 }
                 name_str => {
                     ctx.emit_error(DecodeError::unexpected(
@@ -899,6 +936,8 @@ where
             allow_when_locked: false,
             allow_inhibiting: true,
             hotkey_overlay_title: None,
+            sensitivity: None,
+            natural_scroll: false,
         };
 
         if let Some(child) = children.next() {
@@ -935,6 +974,8 @@ where
                         allow_when_locked,
                         allow_inhibiting,
                         hotkey_overlay_title,
+                        sensitivity,
+                        natural_scroll,
                     })
                 }
                 Err(e) => {
@@ -1036,6 +1077,53 @@ impl FromStr for Key {
             Trigger::TouchpadSwipe5Left
         } else if key.eq_ignore_ascii_case("TouchpadSwipe5Right") {
             Trigger::TouchpadSwipe5Right
+        // Touchscreen swipe gestures
+        } else if key.eq_ignore_ascii_case("Touch3SwipeUp") {
+            Trigger::TouchSwipe3Up
+        } else if key.eq_ignore_ascii_case("Touch3SwipeDown") {
+            Trigger::TouchSwipe3Down
+        } else if key.eq_ignore_ascii_case("Touch3SwipeLeft") {
+            Trigger::TouchSwipe3Left
+        } else if key.eq_ignore_ascii_case("Touch3SwipeRight") {
+            Trigger::TouchSwipe3Right
+        } else if key.eq_ignore_ascii_case("Touch4SwipeUp") {
+            Trigger::TouchSwipe4Up
+        } else if key.eq_ignore_ascii_case("Touch4SwipeDown") {
+            Trigger::TouchSwipe4Down
+        } else if key.eq_ignore_ascii_case("Touch4SwipeLeft") {
+            Trigger::TouchSwipe4Left
+        } else if key.eq_ignore_ascii_case("Touch4SwipeRight") {
+            Trigger::TouchSwipe4Right
+        } else if key.eq_ignore_ascii_case("Touch5SwipeUp") {
+            Trigger::TouchSwipe5Up
+        } else if key.eq_ignore_ascii_case("Touch5SwipeDown") {
+            Trigger::TouchSwipe5Down
+        } else if key.eq_ignore_ascii_case("Touch5SwipeLeft") {
+            Trigger::TouchSwipe5Left
+        } else if key.eq_ignore_ascii_case("Touch5SwipeRight") {
+            Trigger::TouchSwipe5Right
+        // Touchscreen pinch gestures
+        } else if key.eq_ignore_ascii_case("Touch3PinchIn") {
+            Trigger::TouchPinch3In
+        } else if key.eq_ignore_ascii_case("Touch3PinchOut") {
+            Trigger::TouchPinch3Out
+        } else if key.eq_ignore_ascii_case("Touch4PinchIn") {
+            Trigger::TouchPinch4In
+        } else if key.eq_ignore_ascii_case("Touch4PinchOut") {
+            Trigger::TouchPinch4Out
+        } else if key.eq_ignore_ascii_case("Touch5PinchIn") {
+            Trigger::TouchPinch5In
+        } else if key.eq_ignore_ascii_case("Touch5PinchOut") {
+            Trigger::TouchPinch5Out
+        // Touchscreen edge swipes
+        } else if key.eq_ignore_ascii_case("TouchEdgeLeft") {
+            Trigger::TouchEdgeLeft
+        } else if key.eq_ignore_ascii_case("TouchEdgeRight") {
+            Trigger::TouchEdgeRight
+        } else if key.eq_ignore_ascii_case("TouchEdgeTop") {
+            Trigger::TouchEdgeTop
+        } else if key.eq_ignore_ascii_case("TouchEdgeBottom") {
+            Trigger::TouchEdgeBottom
         } else {
             let mut keysym = keysym_from_name(key, KEYSYM_CASE_INSENSITIVE);
             // The keyboard event handling code can receive either
