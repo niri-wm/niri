@@ -12,9 +12,20 @@
 //!   - Multi-finger (3+): any action via touch-binds (swipe, pinch)
 //!   - Edge swipe (1+): touch starts in screen edge zone
 //!
-//! Actions are mapped via `touch-binds` in the KDL config.
+//! Actions are mapped via `binds {}` in the KDL config.
 //! The compositor infers whether an action is continuous (drives an
 //! animation that tracks the finger) or discrete (fires once).
+//!
+//! IPC gesture events:
+//!   Tagged binds (`tag="name"`) emit GestureBegin/Progress/End events
+//!   on the IPC event stream, allowing external tools to observe or
+//!   drive custom animations. The `noop` action consumes a gesture
+//!   for IPC without triggering any compositor action.
+//!
+//! Note on Mod+touch: On touchscreens, touch serves double duty as
+//! both click and gesture input. Mod+touch triggers window move/resize
+//! grabs (hardcoded), so Mod+Touch* gesture binds can conflict with
+//! Mod+click behavior when fingers land before the gesture threshold.
 
 use std::cmp::min;
 use std::time::Duration;
@@ -34,6 +45,7 @@ use niri_config::input::ScreenEdge;
 use niri_config::touch_binds::{
     continuous_gesture_kind, ContinuousGestureKind, TouchGestureType,
 };
+use niri_config::Action;
 
 use crate::niri::{ActiveTouchBind, PointerVisibility, State, TouchEdgeSwipeState};
 
@@ -263,11 +275,16 @@ impl State {
                         self.niri.touch_edge_swipe = None;
                     }
                 }
-                TouchEdgeSwipeState::Active { kind, .. } => {
+                TouchEdgeSwipeState::Active { kind, tag, .. } => {
                     let kind = *kind;
+                    let tag = tag.clone();
                     self.niri.touch_edge_swipe = None;
                     // End the gesture animation.
                     end_continuous_gesture(self, kind);
+                    // Emit IPC GestureEnd for tagged edge swipe.
+                    if let Some(tag) = tag {
+                        self.ipc_gesture_end(tag, true);
+                    }
                     self.niri.touch_gesture_points.remove(&Some(slot));
                     return;
                 }
@@ -285,7 +302,8 @@ impl State {
         if self.niri.touch_gesture_points.is_empty() {
             self.niri.touch_gesture_cumulative = None;
             self.niri.touch_gesture_locked = false;
-            self.niri.touch_active_bind = None;
+            // Take the active bind to get the tag before clearing.
+            let active_tag = self.niri.touch_active_bind.take().and_then(|b| b.tag);
             self.niri.touch_gesture_initial_spread = None;
             self.niri.touch_pinch_active = false;
 
@@ -297,6 +315,11 @@ impl State {
                 self.niri.queue_redraw(&output);
             }
             self.niri.layout.overview_gesture_end();
+
+            // Emit IPC GestureEnd for tagged multi-finger gestures.
+            if let Some(tag) = active_tag {
+                self.ipc_gesture_end(tag, true);
+            }
         }
 
         if let Some(capture) = self.niri.screenshot_ui.pointer_up(Some(slot)) {
@@ -354,6 +377,7 @@ impl State {
                     kind: ContinuousGestureKind,
                     sensitivity: f64,
                     natural: bool,
+                    tag: Option<String>,
                 },
             }
 
@@ -373,11 +397,12 @@ impl State {
                     }
                 }
                 Some(TouchEdgeSwipeState::Active {
-                    kind, sensitivity, natural_scroll, ..
+                    kind, sensitivity, natural_scroll, tag, ..
                 }) => EdgeAction::ActiveFeed {
                     kind: *kind,
                     sensitivity: *sensitivity,
                     natural: *natural_scroll,
+                    tag: tag.clone(),
                 },
                 _ => EdgeAction::None,
             };
@@ -410,11 +435,25 @@ impl State {
                             let kind = continuous_gesture_kind(&bind.action);
                             let sensitivity = bind.sensitivity.unwrap_or(0.4);
                             let natural_scroll = bind.natural_scroll;
+                            let tag = bind.tag;
                             let action = bind.action;
-                            (kind, sensitivity, natural_scroll, action)
+                            (kind, sensitivity, natural_scroll, tag, action)
                         });
 
-                        if let Some((kind, sensitivity, natural_scroll, action)) = bind_info {
+                        if let Some((kind, sensitivity, natural_scroll, tag, action)) = bind_info {
+                            // Emit IPC GestureBegin if this bind has a tag.
+                            if let Some(ref tag) = tag {
+                                let trigger_name = trigger_to_ipc_name(
+                                    Some(edge_to_trigger(edge)),
+                                );
+                                self.ipc_gesture_begin(
+                                    tag.clone(),
+                                    trigger_name,
+                                    1, // edge swipes are single-finger
+                                    kind.is_some(),
+                                );
+                            }
+
                             if let Some(kind) = kind {
                                 // Continuous edge swipe gesture.
                                 self.niri.touch_edge_swipe =
@@ -424,6 +463,7 @@ impl State {
                                         sensitivity,
                                         natural_scroll,
                                         slot: edge_slot,
+                                        tag,
                                     });
                                 handle.cancel(self);
                                 begin_continuous_gesture(self, kind, pos);
@@ -431,7 +471,13 @@ impl State {
                             } else {
                                 // Discrete edge swipe action — fire once and clear.
                                 handle.cancel(self);
-                                self.do_action(action, false);
+                                if !matches!(action, Action::Noop) {
+                                    self.do_action(action, false);
+                                }
+                                // Emit immediate GestureEnd for discrete gestures.
+                                if let Some(ref tag) = tag {
+                                    self.ipc_gesture_end(tag.clone(), true);
+                                }
                                 self.niri.touch_edge_swipe = None;
                             }
                         } else {
@@ -441,11 +487,12 @@ impl State {
                     // During Pending, don't suppress client motion events.
                 }
                 EdgeAction::ActiveFeed {
-                    kind, sensitivity, natural, ..
+                    kind, sensitivity, natural, tag,
                 } => {
                     let timestamp = Duration::from_micros(evt.time());
                     feed_continuous_gesture(
                         self, kind, delta_x, delta_y, sensitivity, natural, timestamp,
+                        tag.as_deref(),
                     );
                     gesture_handled = true;
                 }
@@ -464,8 +511,10 @@ impl State {
                     let kind = active.kind;
                     let sensitivity = active.sensitivity;
                     let natural = active.natural_scroll;
+                    let tag = active.tag.clone();
                     feed_continuous_gesture(
                         self, kind, delta_x, delta_y, sensitivity, natural, timestamp,
+                        tag.as_deref(),
                     );
                 } else if self.niri.touch_pinch_active {
                     // Feed pinch spread delta to overview gesture.
@@ -597,11 +646,25 @@ impl State {
                             let kind = continuous_gesture_kind(&bind.action);
                             let sensitivity = bind.sensitivity.unwrap_or(0.4);
                             let natural_scroll = bind.natural_scroll;
+                            let tag = bind.tag;
                             let action = bind.action;
-                            (kind, sensitivity, natural_scroll, action)
+                            (kind, sensitivity, natural_scroll, tag, action)
                         });
 
-                        if let Some((kind, sensitivity, natural_scroll, action)) = bind_info {
+                        if let Some((kind, sensitivity, natural_scroll, tag, action)) = bind_info {
+                            // Emit IPC GestureBegin if this bind has a tag.
+                            if let Some(ref tag) = tag {
+                                let trigger_name = trigger_to_ipc_name(
+                                    touch_gesture_to_trigger(gesture_type, finger_count as u8),
+                                );
+                                self.ipc_gesture_begin(
+                                    tag.clone(),
+                                    trigger_name,
+                                    finger_count as u8,
+                                    kind.is_some(),
+                                );
+                            }
+
                             if let Some(kind) = kind {
                                 // Continuous gesture — begin animation and store active bind.
                                 if is_pinch {
@@ -614,11 +677,19 @@ impl State {
                                         kind,
                                         sensitivity,
                                         natural_scroll,
+                                        tag,
+                                        ipc_progress: 0.0,
                                     });
                                 }
                             } else {
                                 // Discrete action — fire once.
-                                self.do_action(action, false);
+                                if !matches!(action, Action::Noop) {
+                                    self.do_action(action, false);
+                                }
+                                // Emit immediate GestureEnd for discrete gestures.
+                                if let Some(ref tag) = tag {
+                                    self.ipc_gesture_end(tag.clone(), true);
+                                }
                             }
                         }
                     }
@@ -680,12 +751,18 @@ impl State {
             return;
         };
 
+        // Collect tags for IPC GestureEnd before clearing state.
+        let active_tag = self.niri.touch_active_bind.take().and_then(|b| b.tag);
+        let edge_tag = match &self.niri.touch_edge_swipe {
+            Some(TouchEdgeSwipeState::Active { tag, .. }) => tag.clone(),
+            _ => None,
+        };
+
         // Clear all touch gesture state.
         self.niri.touch_gesture_points.clear();
         self.niri.touch_gesture_cumulative = None;
         self.niri.touch_edge_swipe = None;
         self.niri.touch_gesture_locked = false;
-        self.niri.touch_active_bind = None;
         self.niri.touch_gesture_initial_spread = None;
         self.niri.touch_pinch_active = false;
 
@@ -693,6 +770,14 @@ impl State {
         self.niri.layout.workspace_switch_gesture_end(Some(false));
         self.niri.layout.view_offset_gesture_end(Some(false));
         self.niri.layout.overview_gesture_end();
+
+        // Emit IPC GestureEnd (cancelled) for any tagged gestures.
+        if let Some(tag) = active_tag {
+            self.ipc_gesture_end(tag, false);
+        }
+        if let Some(tag) = edge_tag {
+            self.ipc_gesture_end(tag, false);
+        }
 
         handle.cancel(self);
     }
@@ -832,7 +917,12 @@ fn feed_continuous_gesture(
     sensitivity: f64,
     natural: bool,
     timestamp: Duration,
+    tag: Option<&str>,
 ) {
+    // Compute progress: accumulate the adjusted (post-sensitivity, post-natural)
+    // primary axis delta. 300px ≈ 1 unit (one workspace / full overview toggle).
+    const PROGRESS_UNIT: f64 = 300.0;
+
     match kind {
         ContinuousGestureKind::WorkspaceSwitch => {
             let dy = if natural { -delta_y } else { delta_y };
@@ -868,6 +958,33 @@ fn feed_continuous_gesture(
                 }
             }
         }
+    }
+
+    // Emit IPC GestureProgress if this bind has a tag.
+    if let Some(tag) = tag {
+        // Compute adjusted delta for progress accumulation.
+        let adjusted_delta = match kind {
+            ContinuousGestureKind::WorkspaceSwitch | ContinuousGestureKind::OverviewToggle => {
+                let dy = if natural { -delta_y } else { delta_y };
+                dy * sensitivity
+            }
+            ContinuousGestureKind::ViewScroll => {
+                let dx = if natural { -delta_x } else { delta_x };
+                dx * sensitivity
+            }
+        };
+
+        // Update accumulated progress on the active touch bind if available.
+        let progress = if let Some(ref mut active) = state.niri.touch_active_bind {
+            active.ipc_progress += adjusted_delta / PROGRESS_UNIT;
+            active.ipc_progress
+        } else {
+            // Edge swipe or pinch — no ActiveTouchBind, compute from delta alone.
+            adjusted_delta / PROGRESS_UNIT
+        };
+
+        let ts_ms = timestamp.as_millis() as u32;
+        state.ipc_gesture_progress(tag.to_string(), progress, delta_x, delta_y, ts_ms);
     }
 }
 
@@ -915,4 +1032,37 @@ fn calculate_spread(
     }).sum();
 
     total_dist / n
+}
+
+/// Convert a Trigger to its KDL config name for IPC events.
+fn trigger_to_ipc_name(trigger: Option<Trigger>) -> String {
+    let Some(trigger) = trigger else {
+        return "Unknown".to_string();
+    };
+    match trigger {
+        Trigger::TouchSwipe3Up => "Touch3SwipeUp",
+        Trigger::TouchSwipe3Down => "Touch3SwipeDown",
+        Trigger::TouchSwipe3Left => "Touch3SwipeLeft",
+        Trigger::TouchSwipe3Right => "Touch3SwipeRight",
+        Trigger::TouchSwipe4Up => "Touch4SwipeUp",
+        Trigger::TouchSwipe4Down => "Touch4SwipeDown",
+        Trigger::TouchSwipe4Left => "Touch4SwipeLeft",
+        Trigger::TouchSwipe4Right => "Touch4SwipeRight",
+        Trigger::TouchSwipe5Up => "Touch5SwipeUp",
+        Trigger::TouchSwipe5Down => "Touch5SwipeDown",
+        Trigger::TouchSwipe5Left => "Touch5SwipeLeft",
+        Trigger::TouchSwipe5Right => "Touch5SwipeRight",
+        Trigger::TouchPinch3In => "Touch3PinchIn",
+        Trigger::TouchPinch3Out => "Touch3PinchOut",
+        Trigger::TouchPinch4In => "Touch4PinchIn",
+        Trigger::TouchPinch4Out => "Touch4PinchOut",
+        Trigger::TouchPinch5In => "Touch5PinchIn",
+        Trigger::TouchPinch5Out => "Touch5PinchOut",
+        Trigger::TouchEdgeLeft => "TouchEdgeLeft",
+        Trigger::TouchEdgeRight => "TouchEdgeRight",
+        Trigger::TouchEdgeTop => "TouchEdgeTop",
+        Trigger::TouchEdgeBottom => "TouchEdgeBottom",
+        _ => "Unknown",
+    }
+    .to_string()
 }

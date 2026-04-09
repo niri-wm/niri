@@ -207,6 +207,8 @@ pub enum TouchEdgeSwipeState {
         sensitivity: f64,
         natural_scroll: bool,
         slot: Option<TouchSlot>,
+        /// IPC tag for gesture events.
+        tag: Option<String>,
     },
 }
 
@@ -215,6 +217,10 @@ pub struct ActiveTouchBind {
     pub kind: ContinuousGestureKind,
     pub sensitivity: f64,
     pub natural_scroll: bool,
+    /// IPC tag for gesture events.
+    pub tag: Option<String>,
+    /// Accumulated progress for IPC (0.0 = start, 1.0 = one unit).
+    pub ipc_progress: f64,
 }
 
 pub struct Niri {
@@ -400,7 +406,7 @@ pub struct Niri {
     /// (cx, cy, fingers)
     pub gesture_swipe_3f_cumulative: Option<(f64, f64, usize)>,
     /// Active touchpad swipe gesture from binds (kind + sensitivity).
-    pub gesture_swipe_bind: Option<(ContinuousGestureKind, f64)>,
+    pub gesture_swipe_bind: Option<(ContinuousGestureKind, f64, Option<String>)>,
     /// Active touch points for multi-finger gesture detection.
     pub touch_gesture_points: HashMap<Option<TouchSlot>, Point<f64, Logical>>,
     /// Cumulative delta when tracking a 2+ finger touch gesture.

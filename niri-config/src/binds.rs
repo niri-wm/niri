@@ -31,6 +31,12 @@ pub struct Bind {
     pub sensitivity: Option<f64>,
     /// Natural scroll for touchscreen gesture binds.
     pub natural_scroll: bool,
+    /// Optional tag for IPC gesture events.
+    /// When set, gesture begin/progress/end events are emitted on the IPC
+    /// event stream with this tag, allowing external tools to react.
+    /// Restricted to gesture triggers only (Touch*/Touchpad*) — rejected
+    /// on keyboard/mouse binds to prevent IPC event stream keylogging.
+    pub tag: Option<String>,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
@@ -92,6 +98,50 @@ pub enum Trigger {
     TouchEdgeRight,
     TouchEdgeTop,
     TouchEdgeBottom,
+}
+
+impl Trigger {
+    /// Returns true if this trigger is a gesture (touchscreen or touchpad).
+    /// Only gesture triggers support IPC tag events.
+    pub fn is_gesture(&self) -> bool {
+        matches!(
+            self,
+            Trigger::TouchpadSwipe3Up
+                | Trigger::TouchpadSwipe3Down
+                | Trigger::TouchpadSwipe3Left
+                | Trigger::TouchpadSwipe3Right
+                | Trigger::TouchpadSwipe4Up
+                | Trigger::TouchpadSwipe4Down
+                | Trigger::TouchpadSwipe4Left
+                | Trigger::TouchpadSwipe4Right
+                | Trigger::TouchpadSwipe5Up
+                | Trigger::TouchpadSwipe5Down
+                | Trigger::TouchpadSwipe5Left
+                | Trigger::TouchpadSwipe5Right
+                | Trigger::TouchSwipe3Up
+                | Trigger::TouchSwipe3Down
+                | Trigger::TouchSwipe3Left
+                | Trigger::TouchSwipe3Right
+                | Trigger::TouchSwipe4Up
+                | Trigger::TouchSwipe4Down
+                | Trigger::TouchSwipe4Left
+                | Trigger::TouchSwipe4Right
+                | Trigger::TouchSwipe5Up
+                | Trigger::TouchSwipe5Down
+                | Trigger::TouchSwipe5Left
+                | Trigger::TouchSwipe5Right
+                | Trigger::TouchPinch3In
+                | Trigger::TouchPinch3Out
+                | Trigger::TouchPinch4In
+                | Trigger::TouchPinch4Out
+                | Trigger::TouchPinch5In
+                | Trigger::TouchPinch5Out
+                | Trigger::TouchEdgeLeft
+                | Trigger::TouchEdgeRight
+                | Trigger::TouchEdgeTop
+                | Trigger::TouchEdgeBottom
+        )
+    }
 }
 
 bitflags! {
@@ -430,6 +480,10 @@ pub enum Action {
     MruSetScope(MruScope),
     #[knuffel(skip)]
     MruCycleScope,
+    /// No-op action: the bind matches and consumes the gesture but does
+    /// nothing inside the compositor. Useful with `tag` to pipe gesture
+    /// events to external tools via IPC without triggering any niri action.
+    Noop,
 }
 
 impl From<niri_ipc::Action> for Action {
@@ -899,6 +953,7 @@ where
         let mut hotkey_overlay_title = None;
         let mut sensitivity = None;
         let mut natural_scroll = false;
+        let mut tag = None;
         for (name, val) in &node.properties {
             match &***name {
                 "repeat" => {
@@ -925,6 +980,9 @@ where
                 "natural-scroll" => {
                     natural_scroll = knuffel::traits::DecodeScalar::decode(val, ctx)?;
                 }
+                "tag" => {
+                    tag = Some(knuffel::traits::DecodeScalar::decode(val, ctx)?);
+                }
                 name_str => {
                     ctx.emit_error(DecodeError::unexpected(
                         name,
@@ -933,6 +991,21 @@ where
                     ));
                 }
             }
+        }
+
+        // Tags are only supported on gesture triggers (touchscreen/touchpad).
+        // Allowing tags on keyboard/mouse binds would let the IPC event stream
+        // be used as a keylogger — every tagged keypress would emit an event
+        // with the key name to any process listening on the socket. Gestures
+        // are safe because they don't carry text input (you can't type a
+        // password with a 3-finger swipe).
+        if tag.is_some() && !key.trigger.is_gesture() {
+            ctx.emit_error(DecodeError::unexpected(
+                &node.node_name,
+                "property",
+                "tag is only supported on gesture triggers (Touch*/Touchpad*)",
+            ));
+            tag = None;
         }
 
         let mut children = node.children();
@@ -950,6 +1023,7 @@ where
             hotkey_overlay_title: None,
             sensitivity: None,
             natural_scroll: false,
+            tag: None,
         };
 
         if let Some(child) = children.next() {
@@ -988,6 +1062,7 @@ where
                         hotkey_overlay_title,
                         sensitivity,
                         natural_scroll,
+                        tag,
                     })
                 }
                 Err(e) => {
