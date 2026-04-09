@@ -49,6 +49,20 @@ use niri_config::Action;
 
 use crate::niri::{ActiveTouchBind, PointerVisibility, State, TouchEdgeSwipeState};
 
+/// Default sensitivity for touchscreen gestures (both edge and multi-finger).
+/// Lower than touchpad (1.0) because touchscreen deltas are in screen pixels.
+const TOUCH_DEFAULT_SENSITIVITY: f64 = 0.4;
+
+/// Extract gesture info from a matched bind: continuous kind, sensitivity,
+/// natural scroll, tag, and action.
+fn extract_bind_info(
+    bind: niri_config::Bind,
+) -> (Option<ContinuousGestureKind>, f64, bool, Option<String>, Action) {
+    let kind = continuous_gesture_kind(&bind.action);
+    let sensitivity = bind.sensitivity.unwrap_or(TOUCH_DEFAULT_SENSITIVITY);
+    (kind, sensitivity, bind.natural_scroll, bind.tag, bind.action)
+}
+
 impl State {
     pub(super) fn on_touch_down<I: InputBackend>(&mut self, evt: I::TouchDownEvent) {
         let Some(handle) = self.niri.seat.get_touch() else {
@@ -431,14 +445,7 @@ impl State {
                                 mods,
                             )
                         };
-                        let bind_info = bind_info.map(|bind| {
-                            let kind = continuous_gesture_kind(&bind.action);
-                            let sensitivity = bind.sensitivity.unwrap_or(0.4);
-                            let natural_scroll = bind.natural_scroll;
-                            let tag = bind.tag;
-                            let action = bind.action;
-                            (kind, sensitivity, natural_scroll, tag, action)
-                        });
+                        let bind_info = bind_info.map(extract_bind_info);
 
                         if let Some((kind, sensitivity, natural_scroll, tag, action)) = bind_info {
                             // Emit IPC GestureBegin if this bind has a tag.
@@ -643,14 +650,7 @@ impl State {
                                 )
                             })
                         };
-                        let bind_info = bind_info.map(|bind| {
-                            let kind = continuous_gesture_kind(&bind.action);
-                            let sensitivity = bind.sensitivity.unwrap_or(0.4);
-                            let natural_scroll = bind.natural_scroll;
-                            let tag = bind.tag;
-                            let action = bind.action;
-                            (kind, sensitivity, natural_scroll, tag, action)
-                        });
+                        let bind_info = bind_info.map(extract_bind_info);
 
                         if let Some((kind, sensitivity, natural_scroll, tag, action)) = bind_info {
                             // Emit IPC GestureBegin if this bind has a tag.
@@ -924,8 +924,11 @@ fn feed_continuous_gesture(
     tag: Option<&str>,
 ) {
     // Compute progress: accumulate the adjusted (post-sensitivity, post-natural)
-    // primary axis delta. 300px ≈ 1 unit (one workspace / full overview toggle).
-    const PROGRESS_UNIT: f64 = 300.0;
+    // primary axis delta. gesture-pixel-distance px ≈ 1 unit.
+    let progress_unit = {
+        let config = state.niri.config.borrow();
+        config.input.touchscreen.gesture_progress_distance()
+    };
 
     match kind {
         ContinuousGestureKind::WorkspaceSwitch => {
@@ -989,17 +992,17 @@ fn feed_continuous_gesture(
 
         // Update accumulated progress on the active touch bind or edge swipe.
         let progress = if let Some(ref mut active) = state.niri.touch_active_bind {
-            active.ipc_progress += adjusted_delta / PROGRESS_UNIT;
+            active.ipc_progress += adjusted_delta / progress_unit;
             active.ipc_progress
         } else if let Some(TouchEdgeSwipeState::Active {
             ref mut ipc_progress, ..
         }) = state.niri.touch_edge_swipe
         {
-            *ipc_progress += adjusted_delta / PROGRESS_UNIT;
+            *ipc_progress += adjusted_delta / progress_unit;
             *ipc_progress
         } else {
             // Pinch or other — no accumulator, compute from delta alone.
-            adjusted_delta / PROGRESS_UNIT
+            adjusted_delta / progress_unit
         };
 
         let ts_ms = timestamp.as_millis() as u32;

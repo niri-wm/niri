@@ -7,6 +7,11 @@ use std::time::Duration;
 use calloop::timer::{TimeoutAction, Timer};
 use input::event::gesture::GestureEventCoordinates as _;
 use niri_config::touch_binds::{continuous_gesture_kind, ContinuousGestureKind};
+use crate::niri::ActiveSwipeBind;
+
+/// Default sensitivity for touchpad gestures.
+/// Higher than touchscreen (0.4) because touchpad deltas are smaller libinput units.
+const TOUCHPAD_DEFAULT_SENSITIVITY: f64 = 1.0;
 use niri_config::{
     Action, Bind, Binds, Config, Key, ModKey, Modifiers, MruDirection, SwitchBinds, Trigger,
 };
@@ -3848,7 +3853,7 @@ impl State {
 
                     if let Some(bind) = bind {
                         let kind = continuous_gesture_kind(&bind.action);
-                        let sensitivity = bind.sensitivity.unwrap_or(1.0);
+                        let sensitivity = bind.sensitivity.unwrap_or(TOUCHPAD_DEFAULT_SENSITIVITY);
                         let tag = bind.tag.clone();
 
                         // Emit IPC GestureBegin if this bind has a tag.
@@ -3900,7 +3905,12 @@ impl State {
                                     // No compositor animation.
                                 }
                             }
-                            self.niri.gesture_swipe_bind = Some((kind, sensitivity, tag));
+                            self.niri.gesture_swipe_bind = Some(ActiveSwipeBind {
+                                kind,
+                                sensitivity,
+                                tag,
+                                ipc_progress: 0.0,
+                            });
                         } else {
                             // Discrete action — fire once.
                             if !matches!(bind.action, Action::Noop) {
@@ -3920,8 +3930,10 @@ impl State {
         let timestamp = Duration::from_micros(event.time());
 
         // Feed continuous gesture with bind sensitivity.
-        if let Some((kind, sensitivity, ref tag)) = self.niri.gesture_swipe_bind {
-            let tag = tag.clone();
+        if let Some(ref bind) = self.niri.gesture_swipe_bind {
+            let kind = bind.kind;
+            let sensitivity = bind.sensitivity;
+            let tag = bind.tag.clone();
             let mut handled = false;
             match kind {
                 ContinuousGestureKind::WorkspaceSwitch => {
@@ -3965,9 +3977,36 @@ impl State {
             // Emit IPC GestureProgress for tagged touchpad gestures.
             if handled {
                 if let Some(tag) = tag {
+                    let progress_distance = {
+                        let config = self.niri.config.borrow();
+                        config.input.touchpad.gesture_progress_distance()
+                    };
+                    let adjusted_delta = match kind {
+                        ContinuousGestureKind::WorkspaceSwitch
+                        | ContinuousGestureKind::OverviewToggle => {
+                            delta_y * sensitivity
+                        }
+                        ContinuousGestureKind::ViewScroll => {
+                            delta_x * sensitivity
+                        }
+                        ContinuousGestureKind::Noop => {
+                            if delta_y.abs() > delta_x.abs() {
+                                delta_y * sensitivity
+                            } else {
+                                delta_x * sensitivity
+                            }
+                        }
+                    };
+                    let progress = match &mut self.niri.gesture_swipe_bind {
+                        Some(ref mut bind) => {
+                            bind.ipc_progress += adjusted_delta / progress_distance;
+                            bind.ipc_progress
+                        }
+                        None => 0.0,
+                    };
                     let ts_ms = timestamp.as_millis() as u32;
                     self.ipc_gesture_progress(
-                        tag, 0.0, delta_x, delta_y, ts_ms,
+                        tag, progress, delta_x, delta_y, ts_ms,
                     );
                 }
                 return;
@@ -3992,7 +4031,7 @@ impl State {
     fn on_gesture_swipe_end<I: InputBackend>(&mut self, event: I::GestureSwipeEndEvent) {
         self.niri.gesture_swipe_3f_cumulative = None;
         // Take the bind to extract the tag before clearing.
-        let swipe_tag = self.niri.gesture_swipe_bind.take().and_then(|(_, _, tag)| tag);
+        let swipe_tag = self.niri.gesture_swipe_bind.take().and_then(|b| b.tag);
 
         let mut handled = false;
         let res = self.niri.layout.workspace_switch_gesture_end(Some(true));
