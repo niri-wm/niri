@@ -506,6 +506,34 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
                     Event::CastStopped { stream_id } => {
                         println!("Cast stopped: stream id {stream_id}");
                     }
+                    Event::GestureBegin {
+                        tag,
+                        trigger,
+                        finger_count,
+                        is_continuous,
+                    } => {
+                        let kind = if is_continuous { "continuous" } else { "discrete" };
+                        println!(
+                            "Gesture begin: tag={tag} trigger={trigger} \
+                             fingers={finger_count} ({kind})"
+                        );
+                    }
+                    Event::GestureProgress {
+                        tag,
+                        progress,
+                        delta_x,
+                        delta_y,
+                        timestamp_ms,
+                    } => {
+                        println!(
+                            "Gesture progress: tag={tag} progress={progress:.3} \
+                             delta=({delta_x:.1},{delta_y:.1}) t={timestamp_ms}"
+                        );
+                    }
+                    Event::GestureEnd { tag, completed } => {
+                        let status = if completed { "completed" } else { "cancelled" };
+                        println!("Gesture end: tag={tag} ({status})");
+                    }
                 }
             }
         }

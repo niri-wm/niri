@@ -1846,6 +1846,7 @@ fn make_preset_opened_binds() -> Vec<Bind> {
             hotkey_overlay_title: None,
                         sensitivity: None,
                         natural_scroll: false,
+                        tag: None,
         })
     };
 

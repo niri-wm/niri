@@ -1705,6 +1705,47 @@ pub enum Event {
         /// Stream ID of the stopped screencast.
         stream_id: u64,
     },
+    /// A gesture began (finger(s) crossed recognition threshold and matched a tagged bind).
+    ///
+    /// Only emitted for binds that have a `tag` property set.
+    GestureBegin {
+        /// User-defined tag from the bind config.
+        tag: String,
+        /// The trigger name (e.g. "Touch3SwipeUp", "TouchpadSwipe3Left", "TouchEdgeLeft").
+        trigger: String,
+        /// Number of fingers in the gesture.
+        finger_count: u8,
+        /// Whether this is a continuous (animation-driving) gesture.
+        /// Continuous gestures will emit `GestureProgress` events.
+        is_continuous: bool,
+    },
+    /// A continuous gesture made progress (fires many times per second).
+    ///
+    /// Only emitted for continuous gestures on binds with a `tag` property.
+    GestureProgress {
+        /// User-defined tag from the bind config.
+        tag: String,
+        /// Normalized progress value.
+        /// For workspace switch: 1.0 = moved one full workspace.
+        /// For overview: 1.0 = fully open.
+        progress: f64,
+        /// Raw delta since last event (pixels).
+        delta_x: f64,
+        /// Raw delta since last event (pixels).
+        delta_y: f64,
+        /// Timestamp in milliseconds.
+        timestamp_ms: u32,
+    },
+    /// A gesture ended (all fingers lifted).
+    ///
+    /// Emitted for both continuous and discrete tagged gestures.
+    GestureEnd {
+        /// User-defined tag from the bind config.
+        tag: String,
+        /// Whether the gesture completed (snapped to target) or cancelled (snapped back).
+        /// For discrete gestures, this is always `true`.
+        completed: bool,
+    },
 }
 
 impl From<Duration> for Timestamp {
