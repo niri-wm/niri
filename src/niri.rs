@@ -385,6 +385,7 @@ pub struct Niri {
 
     pub window_mru_ui: WindowMruUi,
     pub pending_mru_commit: Option<PendingMruCommit>,
+    pub pending_auto_raise: Option<PendingAutoRaise>,
 
     pub pick_window: Option<async_channel::Sender<Option<MappedId>>>,
     pub pick_color: Option<async_channel::Sender<Option<niri_ipc::PickedColor>>>,
@@ -621,6 +622,13 @@ pub struct PendingMruCommit {
     id: MappedId,
     token: RegistrationToken,
     stamp: Duration,
+}
+
+/// Pending auto-raise of a floating window after a focus change.
+#[derive(Debug)]
+pub struct PendingAutoRaise {
+    pub window_id: MappedId,
+    pub token: RegistrationToken,
 }
 
 impl RedrawState {
@@ -2538,6 +2546,7 @@ impl Niri {
 
             window_mru_ui,
             pending_mru_commit: None,
+            pending_auto_raise: None,
 
             pick_window: None,
             pick_color: None,
