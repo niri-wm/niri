@@ -1319,6 +1319,8 @@ mod tests {
                     active_gradient: None,
                     inactive_gradient: None,
                     urgent_gradient: None,
+                    fade_duration_ms: 0,
+                    gradient_spin_speed: 0.,
                 },
                 shadow: Shadow {
                     on: false,
