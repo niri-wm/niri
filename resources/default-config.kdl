@@ -90,12 +90,17 @@ input {
     //     //     pinch-threshold 30.0
     //     //     // How much spread must dominate swipe motion for pinch detection.
     //     //     pinch-ratio 2.0
-    //     //     // Multiplier from finger spread to overview toggle progress.
-    //     //     pinch-sensitivity 0.005
+    //     //     // Multiplier from finger spread to continuous pinch animation
+    //     //     // delta. Applies to all continuous pinch binds (overview,
+    //     //     // workspace switch, etc.). Ignores per-bind sensitivity.
+    //     //     pinch-sensitivity 1.0
     //     //     // Scales recognition-threshold for 4+ finger gestures.
     //     //     finger-threshold-scale 1.5
-    //     //     // Pixels of movement for IPC gesture progress to reach 1.0.
+    //     //     // Pixels of swipe movement for IPC gesture progress to reach ±1.0.
     //     //     gesture-progress-distance 200.0
+    //     //     // Pixels of pinch spread change for IPC progress to reach ±1.0.
+    //     //     // Signed: positive = pinch-out, negative = pinch-in.
+    //     //     pinch-progress-distance 100.0
     //     // }
     // }
 

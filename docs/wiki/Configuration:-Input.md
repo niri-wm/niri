@@ -115,7 +115,8 @@ input {
             // edge-threshold 20.0
             // pinch-threshold 30.0
             // pinch-ratio 2.0
-            // pinch-sensitivity 0.005
+            // pinch-sensitivity 1.0
+            // pinch-progress-distance 100.0
             // finger-threshold-scale 1.5
             // gesture-progress-distance 200.0
         }
@@ -300,9 +301,10 @@ The `touchscreen { gestures { } }` tuning parameters are:
 - `edge-threshold <float>`: distance in pixels from a screen edge within which a touch must start for it to count as an edge swipe (`TouchEdgeLeft`/`Right`/`Top`/`Bottom`). Touches beginning farther from the edge are treated as regular swipes. Default: `20.0`.
 - `pinch-threshold <float>`: how far fingers must move together or apart (as total spread change in pixels) before niri classifies the gesture as a pinch rather than a swipe. Default: `30.0`.
 - `pinch-ratio <float>`: ratio by which spread change must exceed linear swipe distance for a gesture to count as a pinch. Higher values make pinch detection stricter — the fingers really have to move apart/together rather than glide across the screen. Default: `2.0`.
-- `pinch-sensitivity <float>`: multiplier mapping finger spread change to overview toggle progress. Higher values make the overview reach fully open with less finger movement. Default: `0.005`.
+- `pinch-sensitivity <float>`: multiplier mapping finger spread change (in screen pixels) to continuous pinch animation delta (e.g. overview open/close progress during a pinch). At the default of `1.0`, one pixel of finger spread change contributes one pixel to the underlying gesture accumulator, which is then divided by the target animation's threshold (e.g. 300 px for overview open/close). A typical 3-finger pinch travels 200–250 px of spread, which maps comfortably across the 0→1 overview progress range at `1.0`. Higher values make continuous pinch actions reach completion with less finger movement; lower values give finer control at the cost of needing more travel. Applies to **all** pinch-bound continuous actions, not just overview — the bind's own `sensitivity=` property is ignored for pinch gestures because raw spread-delta pixels need very different scaling from linear swipe distances. Default: `1.0`.
 - `finger-threshold-scale <float>`: scaling applied to `recognition-threshold` for gestures with more than 3 fingers. The formula is `base * (1 + (fingers - 3) * (scale - 1))`, so with a base threshold of 16 and scale 1.5, a 4-finger gesture needs 24 px and a 5-finger gesture needs 32 px. Compensates for the extra movement spread that wider finger grips produce. Default: `1.5`.
-- `gesture-progress-distance <float>`: pixels of finger movement required for IPC `GestureProgress` events to reach `progress = 1.0`. Units are screen pixels. Tune this to make tagged external-app gestures (like sidebar drawers or scrubbers) feel right on your display. Default: `200.0`.
+- `gesture-progress-distance <float>`: pixels of finger movement required for IPC `GestureProgress` events on **swipe and edge** gestures to reach `progress = ±1.0`. Units are screen pixels. Tune this to make tagged external-app gestures (like sidebar drawers or scrubbers) feel right on your display. Default: `200.0`.
+- `pinch-progress-distance <float>`: pixels of finger spread change for IPC `GestureProgress` events on **pinch** gestures to reach `progress = ±1.0`. Signed: positive for pinch-out (spread growing), negative for pinch-in. Pinch spread changes are usually smaller than linear swipe distances, so this defaults lower than `gesture-progress-distance`. Default: `100.0`.
 
 Example:
 
@@ -312,7 +314,9 @@ input {
         gestures {
             recognition-threshold 26.0
             edge-threshold 30.0
+            pinch-sensitivity 1.0
             gesture-progress-distance 200.0
+            pinch-progress-distance 100.0
         }
     }
 }
