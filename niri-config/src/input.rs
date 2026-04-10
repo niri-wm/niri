@@ -472,7 +472,7 @@ pub enum ScreenEdge {
 
 /// Tuning parameters for touchscreen gesture recognition.
 ///
-/// The actual gesture binds (e.g. `Touch3SwipeUp`, `TouchEdgeLeft`) live in
+/// The actual gesture binds (e.g. `TouchSwipe3Up`, `TouchEdgeLeft`) live in
 /// the main `binds {}` block — this struct only controls how movement is
 /// classified and how IPC progress is reported.
 #[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]

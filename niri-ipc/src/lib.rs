@@ -1711,7 +1711,7 @@ pub enum Event {
     GestureBegin {
         /// User-defined tag from the bind config.
         tag: String,
-        /// The trigger name (e.g. "Touch3SwipeUp", "TouchpadSwipe3Left", "TouchEdgeLeft").
+        /// The trigger name (e.g. "TouchSwipe3Up", "TouchpadSwipe3Left", "TouchEdgeLeft").
         trigger: String,
         /// Number of fingers in the gesture.
         finger_count: u8,

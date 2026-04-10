@@ -1153,42 +1153,42 @@ impl FromStr for Key {
         } else if key.eq_ignore_ascii_case("TouchpadSwipe5Right") {
             Trigger::TouchpadSwipe5Right
         // Touchscreen swipe gestures
-        } else if key.eq_ignore_ascii_case("Touch3SwipeUp") {
+        } else if key.eq_ignore_ascii_case("TouchSwipe3Up") {
             Trigger::TouchSwipe3Up
-        } else if key.eq_ignore_ascii_case("Touch3SwipeDown") {
+        } else if key.eq_ignore_ascii_case("TouchSwipe3Down") {
             Trigger::TouchSwipe3Down
-        } else if key.eq_ignore_ascii_case("Touch3SwipeLeft") {
+        } else if key.eq_ignore_ascii_case("TouchSwipe3Left") {
             Trigger::TouchSwipe3Left
-        } else if key.eq_ignore_ascii_case("Touch3SwipeRight") {
+        } else if key.eq_ignore_ascii_case("TouchSwipe3Right") {
             Trigger::TouchSwipe3Right
-        } else if key.eq_ignore_ascii_case("Touch4SwipeUp") {
+        } else if key.eq_ignore_ascii_case("TouchSwipe4Up") {
             Trigger::TouchSwipe4Up
-        } else if key.eq_ignore_ascii_case("Touch4SwipeDown") {
+        } else if key.eq_ignore_ascii_case("TouchSwipe4Down") {
             Trigger::TouchSwipe4Down
-        } else if key.eq_ignore_ascii_case("Touch4SwipeLeft") {
+        } else if key.eq_ignore_ascii_case("TouchSwipe4Left") {
             Trigger::TouchSwipe4Left
-        } else if key.eq_ignore_ascii_case("Touch4SwipeRight") {
+        } else if key.eq_ignore_ascii_case("TouchSwipe4Right") {
             Trigger::TouchSwipe4Right
-        } else if key.eq_ignore_ascii_case("Touch5SwipeUp") {
+        } else if key.eq_ignore_ascii_case("TouchSwipe5Up") {
             Trigger::TouchSwipe5Up
-        } else if key.eq_ignore_ascii_case("Touch5SwipeDown") {
+        } else if key.eq_ignore_ascii_case("TouchSwipe5Down") {
             Trigger::TouchSwipe5Down
-        } else if key.eq_ignore_ascii_case("Touch5SwipeLeft") {
+        } else if key.eq_ignore_ascii_case("TouchSwipe5Left") {
             Trigger::TouchSwipe5Left
-        } else if key.eq_ignore_ascii_case("Touch5SwipeRight") {
+        } else if key.eq_ignore_ascii_case("TouchSwipe5Right") {
             Trigger::TouchSwipe5Right
         // Touchscreen pinch gestures
-        } else if key.eq_ignore_ascii_case("Touch3PinchIn") {
+        } else if key.eq_ignore_ascii_case("TouchPinch3In") {
             Trigger::TouchPinch3In
-        } else if key.eq_ignore_ascii_case("Touch3PinchOut") {
+        } else if key.eq_ignore_ascii_case("TouchPinch3Out") {
             Trigger::TouchPinch3Out
-        } else if key.eq_ignore_ascii_case("Touch4PinchIn") {
+        } else if key.eq_ignore_ascii_case("TouchPinch4In") {
             Trigger::TouchPinch4In
-        } else if key.eq_ignore_ascii_case("Touch4PinchOut") {
+        } else if key.eq_ignore_ascii_case("TouchPinch4Out") {
             Trigger::TouchPinch4Out
-        } else if key.eq_ignore_ascii_case("Touch5PinchIn") {
+        } else if key.eq_ignore_ascii_case("TouchPinch5In") {
             Trigger::TouchPinch5In
-        } else if key.eq_ignore_ascii_case("Touch5PinchOut") {
+        } else if key.eq_ignore_ascii_case("TouchPinch5Out") {
             Trigger::TouchPinch5Out
         // Touchscreen edge swipes
         } else if key.eq_ignore_ascii_case("TouchEdgeLeft") {
