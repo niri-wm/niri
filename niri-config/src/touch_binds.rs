@@ -1,7 +1,7 @@
 //! Touchscreen gesture types and continuous gesture detection.
 //!
 //! Gesture binds are now configured in the main `binds {}` block using
-//! `Touch*` trigger names (e.g. `Touch3SwipeUp`, `TouchEdgeLeft`).
+//! `Touch*` trigger names (e.g. `TouchSwipe3Up`, `TouchEdgeLeft`).
 //! This module provides the gesture type enum and continuous/discrete
 //! classification used by the touchscreen dispatch code.
 

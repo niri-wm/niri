@@ -78,7 +78,7 @@ input {
     //     // map-to-output "eDP-1"
     //     //
     //     // Touchscreen gesture binds live in the main binds {} block using
-    //     // triggers like Touch3SwipeUp, Touch4PinchIn, TouchEdgeLeft.
+    //     // triggers like TouchSwipe3Up, TouchPinch4In, TouchEdgeLeft.
     //     // See the wiki page "Gestures" for the full list.
     //     //
     //     // gestures {
