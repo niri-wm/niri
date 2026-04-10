@@ -125,6 +125,12 @@ pub struct ResolvedWindowRules {
 
     /// Rules for this window's popups.
     pub popups: ResolvedPopupsRules,
+
+    /// Forward touchscreen multi-finger gestures to this window instead of
+    /// letting niri's gesture recognizer consume them. Intended for apps that
+    /// implement their own gestures (browsers, drawing apps). Mod+gestures and
+    /// edge gestures still go to the compositor. Touchscreen only.
+    pub touchscreen_gesture_passthrough: Option<bool>,
 }
 
 impl<'a> WindowRef<'a> {
@@ -308,6 +314,10 @@ impl ResolvedWindowRules {
                     .merge_with(&rule.background_effect);
 
                 resolved.popups.merge_with(&rule.popups);
+
+                if let Some(x) = rule.touchscreen_gesture_passthrough {
+                    resolved.touchscreen_gesture_passthrough = Some(x);
+                }
             }
 
             resolved.open_on_output = open_on_output.map(|x| x.to_owned());

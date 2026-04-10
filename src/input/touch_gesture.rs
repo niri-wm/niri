@@ -47,7 +47,9 @@ use niri_config::touch_binds::{
 };
 use niri_config::Action;
 
+use crate::layout::LayoutElement;
 use crate::niri::{ActiveTouchBind, PointerVisibility, State, TouchEdgeSwipeState};
+use crate::utils::with_toplevel_role;
 
 /// Default sensitivity for touchscreen gestures (both edge and multi-finger).
 /// Lower than touchpad (1.0) because touchscreen deltas are in screen pixels.
@@ -164,8 +166,11 @@ impl State {
         // Check if we're tracking a multi-finger gesture (2+ fingers),
         // a locked gesture (direction decided), or an edge swipe.
         // If so, don't forward events to clients.
-        let tracking_gesture = self.niri.touch_gesture_points.len() > 2
-            || self.niri.touch_gesture_locked;
+        // Passthrough mode overrides — when set, the whole gesture forwards
+        // raw to the client regardless of finger count.
+        let tracking_gesture = (self.niri.touch_gesture_points.len() > 2
+            || self.niri.touch_gesture_locked)
+            && !self.niri.touchscreen_gesture_passthrough;
         let in_edge_zone = self.niri.touch_edge_swipe.is_some();
 
         let serial = SERIAL_COUNTER.next_serial();
@@ -173,6 +178,26 @@ impl State {
         let under = self.niri.contents_under(pos);
 
         let mod_key = self.backend.mod_key(&self.niri.config.borrow());
+
+        // Touchscreen gesture passthrough: if this is the first finger and it
+        // landed on a window whose rule opts into passthrough, flip the state
+        // flag so the recognizer stays out of the way for the whole gesture.
+        // Mod+ always bypasses (escape hatch — user explicitly asked for a
+        // compositor action). Edge zones also take priority and are handled
+        // above, so a passthrough window in a screen-edge zone still yields
+        // the edge swipe to niri.
+        if was_empty && !in_edge_zone && !self.niri.touchscreen_gesture_passthrough {
+            let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
+            let mods = modifiers_from_state(mods);
+            let mod_down = mods.contains(mod_key.to_modifiers());
+            if !mod_down {
+                if let Some(mapped) = self.niri.window_under(pos) {
+                    if mapped.rules().touchscreen_gesture_passthrough == Some(true) {
+                        self.niri.touchscreen_gesture_passthrough = true;
+                    }
+                }
+            }
+        }
 
         if in_edge_zone {
             // Edge zone touch — skip window activation and client forwarding.
@@ -329,8 +354,10 @@ impl State {
         }
 
         // Check if we're tracking a multi-finger gesture before removing this touch point.
-        let tracking_gesture = self.niri.touch_gesture_points.len() > 2
-            || self.niri.touch_gesture_locked;
+        // Passthrough gestures forward all up events to the client regardless of finger count.
+        let tracking_gesture = (self.niri.touch_gesture_points.len() > 2
+            || self.niri.touch_gesture_locked)
+            && !self.niri.touchscreen_gesture_passthrough;
 
         // Remove touch point from gesture tracking.
         self.niri.touch_gesture_points.remove(&Some(slot));
@@ -370,6 +397,7 @@ impl State {
         if self.niri.touch_gesture_points.is_empty() {
             self.niri.touch_gesture_cumulative = None;
             self.niri.touch_gesture_locked = false;
+            self.niri.touchscreen_gesture_passthrough = false;
             // Take the active bind to get the tag before clearing.
             let active_tag = self
                 .niri
@@ -424,9 +452,17 @@ impl State {
         };
         let slot = evt.slot();
 
-        // Track touch gesture with 2+ fingers.
+        // Track touch gesture with 2+ fingers. Skipped entirely under
+        // touchscreen gesture passthrough so the whole motion stream forwards
+        // raw to the client. `touch_gesture_points` is left untouched — slot
+        // cleanup in on_touch_up will still clear it.
         let mut gesture_handled = false;
-        if let Some(old_pos) = self.niri.touch_gesture_points.get(&Some(slot)).copied() {
+        let tracked_slot = if self.niri.touchscreen_gesture_passthrough {
+            None
+        } else {
+            self.niri.touch_gesture_points.get(&Some(slot)).copied()
+        };
+        if let Some(old_pos) = tracked_slot {
             // Calculate delta from this finger's movement.
             let delta_x = pos.x - old_pos.x;
             let delta_y = pos.y - old_pos.y;
@@ -665,6 +701,22 @@ impl State {
                     {
                         // Gesture recognized — clear cumulative.
                         self.niri.touch_gesture_cumulative = None;
+
+                        // Discoverability log: surface the app-id of whatever
+                        // window was under the touch at lock time, so users
+                        // debugging "why isn't my app getting gestures" can
+                        // see which app-id to add `touchscreen-gesture-passthrough`
+                        // for in their window rules.
+                        if let Some(mapped) = self.niri.window_under(pos) {
+                            let app_id = with_toplevel_role(mapped.toplevel(), |role| {
+                                role.app_id.clone()
+                            });
+                            tracing::debug!(
+                                "touch: captured {}-finger gesture over app-id={:?}",
+                                finger_count,
+                                app_id.unwrap_or_default(),
+                            );
+                        }
 
                         // Lock the gesture.
                         self.niri.touch_gesture_locked = true;
