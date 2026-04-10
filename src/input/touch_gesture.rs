@@ -41,7 +41,7 @@ use super::move_grab::MoveGrab;
 use super::touch_overview_grab::TouchOverviewGrab;
 use super::{find_configured_bind, modifiers_from_state, PointerOrTouchStartData};
 use niri_config::binds::Trigger;
-use niri_config::input::ScreenEdge;
+use niri_config::input::{EdgeZone, ScreenEdge};
 use niri_config::touch_binds::{
     continuous_gesture_kind, ContinuousGestureKind, TouchGestureType,
 };
@@ -116,21 +116,34 @@ impl State {
                 let size = self.niri.global_space.output_geometry(output).unwrap().size;
                 let config = self.niri.config.borrow();
                 let threshold = config.input.touchscreen.edge_threshold();
-                if let Some(edge) = detect_edge(pos_within_output, size, threshold) {
-                    // Check if there's a bind for this edge in main binds {}.
-                    let trigger = edge_to_trigger(edge);
+                if let Some((edge, zone)) = detect_edge(pos_within_output, size, threshold) {
+                    // Lookup order: zoned trigger first, then unzoned parent
+                    // as fallback. `zoned` records which one hit so that all
+                    // downstream lookups and the IPC name emitted on
+                    // gesture-begin stay consistent with the bind that fired.
                     let mod_key = self.backend.mod_key(&config);
                     let mods = self.niri.seat.get_keyboard().unwrap()
                         .modifier_state();
-                    let has_bind = find_configured_bind(
+                    let zoned_trigger = edge_zone_to_trigger(edge, zone);
+                    let parent_trigger = edge_to_trigger(edge);
+                    let zoned_hit = find_configured_bind(
                         config.binds.0.iter(),
                         mod_key,
-                        trigger,
+                        zoned_trigger,
                         mods,
                     ).is_some();
-                    if has_bind {
+                    let parent_hit = !zoned_hit
+                        && find_configured_bind(
+                            config.binds.0.iter(),
+                            mod_key,
+                            parent_trigger,
+                            mods,
+                        ).is_some();
+                    if zoned_hit || parent_hit {
                         self.niri.touch_edge_swipe = Some(TouchEdgeSwipeState::Pending {
                             edge,
+                            zone,
+                            zoned: zoned_hit,
                             cumulative: (0., 0.),
                             slot: Some(slot),
                         });
@@ -427,6 +440,8 @@ impl State {
                 None,
                 PendingAccumulate {
                     edge: ScreenEdge,
+                    zone: EdgeZone,
+                    zoned: bool,
                     cx: f64,
                     cy: f64,
                     edge_slot: Option<smithay::backend::input::TouchSlot>,
@@ -442,6 +457,8 @@ impl State {
             let edge_action = match &mut self.niri.touch_edge_swipe {
                 Some(TouchEdgeSwipeState::Pending {
                     edge,
+                    zone,
+                    zoned,
                     cumulative,
                     slot: edge_slot,
                 }) if Some(slot) == *edge_slot => {
@@ -449,6 +466,8 @@ impl State {
                     cumulative.1 += delta_y;
                     EdgeAction::PendingAccumulate {
                         edge: *edge,
+                        zone: *zone,
+                        zoned: *zoned,
                         cx: cumulative.0,
                         cy: cumulative.1,
                         edge_slot: *edge_slot,
@@ -467,7 +486,7 @@ impl State {
 
             match edge_action {
                 EdgeAction::PendingAccumulate {
-                    edge, cx, cy, edge_slot,
+                    edge, zone, zoned, cx, cy, edge_slot,
                 } => {
                     let threshold = {
                         let config = self.niri.config.borrow();
@@ -475,10 +494,18 @@ impl State {
                     };
 
                     if cx * cx + cy * cy >= threshold * threshold {
-                        // Look up the bind for this edge in main binds {}.
+                        // Re-look-up the bind, preferring the zoned trigger
+                        // if that's the one that matched at touch-down. The
+                        // `zoned` flag was decided in `on_touch_down` so the
+                        // same bind fires here regardless of whether a zoned
+                        // or parent bind is in the config.
+                        let trigger = if zoned {
+                            edge_zone_to_trigger(edge, zone)
+                        } else {
+                            edge_to_trigger(edge)
+                        };
                         let bind_info = {
                             let config = self.niri.config.borrow();
-                            let trigger = edge_to_trigger(edge);
                             let mod_key = self.backend.mod_key(&config);
                             let mods = self.niri.seat.get_keyboard().unwrap()
                                 .modifier_state();
@@ -494,9 +521,7 @@ impl State {
                         if let Some((kind, sensitivity, natural_scroll, tag, action)) = bind_info {
                             // Emit IPC GestureBegin if this bind has a tag.
                             if let Some(ref tag) = tag {
-                                let trigger_name = trigger_to_ipc_name(
-                                    Some(edge_to_trigger(edge)),
-                                );
+                                let trigger_name = trigger_to_ipc_name(Some(trigger));
                                 self.ipc_gesture_begin(
                                     tag.clone(),
                                     trigger_name,
@@ -510,6 +535,8 @@ impl State {
                                 self.niri.touch_edge_swipe =
                                     Some(TouchEdgeSwipeState::Active {
                                         edge,
+                                        zone,
+                                        zoned,
                                         kind,
                                         sensitivity,
                                         natural_scroll,
@@ -860,7 +887,10 @@ fn touch_gesture_to_trigger(gesture: TouchGestureType, finger_count: u8) -> Opti
     }
 }
 
-/// Convert a screen edge to a Trigger for bind lookup.
+/// Convert a screen edge to its unzoned (parent) Trigger for bind lookup.
+///
+/// Used both as the "match any zone" fallback when no zoned bind exists, and
+/// as the IPC name when an unzoned bind is the one that fired.
 fn edge_to_trigger(edge: ScreenEdge) -> Trigger {
     match edge {
         ScreenEdge::Left => Trigger::TouchEdgeLeft,
@@ -870,12 +900,41 @@ fn edge_to_trigger(edge: ScreenEdge) -> Trigger {
     }
 }
 
-/// Detect which screen edge a touch position is near, if any.
+/// Convert an (edge, zone) pair to its zoned Trigger for bind lookup.
+///
+/// The zone suffix uses directional words rotated per edge axis: Top/Bottom
+/// edges split along x (Left/Center/Right), Left/Right edges split along y
+/// (Top/Center/Bottom). `EdgeZone::{Start, Center, End}` is the abstract
+/// per-axis ordering; this function maps it to the concrete variant.
+fn edge_zone_to_trigger(edge: ScreenEdge, zone: EdgeZone) -> Trigger {
+    match (edge, zone) {
+        (ScreenEdge::Top, EdgeZone::Start) => Trigger::TouchEdgeTopLeft,
+        (ScreenEdge::Top, EdgeZone::Center) => Trigger::TouchEdgeTopCenter,
+        (ScreenEdge::Top, EdgeZone::End) => Trigger::TouchEdgeTopRight,
+        (ScreenEdge::Bottom, EdgeZone::Start) => Trigger::TouchEdgeBottomLeft,
+        (ScreenEdge::Bottom, EdgeZone::Center) => Trigger::TouchEdgeBottomCenter,
+        (ScreenEdge::Bottom, EdgeZone::End) => Trigger::TouchEdgeBottomRight,
+        (ScreenEdge::Left, EdgeZone::Start) => Trigger::TouchEdgeLeftTop,
+        (ScreenEdge::Left, EdgeZone::Center) => Trigger::TouchEdgeLeftCenter,
+        (ScreenEdge::Left, EdgeZone::End) => Trigger::TouchEdgeLeftBottom,
+        (ScreenEdge::Right, EdgeZone::Start) => Trigger::TouchEdgeRightTop,
+        (ScreenEdge::Right, EdgeZone::Center) => Trigger::TouchEdgeRightCenter,
+        (ScreenEdge::Right, EdgeZone::End) => Trigger::TouchEdgeRightBottom,
+    }
+}
+
+/// Detect which screen edge a touch position is near, if any, and which
+/// third of that edge it lies in.
+///
+/// The edge is the one closest to the touch point within `threshold`. The
+/// zone splits the perpendicular axis into equal thirds: for Top/Bottom the
+/// split is across x (Start = leftmost third, End = rightmost third); for
+/// Left/Right it is across y (Start = topmost third, End = bottommost third).
 fn detect_edge(
     pos: smithay::utils::Point<f64, smithay::utils::Logical>,
     size: smithay::utils::Size<i32, smithay::utils::Logical>,
     threshold: f64,
-) -> Option<ScreenEdge> {
+) -> Option<(ScreenEdge, EdgeZone)> {
     let x = pos.x;
     let y = pos.y;
     let w = size.w as f64;
@@ -901,7 +960,23 @@ fn detect_edge(
         }
     }
 
-    closest.map(|(edge, _)| edge)
+    let (edge, _) = closest?;
+
+    // Classify the perpendicular-axis position into thirds.
+    let (pos_along, extent) = match edge {
+        ScreenEdge::Top | ScreenEdge::Bottom => (x, w),
+        ScreenEdge::Left | ScreenEdge::Right => (y, h),
+    };
+    let third = extent / 3.0;
+    let zone = if pos_along < third {
+        EdgeZone::Start
+    } else if pos_along < third * 2.0 {
+        EdgeZone::Center
+    } else {
+        EdgeZone::End
+    };
+
+    Some((edge, zone))
 }
 
 /// Begin a continuous gesture animation.
@@ -1253,6 +1328,18 @@ fn trigger_to_ipc_name(trigger: Option<Trigger>) -> String {
         Trigger::TouchEdgeRight => "TouchEdgeRight",
         Trigger::TouchEdgeTop => "TouchEdgeTop",
         Trigger::TouchEdgeBottom => "TouchEdgeBottom",
+        Trigger::TouchEdgeTopLeft => "TouchEdgeTop:Left",
+        Trigger::TouchEdgeTopCenter => "TouchEdgeTop:Center",
+        Trigger::TouchEdgeTopRight => "TouchEdgeTop:Right",
+        Trigger::TouchEdgeBottomLeft => "TouchEdgeBottom:Left",
+        Trigger::TouchEdgeBottomCenter => "TouchEdgeBottom:Center",
+        Trigger::TouchEdgeBottomRight => "TouchEdgeBottom:Right",
+        Trigger::TouchEdgeLeftTop => "TouchEdgeLeft:Top",
+        Trigger::TouchEdgeLeftCenter => "TouchEdgeLeft:Center",
+        Trigger::TouchEdgeLeftBottom => "TouchEdgeLeft:Bottom",
+        Trigger::TouchEdgeRightTop => "TouchEdgeRight:Top",
+        Trigger::TouchEdgeRightCenter => "TouchEdgeRight:Center",
+        Trigger::TouchEdgeRightBottom => "TouchEdgeRight:Bottom",
         _ => "Unknown",
     }
     .to_string()
