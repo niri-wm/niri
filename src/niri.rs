@@ -1477,6 +1477,9 @@ impl State {
 
         self.niri.config_error_notification.hide();
 
+        // Cancel any pending auto-raise timer in case the feature was disabled.
+        self.niri.cancel_pending_auto_raise();
+
         // Find & orphan removed named workspaces.
         let mut removed_workspaces: Vec<String> = vec![];
         for ws in &self.niri.config.borrow().workspaces {
