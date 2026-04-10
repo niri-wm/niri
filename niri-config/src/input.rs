@@ -468,30 +468,72 @@ pub enum ScreenEdge {
     Bottom,
 }
 
+/// Tuning parameters for touchscreen gesture recognition.
+///
+/// The actual gesture binds (e.g. `Touch3SwipeUp`, `TouchEdgeLeft`) live in
+/// the main `binds {}` block — this struct only controls how movement is
+/// classified and how IPC progress is reported.
 #[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]
 pub struct TouchscreenGesturesConfig {
+    /// Distance in pixels fingers must move before a swipe gesture is
+    /// recognized and starts firing events. Lower values feel more responsive
+    /// but risk triggering on incidental finger drift. Default: 16.0.
     #[knuffel(child, unwrap(argument))]
     pub recognition_threshold: Option<f64>,
+    /// Distance in pixels from a screen edge within which a touch must start
+    /// for it to count as an edge swipe (`TouchEdgeLeft`/`Right`/`Top`/`Bottom`).
+    /// Touches beginning farther from the edge are treated as regular swipes.
+    /// Default: 20.0.
     #[knuffel(child, unwrap(argument))]
     pub edge_threshold: Option<f64>,
+    /// How far fingers must move together or apart (as total spread change in
+    /// pixels) before niri classifies the gesture as a pinch rather than a
+    /// swipe. Default: 30.0.
     #[knuffel(child, unwrap(argument))]
     pub pinch_threshold: Option<f64>,
+    /// Ratio by which spread change must exceed linear swipe distance for a
+    /// gesture to count as a pinch. Higher values make pinch detection stricter
+    /// — the fingers really have to move apart/together rather than glide
+    /// across the screen. Default: 2.0.
     #[knuffel(child, unwrap(argument))]
     pub pinch_ratio: Option<f64>,
+    /// Multiplier mapping finger spread change to overview toggle progress.
+    /// Higher values make the overview reach fully open with less finger
+    /// movement. Default: 0.005.
     #[knuffel(child, unwrap(argument))]
     pub pinch_sensitivity: Option<f64>,
+    /// Scaling applied to `recognition_threshold` for gestures with more than
+    /// 3 fingers. The formula is `base * (1 + (fingers - 3) * (scale - 1))`,
+    /// so with a base threshold of 16 and scale 1.5, a 4-finger gesture needs
+    /// 24 px and a 5-finger gesture needs 32 px. Compensates for the extra
+    /// movement spread that wider finger grips produce. Default: 1.5.
     #[knuffel(child, unwrap(argument))]
     pub finger_threshold_scale: Option<f64>,
-    /// Pixels of finger movement for IPC progress to reach 1.0 (screen pixels).
+    /// Pixels of finger movement for IPC `GestureProgress` events to reach
+    /// `progress = 1.0`. Units are screen pixels. Tune this to make tagged
+    /// external-app gestures (like sidebar drawers) feel right on your
+    /// display. Default: 200.0.
     #[knuffel(child, unwrap(argument))]
     pub gesture_progress_distance: Option<f64>,
 }
 
+/// Tuning parameters for touchpad gesture recognition.
+///
+/// The actual gesture binds (e.g. `TouchpadSwipe3Up`) live in the main
+/// `binds {}` block — this struct only controls how movement is classified
+/// and how IPC progress is reported.
 #[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]
 pub struct TouchpadGesturesConfig {
+    /// Distance in libinput delta units that fingers must move before a swipe
+    /// gesture is recognized. These units are acceleration-adjusted and not
+    /// directly comparable to touchscreen pixels. Default: 16.0.
     #[knuffel(child, unwrap(argument))]
     pub recognition_threshold: Option<f64>,
-    /// Libinput delta units of movement for IPC progress to reach 1.0 (acceleration-adjusted units).
+    /// Libinput delta units of finger movement for IPC `GestureProgress`
+    /// events to reach `progress = 1.0`. Because libinput acceleration curves
+    /// are nonlinear, the same physical swipe can produce different delta
+    /// magnitudes depending on speed — this value is not directly comparable
+    /// to the touchscreen `gesture-progress-distance`. Default: 40.0.
     #[knuffel(child, unwrap(argument))]
     pub gesture_progress_distance: Option<f64>,
 }

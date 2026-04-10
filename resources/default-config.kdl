@@ -40,6 +40,17 @@ input {
         // accel-profile "flat"
         // scroll-method "two-finger"
         // disabled-on-external-mouse
+
+        // Touchpad gesture binds live in the main binds {} block using
+        // triggers like TouchpadSwipe3Up, TouchpadSwipe4Down.
+        // See the wiki page "Gestures" for the full list.
+        //
+        // gestures {
+        //     // Libinput delta units of movement before a swipe is recognized.
+        //     recognition-threshold 16.0
+        //     // Libinput delta units for IPC gesture progress to reach 1.0.
+        //     gesture-progress-distance 40.0
+        // }
     }
 
     mouse {
@@ -65,31 +76,26 @@ input {
     //     // off
     //     // natural-scroll
     //     // map-to-output "eDP-1"
-    //     // gestures {
-    //     //     workspace-switch {
-    //     //         // off
-    //     //         finger-count 3
-    //     //         sensitivity 0.4
-    //     //     }
-    //     //     view-scroll {
-    //     //         // off
-    //     //         finger-count 3
-    //     //         sensitivity 0.4
-    //     //     }
-    //     //     overview-toggle {
-    //     //         // off
-    //     //         finger-count 4
-    //     //         sensitivity 0.4
-    //     //     }
-    //     //     recognition-threshold 16.0
     //     //
-    //     //     // Edge swipe gestures trigger when swiping from a screen edge.
-    //     //     // The action can be "view-scroll", "workspace-switch", or "overview-toggle".
+    //     // Touchscreen gesture binds live in the main binds {} block using
+    //     // triggers like Touch3SwipeUp, Touch4PinchIn, TouchEdgeLeft.
+    //     // See the wiki page "Gestures" for the full list.
+    //     //
+    //     // gestures {
+    //     //     // Pixels fingers must move before a swipe is recognized.
+    //     //     recognition-threshold 16.0
+    //     //     // Distance from screen edge (px) where an edge swipe can start.
     //     //     edge-threshold 20.0
-    //     //     // edge-swipe-left "view-scroll"
-    //     //     // edge-swipe-right "view-scroll"
-    //     //     // edge-swipe-top "workspace-switch"
-    //     //     // edge-swipe-bottom "overview-toggle"
+    //     //     // Finger spread change (px) required to classify a pinch.
+    //     //     pinch-threshold 30.0
+    //     //     // How much spread must dominate swipe motion for pinch detection.
+    //     //     pinch-ratio 2.0
+    //     //     // Multiplier from finger spread to overview toggle progress.
+    //     //     pinch-sensitivity 0.005
+    //     //     // Scales recognition-threshold for 4+ finger gestures.
+    //     //     finger-threshold-scale 1.5
+    //     //     // Pixels of movement for IPC gesture progress to reach 1.0.
+    //     //     gesture-progress-distance 200.0
     //     // }
     // }
 
