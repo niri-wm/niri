@@ -20,6 +20,7 @@ pub struct Input {
     pub disable_power_key_handling: bool,
     pub warp_mouse_to_focus: Option<WarpMouseToFocus>,
     pub focus_follows_mouse: Option<FocusFollowsMouse>,
+    pub auto_raise_on_focus: Option<AutoRaiseOnFocus>,
     pub workspace_auto_back_and_forth: bool,
     pub mod_key: Option<ModKey>,
     pub mod_key_nested: Option<ModKey>,
@@ -47,6 +48,8 @@ pub struct InputPart {
     pub warp_mouse_to_focus: Option<WarpMouseToFocus>,
     #[knuffel(child)]
     pub focus_follows_mouse: Option<FocusFollowsMouse>,
+    #[knuffel(child)]
+    pub auto_raise_on_focus: Option<AutoRaiseOnFocus>,
     #[knuffel(child)]
     pub workspace_auto_back_and_forth: Option<Flag>,
     #[knuffel(child, unwrap(argument, str))]
@@ -78,6 +81,7 @@ impl MergeWith<InputPart> for Input {
             (self, part),
             warp_mouse_to_focus,
             focus_follows_mouse,
+            auto_raise_on_focus,
             mod_key,
             mod_key_nested,
         );
@@ -383,6 +387,12 @@ pub struct Touch {
 pub struct FocusFollowsMouse {
     #[knuffel(property, str)]
     pub max_scroll_amount: Option<Percent>,
+}
+
+#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+pub struct AutoRaiseOnFocus {
+    #[knuffel(property)]
+    pub delay_ms: Option<u32>,
 }
 
 #[derive(knuffel::Decode, Debug, PartialEq, Eq, Clone, Copy)]
@@ -743,5 +753,41 @@ mod tests {
             2.0,
         )
         ");
+    }
+
+    #[test]
+    fn parse_auto_raise_on_focus_with_delay() {
+        let parsed = do_parse(
+            r#"
+            auto-raise-on-focus delay-ms=300
+            "#,
+        );
+
+        assert_debug_snapshot!(parsed.auto_raise_on_focus, @r#"
+        Some(
+            AutoRaiseOnFocus {
+                delay_ms: Some(
+                    300,
+                ),
+            },
+        )
+        "#);
+    }
+
+    #[test]
+    fn parse_auto_raise_on_focus_no_delay() {
+        let parsed = do_parse(
+            r#"
+            auto-raise-on-focus
+            "#,
+        );
+
+        assert_debug_snapshot!(parsed.auto_raise_on_focus, @r#"
+        Some(
+            AutoRaiseOnFocus {
+                delay_ms: None,
+            },
+        )
+        "#);
     }
 }
