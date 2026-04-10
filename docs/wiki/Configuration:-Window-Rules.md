@@ -99,6 +99,7 @@ window-rule {
     clip-to-geometry true
     tiled-state true
     baba-is-float true
+    touchscreen-gesture-passthrough true
 
     min-width 100
     max-width 200
@@ -908,6 +909,41 @@ window-rule {
 https://github.com/user-attachments/assets/3f4cb1a4-40b2-4766-98b7-eec014c19509
 
 </video>
+
+#### `touchscreen-gesture-passthrough`
+
+Forward touchscreen multi-finger gestures to matching windows instead of letting niri's gesture recognizer consume them.
+
+By default, niri claims 3+ finger touchscreen swipes and pinches for compositor actions like workspace switching and overview toggle.
+This rule opts specific windows out of that behavior so apps that implement their own touch gestures (browsers, drawing apps, mapping tools) receive the raw touch events.
+
+Escape hatches that still work on passthrough windows:
+
+- **Mod+touch gestures** still trigger compositor binds — holding the mod key always bypasses passthrough so you can invoke niri actions even on a passthrough window.
+- **Edge swipes** still belong to niri — a swipe that starts in a screen-edge zone runs the edge gesture even if the window under it has passthrough enabled.
+- **2-finger touches** are unaffected — they already forward to clients by default regardless of this rule.
+
+This rule is touchscreen-only. Touchpad gestures are not affected.
+
+To discover which app-id to match, run niri with `RUST_LOG=niri=debug` and watch for lines like `touch: captured 3-finger gesture over app-id="org.mozilla.firefox"` after performing a gesture on the target window.
+
+```kdl
+// Let Firefox handle touch gestures itself (page navigation, pinch-zoom).
+window-rule {
+    match app-id="firefox"
+    match app-id="org.mozilla.firefox"
+
+    touchscreen-gesture-passthrough true
+}
+
+// Same for a drawing app and Blender.
+window-rule {
+    match app-id="org.kde.krita"
+    match app-id="org.blender.Blender"
+
+    touchscreen-gesture-passthrough true
+}
+```
 
 #### Size Overrides
 

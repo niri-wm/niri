@@ -119,6 +119,12 @@ pub struct ResolvedWindowRules {
 
     /// Override whether to set the Tiled xdg-toplevel state on the window.
     pub tiled_state: Option<bool>,
+
+    /// Forward touchscreen multi-finger gestures to this window instead of
+    /// letting niri's gesture recognizer consume them. Intended for apps that
+    /// implement their own gestures (browsers, drawing apps). Mod+gestures and
+    /// edge gestures still go to the compositor. Touchscreen only.
+    pub touchscreen_gesture_passthrough: Option<bool>,
 }
 
 impl<'a> WindowRef<'a> {
@@ -295,6 +301,9 @@ impl ResolvedWindowRules {
                 }
                 if let Some(x) = rule.tiled_state {
                     resolved.tiled_state = Some(x);
+                }
+                if let Some(x) = rule.touchscreen_gesture_passthrough {
+                    resolved.touchscreen_gesture_passthrough = Some(x);
                 }
             }
 

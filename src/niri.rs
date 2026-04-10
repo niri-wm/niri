@@ -476,6 +476,12 @@ pub struct Niri {
     /// While locked, all touch events are suppressed from clients until
     /// all fingers are lifted, preventing leaked inputs mid-gesture.
     pub touch_gesture_locked: bool,
+    /// Set when the first finger of a touch gesture landed on a window with
+    /// `touchscreen-gesture-passthrough true`. While set, the gesture
+    /// recognizer is bypassed and touch events forward directly to the
+    /// client for the lifetime of the gesture (until all fingers lift).
+    /// Cleared in `on_touch_up` when `touch_gesture_points` becomes empty.
+    pub touchscreen_gesture_passthrough: bool,
     /// Active touch gesture bind (after direction decided and bind matched).
     pub touch_active_bind: Option<ActiveTouchBind>,
     /// Initial spread (average distance from centroid) when 3+ fingers first tracked.
@@ -2638,6 +2644,7 @@ impl Niri {
             touch_gesture_cumulative: None,
             touch_edge_swipe: None,
             touch_gesture_locked: false,
+            touchscreen_gesture_passthrough: false,
             touch_active_bind: None,
             touch_gesture_initial_spread: None,
             overview_scroll_swipe_gesture: ScrollSwipeGesture::new(),
