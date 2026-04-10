@@ -86,12 +86,22 @@ impl State {
         if !was_empty {
             if self.niri.touch_gesture_locked {
                 // Unlock: end current gesture animations, restart recognition.
+                // If the gesture being interrupted was tagged, emit GestureEnd
+                // with completed=false — a consumer that received GestureBegin
+                // is contractually owed a matching GestureEnd even when the
+                // gesture is cancelled by a new finger landing.
                 self.niri.touch_gesture_locked = false;
-                self.niri.touch_active_bind = None;
-                self.niri.touch_pinch_active = false;
+                let cancelled_tag = self
+                    .niri
+                    .touch_active_bind
+                    .take()
+                    .and_then(ActiveTouchBind::into_tag);
                 self.niri.layout.workspace_switch_gesture_end(Some(false));
                 self.niri.layout.view_offset_gesture_end(Some(false));
                 self.niri.layout.overview_gesture_end();
+                if let Some(tag) = cancelled_tag {
+                    self.ipc_gesture_end(tag, false);
+                }
             }
             self.niri.touch_gesture_cumulative = Some((0., 0.));
             if self.niri.touch_gesture_points.len() >= 3 {
@@ -312,14 +322,48 @@ impl State {
         // Remove touch point from gesture tracking.
         self.niri.touch_gesture_points.remove(&Some(slot));
 
+        // Pinch basis rebase on finger-lift.
+        //
+        // `calculate_spread()` is a purely geometric quantity of the point
+        // set (average distance from centroid). When a finger lifts, the
+        // set changes and the spread can jump by hundreds of pixels in a
+        // single event — not because fingers moved, but because the
+        // geometry did. Feeding that spurious delta into the SwipeTracker
+        // contaminates both `pos()` and `velocity()` and causes
+        // `projected_end_pos` to overshoot the commit threshold, which is
+        // why pinch gestures were always snapping to overview-open
+        // regardless of direction.
+        //
+        // Fix: rebase `last_spread` to the post-removal spread so the next
+        // motion event computes `incremental ≈ 0` across the
+        // discontinuity. Shift `start_spread` by the same delta so the IPC
+        // absolute offset `(current - start)` stays continuous for
+        // tagged consumers.
+        if self.niri.touch_gesture_locked {
+            if let Some(ActiveTouchBind::Pinch {
+                start_spread,
+                last_spread,
+                ..
+            }) = self.niri.touch_active_bind.as_mut()
+            {
+                let new_spread = calculate_spread(&self.niri.touch_gesture_points);
+                let shift = new_spread - *last_spread;
+                *last_spread = new_spread;
+                *start_spread += shift;
+            }
+        }
+
         // End gesture when all fingers are lifted.
         if self.niri.touch_gesture_points.is_empty() {
             self.niri.touch_gesture_cumulative = None;
             self.niri.touch_gesture_locked = false;
             // Take the active bind to get the tag before clearing.
-            let active_tag = self.niri.touch_active_bind.take().and_then(|b| b.tag);
+            let active_tag = self
+                .niri
+                .touch_active_bind
+                .take()
+                .and_then(ActiveTouchBind::into_tag);
             self.niri.touch_gesture_initial_spread = None;
-            self.niri.touch_pinch_active = false;
 
             // End any ongoing gesture animations.
             if let Some(output) = self.niri.layout.workspace_switch_gesture_end(Some(true)) {
@@ -514,43 +558,34 @@ impl State {
                 let timestamp = Duration::from_micros(evt.time());
                 gesture_handled = true;
 
-                // Feed ongoing continuous gesture if one is active.
+                // Feed ongoing continuous gesture if one is active. Swipe and
+                // pinch ride the same `touch_active_bind` slot but take
+                // different feed paths — swipes are driven by linear dx/dy,
+                // pinches by finger spread delta.
                 if let Some(ref active) = self.niri.touch_active_bind {
-                    let kind = active.kind;
-                    let sensitivity = active.sensitivity;
-                    let natural = active.natural_scroll;
-                    let tag = active.tag.clone();
-                    feed_continuous_gesture(
-                        self, kind, delta_x, delta_y, sensitivity, natural, timestamp,
-                        tag.as_deref(),
-                    );
-                } else if self.niri.touch_pinch_active {
-                    // Feed pinch spread delta to overview gesture.
-                    // NOTE: Continuous pinch → overview works but feels jittery
-                    // compared to swipe → overview, because the spread delta
-                    // (radial finger movement) maps poorly to the linear
-                    // overview animation. For best UX, bind pinch to discrete
-                    // open-overview / close-overview instead of continuous
-                    // toggle-overview.
-                    let config = self.niri.config.borrow();
-                    let pinch_sensitivity = config.input.touchscreen.pinch_sensitivity();
-                    drop(config);
-                    let current_spread = calculate_spread(&self.niri.touch_gesture_points);
-                    let initial = self.niri.touch_gesture_initial_spread.unwrap_or(current_spread);
-                    let spread_delta = current_spread - initial;
-                    // Pinch in = negative spread = open overview (positive delta).
-                    let ov_delta = -spread_delta * pinch_sensitivity;
-                    if let Some(redraw) = self
-                        .niri
-                        .layout
-                        .overview_gesture_update(ov_delta, timestamp)
-                    {
-                        if redraw {
-                            self.niri.queue_redraw_all();
+                    match active {
+                        ActiveTouchBind::Swipe {
+                            kind,
+                            sensitivity,
+                            natural_scroll,
+                            tag,
+                            ..
+                        } => {
+                            let kind = *kind;
+                            let sensitivity = *sensitivity;
+                            let natural = *natural_scroll;
+                            let tag = tag.clone();
+                            feed_continuous_gesture(
+                                self, kind, delta_x, delta_y, sensitivity, natural, timestamp,
+                                tag.as_deref(),
+                            );
+                        }
+                        ActiveTouchBind::Pinch { kind, tag, .. } => {
+                            let kind = *kind;
+                            let tag = tag.clone();
+                            feed_continuous_pinch(self, kind, timestamp, tag.as_deref());
                         }
                     }
-                    // Update initial spread so delta is incremental.
-                    self.niri.touch_gesture_initial_spread = Some(current_spread);
                 } else if let Some((cx, cy)) = &mut self.niri.touch_gesture_cumulative {
                     // Recognition phase: accumulate raw deltas.
                     *cx += delta_x;
@@ -668,20 +703,28 @@ impl State {
 
                             if let Some(kind) = kind {
                                 // Continuous gesture — begin animation and store active bind.
-                                if is_pinch {
-                                    // Pinch uses a special continuous feed path.
-                                    begin_continuous_gesture(self, kind, pos);
-                                    self.niri.touch_pinch_active = true;
+                                begin_continuous_gesture(self, kind, pos);
+                                let active = if is_pinch {
+                                    ActiveTouchBind::Pinch {
+                                        kind,
+                                        tag,
+                                        ipc_progress: 0.0,
+                                        start_spread: current_spread,
+                                        // Initialize last_spread = start_spread so the
+                                        // first feed frame computes incremental ≈ 0,
+                                        // avoiding a spurious jump on the recognition frame.
+                                        last_spread: current_spread,
+                                    }
                                 } else {
-                                    begin_continuous_gesture(self, kind, pos);
-                                    self.niri.touch_active_bind = Some(ActiveTouchBind {
+                                    ActiveTouchBind::Swipe {
                                         kind,
                                         sensitivity,
                                         natural_scroll,
                                         tag,
                                         ipc_progress: 0.0,
-                                    });
-                                }
+                                    }
+                                };
+                                self.niri.touch_active_bind = Some(active);
                             } else {
                                 // Discrete action — fire once.
                                 if !matches!(action, Action::Noop) {
@@ -753,7 +796,11 @@ impl State {
         };
 
         // Collect tags for IPC GestureEnd before clearing state.
-        let active_tag = self.niri.touch_active_bind.take().and_then(|b| b.tag);
+        let active_tag = self
+            .niri
+            .touch_active_bind
+            .take()
+            .and_then(ActiveTouchBind::into_tag);
         let edge_tag = match &self.niri.touch_edge_swipe {
             Some(TouchEdgeSwipeState::Active { tag, .. }) => tag.clone(),
             _ => None,
@@ -765,7 +812,6 @@ impl State {
         self.niri.touch_edge_swipe = None;
         self.niri.touch_gesture_locked = false;
         self.niri.touch_gesture_initial_spread = None;
-        self.niri.touch_pinch_active = false;
 
         // Cancel any ongoing gesture animations.
         self.niri.layout.workspace_switch_gesture_end(Some(false));
@@ -990,10 +1036,13 @@ fn feed_continuous_gesture(
             }
         };
 
-        // Update accumulated progress on the active touch bind or edge swipe.
-        let progress = if let Some(ref mut active) = state.niri.touch_active_bind {
-            active.ipc_progress += adjusted_delta / progress_unit;
-            active.ipc_progress
+        // Update accumulated progress on the active Swipe bind or edge swipe.
+        // Pinches take the `feed_continuous_pinch` path and never reach here.
+        let progress = if let Some(ActiveTouchBind::Swipe { ipc_progress, .. }) =
+            state.niri.touch_active_bind.as_mut()
+        {
+            *ipc_progress += adjusted_delta / progress_unit;
+            *ipc_progress
         } else if let Some(TouchEdgeSwipeState::Active {
             ref mut ipc_progress, ..
         }) = state.niri.touch_edge_swipe
@@ -1001,12 +1050,129 @@ fn feed_continuous_gesture(
             *ipc_progress += adjusted_delta / progress_unit;
             *ipc_progress
         } else {
-            // Pinch or other — no accumulator, compute from delta alone.
+            // Fallback: no accumulator reachable (shouldn't happen on the
+            // hot path — the caller populates one of the two state slots
+            // before calling here).
             adjusted_delta / progress_unit
         };
 
         let ts_ms = timestamp.as_millis() as u32;
         state.ipc_gesture_progress(tag.to_string(), progress, delta_x, delta_y, ts_ms);
+    }
+}
+
+/// Feed spread delta to an active continuous pinch gesture.
+///
+/// Mirrors `feed_continuous_gesture` but drives the animation from change in
+/// finger spread instead of linear dx/dy. Works for any finger count ≥ 3
+/// (3-finger, 4-finger, 5-finger pinches all ride this path).
+///
+/// Sign convention: positive incremental spread = pinch-out (fingers spreading),
+/// negative = pinch-in. For OverviewToggle we negate so pinch-in opens, matching
+/// the legacy hardcoded behavior.
+///
+/// Uses `pinch_sensitivity` from the touchscreen gestures config for the
+/// animation drive — not the bind's `sensitivity` property. Pinch has its
+/// own tuning knob because raw spread-delta pixels need very different
+/// scaling from linear swipe distances. At the default `1.0`, one pixel of
+/// spread change contributes one pixel to the underlying gesture
+/// accumulator, matching the scale swipes use.
+fn feed_continuous_pinch(
+    state: &mut State,
+    kind: ContinuousGestureKind,
+    timestamp: Duration,
+    tag: Option<&str>,
+) {
+    // Batch the two config reads so we only borrow RefCell once per call.
+    let (pinch_sensitivity, progress_unit) = {
+        let config = state.niri.config.borrow();
+        (
+            config.input.touchscreen.pinch_sensitivity(),
+            config.input.touchscreen.pinch_progress_distance(),
+        )
+    };
+
+    let current_spread = calculate_spread(&state.niri.touch_gesture_points);
+
+    // Destructure the active Pinch variant directly. If the active bind is
+    // anything else (or None), something is badly wrong with the dispatch in
+    // on_touch_motion — bail out cleanly rather than panic.
+    let Some(ActiveTouchBind::Pinch {
+        start_spread,
+        last_spread,
+        ..
+    }) = state.niri.touch_active_bind.as_mut()
+    else {
+        return;
+    };
+    let incremental = current_spread - *last_spread;
+    *last_spread = current_spread;
+    let start_spread = *start_spread;
+
+    match kind {
+        ContinuousGestureKind::OverviewToggle => {
+            // Pinch-in (negative incremental) → positive anim delta → overview opens.
+            let delta = -incremental * pinch_sensitivity;
+            if let Some(redraw) = state
+                .niri
+                .layout
+                .overview_gesture_update(delta, timestamp)
+            {
+                if redraw {
+                    state.niri.queue_redraw_all();
+                }
+            }
+        }
+        ContinuousGestureKind::WorkspaceSwitch => {
+            // Semantically odd but not broken: pinch-out scrolls workspaces down.
+            let delta = incremental * pinch_sensitivity;
+            if state
+                .niri
+                .layout
+                .workspace_switch_gesture_update(delta, timestamp, true)
+                .is_some()
+            {
+                state.niri.queue_redraw_all();
+            }
+        }
+        ContinuousGestureKind::ViewScroll => {
+            let delta = incremental * pinch_sensitivity;
+            if state
+                .niri
+                .layout
+                .view_offset_gesture_update(delta, timestamp, true)
+                .is_some()
+            {
+                state.niri.queue_redraw_all();
+            }
+        }
+        ContinuousGestureKind::Noop => {
+            // No compositor animation — IPC progress is emitted below.
+        }
+    }
+
+    // Emit IPC GestureProgress for tagged pinch binds.
+    if let Some(tag) = tag {
+        // Signed, unbounded: positive = pinch-out, negative = pinch-in.
+        // Unlike swipes, pinch progress is absolute (computed from start_spread
+        // each frame) rather than accumulated — reversing the pinch gives a
+        // direct inverse, with no drift from accumulated float error.
+        let progress = (current_spread - start_spread) / progress_unit;
+        if let Some(ActiveTouchBind::Pinch { ipc_progress, .. }) =
+            state.niri.touch_active_bind.as_mut()
+        {
+            *ipc_progress = progress;
+        }
+        let ts_ms = timestamp.as_millis() as u32;
+        // Pinch has no natural 2D delta: the gesture is radial, not linear.
+        // We report (delta_x=0, delta_y=incremental_spread) by convention:
+        //   - Consumers that only read `progress` get the right answer.
+        //   - Consumers that want per-frame motion magnitude can read delta_y.
+        //   - Consumers that happen to read delta_x for a pinch get a stable 0
+        //     instead of garbage, so a reversed-sign bug is impossible.
+        // This convention is documented on the GestureProgress struct in
+        // niri-ipc/src/lib.rs.
+        state.ipc_gesture_progress(tag.to_string(), progress, 0.0, incremental, ts_ms);
     }
 }
 

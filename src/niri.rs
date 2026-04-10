@@ -225,14 +225,54 @@ pub struct ActiveSwipeBind {
 }
 
 /// State for an active multi-finger touch gesture (after bind matched).
-pub struct ActiveTouchBind {
-    pub kind: ContinuousGestureKind,
-    pub sensitivity: f64,
-    pub natural_scroll: bool,
-    /// IPC tag for gesture events.
-    pub tag: Option<String>,
-    /// Accumulated progress for IPC (0.0 = start, 1.0 = one unit).
-    pub ipc_progress: f64,
+///
+/// Split by gesture shape: swipes carry linear dx/dy state; pinches carry
+/// finger-spread state. Using an enum here (rather than a shared struct
+/// with a flag) means illegal states like "swipe with a pinch start spread"
+/// are unrepresentable, mirroring the `TouchEdgeSwipeState::Pending/Active`
+/// pattern used elsewhere in this file.
+pub enum ActiveTouchBind {
+    Swipe {
+        kind: ContinuousGestureKind,
+        sensitivity: f64,
+        natural_scroll: bool,
+        /// IPC tag for gesture events.
+        tag: Option<String>,
+        /// Accumulated progress for IPC. Signed and unbounded — grows as the
+        /// finger moves in the recognized direction, goes negative on reversal,
+        /// and can exceed `±1.0` on overshoot.
+        ipc_progress: f64,
+    },
+    Pinch {
+        kind: ContinuousGestureKind,
+        /// IPC tag for gesture events.
+        tag: Option<String>,
+        /// Absolute IPC progress — recomputed each feed frame as
+        /// `(current - start) / pinch_progress_distance`. Signed: positive
+        /// for pinch-out, negative for pinch-in. Non-monotonic: reversing
+        /// the pinch reverses the progress.
+        ipc_progress: f64,
+        /// Finger spread at the moment the pinch was recognized.
+        start_spread: f64,
+        /// Finger spread at the previous motion event. Subtracted from the
+        /// current spread to produce the incremental delta that drives the
+        /// animation.
+        last_spread: f64,
+    },
+}
+
+impl ActiveTouchBind {
+    pub fn kind(&self) -> ContinuousGestureKind {
+        match self {
+            Self::Swipe { kind, .. } | Self::Pinch { kind, .. } => *kind,
+        }
+    }
+
+    pub fn into_tag(self) -> Option<String> {
+        match self {
+            Self::Swipe { tag, .. } | Self::Pinch { tag, .. } => tag,
+        }
+    }
 }
 
 pub struct Niri {
@@ -435,8 +475,6 @@ pub struct Niri {
     pub touch_active_bind: Option<ActiveTouchBind>,
     /// Initial spread (average distance from centroid) when 3+ fingers first tracked.
     pub touch_gesture_initial_spread: Option<f64>,
-    /// Whether a pinch gesture is actively feeding the overview animation.
-    pub touch_pinch_active: bool,
     pub overview_scroll_swipe_gesture: ScrollSwipeGesture,
     pub vertical_wheel_tracker: ScrollTracker,
     pub horizontal_wheel_tracker: ScrollTracker,
@@ -2647,7 +2685,6 @@ impl Niri {
             touch_gesture_locked: false,
             touch_active_bind: None,
             touch_gesture_initial_spread: None,
-            touch_pinch_active: false,
             overview_scroll_swipe_gesture: ScrollSwipeGesture::new(),
             vertical_wheel_tracker: ScrollTracker::new(120),
             horizontal_wheel_tracker: ScrollTracker::new(120),
