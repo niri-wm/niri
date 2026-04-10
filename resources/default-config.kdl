@@ -79,6 +79,11 @@ input {
     //     //
     //     // Touchscreen gesture binds live in the main binds {} block using
     //     // triggers like TouchSwipe3Up, TouchPinch4In, TouchEdgeLeft.
+    //     // Edges can also be split into thirds with a zone suffix, e.g.
+    //     // TouchEdgeTop:Left / TouchEdgeTop:Center / TouchEdgeTop:Right
+    //     // (Top/Bottom use Left/Center/Right; Left/Right use Top/Center/
+    //     // Bottom). The parent bind (e.g. TouchEdgeTop) still works as a
+    //     // fallback for zones without a dedicated bind.
     //     // See the wiki page "Gestures" for the full list.
     //     //
     //     // gestures {

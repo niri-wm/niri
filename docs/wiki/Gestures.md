@@ -132,7 +132,41 @@ binds {
 }
 ```
 
-Available triggers: `TouchEdgeLeft`, `TouchEdgeRight`, `TouchEdgeTop`, `TouchEdgeBottom`. The edge trigger zone width is set by `edge-threshold` in the `touchscreen { gestures { } }` block.
+Available parent triggers: `TouchEdgeLeft`, `TouchEdgeRight`, `TouchEdgeTop`, `TouchEdgeBottom`. The edge trigger zone width is set by `edge-threshold` in the `touchscreen { gestures { } }` block.
+
+##### Edge zones
+
+<sup>Since: next</sup>
+
+Each edge is also split into three zones along its perpendicular axis so you can bind separate actions to different parts of the same edge (like Android's status bar → notification tray vs. quick-settings split, or a top-right screenshot gesture). Use the zone suffix syntax `TouchEdge<Edge>:<Zone>`. The suffix words rotate per edge to match the direction of the split:
+
+| Edge | Zone suffixes | Meaning |
+| --- | --- | --- |
+| `TouchEdgeTop` | `:Left` / `:Center` / `:Right` | thirds along the x-axis |
+| `TouchEdgeBottom` | `:Left` / `:Center` / `:Right` | thirds along the x-axis |
+| `TouchEdgeLeft` | `:Top` / `:Center` / `:Bottom` | thirds along the y-axis |
+| `TouchEdgeRight` | `:Top` / `:Center` / `:Bottom` | thirds along the y-axis |
+
+```kdl
+binds {
+    // Split the top edge into three independent actions.
+    TouchEdgeTop:Left    { spawn "notify-send" "left"; }
+    TouchEdgeTop:Center  { spawn "notify-send" "pull down notifications"; }
+    TouchEdgeTop:Right   { spawn "screenshot.sh"; }
+
+    // Bottom-right corner for the overview; middle-bottom for app drawer.
+    TouchEdgeBottom:Center { spawn "rofi" "-show" "drun"; }
+    TouchEdgeBottom:Right  { toggle-overview; }
+
+    // Parent bind is still valid. If no zoned bind hits for a given touch,
+    // the parent trigger is used as a fallback — so existing configs keep
+    // working unchanged, and zone binds simply override the parent on the
+    // portion of the edge where they apply.
+    TouchEdgeLeft { focus-column-right; }
+}
+```
+
+The compact `CamelCase` form (e.g. `TouchEdgeTopLeft`) also parses, but the colon-suffixed form is preferred in docs and in the wiki because it makes the parent / zone relationship visible at a glance.
 
 Tuning parameters for touchscreen gesture recognition all live in the `input { touchscreen { gestures { } } }` subblock — see [Configuration: Input](./Configuration:-Input.md#touchscreen).
 

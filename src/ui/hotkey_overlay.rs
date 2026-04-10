@@ -595,6 +595,18 @@ fn key_name(screen_reader: bool, mod_key: ModKey, key: &Key) -> String {
         Trigger::TouchEdgeRight => String::from("Touch Edge Right"),
         Trigger::TouchEdgeTop => String::from("Touch Edge Top"),
         Trigger::TouchEdgeBottom => String::from("Touch Edge Bottom"),
+        Trigger::TouchEdgeTopLeft => String::from("Touch Edge Top-Left"),
+        Trigger::TouchEdgeTopCenter => String::from("Touch Edge Top-Center"),
+        Trigger::TouchEdgeTopRight => String::from("Touch Edge Top-Right"),
+        Trigger::TouchEdgeBottomLeft => String::from("Touch Edge Bottom-Left"),
+        Trigger::TouchEdgeBottomCenter => String::from("Touch Edge Bottom-Center"),
+        Trigger::TouchEdgeBottomRight => String::from("Touch Edge Bottom-Right"),
+        Trigger::TouchEdgeLeftTop => String::from("Touch Edge Left-Top"),
+        Trigger::TouchEdgeLeftCenter => String::from("Touch Edge Left-Center"),
+        Trigger::TouchEdgeLeftBottom => String::from("Touch Edge Left-Bottom"),
+        Trigger::TouchEdgeRightTop => String::from("Touch Edge Right-Top"),
+        Trigger::TouchEdgeRightCenter => String::from("Touch Edge Right-Center"),
+        Trigger::TouchEdgeRightBottom => String::from("Touch Edge Right-Bottom"),
     };
     name.push_str(&pretty);
 

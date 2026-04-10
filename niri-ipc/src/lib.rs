@@ -1711,7 +1711,12 @@ pub enum Event {
     GestureBegin {
         /// User-defined tag from the bind config.
         tag: String,
-        /// The trigger name (e.g. "TouchSwipe3Up", "TouchpadSwipe3Left", "TouchEdgeLeft").
+        /// The trigger name (e.g. "TouchSwipe3Up", "TouchpadSwipe3Left",
+        /// "TouchEdgeLeft", "TouchEdgeTop:Left"). Edge triggers with a zone
+        /// suffix (`:Left`, `:Center`, `:Right` for horizontal edges, or
+        /// `:Top`, `:Center`, `:Bottom` for vertical edges) are emitted when
+        /// a zoned bind fired; the bare edge name is used when an unzoned
+        /// parent bind fired.
         trigger: String,
         /// Number of fingers in the gesture.
         finger_count: u8,

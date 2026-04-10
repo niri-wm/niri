@@ -14,7 +14,7 @@ use _server_decoration::server::org_kde_kwin_server_decoration_manager::Mode as 
 use anyhow::{bail, ensure, Context};
 use calloop::futures::Scheduler;
 use niri_config::debug::PreviewRender;
-use niri_config::input::ScreenEdge;
+use niri_config::input::{EdgeZone, ScreenEdge};
 use niri_config::touch_binds::ContinuousGestureKind;
 use niri_config::{
     Config, FloatOrInt, Key, Modifiers, OutputName, TrackLayout, WarpMouseToFocusMode,
@@ -193,12 +193,22 @@ pub enum TouchEdgeSwipeState {
     /// First touch landed in edge zone; waiting for motion to confirm swipe.
     Pending {
         edge: ScreenEdge,
+        /// Which third of the edge the touch landed in. Carried through so
+        /// the gesture stays locked to whichever bind (zoned or unzoned) hit
+        /// at touch-down, even if later lookups need to re-derive the trigger.
+        zone: EdgeZone,
+        /// True if the zoned trigger was the one that matched. False if the
+        /// unzoned parent trigger was the one that matched (fallback path).
+        /// Determines which Trigger name to emit for IPC events.
+        zoned: bool,
         cumulative: (f64, f64),
         slot: Option<TouchSlot>,
     },
     /// Swipe recognized; gesture animation is active (continuous gesture).
     Active {
         edge: ScreenEdge,
+        zone: EdgeZone,
+        zoned: bool,
         kind: ContinuousGestureKind,
         sensitivity: f64,
         natural_scroll: bool,

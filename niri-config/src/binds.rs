@@ -93,11 +93,34 @@ pub enum Trigger {
     TouchPinch4Out,
     TouchPinch5In,
     TouchPinch5Out,
-    // Touchscreen edge swipes
+    // Touchscreen edge swipes (parent / any-zone fallback).
     TouchEdgeLeft,
     TouchEdgeRight,
     TouchEdgeTop,
     TouchEdgeBottom,
+    // Touchscreen edge swipes with zone qualifier. Each edge is split into
+    // three zones along its perpendicular axis, and the zone suffix uses
+    // compass-style directional words appropriate to that axis. At bind
+    // lookup time, a zoned trigger is tried first; if absent, the parent
+    // trigger above is used as a fallback.
+    //
+    // Parse syntax:
+    //   `TouchEdgeTop:Left`, `TouchEdgeTop:Center`, `TouchEdgeTop:Right`
+    //   `TouchEdgeBottom:Left`, `TouchEdgeBottom:Center`, `TouchEdgeBottom:Right`
+    //   `TouchEdgeLeft:Top`, `TouchEdgeLeft:Center`, `TouchEdgeLeft:Bottom`
+    //   `TouchEdgeRight:Top`, `TouchEdgeRight:Center`, `TouchEdgeRight:Bottom`
+    TouchEdgeTopLeft,
+    TouchEdgeTopCenter,
+    TouchEdgeTopRight,
+    TouchEdgeBottomLeft,
+    TouchEdgeBottomCenter,
+    TouchEdgeBottomRight,
+    TouchEdgeLeftTop,
+    TouchEdgeLeftCenter,
+    TouchEdgeLeftBottom,
+    TouchEdgeRightTop,
+    TouchEdgeRightCenter,
+    TouchEdgeRightBottom,
 }
 
 impl Trigger {
@@ -140,6 +163,18 @@ impl Trigger {
                 | Trigger::TouchEdgeRight
                 | Trigger::TouchEdgeTop
                 | Trigger::TouchEdgeBottom
+                | Trigger::TouchEdgeTopLeft
+                | Trigger::TouchEdgeTopCenter
+                | Trigger::TouchEdgeTopRight
+                | Trigger::TouchEdgeBottomLeft
+                | Trigger::TouchEdgeBottomCenter
+                | Trigger::TouchEdgeBottomRight
+                | Trigger::TouchEdgeLeftTop
+                | Trigger::TouchEdgeLeftCenter
+                | Trigger::TouchEdgeLeftBottom
+                | Trigger::TouchEdgeRightTop
+                | Trigger::TouchEdgeRightCenter
+                | Trigger::TouchEdgeRightBottom
         )
     }
 }
@@ -1202,7 +1237,58 @@ impl FromStr for Key {
             Trigger::TouchPinch5In
         } else if key.eq_ignore_ascii_case("TouchPinch5Out") {
             Trigger::TouchPinch5Out
-        // Touchscreen edge swipes
+        // Touchscreen edge swipes — zoned variants first. Both the
+        // compact `TouchEdgeTopLeft` form and the suffix `TouchEdgeTop:Left`
+        // form resolve to the same Trigger.
+        } else if key.eq_ignore_ascii_case("TouchEdgeTopLeft")
+            || key.eq_ignore_ascii_case("TouchEdgeTop:Left")
+        {
+            Trigger::TouchEdgeTopLeft
+        } else if key.eq_ignore_ascii_case("TouchEdgeTopCenter")
+            || key.eq_ignore_ascii_case("TouchEdgeTop:Center")
+        {
+            Trigger::TouchEdgeTopCenter
+        } else if key.eq_ignore_ascii_case("TouchEdgeTopRight")
+            || key.eq_ignore_ascii_case("TouchEdgeTop:Right")
+        {
+            Trigger::TouchEdgeTopRight
+        } else if key.eq_ignore_ascii_case("TouchEdgeBottomLeft")
+            || key.eq_ignore_ascii_case("TouchEdgeBottom:Left")
+        {
+            Trigger::TouchEdgeBottomLeft
+        } else if key.eq_ignore_ascii_case("TouchEdgeBottomCenter")
+            || key.eq_ignore_ascii_case("TouchEdgeBottom:Center")
+        {
+            Trigger::TouchEdgeBottomCenter
+        } else if key.eq_ignore_ascii_case("TouchEdgeBottomRight")
+            || key.eq_ignore_ascii_case("TouchEdgeBottom:Right")
+        {
+            Trigger::TouchEdgeBottomRight
+        } else if key.eq_ignore_ascii_case("TouchEdgeLeftTop")
+            || key.eq_ignore_ascii_case("TouchEdgeLeft:Top")
+        {
+            Trigger::TouchEdgeLeftTop
+        } else if key.eq_ignore_ascii_case("TouchEdgeLeftCenter")
+            || key.eq_ignore_ascii_case("TouchEdgeLeft:Center")
+        {
+            Trigger::TouchEdgeLeftCenter
+        } else if key.eq_ignore_ascii_case("TouchEdgeLeftBottom")
+            || key.eq_ignore_ascii_case("TouchEdgeLeft:Bottom")
+        {
+            Trigger::TouchEdgeLeftBottom
+        } else if key.eq_ignore_ascii_case("TouchEdgeRightTop")
+            || key.eq_ignore_ascii_case("TouchEdgeRight:Top")
+        {
+            Trigger::TouchEdgeRightTop
+        } else if key.eq_ignore_ascii_case("TouchEdgeRightCenter")
+            || key.eq_ignore_ascii_case("TouchEdgeRight:Center")
+        {
+            Trigger::TouchEdgeRightCenter
+        } else if key.eq_ignore_ascii_case("TouchEdgeRightBottom")
+            || key.eq_ignore_ascii_case("TouchEdgeRight:Bottom")
+        {
+            Trigger::TouchEdgeRightBottom
+        // Touchscreen edge swipes — parent (any-zone fallback).
         } else if key.eq_ignore_ascii_case("TouchEdgeLeft") {
             Trigger::TouchEdgeLeft
         } else if key.eq_ignore_ascii_case("TouchEdgeRight") {
