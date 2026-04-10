@@ -108,7 +108,7 @@ input {
         // calibration-matrix 1.0 0.0 0.0 0.0 1.0 0.0
 
         // Touchscreen gesture binds live in the main binds {} block using
-        // trigger names like Touch3SwipeUp, Touch4PinchIn, TouchEdgeLeft.
+        // trigger names like TouchSwipe3Up, TouchPinch4In, TouchEdgeLeft.
         // This subblock only contains tuning parameters.
         gestures {
             // recognition-threshold 16.0
@@ -292,7 +292,7 @@ Settings specific to `touchscreen`:
 
 > [!NOTE]
 >
-> Touchscreen gesture **binds** are configured in the main `binds {}` block using trigger names like `Touch3SwipeUp`, `Touch4PinchIn`, or `TouchEdgeLeft`. The `touchscreen { gestures { } }` subblock below only contains tuning parameters that affect *how* gestures are recognized, not *which* ones fire. See the [Gestures](./Gestures.md) wiki page for the full list of touchscreen gesture triggers.
+> Touchscreen gesture **binds** are configured in the main `binds {}` block using trigger names like `TouchSwipe3Up`, `TouchPinch4In`, or `TouchEdgeLeft`. The `touchscreen { gestures { } }` subblock below only contains tuning parameters that affect *how* gestures are recognized, not *which* ones fire. See the [Gestures](./Gestures.md) wiki page for the full list of touchscreen gesture triggers.
 
 The `touchscreen { gestures { } }` tuning parameters are:
 

@@ -85,39 +85,35 @@ Open and close the overview with a four-finger vertical swipe (default bind).
 
 ### Touchscreen
 
-<sup>Since: next</sup> Touchscreen gestures are configured as binds in the main `binds {}` block. There are three families of trigger: multi-finger swipes, multi-finger pinches, and single-finger edge swipes.
-
-> [!IMPORTANT]
->
-> Touchscreen trigger names put the finger count **after `Touch`**, while touchpad trigger names put it **after `Swipe`**. It's `Touch3SwipeUp` (not `TouchSwipe3Up`) and `TouchpadSwipe3Up` (not `Touchpad3SwipeUp`). The parser will reject the wrong form.
+<sup>Since: next</sup> Touchscreen gestures are configured as binds in the main `binds {}` block, following the same naming convention as touchpad triggers (`TouchSwipe3Up` parallels `TouchpadSwipe3Up`). There are three families of trigger: multi-finger swipes, multi-finger pinches, and single-finger edge swipes.
 
 #### Swipe Gestures
 
 ```kdl
 binds {
-    Touch3SwipeUp    { focus-workspace-up; }
-    Touch3SwipeDown  { focus-workspace-down; }
-    Touch3SwipeLeft  { focus-column-right; }
-    Touch3SwipeRight { focus-column-left; }
-    Touch4SwipeUp    { toggle-overview; }
-    Touch4SwipeDown  { toggle-overview; }
-    // Touch5SwipeUp / Touch5SwipeDown / Touch5SwipeLeft / Touch5SwipeRight also available
+    TouchSwipe3Up    { focus-workspace-up; }
+    TouchSwipe3Down  { focus-workspace-down; }
+    TouchSwipe3Left  { focus-column-right; }
+    TouchSwipe3Right { focus-column-left; }
+    TouchSwipe4Up    { toggle-overview; }
+    TouchSwipe4Down  { toggle-overview; }
+    // TouchSwipe5Up / TouchSwipe5Down / TouchSwipe5Left / TouchSwipe5Right also available
 }
 ```
 
-Available triggers: `Touch3SwipeUp`, `Touch3SwipeDown`, `Touch3SwipeLeft`, `Touch3SwipeRight`, and the equivalent `Touch4*` and `Touch5*` variants.
+Available triggers: `TouchSwipe3Up`, `TouchSwipe3Down`, `TouchSwipe3Left`, `TouchSwipe3Right`, and the equivalent `TouchSwipe4*` and `TouchSwipe5*` variants.
 
 #### Pinch Gestures
 
 ```kdl
 binds {
-    Touch3PinchIn  { open-overview; }
-    Touch3PinchOut { close-overview; }
-    // Touch4PinchIn / Touch4PinchOut / Touch5PinchIn / Touch5PinchOut also available
+    TouchPinch3In  { open-overview; }
+    TouchPinch3Out { close-overview; }
+    // TouchPinch4In / TouchPinch4Out / TouchPinch5In / TouchPinch5Out also available
 }
 ```
 
-Available triggers: `Touch3PinchIn`, `Touch3PinchOut`, `Touch4PinchIn`, `Touch4PinchOut`, `Touch5PinchIn`, `Touch5PinchOut`. Pinch vs swipe classification is controlled by the `pinch-threshold` and `pinch-ratio` tuning parameters.
+Available triggers: `TouchPinch3In`, `TouchPinch3Out`, `TouchPinch4In`, `TouchPinch4Out`, `TouchPinch5In`, `TouchPinch5Out`. Pinch vs swipe classification is controlled by the `pinch-threshold` and `pinch-ratio` tuning parameters.
 
 #### Edge Swipes
 
@@ -147,8 +143,8 @@ binds {
     // Tagged workspace switch — still switches workspaces, and also
     // emits GestureProgress events with tag="ws-nav" for external apps
     // that want to show a progress indicator alongside the animation.
-    Touch3SwipeUp   tag="ws-nav" { focus-workspace-up; }
-    Touch3SwipeDown tag="ws-nav" { focus-workspace-down; }
+    TouchSwipe3Up   tag="ws-nav" { focus-workspace-up; }
+    TouchSwipe3Down tag="ws-nav" { focus-workspace-down; }
 
     // Noop-tagged edge swipe — drives no compositor action, just emits
     // IPC progress events so an external app (e.g. a sidebar drawer)
