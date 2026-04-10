@@ -1303,7 +1303,57 @@ impl State {
                             self.niri.event_loop.remove(token);
                         }
                     }
+
+                    // Auto-raise: raise floating windows after an optional delay.
+                    let auto_raise = self.niri.config.borrow().input.auto_raise_on_focus;
+                    if let Some(auto_raise) = auto_raise {
+                        if mapped.is_floating() {
+                            let delay_ms = auto_raise.delay_ms.unwrap_or(0);
+                            let window_id = mapped.id();
+
+                            if delay_ms == 0 {
+                                // Immediate raise.
+                                self.niri.cancel_pending_auto_raise();
+                                if let Some(window) = self.niri.find_window_by_id(window_id) {
+                                    self.niri.layout.activate_window(&window);
+                                    self.niri.queue_redraw_all();
+                                }
+                            } else {
+                                // Delayed raise.
+                                let timer = Timer::from_duration(Duration::from_millis(u64::from(
+                                    delay_ms,
+                                )));
+
+                                let token = self
+                                    .niri
+                                    .event_loop
+                                    .insert_source(timer, move |_, _, state| {
+                                        state.niri.auto_raise_apply();
+                                        TimeoutAction::Drop
+                                    })
+                                    .unwrap();
+
+                                if let Some(old) = self
+                                    .niri
+                                    .pending_auto_raise
+                                    .replace(PendingAutoRaise { window_id, token })
+                                {
+                                    self.niri.event_loop.remove(old.token);
+                                }
+                            }
+                        } else {
+                            // Focused a tiled window; cancel any pending raise.
+                            self.niri.cancel_pending_auto_raise();
+                        }
+                    } else {
+                        // Feature disabled; cancel any pending raise.
+                        self.niri.cancel_pending_auto_raise();
+                    }
                 }
+            }
+
+            if !matches!(focus, KeyboardFocus::Layout { surface: Some(_) }) {
+                self.niri.cancel_pending_auto_raise();
             }
 
             if let Some(grab) = self.niri.popup_grab.as_mut() {
@@ -6093,6 +6143,28 @@ impl Niri {
             .find(|w| w.id() == pending.id)
         {
             window.set_focus_timestamp(pending.stamp);
+        }
+    }
+
+    /// Apply a pending auto-raise: raise the focused floating window to the top.
+    pub fn auto_raise_apply(&mut self) {
+        let Some(pending) = self.pending_auto_raise.take() else {
+            return;
+        };
+        self.event_loop.remove(pending.token);
+
+        let Some(window) = self.find_window_by_id(pending.window_id) else {
+            return;
+        };
+
+        self.layout.activate_window(&window);
+        self.queue_redraw_all();
+    }
+
+    /// Cancel any pending auto-raise timer.
+    pub fn cancel_pending_auto_raise(&mut self) {
+        if let Some(pending) = self.pending_auto_raise.take() {
+            self.event_loop.remove(pending.token);
         }
     }
 
