@@ -475,6 +475,18 @@ pub enum ScreenEdge {
     Bottom,
 }
 
+/// Which third of an edge a touch landed in.
+///
+/// The perpendicular axis of the edge is split into thirds: for Top/Bottom
+/// that's the x axis (Start=leftmost third, End=rightmost third); for
+/// Left/Right that's the y axis (Start=topmost third, End=bottommost third).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EdgeZone {
+    Start,
+    Center,
+    End,
+}
+
 /// Tuning parameters for touchscreen gesture recognition.
 ///
 /// The actual gesture binds (e.g. `TouchSwipe3Up`, `TouchEdgeLeft`) live in
