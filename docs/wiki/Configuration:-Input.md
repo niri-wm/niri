@@ -46,6 +46,14 @@ input {
         // left-handed
         // disabled-on-external-mouse
         // middle-emulation
+
+        // Touchpad gesture binds live in the main binds {} block using
+        // trigger names like TouchpadSwipe3Up, TouchpadSwipe4Down.
+        // This subblock only contains tuning parameters.
+        // gestures {
+        //     recognition-threshold 16.0
+        //     gesture-progress-distance 40.0
+        // }
     }
 
     mouse {
@@ -100,26 +108,17 @@ input {
         // natural-scroll
         // calibration-matrix 1.0 0.0 0.0 0.0 1.0 0.0
 
+        // Touchscreen gesture binds live in the main binds {} block using
+        // trigger names like Touch3SwipeUp, Touch4PinchIn, TouchEdgeLeft.
+        // This subblock only contains tuning parameters.
         gestures {
-            workspace-switch {
-                // off
-                // finger-count 3
-                // sensitivity 0.4
-                // natural-scroll
-            }
-            view-scroll {
-                // off
-                // finger-count 3
-                // sensitivity 0.4
-                // natural-scroll
-            }
-            overview-toggle {
-                // off
-                // finger-count 4
-                // sensitivity 0.4
-                // natural-scroll
-            }
             // recognition-threshold 16.0
+            // edge-threshold 20.0
+            // pinch-threshold 30.0
+            // pinch-ratio 2.0
+            // pinch-sensitivity 0.005
+            // finger-threshold-scale 1.5
+            // gesture-progress-distance 200.0
         }
     }
 
@@ -289,24 +288,58 @@ Settings specific to `tablet` and `touchscreen`:
 
 Settings specific to `touchscreen`:
 
-- `natural-scroll`: <sup>Since: next</sup> if set, inverts the scrolling direction for touchscreen gestures (workspace switching and view scrolling).
-- `gestures {}`: <sup>Since: next</sup> configure multi-finger gestures:
-  - `workspace-switch {}`: 3-finger vertical swipe to switch workspaces.
-    - `off`: disable this gesture.
-    - `finger-count <int>`: number of fingers required (default: 3).
-    - `sensitivity <float>`: speed multiplier (default: 0.4).
-    - `natural-scroll`: if set, inverts direction for this gesture (inherits from touch-level `natural-scroll` if not set).
-  - `view-scroll {}`: 3-finger horizontal swipe to scroll between columns.
-    - `off`: disable this gesture.
-    - `finger-count <int>`: number of fingers required (default: 3).
-    - `sensitivity <float>`: speed multiplier (default: 0.4).
-    - `natural-scroll`: if set, inverts direction for this gesture (inherits from touch-level `natural-scroll` if not set).
-  - `overview-toggle {}`: 4-finger vertical swipe to toggle the overview.
-    - `off`: disable this gesture.
-    - `finger-count <int>`: number of fingers required (default: 4).
-    - `sensitivity <float>`: speed multiplier (default: 0.4).
-    - `natural-scroll`: if set, inverts direction for this gesture (inherits from touch-level `natural-scroll` if not set).
-  - `recognition-threshold <float>`: distance in pixels before a gesture direction is locked (default: 16.0).
+- `natural-scroll`: <sup>Since: next</sup> if set, inverts the scrolling direction for touchscreen swipe gestures.
+- `gestures {}`: <sup>Since: next</sup> tuning parameters for touchscreen gesture recognition.
+
+> [!NOTE]
+>
+> Touchscreen gesture **binds** are configured in the main `binds {}` block using trigger names like `Touch3SwipeUp`, `Touch4PinchIn`, or `TouchEdgeLeft`. The `touchscreen { gestures { } }` subblock below only contains tuning parameters that affect *how* gestures are recognized, not *which* ones fire. See the [Gestures](./Gestures.md) wiki page for the full list of touchscreen gesture triggers.
+
+The `touchscreen { gestures { } }` tuning parameters are:
+
+- `recognition-threshold <float>`: distance in pixels fingers must move before a swipe gesture is recognized and starts firing events. Lower values feel more responsive but risk triggering on incidental finger drift. Default: `16.0`.
+- `edge-threshold <float>`: distance in pixels from a screen edge within which a touch must start for it to count as an edge swipe (`TouchEdgeLeft`/`Right`/`Top`/`Bottom`). Touches beginning farther from the edge are treated as regular swipes. Default: `20.0`.
+- `pinch-threshold <float>`: how far fingers must move together or apart (as total spread change in pixels) before niri classifies the gesture as a pinch rather than a swipe. Default: `30.0`.
+- `pinch-ratio <float>`: ratio by which spread change must exceed linear swipe distance for a gesture to count as a pinch. Higher values make pinch detection stricter — the fingers really have to move apart/together rather than glide across the screen. Default: `2.0`.
+- `pinch-sensitivity <float>`: multiplier mapping finger spread change to overview toggle progress. Higher values make the overview reach fully open with less finger movement. Default: `0.005`.
+- `finger-threshold-scale <float>`: scaling applied to `recognition-threshold` for gestures with more than 3 fingers. The formula is `base * (1 + (fingers - 3) * (scale - 1))`, so with a base threshold of 16 and scale 1.5, a 4-finger gesture needs 24 px and a 5-finger gesture needs 32 px. Compensates for the extra movement spread that wider finger grips produce. Default: `1.5`.
+- `gesture-progress-distance <float>`: pixels of finger movement required for IPC `GestureProgress` events to reach `progress = 1.0`. Units are screen pixels. Tune this to make tagged external-app gestures (like sidebar drawers or scrubbers) feel right on your display. Default: `200.0`.
+
+Example:
+
+```kdl
+input {
+    touchscreen {
+        gestures {
+            recognition-threshold 26.0
+            edge-threshold 30.0
+            gesture-progress-distance 200.0
+        }
+    }
+}
+```
+
+### Touchpad Gesture Tuning
+
+<sup>Since: next</sup>
+
+The `touchpad { gestures { } }` subblock contains tuning parameters for touchpad swipe recognition. Like touchscreen, the actual gesture binds (`TouchpadSwipe3Up`, etc.) live in the main `binds {}` block.
+
+- `recognition-threshold <float>`: distance in libinput delta units that fingers must move before a swipe gesture is recognized. These units are acceleration-adjusted and not directly comparable to touchscreen pixels. Default: `16.0`.
+- `gesture-progress-distance <float>`: libinput delta units of finger movement required for IPC `GestureProgress` events to reach `progress = 1.0`. Because libinput acceleration curves are nonlinear, the same physical swipe can produce different delta magnitudes depending on speed — this value is **not** directly comparable to the touchscreen `gesture-progress-distance`. Default: `40.0`.
+
+Example:
+
+```kdl
+input {
+    touchpad {
+        gestures {
+            recognition-threshold 16.0
+            gesture-progress-distance 40.0
+        }
+    }
+}
+```
 
 Tablets and touchscreens are absolute pointing devices that can be mapped to a specific output like so:
 
