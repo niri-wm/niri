@@ -41,7 +41,9 @@ pub fn continuous_gesture_kind(action: &Action) -> Option<ContinuousGestureKind>
         Action::FocusColumnLeft | Action::FocusColumnRight => {
             Some(ContinuousGestureKind::ViewScroll)
         }
-        Action::ToggleOverview => Some(ContinuousGestureKind::OverviewToggle),
+        Action::ToggleOverview
+        | Action::OpenOverview
+        | Action::CloseOverview => Some(ContinuousGestureKind::OverviewToggle),
         Action::Noop => Some(ContinuousGestureKind::Noop),
         _ => None,
     }

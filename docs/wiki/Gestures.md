@@ -115,6 +115,10 @@ binds {
 
 Available triggers: `TouchPinch3In`, `TouchPinch3Out`, `TouchPinch4In`, `TouchPinch4Out`, `TouchPinch5In`, `TouchPinch5Out`. Pinch vs swipe classification is controlled by the `pinch-threshold` and `pinch-ratio` tuning parameters.
 
+Pinch gestures are **continuous**: when bound to a continuous-capable action like `open-overview`, `close-overview`, `toggle-overview`, `focus-workspace-*`, `focus-column-*`, or `noop`, the animation tracks finger motion frame-by-frame (pinch-in smoothly opens the overview, reversing the pinch smoothly closes it again). Binding a pinch to a non-continuous action like `spawn` or `close-window` still fires the action once on recognition, as before.
+
+The animation scale for pinch is controlled by `pinch-sensitivity`, not by the bind's `sensitivity=` property — pinch has its own dedicated knob because raw spread-delta pixels need a very different scaling from linear swipe distances. Tune `pinch-sensitivity` in the `touchscreen { gestures { } }` block if pinch-to-overview feels too fast or too slow.
+
 #### Edge Swipes
 
 One-finger swipes that begin within `edge-threshold` pixels of a screen edge. Useful for drawers, panels, and any edge-activated UI.
@@ -156,8 +160,12 @@ binds {
 
 The three IPC events are:
 
-- **`GestureBegin { tag, trigger, finger_count, is_continuous }`** — fired when gesture recognition has locked in. `is_continuous` is true for swipe/pinch gestures that emit progress updates, and false for discrete gestures.
-- **`GestureProgress { tag, progress, delta_x, delta_y }`** — fired repeatedly while a continuous gesture is in motion. `progress` is an accumulated 0.0→1.0 value computed from finger movement and `gesture-progress-distance`. `delta_x` and `delta_y` are the raw accumulated deltas (screen pixels for touchscreen, libinput units for touchpad).
+- **`GestureBegin { tag, trigger, finger_count, is_continuous }`** — fired when gesture recognition has locked in. `is_continuous` is true for swipe, pinch, and edge gestures bound to continuous-capable actions (including `noop`), and false for discrete gestures bound to one-shot actions.
+- **`GestureProgress { tag, progress, delta_x, delta_y, timestamp_ms }`** — fired repeatedly while a continuous gesture is in motion.
+  - `progress` is **signed, unbounded**, normalized: it starts at `0.0` when the gesture is recognized and grows as the gesture continues. Reversing direction produces negative values, and overshoot can exceed `±1.0` — consumers should not assume the value is clamped.
+  - For **swipes and edge gestures**, progress accumulates adjusted (sensitivity-scaled, natural-scroll-adjusted) finger delta on the dominant axis, normalized by `gesture-progress-distance` (default 200 px for touchscreen, 40 for touchpad). Progress `±1.0` ≈ one `gesture-progress-distance` of movement.
+  - For **pinches**, progress is `(current_spread - start_spread) / pinch-progress-distance` (default 100 px). Positive = pinch-out (spread growing), negative = pinch-in.
+  - `delta_x` and `delta_y` are the per-event raw finger deltas in screen pixels (touchscreen) or libinput units (touchpad). **For pinches**, `delta_x` is always `0` and `delta_y` reports the per-event change in finger spread.
 - **`GestureEnd { tag, completed }`** — fired when the gesture ends (fingers released).
 
 #### Noop Gestures

@@ -1725,13 +1725,33 @@ pub enum Event {
     GestureProgress {
         /// User-defined tag from the bind config.
         tag: String,
-        /// Normalized progress value.
-        /// For workspace switch: 1.0 = moved one full workspace.
-        /// For overview: 1.0 = fully open.
+        /// Signed, normalized progress. **Non-monotonic** — consumers must
+        /// handle the value going up and down as the user moves their fingers.
+        ///
+        /// Starts at `0.0` at the moment the gesture is recognized, then
+        /// changes as the gesture continues. The gesture's "natural" direction
+        /// (e.g. swipe-up, pinch-out) produces positive progress; reversing
+        /// direction produces negative values. Can exceed `±1.0` on overshoot,
+        /// and can return to `0.0` (or keep going negative) if the user
+        /// reverses a gesture mid-motion. Consumers that want a commit/cancel
+        /// decision should apply their own threshold to the final value on
+        /// `GestureEnd`, not assume progress is clamped or monotonic.
+        ///
+        /// Normalization depends on the gesture type:
+        /// - Swipes and edge gestures accumulate adjusted (sensitivity-scaled,
+        ///   natural-scroll-adjusted) finger delta on the dominant axis,
+        ///   normalized by `gesture-progress-distance` (default 200 px for
+        ///   touchscreen, 40 for touchpad). Progress `±1.0` ≈ one
+        ///   `gesture-progress-distance` of movement.
+        /// - Pinches use `(current_spread - start_spread) / pinch-progress-distance`
+        ///   (default 100 px) — an absolute measurement (not accumulated),
+        ///   so pinching in then out returns progress cleanly to near 0
+        ///   with no float drift. Positive = pinch-out, negative = pinch-in.
         progress: f64,
-        /// Raw delta since last event (pixels).
+        /// Raw delta since last event (pixels). For pinches this is `0`.
         delta_x: f64,
-        /// Raw delta since last event (pixels).
+        /// Raw delta since last event (pixels). For pinches this is the
+        /// incremental change in finger spread since the previous event.
         delta_y: f64,
         /// Timestamp in milliseconds.
         timestamp_ms: u32,

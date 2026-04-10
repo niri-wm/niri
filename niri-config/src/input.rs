@@ -434,7 +434,7 @@ impl Touchscreen {
         self.gestures
             .as_ref()
             .and_then(|g| g.pinch_sensitivity)
-            .unwrap_or(0.005)
+            .unwrap_or(1.0)
     }
 
     pub fn finger_threshold_scale(&self) -> f64 {
@@ -449,6 +449,13 @@ impl Touchscreen {
             .as_ref()
             .and_then(|g| g.gesture_progress_distance)
             .unwrap_or(200.0)
+    }
+
+    pub fn pinch_progress_distance(&self) -> f64 {
+        self.gestures
+            .as_ref()
+            .and_then(|g| g.pinch_progress_distance)
+            .unwrap_or(100.0)
     }
 
     /// Returns the scaled recognition threshold for a given finger count.
@@ -499,9 +506,13 @@ pub struct TouchscreenGesturesConfig {
     /// across the screen. Default: 2.0.
     #[knuffel(child, unwrap(argument))]
     pub pinch_ratio: Option<f64>,
-    /// Multiplier mapping finger spread change to overview toggle progress.
-    /// Higher values make the overview reach fully open with less finger
-    /// movement. Default: 0.005.
+    /// Multiplier mapping finger spread change (in screen pixels) to
+    /// continuous pinch animation delta. Applies to all pinch-bound
+    /// continuous actions — the bind's own `sensitivity` property is
+    /// ignored for pinch, since raw spread-delta pixels need very
+    /// different scaling from linear swipe distances. At 1.0, one pixel
+    /// of spread change contributes one pixel to the underlying gesture
+    /// accumulator (same scale swipes use). Default: 1.0.
     #[knuffel(child, unwrap(argument))]
     pub pinch_sensitivity: Option<f64>,
     /// Scaling applied to `recognition_threshold` for gestures with more than
@@ -517,6 +528,13 @@ pub struct TouchscreenGesturesConfig {
     /// display. Default: 200.0.
     #[knuffel(child, unwrap(argument))]
     pub gesture_progress_distance: Option<f64>,
+    /// Pixels of finger spread change for IPC `GestureProgress` events on
+    /// pinch gestures to reach `progress = ±1.0`. Signed: positive for
+    /// pinch-out (spread growing), negative for pinch-in (spread shrinking).
+    /// Pinch spread changes are usually smaller than linear swipe distances,
+    /// so this defaults lower than `gesture_progress_distance`. Default: 100.0.
+    #[knuffel(child, unwrap(argument))]
+    pub pinch_progress_distance: Option<f64>,
 }
 
 /// Tuning parameters for touchpad gesture recognition.
