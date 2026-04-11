@@ -2,7 +2,7 @@
 
 In this section you can configure input devices like keyboard and mouse, and some input-related options.
 
-There's a section for each device type: `keyboard`, `touchpad`, `mouse`, `trackpoint`, `trackball`, `tablet`, `touch`.
+There's a section for each device type: `keyboard`, `touchpad`, `mouse`, `trackpoint`, `trackball`, `tablet`, `touchscreen`.
 Settings in those sections will apply to every device of that type.
 Currently, there's no way to configure specific devices individually (but that is planned).
 
@@ -46,6 +46,14 @@ input {
         // left-handed
         // disabled-on-external-mouse
         // middle-emulation
+
+        // Touchpad gesture binds live in the main binds {} block using
+        // the `TouchpadSwipe` trigger with `fingers=N direction="..."`
+        // properties. This subblock only contains tuning parameters.
+        // gestures {
+        //     swipe-trigger-distance 16.0
+        //     swipe-progress-distance 40.0
+        // }
     }
 
     mouse {
@@ -93,10 +101,29 @@ input {
         // calibration-matrix 1.0 0.0 0.0 0.0 1.0 0.0
     }
 
-    touch {
+    touchscreen {
         // off
         map-to-output "eDP-1"
+        // natural-scroll
         // calibration-matrix 1.0 0.0 0.0 0.0 1.0 0.0
+
+        // Touchscreen gesture binds live in the main binds {} block using
+        // parameterized triggers like TouchSwipe fingers=3 direction="up",
+        // TouchPinch fingers=4 direction="in", or TouchEdge edge="left".
+        // This subblock only contains tuning parameters.
+        gestures {
+            // swipe-trigger-distance 100.0     // px of centroid motion before swipe latches
+            // edge-start-distance 30.0         // px-wide edge start zone
+            // pinch-trigger-distance 100.0     // px of spread change before pinch latches
+            // pinch-dominance-ratio 1.0        // spread must beat swipe × this (higher = stricter pinch)
+            // pinch-sensitivity 1.0
+            // pinch-progress-distance 100.0    // px of spread = IPC progress ±1.0 (signed)
+            // swipe-multi-finger-scale 1.2     // scales swipe-trigger-distance for 4+ fingers (1.0 = off)
+            // swipe-progress-distance 200.0    // px of swipe = IPC progress 1.0
+            // rotation-trigger-angle 20.0      // ° before rotation can latch
+            // rotation-dominance-ratio 0.5     // arc must beat swipe × this (higher = stricter rotation)
+            // rotation-progress-angle 90.0     // ° that map to IPC progress ±1.0
+        }
     }
 
     // disable-power-key-handling
@@ -257,11 +284,87 @@ Settings specific to `touchpad` and `mouse`:
 
     <sup>Since: 25.08</sup> You can also override horizontal and vertical scroll factor separately like so: `scroll-factor horizontal=2.0 vertical=-1.0`
 
-Settings specific to `tablet` and `touch`:
+Settings specific to `tablet` and `touchscreen`:
 
 - `calibration-matrix`: set to six floating point numbers to change the calibration matrix. See the [`LIBINPUT_CALIBRATION_MATRIX` documentation](https://wayland.freedesktop.org/libinput/doc/latest/device-configuration-via-udev.html) for examples.
     - <sup>Since: 25.02</sup> for `tablet`
-    - <sup>Since: 25.11</sup> for `touch`
+    - <sup>Since: 25.11</sup> for `touchscreen`
+
+Settings specific to `touchscreen`:
+
+- `natural-scroll`: <sup>Since: next</sup> if set, inverts the scrolling direction for touchscreen swipe gestures.
+- `gestures {}`: <sup>Since: next</sup> tuning parameters for touchscreen gesture recognition.
+
+> [!NOTE]
+>
+> Touchscreen gesture **binds** are configured in the main `binds {}` block using parameterized triggers like `TouchSwipe fingers=3 direction="up"`, `TouchPinch fingers=4 direction="in"`, or `TouchEdge edge="left"`. The `touchscreen { gestures { } }` subblock below only contains tuning parameters that affect *how* gestures are recognized, not *which* ones fire. See the [Gestures](./Gestures.md) wiki page for the full list of touchscreen gesture triggers.
+
+The `touchscreen { gestures { } }` tuning parameters are:
+
+All knobs are grouped as: **trigger** (classifier commit gates), **dominance** (3-way race tuning), **progress** (IPC output scaling), and **misc**.
+
+**Swipe:**
+
+- `swipe-trigger-distance <float>`: pixels of centroid motion before a swipe gesture commits. Lower values feel more responsive but risk triggering on incidental finger drift. Default: `100.0`.
+- `swipe-multi-finger-scale <float>`: scaling applied to `swipe-trigger-distance` for gestures with more than 3 fingers. The formula is `base * (1 + (fingers − 3) * (scale − 1))`, so with a base of 100 and scale 1.2 a 4-finger swipe needs 120 px and a 5-finger swipe needs 140 px. Default `1.2` — gives a small pinch-priority bias at high finger counts so ambiguous 4/5-finger motions resolve as pinch rather than swipe. Set `1.0` to disable the bias entirely.
+- `swipe-progress-distance <float>`: pixels of swipe distance that map to IPC `GestureProgress = 1.0`. IPC-output knob — doesn't affect classification. Tune this for tagged external-app gestures (sidebar drawers, scrubbers, etc.). Default: `200.0`.
+
+**Pinch:**
+
+- `pinch-trigger-distance <float>`: pixels of `|spread_change|` before a pinch gesture commits. Default: `100.0`.
+- `pinch-dominance-ratio <float>`: `|spread_change|` must exceed `swipe_distance × this` for pinch to win the race against swipe. Higher = stricter pinch. Default: `1.0`.
+- `pinch-sensitivity <float>`: multiplier mapping finger spread change to continuous pinch animation delta (e.g. overview open/close progress). At `1.0`, one pixel of spread change contributes one pixel to the gesture accumulator. Applies to **all** pinch-bound continuous actions — the bind's own `sensitivity=` property is ignored for pinch because raw spread-delta pixels need different scaling from linear swipe distances. Default: `1.0`.
+- `pinch-progress-distance <float>`: pixels of spread change that map to IPC `GestureProgress = ±1.0`. Signed: positive for pinch-out, negative for pinch-in. Default: `100.0`.
+
+**Rotation:**
+
+- `rotation-trigger-angle <float>`: cumulative rotation in **degrees** before a rotation gesture commits. Default: `20.0`. Rotation detection is an early proof of concept — see the warning in the [Rotation Gestures](./Gestures.md#rotation-gestures) section.
+- `rotation-dominance-ratio <float>`: rotation arc length (`|cumulative_rotation| × cluster_radius`) must exceed both `swipe_distance × this` and `|spread_change| × this` for rotation to win the race. Higher = stricter rotation. Default: `0.5` (deliberately lenient — rotation almost always includes incidental translation). Matches `pinch-dominance-ratio` semantics (higher = stricter for both).
+- `rotation-progress-angle <float>`: degrees of cumulative rotation that map to IPC `GestureProgress = ±1.0`. Signed: positive = counter-clockwise, negative = clockwise. Default: `90.0`.
+
+**Edge:**
+
+- `edge-start-distance <float>`: width in pixels of the screen-edge start zone. A touch must *begin* within this distance from an edge to count as a `TouchEdge` gesture; touches starting farther in are treated as regular swipes. Default: `30.0`.
+
+Example:
+
+```kdl
+input {
+    touchscreen {
+        gestures {
+            swipe-trigger-distance 26.0
+            edge-start-distance 30.0
+            pinch-sensitivity 1.0
+            swipe-progress-distance 200.0
+            pinch-progress-distance 100.0
+            rotation-trigger-angle 15.0
+            rotation-dominance-ratio 0.5
+        }
+    }
+}
+```
+
+### Touchpad Gesture Tuning
+
+<sup>Since: next</sup>
+
+The `touchpad { gestures { } }` subblock contains tuning parameters for touchpad swipe recognition. Like touchscreen, the actual gesture binds (`TouchpadSwipe fingers=N direction="..."`) live in the main `binds {}` block.
+
+- `swipe-trigger-distance <float>`: libinput delta units of centroid motion before a swipe gesture commits. These units are acceleration-adjusted and not directly comparable to touchscreen pixels. Default: `16.0`.
+- `swipe-progress-distance <float>`: libinput delta units of swipe motion that map to IPC `GestureProgress = 1.0`. Because libinput acceleration curves are nonlinear, the same physical swipe can produce different delta magnitudes depending on speed — this value is **not** directly comparable to the touchscreen `swipe-progress-distance`. Default: `40.0`.
+
+Example:
+
+```kdl
+input {
+    touchpad {
+        gestures {
+            swipe-trigger-distance 16.0
+            swipe-progress-distance 40.0
+        }
+    }
+}
+```
 
 Tablets and touchscreens are absolute pointing devices that can be mapped to a specific output like so:
 
@@ -271,7 +374,7 @@ input {
         map-to-output "eDP-1"
     }
 
-    touch {
+    touchscreen {
         map-to-output "eDP-1"
     }
 }

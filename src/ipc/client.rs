@@ -506,6 +506,70 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
                     Event::CastStopped { stream_id } => {
                         println!("Cast stopped: stream id {stream_id}");
                     }
+                    Event::GestureBegin {
+                        tag,
+                        trigger,
+                        finger_count,
+                        is_continuous,
+                    } => {
+                        let kind = if is_continuous { "continuous" } else { "discrete" };
+                        println!(
+                            "Gesture begin: tag={tag} trigger={trigger} \
+                             fingers={finger_count} ({kind})"
+                        );
+                    }
+                    Event::GestureProgress {
+                        tag,
+                        progress,
+                        delta,
+                        timestamp_ms,
+                    } => {
+                        let delta_str = match delta {
+                            niri_ipc::GestureDelta::Swipe { dx, dy } => {
+                                format!("swipe ({dx:.1},{dy:.1})")
+                            }
+                            niri_ipc::GestureDelta::Pinch { d_spread } => {
+                                format!("pinch Δspread={d_spread:.1}")
+                            }
+                            niri_ipc::GestureDelta::Rotate { d_radians } => {
+                                format!("rotate Δ={d_radians:.4}rad")
+                            }
+                        };
+                        println!(
+                            "Gesture progress: tag={tag} progress={progress:.3} \
+                             {delta_str} t={timestamp_ms}"
+                        );
+                    }
+                    Event::GestureEnd { tag, completed } => {
+                        let status = if completed { "completed" } else { "cancelled" };
+                        println!("Gesture end: tag={tag} ({status})");
+                    }
+                    Event::RecognitionFrame {
+                        finger_count,
+                        swipe_distance,
+                        swipe_trigger_distance,
+                        spread_change,
+                        pinch_trigger_distance,
+                        rotation_rad,
+                        rotation_trigger_angle_rad,
+                        rotation_arc,
+                        rotation_arc_trigger_distance: _,
+                        is_rotate,
+                        is_pinch,
+                        closest,
+                        timestamp_ms,
+                    } => {
+                        println!(
+                            "Recognition frame: fingers={finger_count} \
+                             swipe={swipe_distance:.1}/{swipe_trigger_distance:.1} \
+                             spread={spread_change:.1}/{pinch_trigger_distance:.1} \
+                             rot={:.1}°/{:.1}° arc={rotation_arc:.1} \
+                             is_rotate={is_rotate} is_pinch={is_pinch} \
+                             closest={closest} t={timestamp_ms}",
+                            rotation_rad.to_degrees(),
+                            rotation_trigger_angle_rad.to_degrees(),
+                        );
+                    }
                 }
             }
         }

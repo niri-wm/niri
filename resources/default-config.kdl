@@ -40,6 +40,21 @@ input {
         // accel-profile "flat"
         // scroll-method "two-finger"
         // disabled-on-external-mouse
+
+        // Touchpad gesture binds live in the main binds {} block using
+        // the `TouchpadSwipe` trigger with `fingers=` and `direction=`
+        // properties, e.g.
+        //   TouchpadSwipe fingers=3 direction="up"   { focus-workspace-up; }
+        //   TouchpadSwipe fingers=4 direction="left" { focus-column-right; }
+        // `fingers=` accepts any integer in 3..=10.
+        // See the wiki page "Gestures" for the full list.
+        //
+        // gestures {
+        //     // Libinput delta units of motion before a swipe commits.
+        //     swipe-trigger-distance 16.0
+        //     // Libinput delta units of swipe that map to IPC progress = 1.0.
+        //     swipe-progress-distance 40.0
+        // }
     }
 
     mouse {
@@ -60,6 +75,50 @@ input {
         // scroll-button-lock
         // middle-emulation
     }
+
+    // touchscreen {
+    //     // off
+    //     // natural-scroll
+    //     // map-to-output "eDP-1"
+    //     //
+    //     // Touchscreen gesture binds live in the main binds {} block
+    //     // using parameterized triggers with KDL properties, e.g.
+    //     //   TouchSwipe  fingers=3 direction="up"   { focus-workspace-up; }
+    //     //   TouchPinch  fingers=4 direction="in"   { open-overview; }
+    //     //   TouchRotate fingers=4 direction="cw"   { focus-column-right; }
+    //     //   TouchEdge   edge="left"                { focus-column-right; }
+    //     //   TouchEdge   edge="top"  zone="right"   { spawn "screenshot.sh"; }
+    //     // `fingers=` accepts any integer in 3..=10. Edges can be split
+    //     // into thirds with `zone=`; the vocabulary rotates per edge axis
+    //     // (top/bottom take left|center|right; left/right take
+    //     // top|center|bottom). A parent bind (no `zone=`) still fires as
+    //     // a fallback for zones without a dedicated bind.
+    //     // See the wiki page "Gestures" for the full list.
+    //     //
+    //     // gestures {
+    //     //     // Classifier commit gates. Higher = harder to trigger.
+    //     //     swipe-trigger-distance 100.0   // px of centroid motion before swipe latches
+    //     //     edge-start-distance 30.0       // px-wide edge start zone
+    //     //     pinch-trigger-distance 100.0   // px of spread change before pinch latches
+    //     //     pinch-dominance-ratio 1.0      // spread must equal-or-beat swipe (higher = stricter pinch)
+    //     //     // Multiplier from finger spread to continuous pinch animation
+    //     //     // delta. Applies to all continuous pinch binds (overview,
+    //     //     // workspace switch, etc.). Ignores per-bind sensitivity.
+    //     //     pinch-sensitivity 1.0
+    //     //     // Ramps swipe-trigger-distance for 4+ finger gestures.
+    //     //     // Default 1.2 = small pinch-priority bias at high finger
+    //     //     // counts. Set 1.0 to disable.
+    //     //     swipe-multi-finger-scale 1.2
+    //     //     // IPC progress scaling (doesn't affect classification).
+    //     //     swipe-progress-distance 200.0  // px of swipe = progress 1.0
+    //     //     pinch-progress-distance 100.0  // px of spread = progress ±1.0 (signed)
+    //     //
+    //     //     // Rotation — angles in DEGREES.
+    //     //     rotation-trigger-angle 20.0    // ° before rotation can latch
+    //     //     rotation-dominance-ratio 0.5   // arc must beat swipe × this (higher = stricter)
+    //     //     rotation-progress-angle 90.0   // ° that map to IPC progress ±1.0
+    //     // }
+    // }
 
     // Uncomment this to make the mouse warp to the center of newly focused windows.
     // warp-mouse-to-focus

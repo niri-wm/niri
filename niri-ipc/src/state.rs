@@ -49,6 +49,9 @@ pub struct EventStreamState {
 
     /// State of screencasts.
     pub casts: CastsState,
+
+    /// State of gesture events.
+    pub gesture: GestureState,
 }
 
 /// The workspaces state communicated over the event stream.
@@ -93,6 +96,17 @@ pub struct CastsState {
     pub casts: HashMap<u64, Cast>,
 }
 
+/// The gesture state communicated over the event stream.
+///
+/// Gestures are transient — when a new client connects, there may or may not
+/// be a gesture in progress. We track the active tag so replicate() can send
+/// a GestureBegin if a gesture is currently active.
+#[derive(Debug, Default)]
+pub struct GestureState {
+    /// The tag of the currently active gesture, if any.
+    pub active_tag: Option<String>,
+}
+
 impl EventStreamStatePart for EventStreamState {
     fn replicate(&self) -> Vec<Event> {
         let mut events = Vec::new();
@@ -102,6 +116,7 @@ impl EventStreamStatePart for EventStreamState {
         events.extend(self.overview.replicate());
         events.extend(self.config.replicate());
         events.extend(self.casts.replicate());
+        events.extend(self.gesture.replicate());
         events
     }
 
@@ -112,6 +127,7 @@ impl EventStreamStatePart for EventStreamState {
         let event = self.overview.apply(event)?;
         let event = self.config.apply(event)?;
         let event = self.casts.apply(event)?;
+        let event = self.gesture.apply(event)?;
         Some(event)
     }
 }
@@ -315,6 +331,29 @@ impl EventStreamStatePart for CastsState {
             Event::CastStopped { stream_id } => {
                 let cast = self.casts.remove(&stream_id);
                 cast.expect("stopped cast was missing from the map");
+            }
+            event => return Some(event),
+        }
+        None
+    }
+}
+
+impl EventStreamStatePart for GestureState {
+    fn replicate(&self) -> Vec<Event> {
+        // Gestures are transient — don't replay on connect.
+        vec![]
+    }
+
+    fn apply(&mut self, event: Event) -> Option<Event> {
+        match event {
+            Event::GestureBegin { ref tag, .. } => {
+                self.active_tag = Some(tag.clone());
+            }
+            Event::GestureProgress { .. } => {
+                // No state change needed.
+            }
+            Event::GestureEnd { .. } => {
+                self.active_tag = None;
             }
             event => return Some(event),
         }
