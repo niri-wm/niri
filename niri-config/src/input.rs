@@ -496,7 +496,7 @@ impl Touchscreen {
 
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ScreenEdge {
     Left,
     Right,
@@ -509,18 +509,48 @@ pub enum ScreenEdge {
 /// The perpendicular axis of the edge is split into thirds: for Top/Bottom
 /// that's the x axis (Start=leftmost third, End=rightmost third); for
 /// Left/Right that's the y axis (Start=topmost third, End=bottommost third).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum EdgeZone {
     Start,
     Center,
     End,
 }
 
+impl ScreenEdge {
+    /// Lower-cased name used in KDL config and IPC events (`"left"`,
+    /// `"right"`, `"top"`, `"bottom"`).
+    pub fn as_kdl_name(self) -> &'static str {
+        match self {
+            ScreenEdge::Left => "left",
+            ScreenEdge::Right => "right",
+            ScreenEdge::Top => "top",
+            ScreenEdge::Bottom => "bottom",
+        }
+    }
+}
+
+/// Lower-cased zone name used in KDL config and IPC events. The
+/// vocabulary rotates per edge axis: top/bottom edges take
+/// `left|center|right`; left/right edges take `top|center|bottom`. This
+/// is the single source of truth for that mapping — parsers, IPC
+/// emitters, and display helpers all share it.
+pub fn zone_kdl_name(edge: ScreenEdge, zone: EdgeZone) -> &'static str {
+    match (edge, zone) {
+        (ScreenEdge::Top | ScreenEdge::Bottom, EdgeZone::Start) => "left",
+        (ScreenEdge::Top | ScreenEdge::Bottom, EdgeZone::Center) => "center",
+        (ScreenEdge::Top | ScreenEdge::Bottom, EdgeZone::End) => "right",
+        (ScreenEdge::Left | ScreenEdge::Right, EdgeZone::Start) => "top",
+        (ScreenEdge::Left | ScreenEdge::Right, EdgeZone::Center) => "center",
+        (ScreenEdge::Left | ScreenEdge::Right, EdgeZone::End) => "bottom",
+    }
+}
+
 /// Tuning parameters for touchscreen gesture recognition.
 ///
-/// The actual gesture binds (e.g. `TouchSwipe3Up`, `TouchEdgeLeft`) live in
-/// the main `binds {}` block — this struct only controls how movement is
-/// classified and how IPC progress is reported.
+/// The actual gesture binds (e.g. `TouchSwipe fingers=3 direction="up"`,
+/// `TouchEdge edge="left"`) live in the main `binds {}` block — this
+/// struct only controls how movement is classified and how IPC progress
+/// is reported.
 #[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]
 pub struct TouchscreenGesturesConfig {
     /// Distance in pixels fingers must move before a swipe gesture is
@@ -529,7 +559,7 @@ pub struct TouchscreenGesturesConfig {
     #[knuffel(child, unwrap(argument))]
     pub recognition_threshold: Option<f64>,
     /// Distance in pixels from a screen edge within which a touch must start
-    /// for it to count as an edge swipe (`TouchEdgeLeft`/`Right`/`Top`/`Bottom`).
+    /// for it to count as an edge swipe (`TouchEdge edge="left|right|top|bottom"`).
     /// Touches beginning farther from the edge are treated as regular swipes.
     /// Default: 20.0.
     #[knuffel(child, unwrap(argument))]
@@ -595,9 +625,9 @@ pub struct TouchscreenGesturesConfig {
 
 /// Tuning parameters for touchpad gesture recognition.
 ///
-/// The actual gesture binds (e.g. `TouchpadSwipe3Up`) live in the main
-/// `binds {}` block — this struct only controls how movement is classified
-/// and how IPC progress is reported.
+/// The actual gesture binds (e.g. `TouchpadSwipe fingers=3 direction="up"`)
+/// live in the main `binds {}` block — this struct only controls how
+/// movement is classified and how IPC progress is reported.
 #[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]
 pub struct TouchpadGesturesConfig {
     /// Distance in libinput delta units that fingers must move before a swipe

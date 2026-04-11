@@ -40,7 +40,9 @@ use super::backend_ext::NiriInputBackend as InputBackend;
 use super::move_grab::MoveGrab;
 use super::touch_overview_grab::TouchOverviewGrab;
 use super::{find_configured_bind, modifiers_from_state, PointerOrTouchStartData};
-use niri_config::binds::Trigger;
+use niri_config::binds::{
+    PinchDirection, RotateDirection, SwipeDirection, Trigger, MAX_FINGERS, MIN_FINGERS,
+};
 use niri_config::input::{EdgeZone, ScreenEdge};
 use niri_config::touch_binds::{
     continuous_gesture_kind, ContinuousGestureKind, TouchGestureType,
@@ -144,8 +146,11 @@ impl State {
                     let mod_key = self.backend.mod_key(&config);
                     let mods = self.niri.seat.get_keyboard().unwrap()
                         .modifier_state();
-                    let zoned_trigger = edge_zone_to_trigger(edge, zone);
-                    let parent_trigger = edge_to_trigger(edge);
+                    let zoned_trigger = Trigger::TouchEdge {
+                        edge,
+                        zone: Some(zone),
+                    };
+                    let parent_trigger = Trigger::TouchEdge { edge, zone: None };
                     let zoned_hit = find_configured_bind(
                         config.binds.0.iter(),
                         mod_key,
@@ -582,10 +587,9 @@ impl State {
                         // `zoned` flag was decided in `on_touch_down` so the
                         // same bind fires here regardless of whether a zoned
                         // or parent bind is in the config.
-                        let trigger = if zoned {
-                            edge_zone_to_trigger(edge, zone)
-                        } else {
-                            edge_to_trigger(edge)
+                        let trigger = Trigger::TouchEdge {
+                            edge,
+                            zone: if zoned { Some(zone) } else { None },
                         };
                         let bind_info = {
                             let config = self.niri.config.borrow();
@@ -604,7 +608,7 @@ impl State {
                         if let Some((kind, sensitivity, natural_scroll, tag, action)) = bind_info {
                             // Emit IPC GestureBegin if this bind has a tag.
                             if let Some(ref tag) = tag {
-                                let trigger_name = trigger_to_ipc_name(Some(trigger));
+                                let trigger_name = trigger_to_ipc_name(trigger);
                                 self.ipc_gesture_begin(
                                     tag.clone(),
                                     trigger_name,
@@ -916,12 +920,12 @@ impl State {
                         // recognized but nothing was bound to it, so nothing
                         // will fire — a common "my gesture does nothing" cause.
                         {
-                            let trigger_name = trigger_to_ipc_name(
-                                touch_gesture_to_trigger(
-                                    gesture_type,
-                                    finger_count as u8,
-                                ),
-                            );
+                            let trigger_name = touch_gesture_to_trigger(
+                                gesture_type,
+                                finger_count as u8,
+                            )
+                            .map(trigger_to_ipc_name)
+                            .unwrap_or_else(|| "Unknown".to_string());
                             let (bind_matched, kind_str, tag_str) =
                                 match bind_info.as_ref() {
                                     Some((kind, _, _, tag, _)) => (
@@ -952,9 +956,10 @@ impl State {
                         if let Some((kind, sensitivity, natural_scroll, tag, action)) = bind_info {
                             // Emit IPC GestureBegin if this bind has a tag.
                             if let Some(ref tag) = tag {
-                                let trigger_name = trigger_to_ipc_name(
-                                    touch_gesture_to_trigger(gesture_type, finger_count as u8),
-                                );
+                                let trigger_name =
+                                    touch_gesture_to_trigger(gesture_type, finger_count as u8)
+                                        .map(trigger_to_ipc_name)
+                                        .unwrap_or_else(|| "Unknown".to_string());
                                 self.ipc_gesture_begin(
                                     tag.clone(),
                                     trigger_name,
@@ -1110,72 +1115,66 @@ impl State {
 /// Convert a TouchGestureType + finger count to a Trigger for bind lookup.
 fn touch_gesture_to_trigger(gesture: TouchGestureType, finger_count: u8) -> Option<Trigger> {
     use TouchGestureType::*;
-    match (gesture, finger_count) {
-        (SwipeUp, 3) => Some(Trigger::TouchSwipe3Up),
-        (SwipeDown, 3) => Some(Trigger::TouchSwipe3Down),
-        (SwipeLeft, 3) => Some(Trigger::TouchSwipe3Left),
-        (SwipeRight, 3) => Some(Trigger::TouchSwipe3Right),
-        (SwipeUp, 4) => Some(Trigger::TouchSwipe4Up),
-        (SwipeDown, 4) => Some(Trigger::TouchSwipe4Down),
-        (SwipeLeft, 4) => Some(Trigger::TouchSwipe4Left),
-        (SwipeRight, 4) => Some(Trigger::TouchSwipe4Right),
-        (SwipeUp, 5) => Some(Trigger::TouchSwipe5Up),
-        (SwipeDown, 5) => Some(Trigger::TouchSwipe5Down),
-        (SwipeLeft, 5) => Some(Trigger::TouchSwipe5Left),
-        (SwipeRight, 5) => Some(Trigger::TouchSwipe5Right),
-        (PinchIn, 3) => Some(Trigger::TouchPinch3In),
-        (PinchOut, 3) => Some(Trigger::TouchPinch3Out),
-        (PinchIn, 4) => Some(Trigger::TouchPinch4In),
-        (PinchOut, 4) => Some(Trigger::TouchPinch4Out),
-        (PinchIn, 5) => Some(Trigger::TouchPinch5In),
-        (PinchOut, 5) => Some(Trigger::TouchPinch5Out),
-        (RotateCw, 3) => Some(Trigger::TouchRotate3Cw),
-        (RotateCcw, 3) => Some(Trigger::TouchRotate3Ccw),
-        (RotateCw, 4) => Some(Trigger::TouchRotate4Cw),
-        (RotateCcw, 4) => Some(Trigger::TouchRotate4Ccw),
-        (RotateCw, 5) => Some(Trigger::TouchRotate5Cw),
-        (RotateCcw, 5) => Some(Trigger::TouchRotate5Ccw),
-        (EdgeSwipeLeft, _) => Some(Trigger::TouchEdgeLeft),
-        (EdgeSwipeRight, _) => Some(Trigger::TouchEdgeRight),
-        (EdgeSwipeTop, _) => Some(Trigger::TouchEdgeTop),
-        (EdgeSwipeBottom, _) => Some(Trigger::TouchEdgeBottom),
-        _ => None,
+    // Reject finger counts outside the supported range. Edge swipes are
+    // always single-finger so they're allowed through regardless.
+    if !(MIN_FINGERS..=MAX_FINGERS).contains(&finger_count)
+        && !matches!(
+            gesture,
+            EdgeSwipeLeft | EdgeSwipeRight | EdgeSwipeTop | EdgeSwipeBottom
+        )
+    {
+        return None;
     }
-}
-
-/// Convert a screen edge to its unzoned (parent) Trigger for bind lookup.
-///
-/// Used both as the "match any zone" fallback when no zoned bind exists, and
-/// as the IPC name when an unzoned bind is the one that fired.
-fn edge_to_trigger(edge: ScreenEdge) -> Trigger {
-    match edge {
-        ScreenEdge::Left => Trigger::TouchEdgeLeft,
-        ScreenEdge::Right => Trigger::TouchEdgeRight,
-        ScreenEdge::Top => Trigger::TouchEdgeTop,
-        ScreenEdge::Bottom => Trigger::TouchEdgeBottom,
-    }
-}
-
-/// Convert an (edge, zone) pair to its zoned Trigger for bind lookup.
-///
-/// The zone suffix uses directional words rotated per edge axis: Top/Bottom
-/// edges split along x (Left/Center/Right), Left/Right edges split along y
-/// (Top/Center/Bottom). `EdgeZone::{Start, Center, End}` is the abstract
-/// per-axis ordering; this function maps it to the concrete variant.
-fn edge_zone_to_trigger(edge: ScreenEdge, zone: EdgeZone) -> Trigger {
-    match (edge, zone) {
-        (ScreenEdge::Top, EdgeZone::Start) => Trigger::TouchEdgeTopLeft,
-        (ScreenEdge::Top, EdgeZone::Center) => Trigger::TouchEdgeTopCenter,
-        (ScreenEdge::Top, EdgeZone::End) => Trigger::TouchEdgeTopRight,
-        (ScreenEdge::Bottom, EdgeZone::Start) => Trigger::TouchEdgeBottomLeft,
-        (ScreenEdge::Bottom, EdgeZone::Center) => Trigger::TouchEdgeBottomCenter,
-        (ScreenEdge::Bottom, EdgeZone::End) => Trigger::TouchEdgeBottomRight,
-        (ScreenEdge::Left, EdgeZone::Start) => Trigger::TouchEdgeLeftTop,
-        (ScreenEdge::Left, EdgeZone::Center) => Trigger::TouchEdgeLeftCenter,
-        (ScreenEdge::Left, EdgeZone::End) => Trigger::TouchEdgeLeftBottom,
-        (ScreenEdge::Right, EdgeZone::Start) => Trigger::TouchEdgeRightTop,
-        (ScreenEdge::Right, EdgeZone::Center) => Trigger::TouchEdgeRightCenter,
-        (ScreenEdge::Right, EdgeZone::End) => Trigger::TouchEdgeRightBottom,
+    let fingers = finger_count;
+    match gesture {
+        SwipeUp => Some(Trigger::TouchSwipe {
+            fingers,
+            direction: SwipeDirection::Up,
+        }),
+        SwipeDown => Some(Trigger::TouchSwipe {
+            fingers,
+            direction: SwipeDirection::Down,
+        }),
+        SwipeLeft => Some(Trigger::TouchSwipe {
+            fingers,
+            direction: SwipeDirection::Left,
+        }),
+        SwipeRight => Some(Trigger::TouchSwipe {
+            fingers,
+            direction: SwipeDirection::Right,
+        }),
+        PinchIn => Some(Trigger::TouchPinch {
+            fingers,
+            direction: PinchDirection::In,
+        }),
+        PinchOut => Some(Trigger::TouchPinch {
+            fingers,
+            direction: PinchDirection::Out,
+        }),
+        RotateCw => Some(Trigger::TouchRotate {
+            fingers,
+            direction: RotateDirection::Cw,
+        }),
+        RotateCcw => Some(Trigger::TouchRotate {
+            fingers,
+            direction: RotateDirection::Ccw,
+        }),
+        EdgeSwipeLeft => Some(Trigger::TouchEdge {
+            edge: ScreenEdge::Left,
+            zone: None,
+        }),
+        EdgeSwipeRight => Some(Trigger::TouchEdge {
+            edge: ScreenEdge::Right,
+            zone: None,
+        }),
+        EdgeSwipeTop => Some(Trigger::TouchEdge {
+            edge: ScreenEdge::Top,
+            zone: None,
+        }),
+        EdgeSwipeBottom => Some(Trigger::TouchEdge {
+            edge: ScreenEdge::Bottom,
+            zone: None,
+        }),
     }
 }
 
@@ -1780,56 +1779,84 @@ fn calculate_rotation_delta(
     (filtered, new_angles)
 }
 
-/// Convert a Trigger to its KDL config name for IPC events.
-fn trigger_to_ipc_name(trigger: Option<Trigger>) -> String {
-    let Some(trigger) = trigger else {
-        return "Unknown".to_string();
-    };
+/// Convert a gesture Trigger to its KDL config name for IPC events. The
+/// emitted string echoes the same property form users write in `binds {}`
+/// (e.g. `TouchSwipe fingers=3 direction="up"`) so IPC consumers can
+/// string-match against their own config 1:1. Non-gesture variants fall
+/// through to `"Unknown"` — this function is only meant for gesture
+/// triggers.
+pub(crate) fn trigger_to_ipc_name(trigger: Trigger) -> String {
     match trigger {
-        Trigger::TouchSwipe3Up => "TouchSwipe3Up",
-        Trigger::TouchSwipe3Down => "TouchSwipe3Down",
-        Trigger::TouchSwipe3Left => "TouchSwipe3Left",
-        Trigger::TouchSwipe3Right => "TouchSwipe3Right",
-        Trigger::TouchSwipe4Up => "TouchSwipe4Up",
-        Trigger::TouchSwipe4Down => "TouchSwipe4Down",
-        Trigger::TouchSwipe4Left => "TouchSwipe4Left",
-        Trigger::TouchSwipe4Right => "TouchSwipe4Right",
-        Trigger::TouchSwipe5Up => "TouchSwipe5Up",
-        Trigger::TouchSwipe5Down => "TouchSwipe5Down",
-        Trigger::TouchSwipe5Left => "TouchSwipe5Left",
-        Trigger::TouchSwipe5Right => "TouchSwipe5Right",
-        Trigger::TouchPinch3In => "TouchPinch3In",
-        Trigger::TouchPinch3Out => "TouchPinch3Out",
-        Trigger::TouchPinch4In => "TouchPinch4In",
-        Trigger::TouchPinch4Out => "TouchPinch4Out",
-        Trigger::TouchPinch5In => "TouchPinch5In",
-        Trigger::TouchPinch5Out => "TouchPinch5Out",
-        Trigger::TouchRotate3Cw => "TouchRotate3Cw",
-        Trigger::TouchRotate3Ccw => "TouchRotate3Ccw",
-        Trigger::TouchRotate4Cw => "TouchRotate4Cw",
-        Trigger::TouchRotate4Ccw => "TouchRotate4Ccw",
-        Trigger::TouchRotate5Cw => "TouchRotate5Cw",
-        Trigger::TouchRotate5Ccw => "TouchRotate5Ccw",
-        Trigger::TouchEdgeLeft => "TouchEdgeLeft",
-        Trigger::TouchEdgeRight => "TouchEdgeRight",
-        Trigger::TouchEdgeTop => "TouchEdgeTop",
-        Trigger::TouchEdgeBottom => "TouchEdgeBottom",
-        Trigger::TouchEdgeTopLeft => "TouchEdgeTop:Left",
-        Trigger::TouchEdgeTopCenter => "TouchEdgeTop:Center",
-        Trigger::TouchEdgeTopRight => "TouchEdgeTop:Right",
-        Trigger::TouchEdgeBottomLeft => "TouchEdgeBottom:Left",
-        Trigger::TouchEdgeBottomCenter => "TouchEdgeBottom:Center",
-        Trigger::TouchEdgeBottomRight => "TouchEdgeBottom:Right",
-        Trigger::TouchEdgeLeftTop => "TouchEdgeLeft:Top",
-        Trigger::TouchEdgeLeftCenter => "TouchEdgeLeft:Center",
-        Trigger::TouchEdgeLeftBottom => "TouchEdgeLeft:Bottom",
-        Trigger::TouchEdgeRightTop => "TouchEdgeRight:Top",
-        Trigger::TouchEdgeRightCenter => "TouchEdgeRight:Center",
-        Trigger::TouchEdgeRightBottom => "TouchEdgeRight:Bottom",
-        _ => "Unknown",
+        Trigger::TouchSwipe { fingers, direction } => {
+            format!(
+                "TouchSwipe fingers={fingers} direction=\"{}\"",
+                swipe_dir_name(direction)
+            )
+        }
+        Trigger::TouchpadSwipe { fingers, direction } => {
+            format!(
+                "TouchpadSwipe fingers={fingers} direction=\"{}\"",
+                swipe_dir_name(direction)
+            )
+        }
+        Trigger::TouchPinch { fingers, direction } => {
+            format!(
+                "TouchPinch fingers={fingers} direction=\"{}\"",
+                pinch_dir_name(direction)
+            )
+        }
+        Trigger::TouchRotate { fingers, direction } => {
+            format!(
+                "TouchRotate fingers={fingers} direction=\"{}\"",
+                rotate_dir_name(direction)
+            )
+        }
+        Trigger::TouchEdge { edge, zone } => {
+            let edge_str = edge.as_kdl_name();
+            match zone {
+                None => format!("TouchEdge edge=\"{edge_str}\""),
+                Some(z) => format!(
+                    "TouchEdge edge=\"{edge_str}\" zone=\"{}\"",
+                    niri_config::input::zone_kdl_name(edge, z)
+                ),
+            }
+        }
+        // Every current caller only passes gesture triggers. If that
+        // invariant ever breaks we want to hear about it loudly in dev
+        // rather than silently emitting "Unknown" into the IPC stream.
+        other => {
+            debug_assert!(
+                false,
+                "trigger_to_ipc_name called with non-gesture trigger: {other:?}"
+            );
+            "Unknown".to_string()
+        }
     }
-    .to_string()
 }
+
+fn swipe_dir_name(d: SwipeDirection) -> &'static str {
+    match d {
+        SwipeDirection::Up => "up",
+        SwipeDirection::Down => "down",
+        SwipeDirection::Left => "left",
+        SwipeDirection::Right => "right",
+    }
+}
+
+fn pinch_dir_name(d: PinchDirection) -> &'static str {
+    match d {
+        PinchDirection::In => "in",
+        PinchDirection::Out => "out",
+    }
+}
+
+fn rotate_dir_name(d: RotateDirection) -> &'static str {
+    match d {
+        RotateDirection::Cw => "cw",
+        RotateDirection::Ccw => "ccw",
+    }
+}
+
 
 #[cfg(test)]
 mod tests {

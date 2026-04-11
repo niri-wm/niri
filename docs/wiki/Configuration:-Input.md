@@ -48,8 +48,8 @@ input {
         // middle-emulation
 
         // Touchpad gesture binds live in the main binds {} block using
-        // trigger names like TouchpadSwipe3Up, TouchpadSwipe4Down.
-        // This subblock only contains tuning parameters.
+        // the `TouchpadSwipe` trigger with `fingers=N direction="..."`
+        // properties. This subblock only contains tuning parameters.
         // gestures {
         //     recognition-threshold 16.0
         //     gesture-progress-distance 40.0
@@ -108,7 +108,8 @@ input {
         // calibration-matrix 1.0 0.0 0.0 0.0 1.0 0.0
 
         // Touchscreen gesture binds live in the main binds {} block using
-        // trigger names like TouchSwipe3Up, TouchPinch4In, TouchEdgeLeft.
+        // parameterized triggers like TouchSwipe fingers=3 direction="up",
+        // TouchPinch fingers=4 direction="in", or TouchEdge edge="left".
         // This subblock only contains tuning parameters.
         gestures {
             // recognition-threshold 16.0
@@ -296,12 +297,12 @@ Settings specific to `touchscreen`:
 
 > [!NOTE]
 >
-> Touchscreen gesture **binds** are configured in the main `binds {}` block using trigger names like `TouchSwipe3Up`, `TouchPinch4In`, or `TouchEdgeLeft`. The `touchscreen { gestures { } }` subblock below only contains tuning parameters that affect *how* gestures are recognized, not *which* ones fire. See the [Gestures](./Gestures.md) wiki page for the full list of touchscreen gesture triggers.
+> Touchscreen gesture **binds** are configured in the main `binds {}` block using parameterized triggers like `TouchSwipe fingers=3 direction="up"`, `TouchPinch fingers=4 direction="in"`, or `TouchEdge edge="left"`. The `touchscreen { gestures { } }` subblock below only contains tuning parameters that affect *how* gestures are recognized, not *which* ones fire. See the [Gestures](./Gestures.md) wiki page for the full list of touchscreen gesture triggers.
 
 The `touchscreen { gestures { } }` tuning parameters are:
 
 - `recognition-threshold <float>`: distance in pixels fingers must move before a swipe gesture is recognized and starts firing events. Lower values feel more responsive but risk triggering on incidental finger drift. Default: `16.0`.
-- `edge-threshold <float>`: distance in pixels from a screen edge within which a touch must start for it to count as an edge swipe (`TouchEdgeLeft`/`Right`/`Top`/`Bottom`, or their zoned forms like `TouchEdgeTop:Left`). Touches beginning farther from the edge are treated as regular swipes. Default: `20.0`.
+- `edge-threshold <float>`: distance in pixels from a screen edge within which a touch must start for it to count as an edge swipe (`TouchEdge edge="left|right|top|bottom"`, optionally with `zone=`). Touches beginning farther from the edge are treated as regular swipes. Default: `20.0`.
 - `pinch-threshold <float>`: how far fingers must move together or apart (as total spread change in pixels) before niri classifies the gesture as a pinch rather than a swipe. Default: `30.0`.
 - `pinch-ratio <float>`: ratio by which spread change must exceed linear swipe distance for a gesture to count as a pinch. Higher values make pinch detection stricter — the fingers really have to move apart/together rather than glide across the screen. Default: `2.0`.
 - `pinch-sensitivity <float>`: multiplier mapping finger spread change (in screen pixels) to continuous pinch animation delta (e.g. overview open/close progress during a pinch). At the default of `1.0`, one pixel of finger spread change contributes one pixel to the underlying gesture accumulator, which is then divided by the target animation's threshold (e.g. 300 px for overview open/close). A typical 3-finger pinch travels 200–250 px of spread, which maps comfortably across the 0→1 overview progress range at `1.0`. Higher values make continuous pinch actions reach completion with less finger movement; lower values give finer control at the cost of needing more travel. Applies to **all** pinch-bound continuous actions, not just overview — the bind's own `sensitivity=` property is ignored for pinch gestures because raw spread-delta pixels need very different scaling from linear swipe distances. Default: `1.0`.
@@ -332,7 +333,7 @@ input {
 
 <sup>Since: next</sup>
 
-The `touchpad { gestures { } }` subblock contains tuning parameters for touchpad swipe recognition. Like touchscreen, the actual gesture binds (`TouchpadSwipe3Up`, etc.) live in the main `binds {}` block.
+The `touchpad { gestures { } }` subblock contains tuning parameters for touchpad swipe recognition. Like touchscreen, the actual gesture binds (`TouchpadSwipe fingers=N direction="..."`) live in the main `binds {}` block.
 
 - `recognition-threshold <float>`: distance in libinput delta units that fingers must move before a swipe gesture is recognized. These units are acceleration-adjusted and not directly comparable to touchscreen pixels. Default: `16.0`.
 - `gesture-progress-distance <float>`: libinput delta units of finger movement required for IPC `GestureProgress` events to reach `progress = 1.0`. Because libinput acceleration curves are nonlinear, the same physical swipe can produce different delta magnitudes depending on speed — this value is **not** directly comparable to the touchscreen `gesture-progress-distance`. Default: `40.0`.

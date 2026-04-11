@@ -42,7 +42,11 @@ input {
         // disabled-on-external-mouse
 
         // Touchpad gesture binds live in the main binds {} block using
-        // triggers like TouchpadSwipe3Up, TouchpadSwipe4Down.
+        // the `TouchpadSwipe` trigger with `fingers=` and `direction=`
+        // properties, e.g.
+        //   TouchpadSwipe fingers=3 direction="up"   { focus-workspace-up; }
+        //   TouchpadSwipe fingers=4 direction="left" { focus-column-right; }
+        // `fingers=` accepts any integer in 3..=10.
         // See the wiki page "Gestures" for the full list.
         //
         // gestures {
@@ -77,13 +81,18 @@ input {
     //     // natural-scroll
     //     // map-to-output "eDP-1"
     //     //
-    //     // Touchscreen gesture binds live in the main binds {} block using
-    //     // triggers like TouchSwipe3Up, TouchPinch4In, TouchEdgeLeft.
-    //     // Edges can also be split into thirds with a zone suffix, e.g.
-    //     // TouchEdgeTop:Left / TouchEdgeTop:Center / TouchEdgeTop:Right
-    //     // (Top/Bottom use Left/Center/Right; Left/Right use Top/Center/
-    //     // Bottom). The parent bind (e.g. TouchEdgeTop) still works as a
-    //     // fallback for zones without a dedicated bind.
+    //     // Touchscreen gesture binds live in the main binds {} block
+    //     // using parameterized triggers with KDL properties, e.g.
+    //     //   TouchSwipe  fingers=3 direction="up"   { focus-workspace-up; }
+    //     //   TouchPinch  fingers=4 direction="in"   { open-overview; }
+    //     //   TouchRotate fingers=4 direction="cw"   { focus-column-right; }
+    //     //   TouchEdge   edge="left"                { focus-column-right; }
+    //     //   TouchEdge   edge="top"  zone="right"   { spawn "screenshot.sh"; }
+    //     // `fingers=` accepts any integer in 3..=10. Edges can be split
+    //     // into thirds with `zone=`; the vocabulary rotates per edge axis
+    //     // (top/bottom take left|center|right; left/right take
+    //     // top|center|bottom). A parent bind (no `zone=`) still fires as
+    //     // a fallback for zones without a dedicated bind.
     //     // See the wiki page "Gestures" for the full list.
     //     //
     //     // gestures {

@@ -12,8 +12,41 @@ use smithay::input::keyboard::keysyms::KEY_NoSymbol;
 use smithay::input::keyboard::xkb::{keysym_from_name, KEYSYM_CASE_INSENSITIVE, KEYSYM_NO_FLAGS};
 use smithay::input::keyboard::Keysym;
 
+use crate::input::{EdgeZone, ScreenEdge};
 use crate::recent_windows::{MruDirection, MruFilter, MruScope};
 use crate::utils::{expect_only_children, MergeWith};
+
+/// Direction for a linear swipe gesture.
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
+pub enum SwipeDirection {
+    Up,
+    Down,
+    Left,
+    Right,
+}
+
+/// Direction for a pinch gesture.
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
+pub enum PinchDirection {
+    In,
+    Out,
+}
+
+/// Direction for a rotation gesture (as seen on screen).
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
+pub enum RotateDirection {
+    /// Clockwise on screen.
+    Cw,
+    /// Counter-clockwise on screen.
+    Ccw,
+}
+
+/// Inclusive bounds on the `fingers=` property for multi-finger gestures.
+/// Parser rejects `fingers` values outside `[MIN_FINGERS, MAX_FINGERS]`.
+/// `< 3` would collide with two-finger passthrough (scroll/zoom) and plain
+/// single-finger touch handling; `> 10` exceeds any realistic hardware.
+pub const MIN_FINGERS: u8 = 3;
+pub const MAX_FINGERS: u8 = 10;
 
 #[derive(Debug, Default, PartialEq)]
 pub struct Binds(pub Vec<Bind>);
@@ -61,76 +94,54 @@ pub enum Trigger {
     TouchpadScrollUp,
     TouchpadScrollLeft,
     TouchpadScrollRight,
-    TouchpadSwipe3Up,
-    TouchpadSwipe3Down,
-    TouchpadSwipe3Left,
-    TouchpadSwipe3Right,
-    TouchpadSwipe4Up,
-    TouchpadSwipe4Down,
-    TouchpadSwipe4Left,
-    TouchpadSwipe4Right,
-    TouchpadSwipe5Up,
-    TouchpadSwipe5Down,
-    TouchpadSwipe5Left,
-    TouchpadSwipe5Right,
-    // Touchscreen swipe gestures
-    TouchSwipe3Up,
-    TouchSwipe3Down,
-    TouchSwipe3Left,
-    TouchSwipe3Right,
-    TouchSwipe4Up,
-    TouchSwipe4Down,
-    TouchSwipe4Left,
-    TouchSwipe4Right,
-    TouchSwipe5Up,
-    TouchSwipe5Down,
-    TouchSwipe5Left,
-    TouchSwipe5Right,
-    // Touchscreen pinch gestures
-    TouchPinch3In,
-    TouchPinch3Out,
-    TouchPinch4In,
-    TouchPinch4Out,
-    TouchPinch5In,
-    TouchPinch5Out,
-    // Touchscreen rotation gestures. 3/4/5 fingers; Cw = clockwise when
-    // looking at the screen, Ccw = counter-clockwise. Rotation starts at 3
-    // fingers (never 2) to preserve the 2-finger passthrough contract used
-    // by clients for scrolling/zooming.
-    TouchRotate3Cw,
-    TouchRotate3Ccw,
-    TouchRotate4Cw,
-    TouchRotate4Ccw,
-    TouchRotate5Cw,
-    TouchRotate5Ccw,
-    // Touchscreen edge swipes (parent / any-zone fallback).
-    TouchEdgeLeft,
-    TouchEdgeRight,
-    TouchEdgeTop,
-    TouchEdgeBottom,
-    // Touchscreen edge swipes with zone qualifier. Each edge is split into
-    // three zones along its perpendicular axis, and the zone suffix uses
-    // compass-style directional words appropriate to that axis. At bind
-    // lookup time, a zoned trigger is tried first; if absent, the parent
-    // trigger above is used as a fallback.
-    //
-    // Parse syntax:
-    //   `TouchEdgeTop:Left`, `TouchEdgeTop:Center`, `TouchEdgeTop:Right`
-    //   `TouchEdgeBottom:Left`, `TouchEdgeBottom:Center`, `TouchEdgeBottom:Right`
-    //   `TouchEdgeLeft:Top`, `TouchEdgeLeft:Center`, `TouchEdgeLeft:Bottom`
-    //   `TouchEdgeRight:Top`, `TouchEdgeRight:Center`, `TouchEdgeRight:Bottom`
-    TouchEdgeTopLeft,
-    TouchEdgeTopCenter,
-    TouchEdgeTopRight,
-    TouchEdgeBottomLeft,
-    TouchEdgeBottomCenter,
-    TouchEdgeBottomRight,
-    TouchEdgeLeftTop,
-    TouchEdgeLeftCenter,
-    TouchEdgeLeftBottom,
-    TouchEdgeRightTop,
-    TouchEdgeRightCenter,
-    TouchEdgeRightBottom,
+    /// Multi-finger touchpad swipe.
+    ///
+    /// KDL syntax: `TouchpadSwipe fingers=3 direction="up"`. `fingers` must
+    /// be in `MIN_FINGERS..=MAX_FINGERS`.
+    TouchpadSwipe {
+        fingers: u8,
+        direction: SwipeDirection,
+    },
+    /// Multi-finger touchscreen swipe.
+    ///
+    /// KDL syntax: `TouchSwipe fingers=3 direction="up"`.
+    TouchSwipe {
+        fingers: u8,
+        direction: SwipeDirection,
+    },
+    /// Multi-finger touchscreen pinch (fingers converging / diverging
+    /// around the cluster centroid).
+    ///
+    /// KDL syntax: `TouchPinch fingers=3 direction="in"`.
+    TouchPinch {
+        fingers: u8,
+        direction: PinchDirection,
+    },
+    /// Multi-finger touchscreen rotation (fingers twisting as a group around
+    /// the cluster centroid). Rotation starts at 3 fingers to preserve the
+    /// 2-finger passthrough contract used by clients for scrolling/zooming.
+    ///
+    /// KDL syntax: `TouchRotate fingers=3 direction="cw"`.
+    TouchRotate {
+        fingers: u8,
+        direction: RotateDirection,
+    },
+    /// Single-finger touchscreen edge swipe.
+    ///
+    /// `zone` picks one of the three zones along the edge's perpendicular
+    /// axis; `None` is the parent/any-zone fallback. At bind lookup time a
+    /// zoned trigger is preferred, with `zone: None` as a fallback.
+    ///
+    /// KDL syntax:
+    /// - `TouchEdge edge="left"` (parent)
+    /// - `TouchEdge edge="left" zone="top"` (zoned)
+    ///
+    /// Top/Bottom edges accept `zone="left"|"center"|"right"`; Left/Right
+    /// edges accept `zone="top"|"center"|"bottom"`.
+    TouchEdge {
+        edge: ScreenEdge,
+        zone: Option<EdgeZone>,
+    },
 }
 
 impl Trigger {
@@ -139,58 +150,11 @@ impl Trigger {
     pub fn is_gesture(&self) -> bool {
         matches!(
             self,
-            Trigger::TouchpadSwipe3Up
-                | Trigger::TouchpadSwipe3Down
-                | Trigger::TouchpadSwipe3Left
-                | Trigger::TouchpadSwipe3Right
-                | Trigger::TouchpadSwipe4Up
-                | Trigger::TouchpadSwipe4Down
-                | Trigger::TouchpadSwipe4Left
-                | Trigger::TouchpadSwipe4Right
-                | Trigger::TouchpadSwipe5Up
-                | Trigger::TouchpadSwipe5Down
-                | Trigger::TouchpadSwipe5Left
-                | Trigger::TouchpadSwipe5Right
-                | Trigger::TouchSwipe3Up
-                | Trigger::TouchSwipe3Down
-                | Trigger::TouchSwipe3Left
-                | Trigger::TouchSwipe3Right
-                | Trigger::TouchSwipe4Up
-                | Trigger::TouchSwipe4Down
-                | Trigger::TouchSwipe4Left
-                | Trigger::TouchSwipe4Right
-                | Trigger::TouchSwipe5Up
-                | Trigger::TouchSwipe5Down
-                | Trigger::TouchSwipe5Left
-                | Trigger::TouchSwipe5Right
-                | Trigger::TouchPinch3In
-                | Trigger::TouchPinch3Out
-                | Trigger::TouchPinch4In
-                | Trigger::TouchPinch4Out
-                | Trigger::TouchPinch5In
-                | Trigger::TouchPinch5Out
-                | Trigger::TouchRotate3Cw
-                | Trigger::TouchRotate3Ccw
-                | Trigger::TouchRotate4Cw
-                | Trigger::TouchRotate4Ccw
-                | Trigger::TouchRotate5Cw
-                | Trigger::TouchRotate5Ccw
-                | Trigger::TouchEdgeLeft
-                | Trigger::TouchEdgeRight
-                | Trigger::TouchEdgeTop
-                | Trigger::TouchEdgeBottom
-                | Trigger::TouchEdgeTopLeft
-                | Trigger::TouchEdgeTopCenter
-                | Trigger::TouchEdgeTopRight
-                | Trigger::TouchEdgeBottomLeft
-                | Trigger::TouchEdgeBottomCenter
-                | Trigger::TouchEdgeBottomRight
-                | Trigger::TouchEdgeLeftTop
-                | Trigger::TouchEdgeLeftCenter
-                | Trigger::TouchEdgeLeftBottom
-                | Trigger::TouchEdgeRightTop
-                | Trigger::TouchEdgeRightCenter
-                | Trigger::TouchEdgeRightBottom
+            Trigger::TouchpadSwipe { .. }
+                | Trigger::TouchSwipe { .. }
+                | Trigger::TouchPinch { .. }
+                | Trigger::TouchRotate { .. }
+                | Trigger::TouchEdge { .. }
         )
     }
 }
@@ -991,10 +955,30 @@ where
             ));
         }
 
-        let key = node
-            .node_name
-            .parse::<Key>()
-            .map_err(|e| DecodeError::conversion(&node.node_name, e.wrap_err("invalid keybind")))?;
+        // Split modifiers from the node name. `Ctrl+Shift+TouchSwipe` →
+        // (Modifiers::CTRL|SHIFT, "TouchSwipe").
+        let (modifiers, trigger_name) = match parse_modifiers(&node.node_name) {
+            Ok(pair) => pair,
+            Err(e) => {
+                return Err(DecodeError::conversion(
+                    &node.node_name,
+                    e.wrap_err("invalid keybind"),
+                ))
+            }
+        };
+        let is_gesture_family = is_gesture_family_name(trigger_name);
+
+        // For non-gesture triggers, parse the node name directly (keysyms,
+        // mouse buttons, wheel, TouchpadScroll). For gesture families we
+        // build the Trigger from properties below, because the node name
+        // alone carries no finger count / direction / edge info.
+        let key_from_name = if is_gesture_family {
+            None
+        } else {
+            Some(node.node_name.parse::<Key>().map_err(|e| {
+                DecodeError::conversion(&node.node_name, e.wrap_err("invalid keybind"))
+            })?)
+        };
 
         let mut repeat = true;
         let mut cooldown = None;
@@ -1005,6 +989,14 @@ where
         let mut sensitivity = None;
         let mut natural_scroll = false;
         let mut tag = None;
+
+        // Gesture-specific properties, only populated / legal when
+        // `is_gesture_family` is true.
+        let mut gesture_fingers: Option<u8> = None;
+        let mut gesture_direction: Option<String> = None;
+        let mut gesture_edge: Option<String> = None;
+        let mut gesture_zone: Option<String> = None;
+
         for (name, val) in &node.properties {
             match &***name {
                 "repeat" => {
@@ -1034,6 +1026,29 @@ where
                 "tag" => {
                     tag = Some(knuffel::traits::DecodeScalar::decode(val, ctx)?);
                 }
+                // Gesture-specific properties. Note that knuffel stores
+                // `node.properties` as a BTreeMap keyed on name, so a
+                // KDL node written with `fingers=3 fingers=5 ...` is
+                // silently collapsed to its last value at AST-build
+                // time — this loop only ever sees one entry per name.
+                // Duplicate detection therefore can't happen here; the
+                // only way to reject duplicates would be to intercept
+                // the raw KDL source before knuffel parses it, which
+                // isn't worth it. Last-wins is KDL-level behavior,
+                // and users who care get the same hazard on every
+                // other bind property (`tag=`, `cooldown-ms=`, etc.).
+                "fingers" if is_gesture_family => {
+                    gesture_fingers = Some(knuffel::traits::DecodeScalar::decode(val, ctx)?);
+                }
+                "direction" if is_gesture_family => {
+                    gesture_direction = Some(knuffel::traits::DecodeScalar::decode(val, ctx)?);
+                }
+                "edge" if is_gesture_family => {
+                    gesture_edge = Some(knuffel::traits::DecodeScalar::decode(val, ctx)?);
+                }
+                "zone" if is_gesture_family => {
+                    gesture_zone = Some(knuffel::traits::DecodeScalar::decode(val, ctx)?);
+                }
                 name_str => {
                     ctx.emit_error(DecodeError::unexpected(
                         name,
@@ -1043,6 +1058,25 @@ where
                 }
             }
         }
+
+        // Build the Key. For gesture families, combine node name +
+        // collected properties via build_gesture_trigger.
+        let key = if is_gesture_family {
+            let props = GestureTriggerProps {
+                fingers: gesture_fingers,
+                direction: gesture_direction.as_deref(),
+                edge: gesture_edge.as_deref(),
+                zone: gesture_zone.as_deref(),
+            };
+            match build_gesture_trigger(trigger_name, &props) {
+                Ok(trigger) => Key { trigger, modifiers },
+                Err(msg) => {
+                    return Err(DecodeError::conversion(&node.node_name, miette!("{msg}")));
+                }
+            }
+        } else {
+            key_from_name.unwrap()
+        };
 
         // Tags are only supported on gesture triggers (touchscreen/touchpad).
         // Allowing tags on keyboard/mouse binds would let the IPC event stream
@@ -1131,39 +1165,211 @@ where
     }
 }
 
+/// Returns true if `s` names one of the five parameterized gesture
+/// families. These are parsed via KDL properties in `Bind::decode_node`,
+/// not via `FromStr for Key`.
+pub(crate) fn is_gesture_family_name(s: &str) -> bool {
+    s.eq_ignore_ascii_case("TouchpadSwipe")
+        || s.eq_ignore_ascii_case("TouchSwipe")
+        || s.eq_ignore_ascii_case("TouchPinch")
+        || s.eq_ignore_ascii_case("TouchRotate")
+        || s.eq_ignore_ascii_case("TouchEdge")
+}
+
+/// Splits `Ctrl+Shift+Foo` into `(modifiers, "Foo")`.
+fn parse_modifiers(s: &str) -> Result<(Modifiers, &str), miette::Error> {
+    let mut modifiers = Modifiers::empty();
+    let mut split = s.split('+');
+    let key = split.next_back().unwrap();
+    for part in split {
+        let part = part.trim();
+        if part.eq_ignore_ascii_case("mod") {
+            modifiers |= Modifiers::COMPOSITOR;
+        } else if part.eq_ignore_ascii_case("ctrl") || part.eq_ignore_ascii_case("control") {
+            modifiers |= Modifiers::CTRL;
+        } else if part.eq_ignore_ascii_case("shift") {
+            modifiers |= Modifiers::SHIFT;
+        } else if part.eq_ignore_ascii_case("alt") {
+            modifiers |= Modifiers::ALT;
+        } else if part.eq_ignore_ascii_case("super") || part.eq_ignore_ascii_case("win") {
+            modifiers |= Modifiers::SUPER;
+        } else if part.eq_ignore_ascii_case("iso_level3_shift") || part.eq_ignore_ascii_case("mod5")
+        {
+            modifiers |= Modifiers::ISO_LEVEL3_SHIFT;
+        } else if part.eq_ignore_ascii_case("iso_level5_shift") || part.eq_ignore_ascii_case("mod3")
+        {
+            modifiers |= Modifiers::ISO_LEVEL5_SHIFT;
+        } else {
+            return Err(miette!("invalid modifier: {part}"));
+        }
+    }
+    Ok((modifiers, key))
+}
+
+/// Properties collected from a gesture bind node that feed into building
+/// a parameterized `Trigger` variant.
+#[derive(Debug, Default)]
+pub(crate) struct GestureTriggerProps<'a> {
+    pub fingers: Option<u8>,
+    pub direction: Option<&'a str>,
+    pub edge: Option<&'a str>,
+    pub zone: Option<&'a str>,
+}
+
+/// Build a parameterized gesture `Trigger` from a family name and the
+/// properties collected on the KDL node. Returns a human-readable error
+/// string on any invalid combination (the caller wraps it in a knuffel
+/// `DecodeError`).
+pub(crate) fn build_gesture_trigger(
+    family: &str,
+    props: &GestureTriggerProps<'_>,
+) -> Result<Trigger, String> {
+    let expect_fingers = |props: &GestureTriggerProps<'_>| -> Result<u8, String> {
+        let Some(n) = props.fingers else {
+            return Err(format!(
+                "{family} requires `fingers=N` (valid range {MIN_FINGERS}..={MAX_FINGERS})"
+            ));
+        };
+        if !(MIN_FINGERS..=MAX_FINGERS).contains(&n) {
+            return Err(format!(
+                "fingers={n} out of range (valid range {MIN_FINGERS}..={MAX_FINGERS})"
+            ));
+        }
+        Ok(n)
+    };
+    let reject_edge_zone = |props: &GestureTriggerProps<'_>| -> Result<(), String> {
+        if props.edge.is_some() {
+            return Err(format!("{family} does not accept an `edge=` property"));
+        }
+        if props.zone.is_some() {
+            return Err(format!("{family} does not accept a `zone=` property"));
+        }
+        Ok(())
+    };
+
+    if family.eq_ignore_ascii_case("TouchSwipe") || family.eq_ignore_ascii_case("TouchpadSwipe") {
+        reject_edge_zone(props)?;
+        let fingers = expect_fingers(props)?;
+        let direction = props
+            .direction
+            .ok_or_else(|| format!("{family} requires `direction=\"up|down|left|right\"`"))?;
+        let direction = match direction.to_ascii_lowercase().as_str() {
+            "up" => SwipeDirection::Up,
+            "down" => SwipeDirection::Down,
+            "left" => SwipeDirection::Left,
+            "right" => SwipeDirection::Right,
+            other => {
+                return Err(format!(
+                    "invalid direction=\"{other}\" for {family} (expected up|down|left|right)"
+                ))
+            }
+        };
+        return Ok(if family.eq_ignore_ascii_case("TouchSwipe") {
+            Trigger::TouchSwipe { fingers, direction }
+        } else {
+            Trigger::TouchpadSwipe { fingers, direction }
+        });
+    }
+
+    if family.eq_ignore_ascii_case("TouchPinch") {
+        reject_edge_zone(props)?;
+        let fingers = expect_fingers(props)?;
+        let direction = props
+            .direction
+            .ok_or_else(|| "TouchPinch requires `direction=\"in|out\"`".to_string())?;
+        let direction = match direction.to_ascii_lowercase().as_str() {
+            "in" => PinchDirection::In,
+            "out" => PinchDirection::Out,
+            other => {
+                return Err(format!(
+                    "invalid direction=\"{other}\" for TouchPinch (expected in|out)"
+                ))
+            }
+        };
+        return Ok(Trigger::TouchPinch { fingers, direction });
+    }
+
+    if family.eq_ignore_ascii_case("TouchRotate") {
+        reject_edge_zone(props)?;
+        let fingers = expect_fingers(props)?;
+        let direction = props
+            .direction
+            .ok_or_else(|| "TouchRotate requires `direction=\"cw|ccw\"`".to_string())?;
+        let direction = match direction.to_ascii_lowercase().as_str() {
+            "cw" => RotateDirection::Cw,
+            "ccw" => RotateDirection::Ccw,
+            other => {
+                return Err(format!(
+                    "invalid direction=\"{other}\" for TouchRotate (expected cw|ccw)"
+                ))
+            }
+        };
+        return Ok(Trigger::TouchRotate { fingers, direction });
+    }
+
+    if family.eq_ignore_ascii_case("TouchEdge") {
+        if props.fingers.is_some() {
+            return Err("TouchEdge does not accept a `fingers=` property".to_string());
+        }
+        if props.direction.is_some() {
+            return Err(
+                "TouchEdge uses `edge=` (not `direction=`) and an optional `zone=`".to_string(),
+            );
+        }
+        let edge = props
+            .edge
+            .ok_or_else(|| "TouchEdge requires `edge=\"left|right|top|bottom\"`".to_string())?;
+        let edge = match edge.to_ascii_lowercase().as_str() {
+            "left" => ScreenEdge::Left,
+            "right" => ScreenEdge::Right,
+            "top" => ScreenEdge::Top,
+            "bottom" => ScreenEdge::Bottom,
+            other => {
+                return Err(format!(
+                    "invalid edge=\"{other}\" (expected left|right|top|bottom)"
+                ))
+            }
+        };
+        // Zone parsing uses `zone_kdl_name` as the single source of truth
+        // for the axis-rotating vocabulary (top/bottom edges take
+        // left|center|right; left/right edges take top|center|bottom).
+        // We try each of the three legal EdgeZone values and see which
+        // one's KDL name matches the user's input.
+        let zone = match props.zone {
+            None => None,
+            Some(z) => {
+                let z_lower = z.to_ascii_lowercase();
+                let matched = [EdgeZone::Start, EdgeZone::Center, EdgeZone::End]
+                    .into_iter()
+                    .find(|&ez| crate::input::zone_kdl_name(edge, ez) == z_lower);
+                match matched {
+                    Some(ez) => Some(ez),
+                    None => {
+                        let valid = format!(
+                            "{}|{}|{}",
+                            crate::input::zone_kdl_name(edge, EdgeZone::Start),
+                            crate::input::zone_kdl_name(edge, EdgeZone::Center),
+                            crate::input::zone_kdl_name(edge, EdgeZone::End),
+                        );
+                        return Err(format!(
+                            "invalid zone=\"{z}\" for edge=\"{}\" (expected {valid})",
+                            edge.as_kdl_name()
+                        ));
+                    }
+                }
+            }
+        };
+        return Ok(Trigger::TouchEdge { edge, zone });
+    }
+
+    Err(format!("unknown gesture family `{family}`"))
+}
+
 impl FromStr for Key {
     type Err = miette::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let mut modifiers = Modifiers::empty();
-
-        let mut split = s.split('+');
-        let key = split.next_back().unwrap();
-
-        for part in split {
-            let part = part.trim();
-            if part.eq_ignore_ascii_case("mod") {
-                modifiers |= Modifiers::COMPOSITOR
-            } else if part.eq_ignore_ascii_case("ctrl") || part.eq_ignore_ascii_case("control") {
-                modifiers |= Modifiers::CTRL;
-            } else if part.eq_ignore_ascii_case("shift") {
-                modifiers |= Modifiers::SHIFT;
-            } else if part.eq_ignore_ascii_case("alt") {
-                modifiers |= Modifiers::ALT;
-            } else if part.eq_ignore_ascii_case("super") || part.eq_ignore_ascii_case("win") {
-                modifiers |= Modifiers::SUPER;
-            } else if part.eq_ignore_ascii_case("iso_level3_shift")
-                || part.eq_ignore_ascii_case("mod5")
-            {
-                modifiers |= Modifiers::ISO_LEVEL3_SHIFT;
-            } else if part.eq_ignore_ascii_case("iso_level5_shift")
-                || part.eq_ignore_ascii_case("mod3")
-            {
-                modifiers |= Modifiers::ISO_LEVEL5_SHIFT;
-            } else {
-                return Err(miette!("invalid modifier: {part}"));
-            }
-        }
+        let (modifiers, key) = parse_modifiers(s)?;
 
         let trigger = if key.eq_ignore_ascii_case("MouseLeft") {
             Trigger::MouseLeft
@@ -1191,141 +1397,19 @@ impl FromStr for Key {
             Trigger::TouchpadScrollLeft
         } else if key.eq_ignore_ascii_case("TouchpadScrollRight") {
             Trigger::TouchpadScrollRight
-        } else if key.eq_ignore_ascii_case("TouchpadSwipe3Up") {
-            Trigger::TouchpadSwipe3Up
-        } else if key.eq_ignore_ascii_case("TouchpadSwipe3Down") {
-            Trigger::TouchpadSwipe3Down
-        } else if key.eq_ignore_ascii_case("TouchpadSwipe3Left") {
-            Trigger::TouchpadSwipe3Left
-        } else if key.eq_ignore_ascii_case("TouchpadSwipe3Right") {
-            Trigger::TouchpadSwipe3Right
-        } else if key.eq_ignore_ascii_case("TouchpadSwipe4Up") {
-            Trigger::TouchpadSwipe4Up
-        } else if key.eq_ignore_ascii_case("TouchpadSwipe4Down") {
-            Trigger::TouchpadSwipe4Down
-        } else if key.eq_ignore_ascii_case("TouchpadSwipe4Left") {
-            Trigger::TouchpadSwipe4Left
-        } else if key.eq_ignore_ascii_case("TouchpadSwipe4Right") {
-            Trigger::TouchpadSwipe4Right
-        } else if key.eq_ignore_ascii_case("TouchpadSwipe5Up") {
-            Trigger::TouchpadSwipe5Up
-        } else if key.eq_ignore_ascii_case("TouchpadSwipe5Down") {
-            Trigger::TouchpadSwipe5Down
-        } else if key.eq_ignore_ascii_case("TouchpadSwipe5Left") {
-            Trigger::TouchpadSwipe5Left
-        } else if key.eq_ignore_ascii_case("TouchpadSwipe5Right") {
-            Trigger::TouchpadSwipe5Right
-        // Touchscreen swipe gestures
-        } else if key.eq_ignore_ascii_case("TouchSwipe3Up") {
-            Trigger::TouchSwipe3Up
-        } else if key.eq_ignore_ascii_case("TouchSwipe3Down") {
-            Trigger::TouchSwipe3Down
-        } else if key.eq_ignore_ascii_case("TouchSwipe3Left") {
-            Trigger::TouchSwipe3Left
-        } else if key.eq_ignore_ascii_case("TouchSwipe3Right") {
-            Trigger::TouchSwipe3Right
-        } else if key.eq_ignore_ascii_case("TouchSwipe4Up") {
-            Trigger::TouchSwipe4Up
-        } else if key.eq_ignore_ascii_case("TouchSwipe4Down") {
-            Trigger::TouchSwipe4Down
-        } else if key.eq_ignore_ascii_case("TouchSwipe4Left") {
-            Trigger::TouchSwipe4Left
-        } else if key.eq_ignore_ascii_case("TouchSwipe4Right") {
-            Trigger::TouchSwipe4Right
-        } else if key.eq_ignore_ascii_case("TouchSwipe5Up") {
-            Trigger::TouchSwipe5Up
-        } else if key.eq_ignore_ascii_case("TouchSwipe5Down") {
-            Trigger::TouchSwipe5Down
-        } else if key.eq_ignore_ascii_case("TouchSwipe5Left") {
-            Trigger::TouchSwipe5Left
-        } else if key.eq_ignore_ascii_case("TouchSwipe5Right") {
-            Trigger::TouchSwipe5Right
-        // Touchscreen pinch gestures
-        } else if key.eq_ignore_ascii_case("TouchPinch3In") {
-            Trigger::TouchPinch3In
-        } else if key.eq_ignore_ascii_case("TouchPinch3Out") {
-            Trigger::TouchPinch3Out
-        } else if key.eq_ignore_ascii_case("TouchPinch4In") {
-            Trigger::TouchPinch4In
-        } else if key.eq_ignore_ascii_case("TouchPinch4Out") {
-            Trigger::TouchPinch4Out
-        } else if key.eq_ignore_ascii_case("TouchPinch5In") {
-            Trigger::TouchPinch5In
-        } else if key.eq_ignore_ascii_case("TouchPinch5Out") {
-            Trigger::TouchPinch5Out
-        // Touchscreen rotation gestures.
-        } else if key.eq_ignore_ascii_case("TouchRotate3Cw") {
-            Trigger::TouchRotate3Cw
-        } else if key.eq_ignore_ascii_case("TouchRotate3Ccw") {
-            Trigger::TouchRotate3Ccw
-        } else if key.eq_ignore_ascii_case("TouchRotate4Cw") {
-            Trigger::TouchRotate4Cw
-        } else if key.eq_ignore_ascii_case("TouchRotate4Ccw") {
-            Trigger::TouchRotate4Ccw
-        } else if key.eq_ignore_ascii_case("TouchRotate5Cw") {
-            Trigger::TouchRotate5Cw
-        } else if key.eq_ignore_ascii_case("TouchRotate5Ccw") {
-            Trigger::TouchRotate5Ccw
-        // Touchscreen edge swipes — zoned variants first. Both the
-        // compact `TouchEdgeTopLeft` form and the suffix `TouchEdgeTop:Left`
-        // form resolve to the same Trigger.
-        } else if key.eq_ignore_ascii_case("TouchEdgeTopLeft")
-            || key.eq_ignore_ascii_case("TouchEdgeTop:Left")
-        {
-            Trigger::TouchEdgeTopLeft
-        } else if key.eq_ignore_ascii_case("TouchEdgeTopCenter")
-            || key.eq_ignore_ascii_case("TouchEdgeTop:Center")
-        {
-            Trigger::TouchEdgeTopCenter
-        } else if key.eq_ignore_ascii_case("TouchEdgeTopRight")
-            || key.eq_ignore_ascii_case("TouchEdgeTop:Right")
-        {
-            Trigger::TouchEdgeTopRight
-        } else if key.eq_ignore_ascii_case("TouchEdgeBottomLeft")
-            || key.eq_ignore_ascii_case("TouchEdgeBottom:Left")
-        {
-            Trigger::TouchEdgeBottomLeft
-        } else if key.eq_ignore_ascii_case("TouchEdgeBottomCenter")
-            || key.eq_ignore_ascii_case("TouchEdgeBottom:Center")
-        {
-            Trigger::TouchEdgeBottomCenter
-        } else if key.eq_ignore_ascii_case("TouchEdgeBottomRight")
-            || key.eq_ignore_ascii_case("TouchEdgeBottom:Right")
-        {
-            Trigger::TouchEdgeBottomRight
-        } else if key.eq_ignore_ascii_case("TouchEdgeLeftTop")
-            || key.eq_ignore_ascii_case("TouchEdgeLeft:Top")
-        {
-            Trigger::TouchEdgeLeftTop
-        } else if key.eq_ignore_ascii_case("TouchEdgeLeftCenter")
-            || key.eq_ignore_ascii_case("TouchEdgeLeft:Center")
-        {
-            Trigger::TouchEdgeLeftCenter
-        } else if key.eq_ignore_ascii_case("TouchEdgeLeftBottom")
-            || key.eq_ignore_ascii_case("TouchEdgeLeft:Bottom")
-        {
-            Trigger::TouchEdgeLeftBottom
-        } else if key.eq_ignore_ascii_case("TouchEdgeRightTop")
-            || key.eq_ignore_ascii_case("TouchEdgeRight:Top")
-        {
-            Trigger::TouchEdgeRightTop
-        } else if key.eq_ignore_ascii_case("TouchEdgeRightCenter")
-            || key.eq_ignore_ascii_case("TouchEdgeRight:Center")
-        {
-            Trigger::TouchEdgeRightCenter
-        } else if key.eq_ignore_ascii_case("TouchEdgeRightBottom")
-            || key.eq_ignore_ascii_case("TouchEdgeRight:Bottom")
-        {
-            Trigger::TouchEdgeRightBottom
-        // Touchscreen edge swipes — parent (any-zone fallback).
-        } else if key.eq_ignore_ascii_case("TouchEdgeLeft") {
-            Trigger::TouchEdgeLeft
-        } else if key.eq_ignore_ascii_case("TouchEdgeRight") {
-            Trigger::TouchEdgeRight
-        } else if key.eq_ignore_ascii_case("TouchEdgeTop") {
-            Trigger::TouchEdgeTop
-        } else if key.eq_ignore_ascii_case("TouchEdgeBottom") {
-            Trigger::TouchEdgeBottom
+        } else if is_gesture_family_name(key) {
+            // Gesture families (TouchpadSwipe, TouchSwipe, TouchPinch,
+            // TouchRotate, TouchEdge) are parameterized by KDL properties
+            // (`fingers=`, `direction=`, `edge=`, `zone=`), so the node
+            // name alone isn't enough to construct a Trigger. They are
+            // parsed in `Bind::decode_node` where `node.properties` is
+            // reachable. Reject them here so a bare gesture-family name
+            // without the expected property-parsing path produces a clear
+            // error instead of being silently routed to keysym lookup.
+            return Err(miette!(
+                "{key} is a parameterized gesture family — use property form like \
+                 `TouchSwipe fingers=3 direction=\"up\"`"
+            ));
         } else {
             let mut keysym = keysym_from_name(key, KEYSYM_CASE_INSENSITIVE);
             // The keyboard event handling code can receive either
@@ -1425,5 +1509,474 @@ mod tests {
                 modifiers: Modifiers::ISO_LEVEL5_SHIFT
             },
         );
+    }
+
+    #[test]
+    fn bare_gesture_family_name_is_rejected_by_fromstr() {
+        // FromStr for Key doesn't have property context, so a bare
+        // `TouchSwipe` with no properties must fail (property parsing
+        // happens in Bind::decode_node).
+        assert!("TouchSwipe".parse::<Key>().is_err());
+        assert!("TouchPinch".parse::<Key>().is_err());
+        assert!("TouchRotate".parse::<Key>().is_err());
+        assert!("TouchEdge".parse::<Key>().is_err());
+        assert!("TouchpadSwipe".parse::<Key>().is_err());
+    }
+
+    #[test]
+    fn old_hardcoded_touch_names_no_longer_parse() {
+        // Hard break: the old TouchSwipe3Up / TouchEdgeLeft style is gone.
+        // These should now be interpreted as unknown keysyms and fail.
+        assert!("TouchSwipe3Up".parse::<Key>().is_err());
+        assert!("TouchPinch3In".parse::<Key>().is_err());
+        assert!("TouchRotate4Cw".parse::<Key>().is_err());
+        assert!("TouchEdgeTop:Left".parse::<Key>().is_err());
+    }
+
+    #[test]
+    fn build_touchswipe() {
+        let props = GestureTriggerProps {
+            fingers: Some(3),
+            direction: Some("up"),
+            edge: None,
+            zone: None,
+        };
+        assert_eq!(
+            build_gesture_trigger("TouchSwipe", &props).unwrap(),
+            Trigger::TouchSwipe {
+                fingers: 3,
+                direction: SwipeDirection::Up
+            }
+        );
+    }
+
+    #[test]
+    fn build_touchswipe_arbitrary_fingers() {
+        for n in MIN_FINGERS..=MAX_FINGERS {
+            let props = GestureTriggerProps {
+                fingers: Some(n),
+                direction: Some("right"),
+                edge: None,
+                zone: None,
+            };
+            let got = build_gesture_trigger("TouchSwipe", &props).unwrap();
+            assert_eq!(
+                got,
+                Trigger::TouchSwipe {
+                    fingers: n,
+                    direction: SwipeDirection::Right
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn fingers_out_of_range_rejected() {
+        for bad in [0u8, 1, 2, 11, 20] {
+            let props = GestureTriggerProps {
+                fingers: Some(bad),
+                direction: Some("up"),
+                edge: None,
+                zone: None,
+            };
+            assert!(
+                build_gesture_trigger("TouchSwipe", &props).is_err(),
+                "fingers={bad} should be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn direction_validated_per_family() {
+        // "up" is valid for swipe but not pinch/rotate.
+        let swipe_up = GestureTriggerProps {
+            fingers: Some(3),
+            direction: Some("up"),
+            edge: None,
+            zone: None,
+        };
+        assert!(build_gesture_trigger("TouchSwipe", &swipe_up).is_ok());
+        assert!(build_gesture_trigger("TouchPinch", &swipe_up).is_err());
+        assert!(build_gesture_trigger("TouchRotate", &swipe_up).is_err());
+
+        // "in" is valid for pinch but not swipe/rotate.
+        let pinch_in = GestureTriggerProps {
+            fingers: Some(3),
+            direction: Some("in"),
+            edge: None,
+            zone: None,
+        };
+        assert!(build_gesture_trigger("TouchPinch", &pinch_in).is_ok());
+        assert!(build_gesture_trigger("TouchSwipe", &pinch_in).is_err());
+        assert!(build_gesture_trigger("TouchRotate", &pinch_in).is_err());
+
+        // "cw" is valid for rotate but not swipe/pinch.
+        let rotate_cw = GestureTriggerProps {
+            fingers: Some(3),
+            direction: Some("cw"),
+            edge: None,
+            zone: None,
+        };
+        assert!(build_gesture_trigger("TouchRotate", &rotate_cw).is_ok());
+        assert!(build_gesture_trigger("TouchSwipe", &rotate_cw).is_err());
+        assert!(build_gesture_trigger("TouchPinch", &rotate_cw).is_err());
+    }
+
+    #[test]
+    fn touchedge_parent_no_zone() {
+        let props = GestureTriggerProps {
+            fingers: None,
+            direction: None,
+            edge: Some("left"),
+            zone: None,
+        };
+        assert_eq!(
+            build_gesture_trigger("TouchEdge", &props).unwrap(),
+            Trigger::TouchEdge {
+                edge: ScreenEdge::Left,
+                zone: None
+            }
+        );
+    }
+
+    #[test]
+    fn touchedge_zoned() {
+        // Top edge + zone="right" → EdgeZone::End (thirds along x-axis).
+        let props = GestureTriggerProps {
+            fingers: None,
+            direction: None,
+            edge: Some("top"),
+            zone: Some("right"),
+        };
+        assert_eq!(
+            build_gesture_trigger("TouchEdge", &props).unwrap(),
+            Trigger::TouchEdge {
+                edge: ScreenEdge::Top,
+                zone: Some(EdgeZone::End)
+            }
+        );
+        // Left edge + zone="top" → EdgeZone::Start (thirds along y-axis).
+        let props = GestureTriggerProps {
+            fingers: None,
+            direction: None,
+            edge: Some("left"),
+            zone: Some("top"),
+        };
+        assert_eq!(
+            build_gesture_trigger("TouchEdge", &props).unwrap(),
+            Trigger::TouchEdge {
+                edge: ScreenEdge::Left,
+                zone: Some(EdgeZone::Start)
+            }
+        );
+    }
+
+    #[test]
+    fn touchedge_zone_vocab_mismatch_rejected() {
+        // Left/Right edges need top/center/bottom zones, not left/right.
+        let bad = GestureTriggerProps {
+            fingers: None,
+            direction: None,
+            edge: Some("left"),
+            zone: Some("left"),
+        };
+        assert!(build_gesture_trigger("TouchEdge", &bad).is_err());
+
+        // Top/Bottom edges need left/center/right zones, not top/bottom.
+        let bad = GestureTriggerProps {
+            fingers: None,
+            direction: None,
+            edge: Some("top"),
+            zone: Some("top"),
+        };
+        assert!(build_gesture_trigger("TouchEdge", &bad).is_err());
+    }
+
+    #[test]
+    fn touchedge_rejects_fingers() {
+        let props = GestureTriggerProps {
+            fingers: Some(3),
+            direction: None,
+            edge: Some("left"),
+            zone: None,
+        };
+        assert!(build_gesture_trigger("TouchEdge", &props).is_err());
+    }
+
+    #[test]
+    fn is_gesture_family_name_case_insensitive() {
+        assert!(is_gesture_family_name("TouchSwipe"));
+        assert!(is_gesture_family_name("touchswipe"));
+        assert!(is_gesture_family_name("TOUCHPINCH"));
+        assert!(is_gesture_family_name("TouchpadSwipe"));
+        assert!(!is_gesture_family_name("TouchSwipe3Up"));
+        assert!(!is_gesture_family_name("TouchpadScrollUp"));
+    }
+
+    // Integration tests exercising the full Bind::decode_node two-phase
+    // parse path (strip modifiers → check family → conditional property
+    // loop → build trigger). These go through Config::parse_mem so the
+    // whole knuffel pipeline is exercised.
+
+    #[track_caller]
+    fn parse_binds(binds_kdl: &str) -> crate::Config {
+        crate::Config::parse_mem(&format!("binds {{\n{binds_kdl}\n}}"))
+            .map_err(miette::Report::new)
+            .unwrap()
+    }
+
+    #[track_caller]
+    fn parse_binds_err(binds_kdl: &str) -> String {
+        match crate::Config::parse_mem(&format!("binds {{\n{binds_kdl}\n}}")) {
+            Ok(_) => panic!("expected parse error, got Ok"),
+            Err(e) => format!("{:?}", miette::Report::new(e)),
+        }
+    }
+
+    fn first_bind(config: &crate::Config) -> &Bind {
+        config.binds.0.first().expect("no binds parsed")
+    }
+
+    #[test]
+    fn decode_node_touchswipe_basic() {
+        let cfg = parse_binds(r#"TouchSwipe fingers=3 direction="up" { focus-workspace-up; }"#);
+        let bind = first_bind(&cfg);
+        assert_eq!(
+            bind.key.trigger,
+            Trigger::TouchSwipe {
+                fingers: 3,
+                direction: SwipeDirection::Up,
+            }
+        );
+        assert!(bind.key.modifiers.is_empty());
+    }
+
+    #[test]
+    fn decode_node_touchswipe_with_modifier() {
+        // `Mod+TouchSwipe ...` should strip the modifier and still parse
+        // the property form correctly.
+        let cfg = parse_binds(
+            r#"Mod+TouchSwipe fingers=4 direction="left" { focus-column-right; }"#,
+        );
+        let bind = first_bind(&cfg);
+        assert_eq!(
+            bind.key.trigger,
+            Trigger::TouchSwipe {
+                fingers: 4,
+                direction: SwipeDirection::Left,
+            }
+        );
+        assert!(bind.key.modifiers.contains(Modifiers::COMPOSITOR));
+    }
+
+    #[test]
+    fn decode_node_tag_on_gesture_allowed() {
+        let cfg = parse_binds(
+            r#"TouchSwipe fingers=3 direction="up" tag="ws-nav" { focus-workspace-up; }"#,
+        );
+        let bind = first_bind(&cfg);
+        assert_eq!(bind.tag.as_deref(), Some("ws-nav"));
+    }
+
+    #[test]
+    fn decode_node_tag_on_keyboard_bind_rejected() {
+        // tag="..." is a keylogging risk on keyboard binds and should
+        // fail parsing.
+        let err = parse_binds_err(r#"Ctrl+A tag="keylog" { spawn "uname"; }"#);
+        assert!(
+            err.contains("tag is only supported on gesture triggers"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn decode_node_gesture_property_on_keyboard_bind_rejected() {
+        // `fingers=3` on a keyboard bind should fall through to the
+        // "unexpected property" arm.
+        let err = parse_binds_err(r#"Ctrl+A fingers=3 { spawn "uname"; }"#);
+        assert!(
+            err.contains("unexpected property"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn decode_node_duplicate_fingers_last_wins() {
+        // KDL/knuffel stores properties in a BTreeMap keyed on name, so
+        // `fingers=3 fingers=5` silently keeps the last value. Document
+        // that observed behavior — this is *not* something niri controls
+        // and it applies to every bind property, not just gesture ones.
+        let cfg = parse_binds(
+            r#"TouchSwipe fingers=3 fingers=5 direction="up" { focus-workspace-up; }"#,
+        );
+        let bind = first_bind(&cfg);
+        assert_eq!(
+            bind.key.trigger,
+            Trigger::TouchSwipe {
+                fingers: 5,
+                direction: SwipeDirection::Up,
+            }
+        );
+    }
+
+    #[test]
+    fn decode_node_unknown_property_rejected() {
+        let err = parse_binds_err(
+            r#"TouchSwipe fingers=3 direction="up" foo="bar" { focus-workspace-up; }"#,
+        );
+        assert!(
+            err.contains("unexpected property"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn decode_node_touchedge_with_zone() {
+        let cfg =
+            parse_binds(r#"TouchEdge edge="top" zone="right" { spawn "screenshot"; }"#);
+        let bind = first_bind(&cfg);
+        assert_eq!(
+            bind.key.trigger,
+            Trigger::TouchEdge {
+                edge: ScreenEdge::Top,
+                zone: Some(EdgeZone::End),
+            }
+        );
+    }
+
+    #[test]
+    fn decode_node_touchedge_missing_edge_rejected() {
+        let err = parse_binds_err(r#"TouchEdge { focus-column-right; }"#);
+        assert!(
+            err.contains("requires `edge="),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn decode_node_touchedge_zone_vocab_mismatch_rejected() {
+        // edge="left" doesn't take zone="left".
+        let err = parse_binds_err(r#"TouchEdge edge="left" zone="left" { noop; }"#);
+        assert!(
+            err.contains("invalid zone"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn decode_node_mod_shift_touchedge_zoned() {
+        // Multi-modifier + zoned edge, exercising the full modifier
+        // stripping + property path.
+        let cfg = parse_binds(
+            r#"Mod+Shift+TouchEdge edge="right" zone="bottom" tag="zone-rb" { noop; }"#,
+        );
+        let bind = first_bind(&cfg);
+        assert_eq!(
+            bind.key.trigger,
+            Trigger::TouchEdge {
+                edge: ScreenEdge::Right,
+                zone: Some(EdgeZone::End),
+            }
+        );
+        assert!(bind.key.modifiers.contains(Modifiers::COMPOSITOR));
+        assert!(bind.key.modifiers.contains(Modifiers::SHIFT));
+        assert_eq!(bind.tag.as_deref(), Some("zone-rb"));
+    }
+
+    #[test]
+    fn decode_node_touchpad_swipe_parses() {
+        let cfg = parse_binds(
+            r#"TouchpadSwipe fingers=3 direction="right" { focus-column-left; }"#,
+        );
+        let bind = first_bind(&cfg);
+        assert_eq!(
+            bind.key.trigger,
+            Trigger::TouchpadSwipe {
+                fingers: 3,
+                direction: SwipeDirection::Right,
+            }
+        );
+    }
+
+    #[test]
+    fn decode_node_rotation_parses() {
+        let cfg = parse_binds(
+            r#"TouchRotate fingers=4 direction="cw" { focus-column-right; }"#,
+        );
+        let bind = first_bind(&cfg);
+        assert_eq!(
+            bind.key.trigger,
+            Trigger::TouchRotate {
+                fingers: 4,
+                direction: RotateDirection::Cw,
+            }
+        );
+    }
+
+    #[test]
+    fn decode_node_pinch_parses() {
+        let cfg = parse_binds(r#"TouchPinch fingers=3 direction="in" { open-overview; }"#);
+        let bind = first_bind(&cfg);
+        assert_eq!(
+            bind.key.trigger,
+            Trigger::TouchPinch {
+                fingers: 3,
+                direction: PinchDirection::In,
+            }
+        );
+    }
+
+    #[test]
+    fn decode_node_fingers_out_of_range_rejected() {
+        let err = parse_binds_err(
+            r#"TouchSwipe fingers=2 direction="up" { focus-workspace-up; }"#,
+        );
+        assert!(err.contains("out of range"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn decode_node_pinch_direction_out_parses() {
+        let cfg =
+            parse_binds(r#"TouchPinch fingers=4 direction="out" { close-overview; }"#);
+        let bind = first_bind(&cfg);
+        assert_eq!(
+            bind.key.trigger,
+            Trigger::TouchPinch {
+                fingers: 4,
+                direction: PinchDirection::Out,
+            }
+        );
+    }
+
+    #[test]
+    fn decode_node_swipe_with_rotate_direction_rejected() {
+        // `direction="cw"` is valid for TouchRotate but not TouchSwipe.
+        // Integration-layer coverage that per-family direction validation
+        // actually reaches the user through the full parse path.
+        let err = parse_binds_err(
+            r#"TouchSwipe fingers=3 direction="cw" { focus-workspace-up; }"#,
+        );
+        assert!(
+            err.contains("invalid direction"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn decode_node_touchpad_swipe_with_modifier() {
+        // Modifier-stripping on the touchpad family, mirroring the
+        // touchscreen `decode_node_touchswipe_with_modifier` test.
+        let cfg = parse_binds(
+            r#"Mod+TouchpadSwipe fingers=4 direction="down" { toggle-overview; }"#,
+        );
+        let bind = first_bind(&cfg);
+        assert_eq!(
+            bind.key.trigger,
+            Trigger::TouchpadSwipe {
+                fingers: 4,
+                direction: SwipeDirection::Down,
+            }
+        );
+        assert!(bind.key.modifiers.contains(Modifiers::COMPOSITOR));
     }
 }
