@@ -85,7 +85,7 @@ Open and close the overview with a four-finger vertical swipe (default bind).
 
 ### Touchscreen
 
-<sup>Since: next</sup> Touchscreen gestures are configured as binds in the main `binds {}` block, following the same naming convention as touchpad triggers (`TouchSwipe3Up` parallels `TouchpadSwipe3Up`). There are three families of trigger: multi-finger swipes, multi-finger pinches, and single-finger edge swipes.
+<sup>Since: next</sup> Touchscreen gestures are configured as binds in the main `binds {}` block, following the same naming convention as touchpad triggers (`TouchSwipe3Up` parallels `TouchpadSwipe3Up`). There are four families of trigger: multi-finger swipes, multi-finger pinches, multi-finger rotations, and single-finger edge swipes.
 
 #### Swipe Gestures
 
@@ -114,6 +114,28 @@ binds {
 ```
 
 Available triggers: `TouchPinch3In`, `TouchPinch3Out`, `TouchPinch4In`, `TouchPinch4Out`, `TouchPinch5In`, `TouchPinch5Out`. Pinch vs swipe classification is controlled by the `pinch-threshold` and `pinch-ratio` tuning parameters.
+
+#### Rotation Gestures
+
+> [!WARNING]
+>
+> Rotation detection is an early proof of concept and is currently **buggy and intermittent** on real hardware — recognition can misfire, lock at the wrong finger count, or fail to latch. The math, IPC, and bind plumbing are in place and tests pass, but real-world tuning still needs work. Use with caution and expect false positives / misses while this settles.
+
+Twisting the finger cluster clockwise or counter-clockwise (around its centroid) fires a rotation gesture. Rotation is detected from the averaged per-finger angle change, so two fingers rotating in opposite directions around the centroid both register as the same rotation — the noise floor is √N lower than single-finger angular drift.
+
+```kdl
+binds {
+    // 4-finger rotation walks column focus left/right.
+    TouchRotate4Ccw { focus-column-left; }
+    TouchRotate4Cw  { focus-column-right; }
+}
+```
+
+Available triggers: `TouchRotate3Cw`, `TouchRotate3Ccw`, `TouchRotate4Cw`, `TouchRotate4Ccw`, `TouchRotate5Cw`, `TouchRotate5Ccw`. `Cw` is clockwise on screen, `Ccw` is counter-clockwise on screen — the sign convention assumes the y-axis points down (standard screen coordinates).
+
+Rotation classification runs before pinch and swipe classification, so a clearly rotating finger cluster wins over any incidental spread or translation. Tuning lives under `input { touchscreen { gestures { } } }`: `rotation-threshold` (minimum radians before it latches), `rotation-ratio` (how much rotation arc length must dominate swipe/spread change by), and `rotation-progress-distance` (radians that map to IPC `progress = ±1.0`).
+
+Rotation gestures are **continuous** in the same sense as pinch: binding them to a continuous-capable action animates frame-by-frame, and tagged rotations emit `GestureProgress` events where the delta is `GestureDelta::Rotate { d_radians }`.
 
 Pinch gestures are **continuous**: when bound to a continuous-capable action like `open-overview`, `close-overview`, `toggle-overview`, `focus-workspace-*`, `focus-column-*`, or `noop`, the animation tracks finger motion frame-by-frame (pinch-in smoothly opens the overview, reversing the pinch smoothly closes it again). Binding a pinch to a non-continuous action like `spawn` or `close-window` still fires the action once on recognition, as before.
 
@@ -195,11 +217,15 @@ binds {
 The three IPC events are:
 
 - **`GestureBegin { tag, trigger, finger_count, is_continuous }`** — fired when gesture recognition has locked in. `is_continuous` is true for swipe, pinch, and edge gestures bound to continuous-capable actions (including `noop`), and false for discrete gestures bound to one-shot actions.
-- **`GestureProgress { tag, progress, delta_x, delta_y, timestamp_ms }`** — fired repeatedly while a continuous gesture is in motion.
+- **`GestureProgress { tag, progress, delta, timestamp_ms }`** — fired repeatedly while a continuous gesture is in motion.
   - `progress` is **signed, unbounded**, normalized: it starts at `0.0` when the gesture is recognized and grows as the gesture continues. Reversing direction produces negative values, and overshoot can exceed `±1.0` — consumers should not assume the value is clamped.
   - For **swipes and edge gestures**, progress accumulates adjusted (sensitivity-scaled, natural-scroll-adjusted) finger delta on the dominant axis, normalized by `gesture-progress-distance` (default 200 px for touchscreen, 40 for touchpad). Progress `±1.0` ≈ one `gesture-progress-distance` of movement.
   - For **pinches**, progress is `(current_spread - start_spread) / pinch-progress-distance` (default 100 px). Positive = pinch-out (spread growing), negative = pinch-in.
-  - `delta_x` and `delta_y` are the per-event raw finger deltas in screen pixels (touchscreen) or libinput units (touchpad). **For pinches**, `delta_x` is always `0` and `delta_y` reports the per-event change in finger spread.
+  - For **rotations**, progress is cumulative signed rotation in radians divided by `rotation-progress-distance` (default π/2). Positive = counter-clockwise on screen, negative = clockwise on screen.
+  - `delta` is a tagged enum carrying the per-event raw delta in a gesture-specific shape:
+    - `GestureDelta::Swipe { dx, dy }` — per-event finger delta in screen pixels (touchscreen) or libinput units (touchpad).
+    - `GestureDelta::Pinch { d_spread }` — per-event change in finger spread.
+    - `GestureDelta::Rotate { d_radians }` — per-event change in the averaged per-finger angle. Signed with the same on-screen convention as `progress`.
 - **`GestureEnd { tag, completed }`** — fired when the gesture ends (fingers released).
 
 #### Noop Gestures

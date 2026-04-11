@@ -15,7 +15,7 @@ const TOUCHPAD_DEFAULT_SENSITIVITY: f64 = 1.0;
 use niri_config::{
     Action, Bind, Binds, Config, Key, ModKey, Modifiers, MruDirection, SwitchBinds, Trigger,
 };
-use niri_ipc::LayoutSwitchTarget;
+use niri_ipc::{GestureDelta, LayoutSwitchTarget};
 use smithay::backend::input::{
     AbsolutePositionEvent, Axis, AxisSource, ButtonState, Device, DeviceCapability, Event,
     GestureBeginEvent, GestureEndEvent, GesturePinchUpdateEvent as _, GestureSwipeUpdateEvent as _,
@@ -4005,7 +4005,13 @@ impl State {
                     };
                     let ts_ms = timestamp.as_millis() as u32;
                     self.ipc_gesture_progress(
-                        tag, progress, delta_x, delta_y, ts_ms,
+                        tag,
+                        progress,
+                        GestureDelta::Swipe {
+                            dx: delta_x,
+                            dy: delta_y,
+                        },
+                        ts_ms,
                     );
                 }
                 return;

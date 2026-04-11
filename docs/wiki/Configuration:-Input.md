@@ -119,6 +119,9 @@ input {
             // pinch-progress-distance 100.0
             // finger-threshold-scale 1.5
             // gesture-progress-distance 200.0
+            // rotation-threshold 0.2618
+            // rotation-ratio 0.5
+            // rotation-progress-distance 1.5708
         }
     }
 
@@ -305,6 +308,9 @@ The `touchscreen { gestures { } }` tuning parameters are:
 - `finger-threshold-scale <float>`: scaling applied to `recognition-threshold` for gestures with more than 3 fingers. The formula is `base * (1 + (fingers - 3) * (scale - 1))`, so with a base threshold of 16 and scale 1.5, a 4-finger gesture needs 24 px and a 5-finger gesture needs 32 px. Compensates for the extra movement spread that wider finger grips produce. Default: `1.5`.
 - `gesture-progress-distance <float>`: pixels of finger movement required for IPC `GestureProgress` events on **swipe and edge** gestures to reach `progress = ±1.0`. Units are screen pixels. Tune this to make tagged external-app gestures (like sidebar drawers or scrubbers) feel right on your display. Default: `200.0`.
 - `pinch-progress-distance <float>`: pixels of finger spread change for IPC `GestureProgress` events on **pinch** gestures to reach `progress = ±1.0`. Signed: positive for pinch-out (spread growing), negative for pinch-in. Pinch spread changes are usually smaller than linear swipe distances, so this defaults lower than `gesture-progress-distance`. Default: `100.0`.
+- `rotation-threshold <float>`: minimum cumulative rotation (in **radians**) before a gesture classifies as a rotation rather than a pinch or swipe. Default: `0.2618` (≈ 15°). Rotation detection is currently an early proof of concept — see the warning in the [Rotation Gestures](./Gestures.md#rotation-gestures) section.
+- `rotation-ratio <float>`: ratio by which the rotation arc length (`|cumulative_rotation| * cluster_radius`) must dominate both swipe distance and spread change for a gesture to classify as a rotation. Lower values make rotation detection more permissive (easier to trigger on incidental twist); higher values make it stricter. Default: `0.5`.
+- `rotation-progress-distance <float>`: radians of cumulative rotation for IPC `GestureProgress` events on **rotation** gestures to reach `progress = ±1.0`. Signed with the on-screen convention: positive = counter-clockwise on screen, negative = clockwise. Default: `1.5708` (π/2, or 90°).
 
 Example:
 

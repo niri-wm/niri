@@ -521,13 +521,23 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
                     Event::GestureProgress {
                         tag,
                         progress,
-                        delta_x,
-                        delta_y,
+                        delta,
                         timestamp_ms,
                     } => {
+                        let delta_str = match delta {
+                            niri_ipc::GestureDelta::Swipe { dx, dy } => {
+                                format!("swipe ({dx:.1},{dy:.1})")
+                            }
+                            niri_ipc::GestureDelta::Pinch { d_spread } => {
+                                format!("pinch Δspread={d_spread:.1}")
+                            }
+                            niri_ipc::GestureDelta::Rotate { d_radians } => {
+                                format!("rotate Δ={d_radians:.4}rad")
+                            }
+                        };
                         println!(
                             "Gesture progress: tag={tag} progress={progress:.3} \
-                             delta=({delta_x:.1},{delta_y:.1}) t={timestamp_ms}"
+                             {delta_str} t={timestamp_ms}"
                         );
                     }
                     Event::GestureEnd { tag, completed } => {
