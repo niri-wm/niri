@@ -52,18 +52,18 @@ Switch workspaces by holding <kbd>Mod</kbd> and the middle mouse button (or the 
 
 ### Touchpad
 
-<sup>Since: next</sup> Touchpad gestures are now configured as binds in the main `binds {}` block, the same way keyboard shortcuts are. The trigger names are `TouchpadSwipe3Up`, `TouchpadSwipe3Down`, `TouchpadSwipe3Left`, `TouchpadSwipe3Right`, and the equivalent `TouchpadSwipe4*` and `TouchpadSwipe5*` variants for 4- and 5-finger swipes.
+<sup>Since: next</sup> Touchpad gestures are configured as binds in the main `binds {}` block, the same way keyboard shortcuts are. The trigger is `TouchpadSwipe` with `fingers=N` (integer in `3..=10`) and `direction="up|down|left|right"` properties.
 
 The defaults below reproduce the built-in behavior; you can rebind them to any other action or disable them entirely.
 
 ```kdl
 binds {
-    TouchpadSwipe3Up   { focus-workspace-up; }
-    TouchpadSwipe3Down { focus-workspace-down; }
-    TouchpadSwipe3Left { focus-column-right; }
-    TouchpadSwipe3Right { focus-column-left; }
-    TouchpadSwipe4Up   { toggle-overview; }
-    TouchpadSwipe4Down { toggle-overview; }
+    TouchpadSwipe fingers=3 direction="up"    { focus-workspace-up; }
+    TouchpadSwipe fingers=3 direction="down"  { focus-workspace-down; }
+    TouchpadSwipe fingers=3 direction="left"  { focus-column-right; }
+    TouchpadSwipe fingers=3 direction="right" { focus-column-left; }
+    TouchpadSwipe fingers=4 direction="up"    { toggle-overview; }
+    TouchpadSwipe fingers=4 direction="down"  { toggle-overview; }
 }
 ```
 
@@ -85,35 +85,39 @@ Open and close the overview with a four-finger vertical swipe (default bind).
 
 ### Touchscreen
 
-<sup>Since: next</sup> Touchscreen gestures are configured as binds in the main `binds {}` block, following the same naming convention as touchpad triggers (`TouchSwipe3Up` parallels `TouchpadSwipe3Up`). There are four families of trigger: multi-finger swipes, multi-finger pinches, multi-finger rotations, and single-finger edge swipes.
+<sup>Since: next</sup> Touchscreen gestures are configured as binds in the main `binds {}` block using four parameterized node families — `TouchSwipe`, `TouchPinch`, `TouchRotate`, and `TouchEdge` — with KDL properties for finger count and direction. The `fingers=` property accepts any value in `3..=10`, so arbitrary finger counts are supported without an enum change.
 
 #### Swipe Gestures
 
 ```kdl
 binds {
-    TouchSwipe3Up    { focus-workspace-up; }
-    TouchSwipe3Down  { focus-workspace-down; }
-    TouchSwipe3Left  { focus-column-right; }
-    TouchSwipe3Right { focus-column-left; }
-    TouchSwipe4Up    { toggle-overview; }
-    TouchSwipe4Down  { toggle-overview; }
-    // TouchSwipe5Up / TouchSwipe5Down / TouchSwipe5Left / TouchSwipe5Right also available
+    TouchSwipe fingers=3 direction="up"    { focus-workspace-up; }
+    TouchSwipe fingers=3 direction="down"  { focus-workspace-down; }
+    TouchSwipe fingers=3 direction="left"  { focus-column-right; }
+    TouchSwipe fingers=3 direction="right" { focus-column-left; }
+    TouchSwipe fingers=4 direction="up"    { toggle-overview; }
+    TouchSwipe fingers=4 direction="down"  { toggle-overview; }
+    // fingers=5 (and 6..=10) also work.
 }
 ```
 
-Available triggers: `TouchSwipe3Up`, `TouchSwipe3Down`, `TouchSwipe3Left`, `TouchSwipe3Right`, and the equivalent `TouchSwipe4*` and `TouchSwipe5*` variants.
+- `fingers=` — integer in `3..=10`. Rejecting `<3` preserves the 2-finger passthrough contract used by clients for scrolling/zooming. Required.
+- `direction=` — one of `"up"`, `"down"`, `"left"`, `"right"`. Required.
 
 #### Pinch Gestures
 
 ```kdl
 binds {
-    TouchPinch3In  { open-overview; }
-    TouchPinch3Out { close-overview; }
-    // TouchPinch4In / TouchPinch4Out / TouchPinch5In / TouchPinch5Out also available
+    TouchPinch fingers=3 direction="in"  { open-overview; }
+    TouchPinch fingers=3 direction="out" { close-overview; }
+    // fingers=4/5/6/.../10 also work.
 }
 ```
 
-Available triggers: `TouchPinch3In`, `TouchPinch3Out`, `TouchPinch4In`, `TouchPinch4Out`, `TouchPinch5In`, `TouchPinch5Out`. Pinch vs swipe classification is controlled by the `pinch-threshold` and `pinch-ratio` tuning parameters.
+- `fingers=` — integer in `3..=10`. Required.
+- `direction=` — one of `"in"` (spread shrinking) or `"out"` (spread growing). Required.
+
+Pinch vs swipe classification is controlled by the `pinch-threshold` and `pinch-ratio` tuning parameters.
 
 #### Rotation Gestures
 
@@ -121,17 +125,18 @@ Available triggers: `TouchPinch3In`, `TouchPinch3Out`, `TouchPinch4In`, `TouchPi
 >
 > Rotation detection is an early proof of concept and is currently **buggy and intermittent** on real hardware — recognition can misfire, lock at the wrong finger count, or fail to latch. The math, IPC, and bind plumbing are in place and tests pass, but real-world tuning still needs work. Use with caution and expect false positives / misses while this settles.
 
-Twisting the finger cluster clockwise or counter-clockwise (around its centroid) fires a rotation gesture. Rotation is detected from the averaged per-finger angle change, so two fingers rotating in opposite directions around the centroid both register as the same rotation — the noise floor is √N lower than single-finger angular drift.
+Twisting the finger cluster clockwise or counter-clockwise (around its centroid) fires a rotation gesture. Rotation is detected from the averaged per-finger angle change, so the noise floor is √N lower than single-finger angular drift.
 
 ```kdl
 binds {
     // 4-finger rotation walks column focus left/right.
-    TouchRotate4Ccw { focus-column-left; }
-    TouchRotate4Cw  { focus-column-right; }
+    TouchRotate fingers=4 direction="ccw" { focus-column-left; }
+    TouchRotate fingers=4 direction="cw"  { focus-column-right; }
 }
 ```
 
-Available triggers: `TouchRotate3Cw`, `TouchRotate3Ccw`, `TouchRotate4Cw`, `TouchRotate4Ccw`, `TouchRotate5Cw`, `TouchRotate5Ccw`. `Cw` is clockwise on screen, `Ccw` is counter-clockwise on screen — the sign convention assumes the y-axis points down (standard screen coordinates).
+- `fingers=` — integer in `3..=10`. Required.
+- `direction=` — one of `"cw"` (clockwise on screen) or `"ccw"` (counter-clockwise on screen). Required. The sign convention assumes the y-axis points down (standard screen coordinates).
 
 Rotation classification runs before pinch and swipe classification, so a clearly rotating finger cluster wins over any incidental spread or translation. Tuning lives under `input { touchscreen { gestures { } } }`: `rotation-threshold` (minimum radians before it latches), `rotation-ratio` (how much rotation arc length must dominate swipe/spread change by), and `rotation-progress-distance` (radians that map to IPC `progress = ±1.0`).
 
@@ -147,48 +152,52 @@ One-finger swipes that begin within `edge-threshold` pixels of a screen edge. Us
 
 ```kdl
 binds {
-    TouchEdgeLeft   { focus-column-right; }
-    TouchEdgeRight  { focus-column-left; }
-    TouchEdgeTop    { focus-workspace-up; }
-    TouchEdgeBottom { focus-workspace-down; }
+    TouchEdge edge="left"   { focus-column-right; }
+    TouchEdge edge="right"  { focus-column-left; }
+    TouchEdge edge="top"    { focus-workspace-up; }
+    TouchEdge edge="bottom" { focus-workspace-down; }
 }
 ```
 
-Available parent triggers: `TouchEdgeLeft`, `TouchEdgeRight`, `TouchEdgeTop`, `TouchEdgeBottom`. The edge trigger zone width is set by `edge-threshold` in the `touchscreen { gestures { } }` block.
+- `edge=` — one of `"left"`, `"right"`, `"top"`, `"bottom"`. Required.
+- `zone=` — optional third-of-the-edge qualifier (see Edge Zones below).
+- No `fingers=` — edge swipes are always single-finger. Including `fingers=` is an error.
+
+The edge trigger zone width is set by `edge-threshold` in the `touchscreen { gestures { } }` block.
 
 ##### Edge zones
 
 <sup>Since: next</sup>
 
-Each edge is also split into three zones along its perpendicular axis so you can bind separate actions to different parts of the same edge (like Android's status bar → notification tray vs. quick-settings split, or a top-right screenshot gesture). Use the zone suffix syntax `TouchEdge<Edge>:<Zone>`. The suffix words rotate per edge to match the direction of the split:
+Each edge is also split into three zones along its perpendicular axis so you can bind separate actions to different parts of the same edge (like Android's status bar → notification tray vs. quick-settings split, or a top-right screenshot gesture). Add a `zone=` property to restrict the bind to one third. The zone vocabulary rotates per edge to match the direction of the split:
 
-| Edge | Zone suffixes | Meaning |
+| Edge | Valid `zone=` values | Meaning |
 | --- | --- | --- |
-| `TouchEdgeTop` | `:Left` / `:Center` / `:Right` | thirds along the x-axis |
-| `TouchEdgeBottom` | `:Left` / `:Center` / `:Right` | thirds along the x-axis |
-| `TouchEdgeLeft` | `:Top` / `:Center` / `:Bottom` | thirds along the y-axis |
-| `TouchEdgeRight` | `:Top` / `:Center` / `:Bottom` | thirds along the y-axis |
+| `edge="top"` | `"left"` / `"center"` / `"right"` | thirds along the x-axis |
+| `edge="bottom"` | `"left"` / `"center"` / `"right"` | thirds along the x-axis |
+| `edge="left"` | `"top"` / `"center"` / `"bottom"` | thirds along the y-axis |
+| `edge="right"` | `"top"` / `"center"` / `"bottom"` | thirds along the y-axis |
+
+Mismatched vocabularies (e.g. `edge="left" zone="left"`) are a parse error.
 
 ```kdl
 binds {
     // Split the top edge into three independent actions.
-    TouchEdgeTop:Left    { spawn "notify-send" "left"; }
-    TouchEdgeTop:Center  { spawn "notify-send" "pull down notifications"; }
-    TouchEdgeTop:Right   { spawn "screenshot.sh"; }
+    TouchEdge edge="top" zone="left"    { spawn "notify-send" "left"; }
+    TouchEdge edge="top" zone="center"  { spawn "notify-send" "pull down notifications"; }
+    TouchEdge edge="top" zone="right"   { spawn "screenshot.sh"; }
 
     // Bottom-right corner for the overview; middle-bottom for app drawer.
-    TouchEdgeBottom:Center { spawn "rofi" "-show" "drun"; }
-    TouchEdgeBottom:Right  { toggle-overview; }
+    TouchEdge edge="bottom" zone="center" { spawn "rofi" "-show" "drun"; }
+    TouchEdge edge="bottom" zone="right"  { toggle-overview; }
 
     // Parent bind is still valid. If no zoned bind hits for a given touch,
-    // the parent trigger is used as a fallback — so existing configs keep
-    // working unchanged, and zone binds simply override the parent on the
-    // portion of the edge where they apply.
-    TouchEdgeLeft { focus-column-right; }
+    // the parent (no `zone=`) trigger is used as a fallback — so a bare
+    // `TouchEdge edge="left"` catches any left-edge swipe that doesn't land
+    // in a more specific zone bind.
+    TouchEdge edge="left" { focus-column-right; }
 }
 ```
-
-The compact `CamelCase` form (e.g. `TouchEdgeTopLeft`) also parses, but the colon-suffixed form is preferred in docs and in the wiki because it makes the parent / zone relationship visible at a glance.
 
 Tuning parameters for touchscreen gesture recognition all live in the `input { touchscreen { gestures { } } }` subblock — see [Configuration: Input](./Configuration:-Input.md#touchscreen).
 
@@ -203,14 +212,14 @@ binds {
     // Tagged workspace switch — still switches workspaces, and also
     // emits GestureProgress events with tag="ws-nav" for external apps
     // that want to show a progress indicator alongside the animation.
-    TouchSwipe3Up   tag="ws-nav" { focus-workspace-up; }
-    TouchSwipe3Down tag="ws-nav" { focus-workspace-down; }
+    TouchSwipe fingers=3 direction="up"   tag="ws-nav" { focus-workspace-up; }
+    TouchSwipe fingers=3 direction="down" tag="ws-nav" { focus-workspace-down; }
 
     // Noop-tagged edge swipe — drives no compositor action, just emits
     // IPC progress events so an external app (e.g. a sidebar drawer)
     // can follow the finger.
-    TouchEdgeLeft  tag="sidebar-left"  { noop; }
-    TouchEdgeRight tag="sidebar-right" { noop; }
+    TouchEdge edge="left"  tag="sidebar-left"  { noop; }
+    TouchEdge edge="right" tag="sidebar-right" { noop; }
 }
 ```
 

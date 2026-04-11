@@ -1,9 +1,10 @@
 //! Touchscreen gesture types and continuous gesture detection.
 //!
-//! Gesture binds are now configured in the main `binds {}` block using
-//! `Touch*` trigger names (e.g. `TouchSwipe3Up`, `TouchEdgeLeft`).
-//! This module provides the gesture type enum and continuous/discrete
-//! classification used by the touchscreen dispatch code.
+//! Gesture binds are configured in the main `binds {}` block using
+//! parameterized trigger families (`TouchSwipe fingers=3 direction="up"`,
+//! `TouchEdge edge="left"`, etc.). This module provides the gesture type
+//! enum and continuous/discrete classification used by the touchscreen
+//! dispatch code.
 
 use crate::binds::Action;
 

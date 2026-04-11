@@ -172,15 +172,17 @@ This section is explicitly opinionated. Each choice is labeled with its reasonin
 
 **Why:** There is no alternative. libinput won't recognize touchscreen gestures. Clients receiving raw touches can't participate in compositor actions. Userspace daemons can't sit between the compositor and libinput. The compositor is the only layer that has both the input stream *and* the window context needed to make gesture routing decisions. This is the same conclusion KWin, Mutter, Phoc, and every other Wayland compositor has reached.
 
-### 5.2 Unified `binds {}` block for all input types
+### 5.2 Unified `binds {}` block with parameterized gesture triggers
 
-**What:** Touchscreen, touchpad, keyboard, and mouse gesture binds all live in the same `binds {}` block. Finger count is encoded in the trigger name (`TouchSwipe3Up`, not `TouchSwipeUp fingers=3`).
+**What:** Touchscreen, touchpad, keyboard, and mouse gesture binds all live in the same `binds {}` block. Multi-finger gestures are parameterized via KDL properties: `TouchSwipe fingers=3 direction="up"` rather than hardcoded node names like `TouchSwipe3Up`. The five gesture families (`TouchSwipe`, `TouchpadSwipe`, `TouchPinch`, `TouchRotate`, `TouchEdge`) are the only first-class gesture node names; everything else is properties.
 
 **Why:**
-- **Modifier combos come for free.** `Mod+TouchSwipe3Up` reuses the existing key-bind parser with no new code paths.
-- **One lookup path.** `find_configured_bind()` handles every input type identically; routing decisions happen once.
-- **Consistency with niri's existing model.** Niri's keyboard and mouse binds already work this way; adding a separate `touch-binds {}` block would fragment the mental model.
-- **Trade-off:** finger count in the trigger name means two gestures with the same direction but different finger counts are distinct keys in the bind map. This prevents collisions but limits finger counts to an enumerated set (3/4/5). This trade-off is acceptable because no one binds 6-finger swipes in practice and the bind lookup becomes dead simple.
+- **Modifier combos come for free.** `Mod+TouchSwipe fingers=3 direction="up"` reuses the existing key-bind parser with no new code paths — modifiers are stripped off the node name before property parsing begins.
+- **One lookup path.** `find_configured_bind()` handles every input type identically. `Trigger::TouchSwipe { fingers, direction }` is a struct variant, so `Eq`/`Hash` still work; bind lookup is unchanged from the hardcoded design.
+- **Consistency with niri's existing model.** Niri's keyboard and mouse binds already live in `binds {}`, and all other bind attributes (`tag=`, `natural-scroll=`, `sensitivity=`, `cooldown-ms=`) are KDL properties. Hardcoding finger count into the *node name* was the one place where touch gestures diverged from the rest of the config grammar; this closes that gap.
+- **Arbitrary finger counts.** `fingers=N` accepts any integer in `3..=10`. Users with tablets and large multitouch displays that report 6–10 contacts can bind to them without an enum change on the compositor side. The `3..=10` range is enforced by the parser with a clear error on out-of-range values.
+- **Per-family validation.** Each family has its own legal direction vocabulary (swipe takes `up/down/left/right`, pinch takes `in/out`, rotate takes `cw/ccw`, edge takes `left/right/top/bottom` with optional `zone=`). Invalid combinations are rejected at parse time, not at runtime.
+- **Hard break from the old syntax.** The previous enum-per-combination design (`TouchSwipe3Up`, `TouchEdgeTop:Left`) is gone — no dual-parse, no deprecation aliasing. A cleaner config grammar is worth the one-time migration cost for a pre-1.0 feature with a small user base.
 
 ### 5.3 Tag property + IPC gesture events
 
@@ -217,17 +219,17 @@ This section is explicitly opinionated. Each choice is labeled with its reasonin
 
 ### 5.6 Per-edge zoned triggers
 
-**What:** Each screen edge is split into thirds (left/center/right for top/bottom, top/middle/bottom for left/right), giving 12 distinct edge triggers (`TouchEdgeTop:Left`, etc.) in addition to the 4 unzoned parent triggers. Zoned triggers fall back to the parent if not configured.
+**What:** Each screen edge is split into thirds along its perpendicular axis. `TouchEdge` accepts an optional `zone=` property — `edge="top" zone="left"`, etc. — giving 12 zoned triggers in addition to the 4 unzoned parents. Zoned triggers fall back to the parent if not configured. The zone vocabulary rotates per edge: `top`/`bottom` edges take `left|center|right`; `left`/`right` edges take `top|center|bottom`. Mismatched vocabularies are a parse error.
 
 **Why:**
-- **12 × 2 = 24 edge actions possible** without adding a new concept; power users can bind distinct actions per edge zone.
-- **Backward-compatible.** Configs using plain `TouchEdgeTop` still work identically.
+- **12 + 4 = 16 edge actions possible** without adding a new concept; power users can bind distinct actions per edge zone.
+- **Parent fallback.** A bare `TouchEdge edge="top"` catches any top-edge swipe that doesn't land in a more specific zoned bind, so adding one zoned bind doesn't break the others.
 - **Matches real-world UI patterns.** Status bars, notification shades, and app drawers all want *different* actions for different parts of the same edge.
 - **Matching UI support in external tooling.** `niri-tag-sidebar` mirrors the zone model so tagged panels can anchor to specific zones.
 
 ### 5.7 Touchpad via `wp_pointer_gestures_v1` (libinput)
 
-**What:** Touchpad gestures are read from libinput via smithay's existing plumbing, exposed through the same `binds {}` block with `TouchpadSwipe3Up` etc. triggers. No compositor-side recognition.
+**What:** Touchpad gestures are read from libinput via smithay's existing plumbing, exposed through the same `binds {}` block with `TouchpadSwipe fingers=N direction="..."` triggers. No compositor-side recognition.
 
 **Why:** Touchpad gesture recognition is a solved problem at the libinput layer. Writing our own recognizer for touchpad would duplicate work, produce inconsistent semantics vs. other compositors, and lose firmware-reported gesture quality from modern hardware. The right answer is "use the standard, expose it through niri's bind model."
 
