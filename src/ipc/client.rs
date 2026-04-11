@@ -544,6 +544,32 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
                         let status = if completed { "completed" } else { "cancelled" };
                         println!("Gesture end: tag={tag} ({status})");
                     }
+                    Event::RecognitionFrame {
+                        finger_count,
+                        swipe_distance,
+                        swipe_trigger_distance,
+                        spread_change,
+                        pinch_trigger_distance,
+                        rotation_rad,
+                        rotation_trigger_angle_rad,
+                        rotation_arc,
+                        rotation_arc_trigger_distance: _,
+                        is_rotate,
+                        is_pinch,
+                        closest,
+                        timestamp_ms,
+                    } => {
+                        println!(
+                            "Recognition frame: fingers={finger_count} \
+                             swipe={swipe_distance:.1}/{swipe_trigger_distance:.1} \
+                             spread={spread_change:.1}/{pinch_trigger_distance:.1} \
+                             rot={:.1}°/{:.1}° arc={rotation_arc:.1} \
+                             is_rotate={is_rotate} is_pinch={is_pinch} \
+                             closest={closest} t={timestamp_ms}",
+                            rotation_rad.to_degrees(),
+                            rotation_trigger_angle_rad.to_degrees(),
+                        );
+                    }
                 }
             }
         }

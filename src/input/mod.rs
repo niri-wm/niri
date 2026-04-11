@@ -3812,10 +3812,10 @@ impl State {
 
         let uninverted_delta_y = delta_y;
 
-        // Read gesture threshold from touchpad config.
+        // Read swipe trigger distance from touchpad config.
         let threshold = {
             let config = self.niri.config.borrow();
-            config.input.touchpad.gesture_threshold()
+            config.input.touchpad.swipe_trigger_distance()
         };
 
         // Apply natural scroll from device (for direction detection during cumulative phase).
@@ -3981,7 +3981,7 @@ impl State {
                 if let Some(tag) = tag {
                     let progress_distance = {
                         let config = self.niri.config.borrow();
-                        config.input.touchpad.gesture_progress_distance()
+                        config.input.touchpad.swipe_progress_distance()
                     };
                     let adjusted_delta = match kind {
                         ContinuousGestureKind::WorkspaceSwitch

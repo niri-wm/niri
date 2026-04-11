@@ -67,7 +67,7 @@ binds {
 }
 ```
 
-Tuning parameters for touchpad gesture recognition (`recognition-threshold`, `gesture-progress-distance`) live in the `input { touchpad { gestures { } } }` subblock — see [Configuration: Input](./Configuration:-Input.md#touchpad-gesture-tuning).
+Tuning parameters for touchpad gesture recognition (`swipe-trigger-distance`, `swipe-progress-distance`) live in the `input { touchpad { gestures { } } }` subblock — see [Configuration: Input](./Configuration:-Input.md#touchpad-gesture-tuning).
 
 #### Workspace Switch
 
@@ -117,7 +117,7 @@ binds {
 - `fingers=` — integer in `3..=10`. Required.
 - `direction=` — one of `"in"` (spread shrinking) or `"out"` (spread growing). Required.
 
-Pinch vs swipe classification is controlled by the `pinch-threshold` and `pinch-ratio` tuning parameters.
+Pinch vs swipe classification is controlled by the `pinch-trigger-distance` and `pinch-dominance-ratio` tuning parameters.
 
 #### Rotation Gestures
 
@@ -138,7 +138,7 @@ binds {
 - `fingers=` — integer in `3..=10`. Required.
 - `direction=` — one of `"cw"` (clockwise on screen) or `"ccw"` (counter-clockwise on screen). Required. The sign convention assumes the y-axis points down (standard screen coordinates).
 
-Rotation classification runs before pinch and swipe classification, so a clearly rotating finger cluster wins over any incidental spread or translation. Tuning lives under `input { touchscreen { gestures { } } }`: `rotation-threshold` (minimum **degrees** before it latches, default 15°), `rotation-ratio` (leniency — how much rotation arc length must dominate swipe/spread change by, default 2.0 means arc only needs to be ≥ 0.5 × swipe), and `rotation-progress-distance` (degrees that map to IPC `progress = ±1.0`, default 90°).
+Rotation classification runs before pinch and swipe classification, so a clearly rotating finger cluster wins over any incidental spread or translation. Tuning lives under `input { touchscreen { gestures { } } }`: `rotation-trigger-angle` (minimum **degrees** before it latches, default 15°), `rotation-dominance-ratio` (how much rotation arc length must dominate swipe/spread change, default 0.5 — higher = stricter rotation, matching `pinch-dominance-ratio` semantics), and `rotation-progress-angle` (degrees that map to IPC `progress = ±1.0`, default 90°).
 
 Rotation gestures are **continuous** in the same sense as pinch: binding them to a continuous-capable action animates frame-by-frame, and tagged rotations emit `GestureProgress` events where the delta is `GestureDelta::Rotate { d_radians }`.
 
@@ -148,7 +148,7 @@ The animation scale for pinch is controlled by `pinch-sensitivity`, not by the b
 
 #### Edge Swipes
 
-One-finger swipes that begin within `edge-threshold` pixels of a screen edge. Useful for drawers, panels, and any edge-activated UI.
+One-finger swipes that begin within `edge-start-distance` pixels of a screen edge. Useful for drawers, panels, and any edge-activated UI.
 
 ```kdl
 binds {
@@ -163,7 +163,7 @@ binds {
 - `zone=` — optional third-of-the-edge qualifier (see Edge Zones below).
 - No `fingers=` — edge swipes are always single-finger. Including `fingers=` is an error.
 
-The edge trigger zone width is set by `edge-threshold` in the `touchscreen { gestures { } }` block.
+The edge trigger zone width is set by `edge-start-distance` in the `touchscreen { gestures { } }` block.
 
 ##### Edge zones
 
@@ -228,9 +228,9 @@ The three IPC events are:
 - **`GestureBegin { tag, trigger, finger_count, is_continuous }`** — fired when gesture recognition has locked in. `is_continuous` is true for swipe, pinch, and edge gestures bound to continuous-capable actions (including `noop`), and false for discrete gestures bound to one-shot actions.
 - **`GestureProgress { tag, progress, delta, timestamp_ms }`** — fired repeatedly while a continuous gesture is in motion.
   - `progress` is **signed, unbounded**, normalized: it starts at `0.0` when the gesture is recognized and grows as the gesture continues. Reversing direction produces negative values, and overshoot can exceed `±1.0` — consumers should not assume the value is clamped.
-  - For **swipes and edge gestures**, progress accumulates adjusted (sensitivity-scaled, natural-scroll-adjusted) finger delta on the dominant axis, normalized by `gesture-progress-distance` (default 200 px for touchscreen, 40 for touchpad). Progress `±1.0` ≈ one `gesture-progress-distance` of movement.
+  - For **swipes and edge gestures**, progress accumulates adjusted (sensitivity-scaled, natural-scroll-adjusted) finger delta on the dominant axis, normalized by `swipe-progress-distance` (default 200 px for touchscreen, 40 libinput units for touchpad — same knob name, separate config block). Progress `±1.0` ≈ one progress-distance of movement.
   - For **pinches**, progress is `(current_spread - start_spread) / pinch-progress-distance` (default 100 px). Positive = pinch-out (spread growing), negative = pinch-in.
-  - For **rotations**, progress is cumulative signed rotation divided by `rotation-progress-distance` (configured in **degrees**, default 90°). Positive = counter-clockwise on screen, negative = clockwise on screen.
+  - For **rotations**, progress is cumulative signed rotation divided by `rotation-progress-angle` (configured in **degrees**, default 90°). Positive = counter-clockwise on screen, negative = clockwise on screen.
   - `delta` is a tagged enum carrying the per-event raw delta in a gesture-specific shape:
     - `GestureDelta::Swipe { dx, dy }` — per-event finger delta in screen pixels (touchscreen) or libinput units (touchpad).
     - `GestureDelta::Pinch { d_spread }` — per-event change in finger spread.

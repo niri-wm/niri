@@ -50,10 +50,10 @@ input {
         // See the wiki page "Gestures" for the full list.
         //
         // gestures {
-        //     // Libinput delta units of movement before a swipe is recognized.
-        //     recognition-threshold 16.0
-        //     // Libinput delta units for IPC gesture progress to reach 1.0.
-        //     gesture-progress-distance 40.0
+        //     // Libinput delta units of motion before a swipe commits.
+        //     swipe-trigger-distance 16.0
+        //     // Libinput delta units of swipe that map to IPC progress = 1.0.
+        //     swipe-progress-distance 40.0
         // }
     }
 
@@ -96,25 +96,27 @@ input {
     //     // See the wiki page "Gestures" for the full list.
     //     //
     //     // gestures {
-    //     //     // Pixels fingers must move before a swipe is recognized.
-    //     //     recognition-threshold 16.0
-    //     //     // Distance from screen edge (px) where an edge swipe can start.
-    //     //     edge-threshold 20.0
-    //     //     // Finger spread change (px) required to classify a pinch.
-    //     //     pinch-threshold 30.0
-    //     //     // How much spread must dominate swipe motion for pinch detection.
-    //     //     pinch-ratio 2.0
+    //     //     // Classifier commit gates. Higher = harder to trigger.
+    //     //     swipe-trigger-distance 100.0   // px of centroid motion before swipe latches
+    //     //     edge-start-distance 30.0       // px-wide edge start zone
+    //     //     pinch-trigger-distance 100.0   // px of spread change before pinch latches
+    //     //     pinch-dominance-ratio 1.0      // spread must equal-or-beat swipe (higher = stricter pinch)
     //     //     // Multiplier from finger spread to continuous pinch animation
     //     //     // delta. Applies to all continuous pinch binds (overview,
     //     //     // workspace switch, etc.). Ignores per-bind sensitivity.
     //     //     pinch-sensitivity 1.0
-    //     //     // Scales recognition-threshold for 4+ finger gestures.
-    //     //     finger-threshold-scale 1.5
-    //     //     // Pixels of swipe movement for IPC gesture progress to reach ±1.0.
-    //     //     gesture-progress-distance 200.0
-    //     //     // Pixels of pinch spread change for IPC progress to reach ±1.0.
-    //     //     // Signed: positive = pinch-out, negative = pinch-in.
-    //     //     pinch-progress-distance 100.0
+    //     //     // Ramps swipe-trigger-distance for 4+ finger gestures.
+    //     //     // Default 1.2 = small pinch-priority bias at high finger
+    //     //     // counts. Set 1.0 to disable.
+    //     //     swipe-multi-finger-scale 1.2
+    //     //     // IPC progress scaling (doesn't affect classification).
+    //     //     swipe-progress-distance 200.0  // px of swipe = progress 1.0
+    //     //     pinch-progress-distance 100.0  // px of spread = progress ±1.0 (signed)
+    //     //
+    //     //     // Rotation — angles in DEGREES.
+    //     //     rotation-trigger-angle 20.0    // ° before rotation can latch
+    //     //     rotation-dominance-ratio 0.5   // arc must beat swipe × this (higher = stricter)
+    //     //     rotation-progress-angle 90.0   // ° that map to IPC progress ±1.0
     //     // }
     // }
 
