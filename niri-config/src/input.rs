@@ -456,6 +456,35 @@ impl Touchscreen {
             .unwrap_or(100.0)
     }
 
+    /// Minimum rotation (in radians) that must be accumulated before a
+    /// multi-finger gesture is classified as a rotation rather than a swipe
+    /// or pinch. Default: ~0.26 rad (~15°).
+    pub fn rotation_threshold(&self) -> f64 {
+        self.gestures
+            .as_ref()
+            .and_then(|g| g.rotation_threshold)
+            .unwrap_or(15.0_f64.to_radians())
+    }
+
+    /// Ratio by which the rotation arc length (`|cumulative_rotation| *
+    /// cluster_radius`) must exceed linear swipe distance and spread change
+    /// for a gesture to count as a rotation. Default: 0.5.
+    pub fn rotation_ratio(&self) -> f64 {
+        self.gestures
+            .as_ref()
+            .and_then(|g| g.rotation_ratio)
+            .unwrap_or(0.5)
+    }
+
+    /// Radians of rotation for IPC `GestureProgress` events on rotation
+    /// gestures to reach `progress = ±1.0`. Default: π/2 (~90°).
+    pub fn rotation_progress_distance(&self) -> f64 {
+        self.gestures
+            .as_ref()
+            .and_then(|g| g.rotation_progress_distance)
+            .unwrap_or(std::f64::consts::FRAC_PI_2)
+    }
+
     /// Returns the scaled recognition threshold for a given finger count.
     /// Extra fingers above 3 increase the threshold by the scale factor.
     pub fn scaled_threshold(&self, finger_count: usize) -> f64 {
@@ -545,6 +574,23 @@ pub struct TouchscreenGesturesConfig {
     /// so this defaults lower than `gesture_progress_distance`. Default: 100.0.
     #[knuffel(child, unwrap(argument))]
     pub pinch_progress_distance: Option<f64>,
+    /// Minimum rotation (in **radians**) before a multi-finger gesture is
+    /// classified as a rotation rather than a swipe or pinch. Configured in
+    /// radians so the config is unit-explicit; divide by π and multiply by
+    /// 180 to get degrees. Default: ~0.2618 rad (15°).
+    #[knuffel(child, unwrap(argument))]
+    pub rotation_threshold: Option<f64>,
+    /// Ratio by which the rotation arc length (cumulative rotation times
+    /// cluster radius) must exceed linear swipe distance and spread change
+    /// for a gesture to count as a rotation. Higher values make rotation
+    /// detection stricter. Default: 0.5.
+    #[knuffel(child, unwrap(argument))]
+    pub rotation_ratio: Option<f64>,
+    /// Radians of cumulative rotation for IPC `GestureProgress` events on
+    /// rotation gestures to reach `progress = ±1.0`. Signed: positive for
+    /// counter-clockwise, negative for clockwise. Default: ~1.5708 rad (π/2).
+    #[knuffel(child, unwrap(argument))]
+    pub rotation_progress_distance: Option<f64>,
 }
 
 /// Tuning parameters for touchpad gesture recognition.

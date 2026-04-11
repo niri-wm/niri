@@ -16,6 +16,8 @@ pub enum TouchGestureType {
     SwipeRight,
     PinchIn,
     PinchOut,
+    RotateCw,
+    RotateCcw,
     EdgeSwipeLeft,
     EdgeSwipeRight,
     EdgeSwipeTop,
