@@ -1565,6 +1565,41 @@ pub enum CastTarget {
     },
 }
 
+/// Physical delta carried by a `GestureProgress` event, typed per gesture kind.
+///
+/// Consumers that only drive animations can ignore this and use `progress`.
+/// Consumers that need raw physical units (pixels, radians) match on the
+/// variant. A future gesture kind shows up as a new variant, so exhaustively
+/// matching consumers fail to compile until they handle it.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(tag = "kind")]
+pub enum GestureDelta {
+    /// Swipe / edge swipe. Raw pixel delta on both axes since the previous
+    /// event. Sensitivity and natural-scroll adjustments are **not** applied
+    /// here — this is the raw finger motion.
+    Swipe {
+        /// Horizontal delta in pixels since the previous event.
+        dx: f64,
+        /// Vertical delta in pixels since the previous event.
+        dy: f64,
+    },
+    /// Pinch. Change in cluster spread (pixels) since the previous event.
+    /// Positive = fingers spreading, negative = fingers coming together.
+    Pinch {
+        /// Change in finger spread (average distance from the cluster
+        /// centroid) in pixels since the previous event.
+        d_spread: f64,
+    },
+    /// Rotation. Change in cluster angle (radians) since the previous event.
+    /// Positive = counter-clockwise (mathematical convention).
+    Rotate {
+        /// Change in cluster angle in radians since the previous event.
+        /// Positive = counter-clockwise.
+        d_radians: f64,
+    },
+}
+
 /// A compositor event.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
@@ -1735,29 +1770,31 @@ pub enum Event {
         ///
         /// Starts at `0.0` at the moment the gesture is recognized, then
         /// changes as the gesture continues. The gesture's "natural" direction
-        /// (e.g. swipe-up, pinch-out) produces positive progress; reversing
-        /// direction produces negative values. Can exceed `±1.0` on overshoot,
-        /// and can return to `0.0` (or keep going negative) if the user
-        /// reverses a gesture mid-motion. Consumers that want a commit/cancel
-        /// decision should apply their own threshold to the final value on
-        /// `GestureEnd`, not assume progress is clamped or monotonic.
+        /// (e.g. swipe-up, pinch-out, rotate-ccw) produces positive progress;
+        /// reversing direction produces negative values. Can exceed `±1.0` on
+        /// overshoot, and can return to `0.0` (or keep going negative) if the
+        /// user reverses a gesture mid-motion. Consumers that want a
+        /// commit/cancel decision should apply their own threshold to the
+        /// final value on `GestureEnd`, not assume progress is clamped or
+        /// monotonic.
         ///
-        /// Normalization depends on the gesture type:
+        /// Normalization depends on the gesture kind (see `delta`):
         /// - Swipes and edge gestures accumulate adjusted (sensitivity-scaled,
         ///   natural-scroll-adjusted) finger delta on the dominant axis,
         ///   normalized by `gesture-progress-distance` (default 200 px for
-        ///   touchscreen, 40 for touchpad). Progress `±1.0` ≈ one
-        ///   `gesture-progress-distance` of movement.
+        ///   touchscreen, 40 for touchpad).
         /// - Pinches use `(current_spread - start_spread) / pinch-progress-distance`
         ///   (default 100 px) — an absolute measurement (not accumulated),
         ///   so pinching in then out returns progress cleanly to near 0
         ///   with no float drift. Positive = pinch-out, negative = pinch-in.
+        /// - Rotations use `cumulative_rotation / rotation-progress-distance`
+        ///   (default π/2 rad ≈ 90°). Positive = counter-clockwise.
         progress: f64,
-        /// Raw delta since last event (pixels). For pinches this is `0`.
-        delta_x: f64,
-        /// Raw delta since last event (pixels). For pinches this is the
-        /// incremental change in finger spread since the previous event.
-        delta_y: f64,
+        /// Physical delta since the previous event, typed per gesture kind.
+        /// Consumers that only drive animations can read `progress` and
+        /// ignore this; consumers that need raw physical units (pixels,
+        /// radians) match on the variant.
+        delta: GestureDelta,
         /// Timestamp in milliseconds.
         timestamp_ms: u32,
     },

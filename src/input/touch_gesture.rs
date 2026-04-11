@@ -46,6 +46,7 @@ use niri_config::touch_binds::{
     continuous_gesture_kind, ContinuousGestureKind, TouchGestureType,
 };
 use niri_config::Action;
+use niri_ipc::GestureDelta;
 
 use crate::layout::LayoutElement;
 use crate::niri::{ActiveTouchBind, PointerVisibility, State, TouchEdgeSwipeState};
@@ -87,6 +88,11 @@ impl State {
         // to override a 3-finger decision when more fingers land.
         if !was_empty {
             if self.niri.touch_gesture_locked {
+                tracing::debug!(
+                    target: "niri::input::touch_gesture",
+                    "TOUCH-DBG UNLOCK reason=new-finger was_locked=true now={}",
+                    self.niri.touch_gesture_points.len(),
+                );
                 // Unlock: end current gesture animations, restart recognition.
                 // If the gesture being interrupted was tagged, emit GestureEnd
                 // with completed=false — a consumer that received GestureBegin
@@ -109,7 +115,19 @@ impl State {
             if self.niri.touch_gesture_points.len() >= 3 {
                 self.niri.touch_gesture_initial_spread =
                     Some(calculate_spread(&self.niri.touch_gesture_points));
+                // Initialize rotation tracking basis: record the current
+                // per-slot angles so the next motion frame can compute a
+                // finite delta, and zero the cumulative so recognition
+                // decisions see a fresh gesture.
+                self.niri.touch_gesture_cumulative_rotation = 0.0;
+                self.niri.touch_gesture_previous_angles =
+                    calculate_per_slot_angles(&self.niri.touch_gesture_points);
             }
+            tracing::debug!(
+                target: "niri::input::touch_gesture",
+                "TOUCH-DBG FINGER-LAND fingers={} reset=recognition",
+                self.niri.touch_gesture_points.len(),
+            );
         }
 
         // First finger: check if it's in a screen edge zone for edge swipe detection.
@@ -393,6 +411,33 @@ impl State {
             }
         }
 
+        // Rotation basis rebase on finger-lift.
+        //
+        // Same hazard as the pinch rebase above, different metric. When a
+        // finger lifts, the cluster centroid shifts and the per-slot angles
+        // computed relative to the new centroid can differ from the old
+        // ones by tens of degrees — not because fingers rotated, but
+        // because the reference point moved. The next motion frame would
+        // compute a spurious rotation delta from that discontinuity and
+        // feed it into the animation.
+        //
+        // Fix: overwrite `previous_angles` with fresh angles taken against
+        // the post-removal centroid. No delta is accumulated for this step;
+        // the next real motion event starts fresh. Because `ipc_progress`
+        // for rotation is computed as
+        // `(cumulative_rotation - start_rotation) / progress_distance`,
+        // leaving both values untouched keeps the IPC progress continuous
+        // across the discontinuity with no need for a compensating shift.
+        //
+        // This rebase applies whether the active bind is Rotate (mid-gesture
+        // finger lift of an active rotation) OR another variant (unlocked
+        // recognition phase with 3+ fingers still down, where rotation may
+        // still become the chosen classification on the next frame).
+        if !self.niri.touch_gesture_points.is_empty() {
+            self.niri.touch_gesture_previous_angles =
+                calculate_per_slot_angles(&self.niri.touch_gesture_points);
+        }
+
         // End gesture when all fingers are lifted.
         if self.niri.touch_gesture_points.is_empty() {
             self.niri.touch_gesture_cumulative = None;
@@ -405,6 +450,8 @@ impl State {
                 .take()
                 .and_then(ActiveTouchBind::into_tag);
             self.niri.touch_gesture_initial_spread = None;
+            self.niri.touch_gesture_cumulative_rotation = 0.0;
+            self.niri.touch_gesture_previous_angles.clear();
 
             // End any ongoing gesture animations.
             if let Some(output) = self.niri.layout.workspace_switch_gesture_end(Some(true)) {
@@ -648,6 +695,11 @@ impl State {
                             let tag = tag.clone();
                             feed_continuous_pinch(self, kind, timestamp, tag.as_deref());
                         }
+                        ActiveTouchBind::Rotate { kind, tag, .. } => {
+                            let kind = *kind;
+                            let tag = tag.clone();
+                            feed_continuous_rotation(self, kind, timestamp, tag.as_deref());
+                        }
                     }
                 } else if let Some((cx, cy)) = &mut self.niri.touch_gesture_cumulative {
                     // Recognition phase: accumulate raw deltas.
@@ -660,16 +712,35 @@ impl State {
                     let (cx, cy) = (*cx / finger_count_f, *cy / finger_count_f);
                     let swipe_distance = (cx * cx + cy * cy).sqrt();
 
+                    // Accumulate rotation across frames. `calculate_rotation_delta`
+                    // returns the averaged per-frame angular delta (radians)
+                    // with ±π unwrap applied, plus the fresh per-slot angle
+                    // map that becomes the basis for the next frame.
+                    let (frame_rotation, new_angles) = calculate_rotation_delta(
+                        &self.niri.touch_gesture_points,
+                        &self.niri.touch_gesture_previous_angles,
+                    );
+                    self.niri.touch_gesture_previous_angles = new_angles;
+                    self.niri.touch_gesture_cumulative_rotation += frame_rotation;
+
                     // Scale threshold by finger count — more fingers need more
                     // deliberate movement. This works because unlock-on-new-finger
                     // resets cumulative on EVERY new finger landing, so the user
                     // starts fresh with the correct finger count each time.
-                    let (threshold, pinch_threshold, pinch_ratio) = {
+                    let (
+                        threshold,
+                        pinch_threshold,
+                        pinch_ratio,
+                        rotation_threshold,
+                        rotation_ratio,
+                    ) = {
                         let config = self.niri.config.borrow();
                         (
                             config.input.touchscreen.scaled_threshold(finger_count),
                             config.input.touchscreen.pinch_threshold(),
                             config.input.touchscreen.pinch_ratio(),
+                            config.input.touchscreen.rotation_threshold(),
+                            config.input.touchscreen.rotation_ratio(),
                         )
                     };
 
@@ -678,6 +749,27 @@ impl State {
                     let initial_spread =
                         self.niri.touch_gesture_initial_spread.unwrap_or(current_spread);
                     let spread_change = (current_spread - initial_spread).abs();
+
+                    // Rotation arc length: convert angular delta to a linear
+                    // distance commensurable with swipe_distance and
+                    // spread_change. This is the tangential distance each
+                    // finger would travel if the cluster rotated purely
+                    // around its centroid.
+                    let cumulative_rotation =
+                        self.niri.touch_gesture_cumulative_rotation;
+                    let rotation_arc = cumulative_rotation.abs() * current_spread;
+                    let rotation_arc_threshold =
+                        rotation_threshold * current_spread;
+
+                    // Rotation detection: the rotation arc must exceed its
+                    // own threshold AND dominate both swipe distance and
+                    // spread change by the rotation ratio. We require finger
+                    // count ≥ 3 because 2-finger rotation conflicts with the
+                    // pass-through contract for client-side 2-finger scrolling.
+                    let is_rotate = finger_count >= 3
+                        && rotation_arc >= rotation_arc_threshold
+                        && rotation_arc >= swipe_distance * (1.0 / rotation_ratio)
+                        && rotation_arc >= spread_change * (1.0 / rotation_ratio);
 
                     // Pinch detection: spread change must exceed both the
                     // pinch_threshold AND the swipe distance * pinch_ratio.
@@ -694,9 +786,52 @@ impl State {
                         || (spread_change > pinch_threshold
                             && spread_change > swipe_distance);
 
-                    // Entry: swipe crossed threshold, or pinch conditions met
-                    // with spread_change also exceeding threshold (prevents wobble).
-                    if swipe_distance >= threshold
+                    // Priority: rotate > pinch > swipe. Rotation is the most
+                    // specific classification; if both rotate and pinch are
+                    // marginally true, rotate wins.
+                    let is_pinch = is_pinch && !is_rotate;
+
+                    // Per-frame recognition snapshot. Logs every motion event
+                    // during recognition so you can see which metric is
+                    // closest to its threshold and why a gesture did or
+                    // didn't fire. Enable with:
+                    //   RUST_LOG=niri::input::touch_gesture=debug
+                    // and tail via `journalctl -fu niri -g TOUCH-DBG`.
+                    let closest = {
+                        let swipe_frac = swipe_distance / threshold.max(1e-9);
+                        let pinch_frac = spread_change / pinch_threshold.max(1e-9);
+                        let rotate_frac =
+                            cumulative_rotation.abs() / rotation_threshold.max(1e-9);
+                        if rotate_frac >= swipe_frac && rotate_frac >= pinch_frac {
+                            "rotate"
+                        } else if pinch_frac >= swipe_frac {
+                            "pinch"
+                        } else {
+                            "swipe"
+                        }
+                    };
+                    tracing::debug!(
+                        target: "niri::input::touch_gesture",
+                        "TOUCH-DBG FRAME fingers={} \
+                         swipe={:.1}/{:.1} \
+                         spread={:.1}/{:.1} \
+                         rot={:.3}/{:.3}rad ({:.1}°) \
+                         arc={:.1} \
+                         is_rotate={} is_pinch={} closest={}",
+                        finger_count,
+                        swipe_distance, threshold,
+                        spread_change, pinch_threshold,
+                        cumulative_rotation.abs(), rotation_threshold,
+                        cumulative_rotation.to_degrees(),
+                        rotation_arc,
+                        is_rotate, is_pinch, closest,
+                    );
+
+                    // Entry: rotate crossed its threshold, swipe crossed
+                    // threshold, or pinch conditions met with spread_change
+                    // also exceeding threshold (prevents wobble).
+                    if is_rotate
+                        || swipe_distance >= threshold
                         || (is_pinch && spread_change >= threshold)
                     {
                         // Gesture recognized — clear cumulative.
@@ -723,8 +858,17 @@ impl State {
                         let handle = self.niri.seat.get_touch().unwrap();
                         handle.cancel(self);
 
-                        // Determine gesture type.
-                        let gesture_type = if is_pinch {
+                        // Determine gesture type. Priority: rotate > pinch > swipe.
+                        let gesture_type = if is_rotate {
+                            // Positive cumulative_rotation = CCW in our
+                            // screen-flipped math convention (y axis inverted
+                            // so user-visible CCW matches mathematical +).
+                            if cumulative_rotation > 0.0 {
+                                TouchGestureType::RotateCcw
+                            } else {
+                                TouchGestureType::RotateCw
+                            }
+                        } else if is_pinch {
                             if current_spread < initial_spread {
                                 TouchGestureType::PinchIn
                             } else {
@@ -766,6 +910,45 @@ impl State {
                         };
                         let bind_info = bind_info.map(extract_bind_info);
 
+                        // Lock-decision trace: what gesture type was chosen,
+                        // what trigger name it maps to, and whether a bind
+                        // actually matched. "bind=no" means the gesture was
+                        // recognized but nothing was bound to it, so nothing
+                        // will fire — a common "my gesture does nothing" cause.
+                        {
+                            let trigger_name = trigger_to_ipc_name(
+                                touch_gesture_to_trigger(
+                                    gesture_type,
+                                    finger_count as u8,
+                                ),
+                            );
+                            let (bind_matched, kind_str, tag_str) =
+                                match bind_info.as_ref() {
+                                    Some((kind, _, _, tag, _)) => (
+                                        "yes",
+                                        kind.map(|k| format!("{:?}", k))
+                                            .unwrap_or_else(|| "discrete".to_string()),
+                                        tag.clone().unwrap_or_else(|| "-".to_string()),
+                                    ),
+                                    None => (
+                                        "no",
+                                        "-".to_string(),
+                                        "-".to_string(),
+                                    ),
+                                };
+                            tracing::debug!(
+                                target: "niri::input::touch_gesture",
+                                "TOUCH-DBG LOCK fingers={} type={:?} \
+                                 trigger={} bind={} kind={} tag={}",
+                                finger_count,
+                                gesture_type,
+                                trigger_name,
+                                bind_matched,
+                                kind_str,
+                                tag_str,
+                            );
+                        }
+
                         if let Some((kind, sensitivity, natural_scroll, tag, action)) = bind_info {
                             // Emit IPC GestureBegin if this bind has a tag.
                             if let Some(ref tag) = tag {
@@ -783,7 +966,20 @@ impl State {
                             if let Some(kind) = kind {
                                 // Continuous gesture — begin animation and store active bind.
                                 begin_continuous_gesture(self, kind, pos);
-                                let active = if is_pinch {
+                                let active = if is_rotate {
+                                    ActiveTouchBind::Rotate {
+                                        kind,
+                                        tag,
+                                        ipc_progress: 0.0,
+                                        // Snapshot the current cumulative as
+                                        // the gesture's start, so progress is
+                                        // computed relative to recognition —
+                                        // the recognition-phase rotation
+                                        // doesn't count toward the animated
+                                        // progress.
+                                        start_rotation: cumulative_rotation,
+                                    }
+                                } else if is_pinch {
                                     ActiveTouchBind::Pinch {
                                         kind,
                                         tag,
@@ -891,6 +1087,8 @@ impl State {
         self.niri.touch_edge_swipe = None;
         self.niri.touch_gesture_locked = false;
         self.niri.touch_gesture_initial_spread = None;
+        self.niri.touch_gesture_cumulative_rotation = 0.0;
+        self.niri.touch_gesture_previous_angles.clear();
 
         // Cancel any ongoing gesture animations.
         self.niri.layout.workspace_switch_gesture_end(Some(false));
@@ -931,6 +1129,12 @@ fn touch_gesture_to_trigger(gesture: TouchGestureType, finger_count: u8) -> Opti
         (PinchOut, 4) => Some(Trigger::TouchPinch4Out),
         (PinchIn, 5) => Some(Trigger::TouchPinch5In),
         (PinchOut, 5) => Some(Trigger::TouchPinch5Out),
+        (RotateCw, 3) => Some(Trigger::TouchRotate3Cw),
+        (RotateCcw, 3) => Some(Trigger::TouchRotate3Ccw),
+        (RotateCw, 4) => Some(Trigger::TouchRotate4Cw),
+        (RotateCcw, 4) => Some(Trigger::TouchRotate4Ccw),
+        (RotateCw, 5) => Some(Trigger::TouchRotate5Cw),
+        (RotateCcw, 5) => Some(Trigger::TouchRotate5Ccw),
         (EdgeSwipeLeft, _) => Some(Trigger::TouchEdgeLeft),
         (EdgeSwipeRight, _) => Some(Trigger::TouchEdgeRight),
         (EdgeSwipeTop, _) => Some(Trigger::TouchEdgeTop),
@@ -1184,7 +1388,15 @@ fn feed_continuous_gesture(
         };
 
         let ts_ms = timestamp.as_millis() as u32;
-        state.ipc_gesture_progress(tag.to_string(), progress, delta_x, delta_y, ts_ms);
+        state.ipc_gesture_progress(
+            tag.to_string(),
+            progress,
+            GestureDelta::Swipe {
+                dx: delta_x,
+                dy: delta_y,
+            },
+            ts_ms,
+        );
     }
 }
 
@@ -1291,15 +1503,132 @@ fn feed_continuous_pinch(
             *ipc_progress = progress;
         }
         let ts_ms = timestamp.as_millis() as u32;
-        // Pinch has no natural 2D delta: the gesture is radial, not linear.
-        // We report (delta_x=0, delta_y=incremental_spread) by convention:
-        //   - Consumers that only read `progress` get the right answer.
-        //   - Consumers that want per-frame motion magnitude can read delta_y.
-        //   - Consumers that happen to read delta_x for a pinch get a stable 0
-        //     instead of garbage, so a reversed-sign bug is impossible.
-        // This convention is documented on the GestureProgress struct in
-        // niri-ipc/src/lib.rs.
-        state.ipc_gesture_progress(tag.to_string(), progress, 0.0, incremental, ts_ms);
+        state.ipc_gesture_progress(
+            tag.to_string(),
+            progress,
+            GestureDelta::Pinch {
+                d_spread: incremental,
+            },
+            ts_ms,
+        );
+    }
+}
+
+/// Feed the per-frame rotation delta to an active continuous rotation gesture.
+///
+/// Mirrors `feed_continuous_pinch`, but the scalar driving the animation is a
+/// signed angular delta (radians, CCW positive) rather than a spread delta.
+/// Unlike pinch, rotation must accumulate frame-to-frame because `atan2` wraps
+/// at ±π and because fingers lifting shift the centroid; see
+/// `calculate_rotation_delta` for the math and `rebase_rotation_basis` for
+/// the finger-lift handling.
+///
+/// The rotation is converted to a linear animation delta by multiplying by
+/// `pinch_sensitivity` (same knob as pinch — rotation shares the "radial
+/// gesture" category). For OverviewToggle, CCW opens the overview to mirror
+/// the pinch-in → open convention (both are "gather inward" motions).
+fn feed_continuous_rotation(
+    state: &mut State,
+    kind: ContinuousGestureKind,
+    timestamp: Duration,
+    tag: Option<&str>,
+) {
+    // Batch config reads to hold the RefCell once per call.
+    let (pinch_sensitivity, rotation_progress_distance) = {
+        let config = state.niri.config.borrow();
+        (
+            config.input.touchscreen.pinch_sensitivity(),
+            config.input.touchscreen.rotation_progress_distance(),
+        )
+    };
+
+    // Compute this frame's angular delta and update the previous-angle basis.
+    let (frame_rotation, new_angles) = calculate_rotation_delta(
+        &state.niri.touch_gesture_points,
+        &state.niri.touch_gesture_previous_angles,
+    );
+    state.niri.touch_gesture_previous_angles = new_angles;
+    state.niri.touch_gesture_cumulative_rotation += frame_rotation;
+    let cumulative_rotation = state.niri.touch_gesture_cumulative_rotation;
+
+    // Destructure the active Rotate variant to read its start_rotation;
+    // bail if misdispatched.
+    let Some(ActiveTouchBind::Rotate { start_rotation, .. }) =
+        state.niri.touch_active_bind.as_ref()
+    else {
+        return;
+    };
+    let start_rotation = *start_rotation;
+
+    // Convert angular motion to an animation-accumulator scalar. Arc length
+    // at a unit radius is the angular delta itself; scale by pinch_sensitivity
+    // so users with pinch tuned to their taste get rotation that feels the
+    // same. Multiply by a radius of 100 px to get units comparable to swipe
+    // pixel deltas (π/2 rad ≈ 157 px of "motion").
+    const ROTATION_PIXEL_RADIUS: f64 = 100.0;
+    let anim_delta = frame_rotation * ROTATION_PIXEL_RADIUS * pinch_sensitivity;
+
+    match kind {
+        ContinuousGestureKind::OverviewToggle => {
+            // CCW (positive frame_rotation) → positive anim delta → overview
+            // opens. Matches the pinch-in "gather inward" convention.
+            if let Some(redraw) = state
+                .niri
+                .layout
+                .overview_gesture_update(anim_delta, timestamp)
+            {
+                if redraw {
+                    state.niri.queue_redraw_all();
+                }
+            }
+        }
+        ContinuousGestureKind::WorkspaceSwitch => {
+            if state
+                .niri
+                .layout
+                .workspace_switch_gesture_update(anim_delta, timestamp, true)
+                .is_some()
+            {
+                state.niri.queue_redraw_all();
+            }
+        }
+        ContinuousGestureKind::ViewScroll => {
+            if state
+                .niri
+                .layout
+                .view_offset_gesture_update(anim_delta, timestamp, true)
+                .is_some()
+            {
+                state.niri.queue_redraw_all();
+            }
+        }
+        ContinuousGestureKind::Noop => {
+            // No compositor animation — IPC progress is emitted below.
+        }
+    }
+
+    // Emit IPC GestureProgress for tagged rotation binds.
+    if let Some(tag) = tag {
+        // Signed, unbounded: positive = CCW, negative = CW. Progress is the
+        // rotation since recognition, normalized by the progress distance.
+        // `cumulative_rotation - start_rotation` keeps the running metric
+        // out of the progress math so the recognition-phase rotation isn't
+        // included in the animation drive.
+        let progress = (cumulative_rotation - start_rotation) / rotation_progress_distance;
+        if let Some(ActiveTouchBind::Rotate { ipc_progress, .. }) =
+            state.niri.touch_active_bind.as_mut()
+        {
+            *ipc_progress = progress;
+        }
+        let ts_ms = timestamp.as_millis() as u32;
+        state.ipc_gesture_progress(
+            tag.to_string(),
+            progress,
+            GestureDelta::Rotate {
+                d_radians: frame_rotation,
+            },
+            ts_ms,
+        );
     }
 }
 
@@ -1352,6 +1681,105 @@ fn calculate_spread(
     total_dist / n
 }
 
+/// Compute per-slot angles (in radians) from the cluster centroid.
+///
+/// Only slots that have an actual `TouchSlot` identifier (not `None`) are
+/// returned — angles have to be tracked across frames by slot, and `None`
+/// slots can't be followed. Returns an empty map if fewer than 2 real slots
+/// are present.
+fn calculate_per_slot_angles(
+    points: &std::collections::HashMap<
+        Option<smithay::backend::input::TouchSlot>,
+        smithay::utils::Point<f64, smithay::utils::Logical>,
+    >,
+) -> std::collections::HashMap<smithay::backend::input::TouchSlot, f64> {
+    let mut out = std::collections::HashMap::new();
+    let slotted: Vec<_> = points
+        .iter()
+        .filter_map(|(slot, pt)| slot.map(|s| (s, pt)))
+        .collect();
+    if slotted.len() < 2 {
+        return out;
+    }
+    let n = slotted.len() as f64;
+    let (sx, sy) = slotted.iter().fold((0.0, 0.0), |(ax, ay), (_, p)| {
+        (ax + p.x, ay + p.y)
+    });
+    let cx = sx / n;
+    let cy = sy / n;
+    for (slot, pt) in slotted {
+        // atan2(-dy, dx): screen y grows downward, so we flip the y axis to
+        // get the mathematical convention where positive angles are
+        // counter-clockwise *as the user sees them on the screen*. Without
+        // the flip, a CCW rotation on the glass would produce a negative
+        // angle delta in screen space, which is confusing for users.
+        out.insert(slot, (-(pt.y - cy)).atan2(pt.x - cx));
+    }
+    out
+}
+
+/// Compute the averaged frame-to-frame rotation delta (in radians) across all
+/// fingers present in both frames.
+///
+/// Returns `(frame_delta, new_angles)`:
+/// - `frame_delta` is the signed average angular delta across fingers
+///   present in both frames, with ±π unwrap applied. Positive = CCW.
+///   A noise floor of 0.001 rad is applied: smaller values clamp to 0 to
+///   prevent sub-threshold drift from accumulating into a false rotation on
+///   held-still fingers.
+/// - `new_angles` is the fresh per-slot angle map to store for the next
+///   frame's comparison.
+///
+/// Returns `(0.0, new_angles)` with no accumulated delta when fewer than 2
+/// fingers overlap between frames — the caller should still overwrite its
+/// stored map so the next frame has a basis.
+fn calculate_rotation_delta(
+    current_points: &std::collections::HashMap<
+        Option<smithay::backend::input::TouchSlot>,
+        smithay::utils::Point<f64, smithay::utils::Logical>,
+    >,
+    previous_angles: &std::collections::HashMap<smithay::backend::input::TouchSlot, f64>,
+) -> (
+    f64,
+    std::collections::HashMap<smithay::backend::input::TouchSlot, f64>,
+) {
+    use std::f64::consts::{PI, TAU};
+    const NOISE_FLOOR: f64 = 0.001;
+
+    let new_angles = calculate_per_slot_angles(current_points);
+    if new_angles.is_empty() || previous_angles.is_empty() {
+        return (0.0, new_angles);
+    }
+
+    let mut sum = 0.0;
+    let mut count = 0usize;
+    for (slot, &curr) in &new_angles {
+        let Some(&prev) = previous_angles.get(slot) else {
+            continue;
+        };
+        let raw = curr - prev;
+        // Unwrap across the ±π boundary: any delta with |Δ| > π is on the
+        // wrong side of the wrap; shift by 2π to get the short-way delta.
+        let unwrapped = if raw > PI {
+            raw - TAU
+        } else if raw < -PI {
+            raw + TAU
+        } else {
+            raw
+        };
+        sum += unwrapped;
+        count += 1;
+    }
+
+    if count == 0 {
+        return (0.0, new_angles);
+    }
+
+    let avg = sum / count as f64;
+    let filtered = if avg.abs() < NOISE_FLOOR { 0.0 } else { avg };
+    (filtered, new_angles)
+}
+
 /// Convert a Trigger to its KDL config name for IPC events.
 fn trigger_to_ipc_name(trigger: Option<Trigger>) -> String {
     let Some(trigger) = trigger else {
@@ -1376,6 +1804,12 @@ fn trigger_to_ipc_name(trigger: Option<Trigger>) -> String {
         Trigger::TouchPinch4Out => "TouchPinch4Out",
         Trigger::TouchPinch5In => "TouchPinch5In",
         Trigger::TouchPinch5Out => "TouchPinch5Out",
+        Trigger::TouchRotate3Cw => "TouchRotate3Cw",
+        Trigger::TouchRotate3Ccw => "TouchRotate3Ccw",
+        Trigger::TouchRotate4Cw => "TouchRotate4Cw",
+        Trigger::TouchRotate4Ccw => "TouchRotate4Ccw",
+        Trigger::TouchRotate5Cw => "TouchRotate5Cw",
+        Trigger::TouchRotate5Ccw => "TouchRotate5Ccw",
         Trigger::TouchEdgeLeft => "TouchEdgeLeft",
         Trigger::TouchEdgeRight => "TouchEdgeRight",
         Trigger::TouchEdgeTop => "TouchEdgeTop",
@@ -1395,4 +1829,147 @@ fn trigger_to_ipc_name(trigger: Option<Trigger>) -> String {
         _ => "Unknown",
     }
     .to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+    use std::f64::consts::{FRAC_PI_2, PI};
+
+    use smithay::backend::input::TouchSlot;
+    use smithay::utils::Point;
+
+    use super::{calculate_per_slot_angles, calculate_rotation_delta};
+
+    fn slot(n: u32) -> TouchSlot {
+        // TouchSlot is From<Option<u32>>.
+        TouchSlot::from(Some(n))
+    }
+
+    fn point(x: f64, y: f64) -> Point<f64, smithay::utils::Logical> {
+        Point::from((x, y))
+    }
+
+    fn points_from(
+        items: &[(u32, f64, f64)],
+    ) -> HashMap<Option<TouchSlot>, Point<f64, smithay::utils::Logical>> {
+        items
+            .iter()
+            .map(|(n, x, y)| (Some(slot(*n)), point(*x, *y)))
+            .collect()
+    }
+
+    #[test]
+    fn angles_empty_for_single_finger() {
+        let pts = points_from(&[(0, 5.0, 5.0)]);
+        assert!(calculate_per_slot_angles(&pts).is_empty());
+    }
+
+    #[test]
+    fn angles_three_fingers_around_origin() {
+        // Three fingers spaced 120° apart around the origin, so the
+        // centroid is exactly (0, 0) and each finger lands on a known
+        // angle in the screen-flipped math convention.
+        //   0°: (10, 0) screen
+        //   +120°: screen (10·cos 120°, -10·sin 120°) = (-5, -8.660)
+        //   -120°: screen (10·cos -120°, -10·sin -120°) = (-5, +8.660)
+        let r: f64 = 10.0;
+        let pts = points_from(&[
+            (0, r, 0.0),
+            (1, r * 120.0_f64.to_radians().cos(), -r * 120.0_f64.to_radians().sin()),
+            (2, r * (-120.0_f64).to_radians().cos(), -r * (-120.0_f64).to_radians().sin()),
+        ]);
+        let angles = calculate_per_slot_angles(&pts);
+        let tolerance = 1e-9;
+        assert!((angles[&slot(0)] - 0.0).abs() < tolerance, "slot 0 = {}", angles[&slot(0)]);
+        assert!(
+            (angles[&slot(1)] - 120.0_f64.to_radians()).abs() < tolerance,
+            "slot 1 = {}",
+            angles[&slot(1)]
+        );
+        assert!(
+            (angles[&slot(2)] - (-120.0_f64).to_radians()).abs() < tolerance,
+            "slot 2 = {}",
+            angles[&slot(2)]
+        );
+    }
+
+    /// Build a point set with N fingers arranged around the origin at the
+    /// given angles (screen-flipped math convention: +x right, +y up on
+    /// screen). Each finger is placed at radius 10.
+    fn ring_points(
+        angles: &[(u32, f64)],
+    ) -> HashMap<Option<TouchSlot>, Point<f64, smithay::utils::Logical>> {
+        let r = 10.0_f64;
+        let items: Vec<(u32, f64, f64)> = angles
+            .iter()
+            .map(|(n, a)| (*n, r * a.cos(), -r * a.sin()))
+            .collect();
+        points_from(&items)
+    }
+
+    #[test]
+    fn rotation_static_frames_is_zero() {
+        let pts = ring_points(&[(0, 0.0), (1, 120.0_f64.to_radians()), (2, -120.0_f64.to_radians())]);
+        let prev = calculate_per_slot_angles(&pts);
+        let (delta, _) = calculate_rotation_delta(&pts, &prev);
+        assert_eq!(delta, 0.0);
+    }
+
+    #[test]
+    fn rotation_quarter_turn_ccw() {
+        // Three fingers equally spaced 120° apart. Rotate the entire cluster
+        // +90° (CCW as seen on screen) around the origin.
+        let initial = ring_points(&[
+            (0, 0.0),
+            (1, 120.0_f64.to_radians()),
+            (2, -120.0_f64.to_radians()),
+        ]);
+        let rotated = ring_points(&[
+            (0, 90.0_f64.to_radians()),
+            (1, 210.0_f64.to_radians()),
+            (2, -30.0_f64.to_radians()),
+        ]);
+        let prev = calculate_per_slot_angles(&initial);
+        let (delta, _) = calculate_rotation_delta(&rotated, &prev);
+        // +90° CCW = +π/2.
+        let tolerance = 1e-9;
+        assert!((delta - FRAC_PI_2).abs() < tolerance, "delta = {delta}");
+    }
+
+    #[test]
+    fn rotation_wrap_across_positive_pi() {
+        // Two fingers 180° apart, prev at +170° and -10°. Both rotate +20° CCW:
+        //   slot 0: +170° → +190° ≡ -170°  (wrap across +π)
+        //   slot 1: -10°  → +10°            (normal)
+        // Raw subtraction for slot 0 is (-170 - 170) = -340°, unwrap → +20°.
+        // Average across fingers = +20° = +0.349 rad.
+        let prev_points = ring_points(&[
+            (0, 170.0_f64.to_radians()),
+            (1, -10.0_f64.to_radians()),
+        ]);
+        let prev = calculate_per_slot_angles(&prev_points);
+        let curr = ring_points(&[
+            (0, -170.0_f64.to_radians()),
+            (1, 10.0_f64.to_radians()),
+        ]);
+        let (delta, _) = calculate_rotation_delta(&curr, &prev);
+        let expected = 20.0_f64.to_radians();
+        assert!(
+            (delta - expected).abs() < 1e-9,
+            "delta = {delta}, expected ~{expected}"
+        );
+    }
+
+    #[test]
+    fn rotation_noise_floor_zeroes_tiny_delta() {
+        // Two fingers nudged by < 0.001 rad each: averaged delta is
+        // below the noise floor and should clamp to exactly 0.0.
+        let prev_points = ring_points(&[(0, 0.0), (1, PI)]);
+        let prev = calculate_per_slot_angles(&prev_points);
+        let eps = 0.0005_f64;
+        let curr = ring_points(&[(0, eps), (1, PI + eps)]);
+        let (delta, _) = calculate_rotation_delta(&curr, &prev);
+        assert_eq!(delta, 0.0);
+    }
 }

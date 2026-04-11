@@ -17,8 +17,8 @@ use futures_util::{select_biased, AsyncBufReadExt, AsyncWrite, AsyncWriteExt, Fu
 use niri_config::OutputName;
 use niri_ipc::state::{EventStreamState, EventStreamStatePart as _};
 use niri_ipc::{
-    Action, Event, KeyboardLayouts, OutputConfigChanged, Overview, Reply, Request, Response,
-    Timestamp, WindowLayout, Workspace,
+    Action, Event, GestureDelta, KeyboardLayouts, OutputConfigChanged, Overview, Reply, Request,
+    Response, Timestamp, WindowLayout, Workspace,
 };
 use smithay::desktop::layer_map_for_output;
 use smithay::input::pointer::{
@@ -970,8 +970,7 @@ impl State {
         &mut self,
         tag: String,
         progress: f64,
-        delta_x: f64,
-        delta_y: f64,
+        delta: GestureDelta,
         timestamp_ms: u32,
     ) {
         let Some(server) = &self.niri.ipc_server else {
@@ -980,8 +979,7 @@ impl State {
         let event = Event::GestureProgress {
             tag,
             progress,
-            delta_x,
-            delta_y,
+            delta,
             timestamp_ms,
         };
         // No state.apply needed — progress doesn't change tracked state.

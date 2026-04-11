@@ -270,18 +270,40 @@ pub enum ActiveTouchBind {
         /// animation.
         last_spread: f64,
     },
+    Rotate {
+        kind: ContinuousGestureKind,
+        /// IPC tag for gesture events.
+        tag: Option<String>,
+        /// IPC progress — recomputed each feed frame as
+        /// `(cumulative_rotation - start_rotation) / rotation_progress_distance`.
+        /// Signed: positive for CCW, negative for CW. Non-monotonic.
+        ipc_progress: f64,
+        /// Value of `touch_gesture_cumulative_rotation` at the moment the
+        /// gesture was recognized. Subtracted from the running cumulative to
+        /// produce the rotation *since recognition*, so the recognition-phase
+        /// rotation doesn't bleed into the animated progress. Unlike pinch's
+        /// absolute `current - start` comparison, the underlying metric must
+        /// accumulate per-frame because `atan2` wraps at ±π and because
+        /// fingers lifting mid-gesture shift the centroid. See
+        /// `calculate_rotation_delta` for the per-frame math.
+        start_rotation: f64,
+    },
 }
 
 impl ActiveTouchBind {
     pub fn kind(&self) -> ContinuousGestureKind {
         match self {
-            Self::Swipe { kind, .. } | Self::Pinch { kind, .. } => *kind,
+            Self::Swipe { kind, .. }
+            | Self::Pinch { kind, .. }
+            | Self::Rotate { kind, .. } => *kind,
         }
     }
 
     pub fn into_tag(self) -> Option<String> {
         match self {
-            Self::Swipe { tag, .. } | Self::Pinch { tag, .. } => tag,
+            Self::Swipe { tag, .. }
+            | Self::Pinch { tag, .. }
+            | Self::Rotate { tag, .. } => tag,
         }
     }
 }
@@ -492,6 +514,15 @@ pub struct Niri {
     pub touch_active_bind: Option<ActiveTouchBind>,
     /// Initial spread (average distance from centroid) when 3+ fingers first tracked.
     pub touch_gesture_initial_spread: Option<f64>,
+    /// Cumulative signed rotation in radians accumulated across motion frames
+    /// while 3+ fingers are tracked. Positive = CCW. Reset to 0 when the
+    /// gesture starts or ends.
+    pub touch_gesture_cumulative_rotation: f64,
+    /// Per-slot angle (radians, from the cluster centroid) recorded at the
+    /// previous motion frame. Used to compute the per-finger delta each frame
+    /// before averaging. Rebuilt on finger-lift to avoid centroid-shift
+    /// artifacts (see `rebase_rotation_basis`).
+    pub touch_gesture_previous_angles: HashMap<TouchSlot, f64>,
     pub overview_scroll_swipe_gesture: ScrollSwipeGesture,
     pub vertical_wheel_tracker: ScrollTracker,
     pub horizontal_wheel_tracker: ScrollTracker,
@@ -2701,6 +2732,8 @@ impl Niri {
             touchscreen_gesture_passthrough: false,
             touch_active_bind: None,
             touch_gesture_initial_spread: None,
+            touch_gesture_cumulative_rotation: 0.0,
+            touch_gesture_previous_angles: HashMap::new(),
             overview_scroll_swipe_gesture: ScrollSwipeGesture::new(),
             vertical_wheel_tracker: ScrollTracker::new(120),
             horizontal_wheel_tracker: ScrollTracker::new(120),

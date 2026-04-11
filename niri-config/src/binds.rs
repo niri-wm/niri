@@ -94,6 +94,16 @@ pub enum Trigger {
     TouchPinch4Out,
     TouchPinch5In,
     TouchPinch5Out,
+    // Touchscreen rotation gestures. 3/4/5 fingers; Cw = clockwise when
+    // looking at the screen, Ccw = counter-clockwise. Rotation starts at 3
+    // fingers (never 2) to preserve the 2-finger passthrough contract used
+    // by clients for scrolling/zooming.
+    TouchRotate3Cw,
+    TouchRotate3Ccw,
+    TouchRotate4Cw,
+    TouchRotate4Ccw,
+    TouchRotate5Cw,
+    TouchRotate5Ccw,
     // Touchscreen edge swipes (parent / any-zone fallback).
     TouchEdgeLeft,
     TouchEdgeRight,
@@ -160,6 +170,12 @@ impl Trigger {
                 | Trigger::TouchPinch4Out
                 | Trigger::TouchPinch5In
                 | Trigger::TouchPinch5Out
+                | Trigger::TouchRotate3Cw
+                | Trigger::TouchRotate3Ccw
+                | Trigger::TouchRotate4Cw
+                | Trigger::TouchRotate4Ccw
+                | Trigger::TouchRotate5Cw
+                | Trigger::TouchRotate5Ccw
                 | Trigger::TouchEdgeLeft
                 | Trigger::TouchEdgeRight
                 | Trigger::TouchEdgeTop
@@ -1225,6 +1241,19 @@ impl FromStr for Key {
             Trigger::TouchPinch5In
         } else if key.eq_ignore_ascii_case("TouchPinch5Out") {
             Trigger::TouchPinch5Out
+        // Touchscreen rotation gestures.
+        } else if key.eq_ignore_ascii_case("TouchRotate3Cw") {
+            Trigger::TouchRotate3Cw
+        } else if key.eq_ignore_ascii_case("TouchRotate3Ccw") {
+            Trigger::TouchRotate3Ccw
+        } else if key.eq_ignore_ascii_case("TouchRotate4Cw") {
+            Trigger::TouchRotate4Cw
+        } else if key.eq_ignore_ascii_case("TouchRotate4Ccw") {
+            Trigger::TouchRotate4Ccw
+        } else if key.eq_ignore_ascii_case("TouchRotate5Cw") {
+            Trigger::TouchRotate5Cw
+        } else if key.eq_ignore_ascii_case("TouchRotate5Ccw") {
+            Trigger::TouchRotate5Ccw
         // Touchscreen edge swipes — zoned variants first. Both the
         // compact `TouchEdgeTopLeft` form and the suffix `TouchEdgeTop:Left`
         // form resolve to the same Trigger.
