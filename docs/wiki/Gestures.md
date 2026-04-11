@@ -138,7 +138,7 @@ binds {
 - `fingers=` — integer in `3..=10`. Required.
 - `direction=` — one of `"cw"` (clockwise on screen) or `"ccw"` (counter-clockwise on screen). Required. The sign convention assumes the y-axis points down (standard screen coordinates).
 
-Rotation classification runs before pinch and swipe classification, so a clearly rotating finger cluster wins over any incidental spread or translation. Tuning lives under `input { touchscreen { gestures { } } }`: `rotation-threshold` (minimum radians before it latches), `rotation-ratio` (how much rotation arc length must dominate swipe/spread change by), and `rotation-progress-distance` (radians that map to IPC `progress = ±1.0`).
+Rotation classification runs before pinch and swipe classification, so a clearly rotating finger cluster wins over any incidental spread or translation. Tuning lives under `input { touchscreen { gestures { } } }`: `rotation-threshold` (minimum **degrees** before it latches, default 15°), `rotation-ratio` (leniency — how much rotation arc length must dominate swipe/spread change by, default 2.0 means arc only needs to be ≥ 0.5 × swipe), and `rotation-progress-distance` (degrees that map to IPC `progress = ±1.0`, default 90°).
 
 Rotation gestures are **continuous** in the same sense as pinch: binding them to a continuous-capable action animates frame-by-frame, and tagged rotations emit `GestureProgress` events where the delta is `GestureDelta::Rotate { d_radians }`.
 
@@ -230,7 +230,7 @@ The three IPC events are:
   - `progress` is **signed, unbounded**, normalized: it starts at `0.0` when the gesture is recognized and grows as the gesture continues. Reversing direction produces negative values, and overshoot can exceed `±1.0` — consumers should not assume the value is clamped.
   - For **swipes and edge gestures**, progress accumulates adjusted (sensitivity-scaled, natural-scroll-adjusted) finger delta on the dominant axis, normalized by `gesture-progress-distance` (default 200 px for touchscreen, 40 for touchpad). Progress `±1.0` ≈ one `gesture-progress-distance` of movement.
   - For **pinches**, progress is `(current_spread - start_spread) / pinch-progress-distance` (default 100 px). Positive = pinch-out (spread growing), negative = pinch-in.
-  - For **rotations**, progress is cumulative signed rotation in radians divided by `rotation-progress-distance` (default π/2). Positive = counter-clockwise on screen, negative = clockwise on screen.
+  - For **rotations**, progress is cumulative signed rotation divided by `rotation-progress-distance` (configured in **degrees**, default 90°). Positive = counter-clockwise on screen, negative = clockwise on screen.
   - `delta` is a tagged enum carrying the per-event raw delta in a gesture-specific shape:
     - `GestureDelta::Swipe { dx, dy }` — per-event finger delta in screen pixels (touchscreen) or libinput units (touchpad).
     - `GestureDelta::Pinch { d_spread }` — per-event change in finger spread.
