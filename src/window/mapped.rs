@@ -1,7 +1,7 @@
 use std::cell::{Cell, Ref, RefCell};
 use std::time::Duration;
 
-use niri_config::{Color, CornerRadius, GradientInterpolation, WindowRule};
+use niri_config::{Color, Config, CornerRadius, GradientInterpolation, WindowRule};
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::element::Kind;
 use smithay::backend::renderer::gles::GlesRenderer;
@@ -28,6 +28,7 @@ use crate::layout::{
     LayoutElementRenderSnapshot, SizingMode,
 };
 use crate::niri_render_elements;
+use crate::render_helpers::background_effect::BackgroundEffectElement;
 use crate::render_helpers::border::BorderRenderElement;
 use crate::render_helpers::offscreen::OffscreenData;
 use crate::render_helpers::renderer::NiriRenderer;
@@ -36,7 +37,8 @@ use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderEleme
 use crate::render_helpers::surface::{
     push_elements_from_surface_tree, render_snapshot_from_surface_tree,
 };
-use crate::render_helpers::{BakedBuffer, RenderTarget};
+use crate::render_helpers::xray::XrayPos;
+use crate::render_helpers::{background_effect, BakedBuffer, RenderCtx, RenderTarget};
 use crate::utils::id::IdCounter;
 use crate::utils::transaction::Transaction;
 use crate::utils::{
@@ -103,6 +105,9 @@ pub struct Mapped {
 
     /// Buffer to draw instead of the window when it should be blocked out.
     block_out_buffer: RefCell<SolidColorBuffer>,
+
+    /// The blur config, passed for background effect rendering.
+    blur_config: niri_config::Blur,
 
     /// Whether the next configure should be animated, if the configured state changed.
     animate_next_configure: bool,
@@ -249,7 +254,7 @@ enum RequestSizeOnce {
 }
 
 impl Mapped {
-    pub fn new(window: Window, rules: ResolvedWindowRules, hook: HookId) -> Self {
+    pub fn new(window: Window, rules: ResolvedWindowRules, hook: HookId, config: &Config) -> Self {
         let surface = window.wl_surface().expect("no X11 support");
         let credentials = get_credentials_for_surface(&surface);
 
@@ -270,6 +275,7 @@ impl Mapped {
             is_window_cast_target: false,
             ignore_opacity_window_rule: false,
             block_out_buffer: RefCell::new(SolidColorBuffer::new((0., 0.), [0., 0., 0., 1.])),
+            blur_config: config.blur,
             animate_next_configure: false,
             animate_serials: Vec::new(),
             animation_snapshot: None,
@@ -407,10 +413,12 @@ impl Mapped {
 
         RenderSnapshot {
             contents,
+            contents_with_blocked_out_bg: None,
             blocked_out_contents,
             block_out_from: self.rules().block_out_from,
             size,
             texture: Default::default(),
+            texture_with_blocked_out_bg: Default::default(),
             blocked_out_texture: Default::default(),
         }
     }
@@ -520,11 +528,14 @@ impl Mapped {
         };
 
         self.render(
-            renderer,
+            RenderCtx {
+                renderer,
+                target: RenderTarget::Screencast,
+                xray: None,
+            },
             location,
             scale,
             1.,
-            RenderTarget::Screencast,
             &mut |elem| push(use_border(elem)),
         );
     }
@@ -598,6 +609,10 @@ impl LayoutElement for Mapped {
         &self.window
     }
 
+    fn update_config(&mut self, blur_config: niri_config::Blur) {
+        self.blur_config = blur_config;
+    }
+
     fn size(&self) -> Size<i32, Logical> {
         self.window.geometry().size
     }
@@ -613,14 +628,13 @@ impl LayoutElement for Mapped {
 
     fn render_normal<R: NiriRenderer>(
         &self,
-        renderer: &mut R,
+        ctx: RenderCtx<R>,
         location: Point<f64, Logical>,
         scale: Scale<f64>,
         alpha: f32,
-        target: RenderTarget,
         push: &mut dyn FnMut(LayoutElementRenderElement<R>),
     ) {
-        if target.should_block_out(self.rules.block_out_from) {
+        if ctx.target.should_block_out(self.rules.block_out_from) {
             let mut buffer = self.block_out_buffer.borrow_mut();
             buffer.resize(self.window.geometry().size.to_f64());
             let elem =
@@ -631,7 +645,7 @@ impl LayoutElement for Mapped {
             let surface = self.toplevel().wl_surface();
             let mut push = |elem: WaylandSurfaceRenderElement<R>| push(elem.into());
             push_elements_from_surface_tree(
-                renderer,
+                ctx.renderer,
                 surface,
                 buf_pos.to_physical_precise_round(scale),
                 scale,
@@ -644,33 +658,73 @@ impl LayoutElement for Mapped {
 
     fn render_popups<R: NiriRenderer>(
         &self,
-        renderer: &mut R,
+        mut ctx: RenderCtx<R>,
         location: Point<f64, Logical>,
         scale: Scale<f64>,
         alpha: f32,
-        target: RenderTarget,
         push: &mut dyn FnMut(LayoutElementRenderElement<R>),
     ) {
-        if target.should_block_out(self.rules.block_out_from) {
+        if ctx.target.should_block_out(self.rules.block_out_from) {
             return;
         }
 
         let buf_pos = location - self.window.geometry().loc.to_f64();
         let surface = self.toplevel().wl_surface();
-        let mut push = |elem: WaylandSurfaceRenderElement<R>| push(elem.into());
         for (popup, popup_offset) in PopupManager::popups_for_surface(surface) {
+            let surface = popup.wl_surface();
             let offset = self.window.geometry().loc + popup_offset - popup.geometry().loc;
+            let surface_loc = buf_pos + offset.to_f64();
 
             push_elements_from_surface_tree(
-                renderer,
-                popup.wl_surface(),
-                (buf_pos + offset.to_f64()).to_physical_precise_round(scale),
+                ctx.renderer,
+                surface,
+                surface_loc.to_physical_precise_round(scale),
                 scale,
                 alpha,
                 Kind::ScanoutCandidate,
-                &mut push,
+                &mut |elem| push(elem.into()),
+            );
+
+            background_effect::render_for_surface(
+                surface,
+                ctx.as_gles(),
+                None,
+                self.blur_config,
+                surface_loc,
+                scale,
+                &mut |elem| push(elem.into()),
             );
         }
+    }
+
+    fn render_background_effect(
+        &self,
+        ctx: RenderCtx<GlesRenderer>,
+        geometry: Rectangle<f64, Logical>,
+        scale: f64,
+        clip_to_geometry: bool,
+        surface_anim_scale: Scale<f64>,
+        radius: CornerRadius,
+        xray_pos: XrayPos,
+        push: &mut dyn FnMut(BackgroundEffectElement),
+    ) {
+        let should_block_out = ctx.target.should_block_out(self.rules.block_out_from);
+        background_effect::render_for_tile(
+            ctx,
+            None,
+            geometry,
+            scale,
+            clip_to_geometry,
+            self.toplevel().wl_surface(),
+            self.buf_loc().to_f64(),
+            surface_anim_scale,
+            self.blur_config,
+            radius,
+            self.rules.background_effect,
+            should_block_out,
+            xray_pos,
+            push,
+        );
     }
 
     fn request_size(

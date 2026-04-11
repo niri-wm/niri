@@ -3,18 +3,21 @@ use niri_config::{Config, LayerRule};
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::element::Kind;
 use smithay::desktop::{LayerSurface, PopupManager};
-use smithay::utils::{Logical, Point, Scale, Size};
+use smithay::utils::{Logical, Point, Rectangle, Scale, Size};
+use smithay::wayland::compositor::{remove_pre_commit_hook, HookId};
 use smithay::wayland::shell::wlr_layer::{ExclusiveZone, Layer};
 
 use super::ResolvedLayerRules;
 use crate::animation::Clock;
 use crate::layout::shadow::Shadow;
 use crate::niri_render_elements;
+use crate::render_helpers::background_effect::BackgroundEffectElement;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::shadow::ShadowRenderElement;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
 use crate::render_helpers::surface::push_elements_from_surface_tree;
-use crate::render_helpers::RenderTarget;
+use crate::render_helpers::xray::XrayPos;
+use crate::render_helpers::{background_effect, RenderCtx};
 use crate::utils::{baba_is_float_offset, round_logical_in_physical};
 
 #[derive(Debug)]
@@ -22,14 +25,25 @@ pub struct MappedLayer {
     /// The surface itself.
     surface: LayerSurface,
 
+    /// Pre-commit hook that we have on all mapped layer surfaces.
+    pre_commit_hook: HookId,
+
     /// Up-to-date rules.
     rules: ResolvedLayerRules,
+
+    /// Whether to recompute layer rules on the next commit.
+    ///
+    /// Set in the pre-commit hook when the layer changes; consumed in the commit handler.
+    recompute_rules_on_commit: bool,
 
     /// Buffer to draw instead of the surface when it should be blocked out.
     block_out_buffer: SolidColorBuffer,
 
     /// The shadow around the surface.
     shadow: Shadow,
+
+    /// The blur config, passed for background effect rendering.
+    blur_config: niri_config::Blur,
 
     /// The view size for the layer surface's output.
     view_size: Size<f64, Logical>,
@@ -46,12 +60,14 @@ niri_render_elements! {
         Wayland = WaylandSurfaceRenderElement<R>,
         SolidColor = SolidColorRenderElement,
         Shadow = ShadowRenderElement,
+        BackgroundEffect = BackgroundEffectElement,
     }
 }
 
 impl MappedLayer {
     pub fn new(
         surface: LayerSurface,
+        pre_commit_hook: HookId,
         rules: ResolvedLayerRules,
         view_size: Size<f64, Logical>,
         scale: f64,
@@ -65,11 +81,14 @@ impl MappedLayer {
 
         Self {
             surface,
+            pre_commit_hook,
             rules,
+            recompute_rules_on_commit: false,
             block_out_buffer: SolidColorBuffer::new((0., 0.), [0., 0., 0., 1.]),
             view_size,
             scale,
             shadow: Shadow::new(shadow_config),
+            blur_config: config.blur,
             clock,
         }
     }
@@ -80,6 +99,8 @@ impl MappedLayer {
         shadow_config.on = false;
         shadow_config.merge_with(&self.rules.shadow);
         self.shadow.update_config(shadow_config);
+
+        self.blur_config = config.blur;
     }
 
     pub fn update_shaders(&mut self) {
@@ -128,6 +149,14 @@ impl MappedLayer {
         true
     }
 
+    pub fn set_recompute_rules_on_commit(&mut self) {
+        self.recompute_rules_on_commit = true;
+    }
+
+    pub fn take_recompute_rules_on_commit(&mut self) -> bool {
+        std::mem::take(&mut self.recompute_rules_on_commit)
+    }
+
     pub fn place_within_backdrop(&self) -> bool {
         if !self.rules.place_within_backdrop {
             return false;
@@ -157,16 +186,21 @@ impl MappedLayer {
 
     pub fn render_normal<R: NiriRenderer>(
         &self,
-        renderer: &mut R,
+        mut ctx: RenderCtx<R>,
+        ns: Option<usize>,
         location: Point<f64, Logical>,
-        target: RenderTarget,
+        mut xray_pos: XrayPos,
         push: &mut dyn FnMut(LayerSurfaceRenderElement<R>),
     ) {
         let scale = Scale::from(self.scale);
         let alpha = self.rules.opacity.unwrap_or(1.).clamp(0., 1.);
         let location = location + self.bob_offset();
+        xray_pos = xray_pos.offset(self.bob_offset());
 
-        if target.should_block_out(self.rules.block_out_from) {
+        let surface = self.surface.wl_surface();
+
+        let should_block_out = ctx.target.should_block_out(self.rules.block_out_from);
+        if should_block_out {
             // Round to physical pixels.
             let location = location.to_physical_precise_round(scale).to_logical(scale);
 
@@ -182,9 +216,8 @@ impl MappedLayer {
             // Layer surfaces don't have extra geometry like windows.
             let buf_pos = location;
 
-            let surface = self.surface.wl_surface();
             push_elements_from_surface_tree(
-                renderer,
+                ctx.renderer,
                 surface,
                 buf_pos.to_physical_precise_round(scale),
                 scale,
@@ -196,21 +229,42 @@ impl MappedLayer {
 
         let location = location.to_physical_precise_round(scale).to_logical(scale);
         self.shadow
-            .render(renderer, location, &mut |elem| push(elem.into()));
+            .render(ctx.renderer, location, &mut |elem| push(elem.into()));
+
+        let geometry = Rectangle::new(location, self.block_out_buffer.size());
+        let surface_off = Point::new(0., 0.); // No geometry on layer surfaces.
+        let surface_anim_scale = Scale::from(1.);
+        let radius = self.rules.geometry_corner_radius.unwrap_or_default();
+        background_effect::render_for_tile(
+            ctx.as_gles(),
+            ns,
+            geometry,
+            self.scale,
+            false,
+            surface,
+            surface_off,
+            surface_anim_scale,
+            self.blur_config,
+            radius,
+            self.rules.background_effect,
+            should_block_out,
+            xray_pos,
+            &mut |elem| push(elem.into()),
+        );
     }
 
     pub fn render_popups<R: NiriRenderer>(
         &self,
-        renderer: &mut R,
+        mut ctx: RenderCtx<R>,
+        ns: Option<usize>,
         location: Point<f64, Logical>,
-        target: RenderTarget,
         push: &mut dyn FnMut(LayerSurfaceRenderElement<R>),
     ) {
         let scale = Scale::from(self.scale);
         let alpha = self.rules.opacity.unwrap_or(1.).clamp(0., 1.);
         let location = location + self.bob_offset();
 
-        if target.should_block_out(self.rules.block_out_from) {
+        if ctx.target.should_block_out(self.rules.block_out_from) {
             return;
         }
 
@@ -219,18 +273,36 @@ impl MappedLayer {
 
         let surface = self.surface.wl_surface();
         for (popup, popup_offset) in PopupManager::popups_for_surface(surface) {
+            let surface = popup.wl_surface();
             // Layer surfaces don't have extra geometry like windows.
             let offset = popup_offset - popup.geometry().loc;
+            let surface_loc = buf_pos + offset.to_f64();
 
             push_elements_from_surface_tree(
-                renderer,
-                popup.wl_surface(),
-                (buf_pos + offset.to_f64()).to_physical_precise_round(scale),
+                ctx.renderer,
+                surface,
+                surface_loc.to_physical_precise_round(scale),
                 scale,
                 alpha,
                 Kind::ScanoutCandidate,
                 &mut |elem| push(elem.into()),
             );
+
+            background_effect::render_for_surface(
+                surface,
+                ctx.as_gles(),
+                ns,
+                self.blur_config,
+                surface_loc,
+                scale,
+                &mut |elem| push(elem.into()),
+            );
         }
+    }
+}
+
+impl Drop for MappedLayer {
+    fn drop(&mut self) {
+        remove_pre_commit_hook(self.surface.wl_surface(), self.pre_commit_hook.clone());
     }
 }
