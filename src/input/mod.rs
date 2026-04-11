@@ -13,7 +13,8 @@ use crate::niri::ActiveSwipeBind;
 /// Higher than touchscreen (0.4) because touchpad deltas are smaller libinput units.
 const TOUCHPAD_DEFAULT_SENSITIVITY: f64 = 1.0;
 use niri_config::{
-    Action, Bind, Binds, Config, Key, ModKey, Modifiers, MruDirection, SwitchBinds, Trigger,
+    Action, Bind, Binds, Config, Key, ModKey, Modifiers, MruDirection, SwipeDirection, SwitchBinds,
+    Trigger, MAX_FINGERS, MIN_FINGERS,
 };
 use niri_ipc::{GestureDelta, LayoutSwitchTarget};
 use smithay::backend::input::{
@@ -3858,7 +3859,8 @@ impl State {
 
                         // Emit IPC GestureBegin if this bind has a tag.
                         if let Some(ref tag) = tag {
-                            let trigger_name = touchpad_trigger_ipc_name(trigger);
+                            let trigger_name =
+                                crate::input::touch_gesture::trigger_to_ipc_name(trigger);
                             self.ipc_gesture_begin(
                                 tag.clone(),
                                 trigger_name,
@@ -4964,42 +4966,22 @@ pub fn mods_with_finger_scroll_binds(mod_key: ModKey, binds: &Binds) -> HashSet<
 }
 
 fn swipe_trigger(fingers: usize, is_horizontal: bool, cx: f64, cy: f64) -> Option<Trigger> {
-    let trigger = match (fingers, is_horizontal) {
-        (3, true) if cx > 0. => Trigger::TouchpadSwipe3Right,
-        (3, true) => Trigger::TouchpadSwipe3Left,
-        (3, false) if cy > 0. => Trigger::TouchpadSwipe3Down,
-        (3, false) => Trigger::TouchpadSwipe3Up,
-        (4, true) if cx > 0. => Trigger::TouchpadSwipe4Right,
-        (4, true) => Trigger::TouchpadSwipe4Left,
-        (4, false) if cy > 0. => Trigger::TouchpadSwipe4Down,
-        (4, false) => Trigger::TouchpadSwipe4Up,
-        (5, true) if cx > 0. => Trigger::TouchpadSwipe5Right,
-        (5, true) => Trigger::TouchpadSwipe5Left,
-        (5, false) if cy > 0. => Trigger::TouchpadSwipe5Down,
-        (5, false) => Trigger::TouchpadSwipe5Up,
-        _ => return None,
+    let Ok(fingers_u8) = u8::try_from(fingers) else {
+        return None;
     };
-    Some(trigger)
-}
-
-/// Convert a touchpad Trigger to its KDL config name for IPC events.
-fn touchpad_trigger_ipc_name(trigger: Trigger) -> String {
-    match trigger {
-        Trigger::TouchpadSwipe3Up => "TouchpadSwipe3Up",
-        Trigger::TouchpadSwipe3Down => "TouchpadSwipe3Down",
-        Trigger::TouchpadSwipe3Left => "TouchpadSwipe3Left",
-        Trigger::TouchpadSwipe3Right => "TouchpadSwipe3Right",
-        Trigger::TouchpadSwipe4Up => "TouchpadSwipe4Up",
-        Trigger::TouchpadSwipe4Down => "TouchpadSwipe4Down",
-        Trigger::TouchpadSwipe4Left => "TouchpadSwipe4Left",
-        Trigger::TouchpadSwipe4Right => "TouchpadSwipe4Right",
-        Trigger::TouchpadSwipe5Up => "TouchpadSwipe5Up",
-        Trigger::TouchpadSwipe5Down => "TouchpadSwipe5Down",
-        Trigger::TouchpadSwipe5Left => "TouchpadSwipe5Left",
-        Trigger::TouchpadSwipe5Right => "TouchpadSwipe5Right",
-        _ => "Unknown",
+    if !(MIN_FINGERS..=MAX_FINGERS).contains(&fingers_u8) {
+        return None;
     }
-    .to_string()
+    let direction = match (is_horizontal, cx, cy) {
+        (true, cx, _) if cx > 0. => SwipeDirection::Right,
+        (true, _, _) => SwipeDirection::Left,
+        (false, _, cy) if cy > 0. => SwipeDirection::Down,
+        (false, _, _) => SwipeDirection::Up,
+    };
+    Some(Trigger::TouchpadSwipe {
+        fingers: fingers_u8,
+        direction,
+    })
 }
 
 fn grab_allows_hot_corner(grab: &(dyn PointerGrab<State> + 'static)) -> bool {

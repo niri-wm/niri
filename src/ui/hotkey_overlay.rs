@@ -5,7 +5,11 @@ use std::fmt::Write as _;
 use std::iter::zip;
 use std::rc::Rc;
 
-use niri_config::{Action, Bind, Config, Key, ModKey, Modifiers, Trigger};
+use niri_config::input::{EdgeZone, ScreenEdge};
+use niri_config::{
+    Action, Bind, Config, Key, ModKey, Modifiers, PinchDirection, RotateDirection, SwipeDirection,
+    Trigger,
+};
 use pangocairo::cairo::{self, ImageSurface};
 use pangocairo::pango::{AttrColor, AttrInt, AttrList, AttrString, FontDescription, Weight};
 use smithay::backend::renderer::element::Kind;
@@ -560,63 +564,66 @@ fn key_name(screen_reader: bool, mod_key: ModKey, key: &Key) -> String {
         Trigger::TouchpadScrollUp => String::from("Touchpad Scroll Up"),
         Trigger::TouchpadScrollLeft => String::from("Touchpad Scroll Left"),
         Trigger::TouchpadScrollRight => String::from("Touchpad Scroll Right"),
-        Trigger::TouchpadSwipe3Up => String::from("Touchpad 3-Finger Swipe Up"),
-        Trigger::TouchpadSwipe3Down => String::from("Touchpad 3-Finger Swipe Down"),
-        Trigger::TouchpadSwipe3Left => String::from("Touchpad 3-Finger Swipe Left"),
-        Trigger::TouchpadSwipe3Right => String::from("Touchpad 3-Finger Swipe Right"),
-        Trigger::TouchpadSwipe4Up => String::from("Touchpad 4-Finger Swipe Up"),
-        Trigger::TouchpadSwipe4Down => String::from("Touchpad 4-Finger Swipe Down"),
-        Trigger::TouchpadSwipe4Left => String::from("Touchpad 4-Finger Swipe Left"),
-        Trigger::TouchpadSwipe4Right => String::from("Touchpad 4-Finger Swipe Right"),
-        Trigger::TouchpadSwipe5Up => String::from("Touchpad 5-Finger Swipe Up"),
-        Trigger::TouchpadSwipe5Down => String::from("Touchpad 5-Finger Swipe Down"),
-        Trigger::TouchpadSwipe5Left => String::from("Touchpad 5-Finger Swipe Left"),
-        Trigger::TouchpadSwipe5Right => String::from("Touchpad 5-Finger Swipe Right"),
-        // Touchscreen gestures
-        Trigger::TouchSwipe3Up => String::from("Touch 3-Finger Swipe Up"),
-        Trigger::TouchSwipe3Down => String::from("Touch 3-Finger Swipe Down"),
-        Trigger::TouchSwipe3Left => String::from("Touch 3-Finger Swipe Left"),
-        Trigger::TouchSwipe3Right => String::from("Touch 3-Finger Swipe Right"),
-        Trigger::TouchSwipe4Up => String::from("Touch 4-Finger Swipe Up"),
-        Trigger::TouchSwipe4Down => String::from("Touch 4-Finger Swipe Down"),
-        Trigger::TouchSwipe4Left => String::from("Touch 4-Finger Swipe Left"),
-        Trigger::TouchSwipe4Right => String::from("Touch 4-Finger Swipe Right"),
-        Trigger::TouchSwipe5Up => String::from("Touch 5-Finger Swipe Up"),
-        Trigger::TouchSwipe5Down => String::from("Touch 5-Finger Swipe Down"),
-        Trigger::TouchSwipe5Left => String::from("Touch 5-Finger Swipe Left"),
-        Trigger::TouchSwipe5Right => String::from("Touch 5-Finger Swipe Right"),
-        Trigger::TouchPinch3In => String::from("Touch 3-Finger Pinch In"),
-        Trigger::TouchPinch3Out => String::from("Touch 3-Finger Pinch Out"),
-        Trigger::TouchPinch4In => String::from("Touch 4-Finger Pinch In"),
-        Trigger::TouchPinch4Out => String::from("Touch 4-Finger Pinch Out"),
-        Trigger::TouchPinch5In => String::from("Touch 5-Finger Pinch In"),
-        Trigger::TouchPinch5Out => String::from("Touch 5-Finger Pinch Out"),
-        Trigger::TouchRotate3Cw => String::from("Touch 3-Finger Rotate CW"),
-        Trigger::TouchRotate3Ccw => String::from("Touch 3-Finger Rotate CCW"),
-        Trigger::TouchRotate4Cw => String::from("Touch 4-Finger Rotate CW"),
-        Trigger::TouchRotate4Ccw => String::from("Touch 4-Finger Rotate CCW"),
-        Trigger::TouchRotate5Cw => String::from("Touch 5-Finger Rotate CW"),
-        Trigger::TouchRotate5Ccw => String::from("Touch 5-Finger Rotate CCW"),
-        Trigger::TouchEdgeLeft => String::from("Touch Edge Left"),
-        Trigger::TouchEdgeRight => String::from("Touch Edge Right"),
-        Trigger::TouchEdgeTop => String::from("Touch Edge Top"),
-        Trigger::TouchEdgeBottom => String::from("Touch Edge Bottom"),
-        Trigger::TouchEdgeTopLeft => String::from("Touch Edge Top-Left"),
-        Trigger::TouchEdgeTopCenter => String::from("Touch Edge Top-Center"),
-        Trigger::TouchEdgeTopRight => String::from("Touch Edge Top-Right"),
-        Trigger::TouchEdgeBottomLeft => String::from("Touch Edge Bottom-Left"),
-        Trigger::TouchEdgeBottomCenter => String::from("Touch Edge Bottom-Center"),
-        Trigger::TouchEdgeBottomRight => String::from("Touch Edge Bottom-Right"),
-        Trigger::TouchEdgeLeftTop => String::from("Touch Edge Left-Top"),
-        Trigger::TouchEdgeLeftCenter => String::from("Touch Edge Left-Center"),
-        Trigger::TouchEdgeLeftBottom => String::from("Touch Edge Left-Bottom"),
-        Trigger::TouchEdgeRightTop => String::from("Touch Edge Right-Top"),
-        Trigger::TouchEdgeRightCenter => String::from("Touch Edge Right-Center"),
-        Trigger::TouchEdgeRightBottom => String::from("Touch Edge Right-Bottom"),
+        Trigger::TouchpadSwipe { fingers, direction } => {
+            format!("Touchpad {fingers}-Finger Swipe {}", swipe_dir_label(direction))
+        }
+        Trigger::TouchSwipe { fingers, direction } => {
+            format!("Touch {fingers}-Finger Swipe {}", swipe_dir_label(direction))
+        }
+        Trigger::TouchPinch { fingers, direction } => {
+            format!("Touch {fingers}-Finger Pinch {}", pinch_dir_label(direction))
+        }
+        Trigger::TouchRotate { fingers, direction } => {
+            format!("Touch {fingers}-Finger Rotate {}", rotate_dir_label(direction))
+        }
+        Trigger::TouchEdge { edge, zone } => format_touch_edge_label(edge, zone),
     };
     name.push_str(&pretty);
 
     name
+}
+
+fn swipe_dir_label(d: SwipeDirection) -> &'static str {
+    match d {
+        SwipeDirection::Up => "Up",
+        SwipeDirection::Down => "Down",
+        SwipeDirection::Left => "Left",
+        SwipeDirection::Right => "Right",
+    }
+}
+
+fn pinch_dir_label(d: PinchDirection) -> &'static str {
+    match d {
+        PinchDirection::In => "In",
+        PinchDirection::Out => "Out",
+    }
+}
+
+fn rotate_dir_label(d: RotateDirection) -> &'static str {
+    match d {
+        RotateDirection::Cw => "CW",
+        RotateDirection::Ccw => "CCW",
+    }
+}
+
+fn format_touch_edge_label(edge: ScreenEdge, zone: Option<EdgeZone>) -> String {
+    // Use niri_config's shared edge/zone naming, capitalized for display.
+    let edge_name = capitalize_first(edge.as_kdl_name());
+    match zone {
+        None => format!("Touch Edge {edge_name}"),
+        Some(z) => {
+            let zone_name = capitalize_first(niri_config::input::zone_kdl_name(edge, z));
+            format!("Touch Edge {edge_name}-{zone_name}")
+        }
+    }
+}
+
+fn capitalize_first(s: &str) -> String {
+    let mut chars = s.chars();
+    match chars.next() {
+        None => String::new(),
+        Some(c) => c.to_ascii_uppercase().to_string() + chars.as_str(),
+    }
 }
 
 fn prettify_keysym_name(screen_reader: bool, name: &str) -> String {
