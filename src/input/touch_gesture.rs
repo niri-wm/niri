@@ -443,6 +443,30 @@ impl State {
                 calculate_per_slot_angles(&self.niri.touch_gesture_points);
         }
 
+        // Spread basis rebase on finger-lift (recognition phase only).
+        //
+        // `spread_change = (current_spread - initial_spread).abs()` is the
+        // signal pinch recognition latches on. When a finger lifts during
+        // recognition, `current_spread` jumps because the geometry changed,
+        // not because fingers moved — and the jump typically exceeds
+        // `pinch_threshold` immediately, causing a spurious PinchIn/PinchOut
+        // lock on the very next frame. This was visible in debug logs as
+        // users trying to retry a 5-finger rotation by lifting one finger
+        // and ending up with an unwanted PinchIn at fingers=4.
+        //
+        // Fix: during unlocked recognition, rebase `initial_spread` to the
+        // post-removal geometry so `spread_change` resets to zero across
+        // the discontinuity. Only applies while unlocked — once a pinch
+        // is already active the rebase above (at the `ActiveTouchBind::Pinch`
+        // branch) handles the locked case with continuous IPC progress.
+        if !self.niri.touch_gesture_points.is_empty()
+            && !self.niri.touch_gesture_locked
+            && self.niri.touch_gesture_points.len() >= 3
+        {
+            self.niri.touch_gesture_initial_spread =
+                Some(calculate_spread(&self.niri.touch_gesture_points));
+        }
+
         // End gesture when all fingers are lifted.
         if self.niri.touch_gesture_points.is_empty() {
             self.niri.touch_gesture_cumulative = None;
@@ -831,11 +855,24 @@ impl State {
                         is_rotate, is_pinch, closest,
                     );
 
+                    // Rotation-priority gate: if the rotation arc has
+                    // already met its own minimum, suppress the plain swipe
+                    // threshold race so rotation gets a chance to fully
+                    // latch. Without this, a drifting hand can cross the
+                    // swipe threshold on the same frame rotation is still
+                    // accumulating arc, and swipe wins the race even when
+                    // the user is clearly rotating (observed in debug logs
+                    // as RotateCcw attempts locking as SwipeLeft at
+                    // arc>=130, rot=40° because swipe=109px crossed first).
+                    let rotation_candidate = finger_count >= 3
+                        && rotation_arc >= rotation_arc_threshold;
+
                     // Entry: rotate crossed its threshold, swipe crossed
-                    // threshold, or pinch conditions met with spread_change
-                    // also exceeding threshold (prevents wobble).
+                    // threshold (and rotation isn't already a candidate),
+                    // or pinch conditions met with spread_change also
+                    // exceeding threshold (prevents wobble).
                     if is_rotate
-                        || swipe_distance >= threshold
+                        || (swipe_distance >= threshold && !rotation_candidate)
                         || (is_pinch && spread_change >= threshold)
                     {
                         // Gesture recognized — clear cumulative.
