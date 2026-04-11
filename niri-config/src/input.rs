@@ -226,17 +226,21 @@ pub struct Touchpad {
 }
 
 impl Touchpad {
-    pub fn gesture_threshold(&self) -> f64 {
+    /// Swipe commit gate in libinput delta units (from
+    /// `swipe-trigger-distance`). Default 16.
+    pub fn swipe_trigger_distance(&self) -> f64 {
         self.gestures
             .as_ref()
-            .and_then(|g| g.recognition_threshold)
+            .and_then(|g| g.swipe_trigger_distance)
             .unwrap_or(16.0)
     }
 
-    pub fn gesture_progress_distance(&self) -> f64 {
+    /// Libinput delta units of swipe motion that map to IPC
+    /// `GestureProgress = 1.0`. Default 40.
+    pub fn swipe_progress_distance(&self) -> f64 {
         self.gestures
             .as_ref()
-            .and_then(|g| g.gesture_progress_distance)
+            .and_then(|g| g.swipe_progress_distance)
             .unwrap_or(40.0)
     }
 }
@@ -400,32 +404,41 @@ pub struct Touchscreen {
 }
 
 impl Touchscreen {
-    pub fn gesture_threshold(&self) -> f64 {
+    /// Swipe commit gate: centroid must travel this many pixels before a
+    /// swipe can latch. Default 100.
+    pub fn swipe_trigger_distance(&self) -> f64 {
         self.gestures
             .as_ref()
-            .and_then(|g| g.recognition_threshold)
-            .unwrap_or(16.0)
+            .and_then(|g| g.swipe_trigger_distance)
+            .unwrap_or(100.0)
     }
 
-    pub fn edge_threshold(&self) -> f64 {
+    /// Width (in pixels) of the screen-edge start zone within which a
+    /// touch must begin to count as a `TouchEdge`. Default 30.
+    pub fn edge_start_distance(&self) -> f64 {
         self.gestures
             .as_ref()
-            .and_then(|g| g.edge_threshold)
-            .unwrap_or(20.0)
-    }
-
-    pub fn pinch_threshold(&self) -> f64 {
-        self.gestures
-            .as_ref()
-            .and_then(|g| g.pinch_threshold)
+            .and_then(|g| g.edge_start_distance)
             .unwrap_or(30.0)
     }
 
-    pub fn pinch_ratio(&self) -> f64 {
+    /// Pinch commit gate: `|spread_change|` must exceed this many pixels
+    /// before a pinch can latch. Default 100.
+    pub fn pinch_trigger_distance(&self) -> f64 {
         self.gestures
             .as_ref()
-            .and_then(|g| g.pinch_ratio)
-            .unwrap_or(2.0)
+            .and_then(|g| g.pinch_trigger_distance)
+            .unwrap_or(100.0)
+    }
+
+    /// Pinch dominance ratio: `|spread_change|` must exceed
+    /// `swipe_distance × this` for pinch to win the race against swipe.
+    /// Higher = stricter pinch. Default 1.0.
+    pub fn pinch_dominance_ratio(&self) -> f64 {
+        self.gestures
+            .as_ref()
+            .and_then(|g| g.pinch_dominance_ratio)
+            .unwrap_or(1.0)
     }
 
     pub fn pinch_sensitivity(&self) -> f64 {
@@ -435,20 +448,28 @@ impl Touchscreen {
             .unwrap_or(1.0)
     }
 
-    pub fn finger_threshold_scale(&self) -> f64 {
+    /// Multi-finger scaling applied to `swipe_trigger_distance` for
+    /// gestures with more than 3 fingers. Default 1.2 — gives a small
+    /// pinch-priority bias at high finger counts (4/5-finger swipes need
+    /// slightly more commitment, so ambiguous pinches usually win).
+    pub fn swipe_multi_finger_scale(&self) -> f64 {
         self.gestures
             .as_ref()
-            .and_then(|g| g.finger_threshold_scale)
-            .unwrap_or(1.5)
+            .and_then(|g| g.swipe_multi_finger_scale)
+            .unwrap_or(1.2)
     }
 
-    pub fn gesture_progress_distance(&self) -> f64 {
+    /// Pixels of swipe distance that map to IPC `GestureProgress = 1.0`.
+    /// Default 200.
+    pub fn swipe_progress_distance(&self) -> f64 {
         self.gestures
             .as_ref()
-            .and_then(|g| g.gesture_progress_distance)
+            .and_then(|g| g.swipe_progress_distance)
             .unwrap_or(200.0)
     }
 
+    /// Pixels of spread change that map to IPC `GestureProgress = ±1.0`.
+    /// Default 100.
     pub fn pinch_progress_distance(&self) -> f64 {
         self.gestures
             .as_ref()
@@ -456,53 +477,54 @@ impl Touchscreen {
             .unwrap_or(100.0)
     }
 
-    /// Minimum rotation (in **degrees** in the KDL config — converted to
-    /// radians internally) that must be accumulated before a multi-finger
-    /// gesture is classified as a rotation rather than a swipe or pinch.
-    /// Default: 15°.
-    pub fn rotation_threshold(&self) -> f64 {
+    /// Rotation commit gate: cumulative rotation must exceed this many
+    /// **degrees** (in the KDL config — converted to radians internally)
+    /// before a rotation can latch. Default 20°.
+    pub fn rotation_trigger_angle(&self) -> f64 {
         let deg = self
             .gestures
             .as_ref()
-            .and_then(|g| g.rotation_threshold)
-            .unwrap_or(15.0);
+            .and_then(|g| g.rotation_trigger_angle)
+            .unwrap_or(20.0);
         deg.to_radians()
     }
 
-    /// Leniency ratio for rotation dominance. Higher = rotation wins more
-    /// easily. The effective gate is `rotation_arc >= swipe_distance *
-    /// (1.0 / rotation_ratio)`, so `rotation_ratio=2.0` means rotation
-    /// arc only needs to be half the swipe distance to count as a
-    /// rotation — deliberately lenient, because a user rotating with
-    /// incidental hand drift will often produce more translation than
-    /// arc length. Default: 2.0 (arc must be ≥ 0.5 × swipe). Dropping
-    /// this back to 0.5 reproduces the original strict behavior
-    /// (arc must be ≥ 2 × swipe) which made drift-while-rotating
-    /// essentially unrecognizable.
-    pub fn rotation_ratio(&self) -> f64 {
+    /// Rotation dominance ratio: `rotation_arc` must exceed both
+    /// `swipe_distance × this` and `|spread_change| × this` for rotation
+    /// to win the race. Higher = stricter rotation. **Matches
+    /// `pinch_dominance_ratio` semantics** — both knobs read as
+    /// "higher = stricter".
+    ///
+    /// Default 0.5 (arc must be ≥ 0.5 × competing motion). This is
+    /// deliberately lenient because rotating a finger cluster almost
+    /// always produces some incidental translation; requiring arc to
+    /// *exceed* the translation (ratio ≥ 1.0) would reject most
+    /// real-world rotations.
+    pub fn rotation_dominance_ratio(&self) -> f64 {
         self.gestures
             .as_ref()
-            .and_then(|g| g.rotation_ratio)
-            .unwrap_or(2.0)
+            .and_then(|g| g.rotation_dominance_ratio)
+            .unwrap_or(0.5)
     }
 
     /// Degrees of rotation (in the KDL config — converted to radians
-    /// internally) for IPC `GestureProgress` events on rotation gestures
-    /// to reach `progress = ±1.0`. Default: 90°.
-    pub fn rotation_progress_distance(&self) -> f64 {
+    /// internally) that map to IPC `GestureProgress = ±1.0` for rotation
+    /// gestures. Default 90°.
+    pub fn rotation_progress_angle(&self) -> f64 {
         let deg = self
             .gestures
             .as_ref()
-            .and_then(|g| g.rotation_progress_distance)
+            .and_then(|g| g.rotation_progress_angle)
             .unwrap_or(90.0);
         deg.to_radians()
     }
 
-    /// Returns the scaled recognition threshold for a given finger count.
-    /// Extra fingers above 3 increase the threshold by the scale factor.
-    pub fn scaled_threshold(&self, finger_count: usize) -> f64 {
-        let base = self.gesture_threshold();
-        let scale = self.finger_threshold_scale();
+    /// Returns the swipe trigger distance scaled for a given finger
+    /// count. Extra fingers above 3 increase the distance by the
+    /// `swipe_multi_finger_scale` factor.
+    pub fn scaled_swipe_trigger_distance(&self, finger_count: usize) -> f64 {
+        let base = self.swipe_trigger_distance();
+        let scale = self.swipe_multi_finger_scale();
         let extra = finger_count.saturating_sub(3) as f64;
         base * (1.0 + extra * (scale - 1.0))
     }
@@ -566,28 +588,28 @@ pub fn zone_kdl_name(edge: ScreenEdge, zone: EdgeZone) -> &'static str {
 /// is reported.
 #[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]
 pub struct TouchscreenGesturesConfig {
-    /// Distance in pixels fingers must move before a swipe gesture is
-    /// recognized and starts firing events. Lower values feel more responsive
-    /// but risk triggering on incidental finger drift. Default: 16.0.
+    /// Swipe commit gate: pixels of centroid movement required before a
+    /// swipe gesture latches. Lower values feel more responsive but risk
+    /// triggering on incidental finger drift. Default: 100.0.
     #[knuffel(child, unwrap(argument))]
-    pub recognition_threshold: Option<f64>,
-    /// Distance in pixels from a screen edge within which a touch must start
-    /// for it to count as an edge swipe (`TouchEdge edge="left|right|top|bottom"`).
-    /// Touches beginning farther from the edge are treated as regular swipes.
-    /// Default: 20.0.
+    pub swipe_trigger_distance: Option<f64>,
+    /// Width (in pixels) of the screen-edge start zone. A touch must
+    /// *begin* within this distance from an edge for it to count as a
+    /// `TouchEdge edge="..."` gesture; touches starting farther in are
+    /// treated as regular swipes. Default: 30.0.
     #[knuffel(child, unwrap(argument))]
-    pub edge_threshold: Option<f64>,
-    /// How far fingers must move together or apart (as total spread change in
-    /// pixels) before niri classifies the gesture as a pinch rather than a
-    /// swipe. Default: 30.0.
+    pub edge_start_distance: Option<f64>,
+    /// Pinch commit gate: pixels of `|spread_change|` required before a
+    /// pinch gesture latches. Default: 100.0.
     #[knuffel(child, unwrap(argument))]
-    pub pinch_threshold: Option<f64>,
-    /// Ratio by which spread change must exceed linear swipe distance for a
-    /// gesture to count as a pinch. Higher values make pinch detection stricter
-    /// — the fingers really have to move apart/together rather than glide
-    /// across the screen. Default: 2.0.
+    pub pinch_trigger_distance: Option<f64>,
+    /// Pinch dominance ratio: `|spread_change|` must exceed
+    /// `swipe_distance × this` for pinch to beat swipe in the race.
+    /// Higher values make pinch stricter — the fingers really have to
+    /// move apart/together rather than glide across the screen.
+    /// Default: 1.0.
     #[knuffel(child, unwrap(argument))]
-    pub pinch_ratio: Option<f64>,
+    pub pinch_dominance_ratio: Option<f64>,
     /// Multiplier mapping finger spread change (in screen pixels) to
     /// continuous pinch animation delta. Applies to all pinch-bound
     /// continuous actions — the bind's own `sensitivity` property is
@@ -597,43 +619,46 @@ pub struct TouchscreenGesturesConfig {
     /// accumulator (same scale swipes use). Default: 1.0.
     #[knuffel(child, unwrap(argument))]
     pub pinch_sensitivity: Option<f64>,
-    /// Scaling applied to `recognition_threshold` for gestures with more than
-    /// 3 fingers. The formula is `base * (1 + (fingers - 3) * (scale - 1))`,
-    /// so with a base threshold of 16 and scale 1.5, a 4-finger gesture needs
-    /// 24 px and a 5-finger gesture needs 32 px. Compensates for the extra
-    /// movement spread that wider finger grips produce. Default: 1.5.
+    /// Scaling applied to `swipe_trigger_distance` for gestures with
+    /// more than 3 fingers. The formula is
+    /// `base * (1 + (fingers − 3) * (scale − 1))`, so with a base of 100
+    /// and scale 1.2 a 4-finger swipe needs 120 px and a 5-finger swipe
+    /// needs 140 px. Default 1.2 — gives a small pinch-priority bias at
+    /// high finger counts so ambiguous 4/5-finger motions resolve as
+    /// pinch rather than swipe. Set 1.0 to disable the bias entirely.
     #[knuffel(child, unwrap(argument))]
-    pub finger_threshold_scale: Option<f64>,
-    /// Pixels of finger movement for IPC `GestureProgress` events to reach
-    /// `progress = 1.0`. Units are screen pixels. Tune this to make tagged
-    /// external-app gestures (like sidebar drawers) feel right on your
-    /// display. Default: 200.0.
+    pub swipe_multi_finger_scale: Option<f64>,
+    /// Pixels of swipe distance that map to IPC `GestureProgress = 1.0`.
+    /// IPC-only output knob — doesn't affect classification. Tune this
+    /// to make tagged external-app gestures (sidebar drawers etc.) feel
+    /// right on your display. Default: 200.0.
     #[knuffel(child, unwrap(argument))]
-    pub gesture_progress_distance: Option<f64>,
-    /// Pixels of finger spread change for IPC `GestureProgress` events on
-    /// pinch gestures to reach `progress = ±1.0`. Signed: positive for
-    /// pinch-out (spread growing), negative for pinch-in (spread shrinking).
-    /// Pinch spread changes are usually smaller than linear swipe distances,
-    /// so this defaults lower than `gesture_progress_distance`. Default: 100.0.
+    pub swipe_progress_distance: Option<f64>,
+    /// Pixels of spread change that map to IPC
+    /// `GestureProgress = ±1.0` for pinch gestures. Signed: positive for
+    /// pinch-out (spread growing), negative for pinch-in (spread
+    /// shrinking). Default: 100.0.
     #[knuffel(child, unwrap(argument))]
     pub pinch_progress_distance: Option<f64>,
-    /// Minimum rotation (in **radians**) before a multi-finger gesture is
-    /// classified as a rotation rather than a swipe or pinch. Configured in
-    /// radians so the config is unit-explicit; divide by π and multiply by
-    /// 180 to get degrees. Default: ~0.2618 rad (15°).
+    /// Rotation commit gate: cumulative rotation (in **degrees**)
+    /// required before a rotation gesture latches. Converted to radians
+    /// internally. Default: 20°.
     #[knuffel(child, unwrap(argument))]
-    pub rotation_threshold: Option<f64>,
-    /// Ratio by which the rotation arc length (cumulative rotation times
-    /// cluster radius) must exceed linear swipe distance and spread change
-    /// for a gesture to count as a rotation. Higher values make rotation
-    /// detection stricter. Default: 0.5.
+    pub rotation_trigger_angle: Option<f64>,
+    /// Rotation dominance ratio: `rotation_arc` must exceed
+    /// `swipe_distance × this` AND `|spread_change| × this` for rotation
+    /// to beat swipe and pinch in the race. Higher = stricter, matching
+    /// `pinch_dominance_ratio` semantics. Default: 0.5 (deliberately
+    /// lenient — rotation almost always includes incidental translation,
+    /// so requiring arc to strictly exceed translation would reject
+    /// nearly all real-world rotations).
     #[knuffel(child, unwrap(argument))]
-    pub rotation_ratio: Option<f64>,
-    /// Radians of cumulative rotation for IPC `GestureProgress` events on
-    /// rotation gestures to reach `progress = ±1.0`. Signed: positive for
-    /// counter-clockwise, negative for clockwise. Default: ~1.5708 rad (π/2).
+    pub rotation_dominance_ratio: Option<f64>,
+    /// Degrees of cumulative rotation that map to IPC
+    /// `GestureProgress = ±1.0` for rotation gestures. Signed: positive
+    /// for counter-clockwise, negative for clockwise. Default: 90°.
     #[knuffel(child, unwrap(argument))]
-    pub rotation_progress_distance: Option<f64>,
+    pub rotation_progress_angle: Option<f64>,
 }
 
 /// Tuning parameters for touchpad gesture recognition.
@@ -643,18 +668,19 @@ pub struct TouchscreenGesturesConfig {
 /// movement is classified and how IPC progress is reported.
 #[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]
 pub struct TouchpadGesturesConfig {
-    /// Distance in libinput delta units that fingers must move before a swipe
-    /// gesture is recognized. These units are acceleration-adjusted and not
-    /// directly comparable to touchscreen pixels. Default: 16.0.
+    /// Swipe commit gate: libinput delta units of centroid motion before
+    /// a swipe gesture latches. These units are acceleration-adjusted
+    /// and not directly comparable to touchscreen pixels. Default: 16.0.
     #[knuffel(child, unwrap(argument))]
-    pub recognition_threshold: Option<f64>,
-    /// Libinput delta units of finger movement for IPC `GestureProgress`
-    /// events to reach `progress = 1.0`. Because libinput acceleration curves
-    /// are nonlinear, the same physical swipe can produce different delta
-    /// magnitudes depending on speed — this value is not directly comparable
-    /// to the touchscreen `gesture-progress-distance`. Default: 40.0.
+    pub swipe_trigger_distance: Option<f64>,
+    /// Libinput delta units of swipe movement that map to IPC
+    /// `GestureProgress = 1.0`. Because libinput acceleration curves are
+    /// nonlinear, the same physical swipe can produce different delta
+    /// magnitudes depending on speed — this value is not directly
+    /// comparable to the touchscreen `swipe-progress-distance`.
+    /// Default: 40.0.
     #[knuffel(child, unwrap(argument))]
-    pub gesture_progress_distance: Option<f64>,
+    pub swipe_progress_distance: Option<f64>,
 }
 
 #[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]

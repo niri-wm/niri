@@ -1740,11 +1740,19 @@ pub enum Event {
         /// Stream ID of the stopped screencast.
         stream_id: u64,
     },
-    /// A gesture began (finger(s) crossed recognition threshold and matched a tagged bind).
+    /// A gesture began (finger(s) crossed recognition threshold and matched a bind).
     ///
-    /// Only emitted for binds that have a `tag` property set.
+    /// Multi-finger touchscreen gesture commits emit this event for **every**
+    /// matched bind, tagged or not — untagged commits arrive with an empty
+    /// `tag` so debug tools (e.g. niri-gesture-inspector) can observe every
+    /// classification result. External consumers should filter on the tags
+    /// they care about and ignore empty-tag events.
+    ///
+    /// Edge swipes and touchpad gestures still only emit this event for
+    /// tagged binds.
     GestureBegin {
-        /// User-defined tag from the bind config.
+        /// User-defined tag from the bind config. Empty string for
+        /// untagged multi-finger touchscreen commits.
         tag: String,
         /// The trigger name, echoed back in the same property form used in
         /// `binds {}`. Examples:
@@ -1785,14 +1793,15 @@ pub enum Event {
         /// Normalization depends on the gesture kind (see `delta`):
         /// - Swipes and edge gestures accumulate adjusted (sensitivity-scaled,
         ///   natural-scroll-adjusted) finger delta on the dominant axis,
-        ///   normalized by `gesture-progress-distance` (default 200 px for
-        ///   touchscreen, 40 for touchpad).
+        ///   normalized by `swipe-progress-distance` (default 200 px for
+        ///   touchscreen, 40 libinput units for touchpad — same knob name,
+        ///   separate config block).
         /// - Pinches use `(current_spread - start_spread) / pinch-progress-distance`
         ///   (default 100 px) — an absolute measurement (not accumulated),
         ///   so pinching in then out returns progress cleanly to near 0
         ///   with no float drift. Positive = pinch-out, negative = pinch-in.
-        /// - Rotations use `cumulative_rotation / rotation-progress-distance`
-        ///   (default π/2 rad ≈ 90°). Positive = counter-clockwise.
+        /// - Rotations use `cumulative_rotation / rotation-progress-angle`
+        ///   (default 90°). Positive = counter-clockwise.
         progress: f64,
         /// Physical delta since the previous event, typed per gesture kind.
         /// Consumers that only drive animations can read `progress` and
@@ -1811,6 +1820,75 @@ pub enum Event {
         /// Whether the gesture completed (snapped to target) or cancelled (snapped back).
         /// For discrete gestures, this is always `true`.
         completed: bool,
+    },
+    /// Per-frame recognition telemetry for the touchscreen gesture recognizer.
+    ///
+    /// Emitted at touch frame rate (~120 Hz) during the recognition phase of
+    /// a multi-finger gesture, before any LOCK decision is made. Intended
+    /// for debug / playground tooling (see `niri-gesture-inspector`) that
+    /// wants to visualize threshold crossings, dominance races, and the
+    /// `is_rotate` / `is_pinch` / `closest` classification state in real time.
+    ///
+    /// **Debug builds only.** The emission site in the compositor is gated
+    /// with `#[cfg(debug_assertions)]`, so release builds never produce this
+    /// event and pay zero cost. The enum variant itself is always defined
+    /// so that both debug and release clients compile against the same
+    /// `niri-ipc` crate — release clients simply never receive this variant
+    /// over the wire. Consumers must still handle the variant (even if just
+    /// with an empty match arm) because the type is always in scope.
+    ///
+    /// **Wire format stability.** This is a debug channel. Fields may be
+    /// added, renamed, or removed between niri versions without a deprecation
+    /// cycle. Consumers should tolerate missing/extra fields and treat the
+    /// event as best-effort telemetry, not a load-bearing API.
+    RecognitionFrame {
+        /// Current number of fingers on the touchscreen.
+        finger_count: u8,
+        /// Accumulated linear displacement of the finger cluster centroid
+        /// since recognition began, in screen pixels.
+        swipe_distance: f64,
+        /// Resolved swipe trigger distance in pixels (from
+        /// `swipe-trigger-distance`, scaled by finger count via
+        /// `swipe-multi-finger-scale`).
+        swipe_trigger_distance: f64,
+        /// `current_spread - initial_spread` — **signed** change in average
+        /// finger-to-centroid distance since recognition began, in pixels.
+        /// Negative = pinch-in, positive = pinch-out. The classifier
+        /// compares against `|spread_change|`; this raw signed value is
+        /// useful for visual direction display.
+        spread_change: f64,
+        /// Pinch trigger distance in pixels, from `pinch-trigger-distance`
+        /// (compared against `|spread_change|`).
+        pinch_trigger_distance: f64,
+        /// **Signed** cumulative rotation since recognition began, in
+        /// radians. Negative = counter-clockwise, positive = clockwise.
+        /// The classifier compares against `|rotation_rad|`.
+        rotation_rad: f64,
+        /// Rotation trigger angle in radians (from `rotation-trigger-angle`,
+        /// which the config accepts in degrees).
+        rotation_trigger_angle_rad: f64,
+        /// Rotation arc length (`|rotation_rad| × current_spread`) in pixels —
+        /// the tangential distance each finger would travel if the cluster
+        /// were rotating purely about its centroid. Commensurable with
+        /// `swipe_distance` and `spread_change` for dominance comparisons.
+        rotation_arc: f64,
+        /// Rotation arc trigger distance
+        /// (`rotation_trigger_angle_rad × current_spread`) in pixels — the
+        /// arc-length equivalent of the rotation angle trigger at the
+        /// current finger spread.
+        rotation_arc_trigger_distance: f64,
+        /// Whether all `is_rotate` commit gates are satisfied on this frame
+        /// (arc ≥ arc trigger AND dominates swipe/spread by
+        /// `rotation-dominance-ratio`).
+        is_rotate: bool,
+        /// Whether all `is_pinch` commit gates are satisfied on this frame.
+        is_pinch: bool,
+        /// Leading classification candidate by % of its own trigger on this
+        /// frame. One of `"swipe"`, `"pinch"`, `"rotate"`.
+        closest: String,
+        /// Timestamp in milliseconds, matching the per-frame timestamp used
+        /// elsewhere in the recognizer.
+        timestamp_ms: u32,
     },
 }
 

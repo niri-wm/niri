@@ -137,7 +137,7 @@ impl State {
             if let Some((output, pos_within_output)) = self.niri.output_under(pos) {
                 let size = self.niri.global_space.output_geometry(output).unwrap().size;
                 let config = self.niri.config.borrow();
-                let threshold = config.input.touchscreen.edge_threshold();
+                let threshold = config.input.touchscreen.edge_start_distance();
                 if let Some((edge, zone)) = detect_edge(pos_within_output, size, threshold) {
                     // Lookup order: zoned trigger first, then unzoned parent
                     // as fallback. `zoned` records which one hit so that all
@@ -449,8 +449,8 @@ impl State {
         // signal pinch recognition latches on. When a finger lifts during
         // recognition, `current_spread` jumps because the geometry changed,
         // not because fingers moved — and the jump typically exceeds
-        // `pinch_threshold` immediately, causing a spurious PinchIn/PinchOut
-        // lock on the very next frame. This was visible in debug logs as
+        // `pinch_trigger_distance` immediately, causing a spurious
+        // PinchIn/PinchOut lock on the very next frame. This was visible in debug logs as
         // users trying to retry a 5-finger rotation by lifting one finger
         // and ending up with an unwanted PinchIn at fingers=4.
         //
@@ -473,11 +473,11 @@ impl State {
             self.niri.touch_gesture_locked = false;
             self.niri.touchscreen_gesture_passthrough = false;
             // Take the active bind to get the tag before clearing.
-            let active_tag = self
-                .niri
-                .touch_active_bind
-                .take()
-                .and_then(ActiveTouchBind::into_tag);
+            // We track `had_active` separately so we can emit GestureEnd
+            // even for untagged binds (debug tools rely on it).
+            let active_bind = self.niri.touch_active_bind.take();
+            let had_active = active_bind.is_some();
+            let active_tag = active_bind.and_then(ActiveTouchBind::into_tag);
             self.niri.touch_gesture_initial_spread = None;
             self.niri.touch_gesture_cumulative_rotation = 0.0;
             self.niri.touch_gesture_previous_angles.clear();
@@ -491,9 +491,10 @@ impl State {
             }
             self.niri.layout.overview_gesture_end();
 
-            // Emit IPC GestureEnd for tagged multi-finger gestures.
-            if let Some(tag) = active_tag {
-                self.ipc_gesture_end(tag, true);
+            // Emit IPC GestureEnd for every committed multi-finger
+            // gesture, tagged or not — empty tag for untagged binds.
+            if had_active {
+                self.ipc_gesture_end(active_tag.unwrap_or_default(), true);
             }
         }
 
@@ -602,7 +603,7 @@ impl State {
                 } => {
                     let threshold = {
                         let config = self.niri.config.borrow();
-                        config.input.touchscreen.gesture_threshold()
+                        config.input.touchscreen.swipe_trigger_distance()
                     };
 
                     if cx * cx + cy * cy >= threshold * threshold {
@@ -756,19 +757,22 @@ impl State {
                     // resets cumulative on EVERY new finger landing, so the user
                     // starts fresh with the correct finger count each time.
                     let (
-                        threshold,
-                        pinch_threshold,
-                        pinch_ratio,
-                        rotation_threshold,
-                        rotation_ratio,
+                        swipe_trigger,
+                        pinch_trigger,
+                        pinch_dom,
+                        rotation_trigger,
+                        rotation_dom,
                     ) = {
                         let config = self.niri.config.borrow();
                         (
-                            config.input.touchscreen.scaled_threshold(finger_count),
-                            config.input.touchscreen.pinch_threshold(),
-                            config.input.touchscreen.pinch_ratio(),
-                            config.input.touchscreen.rotation_threshold(),
-                            config.input.touchscreen.rotation_ratio(),
+                            config
+                                .input
+                                .touchscreen
+                                .scaled_swipe_trigger_distance(finger_count),
+                            config.input.touchscreen.pinch_trigger_distance(),
+                            config.input.touchscreen.pinch_dominance_ratio(),
+                            config.input.touchscreen.rotation_trigger_angle(),
+                            config.input.touchscreen.rotation_dominance_ratio(),
                         )
                     };
 
@@ -786,50 +790,52 @@ impl State {
                     let cumulative_rotation =
                         self.niri.touch_gesture_cumulative_rotation;
                     let rotation_arc = cumulative_rotation.abs() * current_spread;
-                    let rotation_arc_threshold =
-                        rotation_threshold * current_spread;
+                    let rotation_arc_trigger_distance =
+                        rotation_trigger * current_spread;
 
                     // Rotation detection: the rotation arc must exceed its
-                    // own threshold AND dominate both swipe distance and
-                    // spread change by the rotation ratio. We require finger
-                    // count ≥ 3 because 2-finger rotation conflicts with the
-                    // pass-through contract for client-side 2-finger scrolling.
+                    // own trigger AND dominate both swipe distance and
+                    // spread change by the rotation dominance ratio. We
+                    // require finger count ≥ 3 because 2-finger rotation
+                    // conflicts with the pass-through contract for
+                    // client-side 2-finger scrolling.
+                    //
+                    // Dominance semantics (unified with pinch): higher
+                    // `rotation_dominance_ratio` = stricter rotation. The
+                    // default of 0.5 means `arc` only needs to be at least
+                    // half of the competing motion — lenient because
+                    // rotating a finger cluster almost always drags a
+                    // little linearly too.
                     let is_rotate = finger_count >= 3
-                        && rotation_arc >= rotation_arc_threshold
-                        && rotation_arc >= swipe_distance * (1.0 / rotation_ratio)
-                        && rotation_arc >= spread_change * (1.0 / rotation_ratio);
+                        && rotation_arc >= rotation_arc_trigger_distance
+                        && rotation_arc >= swipe_distance * rotation_dom
+                        && rotation_arc >= spread_change * rotation_dom;
 
                     // Pinch detection: spread change must exceed both the
-                    // pinch_threshold AND the swipe distance * pinch_ratio.
-                    // This ensures pinch only fires when spread movement
-                    // dominates over linear swipe movement.
-                    let is_pinch = spread_change > pinch_threshold
-                        && spread_change > swipe_distance * pinch_ratio;
+                    // pinch trigger AND swipe distance × dominance ratio.
+                    // `pinch_dom` is the single knob — higher = stricter
+                    // pinch (harder for pinch to win over incidental
+                    // swipe drift). Below 1.0 is lenient; above 1.0
+                    // demands spread to out-move swipe by that factor.
+                    //
+                    // Rotation priority: if rotation already won, pinch
+                    // loses regardless. Rotation is the most specific
+                    // classification, so marginal ties go to rotate.
+                    let is_pinch = spread_change > pinch_trigger
+                        && spread_change > swipe_distance * pinch_dom
+                        && !is_rotate;
 
-                    // Also detect pinch when spread change is large enough on
-                    // its own, even if swipe distance is also high. This handles
-                    // the case where a pinch gesture also has a linear component
-                    // (fingers moving inward AND slightly down).
-                    let is_pinch = is_pinch
-                        || (spread_change > pinch_threshold
-                            && spread_change > swipe_distance);
-
-                    // Priority: rotate > pinch > swipe. Rotation is the most
-                    // specific classification; if both rotate and pinch are
-                    // marginally true, rotate wins.
-                    let is_pinch = is_pinch && !is_rotate;
-
-                    // Per-frame recognition snapshot. Logs every motion event
-                    // during recognition so you can see which metric is
-                    // closest to its threshold and why a gesture did or
+                    // Per-frame recognition snapshot. Logs every motion
+                    // event during recognition so you can see which metric
+                    // is closest to its trigger and why a gesture did or
                     // didn't fire. Enable with:
                     //   RUST_LOG=niri::input::touch_gesture=debug
                     // and tail via `journalctl -fu niri -g TOUCH-DBG`.
                     let closest = {
-                        let swipe_frac = swipe_distance / threshold.max(1e-9);
-                        let pinch_frac = spread_change / pinch_threshold.max(1e-9);
+                        let swipe_frac = swipe_distance / swipe_trigger.max(1e-9);
+                        let pinch_frac = spread_change / pinch_trigger.max(1e-9);
                         let rotate_frac =
-                            cumulative_rotation.abs() / rotation_threshold.max(1e-9);
+                            cumulative_rotation.abs() / rotation_trigger.max(1e-9);
                         if rotate_frac >= swipe_frac && rotate_frac >= pinch_frac {
                             "rotate"
                         } else if pinch_frac >= swipe_frac {
@@ -847,33 +853,67 @@ impl State {
                          arc={:.1} \
                          is_rotate={} is_pinch={} closest={}",
                         finger_count,
-                        swipe_distance, threshold,
-                        spread_change, pinch_threshold,
-                        cumulative_rotation.abs(), rotation_threshold,
+                        swipe_distance, swipe_trigger,
+                        spread_change, pinch_trigger,
+                        cumulative_rotation.abs(), rotation_trigger,
                         cumulative_rotation.to_degrees(),
                         rotation_arc,
                         is_rotate, is_pinch, closest,
                     );
 
+                    // Debug telemetry on the IPC event stream, consumed by
+                    // niri-gesture-inspector (GTK4 live scope visualizer).
+                    // Compile-time gated to debug builds: release builds
+                    // don't pay any cost and don't emit the event, so
+                    // production event-stream consumers never see it.
+                    // Debug builds always emit unconditionally — no env var.
+                    // Emit SIGNED values for spread and rotation so the
+                    // gesture-inspector can render direction on a
+                    // bidirectional bar (pinch-in vs pinch-out, ccw vs
+                    // cw). The classifier above still uses the local
+                    // magnitude variants (`spread_change`, `rotation_arc`).
+                    #[cfg(debug_assertions)]
+                    self.ipc_recognition_frame(
+                        finger_count as u8,
+                        swipe_distance,
+                        swipe_trigger,
+                        current_spread - initial_spread,
+                        pinch_trigger,
+                        cumulative_rotation,
+                        rotation_trigger,
+                        rotation_arc,
+                        rotation_arc_trigger_distance,
+                        is_rotate,
+                        is_pinch,
+                        closest.to_string(),
+                        evt.time_msec(),
+                    );
+
                     // Rotation-priority gate: if the rotation arc has
                     // already met its own minimum, suppress the plain swipe
-                    // threshold race so rotation gets a chance to fully
+                    // trigger race so rotation gets a chance to fully
                     // latch. Without this, a drifting hand can cross the
-                    // swipe threshold on the same frame rotation is still
+                    // swipe trigger on the same frame rotation is still
                     // accumulating arc, and swipe wins the race even when
-                    // the user is clearly rotating (observed in debug logs
-                    // as RotateCcw attempts locking as SwipeLeft at
-                    // arc>=130, rot=40° because swipe=109px crossed first).
+                    // the user is clearly rotating.
                     let rotation_candidate = finger_count >= 3
-                        && rotation_arc >= rotation_arc_threshold;
+                        && rotation_arc >= rotation_arc_trigger_distance;
 
-                    // Entry: rotate crossed its threshold, swipe crossed
-                    // threshold (and rotation isn't already a candidate),
-                    // or pinch conditions met with spread_change also
-                    // exceeding threshold (prevents wobble).
+                    // Entry: rotate passed all gates, swipe passed its
+                    // trigger (and rotation isn't already a candidate), or
+                    // pinch passed its own trigger + dominance gates.
+                    //
+                    // Pinch commits on `is_pinch` alone — which already
+                    // requires `spread_change > pinch_trigger`. Earlier
+                    // versions double-gated against `swipe_trigger` as
+                    // "anti-wobble", but `swipe_trigger` scales with finger
+                    // count via `swipe-multi-finger-scale`, so a 4/5-finger
+                    // pinch inherited a wildly inflated commit gate even
+                    // though `pinch_trigger` stayed flat. Pinch has its
+                    // own knob — use it.
                     if is_rotate
-                        || (swipe_distance >= threshold && !rotation_candidate)
-                        || (is_pinch && spread_change >= threshold)
+                        || (swipe_distance >= swipe_trigger && !rotation_candidate)
+                        || is_pinch
                     {
                         // Gesture recognized — clear cumulative.
                         self.niri.touch_gesture_cumulative = None;
@@ -991,14 +1031,19 @@ impl State {
                         }
 
                         if let Some((kind, sensitivity, natural_scroll, tag, action)) = bind_info {
-                            // Emit IPC GestureBegin if this bind has a tag.
-                            if let Some(ref tag) = tag {
+                            // Emit IPC GestureBegin for every committed
+                            // multi-finger bind, tagged or not. Untagged
+                            // commits arrive with an empty `tag` so debug
+                            // tools (niri-gesture-inspector) can see every
+                            // lock. External consumers filter on tag, so
+                            // empty-tag events are harmless to them.
+                            {
                                 let trigger_name =
                                     touch_gesture_to_trigger(gesture_type, finger_count as u8)
                                         .map(trigger_to_ipc_name)
                                         .unwrap_or_else(|| "Unknown".to_string());
                                 self.ipc_gesture_begin(
-                                    tag.clone(),
+                                    tag.clone().unwrap_or_default(),
                                     trigger_name,
                                     finger_count as u8,
                                     kind.is_some(),
@@ -1047,10 +1092,14 @@ impl State {
                                 if !matches!(action, Action::Noop) {
                                     self.do_action(action, false);
                                 }
-                                // Emit immediate GestureEnd for discrete gestures.
-                                if let Some(ref tag) = tag {
-                                    self.ipc_gesture_end(tag.clone(), true);
-                                }
+                                // Emit immediate GestureEnd unconditionally
+                                // (matching the unconditional GestureBegin
+                                // above) so debug tools see the end of
+                                // every discrete commit.
+                                self.ipc_gesture_end(
+                                    tag.clone().unwrap_or_default(),
+                                    true,
+                                );
                             }
                         }
                     }
@@ -1113,11 +1162,11 @@ impl State {
         };
 
         // Collect tags for IPC GestureEnd before clearing state.
-        let active_tag = self
-            .niri
-            .touch_active_bind
-            .take()
-            .and_then(ActiveTouchBind::into_tag);
+        // Track `had_active` separately so we can emit a cancelled
+        // GestureEnd for untagged multi-finger binds too.
+        let active_bind = self.niri.touch_active_bind.take();
+        let had_active = active_bind.is_some();
+        let active_tag = active_bind.and_then(ActiveTouchBind::into_tag);
         let edge_tag = match &self.niri.touch_edge_swipe {
             Some(TouchEdgeSwipeState::Active { tag, .. }) => tag.clone(),
             _ => None,
@@ -1137,9 +1186,10 @@ impl State {
         self.niri.layout.view_offset_gesture_end(Some(false));
         self.niri.layout.overview_gesture_end();
 
-        // Emit IPC GestureEnd (cancelled) for any tagged gestures.
-        if let Some(tag) = active_tag {
-            self.ipc_gesture_end(tag, false);
+        // Emit IPC GestureEnd (cancelled) for any committed multi-finger
+        // bind (tagged or untagged), and tagged edge swipes.
+        if had_active {
+            self.ipc_gesture_end(active_tag.unwrap_or_default(), false);
         }
         if let Some(tag) = edge_tag {
             self.ipc_gesture_end(tag, false);
@@ -1340,7 +1390,7 @@ fn feed_continuous_gesture(
     // primary axis delta. gesture-pixel-distance px ≈ 1 unit.
     let progress_unit = {
         let config = state.niri.config.borrow();
-        config.input.touchscreen.gesture_progress_distance()
+        config.input.touchscreen.swipe_progress_distance()
     };
 
     match kind {
@@ -1570,11 +1620,11 @@ fn feed_continuous_rotation(
     tag: Option<&str>,
 ) {
     // Batch config reads to hold the RefCell once per call.
-    let (pinch_sensitivity, rotation_progress_distance) = {
+    let (pinch_sensitivity, rotation_progress_angle) = {
         let config = state.niri.config.borrow();
         (
             config.input.touchscreen.pinch_sensitivity(),
-            config.input.touchscreen.rotation_progress_distance(),
+            config.input.touchscreen.rotation_progress_angle(),
         )
     };
 
@@ -1650,7 +1700,7 @@ fn feed_continuous_rotation(
         // `cumulative_rotation - start_rotation` keeps the running metric
         // out of the progress math so the recognition-phase rotation isn't
         // included in the animation drive.
-        let progress = (cumulative_rotation - start_rotation) / rotation_progress_distance;
+        let progress = (cumulative_rotation - start_rotation) / rotation_progress_angle;
         if let Some(ActiveTouchBind::Rotate { ipc_progress, .. }) =
             state.niri.touch_active_bind.as_mut()
         {

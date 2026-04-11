@@ -996,4 +996,47 @@ impl State {
         state.apply(event.clone());
         server.send_event(event);
     }
+
+    /// Emit a RecognitionFrame IPC event with per-frame touchscreen
+    /// recognizer telemetry. Compiled out of release builds via
+    /// `#[cfg(debug_assertions)]` at the call site. No `state.apply`
+    /// because recognition telemetry doesn't mutate tracked state; it's
+    /// pure stream output.
+    #[allow(clippy::too_many_arguments)]
+    pub fn ipc_recognition_frame(
+        &mut self,
+        finger_count: u8,
+        swipe_distance: f64,
+        swipe_trigger_distance: f64,
+        spread_change: f64,
+        pinch_trigger_distance: f64,
+        rotation_rad: f64,
+        rotation_trigger_angle_rad: f64,
+        rotation_arc: f64,
+        rotation_arc_trigger_distance: f64,
+        is_rotate: bool,
+        is_pinch: bool,
+        closest: String,
+        timestamp_ms: u32,
+    ) {
+        let Some(server) = &self.niri.ipc_server else {
+            return;
+        };
+        let event = Event::RecognitionFrame {
+            finger_count,
+            swipe_distance,
+            swipe_trigger_distance,
+            spread_change,
+            pinch_trigger_distance,
+            rotation_rad,
+            rotation_trigger_angle_rad,
+            rotation_arc,
+            rotation_arc_trigger_distance,
+            is_rotate,
+            is_pinch,
+            closest,
+            timestamp_ms,
+        };
+        server.send_event(event);
+    }
 }
