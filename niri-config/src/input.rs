@@ -458,33 +458,46 @@ impl Touchscreen {
             .unwrap_or(100.0)
     }
 
-    /// Minimum rotation (in radians) that must be accumulated before a
-    /// multi-finger gesture is classified as a rotation rather than a swipe
-    /// or pinch. Default: ~0.26 rad (~15°).
+    /// Minimum rotation (in **degrees** in the KDL config — converted to
+    /// radians internally) that must be accumulated before a multi-finger
+    /// gesture is classified as a rotation rather than a swipe or pinch.
+    /// Default: 15°.
     pub fn rotation_threshold(&self) -> f64 {
-        self.gestures
+        let deg = self
+            .gestures
             .as_ref()
             .and_then(|g| g.rotation_threshold)
-            .unwrap_or(15.0_f64.to_radians())
+            .unwrap_or(15.0);
+        deg.to_radians()
     }
 
-    /// Ratio by which the rotation arc length (`|cumulative_rotation| *
-    /// cluster_radius`) must exceed linear swipe distance and spread change
-    /// for a gesture to count as a rotation. Default: 0.5.
+    /// Leniency ratio for rotation dominance. Higher = rotation wins more
+    /// easily. The effective gate is `rotation_arc >= swipe_distance *
+    /// (1.0 / rotation_ratio)`, so `rotation_ratio=2.0` means rotation
+    /// arc only needs to be half the swipe distance to count as a
+    /// rotation — deliberately lenient, because a user rotating with
+    /// incidental hand drift will often produce more translation than
+    /// arc length. Default: 2.0 (arc must be ≥ 0.5 × swipe). Dropping
+    /// this back to 0.5 reproduces the original strict behavior
+    /// (arc must be ≥ 2 × swipe) which made drift-while-rotating
+    /// essentially unrecognizable.
     pub fn rotation_ratio(&self) -> f64 {
         self.gestures
             .as_ref()
             .and_then(|g| g.rotation_ratio)
-            .unwrap_or(0.5)
+            .unwrap_or(2.0)
     }
 
-    /// Radians of rotation for IPC `GestureProgress` events on rotation
-    /// gestures to reach `progress = ±1.0`. Default: π/2 (~90°).
+    /// Degrees of rotation (in the KDL config — converted to radians
+    /// internally) for IPC `GestureProgress` events on rotation gestures
+    /// to reach `progress = ±1.0`. Default: 90°.
     pub fn rotation_progress_distance(&self) -> f64 {
-        self.gestures
+        let deg = self
+            .gestures
             .as_ref()
             .and_then(|g| g.rotation_progress_distance)
-            .unwrap_or(std::f64::consts::FRAC_PI_2)
+            .unwrap_or(90.0);
+        deg.to_radians()
     }
 
     /// Returns the scaled recognition threshold for a given finger count.
