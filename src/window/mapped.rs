@@ -655,20 +655,18 @@ impl LayoutElement for Mapped {
             return;
         }
 
-        let buf_pos = location - self.window.geometry().loc.to_f64();
         let surface = self.toplevel().wl_surface();
-        let mut push = |elem: WaylandSurfaceRenderElement<R>| push(elem.into());
-        for (popup, popup_offset) in PopupManager::popups_for_surface(surface) {
-            let offset = self.window.geometry().loc + popup_offset - popup.geometry().loc;
+        for (popup, offset) in PopupManager::popups_for_surface(surface) {
+            let surface_loc = location + (offset - popup.geometry().loc).to_f64();
 
             push_elements_from_surface_tree(
                 ctx.renderer,
                 popup.wl_surface(),
-                (buf_pos + offset.to_f64()).to_physical_precise_round(scale),
+                surface_loc.to_physical_precise_round(scale),
                 scale,
                 alpha,
                 Kind::ScanoutCandidate,
-                &mut push,
+                &mut |elem| push(elem.into()),
             );
         }
     }

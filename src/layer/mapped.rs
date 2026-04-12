@@ -224,26 +224,22 @@ impl MappedLayer {
         location: Point<f64, Logical>,
         push: &mut dyn FnMut(LayerSurfaceRenderElement<R>),
     ) {
-        let scale = Scale::from(self.scale);
-        let alpha = self.rules.opacity.unwrap_or(1.).clamp(0., 1.);
-        let location = location + self.bob_offset();
-
         if ctx.target.should_block_out(self.rules.block_out_from) {
             return;
         }
 
-        // Layer surfaces don't have extra geometry like windows.
-        let buf_pos = location;
+        let scale = Scale::from(self.scale);
+        let alpha = self.rules.opacity.unwrap_or(1.).clamp(0., 1.);
+        let location = location + self.bob_offset();
 
         let surface = self.surface.wl_surface();
-        for (popup, popup_offset) in PopupManager::popups_for_surface(surface) {
-            // Layer surfaces don't have extra geometry like windows.
-            let offset = popup_offset - popup.geometry().loc;
+        for (popup, offset) in PopupManager::popups_for_surface(surface) {
+            let surface_loc = location + (offset - popup.geometry().loc).to_f64();
 
             push_elements_from_surface_tree(
                 ctx.renderer,
                 popup.wl_surface(),
-                (buf_pos + offset.to_f64()).to_physical_precise_round(scale),
+                surface_loc.to_physical_precise_round(scale),
                 scale,
                 alpha,
                 Kind::ScanoutCandidate,
