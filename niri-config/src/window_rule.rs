@@ -4,7 +4,7 @@ use crate::appearance::{
     BackgroundEffectRule, BlockOutFrom, BorderRule, CornerRadius, ShadowRule, TabIndicatorRule,
 };
 use crate::layout::DefaultPresetSize;
-use crate::utils::RegexEq;
+use crate::utils::{MergeWith, RegexEq};
 use crate::FloatOrInt;
 
 #[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]
@@ -76,6 +76,30 @@ pub struct WindowRule {
     pub tiled_state: Option<bool>,
     #[knuffel(child, default)]
     pub background_effect: BackgroundEffectRule,
+    #[knuffel(child, default)]
+    pub popups: PopupsRule,
+}
+
+/// Rules for popup surfaces.
+#[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]
+pub struct PopupsRule {
+    #[knuffel(child, unwrap(argument))]
+    pub opacity: Option<f32>,
+}
+
+/// Resolved popup-specific rules.
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
+pub struct ResolvedPopupsRules {
+    /// Extra opacity to draw popups with.
+    pub opacity: Option<f32>,
+}
+
+impl MergeWith<PopupsRule> for ResolvedPopupsRules {
+    fn merge_with(&mut self, part: &PopupsRule) {
+        if let Some(x) = part.opacity {
+            self.opacity = Some(x);
+        }
+    }
 }
 
 #[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]

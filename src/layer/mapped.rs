@@ -2,7 +2,7 @@ use niri_config::utils::MergeWith as _;
 use niri_config::{Config, LayerRule};
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::element::Kind;
-use smithay::desktop::{LayerSurface, PopupManager};
+use smithay::desktop::{LayerSurface, PopupKind, PopupManager};
 use smithay::utils::{Logical, Point, Rectangle, Scale, Size};
 use smithay::wayland::compositor::{remove_pre_commit_hook, HookId};
 use smithay::wayland::shell::wlr_layer::{ExclusiveZone, Layer};
@@ -275,6 +275,13 @@ impl MappedLayer {
 
         let surface = self.surface.wl_surface();
         for (popup, offset) in PopupManager::popups_for_surface(surface) {
+            let popup_rules = match popup {
+                PopupKind::Xdg(_) => self.rules.popups,
+                // IME popups aren't affected by rules for regular popups.
+                PopupKind::InputMethod(_) => niri_config::ResolvedPopupsRules::default(),
+            };
+            let alpha = alpha * popup_rules.opacity.unwrap_or(1.).clamp(0., 1.);
+
             let surface = popup.wl_surface();
             let popup_geo = popup.geometry();
             let surface_loc = location + (offset - popup_geo.loc).to_f64();

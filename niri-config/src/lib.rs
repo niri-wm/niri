@@ -59,7 +59,9 @@ use crate::recent_windows::RecentWindowsPart;
 pub use crate::recent_windows::{MruDirection, MruFilter, MruPreviews, MruScope, RecentWindows};
 pub use crate::utils::FloatOrInt;
 use crate::utils::{Flag, MergeWith as _};
-pub use crate::window_rule::{FloatingPosition, RelativeTo, WindowRule};
+pub use crate::window_rule::{
+    FloatingPosition, PopupsRule, RelativeTo, ResolvedPopupsRules, WindowRule,
+};
 pub use crate::workspace::{Workspace, WorkspaceLayoutPart};
 
 const RECURSION_LIMIT: u8 = 10;
@@ -1860,6 +1862,9 @@ mod tests {
                         noise: None,
                         saturation: None,
                     },
+                    popups: PopupsRule {
+                        opacity: None,
+                    },
                 },
             ],
             layer_rules: [
@@ -1900,6 +1905,9 @@ mod tests {
                         blur: None,
                         noise: None,
                         saturation: None,
+                    },
+                    popups: PopupsRule {
+                        opacity: None,
                     },
                 },
             ],

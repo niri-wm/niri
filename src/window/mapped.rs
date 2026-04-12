@@ -6,7 +6,7 @@ use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::element::Kind;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::desktop::space::SpaceElement as _;
-use smithay::desktop::{PopupManager, Window};
+use smithay::desktop::{PopupKind, PopupManager, Window};
 use smithay::output::{self, Output};
 use smithay::reexports::wayland_protocols::xdg::decoration::zv1::server::zxdg_toplevel_decoration_v1;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
@@ -669,6 +669,13 @@ impl LayoutElement for Mapped {
 
         let surface = self.toplevel().wl_surface();
         for (popup, offset) in PopupManager::popups_for_surface(surface) {
+            let popup_rules = match popup {
+                PopupKind::Xdg(_) => self.rules.popups,
+                // IME popups aren't affected by rules for regular popups.
+                PopupKind::InputMethod(_) => niri_config::ResolvedPopupsRules::default(),
+            };
+            let alpha = alpha * popup_rules.opacity.unwrap_or(1.).clamp(0., 1.);
+
             let surface = popup.wl_surface();
             let popup_geo = popup.geometry();
             let surface_loc = location + (offset - popup.geometry().loc).to_f64();
