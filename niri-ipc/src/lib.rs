@@ -440,7 +440,7 @@ pub enum Action {
     },
     /// Consume the window to the right into the focused column.
     ConsumeWindowIntoColumn {},
-    /// Expel the focused window from the column.
+    /// Expel the bottom window from the focused column.
     ExpelWindowFromColumn {},
     /// Swap focused window with one to the right.
     SwapWindowRight {},
@@ -936,7 +936,13 @@ pub enum Action {
     ///
     /// Can be useful for scripts changing the config file, to avoid waiting the small duration for
     /// niri's config file watcher to notice the changes.
-    LoadConfigFile {},
+    LoadConfigFile {
+        /// Path of a new config file to load.
+        ///
+        /// If unset, reloads the current config file.
+        #[cfg_attr(feature = "clap", arg(long))]
+        path: Option<String>,
+    },
 }
 
 /// Change in window or column size.

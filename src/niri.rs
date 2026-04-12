@@ -148,7 +148,7 @@ use crate::protocols::mutter_x11_interop::MutterX11InteropManagerState;
 use crate::protocols::output_management::OutputManagementManagerState;
 use crate::protocols::screencopy::{Screencopy, ScreencopyBuffer, ScreencopyManagerState};
 use crate::protocols::virtual_pointer::VirtualPointerManagerState;
-use crate::render_helpers::debug::draw_opaque_regions;
+use crate::render_helpers::debug::push_opaque_regions;
 use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
@@ -311,7 +311,7 @@ pub struct Niri {
     // verified that a black single-pixel-buffer background lets the foreground surface to be
     // unredirected.
     //
-    // https://github.com/YaLTeR/niri/issues/619
+    // https://github.com/niri-wm/niri/issues/619
     #[cfg(test)]
     pub single_pixel_buffer_state: SinglePixelBufferState,
 
@@ -330,11 +330,6 @@ pub struct Niri {
 
     /// Most recent XKB settings from org.freedesktop.locale1.
     pub xkb_from_locale1: Option<Xkb>,
-
-    /// Whether to reset the keymap on the next physical keyboard event.
-    ///
-    /// Set to true when handling virtual keyboard events which override the keymap.
-    pub reset_keymap: bool,
 
     pub cursor_manager: CursorManager,
     pub cursor_texture_cache: CursorTextureCache,
@@ -2510,7 +2505,6 @@ impl Niri {
             is_fdo_idle_inhibited: Arc::new(AtomicBool::new(false)),
             keyboard_shortcuts_inhibiting_surfaces: HashMap::new(),
             xkb_from_locale1: None,
-            reset_keymap: false,
             cursor_manager,
             cursor_texture_cache: Default::default(),
             cursor_shape_manager_state,
@@ -4036,12 +4030,6 @@ impl Niri {
         self.render_inner(renderer, output, include_pointer, target, &mut |elem| {
             elements.push(elem)
         });
-
-        if self.debug_draw_opaque_regions {
-            let output_scale = Scale::from(output.current_scale().fractional_scale());
-            draw_opaque_regions(&mut elements, output_scale);
-        }
-
         elements
     }
 
@@ -4065,6 +4053,15 @@ impl Niri {
         }
 
         let output_scale = Scale::from(output.current_scale().fractional_scale());
+
+        let push = if self.debug_draw_opaque_regions {
+            &mut move |elem| {
+                push_opaque_regions(&elem, output_scale, push);
+                push(elem);
+            }
+        } else {
+            push
+        };
 
         // The pointer goes on the top.
         if include_pointer && self.pointer_visibility.is_visible() {

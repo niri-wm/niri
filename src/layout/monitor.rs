@@ -1490,6 +1490,13 @@ impl<W: LayoutElement> Monitor<W> {
         (0..=self.workspaces.len()).map(move |idx| {
             let y = first_ws_y + idx as f64 * ws_height_with_gap;
             let loc = Point::from((0., y)) + static_offset;
+
+            // Even though all components that go into loc are rounded to physical pixels, the
+            // floating point addition may lose precision. This can result for example in the
+            // current workspace having y = 0.0000000000002 and thus missing pointer hits at the
+            // monitor edge with y = 0. So, post-round the location too.
+            let loc = loc.to_physical_precise_round(scale).to_logical(scale);
+
             Rectangle::new(loc, ws_size)
         })
     }

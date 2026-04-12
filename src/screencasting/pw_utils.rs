@@ -616,7 +616,7 @@ impl PipeWire {
                             pod::Value::Choice(ChoiceValue::Int(Choice(
                                 ChoiceFlags::empty(),
                                 ChoiceEnum::Range {
-                                    default: 16,
+                                    default: 8,
                                     min: 2,
                                     max: 16
                                 }

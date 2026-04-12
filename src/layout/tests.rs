@@ -3691,6 +3691,41 @@ fn expel_pending_left_from_fullscreen_tabbed_column() {
     check_ops(ops);
 }
 
+#[test]
+fn workspace_render_geo_at_fractional_scale() {
+    let ops = [
+        Op::AddScaledOutput {
+            id: 1,
+            scale: 1.1,
+            layout_config: None,
+        },
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::FocusWorkspaceDown,
+        Op::CompleteAnimations,
+    ];
+
+    let layout = check_ops(ops);
+
+    let MonitorSet::Normal { monitors, .. } = &layout.monitor_set else {
+        unreachable!()
+    };
+
+    let mon = &monitors[0];
+    let mut iter = mon.workspaces_with_render_geo();
+    let (_ws, geo) = iter.next().unwrap();
+    assert!(
+        iter.next().is_none(),
+        "animations are completed, only one workspace should be visible"
+    );
+    assert_eq!(
+        geo.loc.y, 0.,
+        "active workspace must be at y = 0 exactly, \
+         otherwise a pointer against the screen edge at y = 0 won't hit it"
+    );
+}
+
 fn parent_id_causes_loop(layout: &Layout<TestWindow>, id: usize, mut parent_id: usize) -> bool {
     if parent_id == id {
         return true;
