@@ -1065,10 +1065,14 @@ impl<W: LayoutElement> Tile<W> {
             .scaled_by(1. - expanded_progress as f32);
 
         // Popups go on top, whether it's resize or not.
-        self.window
-            .render_popups(ctx.r(), window_render_loc, scale, win_alpha, &mut |elem| {
-                push(elem.into())
-            });
+        self.window.render_popups(
+            ctx.r(),
+            window_render_loc,
+            scale,
+            win_alpha,
+            xray_pos,
+            &mut |elem| push(elem.into()),
+        );
 
         // If we're resizing, try to render a shader, or a fallback.
         let mut pushed_resize = false;

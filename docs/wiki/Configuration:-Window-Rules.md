@@ -107,6 +107,18 @@ window-rule {
         saturation 3
     }
 
+    popups {
+        opacity 0.5
+        geometry-corner-radius 15
+
+        background-effect {
+            xray true
+            blur true
+            noise 0.05
+            saturation 3
+        }
+    }
+
     min-width 100
     max-width 200
     min-height 300
@@ -940,6 +952,67 @@ window-rule {
     }
 }
 ```
+
+#### `popups`
+
+<sup>Since: next release</sup>
+
+Override properties for this window's pop-ups (menus and tooltips).
+
+The properties work the same way as the corresponding window-rule properties, except that they apply to the window's pop-ups rather than to the window itself.
+
+`opacity` is applied *on top* of the layer surface's own opacity rule, so setting both will make pop-ups more transparent than the surface.
+Other properties apply independently.
+
+> [!NOTE]
+> This block affects only pop-ups created by the app via Wayland's [xdg-popup](https://wayland.app/protocols/xdg-shell#xdg_popup) (which should be most of them).
+>
+> Examples of things that look like pop-ups that won't work:
+>
+> - Fully emulated by the client, i.e. not a pop-up at all, the client just draws something that looks like a pop-up inside its window.
+> These are common in game engines and in web apps, e.g. the right click menu in Google Docs or in Electron apps like Discord.
+>
+> - Uses a wl-subsurface instead of an xdg-popup.
+> Common in older apps using GTK 3, notably Firefox still uses these for some menus.
+> Subsurfaces are an indivisible part of a surface and they aren't usually pop-ups, so it wouldn't make sense for niri to apply these rules to them.
+>
+> These emulated pop-ups come with other downsides: they cannot reliably extend outside their window, and if the app tries to do that, they will be clipped by rules such as `clip-to-geometry`.
+> So most modern apps will correctly use xdg-popup, which is the intended way to show pop-ups on Wayland.
+>
+> This block also does not affect input-method pop-ups, such as Fcitx.
+>
+> For pop-ups created by your desktop shell or desktop components, use the corresponding [layer rule](./Configuration:-Layer-Rules.md#popups).
+
+```kdl
+// Blur the background behind pop-up menus in Nautilus.
+window-rule {
+    match app-id="Nautilus"
+
+    popups {
+        // Matches the default libadwaita pop-up corner radius.
+        geometry-corner-radius 15
+
+        // Note: it'll look better to set background opacity
+        // through your GTK theme CSS and not here.
+        // This is just an example that makes it look obvious.
+        opacity 0.5
+
+        background-effect {
+            blur true
+        }
+    }
+}
+```
+
+Keep in mind that the background effect will look right only if the pop-up is shaped like a (rounded) rectangle, and the window correctly sets its Wayland geometry to exclude any shadows.
+For example, GTK 4 pop-ups with pointing arrows (`has-arrow=true` property) are *not* rounded rectangles—the arrow sticks out—so if you enable blur, it will also stick out of the pop-up.
+
+| Correct                                             | Wrong                                                                          |
+|-----------------------------------------------------|--------------------------------------------------------------------------------|
+| The pop-up is a rounded rectangle. Blur looks fine. | The pop-up is not a rounded rectangle. Blur extends above, where the arrow is. |
+| ![](./img/popup-no-arrow.png)                       | ![](./img/popup-arrow.png)                                                     |
+
+These pop-ups with custom shapes will need the app to implement the [ext-background-effect protocol](https://wayland.app/protocols/ext-background-effect-v1) to work properly.
 
 #### Size Overrides
 

@@ -40,6 +40,10 @@ Blur enabled via the window rule will follow the window corner radius set via [`
 On the other hand, blur enabled through `ext-background-effect` will exactly follow the shape requested by the window.
 If the window or layer has clientside rounded corners or other complex shape, it should set a corresponding blur shape through `ext-background-effect`, then it will get correctly shaped background blur without any manual niri configuration.
 
+Windows can also blur their pop-up menus using `ext-background-effect`.
+On the niri side, you can do it with a `popups` block inside [`window-rule`](./Configuration:-Window-Rules.md#popups) and [`layer-rule`](./Configuration:-Layer-Rules.md#popups).
+See those wiki pages for examples and limitations.
+
 Global blur settings are configured in the [`blur {}` config section](./Configuration:-Miscellaneous.md#blur) and apply to all background blur.
 
 ### Xray

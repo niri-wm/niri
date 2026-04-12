@@ -260,6 +260,7 @@ impl MappedLayer {
         mut ctx: RenderCtx<R>,
         ns: Option<usize>,
         location: Point<f64, Logical>,
+        xray_pos: XrayPos,
         push: &mut dyn FnMut(LayerSurfaceRenderElement<R>),
     ) {
         if ctx.target.should_block_out(self.rules.block_out_from) {
@@ -299,10 +300,12 @@ impl MappedLayer {
             let geometry = Rectangle::new(location + offset.to_f64(), popup_geo.size.to_f64());
             let surface_off = popup_geo.loc.upscale(-1).to_f64();
             let surface_anim_scale = Scale::from(1.);
-            let effect = niri_config::BackgroundEffect {
-                xray: Some(false),
-                ..Default::default()
-            };
+            let mut effect = popup_rules.background_effect;
+            // Default xray to false for pop-ups since they're always on top of something.
+            if effect.xray.is_none() {
+                effect.xray = Some(false);
+            }
+            let xray_pos = xray_pos.offset(offset.to_f64());
             background_effect::render_for_tile(
                 ctx.as_gles(),
                 ns,
@@ -313,10 +316,10 @@ impl MappedLayer {
                 surface_off,
                 surface_anim_scale,
                 self.blur_config,
-                niri_config::CornerRadius::default(),
+                popup_rules.geometry_corner_radius.unwrap_or_default(),
                 effect,
                 false,
-                XrayPos::default(),
+                xray_pos,
                 &mut |elem| push(elem.into()),
             );
         }

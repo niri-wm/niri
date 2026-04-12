@@ -42,6 +42,18 @@ layer-rule {
         noise 0.05
         saturation 3
     }
+
+    popups {
+        opacity 0.5
+        geometry-corner-radius 6
+
+        background-effect {
+            xray true
+            blur true
+            noise 0.05
+            saturation 3
+        }
+    }
 }
 ```
 
@@ -241,3 +253,42 @@ layer-rule {
     }
 }
 ```
+
+#### `popups`
+
+<sup>Since: next release</sup>
+
+Override properties for this layer surface's pop-ups (e.g. a menu opened by clicking an item in Waybar).
+
+The properties work the same way as the corresponding layer-rule properties, except that they apply to the layer surface's pop-ups rather than to the layer surface itself.
+
+`opacity` is applied *on top* of the layer surface's own opacity rule, so setting both will make pop-ups more transparent than the surface.
+Other properties apply independently.
+
+> [!NOTE]
+> This block affects only pop-ups created by the app via Wayland's [xdg-popup](https://wayland.app/protocols/xdg-shell#xdg_popup) (which should be most of them).
+>
+> Some desktop shells will emulate pop-ups by drawing something that looks like a pop-up inside a regular layer surface.
+> As far as niri is concerned, those are just layer surfaces and not pop-ups, so this block won't apply to them.
+>
+> This block also does not affect input-method pop-ups, such as Fcitx.
+
+```kdl
+// Blur the background behind Waybar popup menus.
+layer-rule {
+    match namespace="^waybar$"
+
+    popups {
+        // Match the default GTK 3 popup corner radius.
+        geometry-corner-radius 6
+        opacity 0.85
+
+        background-effect {
+            blur true
+        }
+    }
+}
+```
+
+Keep in mind that the background effect will look right only if the pop-up is shaped like a (rounded) rectangle, and the layer surface correctly sets its Wayland geometry to exclude any shadows.
+Pop-ups with custom shapes will need the app to implement the [ext-background-effect protocol](https://wayland.app/protocols/ext-background-effect-v1) to work properly.

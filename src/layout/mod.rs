@@ -166,9 +166,10 @@ pub trait LayoutElement {
         location: Point<f64, Logical>,
         scale: Scale<f64>,
         alpha: f32,
+        xray_pos: XrayPos,
         push: &mut dyn FnMut(LayoutElementRenderElement<R>),
     ) {
-        self.render_popups(ctx.r(), location, scale, alpha, push);
+        self.render_popups(ctx.r(), location, scale, alpha, xray_pos, push);
         self.render_normal(ctx.r(), location, scale, alpha, push);
     }
 
@@ -191,9 +192,10 @@ pub trait LayoutElement {
         location: Point<f64, Logical>,
         scale: Scale<f64>,
         alpha: f32,
+        xray_pos: XrayPos,
         push: &mut dyn FnMut(LayoutElementRenderElement<R>),
     ) {
-        let _ = (ctx, location, scale, alpha, push);
+        let _ = (ctx, location, scale, alpha, xray_pos, push);
     }
 
     /// Renders the background effect behind the main surface of the element.

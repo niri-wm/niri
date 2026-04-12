@@ -1864,6 +1864,13 @@ mod tests {
                     },
                     popups: PopupsRule {
                         opacity: None,
+                        geometry_corner_radius: None,
+                        background_effect: BackgroundEffectRule {
+                            xray: None,
+                            blur: None,
+                            noise: None,
+                            saturation: None,
+                        },
                     },
                 },
             ],
@@ -1908,6 +1915,13 @@ mod tests {
                     },
                     popups: PopupsRule {
                         opacity: None,
+                        geometry_corner_radius: None,
+                        background_effect: BackgroundEffectRule {
+                            xray: None,
+                            blur: None,
+                            noise: None,
+                            saturation: None,
+                        },
                     },
                 },
             ],

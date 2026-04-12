@@ -4271,17 +4271,29 @@ impl Niri {
         // We use macros instead of closures to avoid borrowing issues (renderer and push() go
         // into different functions).
         macro_rules! push_popups_from_layer {
-            ($layer:expr, $ns:expr, $backdrop:expr, $push:expr) => {{
-                self.render_layer_popups(ctx.r(), $ns, &layer_map, $layer, $backdrop, $push);
+            ($layer:expr, $ns:expr, $xray_pos:expr, $backdrop:expr, $push:expr) => {{
+                self.render_layer_popups(
+                    ctx.r(),
+                    $ns,
+                    &layer_map,
+                    $layer,
+                    $xray_pos,
+                    $backdrop,
+                    $push,
+                );
             }};
             ($layer:expr, true) => {{
-                push_popups_from_layer!($layer, None, true, &mut |elem| push(elem.into()));
+                push_popups_from_layer!($layer, None, XrayPos::default(), true, &mut |elem| push(
+                    elem.into()
+                ));
             }};
-            ($layer:expr, $ns:expr, $push:expr) => {{
-                push_popups_from_layer!($layer, $ns, false, $push);
+            ($layer:expr, $ns:expr, $xray_pos:expr, $push:expr) => {{
+                push_popups_from_layer!($layer, $ns, $xray_pos, false, $push);
             }};
             ($layer:expr) => {{
-                push_popups_from_layer!($layer, None, false, &mut |elem| push(elem.into()));
+                push_popups_from_layer!($layer, None, XrayPos::default(), false, &mut |elem| push(
+                    elem.into()
+                ));
             }};
         }
         macro_rules! push_normal_from_layer {
@@ -4359,8 +4371,9 @@ impl Niri {
 
             for (ws, geo) in mon.workspaces_with_render_geo() {
                 let ns = Some(ws.id().get() as usize);
-                push_popups_from_layer!(Layer::Bottom, ns, process!(geo));
-                push_popups_from_layer!(Layer::Background, ns, process!(geo));
+                let xray_pos = XrayPos::new(geo.loc, zoom);
+                push_popups_from_layer!(Layer::Bottom, ns, xray_pos, process!(geo));
+                push_popups_from_layer!(Layer::Background, ns, xray_pos, process!(geo));
             }
 
             mon.render_workspaces(ctx.r(), focus_ring, &mut |elem| push(elem.into()));
@@ -4515,17 +4528,21 @@ impl Niri {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn render_layer_popups<R: NiriRenderer>(
         &self,
         mut ctx: RenderCtx<R>,
         ns: Option<usize>,
         layer_map: &LayerMap,
         layer: Layer,
+        xray_pos: XrayPos,
         for_backdrop: bool,
         push: &mut dyn FnMut(LayerSurfaceRenderElement<R>),
     ) {
         for (mapped, geo) in self.layers_in_render_order(layer_map, layer, for_backdrop) {
-            mapped.render_popups(ctx.r(), ns, geo.loc.to_f64(), push);
+            let loc = geo.loc.to_f64();
+            let xray_pos = xray_pos.offset(loc);
+            mapped.render_popups(ctx.r(), ns, loc, xray_pos, push);
         }
     }
 
@@ -5571,6 +5588,7 @@ impl Niri {
             mapped.window.geometry().loc.to_f64(),
             scale,
             alpha,
+            XrayPos::default(),
             &mut |elem| elements.push(elem.into()),
         );
 
