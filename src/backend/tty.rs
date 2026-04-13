@@ -2906,11 +2906,10 @@ fn suspend() -> anyhow::Result<()> {
 
     let manager = zbus::names::InterfaceName::try_from("org.freedesktop.login1.Manager").unwrap();
 
-    let is_preparing_sleep: bool = proxy.get(manager, "PreparingForSleep")
-    .context("Fail to get PreparingForSleep property from login1.Manager")
-    .and_then(|value| Ok(bool::try_from(value)?))?
-    ;
-
+    let is_preparing_sleep: bool = proxy
+        .get(manager, "PreparingForSleep")
+        .context("Fail to get PreparingForSleep property from login1.Manager")
+        .and_then(|value| Ok(bool::try_from(value)?))?;
 
     if is_preparing_sleep {
         warn!("Refusing to sleep, I just woke up (or going to sleep)");
