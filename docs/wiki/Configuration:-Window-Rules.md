@@ -100,6 +100,13 @@ window-rule {
     tiled-state true
     baba-is-float true
 
+    background-effect {
+        xray true
+        blur true
+        noise 0.05
+        saturation 3
+    }
+
     min-width 100
     max-width 200
     min-height 300
@@ -908,6 +915,31 @@ window-rule {
 https://github.com/user-attachments/assets/3f4cb1a4-40b2-4766-98b7-eec014c19509
 
 </video>
+
+#### `background-effect`
+
+<sup>Since: next release</sup>
+
+Override the background effect options for this window.
+
+- `xray`: set to `true` to enable the xray effect, or `false` to disable it.
+- `blur`: set to `true` to enable blur behind this window, or `false` to force-disable it.
+- `noise`: amount of pixel noise added to the background (helps with color banding from blur).
+- `saturation`: color saturation of the background (`0` is desaturated, `1` is normal, `2` is 200% saturation).
+
+See the [window effects page](./Window-Effects.md) for an overview of background effects.
+
+```kdl
+// Make floating windows use the regular blur (if enabled),
+// while tiled windows keep using the efficient xray blur.
+window-rule {
+    match is-floating=true
+
+    background-effect {
+        xray false
+    }
+}
+```
 
 #### Size Overrides
 

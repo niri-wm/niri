@@ -15,6 +15,7 @@ use smithay::backend::renderer::utils::{
 use smithay::backend::renderer::{
     Bind as _, Color32F, ContextId, Frame as _, Offscreen as _, Renderer, Texture as _,
 };
+use smithay::utils::user_data::UserDataMap;
 use smithay::utils::{Buffer, Logical, Physical, Point, Rectangle, Scale, Size, Transform};
 
 use super::encompassing_geo;
@@ -77,6 +78,7 @@ impl OffscreenBuffer {
         let _span = tracy_client::span!("OffscreenBuffer::render");
 
         let geo = encompassing_geo(scale, elements.iter());
+        // TODO: check for zero size.
         let elements = Vec::from_iter(elements.iter().map(|ele| {
             RelocateRenderElement::from_element(ele, geo.loc.upscale(-1), Relocate::Relative)
         }));
@@ -157,13 +159,10 @@ impl OffscreenBuffer {
 
         let res = {
             let mut target = renderer.bind(&mut inner.texture)?;
-            inner.damage.render_output(
-                renderer,
-                &mut target,
-                1,
-                &elements,
-                Color32F::TRANSPARENT,
-            )?
+            inner
+                .damage
+                .render_output(renderer, &mut target, 1, &elements, Color32F::TRANSPARENT)
+                .context("error rendering")?
         };
 
         // Add the resulting damage to the outer tracker.
@@ -304,6 +303,7 @@ impl RenderElement<GlesRenderer> for OffscreenRenderElement {
         dest: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
         opaque_regions: &[Rectangle<i32, Physical>],
+        _cache: Option<&UserDataMap>,
     ) -> Result<(), GlesError> {
         if frame.context_id() != self.renderer_context_id {
             warn!("trying to render texture from different renderer");
@@ -338,9 +338,18 @@ impl<'render> RenderElement<TtyRenderer<'render>> for OffscreenRenderElement {
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
         opaque_regions: &[Rectangle<i32, Physical>],
+        cache: Option<&UserDataMap>,
     ) -> Result<(), TtyRendererError<'render>> {
         let gles_frame = frame.as_gles_frame();
-        RenderElement::<GlesRenderer>::draw(&self, gles_frame, src, dst, damage, opaque_regions)?;
+        RenderElement::<GlesRenderer>::draw(
+            &self,
+            gles_frame,
+            src,
+            dst,
+            damage,
+            opaque_regions,
+            cache,
+        )?;
         Ok(())
     }
 
