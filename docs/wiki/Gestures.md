@@ -165,6 +165,20 @@ binds {
 
 The edge trigger zone width is set by `edge-start-distance` in the `touchscreen { gestures { } }` block.
 
+##### Edge swipes with continuous actions (overview, workspace switch)
+
+Edge swipes can be bound to continuous actions like `toggle-overview` or `focus-workspace-up`. Two things to be aware of:
+
+- **Direction inversion:** Edge swipes feeding into overview require `natural-scroll=true` to feel correct. Without it, swiping down from the top edge tries to close overview instead of opening it.
+
+  ```kdl
+  binds {
+      TouchEdge edge="top" zone="right" natural-scroll=true { toggle-overview; }
+  }
+  ```
+
+- **Left/right edges and overview:** Continuous overview gestures currently only track vertical (`delta_y`) motion. Left and right edge swipes produce primarily horizontal motion (`delta_x`), which the overview ignores. This means `toggle-overview` on a left or right edge swipe will not work. Use top or bottom edges for overview binds. This is a known limitation.
+
 ##### Edge zones
 
 <sup>Since: next</sup>

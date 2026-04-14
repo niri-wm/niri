@@ -531,6 +531,23 @@ impl Touchscreen {
         base * (1.0 + extra * (scale - 1.0))
     }
 
+    /// Maximum per-finger displacement (px) before a tap candidate is
+    /// killed. Default 15.
+    pub fn tap_wobble_threshold(&self) -> f64 {
+        self.gestures
+            .as_ref()
+            .and_then(|g| g.tap_wobble_threshold)
+            .unwrap_or(15.0)
+    }
+
+    /// Maximum tap duration in milliseconds. Default 250.
+    pub fn tap_timeout_ms(&self) -> f64 {
+        self.gestures
+            .as_ref()
+            .and_then(|g| g.tap_timeout_ms)
+            .unwrap_or(250.0)
+    }
+
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -661,6 +678,17 @@ pub struct TouchscreenGesturesConfig {
     /// for counter-clockwise, negative for clockwise. Default: 90°.
     #[knuffel(child, unwrap(argument))]
     pub rotation_progress_angle: Option<f64>,
+    /// Maximum per-finger displacement (in pixels) allowed during a tap
+    /// gesture. If any single finger moves more than this distance from
+    /// its initial landing position, the tap candidate is killed and the
+    /// gesture can only resolve as swipe/pinch/rotate. Default: 15.0.
+    #[knuffel(child, unwrap(argument))]
+    pub tap_wobble_threshold: Option<f64>,
+    /// Maximum duration (in milliseconds) from the third finger landing
+    /// to all fingers lifting for a tap to fire. Taps slower than this
+    /// are discarded — acts as a tap-vs-hold safety cap. Default: 250.
+    #[knuffel(child, unwrap(argument))]
+    pub tap_timeout_ms: Option<f64>,
 }
 
 /// Tuning parameters for touchpad gesture recognition.

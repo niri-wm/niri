@@ -193,6 +193,24 @@ const CLEAR_COLOR_LOCKED: [f32; 4] = [0.3, 0.1, 0.1, 1.];
 // should be ~1.995 seconds.
 const FRAME_CALLBACK_THROTTLE: Option<Duration> = Some(Duration::from_millis(995));
 
+/// Tap candidate tracking for N-finger tap detection.
+///
+/// Runs in parallel with swipe/pinch/rotate recognition. Killed when any
+/// finger drifts beyond `tap-wobble-threshold` or when the recognizer locks.
+/// If still alive when all fingers lift within `tap-timeout-ms`, fires the
+/// `TouchTap { fingers }` trigger.
+pub struct TapCandidate {
+    pub start_time: Instant,
+    /// Highest finger count observed during this tap sequence.
+    pub peak_fingers: u8,
+    /// Initial landing position for each finger slot, used to compute
+    /// per-finger displacement for the wobble check.
+    pub initial_positions: HashMap<Option<TouchSlot>, Point<f64, Logical>>,
+    /// Set to false when wobble threshold exceeded or recognizer locks.
+    /// Single-shot: once dead, cannot resurrect.
+    pub alive: bool,
+}
+
 /// State for touchscreen edge swipe gesture detection.
 pub enum TouchEdgeSwipeState {
     /// First touch landed in edge zone; waiting for motion to confirm swipe.
@@ -523,6 +541,9 @@ pub struct Niri {
     /// before averaging. Rebuilt on finger-lift to avoid centroid-shift
     /// artifacts (see `rebase_rotation_basis`).
     pub touch_gesture_previous_angles: HashMap<TouchSlot, f64>,
+    /// Tap candidate for N-finger tap detection. Runs in parallel with
+    /// swipe/pinch/rotate recognition. Killed by wobble or recognizer lock.
+    pub touch_tap_candidate: Option<TapCandidate>,
     pub overview_scroll_swipe_gesture: ScrollSwipeGesture,
     pub vertical_wheel_tracker: ScrollTracker,
     pub horizontal_wheel_tracker: ScrollTracker,
@@ -2734,6 +2755,7 @@ impl Niri {
             touch_gesture_initial_spread: None,
             touch_gesture_cumulative_rotation: 0.0,
             touch_gesture_previous_angles: HashMap::new(),
+            touch_tap_candidate: None,
             overview_scroll_swipe_gesture: ScrollSwipeGesture::new(),
             vertical_wheel_tracker: ScrollTracker::new(120),
             horizontal_wheel_tracker: ScrollTracker::new(120),

@@ -576,6 +576,9 @@ fn key_name(screen_reader: bool, mod_key: ModKey, key: &Key) -> String {
         Trigger::TouchRotate { fingers, direction } => {
             format!("Touch {fingers}-Finger Rotate {}", rotate_dir_label(direction))
         }
+        Trigger::TouchTap { fingers } => {
+            format!("Touch {fingers}-Finger Tap")
+        }
         Trigger::TouchEdge { edge, zone } => format_touch_edge_label(edge, zone),
     };
     name.push_str(&pretty);

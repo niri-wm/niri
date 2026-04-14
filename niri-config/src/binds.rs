@@ -127,6 +127,15 @@ pub enum Trigger {
         fingers: u8,
         direction: RotateDirection,
     },
+    /// Multi-finger touchscreen tap (all fingers land and lift with minimal
+    /// motion). Runs in parallel with swipe/pinch/rotate recognition — if
+    /// motion exceeds `tap-wobble-threshold` or the recognizer locks, the
+    /// tap candidate is killed. Always discrete (fire-and-forget).
+    ///
+    /// KDL syntax: `TouchTap fingers=3`.
+    TouchTap {
+        fingers: u8,
+    },
     /// Single-finger touchscreen edge swipe.
     ///
     /// `zone` picks one of the three zones along the edge's perpendicular
@@ -155,6 +164,7 @@ impl Trigger {
                 | Trigger::TouchSwipe { .. }
                 | Trigger::TouchPinch { .. }
                 | Trigger::TouchRotate { .. }
+                | Trigger::TouchTap { .. }
                 | Trigger::TouchEdge { .. }
         )
     }
@@ -1161,6 +1171,7 @@ pub(crate) fn is_gesture_family_name(s: &str) -> bool {
         || s.eq_ignore_ascii_case("TouchSwipe")
         || s.eq_ignore_ascii_case("TouchPinch")
         || s.eq_ignore_ascii_case("TouchRotate")
+        || s.eq_ignore_ascii_case("TouchTap")
         || s.eq_ignore_ascii_case("TouchEdge")
 }
 
@@ -1293,6 +1304,15 @@ pub(crate) fn build_gesture_trigger(
             }
         };
         return Ok(Trigger::TouchRotate { fingers, direction });
+    }
+
+    if family.eq_ignore_ascii_case("TouchTap") {
+        reject_edge_zone(props)?;
+        let fingers = expect_fingers(props)?;
+        if props.direction.is_some() {
+            return Err("TouchTap does not accept a `direction=` property".to_string());
+        }
+        return Ok(Trigger::TouchTap { fingers });
     }
 
     if family.eq_ignore_ascii_case("TouchEdge") {
@@ -1507,6 +1527,7 @@ mod tests {
         assert!("TouchSwipe".parse::<Key>().is_err());
         assert!("TouchPinch".parse::<Key>().is_err());
         assert!("TouchRotate".parse::<Key>().is_err());
+        assert!("TouchTap".parse::<Key>().is_err());
         assert!("TouchEdge".parse::<Key>().is_err());
         assert!("TouchpadSwipe".parse::<Key>().is_err());
     }
@@ -1697,6 +1718,8 @@ mod tests {
         assert!(is_gesture_family_name("touchswipe"));
         assert!(is_gesture_family_name("TOUCHPINCH"));
         assert!(is_gesture_family_name("TouchpadSwipe"));
+        assert!(is_gesture_family_name("TouchTap"));
+        assert!(is_gesture_family_name("touchtap"));
         assert!(!is_gesture_family_name("TouchSwipe3Up"));
         assert!(!is_gesture_family_name("TouchpadScrollUp"));
     }
