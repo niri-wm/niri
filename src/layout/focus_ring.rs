@@ -65,6 +65,7 @@ impl FocusRing {
         radius: CornerRadius,
         scale: f64,
         alpha: f32,
+        gradient_angle_offset: f32,
     ) {
         let width = self.config.width;
         self.full_size = win_size + Size::from((width, width)).upscale(2.);
@@ -186,7 +187,7 @@ impl FocusRing {
                     gradient.in_,
                     gradient.from,
                     gradient.to,
-                    ((gradient.angle as f32) - 90.).to_radians(),
+                    ((gradient.angle as f32) - 90. + gradient_angle_offset).to_radians(),
                     Rectangle::new(full_rect.loc - loc, full_rect.size),
                     rounded_corner_border_width,
                     radius,
@@ -205,7 +206,7 @@ impl FocusRing {
                 gradient.in_,
                 gradient.from,
                 gradient.to,
-                ((gradient.angle as f32) - 90.).to_radians(),
+                ((gradient.angle as f32) - 90. + gradient_angle_offset).to_radians(),
                 Rectangle::new(full_rect.loc - self.locations[0], full_rect.size),
                 rounded_corner_border_width,
                 radius,

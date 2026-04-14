@@ -238,6 +238,8 @@ pub struct FocusRing {
     pub active_gradient: Option<Gradient>,
     pub inactive_gradient: Option<Gradient>,
     pub urgent_gradient: Option<Gradient>,
+    pub fade_duration_ms: u64,
+    pub gradient_spin_speed: f64,
 }
 
 impl Default for FocusRing {
@@ -251,6 +253,8 @@ impl Default for FocusRing {
             active_gradient: None,
             inactive_gradient: None,
             urgent_gradient: None,
+            fade_duration_ms: 0,
+            gradient_spin_speed: 0.,
         }
     }
 }
@@ -265,6 +269,8 @@ pub struct Border {
     pub active_gradient: Option<Gradient>,
     pub inactive_gradient: Option<Gradient>,
     pub urgent_gradient: Option<Gradient>,
+    pub fade_duration_ms: u64,
+    pub gradient_spin_speed: f64,
 }
 
 impl Default for Border {
@@ -278,6 +284,8 @@ impl Default for Border {
             active_gradient: None,
             inactive_gradient: None,
             urgent_gradient: None,
+            fade_duration_ms: 0,
+            gradient_spin_speed: 0.,
         }
     }
 }
@@ -293,6 +301,8 @@ impl From<Border> for FocusRing {
             active_gradient: value.active_gradient,
             inactive_gradient: value.inactive_gradient,
             urgent_gradient: value.urgent_gradient,
+            fade_duration_ms: value.fade_duration_ms,
+            gradient_spin_speed: value.gradient_spin_speed,
         }
     }
 }
@@ -308,6 +318,8 @@ impl From<FocusRing> for Border {
             active_gradient: value.active_gradient,
             inactive_gradient: value.inactive_gradient,
             urgent_gradient: value.urgent_gradient,
+            fade_duration_ms: value.fade_duration_ms,
+            gradient_spin_speed: value.gradient_spin_speed,
         }
     }
 }
@@ -327,6 +339,13 @@ impl MergeWith<BorderRule> for Border {
             (inactive_color, inactive_gradient),
             (urgent_color, urgent_gradient),
         );
+
+        if let Some(v) = part.fade_duration_ms {
+            self.fade_duration_ms = v.0 as u64;
+        }
+        if let Some(v) = part.gradient_spin_speed {
+            self.gradient_spin_speed = v.0 as f64;
+        }
     }
 }
 
@@ -642,6 +661,10 @@ pub struct BorderRule {
     pub inactive_gradient: Option<Gradient>,
     #[knuffel(child)]
     pub urgent_gradient: Option<Gradient>,
+    #[knuffel(child, unwrap(argument))]
+    pub fade_duration_ms: Option<FloatOrInt<0, 65535>>,
+    #[knuffel(child, unwrap(argument))]
+    pub gradient_spin_speed: Option<FloatOrInt<0, 3600>>,
 }
 
 #[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq)]
@@ -692,6 +715,9 @@ impl MergeWith<Self> for BorderRule {
             (inactive_color, inactive_gradient),
             (urgent_color, urgent_gradient),
         );
+
+        merge_clone_opt!((self, part), fade_duration_ms);
+        merge_clone_opt!((self, part), gradient_spin_speed);
     }
 }
 

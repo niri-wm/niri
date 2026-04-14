@@ -42,6 +42,9 @@ pub struct Tile<W: LayoutElement> {
     /// The border around the window.
     border: FocusRing,
 
+    /// Active-color overlay for the border, used during color fade transitions.
+    border_overlay: FocusRing,
+
     /// The focus ring around the window.
     focus_ring: FocusRing,
 
@@ -93,6 +96,18 @@ pub struct Tile<W: LayoutElement> {
 
     /// The animation of the tile's opacity.
     pub(super) alpha_animation: Option<AlphaAnimation>,
+
+    /// The animation of the focus ring fading in/out.
+    focus_ring_anim: Option<Animation>,
+
+    /// The animation of the border fading in/out.
+    border_anim: Option<Animation>,
+
+    /// Whether the tile was focused on the last render update.
+    was_focus_active: bool,
+
+    /// Whether the tile was focused on the last border render update.
+    was_border_active: bool,
 
     /// Offset during the initial interactive move rubberband.
     pub(super) interactive_move_offset: Point<f64, Logical>,
@@ -188,6 +203,7 @@ impl<W: LayoutElement> Tile<W> {
         Self {
             window,
             border: FocusRing::new(border_config.into()),
+            border_overlay: FocusRing::new(border_config.into()),
             focus_ring: FocusRing::new(focus_ring_config),
             shadow: Shadow::new(shadow_config),
             sizing_mode,
@@ -202,6 +218,10 @@ impl<W: LayoutElement> Tile<W> {
             move_x_animation: None,
             move_y_animation: None,
             alpha_animation: None,
+            focus_ring_anim: None,
+            border_anim: None,
+            was_focus_active: false,
+            was_border_active: false,
             interactive_move_offset: Point::from((0., 0.)),
             unmap_snapshot: None,
             rounded_corner_damage: Default::default(),
@@ -237,6 +257,7 @@ impl<W: LayoutElement> Tile<W> {
         let mut border_config = self.options.layout.border.merged_with(&rules.border);
         border_config.width = round_max1(border_config.width);
         self.border.update_config(border_config.into());
+        self.border_overlay.update_config(border_config.into());
 
         let mut focus_ring_config = self
             .options
@@ -385,6 +406,7 @@ impl<W: LayoutElement> Tile<W> {
         let mut border_config = self.options.layout.border.merged_with(&rules.border);
         border_config.width = round_max1(border_config.width);
         self.border.update_config(border_config.into());
+        self.border_overlay.update_config(border_config.into());
 
         let mut focus_ring_config = self
             .options
@@ -450,6 +472,16 @@ impl<W: LayoutElement> Tile<W> {
                 .alpha_animation
                 .as_ref()
                 .is_some_and(|alpha| !alpha.anim.is_done())
+            || self
+                .focus_ring_anim
+                .as_ref()
+                .is_some_and(|anim| !anim.is_done())
+            || (self.was_focus_active && self.options.layout.focus_ring.gradient_spin_speed > 0.)
+            || self
+                .border_anim
+                .as_ref()
+                .is_some_and(|anim| !anim.is_done())
+            || (self.was_border_active && self.options.layout.border.gradient_spin_speed > 0.)
     }
 
     pub fn update_render_elements(&mut self, is_active: bool, view_rect: Rectangle<f64, Logical>) {
@@ -475,19 +507,105 @@ impl<W: LayoutElement> Tile<W> {
                 radius.expanded_by(border_width as f32)
             })
             .scaled_by(1. - expanded_progress as f32);
-        self.border.update_render_elements(
-            border_window_size,
-            is_active,
-            !draw_border_with_background,
-            self.window.is_urgent(),
-            Rectangle::new(
-                view_rect.loc - Point::from((border_width, border_width)),
-                view_rect.size,
-            ),
-            radius,
-            self.scale,
-            1. - expanded_progress as f32,
+        // Animate border color fade on focus change.
+        let border_fade_ms = self.options.layout.border.fade_duration_ms;
+        if is_active != self.was_border_active {
+            if border_fade_ms > 0 {
+                let (from, to) = if is_active { (0., 1.) } else { (1., 0.) };
+                self.border_anim = Some(Animation::ease(
+                    self.clock.clone(),
+                    from,
+                    to,
+                    0.,
+                    border_fade_ms,
+                    crate::animation::Curve::EaseOutCubic,
+                ));
+            } else {
+                self.border_anim = None;
+            }
+            self.was_border_active = is_active;
+        }
+
+        // The active-ness blend factor: 1.0 = fully active colors, 0.0 = fully inactive colors.
+        let border_active_alpha = if border_fade_ms > 0 {
+            match &self.border_anim {
+                Some(anim) if !anim.is_done() => anim.clamped_value() as f32,
+                _ => {
+                    self.border_anim = None;
+                    if is_active { 1.0 } else { 0.0 }
+                }
+            }
+        } else {
+            if is_active { 1.0 } else { 0.0 }
+        };
+
+        let base_alpha = 1. - expanded_progress as f32;
+        let border_view_rect = Rectangle::new(
+            view_rect.loc - Point::from((border_width, border_width)),
+            view_rect.size,
         );
+
+        // Rotate border gradient while active.
+        let border_spin_speed = self.options.layout.border.gradient_spin_speed as f32;
+        let has_active_border = border_active_alpha > 0.;
+        let border_gradient_angle_offset = if has_active_border && border_spin_speed > 0. {
+            let secs = self.clock.now().as_secs_f32();
+            (secs * border_spin_speed) % 360.
+        } else {
+            0.
+        };
+
+        if border_fade_ms > 0 && border_active_alpha > 0. && border_active_alpha < 1. {
+            // Two-layer crossfade: inactive border at full alpha, active overlay on top.
+            // Compositing: active * t + inactive * (1-t) = smooth color interpolation.
+            self.border.update_render_elements(
+                border_window_size,
+                false,
+                !draw_border_with_background,
+                self.window.is_urgent(),
+                border_view_rect,
+                radius,
+                self.scale,
+                base_alpha,
+                0.,
+            );
+            self.border_overlay.update_render_elements(
+                border_window_size,
+                true,
+                !draw_border_with_background,
+                self.window.is_urgent(),
+                border_view_rect,
+                radius,
+                self.scale,
+                border_active_alpha * base_alpha,
+                border_gradient_angle_offset,
+            );
+        } else {
+            // No fade in progress: render single border with the current state.
+            self.border.update_render_elements(
+                border_window_size,
+                is_active,
+                !draw_border_with_background,
+                self.window.is_urgent(),
+                border_view_rect,
+                radius,
+                self.scale,
+                base_alpha,
+                border_gradient_angle_offset,
+            );
+            // Clear overlay so it doesn't render stale elements.
+            self.border_overlay.update_render_elements(
+                border_window_size,
+                is_active,
+                !draw_border_with_background,
+                self.window.is_urgent(),
+                border_view_rect,
+                radius,
+                self.scale,
+                0.,
+                0.,
+            );
+        }
 
         let radius = if self.visual_border_width().is_some() {
             radius
@@ -511,15 +629,63 @@ impl<W: LayoutElement> Tile<W> {
             false
         };
         let radius = radius.expanded_by(self.focus_ring.width() as f32);
+
+        let fade_ms = self.options.layout.focus_ring.fade_duration_ms;
+
+        // Animate focus ring fade in/out on focus change.
+        if is_active != self.was_focus_active {
+            if fade_ms > 0 {
+                let (from, to) = if is_active { (0., 1.) } else { (1., 0.) };
+                self.focus_ring_anim = Some(Animation::ease(
+                    self.clock.clone(),
+                    from,
+                    to,
+                    0.,
+                    fade_ms,
+                    crate::animation::Curve::EaseOutCubic,
+                ));
+            } else {
+                self.focus_ring_anim = None;
+            }
+            self.was_focus_active = is_active;
+        }
+
+        let focus_ring_alpha = if fade_ms > 0 {
+            match &self.focus_ring_anim {
+                Some(anim) if !anim.is_done() => {
+                    anim.clamped_value() as f32
+                }
+                _ => {
+                    self.focus_ring_anim = None;
+                    if is_active { 1.0 } else { 0.0 }
+                }
+            }
+        } else {
+            if is_active { 1.0 } else { 0.0 }
+        };
+
+        // During fade-out, keep rendering with active colors.
+        let ring_is_active = is_active || focus_ring_alpha > 0.0;
+
+        // Rotate gradient while focus ring is visible.
+        let spin_speed = self.options.layout.focus_ring.gradient_spin_speed as f32;
+        let gradient_angle_offset = if ring_is_active && spin_speed > 0. {
+            let secs = self.clock.now().as_secs_f32();
+            (secs * spin_speed) % 360.
+        } else {
+            0.
+        };
+
         self.focus_ring.update_render_elements(
             animated_tile_size,
-            is_active,
+            ring_is_active,
             !draw_focus_ring_with_background,
             self.window.is_urgent(),
             view_rect,
             radius,
             self.scale,
-            1. - expanded_progress as f32,
+            focus_ring_alpha * (1. - expanded_progress as f32),
+            gradient_angle_offset,
         );
 
         self.fullscreen_backdrop.resize(animated_tile_size);
@@ -1263,9 +1429,16 @@ impl<W: LayoutElement> Tile<W> {
         }
 
         if let Some(width) = self.visual_border_width() {
+            let border_loc = location + Point::from((width, width));
             self.border.render(
                 renderer,
-                location + Point::from((width, width)),
+                border_loc,
+                &mut |elem| push(elem.into()),
+            );
+            // Render active-color overlay during border color fade transitions.
+            self.border_overlay.render(
+                renderer,
+                border_loc,
                 &mut |elem| push(elem.into()),
             );
         }
@@ -1274,7 +1447,8 @@ impl<W: LayoutElement> Tile<W> {
         // being outside the monitor or obscured by a solid colored bar, but it is visible under
         // semitransparent bars in maximized state (which is a bit weird) and in the overview (also
         // a bit weird).
-        if focus_ring && expanded_progress < 1. {
+        let has_focus_ring_fade = self.focus_ring_anim.as_ref().is_some_and(|a| !a.is_done());
+        if (focus_ring || has_focus_ring_fade) && expanded_progress < 1. {
             self.focus_ring
                 .render(renderer, location, &mut |elem| push(elem.into()));
         }
