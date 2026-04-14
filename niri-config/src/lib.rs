@@ -710,7 +710,7 @@ mod tests {
                                        4.0 5.0 6.0
                 }
 
-                touch {
+                touchscreen {
                     map-to-output "eDP-1"
                 }
 
@@ -1014,6 +1014,7 @@ mod tests {
                             vertical: None,
                         },
                     ),
+                    gestures: None,
                 },
                 mouse: Mouse {
                     off: false,
@@ -1100,12 +1101,14 @@ mod tests {
                     ),
                     left_handed: false,
                 },
-                touch: Touch {
+                touchscreen: Touchscreen {
                     off: false,
+                    natural_scroll: false,
                     calibration_matrix: None,
                     map_to_output: Some(
                         "eDP-1",
                     ),
+                    gestures: None,
                 },
                 disable_power_key_handling: true,
                 warp_mouse_to_focus: Some(
@@ -1873,6 +1876,7 @@ mod tests {
                             saturation: None,
                         },
                     },
+                    touchscreen_gesture_passthrough: None,
                 },
             ],
             layer_rules: [
@@ -1947,6 +1951,9 @@ mod tests {
                                 "Inhibit",
                             ),
                         ),
+                        sensitivity: None,
+                        natural_scroll: false,
+                        tag: None,
                     },
                     Bind {
                         key: Key {
@@ -2007,6 +2014,9 @@ mod tests {
                         hotkey_overlay_title: Some(
                             None,
                         ),
+                        sensitivity: None,
+                        natural_scroll: false,
+                        tag: None,
                     },
                     Bind {
                         key: Key {

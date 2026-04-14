@@ -1943,6 +1943,12 @@ pub(crate) fn trigger_to_ipc_name(trigger: Trigger) -> String {
         Trigger::TouchTap { fingers } => {
             format!("TouchTap fingers={fingers}")
         }
+        Trigger::TouchpadTapHold { fingers } => {
+            format!("TouchpadTapHold fingers={fingers}")
+        }
+        Trigger::TouchpadTapHoldDrag { fingers } => {
+            format!("TouchpadTapHoldDrag fingers={fingers}")
+        }
         Trigger::TouchEdge { edge, zone } => {
             let edge_str = edge.as_kdl_name();
             match zone {

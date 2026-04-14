@@ -543,6 +543,16 @@ pub struct Niri {
     /// Tap candidate for N-finger tap detection. Runs in parallel with
     /// swipe/pinch/rotate recognition. Killed by wobble or recognizer lock.
     pub touch_tap_candidate: Option<TapCandidate>,
+    /// Touchpad hold-gesture tracking for N-finger tap-hold detection.
+    /// Stores finger_count from GestureHoldBegin. Cleared on
+    /// GestureHoldEnd; if !cancelled and fingers >= 3, fires a
+    /// TouchpadTapHold bind before clearing.
+    pub touchpad_hold_begin: Option<u8>,
+    /// Set when a hold ends with `cancelled=true` (fingers started moving)
+    /// and we had a 3+ finger hold candidate. The next `SwipeBegin` checks
+    /// this to decide whether to enter tap-hold-drag mode instead of
+    /// normal swipe. Stores finger count.
+    pub touchpad_drag_pending: Option<u8>,
     /// Accumulated per-frame deltas for touchscreen gesture batching.
     /// Summed across all per-slot TouchMotion events within a single
     /// hardware scan frame; consumed and zeroed in on_touch_frame.
@@ -2769,6 +2779,8 @@ impl Niri {
             touch_gesture_cumulative_rotation: 0.0,
             touch_gesture_previous_angles: HashMap::new(),
             touch_tap_candidate: None,
+            touchpad_hold_begin: None,
+            touchpad_drag_pending: None,
             touch_frame_delta: (0., 0.),
             touch_frame_edge_delta: (0., 0.),
             touch_frame_dirty: false,
