@@ -585,6 +585,10 @@ fn key_name(screen_reader: bool, mod_key: ModKey, key: &Key) -> String {
         Trigger::TouchTap { fingers } => {
             format!("Touch {fingers}-Finger Tap")
         }
+        Trigger::TouchTapHoldDrag { fingers, direction } => match direction {
+            Some(d) => format!("Touch {fingers}-Finger Tap-Hold-Drag {}", swipe_dir_label(d)),
+            None => format!("Touch {fingers}-Finger Tap-Hold-Drag"),
+        },
         Trigger::TouchEdge { edge, zone } => format_touch_edge_label(edge, zone),
     };
     name.push_str(&pretty);

@@ -131,7 +131,7 @@ The distinction between tap-hold-drag and a direct swipe is made by libinput: a 
 
 ### Touchscreen
 
-<sup>Since: next</sup> Touchscreen gestures are configured as binds in the main `binds {}` block using five parameterized node families — `TouchSwipe`, `TouchPinch`, `TouchRotate`, `TouchTap`, and `TouchEdge` — with KDL properties for finger count and direction. The `fingers=` property accepts any value in `3..=10`, so arbitrary finger counts are supported without an enum change.
+<sup>Since: next</sup> Touchscreen gestures are configured as binds in the main `binds {}` block using six parameterized node families — `TouchSwipe`, `TouchPinch`, `TouchRotate`, `TouchTap`, `TouchTapHoldDrag`, and `TouchEdge` — with KDL properties for finger count and direction. The `fingers=` property accepts any value in `3..=10`, so arbitrary finger counts are supported without an enum change.
 
 #### Swipe Gestures
 
@@ -217,6 +217,37 @@ Tuning parameters in `input { touchscreen { gestures { } } }`:
 - `tap-timeout-ms` — maximum duration (in milliseconds) from the third finger landing to all fingers lifting. Default: 250. Acts as a tap-vs-hold safety cap.
 
 The wobble threshold (default 15 px) sits well below the swipe trigger distance (default 100 px), creating a dead zone between 15–100 px where neither tap nor swipe fires — this handles ambiguous gestures correctly.
+
+#### Tap-Hold-Drag Gestures
+
+<sup>Since: next</sup>
+
+N-finger tap-hold-drag — fingers land, hold stationary (within the wobble threshold), then start moving. The trigger fires at the wobble-kill moment — the transition from "was a tap candidate" to "started moving." This distinguishes tap-hold-drag from a direct swipe: direct swipes move immediately without a stationary hold phase.
+
+Tap-hold-drag supports an optional `direction=` property. Directional binds are checked first; if no directional bind matches, the omnidirectional (no `direction=`) bind is used as a fallback.
+
+```kdl
+binds {
+    // Omnidirectional — fires regardless of initial movement direction
+    TouchTapHoldDrag fingers=3 { spawn "notify-send" "drag started"; }
+
+    // Directional — only fires for that initial direction
+    TouchTapHoldDrag fingers=4 direction="left"  { spawn "wl-copy"; }
+    TouchTapHoldDrag fingers=4 direction="right" { spawn "wl-paste"; }
+    TouchTapHoldDrag fingers=4 direction="up"    { toggle-overview; }
+}
+```
+
+- `fingers=` — integer in `3..=10`. Required.
+- `direction=` — optional. One of `"up"`, `"down"`, `"left"`, `"right"`. When omitted, the trigger is omnidirectional.
+
+Tap-hold-drag can drive **continuous** actions — when bound to a continuous-capable action, the swipe deltas feed into the animation frame-by-frame after activation. Binding to a discrete action fires it once.
+
+Tuning parameters in `input { touchscreen { gestures { } } }`:
+
+- `tap-hold-trigger-delay-ms` — minimum hold duration (in milliseconds) before a wobble-kill can activate a tap-hold-drag bind. If fingers move before this delay elapses, normal swipe/pinch/rotate recognition continues instead. Default: 150. Increase if fast swipes accidentally trigger hold-drag; decrease if hold-drag feels sluggish to activate.
+
+The hold detection also reuses the tap candidate's wobble threshold (`tap-wobble-threshold`, default 15 px). Fingers must stay within this threshold during the hold phase.
 
 #### Edge Swipes
 

@@ -685,18 +685,146 @@ impl State {
                         config.input.touchscreen.tap_wobble_threshold()
                     };
                     let wobble_sq = wobble_threshold * wobble_threshold;
+                    let mut wobble_killed = false;
                     for (s, current_pos) in &self.niri.touch_gesture_points {
                         if let Some(initial) = tap.initial_positions.get(s) {
                             let dx = current_pos.x - initial.x;
                             let dy = current_pos.y - initial.y;
                             if dx * dx + dy * dy > wobble_sq {
-                                tap.alive = false;
-                                tracing::debug!(
-                                    target: "niri::input::touch_gesture",
-                                    "TOUCH-DBG TAP killed reason=wobble",
-                                );
+                                wobble_killed = true;
                                 break;
                             }
+                        }
+                    }
+
+                    if wobble_killed {
+                        let peak_fingers = tap.peak_fingers;
+                        tap.alive = false;
+
+                        // Check minimum hold duration before allowing
+                        // tap-hold-drag. If fingers moved too quickly,
+                        // skip hold-drag and let normal swipe recognition
+                        // handle it.
+                        let hold_delay_ms = {
+                            let config = self.niri.config.borrow();
+                            config.input.touchscreen.tap_hold_trigger_delay_ms()
+                        };
+                        let elapsed_ms = tap.start_time.elapsed().as_millis() as f64;
+                        let hold_long_enough = elapsed_ms >= hold_delay_ms;
+
+                        // Compute centroid delta from initial positions for
+                        // direction detection.
+                        let (mut cx, mut cy) = (0.0, 0.0);
+                        let mut count = 0usize;
+                        for (s, current_pos) in &self.niri.touch_gesture_points {
+                            if let Some(initial) = tap.initial_positions.get(s) {
+                                cx += current_pos.x - initial.x;
+                                cy += current_pos.y - initial.y;
+                                count += 1;
+                            }
+                        }
+                        if count > 0 {
+                            cx /= count as f64;
+                            cy /= count as f64;
+                        }
+
+                        // Check for TouchTapHoldDrag bind — only if held
+                        // long enough to distinguish from a fast swipe.
+                        let bind_info = if hold_long_enough {
+                            let is_horizontal = cx.abs() > cy.abs();
+                            let direction = match (is_horizontal, cx, cy) {
+                                (true, cx, _) if cx > 0.0 => SwipeDirection::Right,
+                                (true, _, _) => SwipeDirection::Left,
+                                (false, _, cy) if cy > 0.0 => SwipeDirection::Down,
+                                _ => SwipeDirection::Up,
+                            };
+
+                            let config = self.niri.config.borrow();
+                            let mod_key = self.backend.mod_key(&config);
+                            let mods = self.niri.seat.get_keyboard().unwrap()
+                                .modifier_state();
+                            // Try directional first.
+                            let directional = Trigger::TouchTapHoldDrag {
+                                fingers: peak_fingers,
+                                direction: Some(direction),
+                            };
+                            let bind = find_configured_bind(
+                                config.binds.0.iter(),
+                                mod_key,
+                                directional,
+                                mods,
+                            );
+                            if bind.is_some() {
+                                bind.map(|b| (extract_bind_info(b), directional))
+                            } else {
+                                // Fall back to omnidirectional.
+                                let omni = Trigger::TouchTapHoldDrag {
+                                    fingers: peak_fingers,
+                                    direction: None,
+                                };
+                                find_configured_bind(
+                                    config.binds.0.iter(),
+                                    mod_key,
+                                    omni,
+                                    mods,
+                                ).map(|b| (extract_bind_info(b), omni))
+                            }
+                        } else {
+                            None
+                        };
+
+                        if let Some(((kind, sensitivity, natural_scroll, tag, action), trigger)) =
+                            bind_info
+                        {
+                            tracing::debug!(
+                                target: "niri::input::touch_gesture",
+                                "TOUCH-DBG TAP killed reason=wobble → \
+                                 TouchTapHoldDrag fingers={} trigger={:?} \
+                                 hold={:.0}ms",
+                                peak_fingers, trigger, elapsed_ms,
+                            );
+
+                            // Lock the gesture so normal swipe/pinch/rotate
+                            // recognition doesn't also fire.
+                            self.niri.touch_gesture_locked = true;
+                            self.niri.touch_gesture_cumulative = None;
+                            let handle = self.niri.seat.get_touch().unwrap();
+                            handle.cancel(self);
+
+                            let trigger_name = trigger_to_ipc_name(trigger);
+                            self.ipc_gesture_begin(
+                                tag.clone().unwrap_or_default(),
+                                trigger_name,
+                                peak_fingers,
+                                kind.is_some(),
+                            );
+
+                            if let Some(kind) = kind {
+                                begin_continuous_gesture(self, kind, pos);
+                                let active = ActiveTouchBind::Swipe {
+                                    kind,
+                                    sensitivity,
+                                    natural_scroll,
+                                    tag,
+                                    ipc_progress: 0.0,
+                                };
+                                self.niri.touch_active_bind = Some(active);
+                            } else {
+                                if !matches!(action, Action::Noop) {
+                                    self.do_action(action, false);
+                                }
+                                self.ipc_gesture_end(
+                                    tag.clone().unwrap_or_default(),
+                                    true,
+                                );
+                            }
+                        } else {
+                            tracing::debug!(
+                                target: "niri::input::touch_gesture",
+                                "TOUCH-DBG TAP killed reason=wobble \
+                                 hold={:.0}ms (need {:.0}ms for hold-drag)",
+                                elapsed_ms, hold_delay_ms,
+                            );
                         }
                     }
                 }
@@ -1949,6 +2077,13 @@ pub(crate) fn trigger_to_ipc_name(trigger: Trigger) -> String {
         Trigger::TouchpadTapHoldDrag { fingers } => {
             format!("TouchpadTapHoldDrag fingers={fingers}")
         }
+        Trigger::TouchTapHoldDrag { fingers, direction } => match direction {
+            Some(d) => format!(
+                "TouchTapHoldDrag fingers={fingers} direction=\"{}\"",
+                swipe_dir_name(d)
+            ),
+            None => format!("TouchTapHoldDrag fingers={fingers}"),
+        },
         Trigger::TouchEdge { edge, zone } => {
             let edge_str = edge.as_kdl_name();
             match zone {
