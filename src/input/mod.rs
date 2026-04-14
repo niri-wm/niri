@@ -3764,6 +3764,101 @@ impl State {
     }
 
     fn on_gesture_swipe_begin<I: InputBackend>(&mut self, event: I::GestureSwipeBeginEvent) {
+        // Swipe starting means hold → swipe transition; no tap-hold.
+        self.niri.touchpad_hold_begin = None;
+
+        // Check for tap-hold-drag: a hold preceded this swipe.
+        if let Some(drag_fingers) = self.niri.touchpad_drag_pending.take() {
+            let trigger = Trigger::TouchpadTapHoldDrag { fingers: drag_fingers };
+            let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
+            let mod_key = self.backend.mod_key(&self.niri.config.borrow());
+            let config = self.niri.config.borrow();
+            let modifiers = modifiers_from_state(mods);
+            let bindings =
+                make_binds_iter(&config, &mut self.niri.window_mru_ui, modifiers);
+            let bind = find_configured_bind(bindings, mod_key, trigger, mods);
+            drop(config);
+
+            if let Some(bind) = bind {
+                let kind = continuous_gesture_kind(&bind.action);
+                let sensitivity = bind.sensitivity.unwrap_or(TOUCHPAD_DEFAULT_SENSITIVITY);
+                let tag = bind.tag.clone();
+
+                // Emit IPC GestureBegin if tagged.
+                if let Some(ref tag) = tag {
+                    let trigger_name =
+                        crate::input::touch_gesture::trigger_to_ipc_name(trigger);
+                    self.ipc_gesture_begin(
+                        tag.clone(),
+                        trigger_name,
+                        drag_fingers,
+                        kind.is_some(),
+                    );
+                }
+
+                if let Some(kind) = kind {
+                    // Continuous gesture — begin animation. Reuses the
+                    // existing swipe bind infrastructure so swipe updates
+                    // and end events feed into the animation automatically.
+                    let is_overview_open = self.niri.layout.is_overview_open();
+                    match kind {
+                        ContinuousGestureKind::OverviewToggle => {
+                            self.niri.layout.overview_gesture_begin();
+                            self.niri.queue_redraw_all();
+                        }
+                        ContinuousGestureKind::WorkspaceSwitch => {
+                            if let Some(output) = self.niri.output_under_cursor() {
+                                self.niri
+                                    .layout
+                                    .workspace_switch_gesture_begin(&output, true);
+                            }
+                        }
+                        ContinuousGestureKind::ViewScroll => {
+                            if self.niri.output_under_cursor().is_some() {
+                                let output_ws = if is_overview_open {
+                                    self.niri.workspace_under_cursor(true)
+                                } else {
+                                    self.niri.output_under_cursor().and_then(|output| {
+                                        let mon = self.niri.layout
+                                            .monitor_for_output(&output)?;
+                                        Some((output, mon.active_workspace_ref()))
+                                    })
+                                };
+                                if let Some((output, ws)) = output_ws {
+                                    let ws_idx = self.niri.layout
+                                        .find_workspace_by_id(ws.id()).unwrap().0;
+                                    self.niri.layout.view_offset_gesture_begin(
+                                        &output, Some(ws_idx), true,
+                                    );
+                                }
+                            }
+                        }
+                        ContinuousGestureKind::Noop => {
+                            // No compositor animation.
+                        }
+                    }
+                    self.niri.gesture_swipe_bind = Some(ActiveSwipeBind {
+                        kind,
+                        sensitivity,
+                        tag,
+                        ipc_progress: 0.0,
+                    });
+                } else {
+                    // Discrete action — fire once.
+                    if let Some(ref tag) = tag {
+                        self.ipc_gesture_end(tag.clone(), true);
+                    }
+                    self.do_action(bind.action, bind.allow_when_locked);
+                }
+
+                // Tap-hold-drag claimed this swipe — don't enter normal
+                // swipe handling.
+                return;
+            }
+            // No bind found for TouchpadTapHoldDrag — fall through to
+            // normal swipe handling below.
+        }
+
         if self.niri.window_mru_ui.is_open() {
             // Don't start swipe gestures while in the MRU.
             return;
@@ -4088,6 +4183,10 @@ impl State {
     }
 
     fn on_gesture_pinch_begin<I: InputBackend>(&mut self, event: I::GesturePinchBeginEvent) {
+        // Pinch starting means hold → pinch transition; no tap or drag.
+        self.niri.touchpad_hold_begin = None;
+        self.niri.touchpad_drag_pending = None;
+
         let serial = SERIAL_COUNTER.next_serial();
         let pointer = self.niri.seat.get_pointer().unwrap();
 
@@ -4142,6 +4241,13 @@ impl State {
     }
 
     fn on_gesture_hold_begin<I: InputBackend>(&mut self, event: I::GestureHoldBeginEvent) {
+        let fingers = event.fingers();
+
+        // Track 3+ finger holds for touchpad tap detection.
+        if fingers >= 3 {
+            self.niri.touchpad_hold_begin = Some(fingers as u8);
+        }
+
         let serial = SERIAL_COUNTER.next_serial();
         let pointer = self.niri.seat.get_pointer().unwrap();
 
@@ -4154,12 +4260,53 @@ impl State {
             &GestureHoldBeginEvent {
                 serial,
                 time: event.time_msec(),
-                fingers: event.fingers(),
+                fingers,
             },
         );
     }
 
     fn on_gesture_hold_end<I: InputBackend>(&mut self, event: I::GestureHoldEndEvent) {
+        // Touchpad tap detection: if the hold ended cleanly (fingers lifted
+        // without moving) and we were tracking a 3+ finger hold, fire the
+        // TouchpadTapHold bind.
+        if !event.cancelled() {
+            if let Some(fingers) = self.niri.touchpad_hold_begin.take() {
+                let trigger = Trigger::TouchpadTapHold { fingers };
+                let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
+                let mod_key = self.backend.mod_key(&self.niri.config.borrow());
+                let config = self.niri.config.borrow();
+                let modifiers = modifiers_from_state(mods);
+                let bindings =
+                    make_binds_iter(&config, &mut self.niri.window_mru_ui, modifiers);
+                let bind = find_configured_bind(bindings, mod_key, trigger, mods);
+                drop(config);
+
+                if let Some(bind) = bind {
+                    // Emit IPC GestureBegin + GestureEnd for tagged taps.
+                    if let Some(ref tag) = bind.tag {
+                        let trigger_name =
+                            crate::input::touch_gesture::trigger_to_ipc_name(trigger);
+                        self.ipc_gesture_begin(
+                            tag.clone(),
+                            trigger_name,
+                            fingers,
+                            false, // taps are always discrete
+                        );
+                        self.ipc_gesture_end(tag.clone(), true);
+                    }
+
+                    self.do_action(bind.action, bind.allow_when_locked);
+                }
+            }
+        } else {
+            // Fingers moved — libinput promoted to swipe/pinch.
+            // Carry the finger count forward as a drag pending signal
+            // for the next SwipeBegin.
+            if let Some(fingers) = self.niri.touchpad_hold_begin.take() {
+                self.niri.touchpad_drag_pending = Some(fingers);
+            }
+        }
+
         let serial = SERIAL_COUNTER.next_serial();
         let pointer = self.niri.seat.get_pointer().unwrap();
 

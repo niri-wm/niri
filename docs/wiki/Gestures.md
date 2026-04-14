@@ -83,6 +83,52 @@ Move the view horizontally with three-finger horizontal swipes (default bind).
 
 Open and close the overview with a four-finger vertical swipe (default bind).
 
+#### Tap-Hold Gestures
+
+<sup>Since: next</sup>
+
+Stationary N-finger tap-holds on the touchpad — fingers land, hold stationary, then lift. The action fires on release. libinput handles motion discrimination: if fingers move, the gesture is promoted to a swipe or pinch and the candidate is dropped automatically.
+
+Fast taps (where fingers lift before libinput's internal hold detection threshold) are **not** intercepted — they pass through to the focused client. This means app-level quick-tap gestures (e.g. 3-finger tap-to-paste in terminals) coexist naturally with compositor tap-hold binds.
+
+```kdl
+binds {
+    TouchpadTapHold fingers=3 { screenshot; }
+    TouchpadTapHold fingers=4 { spawn "notify-send" "4-finger tap-hold"; }
+    TouchpadTapHold fingers=5 { close-window; }
+}
+```
+
+- `fingers=` — integer in `3..=10`. Required. 1- and 2-finger holds are handled by libinput and forwarded to clients; niri only intercepts 3+ finger holds.
+- No `direction=` — tap-holds are omnidirectional. Including `direction=` is an error.
+
+Tap-holds are always **discrete** (fire-and-forget) — they cannot drive continuous animations.
+
+No niri-side tuning knobs are needed — libinput's hold gesture API handles the motion threshold and timing internally.
+
+#### Tap-Hold-Drag Gestures
+
+<sup>Since: next</sup>
+
+N-finger tap-hold-drag — fingers land, hold stationary, then start moving. The trigger activates when the held fingers begin moving, distinguishing it from a direct swipe (where fingers land already in motion). This is the same gesture macOS uses for three-finger window dragging.
+
+Tap-hold-drag can drive **continuous** actions (workspace switch, overview, view scroll) — the swipe deltas feed into the animation automatically. It can also fire discrete actions once on activation.
+
+```kdl
+binds {
+    // Continuous: hold 3 fingers, then drag to switch workspaces
+    TouchpadTapHoldDrag fingers=3 { focus-workspace-up; }
+
+    // Discrete: hold 4 fingers, then move to trigger once
+    TouchpadTapHoldDrag fingers=4 { spawn "notify-send" "drag started"; }
+}
+```
+
+- `fingers=` — integer in `3..=10`. Required.
+- No `direction=` — the drag direction is not part of the trigger. Including `direction=` is an error.
+
+The distinction between tap-hold-drag and a direct swipe is made by libinput: a tap-hold-drag is preceded by a `GestureHoldBegin` event (fingers were stationary first), while a direct swipe skips the hold phase entirely. This means the same finger count can be used for both without conflict — intent is distinguished by the pause before moving.
+
 ### Touchscreen
 
 <sup>Since: next</sup> Touchscreen gestures are configured as binds in the main `binds {}` block using five parameterized node families — `TouchSwipe`, `TouchPinch`, `TouchRotate`, `TouchTap`, and `TouchEdge` — with KDL properties for finger count and direction. The `fingers=` property accepts any value in `3..=10`, so arbitrary finger counts are supported without an enum change.

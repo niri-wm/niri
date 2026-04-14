@@ -103,6 +103,27 @@ pub enum Trigger {
         fingers: u8,
         direction: SwipeDirection,
     },
+    /// Multi-finger touchpad tap-hold (fingers land, hold stationary,
+    /// then lift). libinput handles motion discrimination via its hold
+    /// gesture API — `cancelled=false` on `GestureHoldEnd` means the
+    /// fingers never moved. Fires on release. Fast taps that lift before
+    /// libinput's hold threshold are not intercepted and pass through to
+    /// clients. Always discrete (fire-and-forget).
+    ///
+    /// KDL syntax: `TouchpadTapHold fingers=3`.
+    TouchpadTapHold {
+        fingers: u8,
+    },
+    /// Multi-finger touchpad tap-hold-drag (fingers land, hold stationary,
+    /// then start moving). Fires when the held fingers begin moving —
+    /// libinput transitions from `GestureHold` to `GestureSwipe`.
+    /// Can drive continuous actions (workspace switch, overview, window
+    /// move) or fire a discrete action once on activation.
+    ///
+    /// KDL syntax: `TouchpadTapHoldDrag fingers=3`.
+    TouchpadTapHoldDrag {
+        fingers: u8,
+    },
     /// Multi-finger touchscreen swipe.
     ///
     /// KDL syntax: `TouchSwipe fingers=3 direction="up"`.
@@ -161,6 +182,8 @@ impl Trigger {
         matches!(
             self,
             Trigger::TouchpadSwipe { .. }
+                | Trigger::TouchpadTapHold { .. }
+                | Trigger::TouchpadTapHoldDrag { .. }
                 | Trigger::TouchSwipe { .. }
                 | Trigger::TouchPinch { .. }
                 | Trigger::TouchRotate { .. }
@@ -1168,6 +1191,8 @@ where
 /// not via `FromStr for Key`.
 pub(crate) fn is_gesture_family_name(s: &str) -> bool {
     s.eq_ignore_ascii_case("TouchpadSwipe")
+        || s.eq_ignore_ascii_case("TouchpadTapHold")
+        || s.eq_ignore_ascii_case("TouchpadTapHoldDrag")
         || s.eq_ignore_ascii_case("TouchSwipe")
         || s.eq_ignore_ascii_case("TouchPinch")
         || s.eq_ignore_ascii_case("TouchRotate")
@@ -1306,13 +1331,22 @@ pub(crate) fn build_gesture_trigger(
         return Ok(Trigger::TouchRotate { fingers, direction });
     }
 
-    if family.eq_ignore_ascii_case("TouchTap") {
+    if family.eq_ignore_ascii_case("TouchTap")
+        || family.eq_ignore_ascii_case("TouchpadTapHold")
+        || family.eq_ignore_ascii_case("TouchpadTapHoldDrag")
+    {
         reject_edge_zone(props)?;
         let fingers = expect_fingers(props)?;
         if props.direction.is_some() {
-            return Err("TouchTap does not accept a `direction=` property".to_string());
+            return Err(format!("{family} does not accept a `direction=` property"));
         }
-        return Ok(Trigger::TouchTap { fingers });
+        return Ok(if family.eq_ignore_ascii_case("TouchTap") {
+            Trigger::TouchTap { fingers }
+        } else if family.eq_ignore_ascii_case("TouchpadTapHold") {
+            Trigger::TouchpadTapHold { fingers }
+        } else {
+            Trigger::TouchpadTapHoldDrag { fingers }
+        });
     }
 
     if family.eq_ignore_ascii_case("TouchEdge") {
@@ -1530,6 +1564,8 @@ mod tests {
         assert!("TouchTap".parse::<Key>().is_err());
         assert!("TouchEdge".parse::<Key>().is_err());
         assert!("TouchpadSwipe".parse::<Key>().is_err());
+        assert!("TouchpadTapHold".parse::<Key>().is_err());
+        assert!("TouchpadTapHoldDrag".parse::<Key>().is_err());
     }
 
     #[test]
@@ -1718,6 +1754,10 @@ mod tests {
         assert!(is_gesture_family_name("touchswipe"));
         assert!(is_gesture_family_name("TOUCHPINCH"));
         assert!(is_gesture_family_name("TouchpadSwipe"));
+        assert!(is_gesture_family_name("TouchpadTapHold"));
+        assert!(is_gesture_family_name("touchpadtaphold"));
+        assert!(is_gesture_family_name("TouchpadTapHoldDrag"));
+        assert!(is_gesture_family_name("touchpadtapholddrag"));
         assert!(is_gesture_family_name("TouchTap"));
         assert!(is_gesture_family_name("touchtap"));
         assert!(!is_gesture_family_name("TouchSwipe3Up"));
@@ -1906,6 +1946,100 @@ mod tests {
                 fingers: 3,
                 direction: SwipeDirection::Right,
             }
+        );
+    }
+
+    #[test]
+    fn decode_node_touchpad_tap_parses() {
+        let cfg = parse_binds(
+            r#"TouchpadTapHold fingers=3 { screenshot; }"#,
+        );
+        let bind = first_bind(&cfg);
+        assert_eq!(
+            bind.key.trigger,
+            Trigger::TouchpadTapHold { fingers: 3 }
+        );
+    }
+
+    #[test]
+    fn decode_node_touchpad_tap_with_modifier() {
+        let cfg = parse_binds(
+            r#"Mod+TouchpadTapHold fingers=4 { close-window; }"#,
+        );
+        let bind = first_bind(&cfg);
+        assert_eq!(
+            bind.key.trigger,
+            Trigger::TouchpadTapHold { fingers: 4 }
+        );
+        assert!(bind.key.modifiers.contains(Modifiers::COMPOSITOR));
+    }
+
+    #[test]
+    fn touchpad_tap_rejects_direction() {
+        let props = GestureTriggerProps {
+            fingers: Some(3),
+            direction: Some("up"),
+            edge: None,
+            zone: None,
+        };
+        assert!(
+            build_gesture_trigger("TouchpadTapHold", &props).is_err(),
+            "TouchpadTapHold should reject direction="
+        );
+    }
+
+    #[test]
+    fn touchpad_tap_rejects_fingers_below_3() {
+        for bad in [0u8, 1, 2] {
+            let props = GestureTriggerProps {
+                fingers: Some(bad),
+                direction: None,
+                edge: None,
+                zone: None,
+            };
+            assert!(
+                build_gesture_trigger("TouchpadTapHold", &props).is_err(),
+                "TouchpadTapHold fingers={bad} should be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn decode_node_touchpad_tap_hold_drag_parses() {
+        let cfg = parse_binds(
+            r#"TouchpadTapHoldDrag fingers=3 { focus-workspace-up; }"#,
+        );
+        let bind = first_bind(&cfg);
+        assert_eq!(
+            bind.key.trigger,
+            Trigger::TouchpadTapHoldDrag { fingers: 3 }
+        );
+    }
+
+    #[test]
+    fn decode_node_touchpad_tap_hold_drag_with_modifier() {
+        let cfg = parse_binds(
+            r#"Mod+TouchpadTapHoldDrag fingers=4 { move-window-down; }"#,
+        );
+        let bind = first_bind(&cfg);
+        assert_eq!(
+            bind.key.trigger,
+            Trigger::TouchpadTapHoldDrag { fingers: 4 }
+        );
+        assert!(bind.key.modifiers.contains(Modifiers::COMPOSITOR));
+    }
+
+    #[test]
+    fn touchpad_tap_hold_drag_rejects_direction() {
+        let props = GestureTriggerProps {
+            fingers: Some(3),
+            direction: Some("up"),
+            edge: None,
+            zone: None,
+        };
+        assert!(
+            build_gesture_trigger("TouchpadTapHoldDrag", &props).is_err(),
+            "TouchpadTapHoldDrag should reject direction="
         );
     }
 

@@ -567,6 +567,12 @@ fn key_name(screen_reader: bool, mod_key: ModKey, key: &Key) -> String {
         Trigger::TouchpadSwipe { fingers, direction } => {
             format!("Touchpad {fingers}-Finger Swipe {}", swipe_dir_label(direction))
         }
+        Trigger::TouchpadTapHold { fingers } => {
+            format!("Touchpad {fingers}-Finger Tap-Hold")
+        }
+        Trigger::TouchpadTapHoldDrag { fingers } => {
+            format!("Touchpad {fingers}-Finger Tap-Hold-Drag")
+        }
         Trigger::TouchSwipe { fingers, direction } => {
             format!("Touch {fingers}-Finger Swipe {}", swipe_dir_label(direction))
         }
