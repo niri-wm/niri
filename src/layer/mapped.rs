@@ -162,6 +162,10 @@ impl MappedLayer {
         target: RenderTarget,
         push: &mut dyn FnMut(LayerSurfaceRenderElement<R>),
     ) {
+        if target.should_hide(self.rules.hide_from) {
+            return;
+        }
+
         let scale = Scale::from(self.scale);
         let alpha = self.rules.opacity.unwrap_or(1.).clamp(0., 1.);
         let location = location + self.bob_offset();
@@ -206,6 +210,10 @@ impl MappedLayer {
         target: RenderTarget,
         push: &mut dyn FnMut(LayerSurfaceRenderElement<R>),
     ) {
+        if target.should_hide(self.rules.hide_from) {
+            return;
+        }
+
         let scale = Scale::from(self.scale);
         let alpha = self.rules.opacity.unwrap_or(1.).clamp(0., 1.);
         let location = location + self.bob_offset();

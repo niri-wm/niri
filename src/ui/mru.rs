@@ -350,6 +350,10 @@ impl Thumbnail {
     ) {
         let _span = tracy_client::span!("Thumbnail::render");
 
+        if target.should_hide(mapped.rules().hide_from) {
+            return;
+        }
+
         let round = move |logical: f64| round_logical_in_physical(scale, logical);
         let padding = round(config.highlight.padding);
         let title_gap = round(TITLE_GAP);

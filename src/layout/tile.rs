@@ -1048,6 +1048,9 @@ impl<W: LayoutElement> Tile<W> {
         let area = Rectangle::new(window_render_loc, animated_window_size);
 
         let rules = self.window.rules();
+        if target.should_hide(rules.hide_from) {
+            return;
+        }
 
         // Clip to geometry including during the fullscreen animation to help with buggy clients
         // that submit a full-sized buffer before acking the fullscreen state (Firefox).
@@ -1398,6 +1401,7 @@ impl<W: LayoutElement> Tile<W> {
             contents,
             blocked_out_contents,
             block_out_from: self.window.rules().block_out_from,
+            hide_from: self.window.rules().hide_from,
             size: self.animated_tile_size(),
             texture: Default::default(),
             blocked_out_texture: Default::default(),

@@ -35,6 +35,9 @@ pub struct ClosingWindow {
     /// Where the window should be blocked out from.
     block_out_from: Option<BlockOutFrom>,
 
+    /// Where the window should be hidden from.
+    hide_from: Option<BlockOutFrom>,
+
     /// Size of the window geometry.
     geo_size: Size<f64, Logical>,
 
@@ -122,13 +125,21 @@ impl ClosingWindow {
         let (buffer, buffer_offset) =
             render_to_texture(snapshot.contents).context("error rendering contents")?;
         let (blocked_out_buffer, blocked_out_buffer_offset) =
-            render_to_texture(snapshot.blocked_out_contents)
-                .context("error rendering blocked-out contents")?;
+            if snapshot.blocked_out_contents.is_empty() {
+                // Hidden snapshots can have no blocked-out render elements. Reuse the normal
+                // texture so the closing animation on Output target can still be
+                // created.
+                (buffer.clone(), buffer_offset)
+            } else {
+                render_to_texture(snapshot.blocked_out_contents)
+                    .context("error rendering blocked-out contents")?
+            };
 
         Ok(Self {
             buffer,
             blocked_out_buffer,
             block_out_from: snapshot.block_out_from,
+            hide_from: snapshot.hide_from,
             geo_size,
             pos,
             buffer_offset,
@@ -136,6 +147,10 @@ impl ClosingWindow {
             anim_state: AnimationState::new(blocker, anim),
             random_seed: fastrand::f32(),
         })
+    }
+
+    pub fn should_hide(&self, target: RenderTarget) -> bool {
+        target.should_hide(self.hide_from)
     }
 
     pub fn advance_animations(&mut self) {
