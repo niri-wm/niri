@@ -42,6 +42,9 @@ pub struct MappedLayer {
     /// The shadow around the surface.
     shadow: Shadow,
 
+    /// The blur config, passed for background effect rendering.
+    blur_config: niri_config::Blur,
+
     /// The view size for the layer surface's output.
     view_size: Size<f64, Logical>,
 
@@ -85,6 +88,7 @@ impl MappedLayer {
             view_size,
             scale,
             shadow: Shadow::new(shadow_config),
+            blur_config: config.blur,
             clock,
         }
     }
@@ -95,6 +99,8 @@ impl MappedLayer {
         shadow_config.on = false;
         shadow_config.merge_with(&self.rules.shadow);
         self.shadow.update_config(shadow_config);
+
+        self.blur_config = config.blur;
     }
 
     pub fn update_shaders(&mut self) {
@@ -234,6 +240,7 @@ impl MappedLayer {
             self.scale,
             false,
             surface,
+            self.blur_config,
             radius,
             self.rules.background_effect,
             xray_pos,

@@ -1,10 +1,10 @@
 use std::mem;
 
-use anyhow::Context as _;
+use anyhow::{ensure, Context as _};
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::element::{Id, RenderElementStates};
-use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
+use smithay::backend::renderer::gles::{GlesFrame, GlesRenderer, GlesTexture};
 use smithay::backend::renderer::utils::CommitCounter;
 use smithay::backend::renderer::{
     Bind as _, Color32F, ContextId, Offscreen as _, Renderer as _, Texture,
@@ -12,6 +12,7 @@ use smithay::backend::renderer::{
 use smithay::utils::{Buffer, Logical, Physical, Scale, Size, Transform};
 
 use crate::niri::OutputRenderElements;
+use crate::render_helpers::blur::{Blur, BlurOptions};
 
 #[derive(Debug)]
 pub struct EffectBuffer {
@@ -22,13 +23,17 @@ pub struct EffectBuffer {
     size: Size<i32, Buffer>,
     /// Scale of the effect buffer.
     scale: Scale<f64>,
+    /// Options for blurring.
+    blur_options: BlurOptions,
 
     /// Elements to be rendered on demand.
     elements: Elements,
     /// Offscreen buffer where elements get rendered.
     offscreen: Option<Offscreen>,
+    /// Blurring program, if available.
+    blur: Option<Blur>,
 
-    /// Commit counter for the offscreen texture.
+    /// Commit counter that takes into account both original and blurred texture changes.
     commit_counter: CommitCounter,
 }
 
@@ -55,6 +60,10 @@ struct Offscreen {
     damage: OutputDamageTracker,
     /// Render element states from the last render into the offscreen.
     states: RenderElementStates,
+    /// Rendered blurred version of the texture.
+    ///
+    /// When texture needs to be reblurred, this field must be reset to `None`.
+    blurred: Option<GlesTexture>,
 }
 
 impl Default for Elements {
@@ -69,8 +78,10 @@ impl EffectBuffer {
             id: Id::new(),
             size: Size::default(),
             scale: Scale::from(1.),
+            blur_options: BlurOptions::default(),
             elements: Elements::default(),
             offscreen: None,
+            blur: None,
             commit_counter: CommitCounter::default(),
         }
     }
@@ -100,6 +111,21 @@ impl EffectBuffer {
         self.scale = scale;
     }
 
+    pub fn update_blur_options(&mut self, options: BlurOptions) {
+        if self.blur_options == options {
+            return;
+        }
+
+        self.blur_options = options;
+
+        if let Some(offscreen) = &mut self.offscreen {
+            if offscreen.blurred.is_some() {
+                offscreen.blurred = None;
+                self.commit_counter.increment();
+            }
+        }
+    }
+
     pub fn elements(&mut self) -> &mut Vec<OutputRenderElements<GlesRenderer>> {
         // Assume we're going to insert new elements, switch to New.
         match mem::take(&mut self.elements) {
@@ -113,11 +139,18 @@ impl EffectBuffer {
         elements
     }
 
-    pub fn prepare(&mut self, renderer: &mut GlesRenderer) -> bool {
+    pub fn prepare(&mut self, renderer: &mut GlesRenderer, blur: bool) -> bool {
         if let Err(err) = self.prepare_offscreen(renderer) {
             warn!("error preparing offscreen: {err:?}");
             return false;
         };
+
+        if blur {
+            if let Err(err) = self.prepare_blur(renderer) {
+                warn!("error preparing blur: {err:?}");
+                return false;
+            }
+        }
 
         true
     }
@@ -176,6 +209,7 @@ impl EffectBuffer {
                 scale: self.scale,
                 damage,
                 states: RenderElementStates::default(),
+                blurred: None,
             })
         };
 
@@ -189,6 +223,7 @@ impl EffectBuffer {
             offscreen.damage = OutputDamageTracker::new(buffer_size, self.scale, Transform::Normal);
 
             self.commit_counter.increment();
+            offscreen.blurred = None;
         }
 
         // Render the elements if any.
@@ -215,6 +250,9 @@ impl EffectBuffer {
 
         if res.damage.is_some() {
             self.commit_counter.increment();
+
+            // Original texture changed; reset the blurred texture.
+            offscreen.blurred = None;
         }
 
         // Clear and put the storage back.
@@ -224,8 +262,62 @@ impl EffectBuffer {
         Ok(())
     }
 
-    pub fn render(&mut self) -> anyhow::Result<GlesTexture> {
+    fn prepare_blur(&mut self, renderer: &mut GlesRenderer) -> anyhow::Result<()> {
+        let offscreen = self.offscreen.as_mut().context("missing offscreen")?;
+        if offscreen.blurred.is_some() {
+            // Already rendered.
+            return Ok(());
+        }
+
+        if let Some(blur) = &self.blur {
+            if blur.context_id() != renderer.context_id() {
+                debug!("recreating blur: renderer changed");
+                self.blur = None;
+            }
+        }
+
+        let blur = if let Some(blur) = &mut self.blur {
+            blur
+        } else {
+            let Some(blur) = Blur::new(renderer) else {
+                // Missing blur shader.
+                return Ok(());
+            };
+            self.blur.insert(blur)
+        };
+
+        ensure!(
+            offscreen.renderer_context_id == renderer.context_id(),
+            "wrong renderer context id"
+        );
+
+        blur.prepare_textures(
+            |fourcc, size| renderer.create_buffer(fourcc, size),
+            &offscreen.texture,
+            self.blur_options,
+        )
+        .context("error preparing blur textures")?;
+
+        Ok(())
+    }
+
+    pub fn render(&mut self, frame: &mut GlesFrame, blur: bool) -> anyhow::Result<GlesTexture> {
         let offscreen = self.offscreen.as_mut().context("offscreen is missing")?;
-        Ok(offscreen.texture.clone())
+
+        if !blur {
+            return Ok(offscreen.texture.clone());
+        }
+
+        let texture = if let Some(texture) = &offscreen.blurred {
+            texture.clone()
+        } else {
+            let blur = self.blur.as_mut().context("blur is missing")?;
+            let blurred = blur
+                .render(frame, &offscreen.texture, self.blur_options)
+                .context("error rendering blur")?;
+            offscreen.blurred.insert(blurred).clone()
+        };
+
+        Ok(texture)
     }
 }

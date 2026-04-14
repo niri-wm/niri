@@ -106,6 +106,9 @@ pub struct Mapped {
     /// Buffer to draw instead of the window when it should be blocked out.
     block_out_buffer: RefCell<SolidColorBuffer>,
 
+    /// The blur config, passed for background effect rendering.
+    blur_config: niri_config::Blur,
+
     /// Whether the next configure should be animated, if the configured state changed.
     animate_next_configure: bool,
 
@@ -251,7 +254,7 @@ enum RequestSizeOnce {
 }
 
 impl Mapped {
-    pub fn new(window: Window, rules: ResolvedWindowRules, hook: HookId) -> Self {
+    pub fn new(window: Window, rules: ResolvedWindowRules, hook: HookId, config: &Config) -> Self {
         let surface = window.wl_surface().expect("no X11 support");
         let credentials = get_credentials_for_surface(&surface);
         let mut rv = Self {
@@ -271,6 +274,7 @@ impl Mapped {
             is_window_cast_target: false,
             ignore_opacity_window_rule: false,
             block_out_buffer: RefCell::new(SolidColorBuffer::new((0., 0.), [0., 0., 0., 1.])),
+            blur_config: config.blur,
             animate_next_configure: false,
             animate_serials: Vec::new(),
             animation_snapshot: None,
@@ -604,6 +608,10 @@ impl LayoutElement for Mapped {
         &self.window
     }
 
+    fn update_config(&mut self, blur_config: niri_config::Blur) {
+        self.blur_config = blur_config;
+    }
+
     fn size(&self) -> Size<i32, Logical> {
         self.window.geometry().size
     }
@@ -691,6 +699,7 @@ impl LayoutElement for Mapped {
             scale,
             clip_to_geometry,
             self.toplevel().wl_surface(),
+            self.blur_config,
             radius,
             self.rules.background_effect,
             xray_pos,

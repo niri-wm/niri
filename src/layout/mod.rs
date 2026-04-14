@@ -134,6 +134,11 @@ pub trait LayoutElement {
     /// Unique ID of this element.
     fn id(&self) -> &Self::Id;
 
+    /// Updates the config for the element.
+    fn update_config(&mut self, blur_config: niri_config::Blur) {
+        let _ = blur_config;
+    }
+
     /// Visual size of the element.
     ///
     /// This is what the user would consider the size, i.e. excluding CSD shadows and whatnot.
@@ -364,6 +369,7 @@ pub struct Options {
     pub animations: niri_config::Animations,
     pub gestures: niri_config::Gestures,
     pub overview: niri_config::Overview,
+    pub blur: niri_config::Blur,
     // Debug flags.
     pub disable_resize_throttling: bool,
     pub disable_transactions: bool,
@@ -624,6 +630,7 @@ impl Options {
             animations: config.animations.clone(),
             gestures: config.gestures,
             overview: config.overview,
+            blur: config.blur,
             disable_resize_throttling: config.debug.disable_resize_throttling,
             disable_transactions: config.debug.disable_transactions,
             deactivate_unfocused_windows: config.debug.deactivate_unfocused_windows,

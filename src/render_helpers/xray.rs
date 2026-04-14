@@ -73,6 +73,7 @@ pub struct XrayElement {
     clip_geo_size: Vec2,
     corner_radius: CornerRadius,
     scale: f32,
+    blur: bool,
     noise: f32,
     saturation: f32,
     bg_color: Color32F,
@@ -95,6 +96,7 @@ impl Xray {
         ctx: RenderCtx<GlesRenderer>,
         params: RenderParams,
         xray_pos: XrayPos,
+        blur: bool,
         noise: f32,
         saturation: f32,
         push: &mut dyn FnMut(XrayElement),
@@ -121,7 +123,7 @@ impl Xray {
 
         let mut background = self.background[ctx.target as usize].borrow_mut();
         let prev = background.commit();
-        if background.prepare(ctx.renderer) {
+        if background.prepare(ctx.renderer, blur) {
             if background.commit() != prev {
                 trace!("background damaged");
             }
@@ -191,6 +193,7 @@ impl Xray {
                     clip_geo_size,
                     corner_radius,
                     scale: params.scale as f32,
+                    blur,
                     noise,
                     saturation,
                     bg_color: *bg_color,
@@ -206,7 +209,7 @@ impl Xray {
         }
 
         let prev = backdrop.commit();
-        if backdrop.prepare(ctx.renderer) {
+        if backdrop.prepare(ctx.renderer, blur) {
             if backdrop.commit() != prev {
                 trace!("backdrop damaged");
             }
@@ -239,6 +242,7 @@ impl Xray {
                 clip_geo_size,
                 corner_radius: corner_radius.scaled_by(zoom as f32),
                 scale: params.scale as f32,
+                blur,
                 noise,
                 saturation,
                 bg_color: self.backdrop_color,
@@ -297,7 +301,7 @@ impl RenderElement<GlesRenderer> for XrayElement {
         _opaque_regions: &[Rectangle<i32, Physical>],
     ) -> Result<(), GlesError> {
         let mut buffer = self.buffer.borrow_mut();
-        let texture = match buffer.render() {
+        let texture = match buffer.render(frame, self.blur) {
             Ok(x) => x,
             Err(err) => {
                 warn!("error rendering effect buffer: {err:?}");

@@ -25,6 +25,7 @@ use crate::render_helpers::renderer::AsGlesRenderer;
 use crate::render_helpers::xray::Xray;
 
 pub mod background_effect;
+pub mod blur;
 pub mod border;
 pub mod clipped_surface;
 pub mod damage;

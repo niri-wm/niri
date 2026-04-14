@@ -20,11 +20,13 @@ pub struct BackgroundEffect {
     /// Stored here in addition to `RenderParams` to damage when it changes.
     // FIXME: would be good to remove this duplication of radius.
     corner_radius: CornerRadius,
+    blur_config: niri_config::Blur,
     options: Options,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Options {
+    pub blur: bool,
     pub xray: bool,
     pub noise: Option<f64>,
     pub saturation: Option<f64>,
@@ -32,7 +34,10 @@ pub struct Options {
 
 impl Options {
     fn is_visible(&self) -> bool {
-        self.xray || self.noise.is_some_and(|x| x > 0.) || self.saturation.is_some_and(|x| x != 1.)
+        self.xray
+            || self.blur
+            || self.noise.is_some_and(|x| x > 0.)
+            || self.saturation.is_some_and(|x| x != 1.)
     }
 }
 
@@ -70,8 +75,18 @@ impl BackgroundEffect {
         Self {
             damage: ExtraDamage::new(),
             corner_radius: CornerRadius::default(),
+            blur_config: niri_config::Blur::default(),
             options: Options::default(),
         }
+    }
+
+    pub fn update_config(&mut self, config: niri_config::Blur) {
+        if self.blur_config == config {
+            return;
+        }
+
+        self.blur_config = config;
+        self.damage.damage_all();
     }
 
     pub fn update_render_elements(
@@ -80,6 +95,7 @@ impl BackgroundEffect {
         effect: niri_config::BackgroundEffect,
     ) {
         let mut options = Options {
+            blur: effect.blur == Some(true),
             xray: effect.xray == Some(true),
             noise: effect.noise,
             saturation: effect.saturation,
@@ -122,8 +138,17 @@ impl BackgroundEffect {
 
         let damage = self.damage.render(params.geometry);
 
-        let noise = self.options.noise.unwrap_or(0.) as f32;
-        let saturation = self.options.saturation.unwrap_or(1.) as f32;
+        // Use noise/saturation from options, falling back to blur defaults if blurred, and
+        // to no effect if not blurred.
+        let blur = self.options.blur && !self.blur_config.off;
+        let noise = if blur { self.blur_config.noise } else { 0. };
+        let noise = self.options.noise.unwrap_or(noise) as f32;
+        let saturation = if blur {
+            self.blur_config.saturation
+        } else {
+            1.
+        };
+        let saturation = self.options.saturation.unwrap_or(saturation) as f32;
 
         if self.options.xray {
             let Some(xray) = ctx.xray else {
@@ -131,9 +156,15 @@ impl BackgroundEffect {
             };
 
             push(damage.into());
-            xray.render(ctx, params, xray_pos, noise, saturation, &mut |elem| {
-                push(elem.into())
-            });
+            xray.render(
+                ctx,
+                params,
+                xray_pos,
+                blur,
+                noise,
+                saturation,
+                &mut |elem| push(elem.into()),
+            );
         } else {
             // Render non-xray effect.
         }
@@ -160,6 +191,7 @@ pub fn render_for_tile(
     scale: f64,
     clip_to_geometry: bool,
     surface: &WlSurface,
+    blur_config: niri_config::Blur,
     radius: CornerRadius,
     effect: niri_config::BackgroundEffect,
     xray_pos: XrayPos,
@@ -169,6 +201,7 @@ pub fn render_for_tile(
         let background_effect = SurfaceBackgroundEffect::get(states);
         let mut background_effect = background_effect.0.lock().unwrap();
 
+        background_effect.update_config(blur_config);
         background_effect.update_render_elements(radius, effect);
 
         if !background_effect.is_visible() {
