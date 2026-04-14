@@ -73,6 +73,8 @@ pub struct XrayElement {
     clip_geo_size: Vec2,
     corner_radius: CornerRadius,
     scale: f32,
+    noise: f32,
+    saturation: f32,
     bg_color: Color32F,
     program: Option<GlesTexProgram>,
 }
@@ -87,11 +89,14 @@ impl Xray {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn render(
         &self,
         ctx: RenderCtx<GlesRenderer>,
         params: RenderParams,
         xray_pos: XrayPos,
+        noise: f32,
+        saturation: f32,
         push: &mut dyn FnMut(XrayElement),
     ) {
         let program = Shaders::get(ctx.renderer).postprocess_and_clip.clone();
@@ -186,6 +191,8 @@ impl Xray {
                     clip_geo_size,
                     corner_radius,
                     scale: params.scale as f32,
+                    noise,
+                    saturation,
                     bg_color: *bg_color,
                     program: program.clone(),
                 };
@@ -232,6 +239,8 @@ impl Xray {
                 clip_geo_size,
                 corner_radius: corner_radius.scaled_by(zoom as f32),
                 scale: params.scale as f32,
+                noise,
+                saturation,
                 bg_color: self.backdrop_color,
                 program: program.clone(),
             };
@@ -241,12 +250,14 @@ impl Xray {
 }
 
 impl XrayElement {
-    fn compute_uniforms(&self) -> [Uniform<'static>; 5] {
+    fn compute_uniforms(&self) -> [Uniform<'static>; 7] {
         [
             Uniform::new("niri_scale", self.scale),
             Uniform::new("geo_size", <[f32; 2]>::from(self.clip_geo_size)),
             Uniform::new("corner_radius", <[f32; 4]>::from(self.corner_radius)),
             mat3_uniform("input_to_geo", self.input_to_clip_geo),
+            Uniform::new("noise", self.noise),
+            Uniform::new("saturation", self.saturation),
             Uniform::new("bg_color", self.bg_color.components()),
         ]
     }

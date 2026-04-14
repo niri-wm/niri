@@ -26,11 +26,13 @@ pub struct BackgroundEffect {
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Options {
     pub xray: bool,
+    pub noise: Option<f64>,
+    pub saturation: Option<f64>,
 }
 
 impl Options {
     fn is_visible(&self) -> bool {
-        self.xray
+        self.xray || self.noise.is_some_and(|x| x > 0.) || self.saturation.is_some_and(|x| x != 1.)
     }
 }
 
@@ -77,9 +79,17 @@ impl BackgroundEffect {
         corner_radius: CornerRadius,
         effect: niri_config::BackgroundEffect,
     ) {
-        let options = Options {
+        let mut options = Options {
             xray: effect.xray == Some(true),
+            noise: effect.noise,
+            saturation: effect.saturation,
         };
+
+        // If we have some background effect but xray wasn't explicitly set, default it to true
+        // since it's cheaper.
+        if options.is_visible() && effect.xray.is_none() {
+            options.xray = true;
+        }
 
         if self.options == options && self.corner_radius == corner_radius {
             return;
@@ -112,13 +122,18 @@ impl BackgroundEffect {
 
         let damage = self.damage.render(params.geometry);
 
+        let noise = self.options.noise.unwrap_or(0.) as f32;
+        let saturation = self.options.saturation.unwrap_or(1.) as f32;
+
         if self.options.xray {
             let Some(xray) = ctx.xray else {
                 return;
             };
 
             push(damage.into());
-            xray.render(ctx, params, xray_pos, &mut |elem| push(elem.into()));
+            xray.render(ctx, params, xray_pos, noise, saturation, &mut |elem| {
+                push(elem.into())
+            });
         } else {
             // Render non-xray effect.
         }

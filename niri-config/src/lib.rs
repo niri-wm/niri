@@ -1847,6 +1847,8 @@ mod tests {
                     tiled_state: None,
                     background_effect: BackgroundEffectRule {
                         xray: None,
+                        noise: None,
+                        saturation: None,
                     },
                 },
             ],
@@ -1885,6 +1887,8 @@ mod tests {
                     baba_is_float: None,
                     background_effect: BackgroundEffectRule {
                         xray: None,
+                        noise: None,
+                        saturation: None,
                     },
                 },
             ],

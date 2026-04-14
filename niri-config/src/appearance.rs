@@ -1010,6 +1010,10 @@ where
 pub struct BackgroundEffectRule {
     #[knuffel(child, unwrap(argument))]
     pub xray: Option<bool>,
+    #[knuffel(child, unwrap(argument))]
+    pub noise: Option<FloatOrInt<0, 1000>>,
+    #[knuffel(child, unwrap(argument))]
+    pub saturation: Option<FloatOrInt<0, 1000>>,
 }
 
 /// Resolved background effect rule.
@@ -1021,11 +1025,22 @@ pub struct BackgroundEffect {
     /// - `Some(false)`: no xray
     /// - `Some(true)`: xray even if no other background effect is active
     pub xray: Option<bool>,
+
+    pub noise: Option<f64>,
+    pub saturation: Option<f64>,
 }
 
 impl MergeWith<BackgroundEffectRule> for BackgroundEffect {
     fn merge_with(&mut self, part: &BackgroundEffectRule) {
         merge_clone_opt!((self, part), xray);
+
+        if let Some(x) = part.noise {
+            self.noise = Some(x.0);
+        }
+
+        if let Some(x) = part.saturation {
+            self.saturation = Some(x.0);
+        }
     }
 }
 
