@@ -233,6 +233,8 @@ impl MappedLayer {
             .render(ctx.renderer, location, &mut |elem| push(elem.into()));
 
         let geometry = Rectangle::new(location, self.block_out_buffer.size());
+        let surface_off = Point::new(0., 0.); // No geometry on layer surfaces.
+        let surface_anim_scale = Scale::from(1.);
         let radius = self.rules.geometry_corner_radius.unwrap_or_default();
         background_effect::render_for_tile(
             ctx.as_gles(),
@@ -240,9 +242,12 @@ impl MappedLayer {
             self.scale,
             false,
             surface,
+            surface_off,
+            surface_anim_scale,
             self.blur_config,
             radius,
             self.rules.background_effect,
+            should_block_out,
             xray_pos,
             &mut |elem| push(elem.into()),
         );

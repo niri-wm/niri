@@ -10,7 +10,7 @@ use smithay::backend::renderer::gles::{
 };
 use smithay::backend::renderer::utils::{CommitCounter, OpaqueRegions};
 use smithay::backend::renderer::Color32F;
-use smithay::utils::{Buffer, Logical, Physical, Point, Rectangle, Scale, Transform};
+use smithay::utils::{Buffer, Logical, Physical, Point, Rectangle, Scale, Size, Transform};
 
 use crate::backend::tty::{TtyFrame, TtyRenderer, TtyRendererError};
 use crate::render_helpers::background_effect::RenderParams;
@@ -18,6 +18,7 @@ use crate::render_helpers::effect_buffer::EffectBuffer;
 use crate::render_helpers::renderer::AsGlesFrame as _;
 use crate::render_helpers::shaders::{mat3_uniform, Shaders};
 use crate::render_helpers::{RenderCtx, RenderTarget};
+use crate::utils::region::TransformedRegion;
 
 #[derive(Debug)]
 pub struct Xray {
@@ -69,6 +70,7 @@ pub struct XrayElement {
     id: Id,
     geometry: Rectangle<f64, Logical>,
     src: Rectangle<f64, Buffer>,
+    subregion: Option<TransformedRegion>,
     input_to_clip_geo: Mat3,
     clip_geo_size: Vec2,
     corner_radius: CornerRadius,
@@ -189,6 +191,7 @@ impl Xray {
                     id: background.id().clone(),
                     geometry,
                     src,
+                    subregion: params.subregion.clone(),
                     input_to_clip_geo,
                     clip_geo_size,
                     corner_radius,
@@ -238,6 +241,7 @@ impl Xray {
                 id: backdrop.id().clone(),
                 geometry: params.geometry,
                 src,
+                subregion: params.subregion.clone(),
                 input_to_clip_geo,
                 clip_geo_size,
                 corner_radius: corner_radius.scaled_by(zoom as f32),
@@ -307,6 +311,30 @@ impl RenderElement<GlesRenderer> for XrayElement {
                 warn!("error rendering effect buffer: {err:?}");
                 return Ok(());
             }
+        };
+
+        // FIXME: avoid reallocating a fresh Vec here somehow.
+        let mut filtered_damage = Vec::new();
+        let damage = if let Some(subregion) = &self.subregion {
+            let src_to_geo = self.geometry.size / self.src.size;
+
+            // Compute crop in geometry coordinates.
+            let mut crop = src;
+            crop.loc -= self.src.loc;
+            crop = crop.upscale(src_to_geo);
+            let mut crop = crop.to_logical(1., Transform::Normal, &Size::default());
+
+            // Then convert to subregion coordinates.
+            crop.loc += self.geometry.loc;
+
+            subregion.filter_damage(crop, dst, damage, &mut filtered_damage);
+
+            if filtered_damage.is_empty() {
+                return Ok(());
+            }
+            &filtered_damage[..]
+        } else {
+            damage
         };
 
         let uniforms = self.program.is_some().then(|| self.compute_uniforms());

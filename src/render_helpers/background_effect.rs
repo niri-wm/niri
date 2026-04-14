@@ -1,15 +1,18 @@
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use niri_config::CornerRadius;
 use smithay::backend::renderer::gles::GlesRenderer;
-use smithay::utils::{Logical, Rectangle};
+use smithay::utils::{Logical, Point, Rectangle, Scale};
 use smithay::wayland::compositor::{with_states, SurfaceData};
 use wayland_server::protocol::wl_surface::WlSurface;
 
+use crate::handlers::background_effect::get_cached_blur_region;
 use crate::niri_render_elements;
 use crate::render_helpers::damage::ExtraDamage;
 use crate::render_helpers::xray::{XrayElement, XrayPos};
 use crate::render_helpers::RenderCtx;
+use crate::utils::region::TransformedRegion;
+use crate::utils::surface_geo;
 
 #[derive(Debug)]
 pub struct BackgroundEffect {
@@ -46,6 +49,10 @@ impl Options {
 pub struct RenderParams {
     /// Geometry of the background effect.
     pub geometry: Rectangle<f64, Logical>,
+    /// Effect subregion, will be clipped to `geometry`.
+    ///
+    /// `subregion.iter()` should return `geometry`-relative rectangles.
+    pub subregion: Option<TransformedRegion>,
     /// Geometry and radius for clipping in the same coordinate space as `geometry`.
     pub clip: Option<(Rectangle<f64, Logical>, CornerRadius)>,
     /// Scale to use for rounding to physical pixels.
@@ -80,6 +87,11 @@ impl BackgroundEffect {
         }
     }
 
+    /// Damage the background effect, for example when a blur subregion changes.
+    pub fn damage(&mut self) {
+        self.damage.damage_all();
+    }
+
     pub fn update_config(&mut self, config: niri_config::Blur) {
         if self.blur_config == config {
             return;
@@ -93,9 +105,17 @@ impl BackgroundEffect {
         &mut self,
         corner_radius: CornerRadius,
         effect: niri_config::BackgroundEffect,
+        has_blur_region: bool,
     ) {
+        // If the surface explicitly requests a blur region, default blur to true.
+        let blur = if has_blur_region {
+            effect.blur != Some(false)
+        } else {
+            effect.blur == Some(true)
+        };
+
         let mut options = Options {
-            blur: effect.blur == Some(true),
+            blur,
             xray: effect.xray == Some(true),
             noise: effect.noise,
             saturation: effect.saturation,
@@ -171,6 +191,62 @@ impl BackgroundEffect {
     }
 }
 
+fn render_params_for_tile(
+    geometry: Rectangle<f64, Logical>,
+    scale: f64,
+    clip_to_geometry: bool,
+    block_out: bool,
+    blur_region: Option<Arc<Vec<Rectangle<i32, Logical>>>>,
+    surface_geo: Rectangle<f64, Logical>,
+    surface_anim_scale: Scale<f64>,
+) -> Option<RenderParams> {
+    // Effects not requested by the surface itself are drawn to match the geometry.
+    let mut clip = true;
+
+    let mut effect_geometry = geometry;
+    let mut subregion = None;
+    if let Some(rects) = blur_region {
+        if rects.is_empty() {
+            // Surface has a set, but empty blur region.
+            return None;
+        } else {
+            // If the surface itself requests the effects, apply different defaults.
+            clip = clip_to_geometry;
+
+            // Use geometry-shaped blur for blocked-out windows to avoid unintentionally
+            // leaking any surface shapes. We render those windows as geometry-shaped solid
+            // rectangles anyway.
+            if block_out {
+                clip = true;
+            } else {
+                let mut surface_geo = surface_geo.upscale(surface_anim_scale);
+                surface_geo.loc += geometry.loc;
+
+                subregion = Some(TransformedRegion {
+                    rects,
+                    scale: surface_anim_scale,
+                    offset: surface_geo.loc,
+                });
+
+                surface_geo = surface_geo
+                    .to_physical_precise_round(scale)
+                    .to_logical(scale);
+                effect_geometry = surface_geo;
+            }
+        }
+    }
+
+    // This corner radius is reset to self.corner_radius in render().
+    let clip = clip.then_some((geometry, CornerRadius::default()));
+
+    Some(RenderParams {
+        geometry: effect_geometry,
+        subregion,
+        clip,
+        scale,
+    })
+}
+
 /// Per-surface background effect stored in its data map.
 struct SurfaceBackgroundEffect(Mutex<BackgroundEffect>);
 
@@ -179,6 +255,12 @@ impl SurfaceBackgroundEffect {
         states
             .data_map
             .get_or_insert(|| SurfaceBackgroundEffect(Mutex::new(BackgroundEffect::new())))
+    }
+}
+
+pub fn damage_surface(states: &SurfaceData) {
+    if let Some(effect) = states.data_map.get::<SurfaceBackgroundEffect>() {
+        effect.0.lock().unwrap().damage();
     }
 }
 
@@ -191,9 +273,12 @@ pub fn render_for_tile(
     scale: f64,
     clip_to_geometry: bool,
     surface: &WlSurface,
+    surface_off: Point<f64, Logical>,
+    surface_anim_scale: Scale<f64>,
     blur_config: niri_config::Blur,
     radius: CornerRadius,
     effect: niri_config::BackgroundEffect,
+    should_block_out: bool,
     xray_pos: XrayPos,
     push: &mut dyn FnMut(BackgroundEffectElement),
 ) {
@@ -201,19 +286,29 @@ pub fn render_for_tile(
         let background_effect = SurfaceBackgroundEffect::get(states);
         let mut background_effect = background_effect.0.lock().unwrap();
 
+        let blur_region = get_cached_blur_region(states);
+        let has_blur_region = blur_region.as_ref().is_some_and(|r| !r.is_empty());
+
         background_effect.update_config(blur_config);
-        background_effect.update_render_elements(radius, effect);
+        background_effect.update_render_elements(radius, effect, has_blur_region);
 
         if !background_effect.is_visible() {
             return;
         }
 
-        // Effects not requested by the surface itself are drawn to match the geometry.
-        let _ = clip_to_geometry;
-        let params = RenderParams {
+        let mut surface_geo = surface_geo(states).unwrap_or_default().to_f64();
+        surface_geo.loc += surface_off;
+
+        let Some(params) = render_params_for_tile(
             geometry,
-            clip: Some((geometry, CornerRadius::default())),
             scale,
+            clip_to_geometry,
+            should_block_out,
+            blur_region,
+            surface_geo,
+            surface_anim_scale,
+        ) else {
+            return;
         };
 
         let xray_pos = xray_pos.offset(params.geometry.loc - geometry.loc);

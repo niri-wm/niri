@@ -1079,7 +1079,8 @@ pub struct BackgroundEffect {
 
     /// Whether to blur the background.
     ///
-    /// - `None`: no blur
+    /// - `None`: blur when the window/layer requests it (e.g. through ext-background-effect
+    ///   protocol)
     /// - `Some(false)`: never blur
     /// - `Some(true)`: always blur
     pub blur: Option<bool>,

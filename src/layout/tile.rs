@@ -1282,11 +1282,13 @@ impl<W: LayoutElement> Tile<W> {
                 .render(ctx.renderer, location, &mut |elem| push(elem.into()));
         }
 
+        let surface_anim_scale = animated_window_size / window_size;
         self.window.render_background_effect(
             ctx.as_gles(),
             area,
             self.scale,
             clip_to_geometry,
+            surface_anim_scale,
             radius,
             xray_pos,
             &mut |elem| push(elem.into()),

@@ -203,6 +203,7 @@ pub trait LayoutElement {
         _geometry: Rectangle<f64, Logical>,
         _scale: f64,
         _clip_to_geometry: bool,
+        _surface_anim_scale: Scale<f64>,
         _radius: CornerRadius,
         _xray_pos: XrayPos,
         _push: &mut dyn FnMut(BackgroundEffectElement),

@@ -1,7 +1,7 @@
 use std::cell::{Cell, Ref, RefCell};
 use std::time::Duration;
 
-use niri_config::{Color, CornerRadius, GradientInterpolation, WindowRule};
+use niri_config::{Color, Config, CornerRadius, GradientInterpolation, WindowRule};
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::element::Kind;
 use smithay::backend::renderer::gles::GlesRenderer;
@@ -689,19 +689,24 @@ impl LayoutElement for Mapped {
         geometry: Rectangle<f64, Logical>,
         scale: f64,
         clip_to_geometry: bool,
+        surface_anim_scale: Scale<f64>,
         radius: CornerRadius,
         xray_pos: XrayPos,
         push: &mut dyn FnMut(BackgroundEffectElement),
     ) {
+        let should_block_out = ctx.target.should_block_out(self.rules.block_out_from);
         background_effect::render_for_tile(
             ctx,
             geometry,
             scale,
             clip_to_geometry,
             self.toplevel().wl_surface(),
+            self.buf_loc().to_f64(),
+            surface_anim_scale,
             self.blur_config,
             radius,
             self.rules.background_effect,
+            should_block_out,
             xray_pos,
             push,
         );
