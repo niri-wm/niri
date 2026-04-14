@@ -28,7 +28,7 @@
 //! Mod+click behavior when fingers land before the gesture threshold.
 
 use std::cmp::min;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use smithay::backend::input::{Event as _, TouchEvent};
 use smithay::input::touch::{
@@ -51,7 +51,7 @@ use niri_config::Action;
 use niri_ipc::GestureDelta;
 
 use crate::layout::LayoutElement;
-use crate::niri::{ActiveTouchBind, PointerVisibility, State, TouchEdgeSwipeState};
+use crate::niri::{ActiveTouchBind, PointerVisibility, State, TapCandidate, TouchEdgeSwipeState};
 use crate::utils::with_toplevel_role;
 
 /// Default sensitivity for touchscreen gestures (both edge and multi-finger).
@@ -130,6 +130,34 @@ impl State {
                 "TOUCH-DBG FINGER-LAND fingers={} reset=recognition",
                 self.niri.touch_gesture_points.len(),
             );
+
+            // Tap candidate tracking: initialize when finger count reaches 3,
+            // update peak_fingers when more fingers land. Runs in parallel
+            // with swipe/pinch/rotate recognition. Passthrough windows skip
+            // tap detection (same as swipe).
+            let finger_count = self.niri.touch_gesture_points.len();
+            if finger_count >= 3 && !self.niri.touchscreen_gesture_passthrough {
+                if let Some(ref mut tap) = self.niri.touch_tap_candidate {
+                    // More fingers landed — update peak and record new position.
+                    if tap.alive {
+                        tap.peak_fingers = tap.peak_fingers.max(finger_count as u8);
+                        tap.initial_positions.insert(Some(slot), pos);
+                    }
+                } else {
+                    // First time reaching 3+ fingers — start tap candidate.
+                    self.niri.touch_tap_candidate = Some(TapCandidate {
+                        start_time: Instant::now(),
+                        peak_fingers: finger_count as u8,
+                        initial_positions: self.niri.touch_gesture_points.clone(),
+                        alive: true,
+                    });
+                    tracing::debug!(
+                        target: "niri::input::touch_gesture",
+                        "TOUCH-DBG TAP started fingers={}",
+                        finger_count,
+                    );
+                }
+            }
         }
 
         // First finger: check if it's in a screen edge zone for edge swipe detection.
@@ -469,6 +497,69 @@ impl State {
 
         // End gesture when all fingers are lifted.
         if self.niri.touch_gesture_points.is_empty() {
+            // Tap detection: if the candidate is still alive and within
+            // the timeout, fire the TouchTap trigger.
+            if let Some(tap) = self.niri.touch_tap_candidate.take() {
+                if tap.alive && !self.niri.touch_gesture_locked {
+                    let elapsed_ms = tap.start_time.elapsed().as_millis() as f64;
+                    let timeout = {
+                        let config = self.niri.config.borrow();
+                        config.input.touchscreen.tap_timeout_ms()
+                    };
+                    if elapsed_ms <= timeout {
+                        let trigger = Trigger::TouchTap {
+                            fingers: tap.peak_fingers,
+                        };
+                        let bind_info = {
+                            let config = self.niri.config.borrow();
+                            let mod_key = self.backend.mod_key(&config);
+                            let mods = self.niri.seat.get_keyboard().unwrap()
+                                .modifier_state();
+                            find_configured_bind(
+                                config.binds.0.iter(),
+                                mod_key,
+                                trigger,
+                                mods,
+                            )
+                        };
+                        let bind_matched = bind_info.is_some();
+                        tracing::debug!(
+                            target: "niri::input::touch_gesture",
+                            "TOUCH-DBG TAP fired fingers={} bind={} elapsed={:.0}ms",
+                            tap.peak_fingers,
+                            if bind_matched { "yes" } else { "no" },
+                            elapsed_ms,
+                        );
+                        if let Some(bind) = bind_info {
+                            let tag = bind.tag.clone();
+                            let trigger_name = format!(
+                                "TouchTap fingers={}", tap.peak_fingers,
+                            );
+                            // Emit GestureBegin + immediate GestureEnd for IPC.
+                            self.ipc_gesture_begin(
+                                tag.clone().unwrap_or_default(),
+                                trigger_name,
+                                tap.peak_fingers,
+                                false,
+                            );
+                            if !matches!(bind.action, Action::Noop) {
+                                self.do_action(bind.action, false);
+                            }
+                            self.ipc_gesture_end(
+                                tag.unwrap_or_default(),
+                                true,
+                            );
+                        }
+                    } else {
+                        tracing::debug!(
+                            target: "niri::input::touch_gesture",
+                            "TOUCH-DBG TAP killed reason=timeout elapsed={:.0}ms",
+                            elapsed_ms,
+                        );
+                    }
+                }
+            }
+
             self.niri.touch_gesture_cumulative = None;
             self.niri.touch_gesture_locked = false;
             self.niri.touchscreen_gesture_passthrough = false;
@@ -731,6 +822,33 @@ impl State {
                         }
                     }
                 } else if let Some((cx, cy)) = &mut self.niri.touch_gesture_cumulative {
+                    // Tap wobble check: compute per-finger displacement from
+                    // initial landing positions. Kill the tap candidate if any
+                    // finger exceeds the wobble threshold.
+                    if let Some(ref mut tap) = self.niri.touch_tap_candidate {
+                        if tap.alive {
+                            let wobble_threshold = {
+                                let config = self.niri.config.borrow();
+                                config.input.touchscreen.tap_wobble_threshold()
+                            };
+                            let wobble_sq = wobble_threshold * wobble_threshold;
+                            for (slot, current_pos) in &self.niri.touch_gesture_points {
+                                if let Some(initial) = tap.initial_positions.get(slot) {
+                                    let dx = current_pos.x - initial.x;
+                                    let dy = current_pos.y - initial.y;
+                                    if dx * dx + dy * dy > wobble_sq {
+                                        tap.alive = false;
+                                        tracing::debug!(
+                                            target: "niri::input::touch_gesture",
+                                            "TOUCH-DBG TAP killed reason=wobble",
+                                        );
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     // Recognition phase: accumulate raw deltas.
                     *cx += delta_x;
                     *cy += delta_y;
@@ -917,6 +1035,18 @@ impl State {
                     {
                         // Gesture recognized — clear cumulative.
                         self.niri.touch_gesture_cumulative = None;
+
+                        // Kill tap candidate — recognizer locked, so this is
+                        // a motion gesture, not a tap.
+                        if let Some(ref mut tap) = self.niri.touch_tap_candidate {
+                            if tap.alive {
+                                tap.alive = false;
+                                tracing::debug!(
+                                    target: "niri::input::touch_gesture",
+                                    "TOUCH-DBG TAP killed reason=lock",
+                                );
+                            }
+                        }
 
                         // Discoverability log: surface the app-id of whatever
                         // window was under the touch at lock time, so users
@@ -1180,6 +1310,8 @@ impl State {
         self.niri.touch_gesture_initial_spread = None;
         self.niri.touch_gesture_cumulative_rotation = 0.0;
         self.niri.touch_gesture_previous_angles.clear();
+        self.niri.touch_tap_candidate = None;
+        self.niri.touchscreen_gesture_passthrough = false;
 
         // Cancel any ongoing gesture animations.
         self.niri.layout.workspace_switch_gesture_end(Some(false));
@@ -1246,6 +1378,7 @@ fn touch_gesture_to_trigger(gesture: TouchGestureType, finger_count: u8) -> Opti
             fingers,
             direction: RotateDirection::Ccw,
         }),
+        Tap => Some(Trigger::TouchTap { fingers }),
         EdgeSwipeLeft => Some(Trigger::TouchEdge {
             edge: ScreenEdge::Left,
             zone: None,
@@ -1897,6 +2030,9 @@ pub(crate) fn trigger_to_ipc_name(trigger: Trigger) -> String {
                 "TouchRotate fingers={fingers} direction=\"{}\"",
                 rotate_dir_name(direction)
             )
+        }
+        Trigger::TouchTap { fingers } => {
+            format!("TouchTap fingers={fingers}")
         }
         Trigger::TouchEdge { edge, zone } => {
             let edge_str = edge.as_kdl_name();
