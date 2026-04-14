@@ -2258,6 +2258,103 @@ impl State {
                     self.niri.queue_redraw_all();
                 }
             }
+            Action::OverviewZoomCycle(reverse) => {
+                let config = self.niri.config.borrow();
+                let presets = match &config.overview.zoom_presets {
+                    Some(p) if !p.is_empty() => p.clone(),
+                    _ => return,
+                };
+                let anim_config = config.animations.overview_zoom.0;
+                drop(config);
+
+                if !self.niri.layout.is_overview_open() {
+                    // Auto-open overview at first preset.
+                    for monitor in self.niri.layout.monitors_mut() {
+                        monitor.set_zoom_target_no_anim(presets[0]);
+                        monitor.set_zoom_preset_idx(0);
+                    }
+                    self.niri.layout.open_overview();
+                } else {
+                    for monitor in self.niri.layout.monitors_mut() {
+                        monitor.cycle_overview_zoom(&presets, reverse, anim_config);
+                    }
+                }
+
+                self.niri.queue_redraw_all();
+            }
+            Action::OverviewZoomIn => {
+                if !self.niri.layout.is_overview_open() {
+                    return;
+                }
+
+                let config = self.niri.config.borrow();
+                let presets = match &config.overview.zoom_presets {
+                    Some(p) if !p.is_empty() => p.clone(),
+                    _ => return,
+                };
+                let anim_config = config.animations.overview_zoom.0;
+                drop(config);
+
+                // Find the highest (max) preset value.
+                let max_preset = presets
+                    .iter()
+                    .copied()
+                    .max_by(|a, b| a.partial_cmp(b).unwrap())
+                    .unwrap();
+
+                // Check if all monitors are already at or above the highest preset.
+                let all_at_max = self
+                    .niri
+                    .layout
+                    .monitors()
+                    .all(|m| m.overview_zoom_target() >= max_preset - 0.0001);
+
+                if all_at_max {
+                    // Auto-close overview, preserving zoom so the close
+                    // animation transitions smoothly from the current level.
+                    self.niri.layout.close_overview_preserving_zoom();
+                } else {
+                    for monitor in self.niri.layout.monitors_mut() {
+                        monitor.overview_zoom_in(&presets, anim_config);
+                    }
+                }
+
+                self.niri.queue_redraw_all();
+            }
+            Action::OverviewZoomOut => {
+                let config = self.niri.config.borrow();
+                let presets = match &config.overview.zoom_presets {
+                    Some(p) if !p.is_empty() => p.clone(),
+                    _ => return,
+                };
+                let anim_config = config.animations.overview_zoom.0;
+                drop(config);
+
+                if !self.niri.layout.is_overview_open() {
+                    // Auto-open overview at the highest preset (least zoomed out).
+                    let max_preset = presets
+                        .iter()
+                        .copied()
+                        .max_by(|a, b| a.partial_cmp(b).unwrap())
+                        .unwrap();
+                    let max_idx = presets
+                        .iter()
+                        .position(|&p| (p - max_preset).abs() < 0.0001)
+                        .unwrap_or(0);
+
+                    for monitor in self.niri.layout.monitors_mut() {
+                        monitor.set_zoom_target_no_anim(max_preset);
+                        monitor.set_zoom_preset_idx(max_idx);
+                    }
+                    self.niri.layout.open_overview();
+                } else {
+                    for monitor in self.niri.layout.monitors_mut() {
+                        monitor.overview_zoom_out(&presets, anim_config);
+                    }
+                }
+
+                self.niri.queue_redraw_all();
+            }
             Action::ToggleWindowUrgent(id) => {
                 let window = self
                     .niri
