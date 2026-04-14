@@ -1818,6 +1818,14 @@ impl<W: LayoutElement> Workspace<W> {
         self.windows().any(|win| win.is_urgent())
     }
 
+    pub fn pinned_windows(&self) -> Vec<W::Id> {
+        self.floating
+            .tiles()
+            .filter(|t| t.window().is_pinned())
+            .map(|t| t.window().id().clone())
+            .collect()
+    }
+
     pub fn activate_window(&mut self, window: &W::Id) -> bool {
         if self.floating.activate_window(window) {
             self.floating_is_active = FloatingActive::Yes;
