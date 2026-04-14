@@ -214,7 +214,7 @@ Taps are always **discrete** (fire-and-forget) — they cannot drive continuous 
 Tuning parameters in `input { touchscreen { gestures { } } }`:
 
 - `tap-wobble-threshold` — maximum per-finger displacement (in pixels) before the tap candidate is killed. Default: 15. Increase if taps are too hard to trigger on your device; decrease if taps fire when you intended a swipe.
-- `tap-timeout-ms` — maximum duration (in milliseconds) from the third finger landing to all fingers lifting. Default: 250. Acts as a tap-vs-hold safety cap.
+- `tap-timeout-ms` — maximum duration (in milliseconds) from the third finger landing to all fingers lifting. Default: 500. Acts as a tap-vs-hold safety cap.
 
 The wobble threshold (default 15 px) sits well below the swipe trigger distance (default 100 px), creating a dead zone between 15–100 px where neither tap nor swipe fires — this handles ambiguous gestures correctly.
 
@@ -245,7 +245,7 @@ Tap-hold-drag can drive **continuous** actions — when bound to a continuous-ca
 
 Tuning parameters in `input { touchscreen { gestures { } } }`:
 
-- `tap-hold-trigger-delay-ms` — minimum hold duration (in milliseconds) before a wobble-kill can activate a tap-hold-drag bind. If fingers move before this delay elapses, normal swipe/pinch/rotate recognition continues instead. Default: 150. Increase if fast swipes accidentally trigger hold-drag; decrease if hold-drag feels sluggish to activate.
+- `tap-hold-trigger-delay-ms` — minimum hold duration (in milliseconds) before a wobble-kill can activate a tap-hold-drag bind. If fingers move before this delay elapses, normal swipe/pinch/rotate recognition continues instead. Default: 200. Increase if fast swipes accidentally trigger hold-drag; decrease if hold-drag feels sluggish to activate.
 
 The hold detection also reuses the tap candidate's wobble threshold (`tap-wobble-threshold`, default 15 px). Fingers must stay within this threshold during the hold phase.
 
