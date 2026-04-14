@@ -1006,6 +1006,29 @@ where
     }
 }
 
+#[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq)]
+pub struct BackgroundEffectRule {
+    #[knuffel(child, unwrap(argument))]
+    pub xray: Option<bool>,
+}
+
+/// Resolved background effect rule.
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
+pub struct BackgroundEffect {
+    /// Whether to render with xray effect (see through).
+    ///
+    /// - `None`: xray if any background effect is active
+    /// - `Some(false)`: no xray
+    /// - `Some(true)`: xray even if no other background effect is active
+    pub xray: Option<bool>,
+}
+
+impl MergeWith<BackgroundEffectRule> for BackgroundEffect {
+    fn merge_with(&mut self, part: &BackgroundEffectRule) {
+        merge_clone_opt!((self, part), xray);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use insta::{assert_debug_snapshot, assert_snapshot};

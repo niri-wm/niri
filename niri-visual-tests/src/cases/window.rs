@@ -56,6 +56,7 @@ impl TestCase for Window {
         let ctx = RenderCtx {
             renderer,
             target: RenderTarget::Output,
+            xray: None,
         };
         self.window
             .render_normal(ctx, location, Scale::from(1.), 1., &mut |elem| {

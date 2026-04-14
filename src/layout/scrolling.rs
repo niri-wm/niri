@@ -21,6 +21,7 @@ use crate::input::swipe_tracker::SwipeTracker;
 use crate::layout::SizingMode;
 use crate::niri_render_elements;
 use crate::render_helpers::renderer::NiriRenderer;
+use crate::render_helpers::xray::XrayPos;
 use crate::render_helpers::RenderCtx;
 use crate::utils::transaction::{Transaction, TransactionBlocker};
 use crate::utils::ResizeEdge;
@@ -2900,6 +2901,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     pub fn render<R: NiriRenderer>(
         &self,
         mut ctx: RenderCtx<R>,
+        xray_pos: XrayPos,
         focus_ring: bool,
         push: &mut dyn FnMut(ScrollingSpaceRenderElement<R>),
     ) {
@@ -2954,7 +2956,10 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                     continue;
                 }
 
-                tile.render(ctx.r(), tile_pos, focus_ring, &mut |elem| push(elem.into()));
+                let xray_pos = xray_pos.offset(tile_pos);
+                tile.render(ctx.r(), tile_pos, xray_pos, focus_ring, &mut |elem| {
+                    push(elem.into())
+                });
             }
         }
     }

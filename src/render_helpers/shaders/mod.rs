@@ -13,6 +13,7 @@ pub struct Shaders {
     pub border: Option<ShaderProgram>,
     pub shadow: Option<ShaderProgram>,
     pub clipped_surface: Option<GlesTexProgram>,
+    pub postprocess_and_clip: Option<GlesTexProgram>,
     pub resize: Option<ShaderProgram>,
     pub gradient_fade: Option<GlesTexProgram>,
     pub custom_resize: RefCell<Option<ShaderProgram>>,
@@ -86,7 +87,8 @@ impl Shaders {
             .compile_custom_texture_shader(
                 concat!(
                     include_str!("clipped_surface.frag"),
-                    include_str!("rounding_alpha.frag")
+                    include_str!("rounding_alpha.frag"),
+                    "\nvec4 postprocess(vec4 color) { return color; }",
                 ),
                 &[
                     UniformName::new("niri_scale", UniformType::_1f),
@@ -97,6 +99,26 @@ impl Shaders {
             )
             .map_err(|err| {
                 warn!("error compiling clipped surface shader: {err:?}");
+            })
+            .ok();
+
+        let postprocess_and_clip = renderer
+            .compile_custom_texture_shader(
+                concat!(
+                    include_str!("clipped_surface.frag"),
+                    include_str!("rounding_alpha.frag"),
+                    include_str!("postprocess.frag"),
+                ),
+                &[
+                    UniformName::new("niri_scale", UniformType::_1f),
+                    UniformName::new("geo_size", UniformType::_2f),
+                    UniformName::new("corner_radius", UniformType::_4f),
+                    UniformName::new("input_to_geo", UniformType::Matrix3x3),
+                    UniformName::new("bg_color", UniformType::_4f),
+                ],
+            )
+            .map_err(|err| {
+                warn!("error compiling postprocess_and_clip shader: {err:?}");
             })
             .ok();
 
@@ -120,6 +142,7 @@ impl Shaders {
             border,
             shadow,
             clipped_surface,
+            postprocess_and_clip,
             resize,
             gradient_fade,
             custom_resize: RefCell::new(None),

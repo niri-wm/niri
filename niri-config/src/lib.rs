@@ -1845,6 +1845,9 @@ mod tests {
                     ),
                     scroll_factor: None,
                     tiled_state: None,
+                    background_effect: BackgroundEffectRule {
+                        xray: None,
+                    },
                 },
             ],
             layer_rules: [
@@ -1880,6 +1883,9 @@ mod tests {
                     geometry_corner_radius: None,
                     place_within_backdrop: None,
                     baba_is_float: None,
+                    background_effect: BackgroundEffectRule {
+                        xray: None,
+                    },
                 },
             ],
             binds: Binds(

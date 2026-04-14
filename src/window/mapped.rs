@@ -28,6 +28,7 @@ use crate::layout::{
     LayoutElementRenderSnapshot, SizingMode,
 };
 use crate::niri_render_elements;
+use crate::render_helpers::background_effect::BackgroundEffectElement;
 use crate::render_helpers::border::BorderRenderElement;
 use crate::render_helpers::offscreen::OffscreenData;
 use crate::render_helpers::renderer::NiriRenderer;
@@ -36,7 +37,8 @@ use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderEleme
 use crate::render_helpers::surface::{
     push_elements_from_surface_tree, render_snapshot_from_surface_tree,
 };
-use crate::render_helpers::{BakedBuffer, RenderCtx, RenderTarget};
+use crate::render_helpers::xray::XrayPos;
+use crate::render_helpers::{background_effect, BakedBuffer, RenderCtx, RenderTarget};
 use crate::utils::id::IdCounter;
 use crate::utils::transaction::Transaction;
 use crate::utils::{
@@ -252,7 +254,6 @@ impl Mapped {
     pub fn new(window: Window, rules: ResolvedWindowRules, hook: HookId) -> Self {
         let surface = window.wl_surface().expect("no X11 support");
         let credentials = get_credentials_for_surface(&surface);
-
         let mut rv = Self {
             window,
             id: MappedId::next(),
@@ -407,10 +408,12 @@ impl Mapped {
 
         RenderSnapshot {
             contents,
+            contents_with_blocked_out_bg: None,
             blocked_out_contents,
             block_out_from: self.rules().block_out_from,
             size,
             texture: Default::default(),
+            texture_with_blocked_out_bg: Default::default(),
             blocked_out_texture: Default::default(),
         }
     }
@@ -523,6 +526,7 @@ impl Mapped {
             RenderCtx {
                 renderer,
                 target: RenderTarget::Screencast,
+                xray: None,
             },
             location,
             scale,
@@ -669,6 +673,29 @@ impl LayoutElement for Mapped {
                 &mut |elem| push(elem.into()),
             );
         }
+    }
+
+    fn render_background_effect(
+        &self,
+        ctx: RenderCtx<GlesRenderer>,
+        geometry: Rectangle<f64, Logical>,
+        scale: f64,
+        clip_to_geometry: bool,
+        radius: CornerRadius,
+        xray_pos: XrayPos,
+        push: &mut dyn FnMut(BackgroundEffectElement),
+    ) {
+        background_effect::render_for_tile(
+            ctx,
+            geometry,
+            scale,
+            clip_to_geometry,
+            self.toplevel().wl_surface(),
+            radius,
+            self.rules.background_effect,
+            xray_pos,
+            push,
+        );
     }
 
     fn request_size(

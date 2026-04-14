@@ -18,6 +18,7 @@ use super::{
 use crate::animation::{Animation, Clock};
 use crate::niri_render_elements;
 use crate::render_helpers::renderer::NiriRenderer;
+use crate::render_helpers::xray::XrayPos;
 use crate::render_helpers::RenderCtx;
 use crate::utils::transaction::TransactionBlocker;
 use crate::utils::{
@@ -1056,6 +1057,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
     pub fn render<R: NiriRenderer>(
         &self,
         mut ctx: RenderCtx<R>,
+        xray_pos: XrayPos,
         view_rect: Rectangle<f64, Logical>,
         focus_ring: bool,
         push: &mut dyn FnMut(FloatingSpaceRenderElement<R>),
@@ -1075,7 +1077,10 @@ impl<W: LayoutElement> FloatingSpace<W> {
             // For the active tile, draw the focus ring.
             let focus_ring = focus_ring && Some(tile.window().id()) == active.as_ref();
 
-            tile.render(ctx.r(), tile_pos, focus_ring, &mut |elem| push(elem.into()));
+            let xray_pos = xray_pos.offset(tile_pos);
+            tile.render(ctx.r(), tile_pos, xray_pos, focus_ring, &mut |elem| {
+                push(elem.into())
+            });
         }
     }
 
