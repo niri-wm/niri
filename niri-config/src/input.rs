@@ -416,12 +416,12 @@ impl Touchscreen {
     }
 
     /// Width (in pixels) of the screen-edge start zone within which a
-    /// touch must begin to count as a `TouchEdge`. Default 30.
+    /// touch must begin to count as a `TouchEdge`. Default 12.
     pub fn edge_start_distance(&self) -> f64 {
         self.gestures
             .as_ref()
             .and_then(|g| g.edge_start_distance)
-            .unwrap_or(30.0)
+            .unwrap_or(12.0)
     }
 
     /// Pinch commit gate: `|spread_change|` must exceed this many pixels
@@ -540,22 +540,22 @@ impl Touchscreen {
             .unwrap_or(15.0)
     }
 
-    /// Maximum tap duration in milliseconds. Default 250.
+    /// Maximum tap duration in milliseconds. Default 500.
     pub fn tap_timeout_ms(&self) -> f64 {
         self.gestures
             .as_ref()
             .and_then(|g| g.tap_timeout_ms)
-            .unwrap_or(250.0)
+            .unwrap_or(500.0)
     }
 
     /// Minimum hold duration (ms) before a wobble-kill can activate a
     /// TouchTapHoldDrag bind. Prevents fast swipes from accidentally
-    /// triggering hold-drag. Default 150.
+    /// triggering hold-drag. Default 200.
     pub fn tap_hold_trigger_delay_ms(&self) -> f64 {
         self.gestures
             .as_ref()
             .and_then(|g| g.tap_hold_trigger_delay_ms)
-            .unwrap_or(150.0)
+            .unwrap_or(200.0)
     }
 
 }
@@ -625,7 +625,7 @@ pub struct TouchscreenGesturesConfig {
     /// Width (in pixels) of the screen-edge start zone. A touch must
     /// *begin* within this distance from an edge for it to count as a
     /// `TouchEdge edge="..."` gesture; touches starting farther in are
-    /// treated as regular swipes. Default: 30.0.
+    /// treated as regular swipes. Default: 12.0.
     #[knuffel(child, unwrap(argument))]
     pub edge_start_distance: Option<f64>,
     /// Pinch commit gate: pixels of `|spread_change|` required before a
@@ -696,14 +696,14 @@ pub struct TouchscreenGesturesConfig {
     pub tap_wobble_threshold: Option<f64>,
     /// Maximum duration (in milliseconds) from the third finger landing
     /// to all fingers lifting for a tap to fire. Taps slower than this
-    /// are discarded — acts as a tap-vs-hold safety cap. Default: 250.
+    /// are discarded — acts as a tap-vs-hold safety cap. Default: 500.
     #[knuffel(child, unwrap(argument))]
     pub tap_timeout_ms: Option<f64>,
     /// Minimum hold duration (in milliseconds) before a wobble-kill can
     /// activate a `TouchTapHoldDrag` bind. If fingers move before this
     /// delay elapses, normal swipe/pinch/rotate recognition continues
     /// instead. Prevents fast swipes from accidentally triggering
-    /// hold-drag. Default: 150.
+    /// hold-drag. Default: 200.
     #[knuffel(child, unwrap(argument))]
     pub tap_hold_trigger_delay_ms: Option<f64>,
 }
