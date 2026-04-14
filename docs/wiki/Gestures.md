@@ -85,7 +85,7 @@ Open and close the overview with a four-finger vertical swipe (default bind).
 
 ### Touchscreen
 
-<sup>Since: next</sup> Touchscreen gestures are configured as binds in the main `binds {}` block using four parameterized node families — `TouchSwipe`, `TouchPinch`, `TouchRotate`, and `TouchEdge` — with KDL properties for finger count and direction. The `fingers=` property accepts any value in `3..=10`, so arbitrary finger counts are supported without an enum change.
+<sup>Since: next</sup> Touchscreen gestures are configured as binds in the main `binds {}` block using five parameterized node families — `TouchSwipe`, `TouchPinch`, `TouchRotate`, `TouchTap`, and `TouchEdge` — with KDL properties for finger count and direction. The `fingers=` property accepts any value in `3..=10`, so arbitrary finger counts are supported without an enum change.
 
 #### Swipe Gestures
 
@@ -145,6 +145,32 @@ Rotation gestures are **continuous** in the same sense as pinch: binding them to
 Pinch gestures are **continuous**: when bound to a continuous-capable action like `open-overview`, `close-overview`, `toggle-overview`, `focus-workspace-*`, `focus-column-*`, or `noop`, the animation tracks finger motion frame-by-frame (pinch-in smoothly opens the overview, reversing the pinch smoothly closes it again). Binding a pinch to a non-continuous action like `spawn` or `close-window` still fires the action once on recognition, as before.
 
 The animation scale for pinch is controlled by `pinch-sensitivity`, not by the bind's `sensitivity=` property — pinch has its own dedicated knob because raw spread-delta pixels need a very different scaling from linear swipe distances. Tune `pinch-sensitivity` in the `touchscreen { gestures { } }` block if pinch-to-overview feels too fast or too slow.
+
+#### Tap Gestures
+
+<sup>Since: next</sup>
+
+Stationary N-finger taps — all fingers land and lift with minimal motion. Tap detection runs in parallel with swipe/pinch/rotate recognition using a spatial dead zone, matching the approach used by Android, iOS, and libinput. If any finger drifts beyond the wobble threshold or the swipe/pinch/rotate recognizer locks first, the tap candidate is killed.
+
+```kdl
+binds {
+    TouchTap fingers=3 { screenshot; }
+    TouchTap fingers=4 { spawn "notify-send" "4-finger tap"; }
+    TouchTap fingers=5 { close-window; }
+}
+```
+
+- `fingers=` — integer in `3..=10`. Required.
+- No `direction=` — taps are omnidirectional. Including `direction=` is an error.
+
+Taps are always **discrete** (fire-and-forget) — they cannot drive continuous animations.
+
+Tuning parameters in `input { touchscreen { gestures { } } }`:
+
+- `tap-wobble-threshold` — maximum per-finger displacement (in pixels) before the tap candidate is killed. Default: 15. Increase if taps are too hard to trigger on your device; decrease if taps fire when you intended a swipe.
+- `tap-timeout-ms` — maximum duration (in milliseconds) from the third finger landing to all fingers lifting. Default: 250. Acts as a tap-vs-hold safety cap.
+
+The wobble threshold (default 15 px) sits well below the swipe trigger distance (default 100 px), creating a dead zone between 15–100 px where neither tap nor swipe fires — this handles ambiguous gestures correctly.
 
 #### Edge Swipes
 

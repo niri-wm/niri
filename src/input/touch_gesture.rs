@@ -563,6 +563,9 @@ impl State {
             self.niri.touch_gesture_cumulative = None;
             self.niri.touch_gesture_locked = false;
             self.niri.touchscreen_gesture_passthrough = false;
+            self.niri.touch_frame_dirty = false;
+            self.niri.touch_frame_delta = (0., 0.);
+            self.niri.touch_frame_edge_delta = (0., 0.);
             // Take the active bind to get the tag before clearing.
             // We track `had_active` separately so we can emit GestureEnd
             // even for untagged binds (debug tools rely on it).
@@ -638,602 +641,73 @@ impl State {
             // Update stored position.
             self.niri.touch_gesture_points.insert(Some(slot), pos);
 
-            // Handle edge swipe gesture (takes priority over multi-finger gestures).
-            // Extract state to avoid borrow conflicts with self.
-            enum EdgeAction {
-                None,
-                PendingAccumulate {
-                    edge: ScreenEdge,
-                    zone: EdgeZone,
-                    zoned: bool,
-                    cx: f64,
-                    cy: f64,
-                    edge_slot: Option<smithay::backend::input::TouchSlot>,
-                },
-                ActiveFeed {
-                    kind: ContinuousGestureKind,
-                    sensitivity: f64,
-                    natural: bool,
-                    tag: Option<String>,
-                },
-            }
-
-            let edge_action = match &mut self.niri.touch_edge_swipe {
-                Some(TouchEdgeSwipeState::Pending {
-                    edge,
-                    zone,
-                    zoned,
-                    cumulative,
-                    slot: edge_slot,
-                }) if Some(slot) == *edge_slot => {
-                    cumulative.0 += delta_x;
-                    cumulative.1 += delta_y;
-                    EdgeAction::PendingAccumulate {
-                        edge: *edge,
-                        zone: *zone,
-                        zoned: *zoned,
-                        cx: cumulative.0,
-                        cy: cumulative.1,
-                        edge_slot: *edge_slot,
+            // Handle edge swipe gesture: accumulate deltas per-slot,
+            // defer threshold check and feed to on_touch_frame.
+            if let Some(ref mut state) = self.niri.touch_edge_swipe {
+                match state {
+                    TouchEdgeSwipeState::Pending {
+                        cumulative,
+                        slot: edge_slot,
+                        ..
+                    } if Some(slot) == *edge_slot => {
+                        cumulative.0 += delta_x;
+                        cumulative.1 += delta_y;
                     }
-                }
-                Some(TouchEdgeSwipeState::Active {
-                    kind, sensitivity, natural_scroll, tag, ..
-                }) => EdgeAction::ActiveFeed {
-                    kind: *kind,
-                    sensitivity: *sensitivity,
-                    natural: *natural_scroll,
-                    tag: tag.clone(),
-                },
-                _ => EdgeAction::None,
-            };
-
-            match edge_action {
-                EdgeAction::PendingAccumulate {
-                    edge, zone, zoned, cx, cy, edge_slot,
-                } => {
-                    let threshold = {
-                        let config = self.niri.config.borrow();
-                        config.input.touchscreen.swipe_trigger_distance()
-                    };
-
-                    if cx * cx + cy * cy >= threshold * threshold {
-                        // Re-look-up the bind, preferring the zoned trigger
-                        // if that's the one that matched at touch-down. The
-                        // `zoned` flag was decided in `on_touch_down` so the
-                        // same bind fires here regardless of whether a zoned
-                        // or parent bind is in the config.
-                        let trigger = Trigger::TouchEdge {
-                            edge,
-                            zone: if zoned { Some(zone) } else { None },
-                        };
-                        let bind_info = {
-                            let config = self.niri.config.borrow();
-                            let mod_key = self.backend.mod_key(&config);
-                            let mods = self.niri.seat.get_keyboard().unwrap()
-                                .modifier_state();
-                            find_configured_bind(
-                                config.binds.0.iter(),
-                                mod_key,
-                                trigger,
-                                mods,
-                            )
-                        };
-                        let bind_info = bind_info.map(extract_bind_info);
-
-                        if let Some((kind, sensitivity, natural_scroll, tag, action)) = bind_info {
-                            // Emit IPC GestureBegin if this bind has a tag.
-                            if let Some(ref tag) = tag {
-                                let trigger_name = trigger_to_ipc_name(trigger);
-                                self.ipc_gesture_begin(
-                                    tag.clone(),
-                                    trigger_name,
-                                    1, // edge swipes are single-finger
-                                    kind.is_some(),
-                                );
-                            }
-
-                            if let Some(kind) = kind {
-                                // Continuous edge swipe gesture.
-                                self.niri.touch_edge_swipe =
-                                    Some(TouchEdgeSwipeState::Active {
-                                        edge,
-                                        zone,
-                                        zoned,
-                                        kind,
-                                        sensitivity,
-                                        natural_scroll,
-                                        slot: edge_slot,
-                                        tag,
-                                        ipc_progress: 0.0,
-                                    });
-                                handle.cancel(self);
-                                begin_continuous_gesture(self, kind, pos);
-                                self.niri.queue_redraw_all();
-                            } else {
-                                // Discrete edge swipe action — fire once and clear.
-                                handle.cancel(self);
-                                if !matches!(action, Action::Noop) {
-                                    self.do_action(action, false);
-                                }
-                                // Emit immediate GestureEnd for discrete gestures.
-                                if let Some(ref tag) = tag {
-                                    self.ipc_gesture_end(tag.clone(), true);
-                                }
-                                self.niri.touch_edge_swipe = None;
-                            }
-                        } else {
-                            self.niri.touch_edge_swipe = None;
-                        }
-                    }
-                    // During Pending, don't suppress client motion events.
-                }
-                EdgeAction::ActiveFeed {
-                    kind, sensitivity, natural, tag,
-                } => {
-                    let timestamp = Duration::from_micros(evt.time());
-                    feed_continuous_gesture(
-                        self, kind, delta_x, delta_y, sensitivity, natural, timestamp,
-                        tag.as_deref(),
-                    );
-                    gesture_handled = true;
-                }
-                EdgeAction::None => {}
-            }
-
-            // Process gesture if tracking (3+ fingers or locked) and no edge swipe active.
-            let finger_count = self.niri.touch_gesture_points.len();
-            let gesture_active = finger_count >= 3 || self.niri.touch_gesture_locked;
-            if gesture_active && self.niri.touch_edge_swipe.is_none() {
-                let timestamp = Duration::from_micros(evt.time());
-                gesture_handled = true;
-
-                // Feed ongoing continuous gesture if one is active. Swipe and
-                // pinch ride the same `touch_active_bind` slot but take
-                // different feed paths — swipes are driven by linear dx/dy,
-                // pinches by finger spread delta.
-                if let Some(ref active) = self.niri.touch_active_bind {
-                    match active {
-                        ActiveTouchBind::Swipe {
-                            kind,
-                            sensitivity,
-                            natural_scroll,
-                            tag,
-                            ..
-                        } => {
-                            let kind = *kind;
-                            let sensitivity = *sensitivity;
-                            let natural = *natural_scroll;
-                            let tag = tag.clone();
-                            feed_continuous_gesture(
-                                self, kind, delta_x, delta_y, sensitivity, natural, timestamp,
-                                tag.as_deref(),
-                            );
-                        }
-                        ActiveTouchBind::Pinch { kind, tag, .. } => {
-                            let kind = *kind;
-                            let tag = tag.clone();
-                            feed_continuous_pinch(self, kind, timestamp, tag.as_deref());
-                        }
-                        ActiveTouchBind::Rotate { kind, tag, .. } => {
-                            let kind = *kind;
-                            let tag = tag.clone();
-                            feed_continuous_rotation(self, kind, timestamp, tag.as_deref());
-                        }
-                    }
-                } else if let Some((cx, cy)) = &mut self.niri.touch_gesture_cumulative {
-                    // Tap wobble check: compute per-finger displacement from
-                    // initial landing positions. Kill the tap candidate if any
-                    // finger exceeds the wobble threshold.
-                    if let Some(ref mut tap) = self.niri.touch_tap_candidate {
-                        if tap.alive {
-                            let wobble_threshold = {
-                                let config = self.niri.config.borrow();
-                                config.input.touchscreen.tap_wobble_threshold()
-                            };
-                            let wobble_sq = wobble_threshold * wobble_threshold;
-                            for (slot, current_pos) in &self.niri.touch_gesture_points {
-                                if let Some(initial) = tap.initial_positions.get(slot) {
-                                    let dx = current_pos.x - initial.x;
-                                    let dy = current_pos.y - initial.y;
-                                    if dx * dx + dy * dy > wobble_sq {
-                                        tap.alive = false;
-                                        tracing::debug!(
-                                            target: "niri::input::touch_gesture",
-                                            "TOUCH-DBG TAP killed reason=wobble",
-                                        );
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // Recognition phase: accumulate raw deltas.
-                    *cx += delta_x;
-                    *cy += delta_y;
-
-                    // Normalize by finger count at read time — 5 fingers each
-                    // moving 5px shouldn't count as 25px of movement.
-                    let finger_count_f = finger_count.max(1) as f64;
-                    let (cx, cy) = (*cx / finger_count_f, *cy / finger_count_f);
-                    let swipe_distance = (cx * cx + cy * cy).sqrt();
-
-                    // Accumulate rotation across frames. `calculate_rotation_delta`
-                    // returns the averaged per-frame angular delta (radians)
-                    // with ±π unwrap applied, plus the fresh per-slot angle
-                    // map that becomes the basis for the next frame.
-                    let (frame_rotation, new_angles) = calculate_rotation_delta(
-                        &self.niri.touch_gesture_points,
-                        &self.niri.touch_gesture_previous_angles,
-                    );
-                    self.niri.touch_gesture_previous_angles = new_angles;
-                    self.niri.touch_gesture_cumulative_rotation += frame_rotation;
-
-                    // Scale threshold by finger count — more fingers need more
-                    // deliberate movement. This works because unlock-on-new-finger
-                    // resets cumulative on EVERY new finger landing, so the user
-                    // starts fresh with the correct finger count each time.
-                    let (
-                        swipe_trigger,
-                        pinch_trigger,
-                        pinch_dom,
-                        rotation_trigger,
-                        rotation_dom,
-                    ) = {
-                        let config = self.niri.config.borrow();
-                        (
-                            config
-                                .input
-                                .touchscreen
-                                .scaled_swipe_trigger_distance(finger_count),
-                            config.input.touchscreen.pinch_trigger_distance(),
-                            config.input.touchscreen.pinch_dominance_ratio(),
-                            config.input.touchscreen.rotation_trigger_angle(),
-                            config.input.touchscreen.rotation_dominance_ratio(),
-                        )
-                    };
-
-                    // Check if we've moved far enough for either swipe or pinch.
-                    let current_spread = calculate_spread(&self.niri.touch_gesture_points);
-                    let initial_spread =
-                        self.niri.touch_gesture_initial_spread.unwrap_or(current_spread);
-                    let spread_change = (current_spread - initial_spread).abs();
-
-                    // Rotation arc length: convert angular delta to a linear
-                    // distance commensurable with swipe_distance and
-                    // spread_change. This is the tangential distance each
-                    // finger would travel if the cluster rotated purely
-                    // around its centroid.
-                    let cumulative_rotation =
-                        self.niri.touch_gesture_cumulative_rotation;
-                    let rotation_arc = cumulative_rotation.abs() * current_spread;
-                    let rotation_arc_trigger_distance =
-                        rotation_trigger * current_spread;
-
-                    // Rotation detection: the rotation arc must exceed its
-                    // own trigger AND dominate both swipe distance and
-                    // spread change by the rotation dominance ratio. We
-                    // require finger count ≥ 3 because 2-finger rotation
-                    // conflicts with the pass-through contract for
-                    // client-side 2-finger scrolling.
-                    //
-                    // Dominance semantics (unified with pinch): higher
-                    // `rotation_dominance_ratio` = stricter rotation. The
-                    // default of 0.5 means `arc` only needs to be at least
-                    // half of the competing motion — lenient because
-                    // rotating a finger cluster almost always drags a
-                    // little linearly too.
-                    let is_rotate = finger_count >= 3
-                        && rotation_arc >= rotation_arc_trigger_distance
-                        && rotation_arc >= swipe_distance * rotation_dom
-                        && rotation_arc >= spread_change * rotation_dom;
-
-                    // Pinch detection: spread change must exceed both the
-                    // pinch trigger AND swipe distance × dominance ratio.
-                    // `pinch_dom` is the single knob — higher = stricter
-                    // pinch (harder for pinch to win over incidental
-                    // swipe drift). Below 1.0 is lenient; above 1.0
-                    // demands spread to out-move swipe by that factor.
-                    //
-                    // Rotation priority: if rotation already won, pinch
-                    // loses regardless. Rotation is the most specific
-                    // classification, so marginal ties go to rotate.
-                    let is_pinch = spread_change > pinch_trigger
-                        && spread_change > swipe_distance * pinch_dom
-                        && !is_rotate;
-
-                    // Per-frame recognition snapshot. Logs every motion
-                    // event during recognition so you can see which metric
-                    // is closest to its trigger and why a gesture did or
-                    // didn't fire. Enable with:
-                    //   RUST_LOG=niri::input::touch_gesture=debug
-                    // and tail via `journalctl -fu niri -g TOUCH-DBG`.
-                    let closest = {
-                        let swipe_frac = swipe_distance / swipe_trigger.max(1e-9);
-                        let pinch_frac = spread_change / pinch_trigger.max(1e-9);
-                        let rotate_frac =
-                            cumulative_rotation.abs() / rotation_trigger.max(1e-9);
-                        if rotate_frac >= swipe_frac && rotate_frac >= pinch_frac {
-                            "rotate"
-                        } else if pinch_frac >= swipe_frac {
-                            "pinch"
-                        } else {
-                            "swipe"
-                        }
-                    };
-                    tracing::debug!(
-                        target: "niri::input::touch_gesture",
-                        "TOUCH-DBG FRAME fingers={} \
-                         swipe={:.1}/{:.1} \
-                         spread={:.1}/{:.1} \
-                         rot={:.3}/{:.3}rad ({:.1}°) \
-                         arc={:.1} \
-                         is_rotate={} is_pinch={} closest={}",
-                        finger_count,
-                        swipe_distance, swipe_trigger,
-                        spread_change, pinch_trigger,
-                        cumulative_rotation.abs(), rotation_trigger,
-                        cumulative_rotation.to_degrees(),
-                        rotation_arc,
-                        is_rotate, is_pinch, closest,
-                    );
-
-                    // Debug telemetry on the IPC event stream, consumed by
-                    // niri-gesture-inspector (GTK4 live scope visualizer).
-                    // Compile-time gated to debug builds: release builds
-                    // don't pay any cost and don't emit the event, so
-                    // production event-stream consumers never see it.
-                    // Debug builds always emit unconditionally — no env var.
-                    // Emit SIGNED values for spread and rotation so the
-                    // gesture-inspector can render direction on a
-                    // bidirectional bar (pinch-in vs pinch-out, ccw vs
-                    // cw). The classifier above still uses the local
-                    // magnitude variants (`spread_change`, `rotation_arc`).
-                    #[cfg(debug_assertions)]
-                    self.ipc_recognition_frame(
-                        finger_count as u8,
-                        swipe_distance,
-                        swipe_trigger,
-                        current_spread - initial_spread,
-                        pinch_trigger,
-                        cumulative_rotation,
-                        rotation_trigger,
-                        rotation_arc,
-                        rotation_arc_trigger_distance,
-                        is_rotate,
-                        is_pinch,
-                        closest.to_string(),
-                        evt.time_msec(),
-                    );
-
-                    // Rotation-priority gate: if the rotation arc has
-                    // already met its own minimum, suppress the plain swipe
-                    // trigger race so rotation gets a chance to fully
-                    // latch. Without this, a drifting hand can cross the
-                    // swipe trigger on the same frame rotation is still
-                    // accumulating arc, and swipe wins the race even when
-                    // the user is clearly rotating.
-                    let rotation_candidate = finger_count >= 3
-                        && rotation_arc >= rotation_arc_trigger_distance;
-
-                    // Entry: rotate passed all gates, swipe passed its
-                    // trigger (and rotation isn't already a candidate), or
-                    // pinch passed its own trigger + dominance gates.
-                    //
-                    // Pinch commits on `is_pinch` alone — which already
-                    // requires `spread_change > pinch_trigger`. Earlier
-                    // versions double-gated against `swipe_trigger` as
-                    // "anti-wobble", but `swipe_trigger` scales with finger
-                    // count via `swipe-multi-finger-scale`, so a 4/5-finger
-                    // pinch inherited a wildly inflated commit gate even
-                    // though `pinch_trigger` stayed flat. Pinch has its
-                    // own knob — use it.
-                    if is_rotate
-                        || (swipe_distance >= swipe_trigger && !rotation_candidate)
-                        || is_pinch
+                    TouchEdgeSwipeState::Active { slot: edge_slot, .. }
+                        if Some(slot) == *edge_slot =>
                     {
-                        // Gesture recognized — clear cumulative.
-                        self.niri.touch_gesture_cumulative = None;
+                        // Track edge slot's delta separately so the feed
+                        // doesn't include other fingers' motion.
+                        self.niri.touch_frame_edge_delta.0 += delta_x;
+                        self.niri.touch_frame_edge_delta.1 += delta_y;
+                        gesture_handled = true;
+                    }
+                    TouchEdgeSwipeState::Active { .. } => {
+                        gesture_handled = true;
+                    }
+                    _ => {}
+                }
+            }
 
-                        // Kill tap candidate — recognizer locked, so this is
-                        // a motion gesture, not a tap.
-                        if let Some(ref mut tap) = self.niri.touch_tap_candidate {
-                            if tap.alive {
+            // Accumulate per-frame deltas for batched processing in
+            // on_touch_frame. Position update already happened above.
+            self.niri.touch_frame_delta.0 += delta_x;
+            self.niri.touch_frame_delta.1 += delta_y;
+            self.niri.touch_frame_dirty = true;
+            self.niri.touch_frame_timestamp = Duration::from_micros(evt.time());
+
+            // Tap wobble check runs per-motion (reads positions, cheap,
+            // and needs to kill the candidate as soon as any finger drifts).
+            if let Some(ref mut tap) = self.niri.touch_tap_candidate {
+                if tap.alive {
+                    let wobble_threshold = {
+                        let config = self.niri.config.borrow();
+                        config.input.touchscreen.tap_wobble_threshold()
+                    };
+                    let wobble_sq = wobble_threshold * wobble_threshold;
+                    for (s, current_pos) in &self.niri.touch_gesture_points {
+                        if let Some(initial) = tap.initial_positions.get(s) {
+                            let dx = current_pos.x - initial.x;
+                            let dy = current_pos.y - initial.y;
+                            if dx * dx + dy * dy > wobble_sq {
                                 tap.alive = false;
                                 tracing::debug!(
                                     target: "niri::input::touch_gesture",
-                                    "TOUCH-DBG TAP killed reason=lock",
+                                    "TOUCH-DBG TAP killed reason=wobble",
                                 );
-                            }
-                        }
-
-                        // Discoverability log: surface the app-id of whatever
-                        // window was under the touch at lock time, so users
-                        // debugging "why isn't my app getting gestures" can
-                        // see which app-id to add `touchscreen-gesture-passthrough`
-                        // for in their window rules.
-                        if let Some(mapped) = self.niri.window_under(pos) {
-                            let app_id = with_toplevel_role(mapped.toplevel(), |role| {
-                                role.app_id.clone()
-                            });
-                            tracing::debug!(
-                                "touch: captured {}-finger gesture over app-id={:?}",
-                                finger_count,
-                                app_id.unwrap_or_default(),
-                            );
-                        }
-
-                        // Lock the gesture.
-                        self.niri.touch_gesture_locked = true;
-                        let handle = self.niri.seat.get_touch().unwrap();
-                        handle.cancel(self);
-
-                        // Determine gesture type. Priority: rotate > pinch > swipe.
-                        let gesture_type = if is_rotate {
-                            // Positive cumulative_rotation = CCW in our
-                            // screen-flipped math convention (y axis inverted
-                            // so user-visible CCW matches mathematical +).
-                            if cumulative_rotation > 0.0 {
-                                TouchGestureType::RotateCcw
-                            } else {
-                                TouchGestureType::RotateCw
-                            }
-                        } else if is_pinch {
-                            if current_spread < initial_spread {
-                                TouchGestureType::PinchIn
-                            } else {
-                                TouchGestureType::PinchOut
-                            }
-                        } else if cx.abs() > cy.abs() {
-                            if cx > 0.0 {
-                                TouchGestureType::SwipeRight
-                            } else {
-                                TouchGestureType::SwipeLeft
-                            }
-                        } else {
-                            if cy > 0.0 {
-                                TouchGestureType::SwipeDown
-                            } else {
-                                TouchGestureType::SwipeUp
-                            }
-                        };
-
-                        // Look up matching bind in the main binds {} block.
-                        let bind_info = {
-                            let config = self.niri.config.borrow();
-                            let trigger = touch_gesture_to_trigger(
-                                gesture_type,
-                                finger_count as u8,
-                            );
-                            let mod_key = self.backend.mod_key(&config);
-                            // Check current keyboard modifiers for Mod+Touch combos.
-                            let mods = self.niri.seat.get_keyboard().unwrap()
-                                .modifier_state();
-                            trigger.and_then(|t| {
-                                find_configured_bind(
-                                    config.binds.0.iter(),
-                                    mod_key,
-                                    t,
-                                    mods,
-                                )
-                            })
-                        };
-                        let bind_info = bind_info.map(extract_bind_info);
-
-                        // Lock-decision trace: what gesture type was chosen,
-                        // what trigger name it maps to, and whether a bind
-                        // actually matched. "bind=no" means the gesture was
-                        // recognized but nothing was bound to it, so nothing
-                        // will fire — a common "my gesture does nothing" cause.
-                        {
-                            let trigger_name = touch_gesture_to_trigger(
-                                gesture_type,
-                                finger_count as u8,
-                            )
-                            .map(trigger_to_ipc_name)
-                            .unwrap_or_else(|| "Unknown".to_string());
-                            let (bind_matched, kind_str, tag_str) =
-                                match bind_info.as_ref() {
-                                    Some((kind, _, _, tag, _)) => (
-                                        "yes",
-                                        kind.map(|k| format!("{:?}", k))
-                                            .unwrap_or_else(|| "discrete".to_string()),
-                                        tag.clone().unwrap_or_else(|| "-".to_string()),
-                                    ),
-                                    None => (
-                                        "no",
-                                        "-".to_string(),
-                                        "-".to_string(),
-                                    ),
-                                };
-                            tracing::debug!(
-                                target: "niri::input::touch_gesture",
-                                "TOUCH-DBG LOCK fingers={} type={:?} \
-                                 trigger={} bind={} kind={} tag={}",
-                                finger_count,
-                                gesture_type,
-                                trigger_name,
-                                bind_matched,
-                                kind_str,
-                                tag_str,
-                            );
-                        }
-
-                        if let Some((kind, sensitivity, natural_scroll, tag, action)) = bind_info {
-                            // Emit IPC GestureBegin for every committed
-                            // multi-finger bind, tagged or not. Untagged
-                            // commits arrive with an empty `tag` so debug
-                            // tools (niri-gesture-inspector) can see every
-                            // lock. External consumers filter on tag, so
-                            // empty-tag events are harmless to them.
-                            {
-                                let trigger_name =
-                                    touch_gesture_to_trigger(gesture_type, finger_count as u8)
-                                        .map(trigger_to_ipc_name)
-                                        .unwrap_or_else(|| "Unknown".to_string());
-                                self.ipc_gesture_begin(
-                                    tag.clone().unwrap_or_default(),
-                                    trigger_name,
-                                    finger_count as u8,
-                                    kind.is_some(),
-                                );
-                            }
-
-                            if let Some(kind) = kind {
-                                // Continuous gesture — begin animation and store active bind.
-                                begin_continuous_gesture(self, kind, pos);
-                                let active = if is_rotate {
-                                    ActiveTouchBind::Rotate {
-                                        kind,
-                                        tag,
-                                        ipc_progress: 0.0,
-                                        // Snapshot the current cumulative as
-                                        // the gesture's start, so progress is
-                                        // computed relative to recognition —
-                                        // the recognition-phase rotation
-                                        // doesn't count toward the animated
-                                        // progress.
-                                        start_rotation: cumulative_rotation,
-                                    }
-                                } else if is_pinch {
-                                    ActiveTouchBind::Pinch {
-                                        kind,
-                                        tag,
-                                        ipc_progress: 0.0,
-                                        start_spread: current_spread,
-                                        // Initialize last_spread = start_spread so the
-                                        // first feed frame computes incremental ≈ 0,
-                                        // avoiding a spurious jump on the recognition frame.
-                                        last_spread: current_spread,
-                                    }
-                                } else {
-                                    ActiveTouchBind::Swipe {
-                                        kind,
-                                        sensitivity,
-                                        natural_scroll,
-                                        tag,
-                                        ipc_progress: 0.0,
-                                    }
-                                };
-                                self.niri.touch_active_bind = Some(active);
-                            } else {
-                                // Discrete action — fire once.
-                                if !matches!(action, Action::Noop) {
-                                    self.do_action(action, false);
-                                }
-                                // Emit immediate GestureEnd unconditionally
-                                // (matching the unconditional GestureBegin
-                                // above) so debug tools see the end of
-                                // every discrete commit.
-                                self.ipc_gesture_end(
-                                    tag.clone().unwrap_or_default(),
-                                    true,
-                                );
+                                break;
                             }
                         }
                     }
                 }
+            }
+
+            // Suppress client forwarding if we're in a multi-finger gesture
+            // or an active edge swipe. Processing happens in on_touch_frame.
+            let finger_count = self.niri.touch_gesture_points.len();
+            let gesture_active = finger_count >= 3 || self.niri.touch_gesture_locked;
+            if gesture_active && self.niri.touch_edge_swipe.is_none() {
+                gesture_handled = true;
             }
         }
 
@@ -1283,6 +757,438 @@ impl State {
         let Some(handle) = self.niri.seat.get_touch() else {
             return;
         };
+
+        // Process batched touch motion events. All per-slot position updates
+        // and delta accumulation happened in on_touch_motion; here we run
+        // the expensive processing once per hardware scan frame instead of
+        // once per finger.
+        if self.niri.touch_frame_dirty {
+            self.niri.touch_frame_dirty = false;
+            let delta_x = self.niri.touch_frame_delta.0;
+            let delta_y = self.niri.touch_frame_delta.1;
+            self.niri.touch_frame_delta = (0., 0.);
+            let timestamp = self.niri.touch_frame_timestamp;
+
+            // Compute centroid for use in lock transition (window_under,
+            // begin_continuous_gesture). More correct than the last-moved
+            // finger's position for multi-finger gestures.
+            let pos = {
+                let points = &self.niri.touch_gesture_points;
+                if points.is_empty() {
+                    smithay::utils::Point::from((0., 0.))
+                } else {
+                    let n = points.len() as f64;
+                    let (sx, sy) = points.values().fold((0., 0.), |(ax, ay), p| {
+                        (ax + p.x, ay + p.y)
+                    });
+                    smithay::utils::Point::from((sx / n, sy / n))
+                }
+            };
+
+            // Edge swipe: threshold check (Pending → Active) and active feed.
+            // These were deferred from on_touch_motion to avoid per-slot feeds.
+            if let Some(ref state) = self.niri.touch_edge_swipe {
+                match state {
+                    TouchEdgeSwipeState::Pending {
+                        edge, zone, zoned, cumulative, slot: edge_slot, ..
+                    } => {
+                        let edge = *edge;
+                        let zone = *zone;
+                        let zoned = *zoned;
+                        let (cx, cy) = *cumulative;
+                        let edge_slot = *edge_slot;
+                        let threshold = {
+                            let config = self.niri.config.borrow();
+                            config.input.touchscreen.swipe_trigger_distance()
+                        };
+
+                        if cx * cx + cy * cy >= threshold * threshold {
+                            let trigger = Trigger::TouchEdge {
+                                edge,
+                                zone: if zoned { Some(zone) } else { None },
+                            };
+                            let bind_info = {
+                                let config = self.niri.config.borrow();
+                                let mod_key = self.backend.mod_key(&config);
+                                let mods = self.niri.seat.get_keyboard().unwrap()
+                                    .modifier_state();
+                                find_configured_bind(
+                                    config.binds.0.iter(),
+                                    mod_key,
+                                    trigger,
+                                    mods,
+                                )
+                            };
+                            let bind_info = bind_info.map(extract_bind_info);
+
+                            if let Some((kind, sensitivity, natural_scroll, tag, action)) = bind_info {
+                                if let Some(ref tag) = tag {
+                                    let trigger_name = trigger_to_ipc_name(trigger);
+                                    self.ipc_gesture_begin(
+                                        tag.clone(),
+                                        trigger_name,
+                                        1,
+                                        kind.is_some(),
+                                    );
+                                }
+
+                                if let Some(kind) = kind {
+                                    self.niri.touch_edge_swipe =
+                                        Some(TouchEdgeSwipeState::Active {
+                                            edge,
+                                            zone,
+                                            zoned,
+                                            kind,
+                                            sensitivity,
+                                            natural_scroll,
+                                            slot: edge_slot,
+                                            tag,
+                                            ipc_progress: 0.0,
+                                        });
+                                    handle.cancel(self);
+                                    begin_continuous_gesture(self, kind, pos);
+                                    self.niri.queue_redraw_all();
+                                } else {
+                                    handle.cancel(self);
+                                    if !matches!(action, Action::Noop) {
+                                        self.do_action(action, false);
+                                    }
+                                    if let Some(ref tag) = tag {
+                                        self.ipc_gesture_end(tag.clone(), true);
+                                    }
+                                    self.niri.touch_edge_swipe = None;
+                                }
+                            } else {
+                                self.niri.touch_edge_swipe = None;
+                            }
+                        }
+                    }
+                    TouchEdgeSwipeState::Active {
+                        kind, sensitivity, natural_scroll, tag, ..
+                    } => {
+                        let kind = *kind;
+                        let sensitivity = *sensitivity;
+                        let natural = *natural_scroll;
+                        let tag = tag.clone();
+                        // Use edge-slot-only delta, not the combined
+                        // multi-finger delta.
+                        let (edge_dx, edge_dy) = self.niri.touch_frame_edge_delta;
+                        self.niri.touch_frame_edge_delta = (0., 0.);
+                        feed_continuous_gesture(
+                            self, kind, edge_dx, edge_dy, sensitivity, natural, timestamp,
+                            tag.as_deref(),
+                        );
+                    }
+                }
+            }
+
+            // Process multi-finger gesture (3+ fingers or locked), no edge swipe.
+            let finger_count = self.niri.touch_gesture_points.len();
+            let gesture_active = finger_count >= 3 || self.niri.touch_gesture_locked;
+            if gesture_active && self.niri.touch_edge_swipe.is_none() {
+                // Feed ongoing continuous gesture if one is active.
+                if let Some(ref active) = self.niri.touch_active_bind {
+                    match active {
+                        ActiveTouchBind::Swipe {
+                            kind,
+                            sensitivity,
+                            natural_scroll,
+                            tag,
+                            ..
+                        } => {
+                            let kind = *kind;
+                            let sensitivity = *sensitivity;
+                            let natural = *natural_scroll;
+                            let tag = tag.clone();
+                            feed_continuous_gesture(
+                                self, kind, delta_x, delta_y, sensitivity, natural, timestamp,
+                                tag.as_deref(),
+                            );
+                        }
+                        ActiveTouchBind::Pinch { kind, tag, .. } => {
+                            let kind = *kind;
+                            let tag = tag.clone();
+                            feed_continuous_pinch(self, kind, timestamp, tag.as_deref());
+                        }
+                        ActiveTouchBind::Rotate { kind, tag, .. } => {
+                            let kind = *kind;
+                            let tag = tag.clone();
+                            feed_continuous_rotation(self, kind, timestamp, tag.as_deref());
+                        }
+                    }
+                } else if let Some((cx, cy)) = &mut self.niri.touch_gesture_cumulative {
+                    // Recognition phase: accumulate batched deltas.
+                    *cx += delta_x;
+                    *cy += delta_y;
+
+                    let finger_count_f = finger_count.max(1) as f64;
+                    let (cx, cy) = (*cx / finger_count_f, *cy / finger_count_f);
+                    let swipe_distance = (cx * cx + cy * cy).sqrt();
+
+                    let (frame_rotation, new_angles) = calculate_rotation_delta(
+                        &self.niri.touch_gesture_points,
+                        &self.niri.touch_gesture_previous_angles,
+                    );
+                    self.niri.touch_gesture_previous_angles = new_angles;
+                    self.niri.touch_gesture_cumulative_rotation += frame_rotation;
+
+                    let (
+                        swipe_trigger,
+                        pinch_trigger,
+                        pinch_dom,
+                        rotation_trigger,
+                        rotation_dom,
+                    ) = {
+                        let config = self.niri.config.borrow();
+                        (
+                            config
+                                .input
+                                .touchscreen
+                                .scaled_swipe_trigger_distance(finger_count),
+                            config.input.touchscreen.pinch_trigger_distance(),
+                            config.input.touchscreen.pinch_dominance_ratio(),
+                            config.input.touchscreen.rotation_trigger_angle(),
+                            config.input.touchscreen.rotation_dominance_ratio(),
+                        )
+                    };
+
+                    let current_spread = calculate_spread(&self.niri.touch_gesture_points);
+                    let initial_spread =
+                        self.niri.touch_gesture_initial_spread.unwrap_or(current_spread);
+                    let spread_change = (current_spread - initial_spread).abs();
+
+                    let cumulative_rotation =
+                        self.niri.touch_gesture_cumulative_rotation;
+                    let rotation_arc = cumulative_rotation.abs() * current_spread;
+                    let rotation_arc_trigger_distance =
+                        rotation_trigger * current_spread;
+
+                    let is_rotate = finger_count >= 3
+                        && rotation_arc >= rotation_arc_trigger_distance
+                        && rotation_arc >= swipe_distance * rotation_dom
+                        && rotation_arc >= spread_change * rotation_dom;
+
+                    let is_pinch = spread_change > pinch_trigger
+                        && spread_change > swipe_distance * pinch_dom
+                        && !is_rotate;
+
+                    let closest = {
+                        let swipe_frac = swipe_distance / swipe_trigger.max(1e-9);
+                        let pinch_frac = spread_change / pinch_trigger.max(1e-9);
+                        let rotate_frac =
+                            cumulative_rotation.abs() / rotation_trigger.max(1e-9);
+                        if rotate_frac >= swipe_frac && rotate_frac >= pinch_frac {
+                            "rotate"
+                        } else if pinch_frac >= swipe_frac {
+                            "pinch"
+                        } else {
+                            "swipe"
+                        }
+                    };
+                    tracing::debug!(
+                        target: "niri::input::touch_gesture",
+                        "TOUCH-DBG FRAME fingers={} \
+                         swipe={:.1}/{:.1} \
+                         spread={:.1}/{:.1} \
+                         rot={:.3}/{:.3}rad ({:.1}°) \
+                         arc={:.1} \
+                         is_rotate={} is_pinch={} closest={}",
+                        finger_count,
+                        swipe_distance, swipe_trigger,
+                        spread_change, pinch_trigger,
+                        cumulative_rotation.abs(), rotation_trigger,
+                        cumulative_rotation.to_degrees(),
+                        rotation_arc,
+                        is_rotate, is_pinch, closest,
+                    );
+
+                    #[cfg(debug_assertions)]
+                    self.ipc_recognition_frame(
+                        finger_count as u8,
+                        swipe_distance,
+                        swipe_trigger,
+                        current_spread - initial_spread,
+                        pinch_trigger,
+                        cumulative_rotation,
+                        rotation_trigger,
+                        rotation_arc,
+                        rotation_arc_trigger_distance,
+                        is_rotate,
+                        is_pinch,
+                        closest.to_string(),
+                        timestamp.as_millis() as u32,
+                    );
+
+                    let rotation_candidate = finger_count >= 3
+                        && rotation_arc >= rotation_arc_trigger_distance;
+
+                    if is_rotate
+                        || (swipe_distance >= swipe_trigger && !rotation_candidate)
+                        || is_pinch
+                    {
+                        self.niri.touch_gesture_cumulative = None;
+
+                        if let Some(ref mut tap) = self.niri.touch_tap_candidate {
+                            if tap.alive {
+                                tap.alive = false;
+                                tracing::debug!(
+                                    target: "niri::input::touch_gesture",
+                                    "TOUCH-DBG TAP killed reason=lock",
+                                );
+                            }
+                        }
+
+                        if let Some(mapped) = self.niri.window_under(pos) {
+                            let app_id = with_toplevel_role(mapped.toplevel(), |role| {
+                                role.app_id.clone()
+                            });
+                            tracing::debug!(
+                                "touch: captured {}-finger gesture over app-id={:?}",
+                                finger_count,
+                                app_id.unwrap_or_default(),
+                            );
+                        }
+
+                        self.niri.touch_gesture_locked = true;
+                        let handle = self.niri.seat.get_touch().unwrap();
+                        handle.cancel(self);
+
+                        let gesture_type = if is_rotate {
+                            if cumulative_rotation > 0.0 {
+                                TouchGestureType::RotateCcw
+                            } else {
+                                TouchGestureType::RotateCw
+                            }
+                        } else if is_pinch {
+                            if current_spread < initial_spread {
+                                TouchGestureType::PinchIn
+                            } else {
+                                TouchGestureType::PinchOut
+                            }
+                        } else if cx.abs() > cy.abs() {
+                            if cx > 0.0 {
+                                TouchGestureType::SwipeRight
+                            } else {
+                                TouchGestureType::SwipeLeft
+                            }
+                        } else {
+                            if cy > 0.0 {
+                                TouchGestureType::SwipeDown
+                            } else {
+                                TouchGestureType::SwipeUp
+                            }
+                        };
+
+                        let bind_info = {
+                            let config = self.niri.config.borrow();
+                            let trigger = touch_gesture_to_trigger(
+                                gesture_type,
+                                finger_count as u8,
+                            );
+                            let mod_key = self.backend.mod_key(&config);
+                            let mods = self.niri.seat.get_keyboard().unwrap()
+                                .modifier_state();
+                            trigger.and_then(|t| {
+                                find_configured_bind(
+                                    config.binds.0.iter(),
+                                    mod_key,
+                                    t,
+                                    mods,
+                                )
+                            })
+                        };
+                        let bind_info = bind_info.map(extract_bind_info);
+
+                        {
+                            let trigger_name = touch_gesture_to_trigger(
+                                gesture_type,
+                                finger_count as u8,
+                            )
+                            .map(trigger_to_ipc_name)
+                            .unwrap_or_else(|| "Unknown".to_string());
+                            let (bind_matched, kind_str, tag_str) =
+                                match bind_info.as_ref() {
+                                    Some((kind, _, _, tag, _)) => (
+                                        "yes",
+                                        kind.map(|k| format!("{:?}", k))
+                                            .unwrap_or_else(|| "discrete".to_string()),
+                                        tag.clone().unwrap_or_else(|| "-".to_string()),
+                                    ),
+                                    None => (
+                                        "no",
+                                        "-".to_string(),
+                                        "-".to_string(),
+                                    ),
+                                };
+                            tracing::debug!(
+                                target: "niri::input::touch_gesture",
+                                "TOUCH-DBG LOCK fingers={} type={:?} \
+                                 trigger={} bind={} kind={} tag={}",
+                                finger_count,
+                                gesture_type,
+                                trigger_name,
+                                bind_matched,
+                                kind_str,
+                                tag_str,
+                            );
+                        }
+
+                        if let Some((kind, sensitivity, natural_scroll, tag, action)) = bind_info {
+                            {
+                                let trigger_name =
+                                    touch_gesture_to_trigger(gesture_type, finger_count as u8)
+                                        .map(trigger_to_ipc_name)
+                                        .unwrap_or_else(|| "Unknown".to_string());
+                                self.ipc_gesture_begin(
+                                    tag.clone().unwrap_or_default(),
+                                    trigger_name,
+                                    finger_count as u8,
+                                    kind.is_some(),
+                                );
+                            }
+
+                            if let Some(kind) = kind {
+                                begin_continuous_gesture(self, kind, pos);
+                                let active = if is_rotate {
+                                    ActiveTouchBind::Rotate {
+                                        kind,
+                                        tag,
+                                        ipc_progress: 0.0,
+                                        start_rotation: cumulative_rotation,
+                                    }
+                                } else if is_pinch {
+                                    ActiveTouchBind::Pinch {
+                                        kind,
+                                        tag,
+                                        ipc_progress: 0.0,
+                                        start_spread: current_spread,
+                                        last_spread: current_spread,
+                                    }
+                                } else {
+                                    ActiveTouchBind::Swipe {
+                                        kind,
+                                        sensitivity,
+                                        natural_scroll,
+                                        tag,
+                                        ipc_progress: 0.0,
+                                    }
+                                };
+                                self.niri.touch_active_bind = Some(active);
+                            } else {
+                                if !matches!(action, Action::Noop) {
+                                    self.do_action(action, false);
+                                }
+                                self.ipc_gesture_end(
+                                    tag.clone().unwrap_or_default(),
+                                    true,
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         handle.frame(self);
     }
 
@@ -1312,6 +1218,9 @@ impl State {
         self.niri.touch_gesture_previous_angles.clear();
         self.niri.touch_tap_candidate = None;
         self.niri.touchscreen_gesture_passthrough = false;
+        self.niri.touch_frame_dirty = false;
+        self.niri.touch_frame_delta = (0., 0.);
+        self.niri.touch_frame_edge_delta = (0., 0.);
 
         // Cancel any ongoing gesture animations.
         self.niri.layout.workspace_switch_gesture_end(Some(false));
