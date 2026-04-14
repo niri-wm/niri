@@ -543,6 +543,18 @@ pub struct Niri {
     /// Tap candidate for N-finger tap detection. Runs in parallel with
     /// swipe/pinch/rotate recognition. Killed by wobble or recognizer lock.
     pub touch_tap_candidate: Option<TapCandidate>,
+    /// Accumulated per-frame deltas for touchscreen gesture batching.
+    /// Summed across all per-slot TouchMotion events within a single
+    /// hardware scan frame; consumed and zeroed in on_touch_frame.
+    pub touch_frame_delta: (f64, f64),
+    /// Per-frame delta for the edge swipe slot only. Edge swipes are
+    /// single-finger, so their feed must not include other fingers' motion.
+    pub touch_frame_edge_delta: (f64, f64),
+    /// Set true when any touch_gesture_points position changed in this
+    /// frame. Cleared after on_touch_frame processes the batch.
+    pub touch_frame_dirty: bool,
+    /// Timestamp of the last TouchMotion in this frame (for gesture feeds).
+    pub touch_frame_timestamp: Duration,
     pub overview_scroll_swipe_gesture: ScrollSwipeGesture,
     pub vertical_wheel_tracker: ScrollTracker,
     pub horizontal_wheel_tracker: ScrollTracker,
@@ -2757,6 +2769,10 @@ impl Niri {
             touch_gesture_cumulative_rotation: 0.0,
             touch_gesture_previous_angles: HashMap::new(),
             touch_tap_candidate: None,
+            touch_frame_delta: (0., 0.),
+            touch_frame_edge_delta: (0., 0.),
+            touch_frame_dirty: false,
+            touch_frame_timestamp: Duration::ZERO,
             overview_scroll_swipe_gesture: ScrollSwipeGesture::new(),
             vertical_wheel_tracker: ScrollTracker::new(120),
             horizontal_wheel_tracker: ScrollTracker::new(120),
