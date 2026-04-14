@@ -36,7 +36,7 @@ use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
 use crate::render_helpers::texture::{TextureBuffer, TextureRenderElement};
-use crate::render_helpers::RenderTarget;
+use crate::render_helpers::RenderCtx;
 use crate::utils::{
     baba_is_float_offset, output_size, round_logical_in_physical, to_physical_precise_round,
     with_toplevel_role,
@@ -338,14 +338,13 @@ impl Thumbnail {
     #[allow(clippy::too_many_arguments)]
     fn render<R: NiriRenderer>(
         &self,
-        renderer: &mut R,
+        mut ctx: RenderCtx<R>,
         config: &niri_config::RecentWindows,
         mapped: &Mapped,
         preview_geo: Rectangle<f64, Logical>,
         scale: f64,
         is_active: bool,
         bob_y: f64,
-        target: RenderTarget,
         push: &mut dyn FnMut(WindowMruUiRenderElement<R>),
     ) {
         let _span = tracy_client::span!("Thumbnail::render");
@@ -377,8 +376,8 @@ impl Thumbnail {
         }
         .unwrap_or_default();
 
-        let has_border_shader = BorderRenderElement::has_shader(renderer);
-        let clip_shader = ClippedSurfaceRenderElement::shader(renderer).cloned();
+        let has_border_shader = BorderRenderElement::has_shader(ctx.renderer);
+        let clip_shader = ClippedSurfaceRenderElement::shader(ctx.renderer).cloned();
         let geo = Rectangle::from_size(self.size.to_f64());
         // FIXME: deduplicate code with Tile::render_inner()
         let clip = move |elem| match elem {
@@ -444,21 +443,14 @@ impl Thumbnail {
         };
 
         // FIXME: this could use mipmaps, for that it should be rendered through an offscreen.
-        mapped.render_normal(
-            renderer,
-            Point::new(0., 0.),
-            s,
-            preview_alpha,
-            target,
-            &mut |elem| {
-                let elem = clip(elem);
-                let elem = downscale(elem);
-                push(elem)
-            },
-        );
+        mapped.render_normal(ctx.r(), Point::new(0., 0.), s, preview_alpha, &mut |elem| {
+            let elem = clip(elem);
+            let elem = downscale(elem);
+            push(elem)
+        });
 
         let mut title_size = None;
-        let title_texture = self.title_texture(renderer.as_gles_renderer(), mapped, scale);
+        let title_texture = self.title_texture(ctx.as_gles().renderer, mapped, scale);
         let title_texture = title_texture.map(|texture| {
             let mut size = texture.logical_size();
             size.w = f64::min(size.w, preview_geo.size.w);
@@ -469,7 +461,7 @@ impl Thumbnail {
         // Hide title for blocked-out windows, but only after computing the title size. This way,
         // the background and the border won't have to oscillate in size between normal and
         // screencast renders, causing excessive damage.
-        let should_block_out = target.should_block_out(mapped.rules().block_out_from);
+        let should_block_out = ctx.target.should_block_out(mapped.rules().block_out_from);
         let title_texture = title_texture.filter(|_| !should_block_out);
 
         if let Some((texture, size)) = title_texture {
@@ -491,8 +483,8 @@ impl Thumbnail {
                 Kind::Unspecified,
             );
 
-            let renderer = renderer.as_gles_renderer();
-            if let Some(program) = GradientFadeTextureRenderElement::shader(renderer) {
+            let ctx = ctx.as_gles();
+            if let Some(program) = GradientFadeTextureRenderElement::shader(ctx.renderer) {
                 let elem = GradientFadeTextureRenderElement::new(texture, program);
                 push(WindowMruUiRenderElement::GradientFadeElem(elem));
             } else {
@@ -542,7 +534,7 @@ impl Thumbnail {
                 scale,
                 0.5,
             );
-            background.render(renderer, loc, &mut |elem| {
+            background.render(ctx.renderer, loc, &mut |elem| {
                 push(WindowMruUiRenderElement::FocusRing(elem))
             });
 
@@ -564,7 +556,7 @@ impl Thumbnail {
                 1.,
             );
 
-            border.render(renderer, loc, &mut |elem| {
+            border.render(ctx.renderer, loc, &mut |elem| {
                 push(WindowMruUiRenderElement::FocusRing(elem))
             });
         }
@@ -1100,8 +1092,7 @@ impl WindowMruUi {
         &self,
         niri: &Niri,
         output: &Output,
-        renderer: &mut R,
-        target: RenderTarget,
+        mut ctx: RenderCtx<R>,
         push: &mut dyn FnMut(WindowMruUiRenderElement<R>),
     ) {
         let (inner, progress) = match &self.state {
@@ -1139,14 +1130,17 @@ impl WindowMruUi {
         // During the closing fade, use an offscreen to avoid transparent compositing artifacts.
         let mut pushed_offscreen = false;
         if *output == inner.output && alpha < 1. {
-            let renderer = renderer.as_gles_renderer();
+            let mut ctx = ctx.as_gles();
 
             let mut elems = Vec::new();
-            inner.render(niri, renderer, target, &mut |elem| elems.push(elem));
+            inner.render(niri, ctx.r(), &mut |elem| elems.push(elem));
             elems.push(WindowMruUiRenderElement::SolidColor(render_backdrop(1.)));
 
             let scale = output.current_scale().fractional_scale();
-            match inner.offscreen.render(renderer, Scale::from(scale), &elems) {
+            match inner
+                .offscreen
+                .render(ctx.renderer, Scale::from(scale), &elems)
+            {
                 Ok((elem, _sync, _data)) => {
                     // FIXME: would be good to passthrough offscreen data to visible windows here.
                     // As is, during the closing fade, windows from other workspaces stop receiving
@@ -1172,7 +1166,7 @@ impl WindowMruUi {
         // This is not used as fallback when offscreen fails to render because it looks better to
         // hide the previews immediately than to render them with alpha = 1. during a fade-out.
         if *output == inner.output && alpha == 1. {
-            inner.render(niri, renderer, target, &mut |elem| push(elem));
+            inner.render(niri, ctx, &mut |elem| push(elem));
         }
 
         // This is used for both normal elems and for other outputs.
@@ -1554,8 +1548,7 @@ impl Inner {
     fn render<R: NiriRenderer>(
         &self,
         niri: &Niri,
-        renderer: &mut R,
-        target: RenderTarget,
+        mut ctx: RenderCtx<R>,
         push: &mut dyn FnMut(WindowMruUiRenderElement<R>),
     ) {
         let output_size = output_size(&self.output);
@@ -1564,7 +1557,7 @@ impl Inner {
         let panel_texture =
             self.scope_panel
                 .borrow_mut()
-                .get(renderer.as_gles_renderer(), scale, self.wmru.scope);
+                .get(ctx.as_gles().renderer, scale, self.wmru.scope);
         if let Some(texture) = panel_texture {
             let padding = round_logical_in_physical(scale, f64::from(PANEL_PADDING));
 
@@ -1598,9 +1591,7 @@ impl Inner {
             let config = &config.recent_windows;
 
             let is_active = Some(id) == current_id;
-            thumbnail.render(
-                renderer, config, mapped, geo, scale, is_active, bob_y, target, push,
-            );
+            thumbnail.render(ctx.r(), config, mapped, geo, scale, is_active, bob_y, push);
         }
     }
 
