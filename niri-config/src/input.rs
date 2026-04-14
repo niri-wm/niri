@@ -548,6 +548,16 @@ impl Touchscreen {
             .unwrap_or(250.0)
     }
 
+    /// Minimum hold duration (ms) before a wobble-kill can activate a
+    /// TouchTapHoldDrag bind. Prevents fast swipes from accidentally
+    /// triggering hold-drag. Default 150.
+    pub fn tap_hold_trigger_delay_ms(&self) -> f64 {
+        self.gestures
+            .as_ref()
+            .and_then(|g| g.tap_hold_trigger_delay_ms)
+            .unwrap_or(150.0)
+    }
+
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -689,6 +699,13 @@ pub struct TouchscreenGesturesConfig {
     /// are discarded — acts as a tap-vs-hold safety cap. Default: 250.
     #[knuffel(child, unwrap(argument))]
     pub tap_timeout_ms: Option<f64>,
+    /// Minimum hold duration (in milliseconds) before a wobble-kill can
+    /// activate a `TouchTapHoldDrag` bind. If fingers move before this
+    /// delay elapses, normal swipe/pinch/rotate recognition continues
+    /// instead. Prevents fast swipes from accidentally triggering
+    /// hold-drag. Default: 150.
+    #[knuffel(child, unwrap(argument))]
+    pub tap_hold_trigger_delay_ms: Option<f64>,
 }
 
 /// Tuning parameters for touchpad gesture recognition.

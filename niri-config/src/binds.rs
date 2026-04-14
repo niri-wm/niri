@@ -157,6 +157,20 @@ pub enum Trigger {
     TouchTap {
         fingers: u8,
     },
+    /// Multi-finger touchscreen tap-hold-drag (fingers land, hold
+    /// stationary within wobble threshold, then start moving). Fires at
+    /// the wobble-kill moment — the transition from "was a tap candidate"
+    /// to "started moving." Optional `direction` restricts to a specific
+    /// initial movement direction; `None` = omnidirectional (fires
+    /// regardless of direction). Can drive continuous actions.
+    ///
+    /// KDL syntax:
+    /// - `TouchTapHoldDrag fingers=3` (omnidirectional)
+    /// - `TouchTapHoldDrag fingers=3 direction="left"` (directional)
+    TouchTapHoldDrag {
+        fingers: u8,
+        direction: Option<SwipeDirection>,
+    },
     /// Single-finger touchscreen edge swipe.
     ///
     /// `zone` picks one of the three zones along the edge's perpendicular
@@ -188,6 +202,7 @@ impl Trigger {
                 | Trigger::TouchPinch { .. }
                 | Trigger::TouchRotate { .. }
                 | Trigger::TouchTap { .. }
+                | Trigger::TouchTapHoldDrag { .. }
                 | Trigger::TouchEdge { .. }
         )
     }
@@ -1197,6 +1212,7 @@ pub(crate) fn is_gesture_family_name(s: &str) -> bool {
         || s.eq_ignore_ascii_case("TouchPinch")
         || s.eq_ignore_ascii_case("TouchRotate")
         || s.eq_ignore_ascii_case("TouchTap")
+        || s.eq_ignore_ascii_case("TouchTapHoldDrag")
         || s.eq_ignore_ascii_case("TouchEdge")
 }
 
@@ -1347,6 +1363,32 @@ pub(crate) fn build_gesture_trigger(
         } else {
             Trigger::TouchpadTapHoldDrag { fingers }
         });
+    }
+
+    if family.eq_ignore_ascii_case("TouchTapHoldDrag") {
+        reject_edge_zone(props)?;
+        let fingers = expect_fingers(props)?;
+        // direction= is optional for TouchTapHoldDrag (unlike TouchSwipe
+        // where it's required). None = omnidirectional.
+        let direction = match props.direction {
+            None => None,
+            Some(d) => {
+                let dir = match d.to_ascii_lowercase().as_str() {
+                    "up" => SwipeDirection::Up,
+                    "down" => SwipeDirection::Down,
+                    "left" => SwipeDirection::Left,
+                    "right" => SwipeDirection::Right,
+                    other => {
+                        return Err(format!(
+                            "invalid direction=\"{other}\" for TouchTapHoldDrag \
+                             (expected up|down|left|right)"
+                        ))
+                    }
+                };
+                Some(dir)
+            }
+        };
+        return Ok(Trigger::TouchTapHoldDrag { fingers, direction });
     }
 
     if family.eq_ignore_ascii_case("TouchEdge") {
@@ -1566,6 +1608,7 @@ mod tests {
         assert!("TouchpadSwipe".parse::<Key>().is_err());
         assert!("TouchpadTapHold".parse::<Key>().is_err());
         assert!("TouchpadTapHoldDrag".parse::<Key>().is_err());
+        assert!("TouchTapHoldDrag".parse::<Key>().is_err());
     }
 
     #[test]
@@ -1760,6 +1803,8 @@ mod tests {
         assert!(is_gesture_family_name("touchpadtapholddrag"));
         assert!(is_gesture_family_name("TouchTap"));
         assert!(is_gesture_family_name("touchtap"));
+        assert!(is_gesture_family_name("TouchTapHoldDrag"));
+        assert!(is_gesture_family_name("touchtapholddrag"));
         assert!(!is_gesture_family_name("TouchSwipe3Up"));
         assert!(!is_gesture_family_name("TouchpadScrollUp"));
     }
@@ -2041,6 +2086,49 @@ mod tests {
             build_gesture_trigger("TouchpadTapHoldDrag", &props).is_err(),
             "TouchpadTapHoldDrag should reject direction="
         );
+    }
+
+    #[test]
+    fn decode_node_touch_tap_hold_drag_omnidirectional() {
+        let cfg = parse_binds(
+            r#"TouchTapHoldDrag fingers=3 { screenshot; }"#,
+        );
+        let bind = first_bind(&cfg);
+        assert_eq!(
+            bind.key.trigger,
+            Trigger::TouchTapHoldDrag { fingers: 3, direction: None }
+        );
+    }
+
+    #[test]
+    fn decode_node_touch_tap_hold_drag_directional() {
+        let cfg = parse_binds(
+            r#"TouchTapHoldDrag fingers=3 direction="left" { spawn "wl-copy"; }"#,
+        );
+        let bind = first_bind(&cfg);
+        assert_eq!(
+            bind.key.trigger,
+            Trigger::TouchTapHoldDrag {
+                fingers: 3,
+                direction: Some(SwipeDirection::Left),
+            }
+        );
+    }
+
+    #[test]
+    fn decode_node_touch_tap_hold_drag_with_modifier() {
+        let cfg = parse_binds(
+            r#"Mod+TouchTapHoldDrag fingers=4 direction="up" { toggle-overview; }"#,
+        );
+        let bind = first_bind(&cfg);
+        assert_eq!(
+            bind.key.trigger,
+            Trigger::TouchTapHoldDrag {
+                fingers: 4,
+                direction: Some(SwipeDirection::Up),
+            }
+        );
+        assert!(bind.key.modifiers.contains(Modifiers::COMPOSITOR));
     }
 
     #[test]
