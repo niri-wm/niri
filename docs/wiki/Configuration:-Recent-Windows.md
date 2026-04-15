@@ -1,6 +1,6 @@
 ### Overview
 
-<sup>Since: next release</sup>
+<sup>Since: 25.11</sup>
 
 In this section you can configure the recent windows switcher (Alt-Tab).
 
@@ -9,6 +9,8 @@ Here is an outline of the available settings and their default values:
 ```kdl
 recent-windows {
     // off
+    debounce-ms 750
+
     open-delay-ms 150
 
     highlight {
@@ -38,6 +40,30 @@ recent-windows {
 ```
 
 `off` disables the recent windows switcher altogether.
+
+### `debounce-ms`
+
+Delay, in milliseconds, between the window receiving focus and getting "committed" to the recent windows list.
+
+When you want to focus some window, you might end up focusing some unrelated windows on the way:
+
+- with keyboard navigation, the windows between your current one and the target one;
+- with [`focus-follows-mouse`](./Configuration:-Input.md#focus-follows-mouse), the windows you happen to cross with the mouse pointer on the way to the target window.
+
+The debounce delay prevents those intermediate windows from polluting the recent windows list.
+
+Note that some actions, like keyboard input into the target window, will skip this delay and commit the window to the list immediately.
+This way, the recent windows list stays responsive while not getting polluted too much with unintended windows.
+
+If you want windows to appear in recent windows right away, including intermediate windows, you can reduce the delay or set it to zero:
+
+```kdl
+recent-windows {
+    // Commit windows to the recent windows list as soon as they're focused,
+    // with no debounce delay.
+    debounce-ms 0
+}
+```
 
 ### `open-delay-ms`
 

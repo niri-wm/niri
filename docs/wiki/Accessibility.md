@@ -10,6 +10,7 @@ Specifically, niri will announce:
 
 - workspace switching, for example it'll say "Workspace 2" when you switch to the second workspace;
 - the exit confirmation dialog (appears on <kbd>Super</kbd><kbd>Shift</kbd><kbd>E</kbd> by default);
+- <sup>Since: 25.11</sup> niri has an <kbd>Alt</kbd><kbd>Tab</kbd> window switcher where it will announce the selected window title;
 - entering the screenshot UI and the overview (niri will say when these are focused, nothing else for now);
 - whenever a config parse error occurs;
 - the important hotkeys list (for now, as one big announcement without tab navigation; appears on <kbd>Super</kbd><kbd>Shift</kbd><kbd>/</kbd> by default).
@@ -27,7 +28,6 @@ The default config binds <kbd>Super</kbd><kbd>Alt</kbd><kbd>S</kbd> to toggle Or
 
 Note that there are some limitations:
 
-- We don't have an Alt-Tab window switcher yet; it's in the works.
 - We don't have a bind to move focus to layer-shell panels. This is not hard to add, but it would be good to have some consensus or prior art with LXQt/Xfce on how exactly this should work.
 - You need to have a screen connected and enabled. Without a screen, niri won't give focus any window. This makes sense for sighted users, and I'm not entirely sure what makes the most sense for accessibility purposes (maybe, it'd be better solved with virtual monitors).
 - You need working EGL (hardware acceleration).

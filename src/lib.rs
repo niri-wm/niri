@@ -19,17 +19,11 @@ pub mod niri;
 pub mod protocols;
 pub mod render_helpers;
 pub mod rubber_band;
+#[cfg(feature = "xdp-gnome-screencast")]
+pub mod screencasting;
 pub mod ui;
 pub mod utils;
 pub mod window;
-
-#[cfg(not(feature = "xdp-gnome-screencast"))]
-pub mod dummy_pw_utils;
-#[cfg(feature = "xdp-gnome-screencast")]
-pub mod pw_utils;
-
-#[cfg(not(feature = "xdp-gnome-screencast"))]
-pub use dummy_pw_utils as pw_utils;
 
 #[cfg(test)]
 mod tests;

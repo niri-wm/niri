@@ -20,16 +20,19 @@ jobs:
 
     name: test
     runs-on: ubuntu-24.04
+    # FIXME: remove once it's available in runs-on.
+    # This is necessary for libwayland-server v1.23.
+    container: ubuntu:26.04
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           show-progress: false
 
       - name: Install dependencies
         run: |
-          sudo apt-get update -y
-          sudo apt-get install -y ${{ env.DEPS_APT }}
+          apt-get update -y
+          apt-get install -y ${{ env.DEPS_APT }}
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -49,7 +52,7 @@ jobs:
     runs-on: ubuntu-24.04
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           show-progress: false
 
@@ -91,7 +94,7 @@ jobs:
     runs-on: ubuntu-24.04
     container: alpine:3
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           show-progress: false
 
@@ -111,6 +114,9 @@ jobs:
 
     name: randomized and slow tests
     runs-on: ubuntu-24.04
+    # FIXME: remove once it's available in runs-on.
+    # This is necessary for libwayland-server v1.23.
+    container: ubuntu:26.04
 
     env:
       RUST_BACKTRACE: 1
@@ -121,14 +127,14 @@ jobs:
       PROPTEST_MAX_SHRINK_ITERS: 200000
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           show-progress: false
 
       - name: Install dependencies
         run: |
-          sudo apt-get update -y
-          sudo apt-get install -y ${{ env.DEPS_APT }}
+          apt-get update -y
+          apt-get install -y ${{ env.DEPS_APT }}
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -148,7 +154,7 @@ jobs:
     runs-on: ubuntu-24.04
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           show-progress: false
 
@@ -172,7 +178,7 @@ jobs:
     runs-on: ubuntu-24.04
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           show-progress: false
 
@@ -181,7 +187,7 @@ jobs:
           sudo apt-get update -y
           sudo apt-get install -y ${{ env.DEPS_APT }} libadwaita-1-dev
 
-      - uses: dtolnay/rust-toolchain@1.80.1
+      - uses: dtolnay/rust-toolchain@1.85.0
 
       - uses: Swatinem/rust-cache@v2
 
@@ -195,7 +201,7 @@ jobs:
     runs-on: ubuntu-24.04
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           show-progress: false
 
@@ -217,7 +223,7 @@ jobs:
     runs-on: ubuntu-24.04
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           show-progress: false
 
@@ -233,7 +239,7 @@ jobs:
     container: fedora:41
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           show-progress: false
 
@@ -251,32 +257,30 @@ jobs:
       CARGO_HOME: /home/runner/work/niri/niri/cargo-home
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           show-progress: false
-
-      # Required for the rust-cache action to work.
-      - uses: dtolnay/rust-toolchain@stable
 
       # Remove man-db triggers to speed up Ubuntu upgrade by a minute or two during vmactions/freebsd-vm action run.
       - run: |
           sudo rm /var/lib/dpkg/info/man-db.*
 
       - name: Build
-        uses: vmactions/freebsd-vm@966989c456d41351f095a421f60e71342d3bce41  # v1.2.1
+        uses: vmactions/freebsd-vm@v1
         with:
+          release: "15.0"
           copyback: false
           prepare: |
             pkg update -f
             pkg install -y ${{ env.DEPS_PKG }}
           run: |
-            curl -o patch-pipewire_init 'https://cgit.freebsd.org/ports/plain/x11-wm/niri/files/patch-pipewire_init?id=f3f7e555b06d9a87d63c047ce3e82e936a11f2fe'
+            curl -o patch-pipewire_init 'https://cgit.freebsd.org/ports/plain/x11-wm/niri/files/patch-pipewire_init?id=cadf6784d264cf780b6e0ad59bd15b831d36cf80'
 
             export CARGO_HOME="$PWD/cargo-home"
 
             cargo fetch
 
-            ( cd $CARGO_HOME/git/checkouts/pipewire-rs-*/*/; patch -p2 < $CARGO_HOME/../patch-pipewire_init; )
+            ( cd $CARGO_HOME/registry/src/index.crates.io-*/; patch -p1 < $CARGO_HOME/../patch-pipewire_init; )
 
             cargo build \
               --offline \
@@ -291,16 +295,12 @@ jobs:
           dotnet: false
           large-packages: false
         
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           show-progress: false
 
-      - name: Check flake inputs
-        uses: DeterminateSystems/flake-checker-action@v4
-        continue-on-error: true
-
       - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@v3
+        uses: cachix/install-nix-action@v31
         continue-on-error: true
 
       - run: nix flake check
@@ -314,7 +314,7 @@ jobs:
       contents: write
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           lfs: true
           show-progress: false
@@ -331,7 +331,7 @@ jobs:
       contents: write
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           lfs: true
           show-progress: false

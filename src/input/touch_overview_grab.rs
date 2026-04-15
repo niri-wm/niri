@@ -123,6 +123,17 @@ impl TouchGrab<State> for TouchOverviewGrab {
         seq: Serial,
     ) {
         handle.down(data, None, event, seq);
+
+        if event.slot == self.start_data.slot {
+            return;
+        }
+
+        if matches!(self.gesture, GestureState::InteractiveMove) {
+            if let Some(window) = &self.window.as_ref() {
+                data.niri.layout.toggle_window_floating(Some(window));
+                data.niri.queue_redraw_all();
+            }
+        }
     }
 
     fn up(

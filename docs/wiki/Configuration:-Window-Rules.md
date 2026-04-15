@@ -419,7 +419,7 @@ window-rule {
 
 #### `open-maximized-to-edges`
 
-<sup>Since: next release</sup>
+<sup>Since: 25.11</sup>
 
 Make the window open [maximized to edges](./Fullscreen-and-Maximize.md).
 
@@ -623,6 +623,7 @@ window-rule {
 <sup>Since: 25.02</sup>
 
 Set the default display mode for columns created from this window.
+Can be `normal` or `tabbed`.
 
 This is used any time a window goes into its own column.
 For example:

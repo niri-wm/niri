@@ -28,7 +28,7 @@ pub struct ShaderRenderElement {
     // Should only be used for visual improvements, i.e. corner radius anti-aliasing.
     scale: f32,
     alpha: f32,
-    additional_uniforms: Vec<Uniform<'static>>,
+    additional_uniforms: Rc<[Uniform<'static>]>,
     textures: HashMap<String, GlesTexture>,
     kind: Kind,
 }
@@ -185,7 +185,7 @@ impl ShaderRenderElement {
         // Should only be used for visual improvements, i.e. corner radius anti-aliasing.
         scale: f32,
         alpha: f32,
-        additional_uniforms: Vec<Uniform<'static>>,
+        additional_uniforms: Rc<[Uniform<'static>]>,
         textures: HashMap<String, GlesTexture>,
         kind: Kind,
     ) -> Self {
@@ -212,7 +212,7 @@ impl ShaderRenderElement {
             opaque_regions: vec![],
             scale: 1.,
             alpha: 1.,
-            additional_uniforms: vec![],
+            additional_uniforms: Rc::new([]),
             textures: HashMap::new(),
             kind,
         }
@@ -228,7 +228,7 @@ impl ShaderRenderElement {
         opaque_regions: Option<Vec<Rectangle<f64, Logical>>>,
         scale: f32,
         alpha: f32,
-        uniforms: Vec<Uniform<'static>>,
+        uniforms: Rc<[Uniform<'static>]>,
         textures: HashMap<String, GlesTexture>,
     ) {
         self.area.size = size;
@@ -294,6 +294,8 @@ impl RenderElement<GlesRenderer> for ShaderRenderElement {
         damage: &[Rectangle<i32, Physical>],
         _opaque_regions: &[Rectangle<i32, Physical>],
     ) -> Result<(), GlesError> {
+        let _span = tracy_client::span!("ShaderRenderElement::draw");
+
         let frame = frame.as_gles_frame();
 
         let Some(shader) = Shaders::get_from_frame(frame).program(self.program) else {
@@ -373,7 +375,8 @@ impl RenderElement<GlesRenderer> for ShaderRenderElement {
         let has_tint = frame.debug_flags().contains(DebugFlags::TINT);
 
         // render
-        frame.with_context(move |gl| -> Result<(), GlesError> {
+        let span_loc = smithay::gpu_span_location!("draw shader");
+        frame.with_profiled_context(span_loc, move |gl| -> Result<(), GlesError> {
             let program = if has_debug {
                 &shader.0.debug
             } else {
@@ -425,7 +428,7 @@ impl RenderElement<GlesRenderer> for ShaderRenderElement {
                     gl.Uniform1f(shader.0.uniform_tint, tint);
                 }
 
-                for uniform in &self.additional_uniforms {
+                for uniform in &*self.additional_uniforms {
                     let desc =
                         program
                             .additional_uniforms

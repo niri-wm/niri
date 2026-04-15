@@ -268,12 +268,14 @@ impl TestCase for Layout {
         _size: Size<i32, Physical>,
     ) -> Vec<Box<dyn RenderElement<GlesRenderer>>> {
         self.layout.update_render_elements(Some(&self.output));
+
+        let mut rv = Vec::new();
         self.layout
             .monitor_for_output(&self.output)
             .unwrap()
-            .render_elements(renderer, RenderTarget::Output, true)
-            .flat_map(|(_, _, iter)| iter)
-            .map(|elem| Box::new(elem) as _)
-            .collect()
+            .render_workspaces(renderer, RenderTarget::Output, true, &mut |elem| {
+                rv.push(Box::new(elem) as _)
+            });
+        rv
     }
 }

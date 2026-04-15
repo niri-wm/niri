@@ -6,6 +6,7 @@ use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 use super::*;
 use crate::layout::LayoutElement as _;
+use crate::utils::spawning::store_and_increase_nofile_rlimit;
 use crate::utils::with_toplevel_role;
 
 #[test]
@@ -162,6 +163,8 @@ impl fmt::Display for DefaultSize {
 
 #[test]
 fn target_output_and_workspaces() {
+    store_and_increase_nofile_rlimit();
+
     // Here we test a massive powerset of settings that can affect where a window opens:
     //
     // * open-on-workspace
@@ -438,6 +441,8 @@ fn target_size() {
         return;
     }
 
+    store_and_increase_nofile_rlimit();
+
     // Here we test a massive powerset of settings that can affect the window size:
     //
     // * want fullscreen
@@ -682,6 +687,8 @@ post-map configures:
 
 #[test]
 fn fullscreen_maximize() {
+    store_and_increase_nofile_rlimit();
+
     let open_fullscreen = [None, Some("false"), Some("true")];
     let want_fullscreen = [
         WantFullscreen::No,
