@@ -909,7 +909,7 @@ impl XdgShellHandler for State {
             return;
         };
 
-        if let Some((mapped, output)) = self.niri.layout.find_window_and_output_mut(&parent) {
+        if let Some((mapped, output)) = self.niri.layout.find_window_and_output(&parent) {
             let output = output.cloned();
             let window = mapped.window.clone();
             if self.niri.layout.descendants_added(&window) {
