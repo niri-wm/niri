@@ -116,10 +116,12 @@ impl TestWindow {
                 if self.0.animate_next_configure.get() {
                     self.0.animation_snapshot.replace(Some(RenderSnapshot {
                         contents: Vec::new(),
+                        contents_with_blocked_out_bg: None,
                         blocked_out_contents: Vec::new(),
                         block_out_from: None,
                         size: self.0.bbox.get().size.to_f64(),
                         texture: OnceCell::new(),
+                        texture_with_blocked_out_bg: Default::default(),
                         blocked_out_texture: OnceCell::new(),
                     }));
                 }
@@ -3689,6 +3691,41 @@ fn expel_pending_left_from_fullscreen_tabbed_column() {
     ];
 
     check_ops(ops);
+}
+
+#[test]
+fn workspace_render_geo_at_fractional_scale() {
+    let ops = [
+        Op::AddScaledOutput {
+            id: 1,
+            scale: 1.1,
+            layout_config: None,
+        },
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::FocusWorkspaceDown,
+        Op::CompleteAnimations,
+    ];
+
+    let layout = check_ops(ops);
+
+    let MonitorSet::Normal { monitors, .. } = &layout.monitor_set else {
+        unreachable!()
+    };
+
+    let mon = &monitors[0];
+    let mut iter = mon.workspaces_with_render_geo();
+    let (_ws, geo) = iter.next().unwrap();
+    assert!(
+        iter.next().is_none(),
+        "animations are completed, only one workspace should be visible"
+    );
+    assert_eq!(
+        geo.loc.y, 0.,
+        "active workspace must be at y = 0 exactly, \
+         otherwise a pointer against the screen edge at y = 0 won't hit it"
+    );
 }
 
 fn parent_id_causes_loop(layout: &Layout<TestWindow>, id: usize, mut parent_id: usize) -> bool {

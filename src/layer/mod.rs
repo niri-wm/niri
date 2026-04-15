@@ -1,13 +1,14 @@
 use niri_config::layer_rule::{LayerRule, Match};
 use niri_config::utils::MergeWith as _;
-use niri_config::{BlockOutFrom, CornerRadius, ShadowRule};
+use niri_config::{BackgroundEffect, BlockOutFrom, CornerRadius, ResolvedPopupsRules, ShadowRule};
 use smithay::desktop::LayerSurface;
+use smithay::wayland::shell::wlr_layer::Layer;
 
 pub mod mapped;
 pub use mapped::MappedLayer;
 
 /// Rules fully resolved for a layer-shell surface.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Default, PartialEq)]
 pub struct ResolvedLayerRules {
     /// Extra opacity to draw this layer surface with.
     pub opacity: Option<f32>,
@@ -26,33 +27,19 @@ pub struct ResolvedLayerRules {
 
     /// Whether to bob this window up and down.
     pub baba_is_float: bool,
+
+    /// Background effect configuration.
+    pub background_effect: BackgroundEffect,
+
+    /// Rules for this layer surface's popups.
+    pub popups: ResolvedPopupsRules,
 }
 
 impl ResolvedLayerRules {
-    pub const fn empty() -> Self {
-        Self {
-            opacity: None,
-            block_out_from: None,
-            shadow: ShadowRule {
-                off: false,
-                on: false,
-                offset: None,
-                softness: None,
-                spread: None,
-                draw_behind_window: None,
-                color: None,
-                inactive_color: None,
-            },
-            geometry_corner_radius: None,
-            place_within_backdrop: false,
-            baba_is_float: false,
-        }
-    }
-
     pub fn compute(rules: &[LayerRule], surface: &LayerSurface, is_at_startup: bool) -> Self {
         let _span = tracy_client::span!("ResolvedLayerRules::compute");
 
-        let mut resolved = ResolvedLayerRules::empty();
+        let mut resolved = ResolvedLayerRules::default();
 
         for rule in rules {
             let matches = |m: &Match| {
@@ -90,6 +77,12 @@ impl ResolvedLayerRules {
             }
 
             resolved.shadow.merge_with(&rule.shadow);
+
+            resolved
+                .background_effect
+                .merge_with(&rule.background_effect);
+
+            resolved.popups.merge_with(&rule.popups);
         }
 
         resolved
@@ -99,6 +92,18 @@ impl ResolvedLayerRules {
 fn surface_matches(surface: &LayerSurface, m: &Match) -> bool {
     if let Some(namespace_re) = &m.namespace {
         if !namespace_re.0.is_match(surface.namespace()) {
+            return false;
+        }
+    }
+
+    if let Some(layer) = m.layer {
+        let surface_layer = match surface.layer() {
+            Layer::Background => niri_ipc::Layer::Background,
+            Layer::Bottom => niri_ipc::Layer::Bottom,
+            Layer::Top => niri_ipc::Layer::Top,
+            Layer::Overlay => niri_ipc::Layer::Overlay,
+        };
+        if layer != surface_layer {
             return false;
         }
     }

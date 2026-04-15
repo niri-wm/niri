@@ -846,9 +846,7 @@ impl XdgShellHandler for State {
         self.niri
             .stop_casts_for_target(CastTarget::Window { id: id.get() });
 
-        self.backend.with_primary_renderer(|renderer| {
-            self.niri.layout.store_unmap_snapshot(renderer, &window);
-        });
+        self.store_unmap_snapshot(&window, output.as_ref());
 
         let transaction = Transaction::new();
         let blocker = transaction.blocker();
@@ -863,7 +861,15 @@ impl XdgShellHandler for State {
 
         self.niri.window_mru_ui.remove_window(id);
         self.niri.layout.remove_window(&window, transaction.clone());
-        self.add_default_dmabuf_pre_commit_hook(surface.wl_surface());
+
+        let surface = surface.wl_surface();
+        // This check is necessary because implicit resource destruction is done with
+        // undefined order, so the surface might get destroyed before toplevel_destroyed() is
+        // called. In this case, adding the default pre-commit hook here would leak it, since the
+        // place that removes it is WlSurface::destroyed(), which had already been called by now.
+        if surface.is_alive() {
+            self.add_default_dmabuf_pre_commit_hook(surface);
+        }
 
         // If this is the only instance, then this transaction will complete immediately, so no
         // need to set the timer.
@@ -1437,7 +1443,7 @@ pub fn add_mapped_toplevel_pre_commit_hook(toplevel: &ToplevelSurface) -> HookId
         let span =
             trace_span!("toplevel pre-commit", surface = %surface.id(), serial = Empty).entered();
 
-        let Some((mapped, _)) = state.niri.layout.find_window_and_output_mut(surface) else {
+        let Some((mapped, output)) = state.niri.layout.find_window_and_output_mut(surface) else {
             error!("pre-commit hook for mapped surfaces must be removed upon unmapping");
             return;
         };
@@ -1539,9 +1545,8 @@ pub fn add_mapped_toplevel_pre_commit_hook(toplevel: &ToplevelSurface) -> HookId
 
         let window = mapped.window.clone();
         if got_unmapped {
-            state.backend.with_primary_renderer(|renderer| {
-                state.niri.layout.store_unmap_snapshot(renderer, &window);
-            });
+            let output = output.cloned();
+            state.store_unmap_snapshot(&window, output.as_ref());
         } else {
             if animate {
                 state.backend.with_primary_renderer(|renderer| {

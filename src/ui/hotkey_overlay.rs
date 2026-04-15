@@ -579,6 +579,13 @@ fn prettify_keysym_name(screen_reader: bool, name: &str) -> String {
             "grave" => "`",
             "bracketleft" => "[",
             "bracketright" => "]",
+            "adiaeresis" => "Ä",
+            "ediaeresis" => "Ë",
+            "idiaeresis" => "Ï",
+            "odiaeresis" => "Ö",
+            "udiaeresis" => "Ü",
+            "ydiaeresis" => "Ÿ",
+            "wdiaeresis" => "Ẅ",
             _ => name,
         }
     };

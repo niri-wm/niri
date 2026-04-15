@@ -4,7 +4,6 @@ use smithay::backend::winit::WinitVirtualDevice;
 use smithay::output::Output;
 
 use crate::niri::State;
-use crate::protocols::virtual_keyboard::VirtualKeyboard;
 use crate::protocols::virtual_pointer::VirtualPointer;
 
 pub trait NiriInputBackend: input::InputBackend<Device = Self::NiriDevice> {
@@ -41,12 +40,6 @@ impl NiriInputDevice for WinitVirtualDevice {
         // instead, we just return None and rely on the fact that it has only one output.
         // doing so causes the cursor to be placed in *global* output coordinates,
         // which are not flipped, and happen to be what we want.
-        None
-    }
-}
-
-impl NiriInputDevice for VirtualKeyboard {
-    fn output(&self, _: &State) -> Option<Output> {
         None
     }
 }
