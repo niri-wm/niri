@@ -20,6 +20,7 @@
       rust-overlay,
     }:
     let
+      revision = self.shortRev or self.dirtyShortRev or "unknown";
       niri-package =
         {
           lib,
@@ -46,7 +47,7 @@
 
         rustPlatform.buildRustPackage {
           pname = "niri";
-          version = self.shortRev or self.dirtyShortRev or "unknown";
+          version = revision;
 
           src = lib.fileset.toSource {
             root = ./.;
@@ -148,7 +149,7 @@
                 "-Wl,--pop-state"
               ]
             );
-            NIRI_BUILD_COMMIT = self.shortRev;
+            NIRI_BUILD_COMMIT = revision;
           };
 
           passthru = {

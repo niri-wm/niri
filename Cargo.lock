@@ -894,9 +894,9 @@ dependencies = [
 
 [[package]]
 name = "csscolorparser"
-version = "0.8.1"
+version = "0.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "02ee6eae4d99456f92dc379ba21cf08f783ef5525f193c3854b4e921ece045c5"
+checksum = "199f851bd3cb5004c09474252c7f74e7c047441ed0979bf3688a7106a13da952"
 dependencies = [
  "num-traits",
  "phf",
@@ -3475,7 +3475,7 @@ checksum = "b7c388c1b5e93756d0c740965c41e8822f866621d41acbdf6336a6a168f8840c"
 [[package]]
 name = "smithay"
 version = "0.7.0"
-source = "git+https://github.com/Smithay/smithay.git#f1d0d2c43e843233119af3dcf76d619e1afff4ee"
+source = "git+https://github.com/Smithay/smithay.git?rev=dce4d34e7421559b661af9c519904f4b24346148#dce4d34e7421559b661af9c519904f4b24346148"
 dependencies = [
  "aliasable",
  "appendlist",
@@ -3550,7 +3550,7 @@ dependencies = [
 [[package]]
 name = "smithay-drm-extras"
 version = "0.1.0"
-source = "git+https://github.com/Smithay/smithay.git#f1d0d2c43e843233119af3dcf76d619e1afff4ee"
+source = "git+https://github.com/Smithay/smithay.git?rev=dce4d34e7421559b661af9c519904f4b24346148#dce4d34e7421559b661af9c519904f4b24346148"
 dependencies = [
  "drm",
  "libdisplay-info",
