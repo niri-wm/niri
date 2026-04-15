@@ -863,6 +863,7 @@ impl XdgShellHandler for State {
 
         self.niri.window_mru_ui.remove_window(id);
         self.niri.layout.remove_window(&window, transaction.clone());
+        self.niri.cancel_block_out_hold_timers(id);
 
         let surface = surface.wl_surface();
         // This check is necessary because implicit resource destruction is done with
@@ -908,7 +909,7 @@ impl XdgShellHandler for State {
             return;
         };
 
-        if let Some((mapped, output)) = self.niri.layout.find_window_and_output_mut(&parent) {
+        if let Some((mapped, output)) = self.niri.layout.find_window_and_output(&parent) {
             let output = output.cloned();
             let window = mapped.window.clone();
             if self.niri.layout.descendants_added(&window) {
@@ -1367,32 +1368,51 @@ impl State {
     }
 
     pub fn update_window_rules(&mut self, toplevel: &ToplevelSurface) {
-        let config = self.niri.config.borrow();
-        let window_rules = &config.window_rules;
-
-        if let Some(unmapped) = self.niri.unmapped_windows.get_mut(toplevel.wl_surface()) {
-            let new_rules = ResolvedWindowRules::compute(
-                window_rules,
-                WindowRef::Unmapped(unmapped),
-                self.niri.is_at_startup,
-            );
-            if let InitialConfigureState::Configured { rules, .. } = &mut unmapped.state {
-                *rules = new_rules;
-            }
-        } else if let Some((mapped, output)) = self
-            .niri
-            .layout
-            .find_window_and_output_mut(toplevel.wl_surface())
         {
-            if mapped.recompute_window_rules(window_rules, self.niri.is_at_startup) {
-                drop(config);
-                let output = output.cloned();
-                let window = mapped.window.clone();
-                self.niri.layout.update_window(&window, None);
+            let config = self.niri.config.borrow();
+            let window_rules = &config.window_rules;
 
-                if let Some(output) = output {
-                    self.niri.queue_redraw(&output);
+            if let Some(unmapped) = self.niri.unmapped_windows.get_mut(toplevel.wl_surface()) {
+                let new_rules = ResolvedWindowRules::compute(
+                    window_rules,
+                    WindowRef::Unmapped(unmapped),
+                    self.niri.is_at_startup,
+                );
+                if let InitialConfigureState::Configured { rules, .. } = &mut unmapped.state {
+                    *rules = new_rules;
                 }
+                return;
+            }
+        }
+
+        let Some((window, output, id, action, rules_changed)) = ({
+            let config = self.niri.config.borrow();
+            let window_rules = &config.window_rules;
+
+            self.niri
+                .layout
+                .find_window_and_output_mut(toplevel.wl_surface())
+                .map(|(mapped, output)| {
+                    let rules_changed = mapped.recompute_window_rules_with_metadata_hint(
+                        window_rules,
+                        self.niri.is_at_startup,
+                        true,
+                    );
+                    let action = mapped.take_block_out_hold_action();
+                    let window = mapped.window.clone();
+                    let id = mapped.id();
+                    let output = output.cloned();
+                    (window, output, id, action, rules_changed)
+                })
+        }) else {
+            return;
+        };
+
+        self.niri.handle_block_out_hold_action(id, action);
+        if rules_changed {
+            self.niri.layout.update_window(&window, None);
+            if let Some(output) = output {
+                self.niri.queue_redraw(&output);
             }
         }
     }

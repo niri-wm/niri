@@ -176,7 +176,7 @@ use crate::utils::{
     logical_output, make_screenshot_path, output_matches_name, output_size, panel_orientation,
     send_scale_transform, write_png_rgba8, xwayland,
 };
-use crate::window::mapped::MappedId;
+use crate::window::mapped::{BlockOutHoldAction, MappedId};
 use crate::window::{InitialConfigureState, Mapped, ResolvedWindowRules, Unmapped, WindowRef};
 
 const CLEAR_COLOR_LOCKED: [f32; 4] = [0.3, 0.1, 0.1, 1.];
@@ -185,6 +185,8 @@ const CLEAR_COLOR_LOCKED: [f32; 4] = [0.3, 0.1, 0.1, 1.];
 // second, so with the worst timing the maximum interval between two frame callbacks for a surface
 // should be ~1.995 seconds.
 const FRAME_CALLBACK_THROTTLE: Option<Duration> = Some(Duration::from_millis(995));
+const BLOCK_OUT_HOLD_SILENCE_TIMEOUT: Duration = Duration::from_millis(30);
+const BLOCK_OUT_HOLD_FORCE_TIMEOUT: Duration = Duration::from_millis(200);
 
 pub struct Niri {
     pub config: Rc<RefCell<Config>>,
@@ -222,6 +224,8 @@ pub struct Niri {
     // Each workspace corresponds to a Space. Each workspace generally has one Output mapped to it,
     // however it may have none (when there are no outputs connected) or multiple (when mirroring).
     pub layout: Layout<Mapped>,
+    pub block_out_hold_silence_timers: HashMap<MappedId, RegistrationToken>,
+    pub block_out_hold_force_timers: HashMap<MappedId, RegistrationToken>,
 
     // This space does not actually contain any windows, but all outputs are mapped into it
     // according to their global position.
@@ -2435,6 +2439,8 @@ impl Niri {
             clock: animation_clock,
 
             layout,
+            block_out_hold_silence_timers: HashMap::new(),
+            block_out_hold_force_timers: HashMap::new(),
             global_space: Space::default(),
             sorted_outputs: Vec::default(),
             output_state: HashMap::new(),
@@ -3939,6 +3945,8 @@ impl Niri {
 
         let mut windows = vec![];
         let mut outputs = HashSet::new();
+        let mut actions = Vec::new();
+        let prefer_no_csd = config.prefer_no_csd;
         self.layout.with_windows_mut(|mapped, output| {
             if mapped.recompute_window_rules_if_needed(window_rules, self.is_at_startup) {
                 windows.push(mapped.window.clone());
@@ -3947,13 +3955,17 @@ impl Niri {
                     outputs.insert(output.clone());
                 }
 
-                // Since refresh_window_rules() is called after refresh_layout(), we need to update
-                // the tiled state right here, so that it's picked up by the following
-                // send_pending_configure().
-                mapped.update_tiled_state(config.prefer_no_csd);
+                mapped.update_tiled_state(prefer_no_csd);
             }
+
+            let action = mapped.take_block_out_hold_action();
+            actions.push((mapped.id(), action));
         });
         drop(config);
+
+        for (id, action) in actions {
+            self.handle_block_out_hold_action(id, action);
+        }
 
         for win in windows {
             self.layout.update_window(&win, None);
@@ -5949,7 +5961,7 @@ impl Niri {
     pub fn recompute_window_rules(&mut self) {
         let _span = tracy_client::span!("Niri::recompute_window_rules");
 
-        let changed = {
+        let (changed, actions) = {
             let window_rules = &self.config.borrow().window_rules;
 
             for unmapped in self.unmapped_windows.values_mut() {
@@ -5964,17 +5976,23 @@ impl Niri {
             }
 
             let mut windows = vec![];
+            let mut actions = Vec::new();
             self.layout.with_windows_mut(|mapped, _| {
                 if mapped.recompute_window_rules(window_rules, self.is_at_startup) {
                     windows.push(mapped.window.clone());
                 }
+                actions.push((mapped.id(), mapped.take_block_out_hold_action()));
             });
             let changed = !windows.is_empty();
             for win in windows {
                 self.layout.update_window(&win, None);
             }
-            changed
+            (changed, actions)
         };
+
+        for (id, action) in actions {
+            self.handle_block_out_hold_action(id, action);
+        }
 
         if changed {
             // FIXME: granular.
@@ -6090,6 +6108,102 @@ impl Niri {
     pub fn queue_redraw_mru_output(&mut self) {
         if let Some(output) = self.window_mru_ui.output().cloned() {
             self.queue_redraw(&output);
+        }
+    }
+
+    pub fn handle_block_out_hold_action(&mut self, id: MappedId, action: BlockOutHoldAction) {
+        match action {
+            BlockOutHoldAction::None => {}
+            BlockOutHoldAction::Started => self.start_block_out_hold_timers(id),
+            BlockOutHoldAction::Cleared => self.cancel_block_out_hold_timers(id),
+        }
+    }
+
+    pub fn reset_block_out_hold_silence_timer(&mut self, id: MappedId) {
+        if !self.block_out_hold_force_timers.contains_key(&id) {
+            return;
+        }
+        if let Some(token) = self.block_out_hold_silence_timers.remove(&id) {
+            self.event_loop.remove(token);
+        }
+        self.arm_block_out_hold_silence_timer(id);
+    }
+
+    pub fn cancel_block_out_hold_timers(&mut self, id: MappedId) {
+        if let Some(token) = self.block_out_hold_silence_timers.remove(&id) {
+            self.event_loop.remove(token);
+        }
+        if let Some(token) = self.block_out_hold_force_timers.remove(&id) {
+            self.event_loop.remove(token);
+        }
+    }
+
+    fn start_block_out_hold_timers(&mut self, id: MappedId) {
+        self.cancel_block_out_hold_timers(id);
+        self.arm_block_out_hold_silence_timer(id);
+        self.arm_block_out_hold_force_timer(id);
+    }
+
+    fn arm_block_out_hold_silence_timer(&mut self, id: MappedId) {
+        let timer = Timer::from_duration(BLOCK_OUT_HOLD_SILENCE_TIMEOUT);
+        let token = self
+            .event_loop
+            .insert_source(timer, move |_, _, state| {
+                state.niri.on_block_out_hold_silence_timeout(id);
+                TimeoutAction::Drop
+            })
+            .unwrap();
+        self.block_out_hold_silence_timers.insert(id, token);
+    }
+
+    fn arm_block_out_hold_force_timer(&mut self, id: MappedId) {
+        let timer = Timer::from_duration(BLOCK_OUT_HOLD_FORCE_TIMEOUT);
+        let token = self
+            .event_loop
+            .insert_source(timer, move |_, _, state| {
+                state.niri.on_block_out_hold_force_timeout(id);
+                TimeoutAction::Drop
+            })
+            .unwrap();
+        self.block_out_hold_force_timers.insert(id, token);
+    }
+
+    fn on_block_out_hold_silence_timeout(&mut self, id: MappedId) {
+        self.block_out_hold_silence_timers.remove(&id);
+        if let Some(token) = self.block_out_hold_force_timers.remove(&id) {
+            self.event_loop.remove(token);
+        }
+        self.finish_block_out_hold_timeout(id);
+    }
+
+    fn on_block_out_hold_force_timeout(&mut self, id: MappedId) {
+        self.block_out_hold_force_timers.remove(&id);
+        if let Some(token) = self.block_out_hold_silence_timers.remove(&id) {
+            self.event_loop.remove(token);
+        }
+        self.finish_block_out_hold_timeout(id);
+    }
+
+    fn finish_block_out_hold_timeout(&mut self, id: MappedId) {
+        let mut redraw = None;
+        let mut cleared = false;
+        {
+            if let Some((mapped, output)) = self.layout.find_window_and_output_by_id_mut(id) {
+                if mapped.has_block_out_hold() {
+                    mapped.clear_block_out_hold();
+                    cleared = true;
+                    redraw = output.cloned();
+                }
+            }
+        }
+
+        if cleared {
+            if let Some(output) = redraw {
+                self.queue_redraw(&output);
+            } else {
+                self.queue_redraw_all();
+            }
+            self.queue_redraw_mru_output();
         }
     }
 }

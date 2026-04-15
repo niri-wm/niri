@@ -257,14 +257,26 @@ impl CompositorHandler for State {
             }
 
             // This is a commit of a previously-mapped root or a non-toplevel root.
-            if let Some((mapped, output)) = self.niri.layout.find_window_and_output(surface) {
-                let window = mapped.window.clone();
-                let output = output.cloned();
-
-                let id = mapped.id();
-
+            let surface_was_mapped = is_mapped(surface);
+            if let Some((window, output, id, hold_active)) = self
+                .niri
+                .layout
+                .find_window_and_output(surface)
+                .map(|(mapped, output)| {
+                    let hold_active = mapped.has_block_out_hold();
+                    (
+                        mapped.window.clone(),
+                        output.cloned(),
+                        mapped.id(),
+                        hold_active,
+                    )
+                })
+            {
                 // This is a commit of a previously-mapped toplevel.
-                let is_mapped = is_mapped(surface);
+                let is_mapped = surface_was_mapped;
+                if hold_active {
+                    self.niri.reset_block_out_hold_silence_timer(id);
+                }
 
                 // Must start the close animation before window.on_commit().
                 let transaction = Transaction::new();
@@ -293,6 +305,7 @@ impl CompositorHandler for State {
 
                     self.niri.window_mru_ui.remove_window(id);
                     self.niri.layout.remove_window(&window, transaction.clone());
+                    self.niri.cancel_block_out_hold_timers(id);
                     self.add_default_dmabuf_pre_commit_hook(surface);
 
                     // If this is the only instance, then this transaction will complete
@@ -369,14 +382,25 @@ impl CompositorHandler for State {
         }
 
         // This is a commit of a non-root or a non-toplevel root.
-        let root_window_output = self.niri.layout.find_window_and_output(&root_surface);
-        if let Some((mapped, output)) = root_window_output {
-            let window = mapped.window.clone();
-            let output = output.cloned();
+        if let Some((window, output, id, hold_active)) = self
+            .niri
+            .layout
+            .find_window_and_output(&root_surface)
+            .map(|(mapped, output)| {
+                let hold_active = mapped.has_block_out_hold();
+                (
+                    mapped.window.clone(),
+                    output.cloned(),
+                    mapped.id(),
+                    hold_active,
+                )
+            })
+        {
+            if hold_active {
+                self.niri.reset_block_out_hold_silence_timer(id);
+            }
             window.on_commit();
-            self.niri
-                .window_mru_ui
-                .update_window(&self.niri.layout, mapped.id());
+            self.niri.window_mru_ui.update_window(&self.niri.layout, id);
             self.niri.layout.update_window(&window, None);
             if let Some(output) = output {
                 self.niri.queue_redraw(&output);

@@ -39,7 +39,8 @@ use std::time::Duration;
 use monitor::{InsertHint, InsertPosition, InsertWorkspace, MonitorAddWindowTarget};
 use niri_config::utils::MergeWith as _;
 use niri_config::{
-    Config, CornerRadius, LayoutPart, PresetSize, Workspace as WorkspaceConfig, WorkspaceReference,
+    BlockOutFrom, Config, CornerRadius, LayoutPart, PresetSize, Workspace as WorkspaceConfig,
+    WorkspaceReference,
 };
 use niri_ipc::{ColumnDisplay, PositionChange, SizeChange, WindowLayout};
 use scrolling::{Column, ColumnWidth};
@@ -71,6 +72,7 @@ use crate::utils::{
     ensure_min_max_size_maybe_zero, output_matches_name, output_size,
     round_logical_in_physical_max1, ResizeEdge,
 };
+use crate::window::mapped::{Mapped, MappedId};
 use crate::window::ResolvedWindowRules;
 
 pub mod closing_window;
@@ -117,6 +119,44 @@ niri_render_elements! {
 
 pub type LayoutElementRenderSnapshot =
     RenderSnapshot<BakedBuffer<TextureBuffer<GlesTexture>>, BakedBuffer<SolidColorBuffer>>;
+
+impl Layout<Mapped> {
+    pub fn find_window_and_output_by_id_mut(
+        &mut self,
+        id: MappedId,
+    ) -> Option<(&mut Mapped, Option<&Output>)> {
+        if let Some(InteractiveMoveState::Moving(move_)) = &mut self.interactive_move {
+            if move_.tile.window().id() == id {
+                return Some((move_.tile.window_mut(), Some(&move_.output)));
+            }
+        }
+
+        match &mut self.monitor_set {
+            MonitorSet::Normal { monitors, .. } => {
+                for mon in monitors {
+                    for ws in &mut mon.workspaces {
+                        for window in ws.windows_mut() {
+                            if window.id() == id {
+                                return Some((window, Some(&mon.output)));
+                            }
+                        }
+                    }
+                }
+            }
+            MonitorSet::NoOutputs { workspaces } => {
+                for ws in workspaces {
+                    for window in ws.windows_mut() {
+                        if window.id() == id {
+                            return Some((window, None));
+                        }
+                    }
+                }
+            }
+        }
+
+        None
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SizingMode {
@@ -278,6 +318,10 @@ pub trait LayoutElement {
     fn is_child_of(&self, parent: &Self) -> bool;
 
     fn rules(&self) -> &ResolvedWindowRules;
+
+    fn block_out_from(&self) -> Option<BlockOutFrom> {
+        self.rules().block_out_from
+    }
 
     /// Runs periodic clean-up tasks.
     fn refresh(&self);

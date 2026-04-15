@@ -469,7 +469,7 @@ impl Thumbnail {
         // Hide title for blocked-out windows, but only after computing the title size. This way,
         // the background and the border won't have to oscillate in size between normal and
         // screencast renders, causing excessive damage.
-        let should_block_out = target.should_block_out(mapped.rules().block_out_from);
+        let should_block_out = target.should_block_out(mapped.block_out_from());
         let title_texture = title_texture.filter(|_| !should_block_out);
 
         if let Some((texture, size)) = title_texture {

@@ -1,7 +1,8 @@
 use std::cell::{Cell, Ref, RefCell};
+use std::mem;
 use std::time::Duration;
 
-use niri_config::{Color, CornerRadius, GradientInterpolation, WindowRule};
+use niri_config::{BlockOutFrom, Color, CornerRadius, GradientInterpolation, WindowRule};
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::element::Kind;
 use smithay::backend::renderer::gles::GlesRenderer;
@@ -103,6 +104,10 @@ pub struct Mapped {
 
     /// Buffer to draw instead of the window when it should be blocked out.
     block_out_buffer: RefCell<SolidColorBuffer>,
+
+    /// Holds the previous block-out value until the window submits the new contents.
+    block_out_hold: Option<BlockOutFrom>,
+    block_out_hold_action: BlockOutHoldAction,
 
     /// Whether the next configure should be animated, if the configured state changed.
     animate_next_configure: bool,
@@ -248,6 +253,19 @@ enum RequestSizeOnce {
     UseWindowSize,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlockOutHoldAction {
+    None,
+    Started,
+    Cleared,
+}
+
+impl Default for BlockOutHoldAction {
+    fn default() -> Self {
+        BlockOutHoldAction::None
+    }
+}
+
 impl Mapped {
     pub fn new(window: Window, rules: ResolvedWindowRules, hook: HookId) -> Self {
         let surface = window.wl_surface().expect("no X11 support");
@@ -270,6 +288,8 @@ impl Mapped {
             is_window_cast_target: false,
             ignore_opacity_window_rule: false,
             block_out_buffer: RefCell::new(SolidColorBuffer::new((0., 0.), [0., 0., 0., 1.])),
+            block_out_hold: None,
+            block_out_hold_action: BlockOutHoldAction::None,
             animate_next_configure: false,
             animate_serials: Vec::new(),
             animation_snapshot: None,
@@ -299,8 +319,18 @@ impl Mapped {
 
     /// Recomputes the resolved window rules and returns whether they changed.
     pub fn recompute_window_rules(&mut self, rules: &[WindowRule], is_at_startup: bool) -> bool {
+        self.recompute_window_rules_with_metadata_hint(rules, is_at_startup, false)
+    }
+
+    pub fn recompute_window_rules_with_metadata_hint(
+        &mut self,
+        rules: &[WindowRule],
+        is_at_startup: bool,
+        delay_block_out_release: bool,
+    ) -> bool {
         self.need_to_recompute_rules = false;
 
+        let previous_block_out = self.rules.block_out_from;
         let new_rules = ResolvedWindowRules::compute(rules, WindowRef::Mapped(self), is_at_startup);
         if new_rules == self.rules {
             return false;
@@ -313,6 +343,11 @@ impl Mapped {
         }
 
         self.rules = new_rules;
+        self.update_block_out_hold(
+            previous_block_out,
+            self.rules.block_out_from,
+            delay_block_out_release,
+        );
         true
     }
 
@@ -358,6 +393,64 @@ impl Mapped {
 
     pub fn is_window_cast_target(&self) -> bool {
         self.is_window_cast_target
+    }
+
+    pub fn block_out_from(&self) -> Option<BlockOutFrom> {
+        self.block_out_hold.or(self.rules.block_out_from)
+    }
+
+    fn start_block_out_hold(&mut self, value: BlockOutFrom) {
+        self.block_out_hold = Some(value);
+        self.block_out_hold_action = BlockOutHoldAction::Started;
+        self.needs_frame_callback = true;
+    }
+
+    fn update_block_out_hold(
+        &mut self,
+        previous: Option<BlockOutFrom>,
+        current: Option<BlockOutFrom>,
+        delay_release: bool,
+    ) {
+        if delay_release && Self::block_out_became_less_restrictive(previous, current) {
+            if let Some(previous) = previous {
+                self.start_block_out_hold(previous);
+            }
+        } else if self
+            .block_out_hold
+            .is_some_and(|prev| !Self::block_out_became_less_restrictive(Some(prev), current))
+        {
+            self.block_out_hold = None;
+            self.block_out_hold_action = BlockOutHoldAction::Cleared;
+        }
+    }
+
+    pub fn has_block_out_hold(&self) -> bool {
+        self.block_out_hold.is_some()
+    }
+
+    pub fn clear_block_out_hold(&mut self) {
+        self.block_out_hold = None;
+    }
+
+    pub fn take_block_out_hold_action(&mut self) -> BlockOutHoldAction {
+        mem::take(&mut self.block_out_hold_action)
+    }
+
+    fn block_out_became_less_restrictive(
+        previous: Option<BlockOutFrom>,
+        current: Option<BlockOutFrom>,
+    ) -> bool {
+        use crate::render_helpers::RenderTarget;
+
+        const TARGETS: [RenderTarget; 3] = [
+            RenderTarget::Output,
+            RenderTarget::Screencast,
+            RenderTarget::ScreenCapture,
+        ];
+
+        TARGETS
+            .into_iter()
+            .any(|target| target.should_block_out(previous) && !target.should_block_out(current))
     }
 
     pub fn toggle_ignore_opacity_window_rule(&mut self) {
@@ -408,7 +501,7 @@ impl Mapped {
         RenderSnapshot {
             contents,
             blocked_out_contents,
-            block_out_from: self.rules().block_out_from,
+            block_out_from: self.block_out_from(),
             size,
             texture: Default::default(),
             blocked_out_texture: Default::default(),
@@ -620,7 +713,7 @@ impl LayoutElement for Mapped {
         target: RenderTarget,
         push: &mut dyn FnMut(LayoutElementRenderElement<R>),
     ) {
-        if target.should_block_out(self.rules.block_out_from) {
+        if target.should_block_out(self.block_out_from()) {
             let mut buffer = self.block_out_buffer.borrow_mut();
             buffer.resize(self.window.geometry().size.to_f64());
             let elem =
@@ -651,7 +744,7 @@ impl LayoutElement for Mapped {
         target: RenderTarget,
         push: &mut dyn FnMut(LayoutElementRenderElement<R>),
     ) {
-        if target.should_block_out(self.rules.block_out_from) {
+        if target.should_block_out(self.block_out_from()) {
             return;
         }
 
@@ -1258,6 +1351,10 @@ impl LayoutElement for Mapped {
 
     fn rules(&self) -> &ResolvedWindowRules {
         &self.rules
+    }
+
+    fn block_out_from(&self) -> Option<BlockOutFrom> {
+        Mapped::block_out_from(self)
     }
 
     fn take_animation_snapshot(&mut self) -> Option<LayoutElementRenderSnapshot> {
