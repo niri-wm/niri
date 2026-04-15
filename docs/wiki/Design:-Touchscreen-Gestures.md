@@ -1,5 +1,6 @@
 # Design: Touchscreen Gestures
 
+> [!IMPORTANT]
 > **Status: proposal / working prototype — not upstream niri's canonical design.**
 >
 > This document is not niri's official design position. It is a write-up of the choices I (the PR author) made while building a working touchscreen gesture implementation on the `feat/configurable-touch-gestures` branch, shaped by feedback from reviewers on the associated PR. The goal was to land *something that works* so there's a concrete reference point to experiment with, gather real-world feedback on, and iterate on — not to prescribe how niri should handle touch gestures long-term.
