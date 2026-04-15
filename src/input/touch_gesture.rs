@@ -1113,7 +1113,7 @@ impl State {
                             "swipe"
                         }
                     };
-                    tracing::debug!(
+                    tracing::trace!(
                         target: "niri::input::touch_gesture",
                         "TOUCH-DBG FRAME fingers={} \
                          swipe={:.1}/{:.1} \
