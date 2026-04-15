@@ -261,7 +261,7 @@ impl CompositorHandler for State {
             if let Some((window, output, id, hold_active)) = self
                 .niri
                 .layout
-                .find_window_and_output_mut(surface)
+                .find_window_and_output(surface)
                 .map(|(mapped, output)| {
                     let hold_active = mapped.has_block_out_hold();
                     (
