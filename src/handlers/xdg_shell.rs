@@ -897,11 +897,11 @@ impl XdgShellHandler for State {
     }
 
     fn app_id_changed(&mut self, toplevel: ToplevelSurface) {
-        self.update_window_rules(&toplevel, true);
+        self.update_window_rules(&toplevel);
     }
 
     fn title_changed(&mut self, toplevel: ToplevelSurface) {
-        self.update_window_rules(&toplevel, true);
+        self.update_window_rules(&toplevel);
     }
 
     fn parent_changed(&mut self, toplevel: ToplevelSurface) {
@@ -1367,11 +1367,7 @@ impl State {
         }
     }
 
-    pub fn update_window_rules(
-        &mut self,
-        toplevel: &ToplevelSurface,
-        delay_block_out_release: bool,
-    ) {
+    pub fn update_window_rules(&mut self, toplevel: &ToplevelSurface) {
         {
             let config = self.niri.config.borrow();
             let window_rules = &config.window_rules;
@@ -1400,7 +1396,7 @@ impl State {
                     let rules_changed = mapped.recompute_window_rules_with_metadata_hint(
                         window_rules,
                         self.niri.is_at_startup,
-                        delay_block_out_release,
+                        true,
                     );
                     let action = mapped.take_block_out_hold_action();
                     let window = mapped.window.clone();
