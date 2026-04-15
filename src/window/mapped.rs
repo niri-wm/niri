@@ -395,7 +395,7 @@ impl Mapped {
         self.is_window_cast_target
     }
 
-    pub fn effective_block_out_from(&self) -> Option<BlockOutFrom> {
+    pub fn block_out_from(&self) -> Option<BlockOutFrom> {
         self.block_out_hold.or(self.rules.block_out_from)
     }
 
@@ -501,7 +501,7 @@ impl Mapped {
         RenderSnapshot {
             contents,
             blocked_out_contents,
-            block_out_from: self.effective_block_out_from(),
+            block_out_from: self.block_out_from(),
             size,
             texture: Default::default(),
             blocked_out_texture: Default::default(),
@@ -713,7 +713,7 @@ impl LayoutElement for Mapped {
         target: RenderTarget,
         push: &mut dyn FnMut(LayoutElementRenderElement<R>),
     ) {
-        if target.should_block_out(self.effective_block_out_from()) {
+        if target.should_block_out(self.block_out_from()) {
             let mut buffer = self.block_out_buffer.borrow_mut();
             buffer.resize(self.window.geometry().size.to_f64());
             let elem =
@@ -744,7 +744,7 @@ impl LayoutElement for Mapped {
         target: RenderTarget,
         push: &mut dyn FnMut(LayoutElementRenderElement<R>),
     ) {
-        if target.should_block_out(self.effective_block_out_from()) {
+        if target.should_block_out(self.block_out_from()) {
             return;
         }
 
@@ -1354,7 +1354,7 @@ impl LayoutElement for Mapped {
     }
 
     fn block_out_from(&self) -> Option<BlockOutFrom> {
-        self.effective_block_out_from()
+        Mapped::block_out_from(self)
     }
 
     fn take_animation_snapshot(&mut self) -> Option<LayoutElementRenderSnapshot> {
