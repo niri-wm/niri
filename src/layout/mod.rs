@@ -2275,6 +2275,39 @@ impl<W: LayoutElement> Layout<W> {
         mon.active_window().map(|win| (win, &mon.output))
     }
 
+    pub fn tile_for_window(&self, window: &W) -> Option<&Tile<W>> {
+        if let Some(InteractiveMoveState::Moving(move_)) = &self.interactive_move {
+            if move_.tile.window().id() == window.id() {
+                return Some(&move_.tile);
+            }
+        }
+
+        match &self.monitor_set {
+            MonitorSet::Normal { monitors, .. } => {
+                for mon in monitors {
+                    for ws in &mon.workspaces {
+                        for tile in ws.tiles() {
+                            if tile.window().id() == window.id() {
+                                return Some(tile);
+                            }
+                        }
+                    }
+                }
+            }
+            MonitorSet::NoOutputs { workspaces } => {
+                for ws in workspaces {
+                    for tile in ws.tiles() {
+                        if tile.window().id() == window.id() {
+                            return Some(tile);
+                        }
+                    }
+                }
+            }
+        }
+
+        None
+    }
+
     pub fn interactive_moved_window_under(
         &self,
         output: &Output,

@@ -143,6 +143,19 @@ pub enum Action {
         show_pointer: bool,
         path: Option<String>,
     },
+    ScreenshotTile(
+        #[knuffel(property(name = "write-to-disk"), default = true)] bool,
+        #[knuffel(property(name = "show-pointer"), default = false)] bool,
+        // Path; not settable from knuffel
+        Option<String>,
+    ),
+    #[knuffel(skip)]
+    ScreenshotTileById {
+        id: u64,
+        write_to_disk: bool,
+        show_pointer: bool,
+        path: Option<String>,
+    },
     ToggleKeyboardShortcutsInhibit,
     CloseWindow,
     #[knuffel(skip)]
@@ -420,6 +433,23 @@ impl From<niri_ipc::Action> for Action {
                 show_pointer,
                 path,
             } => Self::ScreenshotWindowById {
+                id,
+                write_to_disk,
+                show_pointer,
+                path,
+            },
+            niri_ipc::Action::ScreenshotTile {
+                id: None,
+                write_to_disk,
+                show_pointer,
+                path,
+            } => Self::ScreenshotTile(write_to_disk, show_pointer, path),
+            niri_ipc::Action::ScreenshotTile {
+                id: Some(id),
+                write_to_disk,
+                show_pointer,
+                path,
+            } => Self::ScreenshotTileById {
                 id,
                 write_to_disk,
                 show_pointer,
