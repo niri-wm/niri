@@ -3,6 +3,32 @@
 // Check the wiki for a full description of the configuration:
 // https://niri-wm.github.io/niri/Configuration:-Introduction
 
+// Add lines like this to spawn processes at startup.
+// Note that running niri as a session supports xdg-desktop-autostart,
+// which may be more convenient to use.
+// See the binds section below for more spawn examples.
+
+// This line starts waybar, a commonly used bar for Wayland compositors.
+spawn-at-startup "waybar"
+
+// To run a shell command (with variables, pipes, etc.), use spawn-sh-at-startup:
+// spawn-sh-at-startup "qs -c ~/source/qs/MyAwesomeShell"
+
+// Uncomment this line to ask the clients to omit their client-side decorations if possible.
+// If the client will specifically ask for CSD, the request will be honored.
+// Additionally, clients will be informed that they are tiled, removing some client-side rounded corners.
+// This option will also fix border/focus ring drawing behind some semitransparent windows.
+// After enabling or disabling this, you need to restart the apps for this to take effect.
+// prefer-no-csd
+
+// You can change the path where screenshots are saved.
+// A ~ at the front will be expanded to the home directory.
+// The path is formatted with strftime(3) to give you the screenshot date and time.
+screenshot-path "~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png"
+
+// You can also set this to null to disable saving screenshots to disk.
+// screenshot-path null
+
 // Input device configuration.
 // Find the full list of options on the wiki:
 // https://niri-wm.github.io/niri/Configuration:-Input
@@ -262,46 +288,106 @@ layout {
     }
 }
 
-// Add lines like this to spawn processes at startup.
-// Note that running niri as a session supports xdg-desktop-autostart,
-// which may be more convenient to use.
-// See the binds section below for more spawn examples.
+// Overview settings. For an overview of all options, see the wiki:
+// https://niri-wm.github.io/niri/Overview.html
+overview {
+    zoom 0.5
+    backdrop-color "#262626"
 
-// This line starts waybar, a commonly used bar for Wayland compositors.
-spawn-at-startup "waybar"
-
-// To run a shell command (with variables, pipes, etc.), use spawn-sh-at-startup:
-// spawn-sh-at-startup "qs -c ~/source/qs/MyAwesomeShell"
-
-hotkey-overlay {
-    // Uncomment this line to disable the "Important Hotkeys" pop-up at startup.
-    // skip-at-startup
+    workspace-shadow {
+        // off
+        softness 40
+        spread 10
+        offset x=0 y=10
+        color "#00000050"
+    }
 }
 
-// Uncomment this line to ask the clients to omit their client-side decorations if possible.
-// If the client will specifically ask for CSD, the request will be honored.
-// Additionally, clients will be informed that they are tiled, removing some client-side rounded corners.
-// This option will also fix border/focus ring drawing behind some semitransparent windows.
-// After enabling or disabling this, you need to restart the apps for this to take effect.
-// prefer-no-csd
+// Gesture settings. For an overview of all gestures, see the wiki:
+// https://niri-wm.github.io/niri/Configuration:-Gestures.html
+gestures {
+    dnd-edge-view-scroll {
+        trigger-width 30
+        delay-ms 100
+        max-speed 1500
+    }
 
-// You can change the path where screenshots are saved.
-// A ~ at the front will be expanded to the home directory.
-// The path is formatted with strftime(3) to give you the screenshot date and time.
-screenshot-path "~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png"
+    dnd-edge-workspace-switch {
+        trigger-height 50
+        delay-ms 100
+        max-speed 1500
+    }
 
-// You can also set this to null to disable saving screenshots to disk.
-// screenshot-path null
+    // You can also customize hot corners per-output in the output config.
+    // https://niri-wm.github.io/niri/Configuration:-Outputs.html#hot-corners
+    hot-corners {
+        // off
+        top-left
+        // top-right
+        // bottom-left
+        // bottom-right
+    }
+}
 
 // Animation settings.
 // The wiki explains how to configure individual animations:
 // https://niri-wm.github.io/niri/Configuration:-Animations
 animations {
     // Uncomment to turn off all animations.
+    // You can also put "off" into each individual animation to disable it.
     // off
 
     // Slow down all animations by this factor. Values below 1 speed them up instead.
     // slowdown 3.0
+
+    // Individual animations.
+
+    workspace-switch {
+        spring damping-ratio=1.0 stiffness=1000 epsilon=0.0001
+    }
+
+    window-open {
+        duration-ms 150
+        curve "ease-out-expo"
+    }
+
+    window-close {
+        duration-ms 150
+        curve "ease-out-quad"
+    }
+
+    horizontal-view-movement {
+        spring damping-ratio=1.0 stiffness=800 epsilon=0.0001
+    }
+
+    window-movement {
+        spring damping-ratio=1.0 stiffness=800 epsilon=0.0001
+    }
+
+    window-resize {
+        spring damping-ratio=1.0 stiffness=800 epsilon=0.0001
+    }
+
+    config-notification-open-close {
+        spring damping-ratio=0.6 stiffness=1000 epsilon=0.001
+    }
+
+    exit-confirmation-open-close {
+        spring damping-ratio=0.6 stiffness=500 epsilon=0.01
+    }
+
+    screenshot-ui-open {
+        duration-ms 200
+        curve "ease-out-quad"
+    }
+
+    overview-open-close {
+        spring damping-ratio=1.0 stiffness=800 epsilon=0.0001
+    }
+
+    recent-windows-close {
+        spring damping-ratio=1.0 stiffness=800 epsilon=0.001
+    }
 }
 
 // Window rules let you adjust behavior for individual windows.
@@ -629,4 +715,103 @@ binds {
     // Powers off the monitors. To turn them back on, do any input like
     // moving the mouse or pressing any other key.
     Mod+Shift+P { power-off-monitors; }
+}
+
+// "Recent Windows" switcher settings. For an overview of all options, see the wiki:
+// https://niri-wm.github.io/niri/Configuration:-Recent-Windows.html
+recent-windows {
+    // Uncomment this line to disable the recent windows switcher altogether.
+    // off
+
+    // Delay, in milliseconds, between the window receiving focus and getting
+    // "committed" to the recent windows list.
+    debounce-ms 750
+
+    // Delay, in milliseconds, between pressing the Alt-Tab bind and the recent
+    // windows switcher visually appearing on screen. The switcher is delayed
+    // by default so that quickly tapping Alt-Tab to switch windows won't cause
+    // annoying fullscreen visual changes.
+    open-delay-ms 150
+
+    highlight {
+        active-color "#999999ff"
+        urgent-color "#ff9999ff"
+        padding 30
+        corner-radius 0
+    }
+
+    previews {
+        max-height 480
+        max-scale 0.5
+    }
+
+    // Configure binds that open and navigate the recent windows switcher.
+    binds {
+        // The available actions are next-window and previous-window.
+        // They can optionally have the following properties:
+        // filter="app-id": filters the switcher to the windows of the currently
+        //   selected application, as determined by the Wayland app ID
+        // scope="all", scope="output", scope="workspace": sets the pre-selected
+        //   scope when this bind is used to open the recent windows switcher.
+        Alt+Tab         { next-window; }
+        Alt+Shift+Tab   { previous-window; }
+        Alt+Grave       { next-window     filter="app-id"; }
+        Alt+Shift+Grave { previous-window filter="app-id"; }
+
+        // Pre-select the "Output" scope when switching windows.
+        Mod+Tab         { next-window     scope="output"; }
+        Mod+Shift+Tab   { previous-window scope="output"; }
+        Mod+Grave       { next-window     scope="output" filter="app-id"; }
+        Mod+Shift+Grave { previous-window scope="output" filter="app-id"; }
+
+        // The recent windows binds have lower precedence than the normal binds,
+        // meaning that if you have AltTab bound to something else in the normal
+        // binds, the recent-windows bind won't work.
+        // In this case, you can remove the conflicting normal bind.
+    }
+}
+
+// Override environment variables for processes spawned by Niri.
+environment {
+    // Set a variable like this:
+    // QT_QPA_PLATFORM "wayland"
+
+    // Remove a variable by using null as the value:
+    // DISPLAY null
+}
+
+cursor {
+    // Change the theme and size of the cursor, as well as set the
+    // XCURSOR_THEME and XCURSOR_SIZE environment variables.
+    // xcursor-theme "breeze_cursors"
+    // xcursor-size 48
+
+    // Hide the cursor when pressing a key on the keyboard.
+    // hide-when-typing
+    // Hide the cursor once this number of milliseconds passes since the last cursor movement.
+    // hide-after-inactive-ms 1000
+}
+
+// When a recent enough xwayland-satellite is detected, niri will create the X11 sockets and set DISPLAY, then automatically spawn xwayland-satellite when an X11 client tries to connect. If Xwayland dies, niri will keep watching the X11 socket and restart xwayland-satellite as needed. This is very similar to how built-in Xwayland works in other compositors.
+xwayland-satellite {
+    // Uncomment this line to disable the integration.
+    // off
+    // Set the path to the xwayland-satellite binary.
+    // By default, it's looked up like any other non-absolute program name.
+    path "xwayland-satellite"
+}
+
+clipboard {
+    // Uncomment this line to disable the primary clipboard (middle-click paste).
+    // disable-primary
+}
+
+hotkey-overlay {
+    // Uncomment this line to disable the "Important Hotkeys" pop-up at startup.
+    // skip-at-startup
+}
+
+config-notification {
+    // Uncomment this line to disable the "Failed to parse config file" notification.
+    // disable-failed
 }
