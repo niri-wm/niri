@@ -14,6 +14,7 @@ use smithay::wayland::shell::xdg::{
     SurfaceCachedState, ToplevelSurface, XdgToplevelSurfaceRoleAttributes,
 };
 
+use crate::layout::LayoutElement;
 use crate::utils::with_toplevel_role;
 
 pub mod mapped;
@@ -175,6 +176,13 @@ impl<'a> WindowRef<'a> {
         match self {
             WindowRef::Unmapped(_) => false,
             WindowRef::Mapped(mapped) => mapped.is_window_cast_target(),
+        }
+    }
+
+    pub fn sizing_mode(self) -> Option<u8> {
+        match self {
+            WindowRef::Unmapped(_) => None,
+            WindowRef::Mapped(mapped) => Some(mapped.committed_sizing_mode().into()),
         }
     }
 }
@@ -441,6 +449,15 @@ fn window_matches(window: WindowRef, role: &XdgToplevelSurfaceRoleAttributes, m:
 
     if let Some(is_window_cast_target) = m.is_window_cast_target {
         if window.is_window_cast_target() != is_window_cast_target {
+            return false;
+        }
+    }
+
+    if let Some(m_sizing_mode) = m.sizing_mode {
+        let Some(window_sizing_mode) = window.sizing_mode() else {
+            return false;
+        };
+        if m_sizing_mode != window_sizing_mode {
             return false;
         }
     }

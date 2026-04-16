@@ -459,6 +459,12 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
                     Event::WindowFocusChanged { id } => {
                         println!("Window focus changed: {id:?}");
                     }
+                    Event::WindowSizingModeChanged {
+                        id,
+                        sizing_mode,
+                    } => {
+                        println!("Window {id}: sizing mode changed to {sizing_mode}");
+                    }
                     Event::WindowFocusTimestampChanged {
                         id,
                         focus_timestamp,
@@ -690,6 +696,8 @@ fn print_window(window: &Window) {
         "  Is floating: {}",
         if window.is_floating { "yes" } else { "no" }
     );
+
+    println!("  Sizing mode: {}", window.sizing_mode);
 
     if let Some(pid) = window.pid {
         println!("  PID: {pid}");
