@@ -73,7 +73,7 @@ use smithay::utils::{
 };
 use smithay::wayland::background_effect::BackgroundEffectState;
 use smithay::wayland::compositor::{
-    with_states, with_surface_tree_downward, CompositorClientState, CompositorHandler,
+    get_parent, with_states, with_surface_tree_downward, CompositorClientState, CompositorHandler,
     CompositorState, HookId, SurfaceData, TraversalAction,
 };
 use smithay::wayland::cursor_shape::CursorShapeManagerState;
@@ -82,6 +82,8 @@ use smithay::wayland::fractional_scale::FractionalScaleManagerState;
 use smithay::wayland::idle_inhibit::IdleInhibitManagerState;
 use smithay::wayland::idle_notify::IdleNotifierState;
 use smithay::wayland::input_method::InputMethodManagerState;
+use smithay::wayland::input_method_v1::InputMethodV1ManagerState;
+use smithay::wayland::input_method_v1::PopupSurface as InputMethodPopupSurfaceV1;
 use smithay::wayland::keyboard_shortcuts_inhibit::{
     KeyboardShortcutsInhibitState, KeyboardShortcutsInhibitor,
 };
@@ -291,6 +293,7 @@ pub struct Niri {
     pub tablet_state: TabletManagerState,
     pub text_input_state: TextInputManagerState,
     pub input_method_state: InputMethodManagerState,
+    pub input_method_v1_state: InputMethodV1ManagerState,
     pub keyboard_shortcuts_inhibit_state: KeyboardShortcutsInhibitState,
     pub virtual_keyboard_state: VirtualKeyboardManagerState,
     pub virtual_pointer_state: VirtualPointerManagerState,
@@ -304,6 +307,7 @@ pub struct Niri {
     pub wlr_data_control_state: WlrDataControlState,
     pub ext_data_control_state: ExtDataControlState,
     pub popups: PopupManager,
+    pub input_method_v1_popups: Vec<InputMethodPopupSurfaceV1>,
     pub popup_grab: Option<PopupGrabState>,
     pub presentation_state: PresentationState,
     pub security_context_state: SecurityContextState,
@@ -2315,6 +2319,8 @@ impl Niri {
         let text_input_state = TextInputManagerState::new::<State>(&display_handle);
         let input_method_state =
             InputMethodManagerState::new::<State, _>(&display_handle, client_is_unrestricted);
+        let input_method_v1_state =
+            InputMethodV1ManagerState::new::<State, _>(&display_handle, client_is_unrestricted);
         let keyboard_shortcuts_inhibit_state =
             KeyboardShortcutsInhibitState::new::<State>(&display_handle);
         let virtual_keyboard_state =
@@ -2519,6 +2525,7 @@ impl Niri {
             xdg_foreign_state,
             text_input_state,
             input_method_state,
+            input_method_v1_state,
             keyboard_shortcuts_inhibit_state,
             virtual_keyboard_state,
             virtual_pointer_state,
@@ -2538,6 +2545,7 @@ impl Niri {
             wlr_data_control_state,
             ext_data_control_state,
             popups: PopupManager::default(),
+            input_method_v1_popups: Vec::new(),
             popup_grab: None,
             suppressed_keys: HashSet::new(),
             suppressed_buttons: HashSet::new(),
@@ -4182,6 +4190,35 @@ impl Niri {
         // The pointer goes on the top.
         if include_pointer && self.pointer_visibility.is_visible() {
             self.render_pointer(ctx.renderer, output, &mut |elem| push(elem.into()));
+        }
+
+        // input-method-v1 popups (candidate window / panel), below the pointer.
+        for popup in self.input_method_v1_popups.iter().filter(|p| p.alive()) {
+            let Some(parent) = popup.get_parent() else {
+                continue;
+            };
+
+            let mut root = parent.surface.clone();
+            while let Some(next) = get_parent(&root) {
+                root = next;
+            }
+
+            if self.output_for_root(&root) != Some(output) {
+                continue;
+            }
+
+            let location = (parent.location.loc + popup.location())
+                .to_f64()
+                .to_physical_precise_round(output_scale);
+            push_elements_from_surface_tree(
+                renderer,
+                popup.wl_surface(),
+                location,
+                output_scale,
+                1.,
+                Kind::ScanoutCandidate,
+                &mut |elem| push(elem.into()),
+            );
         }
 
         // Next, the screen transition texture.
