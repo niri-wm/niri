@@ -32,7 +32,8 @@ use crate::niri_render_elements;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::shadow::ShadowRenderElement;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
-use crate::render_helpers::RenderTarget;
+use crate::render_helpers::xray::{Xray, XrayPos};
+use crate::render_helpers::RenderCtx;
 use crate::utils::id::IdCounter;
 use crate::utils::transaction::{Transaction, TransactionBlocker};
 use crate::utils::{
@@ -1626,22 +1627,22 @@ impl<W: LayoutElement> Workspace<W> {
 
     pub fn render_scrolling<R: NiriRenderer>(
         &self,
-        renderer: &mut R,
-        target: RenderTarget,
+        ctx: RenderCtx<R>,
+        xray_pos: XrayPos,
         focus_ring: bool,
         push: &mut dyn FnMut(WorkspaceRenderElement<R>),
     ) {
         let scrolling_focus_ring = focus_ring && !self.floating_is_active();
         self.scrolling
-            .render(renderer, target, scrolling_focus_ring, &mut |elem| {
+            .render(ctx, xray_pos, scrolling_focus_ring, &mut |elem| {
                 push(elem.into())
             });
     }
 
     pub fn render_floating<R: NiriRenderer>(
         &self,
-        renderer: &mut R,
-        target: RenderTarget,
+        ctx: RenderCtx<R>,
+        xray_pos: XrayPos,
         focus_ring: bool,
         push: &mut dyn FnMut(WorkspaceRenderElement<R>),
     ) {
@@ -1651,13 +1652,10 @@ impl<W: LayoutElement> Workspace<W> {
 
         let view_rect = Rectangle::from_size(self.view_size);
         let floating_focus_ring = focus_ring && self.floating_is_active();
-        self.floating.render(
-            renderer,
-            view_rect,
-            target,
-            floating_focus_ring,
-            &mut |elem| push(elem.into()),
-        );
+        self.floating
+            .render(ctx, xray_pos, view_rect, floating_focus_ring, &mut |elem| {
+                push(elem.into())
+            });
     }
 
     pub fn render_shadow<R: NiriRenderer>(
@@ -1689,14 +1687,27 @@ impl<W: LayoutElement> Workspace<W> {
         ) || !self.render_above_top_layer()
     }
 
-    pub fn store_unmap_snapshot_if_empty(&mut self, renderer: &mut GlesRenderer, window: &W::Id) {
+    pub fn store_unmap_snapshot_if_empty(
+        &mut self,
+        renderer: &mut GlesRenderer,
+        xray: Option<&mut Xray>,
+        xray_has_blocked_out_layers: bool,
+        xray_pos: XrayPos,
+        window: &W::Id,
+    ) {
         let view_size = self.view_size();
         for (tile, tile_pos) in self.tiles_with_render_positions_mut(false) {
             if tile.window().id() == window {
                 let view_pos = Point::from((-tile_pos.x, -tile_pos.y));
                 let view_rect = Rectangle::new(view_pos, view_size);
                 tile.update_render_elements(false, view_rect);
-                tile.store_unmap_snapshot_if_empty(renderer);
+                let xray_pos = xray_pos.offset(tile_pos);
+                tile.store_unmap_snapshot_if_empty(
+                    renderer,
+                    xray,
+                    xray_has_blocked_out_layers,
+                    xray_pos,
+                );
                 return;
             }
         }

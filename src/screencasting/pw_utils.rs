@@ -153,15 +153,19 @@ pub enum CastSizeChange {
 
 /// Data for drawing a cursor either as metadata or embedded.
 ///
+/// The cursor elements are expected to be at the start of the main elements slice. `elem_count` is
+/// the count of the pointer elements. This way, the full slice includes both main and cursor
+/// elements for embedded mode, and `&elements[elem_count..]` gives just the main elements for
+/// metadata mode.
+///
 /// We have weird borrowed references here in order to support both metadata and embedded cases.
 /// The cursor damage tracker needs a slice of impl Element at (0, 0), so we pass it `relocated`
-/// (luckily, &impl Element also impls Element). Then, if we need to embed the cursor, we chain the
-/// elements to the main video buffer elements, so we need the same type. We use `original` for
-/// this; `E` is expected to match the type of the main video buffer elements.
+/// (luckily, &impl Element also impls Element). Then, if we need to embed the cursor, we use the
+/// full elements slice which starts with non-relocated pointer elements (that we borrow from).
 #[derive(Debug)]
 pub struct CursorData<'a, E> {
-    /// Cursor elements at their original location.
-    original: &'a [E],
+    /// Count of the pointer elements in the slice (index of the first non-pointer element).
+    elem_count: usize,
     /// Cursor elements relocated to (0, 0).
     relocated: Vec<RelocateRenderElement<&'a E>>,
     /// Location of the cursor's hotspot in the video buffer.
@@ -175,16 +179,22 @@ pub struct CursorData<'a, E> {
 }
 
 impl<'a, E: Element> CursorData<'a, E> {
-    pub fn compute(elements: &'a [E], location: Point<f64, Logical>, scale: Scale<f64>) -> Self {
+    pub fn compute(
+        elements: &'a [E],
+        elem_count: usize,
+        location: Point<f64, Logical>,
+        scale: Scale<f64>,
+    ) -> Self {
+        let pointer_elements = &elements[..elem_count];
         let location = location.to_physical_precise_round(scale);
 
-        let geo = encompassing_geo(scale, elements.iter());
-        let relocated = Vec::from_iter(elements.iter().map(|elem| {
+        let geo = encompassing_geo(scale, pointer_elements.iter());
+        let relocated = Vec::from_iter(pointer_elements.iter().map(|elem| {
             RelocateRenderElement::from_element(elem, geo.loc.upscale(-1), Relocate::Relative)
         }));
 
         Self {
-            original: elements,
+            elem_count,
             relocated,
             location,
             hotspot: location - geo.loc,
@@ -1052,7 +1062,7 @@ impl Cast {
     pub fn dequeue_buffer_and_render(
         &mut self,
         renderer: &mut GlesRenderer,
-        elements: &[CastRenderElement<GlesRenderer>],
+        mut elements: &[CastRenderElement<GlesRenderer>],
         cursor_data: &CursorData<CastRenderElement<GlesRenderer>>,
         size: Size<i32, Physical>,
         scale: Scale<f64>,
@@ -1092,11 +1102,17 @@ impl Cast {
             );
         }
 
-        let (damage, _states) = damage_tracker.damage_output(1, elements).unwrap();
-
         let mut has_cursor_update = false;
         let mut redraw_cursor = false;
-        if self.cursor_mode != CursorMode::Hidden {
+
+        // For embedded cursor, pass the full slice (cursor + main) to the damage tracker.
+        // For metadata or hidden cursor, pass only the main elements.
+        if self.cursor_mode == CursorMode::Metadata || self.cursor_mode == CursorMode::Hidden {
+            elements = &elements[cursor_data.elem_count..];
+        }
+        let (damage, states) = damage_tracker.damage_output(1, elements).unwrap();
+
+        if self.cursor_mode == CursorMode::Metadata {
             let (damage, _states) = cursor_damage_tracker
                 .damage_output(1, &cursor_data.relocated)
                 .unwrap();
@@ -1118,33 +1134,30 @@ impl Cast {
         };
         let buffer = pw_buffer.as_ptr();
 
+        let mut inner = self.inner.borrow_mut();
+        let inner_ = &mut *inner;
+        let CastState::Ready { damage_tracker, .. } = &mut inner_.state else {
+            unreachable!()
+        };
+        let damage_tracker = damage_tracker.as_mut().unwrap();
+
         unsafe {
             let spa_buffer = (*buffer).buffer;
 
-            let mut pointer_elements = None;
             if self.cursor_mode == CursorMode::Metadata {
                 add_cursor_metadata(renderer, spa_buffer, cursor_data, redraw_cursor);
-            } else if self.cursor_mode != CursorMode::Hidden {
-                // Embed the cursor into the main render.
-                pointer_elements = Some(cursor_data.original.iter());
             }
-            let pointer_elements = pointer_elements.into_iter().flatten();
-            let elements = pointer_elements.chain(elements);
 
             // FIXME: would be good to skip rendering the full frame if only the pointer changed.
             // Unfortunately, I think the OBS PipeWire code needs to be updated first to cleanly
             // allow for that codepath.
             let fd = (*(*spa_buffer).datas).fd;
-            let dmabuf = self.inner.borrow().dmabufs[&fd].clone();
+            let dmabuf = inner_.dmabufs[&fd].clone();
 
-            match render_to_dmabuf(
-                renderer,
-                dmabuf,
-                size,
-                scale,
-                Transform::Normal,
-                elements.rev(),
-            ) {
+            let res = render_to_dmabuf(renderer, damage_tracker, dmabuf, elements, states);
+            drop(inner);
+
+            match res {
                 Ok(sync_point) => {
                     mark_buffer_as_good(pw_buffer, &mut self.sequence_counter);
                     trace!("queueing buffer with seq={}", self.sequence_counter);

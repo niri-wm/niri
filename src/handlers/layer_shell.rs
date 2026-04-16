@@ -3,10 +3,10 @@ use smithay::desktop::{layer_map_for_output, LayerSurface, PopupKind, WindowSurf
 use smithay::output::Output;
 use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::wayland::compositor::{get_parent, with_states};
+use smithay::wayland::compositor::{add_pre_commit_hook, get_parent, with_states, HookId};
 use smithay::wayland::shell::wlr_layer::{
-    self, Layer, LayerSurface as WlrLayerSurface, LayerSurfaceData, WlrLayerShellHandler,
-    WlrLayerShellState,
+    self, Layer, LayerSurface as WlrLayerSurface, LayerSurfaceCachedState, LayerSurfaceData,
+    WlrLayerShellHandler, WlrLayerShellState,
 };
 use smithay::wayland::shell::xdg::PopupSurface;
 
@@ -126,8 +126,10 @@ impl State {
                 let output_size = output_size(&output);
                 let scale = output.current_scale().fractional_scale();
 
+                let hook = add_mapped_layer_pre_commit_hook(layer);
                 let mapped = MappedLayer::new(
                     layer.clone(),
+                    hook,
                     rules,
                     output_size,
                     scale,
@@ -141,6 +143,21 @@ impl State {
                     .insert(layer.clone(), mapped);
                 if prev.is_some() {
                     error!("MappedLayer was present for an unmapped surface");
+                }
+            } else {
+                // The surface remains mapped.
+                if let Some(mapped) = self.niri.mapped_layer_surfaces.get_mut(layer) {
+                    // Check if the layer changed.
+                    if mapped.take_recompute_rules_on_commit() {
+                        let config = self.niri.config.borrow();
+                        if mapped
+                            .recompute_layer_rules(&config.layer_rules, self.niri.is_at_startup)
+                        {
+                            mapped.update_config(&config);
+                        }
+                    }
+                } else {
+                    error!("MappedLayer missing for a mapped surface");
                 }
             }
 
@@ -203,4 +220,24 @@ impl State {
 
         true
     }
+}
+
+fn add_mapped_layer_pre_commit_hook(layer: &LayerSurface) -> HookId {
+    add_pre_commit_hook::<State, _>(layer.wl_surface(), move |state, _dh, surface| {
+        let layer_changed = with_states(surface, |states| {
+            let mut guard = states.cached_state.get::<LayerSurfaceCachedState>();
+            let pending_layer = guard.pending().layer;
+            let current_layer = guard.current().layer;
+            pending_layer != current_layer
+        });
+
+        if layer_changed {
+            for mapped in state.niri.mapped_layer_surfaces.values_mut() {
+                if mapped.surface().wl_surface() == surface {
+                    mapped.set_recompute_rules_on_commit();
+                    break;
+                }
+            }
+        }
+    })
 }
