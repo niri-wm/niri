@@ -23,6 +23,7 @@ pub struct Input {
     pub workspace_auto_back_and_forth: bool,
     pub mod_key: Option<ModKey>,
     pub mod_key_nested: Option<ModKey>,
+    pub disable_mouse_warp_to_focused_output: bool,
 }
 
 #[derive(knuffel::Decode, Debug, Default, PartialEq)]
@@ -53,6 +54,8 @@ pub struct InputPart {
     pub mod_key: Option<ModKey>,
     #[knuffel(child, unwrap(argument, str))]
     pub mod_key_nested: Option<ModKey>,
+    #[knuffel(child)]
+    pub disable_mouse_warp_to_focused_output: Option<Flag>,
 }
 
 impl MergeWith<InputPart> for Input {
@@ -62,6 +65,7 @@ impl MergeWith<InputPart> for Input {
             keyboard,
             disable_power_key_handling,
             workspace_auto_back_and_forth,
+            disable_mouse_warp_to_focused_output,
         );
 
         merge_clone!(
