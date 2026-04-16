@@ -55,6 +55,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .compact()
         .with_writer(io::stderr)
         .with_env_filter(env_filter)
+        .with_ansi_sanitization(false)
         .init();
 
     if env::var_os("NOTIFY_SOCKET").is_some() {
@@ -234,7 +235,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if env::var_os("NIRI_DISABLE_SYSTEM_MANAGER_NOTIFY").is_none_or(|x| x != "1") {
         // Notify systemd we're ready.
-        if let Err(err) = sd_notify::notify(true, &[NotifyState::Ready]) {
+        if let Err(err) = sd_notify::notify(&[NotifyState::Ready]) {
             warn!("error notifying systemd: {err:?}");
         };
 
