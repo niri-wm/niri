@@ -486,8 +486,7 @@ impl Mapped {
         let bbox = self.window.bbox_with_popups().to_physical_precise_up(scale);
 
         let has_border_shader = BorderRenderElement::has_shader(renderer);
-        let rules = self.rules();
-        let radius = rules.geometry_corner_radius.unwrap_or_default();
+        let radius = self.geometry_corner_radius();
         let window_size = self
             .size()
             .to_f64()
@@ -1291,6 +1290,10 @@ impl LayoutElement for Mapped {
             // No pending size, return the current size if it's non-fullscreen.
             current_size
         }
+    }
+
+    fn is_windowed_fullscreen(&self) -> bool {
+        self.is_windowed_fullscreen
     }
 
     fn is_pending_windowed_fullscreen(&self) -> bool {
