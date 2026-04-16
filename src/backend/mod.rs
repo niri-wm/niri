@@ -185,6 +185,14 @@ impl Backend {
         }
     }
 
+    pub fn set_output_power(&mut self, _niri: &mut Niri, output: &Output, active: bool) {
+        match self {
+            Backend::Tty(tty) => tty.set_output_power(output, active),
+            Backend::Winit(_) => (),
+            Backend::Headless(_) => (),
+        }
+    }
+
     pub fn update_ignored_nodes_config(&mut self, niri: &mut Niri) {
         match self {
             Backend::Tty(tty) => tty.update_ignored_nodes_config(niri),
