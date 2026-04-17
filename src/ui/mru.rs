@@ -36,7 +36,7 @@ use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
 use crate::render_helpers::texture::{TextureBuffer, TextureRenderElement};
-use crate::render_helpers::RenderTarget;
+use crate::render_helpers::RenderCtx;
 use crate::utils::{
     baba_is_float_offset, output_size, round_logical_in_physical, to_physical_precise_round,
     with_toplevel_role,
@@ -338,15 +338,15 @@ impl Thumbnail {
     #[allow(clippy::too_many_arguments)]
     fn render<R: NiriRenderer>(
         &self,
-        renderer: &mut R,
+        mut ctx: RenderCtx<R>,
         config: &niri_config::RecentWindows,
         mapped: &Mapped,
         preview_geo: Rectangle<f64, Logical>,
         scale: f64,
         is_active: bool,
         bob_y: f64,
-        target: RenderTarget,
-    ) -> impl Iterator<Item = WindowMruUiRenderElement<R>> {
+        push: &mut dyn FnMut(WindowMruUiRenderElement<R>),
+    ) {
         let _span = tracy_client::span!("Thumbnail::render");
 
         let round = move |logical: f64| round_logical_in_physical(scale, logical);
@@ -368,24 +368,18 @@ impl Thumbnail {
         };
         let bob_offset = Point::new(0., bob_y);
 
-        // FIXME: this could use mipmaps, for that it should be rendered through an offscreen.
-        let elems = mapped
-            .render_normal(renderer, Point::new(0., 0.), s, preview_alpha, target)
-            .into_iter();
-
         // Clip thumbnails to their geometry.
         let radius = if mapped.sizing_mode().is_normal() {
-            mapped.rules().geometry_corner_radius
+            mapped.geometry_corner_radius()
         } else {
-            None
-        }
-        .unwrap_or_default();
+            CornerRadius::default()
+        };
 
-        let has_border_shader = BorderRenderElement::has_shader(renderer);
-        let clip_shader = ClippedSurfaceRenderElement::shader(renderer).cloned();
+        let has_border_shader = BorderRenderElement::has_shader(ctx.renderer);
+        let clip_shader = ClippedSurfaceRenderElement::shader(ctx.renderer).cloned();
         let geo = Rectangle::from_size(self.size.to_f64());
         // FIXME: deduplicate code with Tile::render_inner()
-        let elems = elems.map(move |elem| match elem {
+        let clip = move |elem| match elem {
             LayoutElementRenderElement::Wayland(elem) => {
                 if let Some(shader) = clip_shader.clone() {
                     if ClippedSurfaceRenderElement::will_clip(&elem, s, geo, radius) {
@@ -426,9 +420,15 @@ impl Thumbnail {
                 // Otherwise, render the solid color as is.
                 LayoutElementRenderElement::SolidColor(elem).into()
             }
-        });
+            elem @ LayoutElementRenderElement::BackgroundEffect(_) => {
+                // This is only used on popups for now. If subsurface blur is implemented, this
+                // will need to be handled somehow.
+                error!("background effect clipping is unimplemented");
+                elem.into()
+            }
+        };
 
-        let elems = elems.map(move |elem| {
+        let downscale = move |elem| {
             let thumb_scale = Scale {
                 x: preview_geo.size.w / geo.size.w,
                 y: preview_geo.size.h / geo.size.h,
@@ -445,10 +445,17 @@ impl Thumbnail {
                 Relocate::Relative,
             );
             WindowMruUiRenderElement::Thumbnail(elem)
+        };
+
+        // FIXME: this could use mipmaps, for that it should be rendered through an offscreen.
+        mapped.render_normal(ctx.r(), Point::new(0., 0.), s, preview_alpha, &mut |elem| {
+            let elem = clip(elem);
+            let elem = downscale(elem);
+            push(elem)
         });
 
         let mut title_size = None;
-        let title_texture = self.title_texture(renderer.as_gles_renderer(), mapped, scale);
+        let title_texture = self.title_texture(ctx.as_gles().renderer, mapped, scale);
         let title_texture = title_texture.map(|texture| {
             let mut size = texture.logical_size();
             size.w = f64::min(size.w, preview_geo.size.w);
@@ -459,10 +466,10 @@ impl Thumbnail {
         // Hide title for blocked-out windows, but only after computing the title size. This way,
         // the background and the border won't have to oscillate in size between normal and
         // screencast renders, causing excessive damage.
-        let should_block_out = target.should_block_out(mapped.rules().block_out_from);
+        let should_block_out = ctx.target.should_block_out(mapped.rules().block_out_from);
         let title_texture = title_texture.filter(|_| !should_block_out);
 
-        let title_elems = title_texture.map(|(texture, size)| {
+        if let Some((texture, size)) = title_texture {
             // Clip from the right if it doesn't fit.
             let src = Rectangle::from_size(size);
 
@@ -481,18 +488,18 @@ impl Thumbnail {
                 Kind::Unspecified,
             );
 
-            let renderer = renderer.as_gles_renderer();
-            if let Some(program) = GradientFadeTextureRenderElement::shader(renderer) {
+            let ctx = ctx.as_gles();
+            if let Some(program) = GradientFadeTextureRenderElement::shader(ctx.renderer) {
                 let elem = GradientFadeTextureRenderElement::new(texture, program);
-                WindowMruUiRenderElement::GradientFadeElem(elem)
+                push(WindowMruUiRenderElement::GradientFadeElem(elem));
             } else {
                 let elem = PrimaryGpuTextureRenderElement(texture);
-                WindowMruUiRenderElement::TextureElement(elem)
+                push(WindowMruUiRenderElement::TextureElement(elem));
             }
-        });
+        }
 
         let is_urgent = mapped.is_urgent();
-        let background_elems = (is_active || is_urgent).then(|| {
+        if is_active || is_urgent {
             let padding = Point::new(padding, padding);
 
             let mut size = preview_geo.size;
@@ -532,9 +539,9 @@ impl Thumbnail {
                 scale,
                 0.5,
             );
-            let bg_elems = background
-                .render(renderer, loc)
-                .map(WindowMruUiRenderElement::FocusRing);
+            background.render(ctx.renderer, loc, &mut |elem| {
+                push(WindowMruUiRenderElement::FocusRing(elem))
+            });
 
             let mut border = self.border.borrow_mut();
             let mut config = *border.config();
@@ -554,15 +561,10 @@ impl Thumbnail {
                 1.,
             );
 
-            let border_elems = border
-                .render(renderer, loc)
-                .map(WindowMruUiRenderElement::FocusRing);
-
-            bg_elems.chain(border_elems)
-        });
-        let background_elems = background_elems.into_iter().flatten();
-
-        elems.chain(title_elems).chain(background_elems)
+            border.render(ctx.renderer, loc, &mut |elem| {
+                push(WindowMruUiRenderElement::FocusRing(elem))
+            });
+        }
     }
 }
 
@@ -966,7 +968,7 @@ impl WindowMruUi {
             MruCloseRequest::Confirm => inner.wmru.current_id,
         };
 
-        if inner.clock.now_unadjusted() < inner.open_at {
+        if !inner.is_fully_open() {
             // Hasn't displayed yet, no need to fade out.
             let UiState::Closed { previous_scope } = &mut self.state else {
                 unreachable!()
@@ -1026,6 +1028,10 @@ impl WindowMruUi {
         let UiState::Open(inner) = &mut self.state else {
             return None;
         };
+        // Don't handle pointer until the UI is visible.
+        if !inner.is_fully_open() {
+            return None;
+        }
 
         inner.freeze_view = true;
 
@@ -1087,26 +1093,26 @@ impl WindowMruUi {
         }
     }
 
-    pub fn render_output<'a, R: NiriRenderer>(
-        &'a self,
-        niri: &'a Niri,
+    pub fn render_output<R: NiriRenderer>(
+        &self,
+        niri: &Niri,
         output: &Output,
-        renderer: &'a mut R,
-        target: RenderTarget,
-    ) -> Option<impl Iterator<Item = WindowMruUiRenderElement<R>> + 'a> {
+        mut ctx: RenderCtx<R>,
+        push: &mut dyn FnMut(WindowMruUiRenderElement<R>),
+    ) {
         let (inner, progress) = match &self.state {
-            UiState::Closed { .. } => return None,
+            UiState::Closed { .. } => return,
             UiState::Closing { inner, anim } => (inner, anim.clamped_value()),
             UiState::Open(inner) => {
-                if inner.open_at <= inner.clock.now_unadjusted() {
+                if inner.is_fully_open() {
                     (inner, 1.)
                 } else {
-                    return None;
+                    return;
                 }
             }
         };
 
-        let span = tracy_client::span!("mru render");
+        let _span = tracy_client::span!("WindowMruUi::render_output");
 
         let alpha = progress.clamp(0., 1.) as f32;
 
@@ -1127,13 +1133,19 @@ impl WindowMruUi {
         };
 
         // During the closing fade, use an offscreen to avoid transparent compositing artifacts.
-        let offscreen_elem = if *output == inner.output && alpha < 1. {
-            let renderer = renderer.as_gles_renderer();
-            let mut elems = Vec::from_iter(inner.render(niri, renderer, target));
+        let mut pushed_offscreen = false;
+        if *output == inner.output && alpha < 1. {
+            let mut ctx = ctx.as_gles();
+
+            let mut elems = Vec::new();
+            inner.render(niri, ctx.r(), &mut |elem| elems.push(elem));
             elems.push(WindowMruUiRenderElement::SolidColor(render_backdrop(1.)));
 
             let scale = output.current_scale().fractional_scale();
-            match inner.offscreen.render(renderer, Scale::from(scale), &elems) {
+            match inner
+                .offscreen
+                .render(ctx.renderer, Scale::from(scale), &elems)
+            {
                 Ok((elem, _sync, _data)) => {
                     // FIXME: would be good to passthrough offscreen data to visible windows here.
                     // As is, during the closing fade, windows from other workspaces stop receiving
@@ -1145,39 +1157,27 @@ impl WindowMruUi {
                     // itself).
                     //
                     // Anyhow, this is not very noticeable since Alt-Tab closing happens quickly.
-                    Some(WindowMruUiRenderElement::Offscreen(elem.with_alpha(alpha)))
+                    push(WindowMruUiRenderElement::Offscreen(elem.with_alpha(alpha)));
+                    pushed_offscreen = true;
                 }
                 Err(err) => {
                     warn!("error rendering MRU to offscreen for fade-out: {err:?}");
-                    None
                 }
             }
-        } else {
-            None
-        };
+        }
 
         // When alpha is 1., render everything directly, without an offscreen.
         //
         // This is not used as fallback when offscreen fails to render because it looks better to
         // hide the previews immediately than to render them with alpha = 1. during a fade-out.
-        let normal_elems =
-            (*output == inner.output && alpha == 1.).then(|| inner.render(niri, renderer, target));
-        let normal_elems = normal_elems.into_iter().flatten();
+        if *output == inner.output && alpha == 1. {
+            inner.render(niri, ctx, &mut |elem| push(elem));
+        }
 
         // This is used for both normal elems and for other outputs.
-        let backdrop_elem = (offscreen_elem.is_none())
-            .then(|| WindowMruUiRenderElement::SolidColor(render_backdrop(alpha)));
-
-        // Make sure the span includes consuming the iterator.
-        let drop_span = std::iter::once(span).filter_map(|_| None);
-
-        Some(
-            offscreen_elem
-                .into_iter()
-                .chain(normal_elems)
-                .chain(backdrop_elem)
-                .chain(drop_span),
-        )
+        if !pushed_offscreen {
+            push(WindowMruUiRenderElement::SolidColor(render_backdrop(alpha)));
+        }
     }
 
     pub fn are_animations_ongoing(&self) -> bool {
@@ -1284,6 +1284,10 @@ impl Inner {
             }
             self.view_pos.offset(delta);
         }
+    }
+
+    fn is_fully_open(&self) -> bool {
+        self.open_at <= self.clock.now_unadjusted()
     }
 
     fn animate_view_pos_from(&mut self, from: f64) {
@@ -1546,20 +1550,20 @@ impl Inner {
         })
     }
 
-    fn render<'a, R: NiriRenderer>(
-        &'a self,
-        niri: &'a Niri,
-        renderer: &'a mut R,
-        target: RenderTarget,
-    ) -> impl Iterator<Item = WindowMruUiRenderElement<R>> + 'a {
+    fn render<R: NiriRenderer>(
+        &self,
+        niri: &Niri,
+        mut ctx: RenderCtx<R>,
+        push: &mut dyn FnMut(WindowMruUiRenderElement<R>),
+    ) {
         let output_size = output_size(&self.output);
         let scale = self.output.current_scale().fractional_scale();
 
         let panel_texture =
             self.scope_panel
                 .borrow_mut()
-                .get(renderer.as_gles_renderer(), scale, self.wmru.scope);
-        let panel = panel_texture.map(move |texture| {
+                .get(ctx.as_gles().renderer, scale, self.wmru.scope);
+        if let Some(texture) = panel_texture {
             let padding = round_logical_in_physical(scale, f64::from(PANEL_PADDING));
 
             let size = texture.logical_size();
@@ -1572,9 +1576,8 @@ impl Inner {
                 None,
                 Kind::Unspecified,
             ));
-            WindowMruUiRenderElement::TextureElement(elem)
-        });
-        let panel = panel.into_iter();
+            push(WindowMruUiRenderElement::TextureElement(elem));
+        }
 
         let current_id = self.wmru.current_id;
 
@@ -1583,26 +1586,18 @@ impl Inner {
 
         let config = self.config.borrow();
 
-        let thumbnails = self
-            .thumbnails_in_view_render()
-            .filter_map(move |(thumbnail, geo)| {
-                let id = thumbnail.id;
-                let Some((_, mapped)) = niri.layout.windows().find(|(_, m)| m.id() == id) else {
-                    error!("window in the MRU must be present in the layout");
-                    return None;
-                };
+        for (thumbnail, geo) in self.thumbnails_in_view_render() {
+            let id = thumbnail.id;
+            let Some((_, mapped)) = niri.layout.windows().find(|(_, m)| m.id() == id) else {
+                error!("window in the MRU must be present in the layout");
+                continue;
+            };
 
-                let config = &config.recent_windows;
+            let config = &config.recent_windows;
 
-                let is_active = Some(id) == current_id;
-                let elems = thumbnail.render(
-                    renderer, config, mapped, geo, scale, is_active, bob_y, target,
-                );
-                Some(elems)
-            });
-        let thumbnails = thumbnails.flatten();
-
-        panel.chain(thumbnails)
+            let is_active = Some(id) == current_id;
+            thumbnail.render(ctx.r(), config, mapped, geo, scale, is_active, bob_y, push);
+        }
     }
 
     fn thumbnail_under(&self, pos: Point<f64, Logical>) -> Option<MappedId> {

@@ -1,4 +1,4 @@
-use std::cell::{Cell, OnceCell, RefCell};
+use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
 use std::ffi::OsString;
 use std::os::unix::net::UnixStream;
@@ -22,15 +22,13 @@ use smithay::backend::allocator::Fourcc;
 use smithay::backend::input::Keycode;
 use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::element::memory::MemoryRenderBufferRenderElement;
-use smithay::backend::renderer::element::surface::{
-    render_elements_from_surface_tree, WaylandSurfaceRenderElement,
-};
+use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::element::utils::{
     select_dmabuf_feedback, CropRenderElement, Relocate, RelocateRenderElement,
     RescaleRenderElement,
 };
 use smithay::backend::renderer::element::{
-    default_primary_scanout_output_compare, Element, Id, Kind, PrimaryScanoutOutput,
+    default_primary_scanout_output_compare, Element, Id, Kind, PrimaryScanoutOutput, RenderElement,
     RenderElementStates,
 };
 use smithay::backend::renderer::gles::GlesRenderer;
@@ -40,7 +38,8 @@ use smithay::desktop::utils::{
     bbox_from_surface_tree, output_update, send_dmabuf_feedback_surface_tree,
     send_frames_surface_tree, surface_presentation_feedback_flags_from_states,
     surface_primary_scanout_output, take_presentation_feedback_surface_tree,
-    under_from_surface_tree, update_surface_primary_scanout_output, OutputPresentationFeedback,
+    under_from_surface_tree, update_surface_primary_scanout_output, with_surfaces_surface_tree,
+    OutputPresentationFeedback,
 };
 use smithay::desktop::{
     find_popup_root_surface, layer_map_for_output, LayerMap, LayerSurface, PopupGrab, PopupManager,
@@ -72,6 +71,7 @@ use smithay::utils::{
     ClockSource, IsAlive as _, Logical, Monotonic, Physical, Point, Rectangle, Scale, Size,
     Transform, SERIAL_COUNTER,
 };
+use smithay::wayland::background_effect::BackgroundEffectState;
 use smithay::wayland::compositor::{
     with_states, with_surface_tree_downward, CompositorClientState, CompositorHandler,
     CompositorState, HookId, SurfaceData, TraversalAction,
@@ -81,7 +81,7 @@ use smithay::wayland::dmabuf::DmabufState;
 use smithay::wayland::fractional_scale::FractionalScaleManagerState;
 use smithay::wayland::idle_inhibit::IdleInhibitManagerState;
 use smithay::wayland::idle_notify::IdleNotifierState;
-use smithay::wayland::input_method::{InputMethodManagerState, InputMethodSeat};
+use smithay::wayland::input_method::InputMethodManagerState;
 use smithay::wayland::keyboard_shortcuts_inhibit::{
     KeyboardShortcutsInhibitState, KeyboardShortcutsInhibitor,
 };
@@ -125,8 +125,6 @@ use crate::dbus::freedesktop_login1::Login1ToNiri;
 use crate::dbus::gnome_shell_introspect::{self, IntrospectToNiri, NiriToIntrospect};
 #[cfg(feature = "dbus")]
 use crate::dbus::gnome_shell_screenshot::{NiriToScreenshot, ScreenshotToNiri};
-#[cfg(feature = "xdp-gnome-screencast")]
-use crate::dbus::mutter_screen_cast::{self, ScreenCastToNiri};
 use crate::frame_clock::FrameClock;
 use crate::handlers::{configure_lock_surface, XDG_ACTIVATION_TOKEN_TIMEOUT};
 use crate::input::pick_color_grab::PickColorGrab;
@@ -141,7 +139,9 @@ use crate::layer::mapped::LayerSurfaceRenderElement;
 use crate::layer::MappedLayer;
 use crate::layout::tile::TileRenderElement;
 use crate::layout::workspace::{Workspace, WorkspaceId};
-use crate::layout::{HitType, Layout, LayoutElement as _, MonitorRenderElement};
+use crate::layout::{
+    HitType, Layout, LayoutElement as _, LayoutElementRenderElement, MonitorRenderElement,
+};
 use crate::niri_render_elements;
 use crate::protocols::ext_workspace::{self, ExtWorkspaceManagerState};
 use crate::protocols::foreign_toplevel::{self, ForeignToplevelManagerState};
@@ -150,18 +150,20 @@ use crate::protocols::mutter_x11_interop::MutterX11InteropManagerState;
 use crate::protocols::output_management::OutputManagementManagerState;
 use crate::protocols::screencopy::{Screencopy, ScreencopyBuffer, ScreencopyManagerState};
 use crate::protocols::virtual_pointer::VirtualPointerManagerState;
-use crate::pw_utils::{Cast, PipeWire};
-#[cfg(feature = "xdp-gnome-screencast")]
-use crate::pw_utils::{CastSizeChange, PwToNiri};
-use crate::render_helpers::debug::draw_opaque_regions;
+use crate::render_helpers::blur::BlurOptions;
+use crate::render_helpers::debug::push_opaque_regions;
 use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
+use crate::render_helpers::surface::push_elements_from_surface_tree;
 use crate::render_helpers::texture::TextureBuffer;
+use crate::render_helpers::xray::{Xray, XrayPos};
 use crate::render_helpers::{
     encompassing_geo, render_to_dmabuf, render_to_encompassing_texture, render_to_shm,
-    render_to_texture, render_to_vec, shaders, RenderTarget, SplitElements,
+    render_to_texture, render_to_vec, shaders, RenderCtx, RenderTarget,
 };
+#[cfg(feature = "xdp-gnome-screencast")]
+use crate::screencasting::Screencasting;
 use crate::ui::config_error_notification::ConfigErrorNotification;
 use crate::ui::exit_confirm_dialog::{ExitConfirmDialog, ExitConfirmDialogRenderElement};
 use crate::ui::hotkey_overlay::HotkeyOverlay;
@@ -279,6 +281,7 @@ pub struct Niri {
     pub screencopy_state: ScreencopyManagerState,
     pub output_management_state: OutputManagementManagerState,
     pub viewporter_state: ViewporterState,
+    pub background_effect_state: BackgroundEffectState,
     pub xdg_foreign_state: XdgForeignState,
     pub shm_state: ShmState,
     pub output_manager_state: OutputManagerState,
@@ -313,7 +316,7 @@ pub struct Niri {
     // verified that a black single-pixel-buffer background lets the foreground surface to be
     // unredirected.
     //
-    // https://github.com/YaLTeR/niri/issues/619
+    // https://github.com/niri-wm/niri/issues/619
     #[cfg(test)]
     pub single_pixel_buffer_state: SinglePixelBufferState,
 
@@ -408,19 +411,8 @@ pub struct Niri {
 
     pub satellite: Option<Satellite>,
 
-    // Casts are dropped before PipeWire to prevent a double-free (yay).
-    pub casts: Vec<Cast>,
-    pub pipewire: Option<PipeWire>,
     #[cfg(feature = "xdp-gnome-screencast")]
-    pub pw_to_niri: calloop::channel::Sender<PwToNiri>,
-
-    // Screencast output for each mapped window.
-    #[cfg(feature = "xdp-gnome-screencast")]
-    pub mapped_cast_output: HashMap<Window, Output>,
-
-    /// Window ID for the "dynamic cast" special window for the xdp-gnome picker.
-    #[cfg(feature = "xdp-gnome-screencast")]
-    pub dynamic_cast_id_for_portal: MappedId,
+    pub casting: Screencasting,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -484,6 +476,7 @@ pub struct OutputState {
     /// Solid color buffer for the backdrop that we use instead of clearing to avoid damage
     /// tracking issues and make screenshots easier.
     pub backdrop_buffer: SolidColorBuffer,
+    pub xray: Xray,
     pub lock_render_state: LockRenderState,
     pub lock_surface: Option<LockSurface>,
     pub lock_color_buffer: SolidColorBuffer,
@@ -584,8 +577,48 @@ pub enum CenterCoords {
 pub enum CastTarget {
     // Dynamic cast before selecting anything.
     Nothing,
-    Output(WeakOutput),
-    Window { id: u64 },
+    Output {
+        output: WeakOutput,
+        /// Cached name of the output.
+        name: String,
+    },
+    Window {
+        id: u64,
+    },
+}
+
+impl CastTarget {
+    pub fn output(output: &Output) -> Self {
+        Self::Output {
+            output: output.downgrade(),
+            name: output.name(),
+        }
+    }
+
+    pub fn matches_output(&self, weak: &WeakOutput) -> bool {
+        matches!(self, CastTarget::Output { output, .. } if output == weak)
+    }
+
+    pub fn matches(&self, ipc: &niri_ipc::CastTarget) -> bool {
+        use CastTarget::*;
+        match (self, ipc) {
+            (Nothing, niri_ipc::CastTarget::Nothing {}) => true,
+            (Output { name, .. }, niri_ipc::CastTarget::Output { name: ipc_name }) => {
+                name == ipc_name
+            }
+            (Window { id }, niri_ipc::CastTarget::Window { id: ipc_id }) => id == ipc_id,
+            _ => false,
+        }
+    }
+
+    pub fn make_ipc(&self) -> niri_ipc::CastTarget {
+        use CastTarget::*;
+        match self {
+            Nothing => niri_ipc::CastTarget::Nothing {},
+            Output { name, .. } => niri_ipc::CastTarget::Output { name: name.clone() },
+            Window { id } => niri_ipc::CastTarget::Window { id: *id },
+        }
+    }
 }
 
 /// Pending update to a window's focus timestamp.
@@ -789,6 +822,7 @@ impl State {
         // screencasts.
         #[cfg(feature = "xdp-gnome-screencast")]
         self.niri.refresh_mapped_cast_window_rules();
+        self.ipc_refresh_casts();
 
         self.niri.refresh_window_rules();
         self.refresh_ipc_outputs();
@@ -942,7 +976,6 @@ impl State {
         self.niri.layout.activate_window(window);
 
         let new_active = self.niri.layout.active_output().cloned();
-        #[allow(clippy::collapsible_if)]
         if new_active != active_output {
             if !self.maybe_warp_cursor_to_focus_centered() {
                 self.move_cursor_to_output(&new_active.unwrap());
@@ -1069,21 +1102,8 @@ impl State {
     }
 
     pub fn refresh_popup_grab(&mut self) {
-        let keyboard_grabbed = self.niri.seat.input_method().keyboard_grabbed();
-
         if let Some(grab) = &mut self.niri.popup_grab {
             if grab.grab.has_ended() {
-                self.niri.popup_grab = None;
-            } else if keyboard_grabbed {
-                // HACK: remove popup grab if IME grabbed the keyboard, because we can't yet do
-                // popup grabs together with an IME grab.
-                // FIXME: do this properly.
-                grab.grab.ungrab(PopupUngrabStrategy::All);
-                self.niri.seat.get_pointer().unwrap().unset_grab(
-                    self,
-                    SERIAL_COUNTER.next_serial(),
-                    get_monotonic_time().as_millis() as u32,
-                );
                 self.niri.popup_grab = None;
             }
         }
@@ -1300,6 +1320,7 @@ impl State {
                         get_monotonic_time().as_millis() as u32,
                     );
                     self.niri.popup_grab = None;
+                    self.niri.on_maybe_dnd_ended();
                 }
             }
 
@@ -1371,7 +1392,7 @@ impl State {
         }
     }
 
-    fn set_xkb_config(&mut self, xkb: XkbConfig) {
+    pub fn set_xkb_config(&mut self, xkb: XkbConfig) {
         let keyboard = self.niri.seat.get_keyboard().unwrap();
         let num_lock = keyboard.modifier_state().num_lock;
         if let Err(err) = keyboard.set_xkb_config(self, xkb) {
@@ -1929,12 +1950,6 @@ impl State {
             return;
         }
 
-        // Redraw the pointer if hidden through cursor{} options
-        if self.niri.pointer_visibility == PointerVisibility::Hidden {
-            self.niri.pointer_visibility = PointerVisibility::Visible;
-            self.niri.queue_redraw_all();
-        }
-
         let default_output = self
             .niri
             .output_under_cursor()
@@ -1961,6 +1976,7 @@ impl State {
         if let Some(touch) = self.niri.seat.get_touch() {
             touch.unset_grab(self);
         }
+        self.niri.on_maybe_dnd_ended();
 
         self.backend.with_primary_renderer(|renderer| {
             self.niri
@@ -2016,277 +2032,53 @@ impl State {
         self.niri.queue_redraw_all();
     }
 
-    #[cfg(feature = "xdp-gnome-screencast")]
-    pub fn on_pw_msg(&mut self, msg: PwToNiri) {
-        match msg {
-            PwToNiri::StopCast { session_id } => self.niri.stop_cast(session_id),
-            PwToNiri::Redraw { stream_id } => self.redraw_cast(stream_id),
-            PwToNiri::FatalError => {
-                warn!("stopping PipeWire due to fatal error");
-                if let Some(pw) = self.niri.pipewire.take() {
-                    let ids: Vec<_> = self.niri.casts.iter().map(|cast| cast.session_id).collect();
-                    for id in ids {
-                        self.niri.stop_cast(id);
-                    }
-                    self.niri.event_loop.remove(pw.token);
-                }
-            }
-        }
-    }
+    pub fn store_unmap_snapshot(&mut self, window: &Window, output: Option<&Output>) {
+        // The unmapping tile may have an xray background, in which case we will render xray
+        // elements, so they need to be updated.
+        self.niri.update_xray_render_elements(output);
 
-    #[cfg(feature = "xdp-gnome-screencast")]
-    fn redraw_cast(&mut self, stream_id: usize) {
-        let _span = tracy_client::span!("State::redraw_cast");
-
-        let casts = &mut self.niri.casts;
-        let Some(cast) = casts.iter_mut().find(|cast| cast.stream_id == stream_id) else {
-            warn!("cast to redraw is missing");
-            return;
-        };
-
-        match &cast.target {
-            CastTarget::Nothing => {
-                self.backend.with_primary_renderer(|renderer| {
-                    if cast.dequeue_buffer_and_clear(renderer) {
-                        cast.last_frame_time = get_monotonic_time();
-                    }
-                });
-            }
-            CastTarget::Output(weak) => {
-                if let Some(output) = weak.upgrade() {
-                    self.niri.queue_redraw(&output);
-                }
-            }
-            CastTarget::Window { id } => {
-                let mut windows = self.niri.layout.windows();
-                let Some((_, mapped)) = windows.find(|(_, mapped)| mapped.id().get() == *id) else {
-                    return;
+        self.backend.with_primary_renderer(|renderer| {
+            if let Some(output) = output {
+                let mut ctx = RenderCtx {
+                    target: RenderTarget::Output,
+                    renderer,
+                    xray: None,
                 };
 
-                // Use the cached output since it will be present even if the output was
-                // currently disconnected.
-                let Some(output) = self.niri.mapped_cast_output.get(&mapped.window) else {
-                    return;
-                };
+                self.niri.fill_xray_elements(ctx.r(), output);
 
-                let scale = Scale::from(output.current_scale().fractional_scale());
-                let bbox = mapped
-                    .window
-                    .bbox_with_popups()
-                    .to_physical_precise_up(scale);
-
-                match cast.ensure_size(bbox.size) {
-                    Ok(CastSizeChange::Ready) => (),
-                    Ok(CastSizeChange::Pending) => return,
-                    Err(err) => {
-                        warn!("error updating stream size, stopping screencast: {err:?}");
-                        drop(windows);
-                        let session_id = cast.session_id;
-                        self.niri.stop_cast(session_id);
-                        return;
-                    }
+                // If any background layer has block_out_from, also fill the Screencast xray
+                // buffer so the unmap snapshot can render a buffer with blocked-out background.
+                //
+                // This will be used in Tile::render_snapshot().
+                let has_blocked_out = self.niri.has_blocked_out_background_layers(output);
+                if has_blocked_out {
+                    let screencast_ctx = RenderCtx {
+                        target: RenderTarget::Screencast,
+                        ..ctx.r()
+                    };
+                    self.niri.fill_xray_elements(screencast_ctx, output);
                 }
 
-                self.backend.with_primary_renderer(|renderer| {
-                    // FIXME: pointer.
-                    let elements = mapped
-                        .render_for_screen_cast(renderer, scale)
-                        .rev()
-                        .collect::<Vec<_>>();
+                let state = self.niri.output_state.get_mut(output).unwrap();
+                self.niri.layout.store_unmap_snapshot(
+                    renderer,
+                    Some(&mut state.xray),
+                    has_blocked_out,
+                    window,
+                );
 
-                    if cast.dequeue_buffer_and_render(renderer, &elements, bbox.size, scale) {
-                        cast.last_frame_time = get_monotonic_time();
-                    }
-                });
+                self.niri.clear_xray_elements(output);
+            } else {
+                self.niri
+                    .layout
+                    .store_unmap_snapshot(renderer, None, false, window);
             }
-        }
+        });
     }
 
     #[cfg(not(feature = "xdp-gnome-screencast"))]
     pub fn set_dynamic_cast_target(&mut self, _target: CastTarget) {}
-
-    #[cfg(feature = "xdp-gnome-screencast")]
-    pub fn set_dynamic_cast_target(&mut self, target: CastTarget) {
-        let _span = tracy_client::span!("State::set_dynamic_cast_target");
-
-        let mut refresh = None;
-        match &target {
-            // Leave refresh as is when clearing. Chances are, the next refresh will match it,
-            // then we'll avoid reconfiguring.
-            CastTarget::Nothing => (),
-            CastTarget::Output(output) => {
-                if let Some(output) = output.upgrade() {
-                    refresh = Some(output.current_mode().unwrap().refresh as u32);
-                }
-            }
-            CastTarget::Window { id } => {
-                let mut windows = self.niri.layout.windows();
-                if let Some((_, mapped)) = windows.find(|(_, mapped)| mapped.id().get() == *id) {
-                    if let Some(output) = self.niri.mapped_cast_output.get(&mapped.window) {
-                        refresh = Some(output.current_mode().unwrap().refresh as u32);
-                    }
-                }
-            }
-        }
-
-        let mut to_redraw = Vec::new();
-        let mut to_stop = Vec::new();
-        for cast in &mut self.niri.casts {
-            if !cast.dynamic_target {
-                continue;
-            }
-
-            if let Some(refresh) = refresh {
-                if let Err(err) = cast.set_refresh(refresh) {
-                    warn!("error changing cast FPS: {err:?}");
-                    to_stop.push(cast.session_id);
-                    continue;
-                }
-            }
-
-            cast.target = target.clone();
-            to_redraw.push(cast.stream_id);
-        }
-
-        for id in to_redraw {
-            self.redraw_cast(id);
-        }
-    }
-
-    #[cfg(feature = "xdp-gnome-screencast")]
-    pub fn on_screen_cast_msg(&mut self, msg: ScreenCastToNiri) {
-        use smithay::reexports::gbm::Modifier;
-
-        use crate::dbus::mutter_screen_cast::StreamTargetId;
-
-        match msg {
-            ScreenCastToNiri::StartCast {
-                session_id,
-                stream_id,
-                target,
-                cursor_mode,
-                signal_ctx,
-            } => {
-                let _span = tracy_client::span!("StartCast");
-
-                debug!(session_id, stream_id, "StartCast");
-
-                let Some(gbm) = self.backend.gbm_device() else {
-                    warn!("error starting screencast: no GBM device available");
-                    self.niri.stop_cast(session_id);
-                    return;
-                };
-
-                let pw = if let Some(pw) = &self.niri.pipewire {
-                    pw
-                } else {
-                    match PipeWire::new(self.niri.event_loop.clone(), self.niri.pw_to_niri.clone())
-                    {
-                        Ok(pipewire) => self.niri.pipewire.insert(pipewire),
-                        Err(err) => {
-                            warn!(
-                                "error starting screencast: PipeWire failed to initialize: {err:?}"
-                            );
-                            self.niri.stop_cast(session_id);
-                            return;
-                        }
-                    }
-                };
-
-                let mut dynamic_target = false;
-                let (target, size, refresh, alpha) = match target {
-                    StreamTargetId::Output { name } => {
-                        let global_space = &self.niri.global_space;
-                        let output = global_space.outputs().find(|out| out.name() == name);
-                        let Some(output) = output else {
-                            warn!("error starting screencast: requested output is missing");
-                            self.niri.stop_cast(session_id);
-                            return;
-                        };
-
-                        let mode = output.current_mode().unwrap();
-                        let transform = output.current_transform();
-                        let size = transform.transform_size(mode.size);
-                        let refresh = mode.refresh as u32;
-                        (CastTarget::Output(output.downgrade()), size, refresh, false)
-                    }
-                    StreamTargetId::Window { id }
-                        if id == self.niri.dynamic_cast_id_for_portal.get() =>
-                    {
-                        dynamic_target = true;
-
-                        // All dynamic casts start as Nothing to avoid surprises and exposing
-                        // sensitive info.
-                        (CastTarget::Nothing, Size::from((1, 1)), 1000, true)
-                    }
-                    StreamTargetId::Window { id } => {
-                        let Some(window) = self.niri.layout.windows().find_map(|(_, mapped)| {
-                            (mapped.id().get() == id).then_some(&mapped.window)
-                        }) else {
-                            warn!("error starting screencast: requested window is missing");
-                            self.niri.stop_cast(session_id);
-                            return;
-                        };
-
-                        // Use the cached output since it will be present even if the output was
-                        // currently disconnected.
-                        let Some(output) = self.niri.mapped_cast_output.get(window) else {
-                            warn!("error starting screencast: requested window is missing");
-                            self.niri.stop_cast(session_id);
-                            return;
-                        };
-
-                        let scale = Scale::from(output.current_scale().fractional_scale());
-                        let bbox = window.bbox_with_popups().to_physical_precise_up(scale);
-                        let refresh = output.current_mode().unwrap().refresh as u32;
-
-                        (CastTarget::Window { id }, bbox.size, refresh, true)
-                    }
-                };
-
-                let mut render_formats = self
-                    .backend
-                    .with_primary_renderer(|renderer| {
-                        renderer.egl_context().dmabuf_render_formats().clone()
-                    })
-                    .unwrap_or_default();
-
-                {
-                    let config = self.niri.config.borrow();
-                    if config.debug.force_pipewire_invalid_modifier {
-                        render_formats = render_formats
-                            .into_iter()
-                            .filter(|f| f.modifier == Modifier::Invalid)
-                            .collect();
-                    }
-                }
-
-                let res = pw.start_cast(
-                    gbm,
-                    render_formats,
-                    session_id,
-                    stream_id,
-                    target,
-                    dynamic_target,
-                    size,
-                    refresh,
-                    alpha,
-                    cursor_mode,
-                    signal_ctx,
-                );
-                match res {
-                    Ok(cast) => {
-                        self.niri.casts.push(cast);
-                    }
-                    Err(err) => {
-                        warn!("error starting screencast: {err:?}");
-                        self.niri.stop_cast(session_id);
-                    }
-                }
-            }
-            ScreenCastToNiri::StopCast { session_id } => self.niri.stop_cast(session_id),
-        }
-    }
 
     #[cfg(feature = "dbus")]
     pub fn on_screen_shot_msg(
@@ -2360,7 +2152,7 @@ impl State {
 
         #[cfg(feature = "xdp-gnome-screencast")]
         windows.insert(
-            self.niri.dynamic_cast_id_for_portal.get(),
+            self.niri.casting.dynamic_cast_id_for_portal.get(),
             gnome_shell_introspect::WindowProperties {
                 title: String::from("niri Dynamic Cast Target"),
                 app_id: String::from("rs.bxt.niri.desktop"),
@@ -2541,6 +2333,7 @@ impl Niri {
         let screencopy_state =
             ScreencopyManagerState::new::<State, _>(&display_handle, client_is_unrestricted);
         let viewporter_state = ViewporterState::new::<State>(&display_handle);
+        let background_effect_state = BackgroundEffectState::new::<State>(&display_handle);
         let xdg_foreign_state = XdgForeignState::new::<State>(&display_handle);
 
         let is_tty = matches!(backend, Backend::Tty(_));
@@ -2653,16 +2446,7 @@ impl Niri {
         };
 
         #[cfg(feature = "xdp-gnome-screencast")]
-        let pw_to_niri = {
-            let (pw_to_niri, from_pipewire) = calloop::channel::channel();
-            event_loop
-                .insert_source(from_pipewire, move |event, _, state| match event {
-                    calloop::channel::Event::Msg(msg) => state.on_pw_msg(msg),
-                    calloop::channel::Event::Closed => (),
-                })
-                .unwrap();
-            pw_to_niri
-        };
+        let screencasting = Screencasting::new(&event_loop);
 
         let display_source = Generic::new(display, Interest::READ, Mode::Level);
         event_loop
@@ -2733,6 +2517,7 @@ impl Niri {
             output_management_state,
             screencopy_state,
             viewporter_state,
+            background_effect_state,
             xdg_foreign_state,
             text_input_state,
             input_method_state,
@@ -2829,16 +2614,8 @@ impl Niri {
 
             satellite: None,
 
-            pipewire: None,
-            casts: vec![],
             #[cfg(feature = "xdp-gnome-screencast")]
-            pw_to_niri,
-
-            #[cfg(feature = "xdp-gnome-screencast")]
-            mapped_cast_output: HashMap::new(),
-
-            #[cfg(feature = "xdp-gnome-screencast")]
-            dynamic_cast_id_for_portal: MappedId::next(),
+            casting: screencasting,
         };
 
         niri.reset_pointer_inactivity_timer();
@@ -3083,6 +2860,7 @@ impl Niri {
             vblank_throttle: VBlankThrottle::new(self.event_loop.clone(), name.connector.clone()),
             frame_callback_sequence: 0,
             backdrop_buffer: SolidColorBuffer::new(size, backdrop_color),
+            xray: Xray::new(),
             lock_render_state,
             lock_surface: None,
             lock_color_buffer: SolidColorBuffer::new(size, CLEAR_COLOR_LOCKED),
@@ -3116,10 +2894,8 @@ impl Niri {
             RedrawState::WaitingForEstimatedVBlankAndQueued(token) => self.event_loop.remove(token),
         }
 
-        #[cfg(feature = "xdp-gnome-screencast")]
-        self.stop_casts_for_target(CastTarget::Output(output.downgrade()));
-
-        self.remove_screencopy_output(output);
+        self.stop_casts_for_target(CastTarget::output(output));
+        self.screencopy_state.remove_output(output);
 
         // Disable the output global and remove some time later to give the clients some time to
         // process it.
@@ -3880,16 +3656,13 @@ impl Niri {
         }
     }
 
-    pub fn pointer_element<R: NiriRenderer>(
+    pub fn render_pointer<R: NiriRenderer>(
         &self,
         renderer: &mut R,
         output: &Output,
-    ) -> Vec<OutputRenderElements<R>> {
-        if !self.pointer_visibility.is_visible() {
-            return vec![];
-        }
-
-        let _span = tracy_client::span!("Niri::pointer_element");
+        push: &mut dyn FnMut(PointerRenderElements<R>),
+    ) {
+        let _span = tracy_client::span!("Niri::render_pointer");
         let output_scale = output.current_scale();
         let output_pos = self.global_space.output_geometry(output).unwrap().loc;
 
@@ -3905,20 +3678,21 @@ impl Niri {
 
         let output_scale = Scale::from(output.current_scale().fractional_scale());
 
-        let mut pointer_elements = match render_cursor {
-            RenderCursor::Hidden => vec![],
+        match render_cursor {
+            RenderCursor::Hidden => (),
             RenderCursor::Surface { surface, hotspot } => {
                 let pointer_pos =
                     (pointer_pos - hotspot.to_f64()).to_physical_precise_round(output_scale);
 
-                render_elements_from_surface_tree(
+                push_elements_from_surface_tree(
                     renderer,
                     &surface,
                     pointer_pos,
                     output_scale,
                     1.,
                     Kind::Cursor,
-                )
+                    &mut |elem| push(elem.into()),
+                );
             }
             RenderCursor::Named {
                 icon,
@@ -3931,8 +3705,7 @@ impl Niri {
                     (pointer_pos - hotspot.to_f64()).to_physical_precise_round(output_scale);
 
                 let texture = self.cursor_texture_cache.get(icon, scale, &cursor, idx);
-                let mut pointer_elements = vec![];
-                let pointer_element = match MemoryRenderBufferRenderElement::from_buffer(
+                match MemoryRenderBufferRenderElement::from_buffer(
                     renderer,
                     pointer_pos,
                     &texture,
@@ -3941,34 +3714,87 @@ impl Niri {
                     None,
                     Kind::Cursor,
                 ) {
-                    Ok(element) => Some(element),
+                    Ok(element) => push(element.into()),
                     Err(err) => {
                         warn!("error importing a cursor texture: {err:?}");
-                        None
                     }
-                };
-                if let Some(element) = pointer_element {
-                    pointer_elements.push(OutputRenderElements::NamedPointer(element));
                 }
-
-                pointer_elements
             }
-        };
+        }
 
         if let Some(dnd_icon) = self.dnd_icon.as_ref() {
             let pointer_pos =
                 (pointer_pos + dnd_icon.offset.to_f64()).to_physical_precise_round(output_scale);
-            pointer_elements.extend(render_elements_from_surface_tree(
+            push_elements_from_surface_tree(
                 renderer,
                 &dnd_icon.surface,
                 pointer_pos,
                 output_scale,
                 1.,
                 Kind::ScanoutCandidate,
-            ));
+                &mut |elem| push(elem.into()),
+            );
+        }
+    }
+
+    /// Checks if the pointer should be included on a window cast or screenshot.
+    ///
+    /// Returns `(cursor_global_pos, win_pos)` if the pointer should be included, or `None`
+    /// otherwise.
+    pub fn pointer_pos_for_window_cast(
+        &self,
+        mapped: &Mapped,
+    ) -> Option<(Point<f64, Logical>, Point<f64, Logical>)> {
+        // Tablet cursor.
+        if let Some(tablet_pos) = self.tablet_cursor_location {
+            let contents = self.contents_under(tablet_pos);
+            if let Some((w, HitType::Input { win_pos })) = contents.window {
+                if w == mapped.window {
+                    // Tablet tools don't currently expose current focus, and don't currently
+                    // have grabs. When those are implemented, this branch should be adjusted
+                    // to look more similar to the branch below.
+                    return Some((tablet_pos, win_pos));
+                }
+            }
+        }
+        // Regular cursor.
+        else if let Some((w, HitType::Input { win_pos })) = &self.pointer_contents.window {
+            if w == &mapped.window {
+                // Grabs can modify the pointer focus, making it different from
+                // pointer_contents. Notably, gestures like Mod+MMB will remove the pointer
+                // focus, and ClickGrab will keep pointer focus on the clicked window even
+                // while it's moving over a different window.
+                //
+                // So, double-check that current_focus() (after grabs) also matches the pointer
+                // contents.
+                let pointer = self.seat.get_pointer().unwrap();
+
+                // The DnD grab is a bit special because it has its own focus (data device)
+                // while the pointer focus is cleared. That focus is not currently exposed from
+                // Smithay, and showing DnD icons on window screenshots seems useful, so let's
+                // just allow it during DnD grabs.
+                let is_dnd_grab = pointer
+                    .with_grab(|_, grab| State::is_dnd_grab(grab.as_any()))
+                    .unwrap_or(false);
+
+                let current_focus_matches = is_dnd_grab
+                    || pointer
+                        .current_focus()
+                        .map(|focused| self.find_root_shell_surface(&focused))
+                        .is_some_and(|focused| mapped.is_wl_surface(&focused));
+                if current_focus_matches {
+                    // We don't check for pointer visibility because it can only be Visible or
+                    // Hidden, and never Disabled (then it wouldn't have focus). Even when the
+                    // pointer is Hidden, we want to render it, since the user explicitly
+                    // requested show_pointer = true, and otherwise there's no easy way to
+                    // screenshot a window with pointer with hide-when-typing because pressing
+                    // the screenshot bind will hide the pointer.
+                    return Some((pointer.current_location(), *win_pos));
+                }
+            }
         }
 
-        pointer_elements
+        None
     }
 
     pub fn refresh_pointer_outputs(&mut self) {
@@ -4196,66 +4022,6 @@ impl Niri {
         }
     }
 
-    #[cfg(feature = "xdp-gnome-screencast")]
-    pub fn refresh_mapped_cast_window_rules(&mut self) {
-        // O(N^2) but should be fine since there aren't many casts usually.
-        self.layout.with_windows_mut(|mapped, _| {
-            let id = mapped.id().get();
-            // Find regardless of cast.is_active.
-            let value = self
-                .casts
-                .iter()
-                .any(|cast| cast.target == (CastTarget::Window { id }));
-            mapped.set_is_window_cast_target(value);
-        });
-    }
-
-    #[cfg(feature = "xdp-gnome-screencast")]
-    pub fn refresh_mapped_cast_outputs(&mut self) {
-        use std::collections::hash_map::Entry;
-
-        let mut seen = HashSet::new();
-        let mut output_changed = vec![];
-
-        self.layout.with_windows(|mapped, output, _, _| {
-            seen.insert(mapped.window.clone());
-
-            let Some(output) = output else {
-                return;
-            };
-
-            match self.mapped_cast_output.entry(mapped.window.clone()) {
-                Entry::Occupied(mut entry) => {
-                    if entry.get() != output {
-                        entry.insert(output.clone());
-                        output_changed.push((mapped.id(), output.clone()));
-                    }
-                }
-                Entry::Vacant(entry) => {
-                    entry.insert(output.clone());
-                }
-            }
-        });
-
-        self.mapped_cast_output.retain(|win, _| seen.contains(win));
-
-        let mut to_stop = vec![];
-        for (id, out) in output_changed {
-            let refresh = out.current_mode().unwrap().refresh as u32;
-            let target = CastTarget::Window { id: id.get() };
-            for cast in self.casts.iter_mut().filter(|cast| cast.target == target) {
-                if let Err(err) = cast.set_refresh(refresh) {
-                    warn!("error changing cast FPS: {err:?}");
-                    to_stop.push(cast.session_id);
-                };
-            }
-        }
-
-        for session_id in to_stop {
-            self.stop_cast(session_id);
-        }
-    }
-
     pub fn advance_animations(&mut self) {
         let _span = tracy_client::span!("Niri::advance_animations");
 
@@ -4275,10 +4041,11 @@ impl Niri {
     }
 
     pub fn update_render_elements(&mut self, output: Option<&Output>) {
+        self.update_xray_render_elements(output);
         self.layout.update_render_elements(output);
 
         for (out, state) in self.output_state.iter_mut() {
-            if output.map_or(true, |output| out == output) {
+            if output.is_none_or(|output| out == output) {
                 let scale = Scale::from(out.current_scale().fractional_scale());
                 let transform = out.current_transform();
 
@@ -4301,6 +4068,49 @@ impl Niri {
         }
     }
 
+    // Updates only those render elements that go in the xray buffer.
+    pub fn update_xray_render_elements(&mut self, output: Option<&Output>) {
+        for (out, state) in self.output_state.iter_mut() {
+            if output.is_none_or(|output| out == output) {
+                let scale = Scale::from(out.current_scale().fractional_scale());
+                let mode = out.current_mode().unwrap();
+                let transform = out.current_transform();
+                let size = transform.transform_size(mode.size);
+
+                state.xray.workspaces.clear();
+                let mon = self.layout.monitor_for_output(out).unwrap();
+                for (ws, geo) in mon.workspaces_with_render_geo() {
+                    let bg_color = ws.render_background().color();
+                    state.xray.workspaces.push((geo, bg_color));
+                }
+                state.xray.backdrop_color = state.backdrop_buffer.color();
+                let blur_options = BlurOptions::from(self.config.borrow().blur);
+                for buf in &state.xray.background {
+                    let mut buffer = buf.borrow_mut();
+                    buffer.update_size(size, scale);
+                    buffer.update_blur_options(blur_options);
+                }
+                for buf in &state.xray.backdrop {
+                    let mut buffer = buf.borrow_mut();
+                    buffer.update_size(size, scale);
+                    buffer.update_blur_options(blur_options);
+                }
+
+                let layer_map = layer_map_for_output(out);
+                for surface in layer_map.layers_on(Layer::Background) {
+                    let Some(mapped) = self.mapped_layer_surfaces.get_mut(surface) else {
+                        continue;
+                    };
+                    let Some(geo) = layer_map.layer_geometry(surface) else {
+                        continue;
+                    };
+
+                    mapped.update_render_elements(geo.size.to_f64());
+                }
+            }
+        }
+    }
+
     pub fn update_shaders(&mut self) {
         self.layout.update_shaders();
 
@@ -4309,69 +4119,105 @@ impl Niri {
         }
     }
 
-    pub fn render<R: NiriRenderer>(
+    pub fn render_to_vec<R: NiriRenderer>(
         &self,
-        renderer: &mut R,
+        ctx: RenderCtx<R>,
         output: &Output,
         include_pointer: bool,
-        mut target: RenderTarget,
     ) -> Vec<OutputRenderElements<R>> {
+        let mut elements = Vec::new();
+        self.render(ctx, output, include_pointer, &mut |elem| {
+            elements.push(elem)
+        });
+        elements
+    }
+
+    pub fn render<R: NiriRenderer>(
+        &self,
+        mut ctx: RenderCtx<R>,
+        output: &Output,
+        include_pointer: bool,
+        push: &mut dyn FnMut(OutputRenderElements<R>),
+    ) {
         let _span = tracy_client::span!("Niri::render");
 
-        if target == RenderTarget::Output {
+        if ctx.target == RenderTarget::Output {
             if let Some(preview) = self.config.borrow().debug.preview_render {
-                target = match preview {
+                ctx.target = match preview {
                     PreviewRender::Screencast => RenderTarget::Screencast,
                     PreviewRender::ScreenCapture => RenderTarget::ScreenCapture,
                 };
             }
         }
 
+        self.fill_xray_elements(ctx.as_gles(), output);
+
+        // Reborrow to shorten lifetime to be able to put in xray.
+        let mut ctx = ctx.r();
+        let state = self.output_state.get(output).unwrap();
+        ctx.xray = Some(&state.xray);
+
+        self.render_inner(ctx, output, include_pointer, push);
+
+        self.clear_xray_elements(output);
+    }
+
+    fn render_inner<R: NiriRenderer>(
+        &self,
+        mut ctx: RenderCtx<R>,
+        output: &Output,
+        include_pointer: bool,
+        push: &mut dyn FnMut(OutputRenderElements<R>),
+    ) {
+        let state = self.output_state.get(output).unwrap();
         let output_scale = Scale::from(output.current_scale().fractional_scale());
 
+        let push = if self.debug_draw_opaque_regions {
+            &mut move |elem| {
+                push_opaque_regions(&elem, output_scale, push);
+                push(elem);
+            }
+        } else {
+            push
+        };
+
         // The pointer goes on the top.
-        let mut elements = vec![];
-        if include_pointer {
-            elements = self.pointer_element(renderer, output);
+        if include_pointer && self.pointer_visibility.is_visible() {
+            self.render_pointer(ctx.renderer, output, &mut |elem| push(elem.into()));
         }
 
         // Next, the screen transition texture.
         {
-            let state = self.output_state.get(output).unwrap();
             if let Some(transition) = &state.screen_transition {
-                elements.push(transition.render(target).into());
+                push(transition.render(ctx.target).into());
             }
         }
 
         // Next, the exit confirm dialog.
-        elements.extend(
-            self.exit_confirm_dialog
-                .render(renderer, output)
-                .into_iter()
-                .map(OutputRenderElements::from),
-        );
+        self.exit_confirm_dialog
+            .render(ctx.renderer, output, &mut |elem| push(elem.into()));
 
         // Next, the config error notification too.
-        if let Some(element) = self.config_error_notification.render(renderer, output) {
-            elements.push(element.into());
+        if let Some(element) = self.config_error_notification.render(ctx.renderer, output) {
+            push(element.into());
         }
 
         // If the session is locked, draw the lock surface.
         if self.is_locked() {
-            let state = self.output_state.get(output).unwrap();
             if let Some(surface) = state.lock_surface.as_ref() {
-                elements.extend(render_elements_from_surface_tree(
-                    renderer,
+                push_elements_from_surface_tree(
+                    ctx.renderer,
                     surface.wl_surface(),
-                    (0, 0),
+                    Point::new(0, 0),
                     output_scale,
                     1.,
                     Kind::ScanoutCandidate,
-                ));
+                    &mut |elem| push(elem.into()),
+                );
             }
 
             // Draw the solid color background.
-            elements.push(
+            push(
                 SolidColorRenderElement::from_buffer(
                     &state.lock_color_buffer,
                     (0., 0.),
@@ -4381,14 +4227,10 @@ impl Niri {
                 .into(),
             );
 
-            if self.debug_draw_opaque_regions {
-                draw_opaque_regions(&mut elements, output_scale);
-            }
-            return elements;
+            return;
         }
 
         // Prepare the background elements.
-        let state = self.output_state.get(output).unwrap();
         let backdrop = SolidColorRenderElement::from_buffer(
             &state.backdrop_buffer,
             (0., 0.),
@@ -4399,35 +4241,23 @@ impl Niri {
 
         // If the screenshot UI is open, draw it.
         if self.screenshot_ui.is_open() {
-            elements.extend(
-                self.screenshot_ui
-                    .render_output(output, target)
-                    .into_iter()
-                    .map(OutputRenderElements::from),
-            );
+            self.screenshot_ui
+                .render_output(output, ctx.target, &mut |elem| push(elem.into()));
 
             // Add the backdrop for outputs that were connected while the screenshot UI was open.
-            elements.push(backdrop);
+            push(backdrop);
 
-            if self.debug_draw_opaque_regions {
-                draw_opaque_regions(&mut elements, output_scale);
-            }
-            return elements;
+            return;
         }
 
         // Draw the hotkey overlay on top.
-        if let Some(element) = self.hotkey_overlay.render(renderer, output) {
-            elements.push(element.into());
+        if let Some(element) = self.hotkey_overlay.render(ctx.renderer, output) {
+            push(element.into());
         }
 
         // Then, the Alt-Tab switcher.
-        let mru_elements = self
-            .window_mru_ui
-            .render_output(self, output, renderer, target)
-            .into_iter()
-            .flatten()
-            .map(OutputRenderElements::from);
-        elements.extend(mru_elements);
+        self.window_mru_ui
+            .render_output(self, output, ctx.r(), &mut |elem| push(elem.into()));
 
         // Don't draw the focus ring on the workspaces while interactively moving above those
         // workspaces, since the interactively-moved window already has a focus ring.
@@ -4436,151 +4266,241 @@ impl Niri {
         // Get monitor elements.
         let mon = self.layout.monitor_for_output(output).unwrap();
         let zoom = mon.overview_zoom();
-        let monitor_elements = Vec::from_iter(
-            mon.render_elements(renderer, target, focus_ring)
-                .map(|(geo, bg, iter)| (geo, bg, Vec::from_iter(iter))),
-        );
-        let workspace_shadow_elements = Vec::from_iter(mon.render_workspace_shadows(renderer));
-        let insert_hint_elements = mon.render_insert_hint_between_workspaces(renderer);
-        let int_move_elements: Vec<_> = self
-            .layout
-            .render_interactive_move_for_output(renderer, output, target)
-            .collect();
 
         // Get layer-shell elements.
         let layer_map = layer_map_for_output(output);
-        let mut extend_from_layer =
-            |elements: &mut SplitElements<LayerSurfaceRenderElement<R>>, layer, for_backdrop| {
-                self.render_layer(renderer, target, &layer_map, layer, elements, for_backdrop);
-            };
+
+        // We use macros instead of closures to avoid borrowing issues (renderer and push() go
+        // into different functions).
+        macro_rules! push_popups_from_layer {
+            ($layer:expr, $ns:expr, $xray_pos:expr, $backdrop:expr, $push:expr) => {{
+                self.render_layer_popups(
+                    ctx.r(),
+                    $ns,
+                    &layer_map,
+                    $layer,
+                    $xray_pos,
+                    $backdrop,
+                    $push,
+                );
+            }};
+            ($layer:expr, true) => {{
+                push_popups_from_layer!($layer, None, XrayPos::default(), true, &mut |elem| push(
+                    elem.into()
+                ));
+            }};
+            ($layer:expr, $ns:expr, $xray_pos:expr, $push:expr) => {{
+                push_popups_from_layer!($layer, $ns, $xray_pos, false, $push);
+            }};
+            ($layer:expr) => {{
+                push_popups_from_layer!($layer, None, XrayPos::default(), false, &mut |elem| push(
+                    elem.into()
+                ));
+            }};
+        }
+        macro_rules! push_normal_from_layer {
+            ($layer:expr, $ns:expr, $xray_pos:expr, $backdrop:expr, $push:expr) => {{
+                self.render_layer_normal(
+                    ctx.r(),
+                    $ns,
+                    &layer_map,
+                    $layer,
+                    $xray_pos,
+                    $backdrop,
+                    $push,
+                );
+            }};
+            ($layer:expr, true) => {{
+                push_normal_from_layer!($layer, None, XrayPos::default(), true, &mut |elem| {
+                    push(elem.into())
+                });
+            }};
+            ($layer:expr, $ns:expr, $xray_pos:expr, $push:expr) => {{
+                push_normal_from_layer!($layer, $ns, $xray_pos, false, $push);
+            }};
+            ($layer:expr) => {{
+                push_normal_from_layer!($layer, None, XrayPos::default(), false, &mut |elem| {
+                    push(elem.into())
+                });
+            }};
+        }
 
         // The overlay layer elements go next.
-        let mut layer_elems = SplitElements::default();
-        extend_from_layer(&mut layer_elems, Layer::Overlay, false);
-        elements.extend(layer_elems.into_iter().map(OutputRenderElements::from));
-
-        // Collect the top layer elements.
-        let mut layer_elems = SplitElements::default();
-        extend_from_layer(&mut layer_elems, Layer::Top, false);
-        let top_layer = layer_elems;
+        push_popups_from_layer!(Layer::Overlay);
+        push_normal_from_layer!(Layer::Overlay);
 
         // When rendering above the top layer, we put the regular monitor elements first.
         // Otherwise, we will render all layer-shell pop-ups and the top layer on top.
         if mon.render_above_top_layer() {
-            // Collect all other layer-shell elements.
-            let mut layer_elems = SplitElements::default();
-            extend_from_layer(&mut layer_elems, Layer::Bottom, false);
-            extend_from_layer(&mut layer_elems, Layer::Background, false);
+            self.layout
+                .render_interactive_move_for_output(ctx.r(), output, &mut |elem| push(elem.into()));
 
-            elements.extend(
-                int_move_elements
-                    .into_iter()
-                    .map(OutputRenderElements::from),
-            );
-            elements.extend(
-                insert_hint_elements
-                    .into_iter()
-                    .map(OutputRenderElements::from),
-            );
+            mon.render_insert_hint_between_workspaces(ctx.renderer, &mut |elem| push(elem.into()));
 
-            let mut ws_background = None;
-            elements.extend(
-                monitor_elements
-                    .into_iter()
-                    .flat_map(|(_ws_geo, ws_bg, iter)| {
-                        ws_background = Some(ws_bg);
-                        iter
-                    })
-                    .map(OutputRenderElements::from),
-            );
+            mon.render_workspaces(ctx.r(), focus_ring, &mut |elem| push(elem.into()));
 
-            elements.extend(top_layer.into_iter().map(OutputRenderElements::from));
-            elements.extend(layer_elems.into_iter().map(OutputRenderElements::from));
+            push_popups_from_layer!(Layer::Top);
+            push_normal_from_layer!(Layer::Top);
 
-            if let Some(ws_background) = ws_background {
-                elements.push(OutputRenderElements::from(ws_background));
+            push_popups_from_layer!(Layer::Bottom);
+            push_popups_from_layer!(Layer::Background);
+            push_normal_from_layer!(Layer::Bottom);
+            push_normal_from_layer!(Layer::Background);
+
+            // We don't expect more than one workspace when render_above_top_layer().
+            if let Some((ws, _geo)) = mon.workspaces_with_render_geo().next() {
+                push(ws.render_background().into());
             }
-
-            elements.extend(
-                workspace_shadow_elements
-                    .into_iter()
-                    .map(OutputRenderElements::from),
-            );
         } else {
-            elements.extend(top_layer.into_iter().map(OutputRenderElements::from));
+            push_popups_from_layer!(Layer::Top);
+            push_normal_from_layer!(Layer::Top);
 
-            elements.extend(
-                int_move_elements
-                    .into_iter()
-                    .map(OutputRenderElements::from),
-            );
+            self.layout
+                .render_interactive_move_for_output(ctx.r(), output, &mut |elem| push(elem.into()));
 
-            elements.extend(
-                insert_hint_elements
-                    .into_iter()
-                    .map(OutputRenderElements::from),
-            );
+            mon.render_insert_hint_between_workspaces(ctx.renderer, &mut |elem| push(elem.into()));
 
-            for (ws_geo, ws_background, ws_elements) in monitor_elements {
-                // Collect all other layer-shell elements.
-                let mut layer_elems = SplitElements::default();
-                extend_from_layer(&mut layer_elems, Layer::Bottom, false);
-                extend_from_layer(&mut layer_elems, Layer::Background, false);
-
-                elements.extend(
-                    layer_elems
-                        .popups
-                        .into_iter()
-                        .filter_map(|elem| scale_relocate_crop(elem, output_scale, zoom, ws_geo))
-                        .map(OutputRenderElements::from),
-                );
-
-                elements.extend(ws_elements.into_iter().map(OutputRenderElements::from));
-
-                elements.extend(
-                    layer_elems
-                        .normal
-                        .into_iter()
-                        .filter_map(|elem| scale_relocate_crop(elem, output_scale, zoom, ws_geo))
-                        .map(OutputRenderElements::from),
-                );
-
-                elements.push(OutputRenderElements::from(ws_background));
+            // Macro instead of closure to avoid borrowing push().
+            macro_rules! process {
+                ($geo:expr) => {{
+                    &mut |elem| {
+                        if let Some(elem) = scale_relocate_crop(elem, output_scale, zoom, $geo) {
+                            push(elem.into());
+                        }
+                    }
+                }};
             }
 
-            elements.extend(
-                workspace_shadow_elements
-                    .into_iter()
-                    .map(OutputRenderElements::from),
-            );
+            for (ws, geo) in mon.workspaces_with_render_geo() {
+                let ns = Some(ws.id().get() as usize);
+                let xray_pos = XrayPos::new(geo.loc, zoom);
+                push_popups_from_layer!(Layer::Bottom, ns, xray_pos, process!(geo));
+                push_popups_from_layer!(Layer::Background, ns, xray_pos, process!(geo));
+            }
+
+            mon.render_workspaces(ctx.r(), focus_ring, &mut |elem| push(elem.into()));
+
+            for (ws, geo) in mon.workspaces_with_render_geo() {
+                // The render element namespace. This will be set to the workspace index for
+                // elements duplicated across workspaces (i.e. background and bottom layers) in
+                // order to have their non-xray framebuffer effects separated from each other.
+                //
+                // This doesn't have to correspond exactly to workspace id or idx, the only
+                // requirement is that there's only one framebuffer effect element with a given id +
+                // namespace on the frame at once. Id + namespace is used as the cache key in the
+                // damage tracker.
+                let ns = Some(ws.id().get() as usize);
+                let xray_pos = XrayPos::new(geo.loc, zoom);
+                push_normal_from_layer!(Layer::Bottom, ns, xray_pos, process!(geo));
+                push_normal_from_layer!(Layer::Background, ns, xray_pos, process!(geo));
+
+                process!(geo)(ws.render_background());
+            }
         }
+
+        mon.render_workspace_shadows(ctx.renderer, &mut |elem| push(elem.into()));
 
         // Then the backdrop.
-        let mut layer_elems = SplitElements::default();
-        extend_from_layer(&mut layer_elems, Layer::Background, true);
-        elements.extend(layer_elems.into_iter().map(OutputRenderElements::from));
+        push_popups_from_layer!(Layer::Background, true);
+        push_normal_from_layer!(Layer::Background, true);
 
-        elements.push(backdrop);
-
-        if self.debug_draw_opaque_regions {
-            draw_opaque_regions(&mut elements, output_scale);
-        }
-
-        elements
+        push(backdrop);
     }
 
-    #[allow(clippy::too_many_arguments)]
-    fn render_layer<R: NiriRenderer>(
-        &self,
-        renderer: &mut R,
-        target: RenderTarget,
-        layer_map: &LayerMap,
+    pub fn fill_xray_elements(&self, mut ctx: RenderCtx<GlesRenderer>, output: &Output) {
+        let _span = tracy_client::span!("Niri::fill_xray_elements");
+
+        // Make sure the xrayed elements themselves cannot use xray by mistake.
+        ctx.xray = None;
+
+        let state = self.output_state.get(output).unwrap();
+        let xray = &state.xray;
+        let layer_map = layer_map_for_output(output);
+
+        // FIXME: it would be cool to call this code on-demand. It's even relatively simple to do:
+        // move this function to after the render_inner() call, check if
+        // Rc::strong_count(&xray.background) > 1, and only then construct the elements. This way,
+        // only if something referenced the xray buffer will the elements get constructed.
+        //
+        // Unfortunately, currently this runs into an important limitation: offscreens are rendered
+        // immediately deep inside render_inner(), and when they are, they already need the xray
+        // elements filled.
+        //
+        // Perhaps in the future when offscreen rendering becomes on-demand, this optimization will
+        // be possible.
+
+        let mut buffer = xray.background[ctx.target as usize].borrow_mut();
+        {
+            let elements = buffer.elements();
+            elements.clear();
+            self.render_layer_normal(
+                ctx.r(),
+                None,
+                &layer_map,
+                Layer::Background,
+                XrayPos::default(),
+                false,
+                &mut |elem| elements.push(elem.into()),
+            );
+            // Avoid unused capacity remaining forever.
+            elements.shrink_to_fit();
+        }
+
+        let mut buffer = xray.backdrop[ctx.target as usize].borrow_mut();
+        {
+            let elements = buffer.elements();
+            elements.clear();
+            self.render_layer_normal(
+                ctx.r(),
+                None,
+                &layer_map,
+                Layer::Background,
+                XrayPos::default(),
+                true,
+                &mut |elem| elements.push(elem.into()),
+            );
+            // Avoid unused capacity remaining forever.
+            elements.shrink_to_fit();
+        }
+    }
+
+    pub fn clear_xray_elements(&self, output: &Output) {
+        let state = self.output_state.get(output).unwrap();
+        let xray = &state.xray;
+
+        // Clear the xray elements for all render targets after all rendering that could use them
+        // did so.
+        for buf in &xray.background {
+            buf.borrow_mut().elements().clear();
+        }
+        for buf in &xray.backdrop {
+            buf.borrow_mut().elements().clear();
+        }
+    }
+
+    /// Checks if any background layer surface has `block_out_from` set.
+    pub fn has_blocked_out_background_layers(&self, output: &Output) -> bool {
+        let layer_map = layer_map_for_output(output);
+        for for_backdrop in [false, true] {
+            for (mapped, _geo) in
+                self.layers_in_render_order(&layer_map, Layer::Background, for_backdrop)
+            {
+                if mapped.rules().block_out_from.is_some() {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    fn layers_in_render_order<'a>(
+        &'a self,
+        layer_map: &'a LayerMap,
         layer: Layer,
-        elements: &mut SplitElements<LayerSurfaceRenderElement<R>>,
         for_backdrop: bool,
-    ) {
+    ) -> impl Iterator<Item = (&'a MappedLayer, Rectangle<i32, Logical>)> {
         // LayerMap returns layers in reverse stacking order.
-        let iter = layer_map.layers_on(layer).rev().filter_map(|surface| {
+        layer_map.layers_on(layer).rev().filter_map(move |surface| {
             let mapped = self.mapped_layer_surfaces.get(surface)?;
 
             if for_backdrop != mapped.place_within_backdrop() {
@@ -4589,9 +4509,42 @@ impl Niri {
 
             let geo = layer_map.layer_geometry(surface)?;
             Some((mapped, geo))
-        });
-        for (mapped, geo) in iter {
-            elements.extend(mapped.render(renderer, geo.loc.to_f64(), target));
+        })
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn render_layer_normal<R: NiriRenderer>(
+        &self,
+        mut ctx: RenderCtx<R>,
+        ns: Option<usize>,
+        layer_map: &LayerMap,
+        layer: Layer,
+        xray_pos: XrayPos,
+        for_backdrop: bool,
+        push: &mut dyn FnMut(LayerSurfaceRenderElement<R>),
+    ) {
+        for (mapped, geo) in self.layers_in_render_order(layer_map, layer, for_backdrop) {
+            let loc = geo.loc.to_f64();
+            let xray_pos = xray_pos.offset(loc);
+            mapped.render_normal(ctx.r(), ns, loc, xray_pos, push);
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn render_layer_popups<R: NiriRenderer>(
+        &self,
+        mut ctx: RenderCtx<R>,
+        ns: Option<usize>,
+        layer_map: &LayerMap,
+        layer: Layer,
+        xray_pos: XrayPos,
+        for_backdrop: bool,
+        push: &mut dyn FnMut(LayerSurfaceRenderElement<R>),
+    ) {
+        for (mapped, geo) in self.layers_in_render_order(layer_map, layer, for_backdrop) {
+            let loc = geo.loc.to_f64();
+            let xray_pos = xray_pos.offset(loc);
+            mapped.render_popups(ctx.r(), ns, loc, xray_pos, push);
         }
     }
 
@@ -4776,6 +4729,7 @@ impl Niri {
                         surface,
                         output,
                         states,
+                        None,
                         render_element_states,
                         default_primary_scanout_output_compare,
                     );
@@ -4794,6 +4748,7 @@ impl Niri {
                         surface,
                         output,
                         states,
+                        None,
                         render_element_states,
                         default_primary_scanout_output_compare,
                     );
@@ -4850,23 +4805,74 @@ impl Niri {
                 primary_scanout_output.update_from_render_element_states(
                     id,
                     output,
+                    None,
                     render_element_states,
                     |_, _, output, _| output,
                 );
             });
         }
 
-        for surface in layer_map_for_output(output).layers() {
-            surface.with_surfaces(|surface, states| {
-                update_surface_primary_scanout_output(
-                    surface,
+        let xray = &self.output_state[output].xray;
+        let xray_bg = xray.background[RenderTarget::Output as usize].borrow();
+        let xray_bd = xray.backdrop[RenderTarget::Output as usize].borrow();
+
+        for layer in layer_map_for_output(output).layers() {
+            let surface = layer.wl_surface();
+            let is_background = layer.layer() == Layer::Background;
+
+            with_surfaces_surface_tree(surface, |surface, states| {
+                let primary_scanout_output = states
+                    .data_map
+                    .get_or_insert_threadsafe(Mutex::<PrimaryScanoutOutput>::default);
+                let mut primary_scanout_output = primary_scanout_output.lock().unwrap();
+                let mut id = Id::from_wayland_resource(surface);
+
+                // Background layers may be invisible normally but visible through an xray
+                // background effect. Try to find it and use the xray element's id in this case.
+                //
+                // FIXME: this won't work if there's another layer of offscreen (e.g. window with
+                // an xray background during its opening animation). But hopefully with the
+                // refactor to draw background effects outside offscreens it won't be a problem.
+                if is_background && !render_element_states.element_was_presented(id.clone()) {
+                    // A layer may be present either in background or backdrop, never in both.
+                    if xray_bg
+                        .render_element_states()
+                        .is_some_and(|s| s.element_was_presented(id.clone()))
+                    {
+                        id = xray_bg.id().clone();
+                    } else if xray_bd
+                        .render_element_states()
+                        .is_some_and(|s| s.element_was_presented(id.clone()))
+                    {
+                        id = xray_bd.id().clone();
+                    }
+                }
+
+                primary_scanout_output.update_from_render_element_states(
+                    id,
                     output,
-                    states,
+                    None,
                     render_element_states,
                     // Layer surfaces are shown only on one output at a time.
                     |_, _, output, _| output,
                 );
             });
+
+            // Popups never go into xray buffers.
+            for (popup, _) in PopupManager::popups_for_surface(surface) {
+                let surface = popup.wl_surface();
+                with_surfaces_surface_tree(surface, |surface, states| {
+                    update_surface_primary_scanout_output(
+                        surface,
+                        output,
+                        states,
+                        None,
+                        render_element_states,
+                        // Layer surfaces are shown only on one output at a time.
+                        |_, _, output, _| output,
+                    );
+                });
+            }
         }
 
         if let Some(surface) = &self.output_state[output].lock_surface {
@@ -4879,6 +4885,7 @@ impl Niri {
                         surface,
                         output,
                         states,
+                        None,
                         render_element_states,
                         default_primary_scanout_output_compare,
                     );
@@ -5150,7 +5157,11 @@ impl Niri {
                 &mut feedback,
                 surface_primary_scanout_output,
                 |surface, _| {
-                    surface_presentation_feedback_flags_from_states(surface, render_element_states)
+                    surface_presentation_feedback_flags_from_states(
+                        surface,
+                        None,
+                        render_element_states,
+                    )
                 },
             );
         }
@@ -5161,7 +5172,11 @@ impl Niri {
                 &mut feedback,
                 surface_primary_scanout_output,
                 |surface, _| {
-                    surface_presentation_feedback_flags_from_states(surface, render_element_states)
+                    surface_presentation_feedback_flags_from_states(
+                        surface,
+                        None,
+                        render_element_states,
+                    )
                 },
             );
         }
@@ -5171,7 +5186,11 @@ impl Niri {
                 &mut feedback,
                 surface_primary_scanout_output,
                 |surface, _| {
-                    surface_presentation_feedback_flags_from_states(surface, render_element_states)
+                    surface_presentation_feedback_flags_from_states(
+                        surface,
+                        None,
+                        render_element_states,
+                    )
                 },
             )
         }
@@ -5181,7 +5200,11 @@ impl Niri {
                 &mut feedback,
                 surface_primary_scanout_output,
                 |surface, _| {
-                    surface_presentation_feedback_flags_from_states(surface, render_element_states)
+                    surface_presentation_feedback_flags_from_states(
+                        surface,
+                        None,
+                        render_element_states,
+                    )
                 },
             );
         }
@@ -5192,131 +5215,16 @@ impl Niri {
                 &mut feedback,
                 surface_primary_scanout_output,
                 |surface, _| {
-                    surface_presentation_feedback_flags_from_states(surface, render_element_states)
+                    surface_presentation_feedback_flags_from_states(
+                        surface,
+                        None,
+                        render_element_states,
+                    )
                 },
             );
         }
 
         feedback
-    }
-
-    #[cfg(feature = "xdp-gnome-screencast")]
-    fn render_for_screen_cast(
-        &mut self,
-        renderer: &mut GlesRenderer,
-        output: &Output,
-        target_presentation_time: Duration,
-    ) {
-        let _span = tracy_client::span!("Niri::render_for_screen_cast");
-
-        let target = CastTarget::Output(output.downgrade());
-
-        let size = output.current_mode().unwrap().size;
-        let transform = output.current_transform();
-        let size = transform.transform_size(size);
-
-        let scale = Scale::from(output.current_scale().fractional_scale());
-
-        let mut elements = None;
-        let mut casts_to_stop = vec![];
-
-        let mut casts = mem::take(&mut self.casts);
-        for cast in &mut casts {
-            if !cast.is_active() {
-                continue;
-            }
-
-            if cast.target != target {
-                continue;
-            }
-
-            match cast.ensure_size(size) {
-                Ok(CastSizeChange::Ready) => (),
-                Ok(CastSizeChange::Pending) => continue,
-                Err(err) => {
-                    warn!("error updating stream size, stopping screencast: {err:?}");
-                    casts_to_stop.push(cast.session_id);
-                }
-            }
-
-            if cast.check_time_and_schedule(output, target_presentation_time) {
-                continue;
-            }
-
-            // FIXME: Hidden / embedded / metadata cursor
-            let elements = elements.get_or_insert_with(|| {
-                self.render(renderer, output, true, RenderTarget::Screencast)
-            });
-
-            if cast.dequeue_buffer_and_render(renderer, elements, size, scale) {
-                cast.last_frame_time = target_presentation_time;
-            }
-        }
-        self.casts = casts;
-
-        for id in casts_to_stop {
-            self.stop_cast(id);
-        }
-    }
-
-    #[cfg(feature = "xdp-gnome-screencast")]
-    fn render_windows_for_screen_cast(
-        &mut self,
-        renderer: &mut GlesRenderer,
-        output: &Output,
-        target_presentation_time: Duration,
-    ) {
-        let _span = tracy_client::span!("Niri::render_windows_for_screen_cast");
-
-        let scale = Scale::from(output.current_scale().fractional_scale());
-
-        let mut casts_to_stop = vec![];
-
-        let mut casts = mem::take(&mut self.casts);
-        for cast in &mut casts {
-            if !cast.is_active() {
-                continue;
-            }
-
-            let CastTarget::Window { id } = cast.target else {
-                continue;
-            };
-
-            let mut windows = self.layout.windows_for_output(output);
-            let Some(mapped) = windows.find(|win| win.id().get() == id) else {
-                continue;
-            };
-
-            let bbox = mapped
-                .window
-                .bbox_with_popups()
-                .to_physical_precise_up(scale);
-
-            match cast.ensure_size(bbox.size) {
-                Ok(CastSizeChange::Ready) => (),
-                Ok(CastSizeChange::Pending) => continue,
-                Err(err) => {
-                    warn!("error updating stream size, stopping screencast: {err:?}");
-                    casts_to_stop.push(cast.session_id);
-                }
-            }
-
-            if cast.check_time_and_schedule(output, target_presentation_time) {
-                continue;
-            }
-
-            // FIXME: pointer.
-            let elements: Vec<_> = mapped.render_for_screen_cast(renderer, scale).collect();
-
-            if cast.dequeue_buffer_and_render(renderer, &elements, bbox.size, scale) {
-                cast.last_frame_time = target_presentation_time;
-            }
-        }
-        self.casts = casts;
-
-        for id in casts_to_stop {
-            self.stop_cast(id);
-        }
     }
 
     pub fn render_for_screencopy_with_damage(
@@ -5327,56 +5235,69 @@ impl Niri {
         let _span = tracy_client::span!("Niri::render_for_screencopy_with_damage");
 
         let mut screencopy_state = mem::take(&mut self.screencopy_state);
-        let elements = OnceCell::new();
 
-        for queue in screencopy_state.queues_mut() {
+        screencopy_state.with_queues_mut(|queue| {
             let (damage_tracker, screencopy) = queue.split();
             if let Some(screencopy) = screencopy {
                 if screencopy.output() == output {
-                    let elements = elements.get_or_init(|| {
-                        self.render(renderer, output, true, RenderTarget::ScreenCapture)
-                    });
-                    // FIXME: skip elements if not including pointers
-                    let render_result = Self::render_for_screencopy_internal(
+                    let ctx = RenderCtx {
                         renderer,
+                        target: RenderTarget::ScreenCapture,
+                        xray: None,
+                    };
+                    let offset = screencopy.region_loc().upscale(-1);
+                    let mut elements = Vec::new();
+                    self.render(ctx, output, screencopy.overlay_cursor(), &mut |elem| {
+                        let elem =
+                            RelocateRenderElement::from_element(elem, offset, Relocate::Relative);
+                        elements.push(elem);
+                    });
+
+                    let (damages, states) = Self::damage_screencopy_internal(
                         output,
-                        elements,
-                        true,
+                        &elements,
                         damage_tracker,
                         screencopy,
                     );
-                    match render_result {
-                        Ok((sync, damages)) => {
-                            if let Some(damages) = damages {
-                                // Convert from Physical coordinates back to Buffer coordinates.
-                                let transform = output.current_transform();
-                                let physical_size =
-                                    transform.transform_size(screencopy.buffer_size());
-                                let damages = damages.iter().map(|dmg| {
-                                    dmg.to_logical(1).to_buffer(
-                                        1,
-                                        transform.invert(),
-                                        &physical_size.to_logical(1),
-                                    )
-                                });
+                    if let Some(damages) = damages {
+                        // Convert from Physical coordinates back to Buffer coordinates.
+                        let transform = output.current_transform();
+                        let physical_size = transform.transform_size(screencopy.buffer_size());
+                        let damages = damages.iter().map(|dmg| {
+                            dmg.to_logical(1).to_buffer(
+                                1,
+                                transform.invert(),
+                                &physical_size.to_logical(1),
+                            )
+                        });
 
-                                screencopy.damage(damages);
+                        screencopy.damage(damages);
+
+                        let render_result = Self::render_for_screencopy_internal(
+                            renderer,
+                            damage_tracker,
+                            &elements,
+                            states,
+                            screencopy,
+                        );
+                        match render_result {
+                            Ok(sync) => {
                                 queue.pop().submit_after_sync(false, sync, &self.event_loop);
-                            } else {
-                                trace!("no damage found, waiting till next redraw");
+                            }
+                            Err(err) => {
+                                // Recreate damage tracker to report full damage next check.
+                                *damage_tracker =
+                                    OutputDamageTracker::new((0, 0), 1.0, Transform::Normal);
+                                queue.pop();
+                                warn!("error rendering for screencopy: {err:?}");
                             }
                         }
-                        Err(err) => {
-                            // Recreate damage tracker to report full damage next check.
-                            *damage_tracker =
-                                OutputDamageTracker::new((0, 0), 1.0, Transform::Normal);
-                            queue.pop();
-                            warn!("error rendering for screencopy: {err:?}");
-                        }
+                    } else {
+                        trace!("no damage found, waiting till next redraw");
                     }
                 };
             }
-        }
+        });
 
         self.screencopy_state = screencopy_state;
     }
@@ -5397,28 +5318,33 @@ impl Niri {
 
         self.update_render_elements(Some(output));
 
-        let elements = self.render(
+        let ctx = RenderCtx {
             renderer,
-            output,
-            screencopy.overlay_cursor(),
-            RenderTarget::ScreenCapture,
-        );
-        let Some(queue) = self.screencopy_state.get_queue_mut(manager) else {
-            bail!("screencopy manager destroyed already");
+            target: RenderTarget::ScreenCapture,
+            xray: None,
         };
-        let damage_tracker = queue.split().0;
+        let offset = screencopy.region_loc().upscale(-1);
+        let mut elements = Vec::new();
+        self.render(ctx, output, screencopy.overlay_cursor(), &mut |elem| {
+            let elem = RelocateRenderElement::from_element(elem, offset, Relocate::Relative);
+            elements.push(elem);
+        });
 
-        let render_result = Self::render_for_screencopy_internal(
+        let Some(damage_tracker) = self.screencopy_state.damage_tracker(manager) else {
+            error!("screencopy queue must not be deleted as long as frames exist");
+            bail!("screencopy queue missing");
+        };
+
+        let (_damages, states) =
+            Self::damage_screencopy_internal(output, &elements, damage_tracker, &screencopy);
+        let res = Self::render_for_screencopy_internal(
             renderer,
-            output,
-            &elements,
-            false,
             damage_tracker,
+            &elements,
+            states,
             &screencopy,
         );
-
-        let res = render_result
-            .map(|(sync, _damage)| screencopy.submit_after_sync(false, sync, &self.event_loop));
+        let res = res.map(|sync| screencopy.submit_after_sync(false, sync, &self.event_loop));
 
         if res.is_err() {
             // Recreate damage tracker to report full damage next check.
@@ -5428,15 +5354,15 @@ impl Niri {
         res
     }
 
-    #[allow(clippy::type_complexity)]
-    fn render_for_screencopy_internal<'a>(
-        renderer: &mut GlesRenderer,
+    fn damage_screencopy_internal<'a>(
         output: &Output,
-        elements: &[OutputRenderElements<GlesRenderer>],
-        with_damage: bool,
+        elements: &[impl Element],
         damage_tracker: &'a mut OutputDamageTracker,
         screencopy: &Screencopy,
-    ) -> anyhow::Result<(Option<SyncPoint>, Option<&'a Vec<Rectangle<i32, Physical>>>)> {
+    ) -> (
+        Option<&'a Vec<Rectangle<i32, Physical>>>,
+        RenderElementStates,
+    ) {
         let OutputModeSource::Static {
             size: last_size,
             scale: last_scale,
@@ -5454,116 +5380,40 @@ impl Niri {
             *damage_tracker = OutputDamageTracker::new(size, scale, transform);
         }
 
-        let region_loc = screencopy.region_loc();
-        let elements = elements
-            .iter()
-            .map(|element| {
-                RelocateRenderElement::from_element(
-                    element,
-                    region_loc.upscale(-1),
-                    Relocate::Relative,
-                )
-            })
-            .collect::<Vec<_>>();
-
         // Just checked damage tracker has static mode
-        let damages = damage_tracker.damage_output(1, &elements).unwrap().0;
-        if with_damage && damages.is_none() {
-            return Ok((None, None));
-        }
+        damage_tracker.damage_output(1, elements).unwrap()
+    }
 
-        let elements = elements.iter().rev();
-
+    #[allow(clippy::type_complexity)]
+    fn render_for_screencopy_internal(
+        renderer: &mut GlesRenderer,
+        damage_tracker: &mut OutputDamageTracker,
+        elements: &[impl RenderElement<GlesRenderer>],
+        states: RenderElementStates,
+        screencopy: &Screencopy,
+    ) -> anyhow::Result<Option<SyncPoint>> {
         let sync = match screencopy.buffer() {
             ScreencopyBuffer::Dmabuf(dmabuf) => {
                 let sync =
-                    render_to_dmabuf(renderer, dmabuf.clone(), size, scale, transform, elements)
+                    render_to_dmabuf(renderer, damage_tracker, dmabuf.clone(), elements, states)
                         .context("error rendering to screencopy dmabuf")?;
                 Some(sync)
             }
             ScreencopyBuffer::Shm(wl_buffer) => {
-                render_to_shm(renderer, wl_buffer, size, scale, transform, elements)
+                render_to_shm(renderer, damage_tracker, wl_buffer, elements, states)
                     .context("error rendering to screencopy shm buffer")?;
                 None
             }
         };
 
-        Ok((sync, damages))
-    }
-
-    #[cfg(feature = "xdp-gnome-screencast")]
-    fn stop_cast(&mut self, session_id: usize) {
-        let _span = tracy_client::span!("Niri::stop_cast");
-
-        debug!(session_id, "StopCast");
-
-        for i in (0..self.casts.len()).rev() {
-            let cast = &self.casts[i];
-            if cast.session_id != session_id {
-                continue;
-            }
-
-            let cast = self.casts.swap_remove(i);
-            if let Err(err) = cast.stream.disconnect() {
-                warn!("error disconnecting stream: {err:?}");
-            }
-        }
-
-        let dbus = &self.dbus.as_ref().unwrap();
-        let server = dbus.conn_screen_cast.as_ref().unwrap().object_server();
-        let path = format!("/org/gnome/Mutter/ScreenCast/Session/u{session_id}");
-        if let Ok(iface) = server.interface::<_, mutter_screen_cast::Session>(path) {
-            let _span = tracy_client::span!("invoking Session::stop");
-
-            async_io::block_on(async move {
-                iface
-                    .get()
-                    .stop(server.inner(), iface.signal_emitter().clone())
-                    .await
-            });
-        }
+        Ok(sync)
     }
 
     #[cfg(not(feature = "xdp-gnome-screencast"))]
     pub fn stop_casts_for_target(&mut self, _target: CastTarget) {}
 
-    #[cfg(feature = "xdp-gnome-screencast")]
-    pub fn stop_casts_for_target(&mut self, target: CastTarget) {
-        let _span = tracy_client::span!("Niri::stop_casts_for_target");
-
-        // This is O(N^2) but it shouldn't be a problem I think.
-        let mut saw_dynamic = false;
-        let mut ids = Vec::new();
-        for cast in &self.casts {
-            if cast.target != target {
-                continue;
-            }
-
-            if cast.dynamic_target {
-                saw_dynamic = true;
-                continue;
-            }
-
-            ids.push(cast.session_id);
-        }
-
-        for id in ids {
-            self.stop_cast(id);
-        }
-
-        // We don't stop dynamic casts, instead we switch them to Nothing.
-        if saw_dynamic {
-            self.event_loop
-                .insert_idle(|state| state.set_dynamic_cast_target(CastTarget::Nothing));
-        }
-    }
-
-    pub fn remove_screencopy_output(&mut self, output: &Output) {
-        let _span = tracy_client::span!("Niri::remove_screencopy_output");
-        for queue in self.screencopy_state.queues_mut() {
-            queue.remove_output(output);
-        }
-    }
+    #[cfg(not(feature = "xdp-gnome-screencast"))]
+    pub fn stop_cast(&mut self, _session_id: crate::utils::CastSessionId) {}
 
     pub fn debug_toggle_damage(&mut self) {
         self.debug_draw_damage = !self.debug_draw_damage;
@@ -5593,7 +5443,12 @@ impl Niri {
                 RenderTarget::ScreenCapture,
             ];
             let screenshot = targets.map(|target| {
-                let elements = self.render::<GlesRenderer>(renderer, &output, false, target);
+                let ctx = RenderCtx {
+                    renderer,
+                    target,
+                    xray: None,
+                };
+                let elements = self.render_to_vec(ctx, &output, false);
                 let elements = elements.iter().rev();
 
                 let res = render_to_texture(
@@ -5609,7 +5464,15 @@ impl Niri {
                 }
                 let res_output = res.ok();
 
-                let pointer = self.pointer_element(renderer, &output);
+                let mut pointer = Vec::new();
+
+                // We check the pointer visibility for Disabled (and not .is_visible()) in order to
+                // show the pointer even when it's hidden through cursor {} options. The user can
+                // then toggle it in the screenshot UI as needed.
+                if self.pointer_visibility != PointerVisibility::Disabled {
+                    self.render_pointer(renderer, &output, &mut |elem| pointer.push(elem));
+                }
+
                 let res_pointer = if pointer.is_empty() {
                     None
                 } else {
@@ -5662,12 +5525,12 @@ impl Niri {
         let size = transform.transform_size(size);
 
         let scale = Scale::from(output.current_scale().fractional_scale());
-        let elements = self.render::<GlesRenderer>(
+        let ctx = RenderCtx {
             renderer,
-            output,
-            include_pointer,
-            RenderTarget::ScreenCapture,
-        );
+            target: RenderTarget::ScreenCapture,
+            xray: None,
+        };
+        let elements = self.render_to_vec(ctx, output, include_pointer);
         let elements = elements.iter().rev();
         let pixels = render_to_vec(
             renderer,
@@ -5688,6 +5551,7 @@ impl Niri {
         output: &Output,
         mapped: &Mapped,
         write_to_disk: bool,
+        show_pointer: bool,
         path: Option<String>,
     ) -> anyhow::Result<()> {
         let _span = tracy_client::span!("Niri::screenshot_window");
@@ -5699,15 +5563,40 @@ impl Niri {
             } else {
                 mapped.rules().opacity.unwrap_or(1.).clamp(0., 1.)
             };
-        // FIXME: pointer.
-        let elements = mapped.render(
+
+        let mut elements: Vec<WindowScreenshotRenderElement<GlesRenderer>> = Vec::new();
+
+        // Add pointer if requested and it's over this window.
+        if show_pointer {
+            if let Some((_, win_pos)) = self.pointer_pos_for_window_cast(mapped) {
+                // Pointer elements are at output-local physical coords.
+                // Relocate by -win_pos to make them window-relative.
+                let pos = win_pos.to_physical_precise_round(scale).upscale(-1);
+                self.render_pointer(renderer, output, &mut |elem| {
+                    let elem = RelocateRenderElement::from_element(elem, pos, Relocate::Relative);
+                    elements.push(elem.into());
+                });
+            }
+        }
+        let pointer_count = elements.len();
+
+        let ctx = RenderCtx {
             renderer,
+            target: RenderTarget::ScreenCapture,
+            xray: None,
+        };
+        mapped.render(
+            ctx,
             mapped.window.geometry().loc.to_f64(),
             scale,
             alpha,
-            RenderTarget::ScreenCapture,
+            XrayPos::default(),
+            &mut |elem| elements.push(elem.into()),
         );
-        let geo = encompassing_geo(scale, elements.iter());
+
+        // The pointer is not included in encompassing_geo because we don't want it to expand the
+        // screenshot size.
+        let geo = encompassing_geo(scale, elements.iter().skip(pointer_count));
         let elements = elements.iter().rev().map(|elem| {
             RelocateRenderElement::from_element(elem, geo.loc.upscale(-1), Relocate::Relative)
         });
@@ -5857,12 +5746,12 @@ impl Niri {
         let transform = output.current_transform();
         let size = transform.transform_size(size);
 
-        let elements = self.render::<GlesRenderer>(
+        let ctx = RenderCtx {
             renderer,
-            &output,
-            include_pointer,
-            RenderTarget::ScreenCapture,
-        );
+            target: RenderTarget::ScreenCapture,
+            xray: None,
+        };
+        let elements = self.render_to_vec(ctx, &output, include_pointer);
         let elements = elements.iter().rev();
         let pixels = render_to_vec(
             renderer,
@@ -6335,7 +6224,12 @@ impl Niri {
                     RenderTarget::ScreenCapture,
                 ];
                 let textures = targets.map(|target| {
-                    let elements = self.render::<GlesRenderer>(renderer, &output, false, target);
+                    let ctx = RenderCtx {
+                        renderer,
+                        target,
+                        xray: None,
+                    };
+                    let elements = self.render_to_vec(ctx, &output, false);
                     let elements = elements.iter().rev();
 
                     let res = render_to_texture(
@@ -6572,6 +6466,20 @@ fn scale_relocate_crop<E: Element>(
 }
 
 niri_render_elements! {
+    PointerRenderElements<R> => {
+        Wayland = WaylandSurfaceRenderElement<R>,
+        NamedPointer = MemoryRenderBufferRenderElement<R>,
+    }
+}
+
+niri_render_elements! {
+    WindowScreenshotRenderElement<R> => {
+        Layout = LayoutElementRenderElement<R>,
+        Pointer = RelocateRenderElement<PointerRenderElements<R>>,
+    }
+}
+
+niri_render_elements! {
     OutputRenderElements<R> => {
         Monitor = MonitorRenderElement<R>,
         RescaledTile = RescaleRenderElement<TileRenderElement<R>>,
@@ -6579,8 +6487,11 @@ niri_render_elements! {
         RelocatedLayerSurface = CropRenderElement<RelocateRenderElement<RescaleRenderElement<
             LayerSurfaceRenderElement<R>
         >>>,
+        RelocatedColor = CropRenderElement<RelocateRenderElement<RescaleRenderElement<
+            SolidColorRenderElement
+        >>>,
+        Pointer = PointerRenderElements<R>,
         Wayland = WaylandSurfaceRenderElement<R>,
-        NamedPointer = MemoryRenderBufferRenderElement<R>,
         SolidColor = SolidColorRenderElement,
         ScreenshotUi = ScreenshotUiRenderElement,
         WindowMruUi = WindowMruUiRenderElement<R>,

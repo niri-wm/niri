@@ -62,10 +62,6 @@ impl CompositorHandler for State {
         on_commit_buffer_handler::<Self>(surface);
         self.backend.early_import(surface);
 
-        if is_sync_subsurface(surface) {
-            return;
-        }
-
         let mut root_surface = surface.clone();
         while let Some(parent) = get_parent(&root_surface) {
             root_surface = parent;
@@ -75,6 +71,10 @@ impl CompositorHandler for State {
         self.niri
             .root_surface
             .insert(surface.clone(), root_surface.clone());
+
+        if is_sync_subsurface(surface) {
+            return;
+        }
 
         if surface == &root_surface {
             // This is a root surface commit. It might have mapped a previously-unmapped toplevel.
@@ -195,7 +195,10 @@ impl CompositorHandler for State {
                     // The mapped pre-commit hook deals with dma-bufs on its own.
                     self.remove_default_dmabuf_pre_commit_hook(surface);
                     let hook = add_mapped_toplevel_pre_commit_hook(toplevel);
-                    let mapped = Mapped::new(window, rules, hook);
+                    let mapped = {
+                        let config = self.niri.config.borrow();
+                        Mapped::new(window, rules, hook, &config)
+                    };
                     let window = mapped.window.clone();
 
                     let target = if let Some(p) = &parent {
@@ -486,11 +489,10 @@ impl CompositorHandler for State {
         // subsurface is destroyed; in the case of alacritty, this is the top CSD shadow. But, it
         // gets most of the job done.
         if let Some(root) = self.niri.root_surface.get(surface) {
-            if let Some((mapped, _)) = self.niri.layout.find_window_and_output(root) {
+            if let Some((mapped, output)) = self.niri.layout.find_window_and_output(root) {
                 let window = mapped.window.clone();
-                self.backend.with_primary_renderer(|renderer| {
-                    self.niri.layout.store_unmap_snapshot(renderer, &window);
-                });
+                let output = output.cloned();
+                self.store_unmap_snapshot(&window, output.as_ref());
             }
         }
 
@@ -498,7 +500,16 @@ impl CompositorHandler for State {
             .root_surface
             .retain(|k, v| k != surface && v != surface);
 
-        self.niri.dmabuf_pre_commit_hook.remove(surface);
+        // The object destruction order is not guaranteed to follow the logical role order. So for
+        // example when a client disconnects unexpectedly, WlSurface::destroyed() may be called
+        // before XdgShellHandler::toplevel_destroyed(). In this case, the surface will *not* have
+        // the default dmabuf pre-commit hook: it will still have the toplevel pre-commit hook.
+        //
+        // So, this may come out empty, and then the toplevel pre-commit hook will be removed in the
+        // subsequent toplevel_destroyed() call.
+        if let Some(hook) = self.niri.dmabuf_pre_commit_hook.remove(surface) {
+            remove_pre_commit_hook(surface, &hook);
+        }
     }
 }
 
@@ -517,6 +528,11 @@ delegate_shm!(State);
 
 impl State {
     pub fn add_default_dmabuf_pre_commit_hook(&mut self, surface: &WlSurface) {
+        if !surface.is_alive() {
+            error!("tried to add dmabuf pre-commit hook for a dead surface");
+            return;
+        }
+
         let hook = add_pre_commit_hook::<Self, _>(surface, move |state, _dh, surface| {
             let maybe_dmabuf = with_states(surface, |surface_data| {
                 surface_data
@@ -556,13 +572,13 @@ impl State {
         let s = surface.clone();
         if let Some(prev) = self.niri.dmabuf_pre_commit_hook.insert(s, hook) {
             error!("tried to add dmabuf pre-commit hook when there was already one");
-            remove_pre_commit_hook(surface, prev);
+            remove_pre_commit_hook(surface, &prev);
         }
     }
 
     pub fn remove_default_dmabuf_pre_commit_hook(&mut self, surface: &WlSurface) {
         if let Some(hook) = self.niri.dmabuf_pre_commit_hook.remove(surface) {
-            remove_pre_commit_hook(surface, hook);
+            remove_pre_commit_hook(surface, &hook);
         } else {
             error!("tried to remove dmabuf pre-commit hook but there was none");
         }

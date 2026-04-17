@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::rc::Rc;
 
 use glam::{Mat3, Vec2};
 use niri_config::{
@@ -7,12 +8,15 @@ use niri_config::{
 use smithay::backend::renderer::element::{Element, Id, Kind, RenderElement, UnderlyingStorage};
 use smithay::backend::renderer::gles::{GlesError, GlesFrame, GlesRenderer, Uniform};
 use smithay::backend::renderer::utils::{CommitCounter, DamageSet, OpaqueRegions};
+use smithay::gpu_span_location;
+use smithay::utils::user_data::UserDataMap;
 use smithay::utils::{Buffer, Logical, Physical, Point, Rectangle, Scale, Size, Transform};
 
 use super::renderer::NiriRenderer;
 use super::shader_element::ShaderRenderElement;
 use super::shaders::{mat3_uniform, ProgramType, Shaders};
 use crate::backend::tty::{TtyFrame, TtyRenderer, TtyRendererError};
+use crate::render_helpers::renderer::AsGlesFrame as _;
 
 /// Renders a wide variety of borders and border parts.
 ///
@@ -197,7 +201,7 @@ impl BorderRenderElement {
             None,
             scale,
             alpha,
-            vec![
+            Rc::new([
                 Uniform::new("colorspace", colorspace),
                 Uniform::new("hue_interpolation", hue_interpolation),
                 Uniform::new("color_from", color_from.to_array_unpremul()),
@@ -209,7 +213,7 @@ impl BorderRenderElement {
                 Uniform::new("geo_size", geo_size.to_array()),
                 Uniform::new("outer_radius", <[f32; 4]>::from(corner_radius)),
                 Uniform::new("border_width", border_width),
-            ],
+            ]),
             HashMap::new(),
         );
     }
@@ -282,8 +286,20 @@ impl RenderElement<GlesRenderer> for BorderRenderElement {
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
         opaque_regions: &[Rectangle<i32, Physical>],
+        cache: Option<&UserDataMap>,
     ) -> Result<(), GlesError> {
-        RenderElement::<GlesRenderer>::draw(&self.inner, frame, src, dst, damage, opaque_regions)
+        let _span = tracy_client::span!("BorderRenderElement::draw");
+        frame.with_gpu_span(gpu_span_location!("BorderRenderElement::draw"), |frame| {
+            RenderElement::<GlesRenderer>::draw(
+                &self.inner,
+                frame,
+                src,
+                dst,
+                damage,
+                opaque_regions,
+                cache,
+            )
+        })
     }
 
     fn underlying_storage(&self, renderer: &mut GlesRenderer) -> Option<UnderlyingStorage<'_>> {
@@ -299,8 +315,11 @@ impl<'render> RenderElement<TtyRenderer<'render>> for BorderRenderElement {
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
         opaque_regions: &[Rectangle<i32, Physical>],
+        cache: Option<&UserDataMap>,
     ) -> Result<(), TtyRendererError<'render>> {
-        RenderElement::<TtyRenderer<'_>>::draw(&self.inner, frame, src, dst, damage, opaque_regions)
+        let frame = frame.as_gles_frame();
+        RenderElement::<GlesRenderer>::draw(self, frame, src, dst, damage, opaque_regions, cache)?;
+        Ok(())
     }
 
     fn underlying_storage(

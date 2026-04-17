@@ -450,6 +450,11 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
             let is_open = state.overview.is_open;
             Response::OverviewState(Overview { is_open })
         }
+        Request::Casts => {
+            let state = ctx.event_stream_state.borrow();
+            let casts = state.casts.casts.values().cloned().collect();
+            Response::Casts(casts)
+        }
     };
 
     Ok(response)
@@ -458,7 +463,8 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
 fn validate_action(action: &Action) -> Result<(), String> {
     if let Action::Screenshot { path, .. }
     | Action::ScreenshotScreen { path, .. }
-    | Action::ScreenshotWindow { path, .. } = action
+    | Action::ScreenshotWindow { path, .. }
+    | Action::LoadConfigFile { path } = action
     {
         if let Some(path) = path {
             // Relative paths are resolved against the niri compositor's working directory, which
@@ -466,6 +472,13 @@ fn validate_action(action: &Action) -> Result<(), String> {
             if !Path::new(path).is_absolute() {
                 return Err(format!("path must be absolute: {path}"));
             }
+        }
+    }
+
+    if let Action::LoadConfigFile { path: Some(path) } = action {
+        let p = Path::new(path);
+        if !p.is_file() {
+            return Err(format!("path does not point to a file: {path}"));
         }
     }
 
@@ -791,6 +804,121 @@ impl State {
         let event = Event::OverviewOpenedOrClosed { is_open };
         state.apply(event.clone());
         server.send_event(event);
+    }
+
+    pub fn ipc_refresh_casts(&mut self) {
+        let Some(server) = &self.niri.ipc_server else {
+            return;
+        };
+
+        let _span = tracy_client::span!("State::ipc_refresh_casts");
+
+        let mut state = server.event_stream_state.borrow_mut();
+        let state = &mut state.casts;
+
+        let mut events = Vec::new();
+        let mut seen = HashSet::new();
+
+        // Check PipeWire screencasts.
+        #[cfg(feature = "xdp-gnome-screencast")]
+        {
+            // Check pending dynamic casts.
+            for pending in &self.niri.casting.pending_dynamic_casts {
+                let stream_id = pending.stream_id.get();
+                seen.insert(stream_id);
+
+                // Pending dynamic casts don't change any properties, so we only need to check if
+                // it's missing from the state.
+                if !state.casts.contains_key(&stream_id) {
+                    let cast = niri_ipc::Cast {
+                        session_id: pending.session_id.get(),
+                        stream_id,
+                        kind: niri_ipc::CastKind::PipeWire,
+                        target: niri_ipc::CastTarget::Nothing {},
+                        is_dynamic_target: true,
+                        is_active: false,
+                        pid: None,
+                        pw_node_id: None,
+                    };
+                    events.push(Event::CastStartedOrChanged { cast });
+                }
+            }
+
+            // Check active casts.
+            for cast in &self.niri.casting.casts {
+                let stream_id = cast.stream_id.get();
+                seen.insert(stream_id);
+
+                let pw_node_id = cast.node_id();
+                if state.casts.get(&stream_id).is_none_or(|existing| {
+                    // Only these properties can change.
+                    existing.is_active != cast.is_active()
+                        || !cast.target.matches(&existing.target)
+                        || existing.pw_node_id != pw_node_id
+                }) {
+                    let cast = niri_ipc::Cast {
+                        session_id: cast.session_id.get(),
+                        stream_id,
+                        kind: niri_ipc::CastKind::PipeWire,
+                        target: cast.target.make_ipc(),
+                        is_dynamic_target: cast.dynamic_target,
+                        is_active: cast.is_active(),
+                        pid: None,
+                        pw_node_id,
+                    };
+                    events.push(Event::CastStartedOrChanged { cast });
+                }
+            }
+        }
+
+        // Check screencopy casts.
+        //
+        // First, clear expired casts. Ideally we'd have a deadline timer, but our 1 second frame
+        // callback timer calls refresh regularly, so that's fine as is.
+        self.niri.screencopy_state.clear_expired_casts();
+
+        for queue in self.niri.screencopy_state.queues() {
+            if let Some(cast_info) = queue.cast() {
+                let stream_id = cast_info.stream_id.get();
+                seen.insert(stream_id);
+
+                if state.casts.get(&stream_id).is_none_or(|existing| {
+                    // Only this property can change.
+                    match &existing.target {
+                        niri_ipc::CastTarget::Output { name } => *name != cast_info.output_name,
+                        _ => true,
+                    }
+                }) {
+                    let cast = niri_ipc::Cast {
+                        session_id: cast_info.session_id.get(),
+                        stream_id,
+                        kind: niri_ipc::CastKind::WlrScreencopy,
+                        target: niri_ipc::CastTarget::Output {
+                            name: cast_info.output_name.clone(),
+                        },
+                        is_dynamic_target: false,
+                        is_active: true,
+                        pid: queue.credentials().map(|creds| creds.pid),
+                        pw_node_id: None,
+                    };
+                    events.push(Event::CastStartedOrChanged { cast });
+                }
+            }
+        }
+
+        // Check for stopped casts.
+        for stream_id in state.casts.keys() {
+            if !seen.contains(stream_id) {
+                events.push(Event::CastStopped {
+                    stream_id: *stream_id,
+                });
+            }
+        }
+
+        for event in events {
+            state.apply(event.clone());
+            server.send_event(event);
+        }
     }
 
     pub fn ipc_config_loaded(&mut self, failed: bool) {

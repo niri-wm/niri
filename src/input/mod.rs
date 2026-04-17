@@ -19,6 +19,7 @@ use smithay::backend::input::{
     TabletToolTipState, TouchEvent,
 };
 use smithay::backend::libinput::LibinputInputBackend;
+use smithay::input::dnd::DnDGrab;
 use smithay::input::keyboard::{keysyms, FilterResult, Keysym, Layout, ModifiersState};
 use smithay::input::pointer::{
     AxisFrame, ButtonEvent, CursorIcon, CursorImageStatus, Focus, GestureHoldBeginEvent,
@@ -31,14 +32,17 @@ use smithay::input::touch::{
 };
 use smithay::input::SeatHandler;
 use smithay::output::Output;
+use smithay::reexports::wayland_server::protocol::wl_data_source::WlDataSource;
+use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Rectangle, Transform, SERIAL_COUNTER};
 use smithay::wayland::keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitor;
 use smithay::wayland::pointer_constraints::{with_pointer_constraint, PointerConstraint};
-use smithay::wayland::selection::data_device::DnDGrab;
 use smithay::wayland::tablet_manager::{TabletDescriptor, TabletSeatTrait};
 use touch_overview_grab::TouchOverviewGrab;
 
 use self::move_grab::MoveGrab;
+use self::pick_color_grab::PickColorGrab;
+use self::pick_window_grab::PickWindowGrab;
 use self::resize_grab::ResizeGrab;
 use self::spatial_movement_grab::SpatialMovementGrab;
 #[cfg(feature = "dbus")]
@@ -49,7 +53,7 @@ use crate::niri::{CastTarget, PointerVisibility, State};
 use crate::ui::mru::{WindowMru, WindowMruUi};
 use crate::ui::screenshot_ui::ScreenshotUi;
 use crate::utils::spawning::{spawn, spawn_sh};
-use crate::utils::{center, get_monotonic_time, ResizeEdge};
+use crate::utils::{center, get_monotonic_time, CastSessionId, ResizeEdge};
 
 pub mod backend_ext;
 pub mod move_grab;
@@ -486,19 +490,22 @@ impl State {
                     }
                 }
 
-                if pressed
-                    && raw == Some(Keysym::Escape)
-                    && (this.niri.pick_window.is_some() || this.niri.pick_color.is_some())
-                {
-                    // We window picking state so the pick window grab must be active.
-                    // Unsetting it cancels window picking.
-                    this.niri
-                        .seat
-                        .get_pointer()
-                        .unwrap()
-                        .unset_grab(this, serial, time);
-                    this.niri.suppressed_keys.insert(key_code);
-                    return FilterResult::Intercept(None);
+                if pressed && raw == Some(Keysym::Escape) {
+                    // Cancel certain grabs on Escape.
+                    let pointer = this.niri.seat.get_pointer().unwrap();
+                    if pointer
+                        .with_grab(|_, grab| Self::grab_can_be_cancelled_with_esc(grab))
+                        .unwrap_or(false)
+                    {
+                        pointer.unset_grab(this, serial, time);
+
+                        // If this was a DnD, we won't get DndGrabHandler::dropped(), so we need to
+                        // call the cleanup.
+                        this.niri.on_maybe_dnd_ended();
+
+                        this.niri.suppressed_keys.insert(key_code);
+                        return FilterResult::Intercept(None);
+                    }
                 }
 
                 if let Some(Keysym::space) = raw {
@@ -741,7 +748,7 @@ impl State {
                 self.open_screenshot_ui(show_cursor, path);
                 self.niri.cancel_mru();
             }
-            Action::ScreenshotWindow(write_to_disk, path) => {
+            Action::ScreenshotWindow(write_to_disk, show_pointer, path) => {
                 let focus = self.niri.layout.focus_with_output();
                 if let Some((mapped, output)) = focus {
                     self.backend.with_primary_renderer(|renderer| {
@@ -750,6 +757,7 @@ impl State {
                             output,
                             mapped,
                             write_to_disk,
+                            show_pointer,
                             path,
                         ) {
                             warn!("error taking screenshot: {err:?}");
@@ -760,6 +768,7 @@ impl State {
             Action::ScreenshotWindowById {
                 id,
                 write_to_disk,
+                show_pointer,
                 path,
             } => {
                 let mut windows = self.niri.layout.windows();
@@ -772,6 +781,7 @@ impl State {
                             output,
                             mapped,
                             write_to_disk,
+                            show_pointer,
                             path,
                         ) {
                             warn!("error taking screenshot: {err:?}");
@@ -2230,12 +2240,14 @@ impl State {
                     Some(name) => self.niri.output_by_name_match(&name),
                 };
                 if let Some(output) = output {
-                    let output = output.downgrade();
-                    self.set_dynamic_cast_target(CastTarget::Output(output));
+                    self.set_dynamic_cast_target(CastTarget::output(output));
                 }
             }
             Action::ClearDynamicCastTarget => {
                 self.set_dynamic_cast_target(CastTarget::Nothing);
+            }
+            Action::StopCast(session_id) => {
+                self.niri.stop_cast(CastSessionId::from(session_id));
             }
             Action::ToggleOverview => {
                 self.niri.layout.toggle_overview();
@@ -2285,9 +2297,9 @@ impl State {
                 }
                 self.niri.queue_redraw_all();
             }
-            Action::LoadConfigFile => {
+            Action::LoadConfigFile(path) => {
                 if let Some(watcher) = &self.niri.config_file_watcher {
-                    watcher.load_config();
+                    watcher.load_config(path);
                 }
             }
             Action::MruConfirm => {
@@ -2454,6 +2466,35 @@ impl State {
             }
         }
 
+        // Warp pointer across the screen during the spatial movement grabs.
+        let spatial_grab = pointer.with_grab(|_, grab| {
+            let grab = grab.as_any();
+            if let Some(grab) = grab.downcast_ref::<SpatialMovementGrab>() {
+                if let Some(output) = grab.view_offset_output() {
+                    return Some((output.clone(), true));
+                } else if let Some(output) = grab.workspace_switch_output() {
+                    return Some((output.clone(), false));
+                }
+            } else if let Some(grab) = grab.downcast_ref::<MoveGrab>() {
+                if let Some(output) = grab.view_offset_output() {
+                    return Some((output.clone(), true));
+                }
+            }
+            None
+        });
+        if let Some((output, horizontal)) = spatial_grab.flatten() {
+            if let Some(geo) = self.niri.global_space.output_geometry(&output) {
+                let geo = geo.to_f64();
+                if horizontal {
+                    new_pos.x = (new_pos.x - geo.loc.x).rem_euclid(geo.size.w) + geo.loc.x;
+                    new_pos.y = new_pos.y.clamp(geo.loc.y, geo.loc.y + geo.size.h - 1.);
+                } else {
+                    new_pos.x = new_pos.x.clamp(geo.loc.x, geo.loc.x + geo.size.w - 1.);
+                    new_pos.y = (new_pos.y - geo.loc.y).rem_euclid(geo.size.h) + geo.loc.y;
+                }
+            }
+        }
+
         if self
             .niri
             .global_space
@@ -2583,10 +2624,9 @@ impl State {
         self.niri.maybe_activate_pointer_constraint();
 
         // Inform the layout of an ongoing DnD operation.
-        let mut is_dnd_grab = false;
-        pointer.with_grab(|_, grab| {
-            is_dnd_grab = grab.as_any().is::<DnDGrab<Self>>();
-        });
+        let is_dnd_grab = pointer
+            .with_grab(|_, grab| Self::is_dnd_grab(grab.as_any()))
+            .unwrap_or(false);
         if is_dnd_grab {
             if let Some((output, pos_within_output)) = self.niri.output_under(new_pos) {
                 let output = output.clone();
@@ -2682,10 +2722,9 @@ impl State {
         self.niri.tablet_cursor_location = None;
 
         // Inform the layout of an ongoing DnD operation.
-        let mut is_dnd_grab = false;
-        pointer.with_grab(|_, grab| {
-            is_dnd_grab = grab.as_any().is::<DnDGrab<Self>>();
-        });
+        let is_dnd_grab = pointer
+            .with_grab(|_, grab| Self::is_dnd_grab(grab.as_any()))
+            .unwrap_or(false);
         if is_dnd_grab {
             if let Some((output, pos_within_output)) = self.niri.output_under(pos) {
                 let output = output.clone();
@@ -2857,8 +2896,22 @@ impl State {
                             location,
                         };
                         let start_data = PointerOrTouchStartData::Pointer(start_data);
-                        if let Some(grab) = MoveGrab::new(self, start_data, window.clone(), false) {
+                        let icon = CursorIcon::Grabbing;
+                        if let Some(grab) =
+                            MoveGrab::new(self, start_data, window.clone(), false, Some(icon))
+                        {
                             pointer.set_grab(self, grab, serial, Focus::Clear);
+
+                            // Set the cursor to Grabbing right away for Mod+LMB since it doesn't
+                            // do any other gesture.
+                            //
+                            // In the overview, we click to activate window and close the overview,
+                            // in this case setting the cursor right away would be distracting.
+                            if !is_overview_open {
+                                self.niri
+                                    .cursor_manager
+                                    .set_cursor_image(CursorImageStatus::Named(icon));
+                            }
                         }
                     }
                 }
@@ -3035,7 +3088,7 @@ impl State {
             pointer
                 .current_focus()
                 .map(|surface| self.niri.find_root_shell_surface(&surface))
-                .map_or(true, |root| {
+                .is_none_or(|root| {
                     !self
                         .niri
                         .mapped_layer_surfaces
@@ -3212,8 +3265,8 @@ impl State {
         let horizontal_amount = event.amount(Axis::Horizontal);
         let vertical_amount = event.amount(Axis::Vertical);
 
-        // Handle touchpad scroll bindings.
-        if source == AxisSource::Finger {
+        // Handle touchpad and continuous scroll bindings.
+        if source == AxisSource::Finger || source == AxisSource::Continuous {
             let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
             let modifiers = modifiers_from_state(mods);
 
@@ -4106,7 +4159,8 @@ impl State {
                         location: pos,
                     };
                     let start_data = PointerOrTouchStartData::Touch(start_data);
-                    if let Some(grab) = MoveGrab::new(self, start_data, window.clone(), true) {
+                    if let Some(grab) = MoveGrab::new(self, start_data, window.clone(), true, None)
+                    {
                         handle.set_grab(self, grab, serial);
                     }
                 }
@@ -4197,10 +4251,9 @@ impl State {
         );
 
         // Inform the layout of an ongoing DnD operation.
-        let mut is_dnd_grab = false;
-        handle.with_grab(|_, grab| {
-            is_dnd_grab = grab.as_any().is::<DnDGrab<Self>>();
-        });
+        let is_dnd_grab = handle
+            .with_grab(|_, grab| Self::is_dnd_grab(grab.as_any()))
+            .unwrap_or(false);
         if is_dnd_grab {
             if let Some((output, pos_within_output)) = self.niri.output_under(pos) {
                 let output = output.clone();
@@ -4240,6 +4293,19 @@ impl State {
         if let Some(action) = action {
             self.do_action(action, true);
         }
+    }
+
+    pub fn is_dnd_grab(grab: &dyn Any) -> bool {
+        // Normal DnD
+        grab.is::<DnDGrab<Self, WlDataSource, WlSurface>>()
+            // Null-source DnD: weston-dnd --self-only
+            || grab.is::<DnDGrab<Self, WlSurface, WlSurface>>()
+    }
+
+    fn grab_can_be_cancelled_with_esc(grab: &(dyn PointerGrab<State> + 'static)) -> bool {
+        let grab = grab.as_any();
+
+        grab.is::<PickWindowGrab>() || grab.is::<PickColorGrab>() || Self::is_dnd_grab(grab)
     }
 }
 
@@ -4623,7 +4689,11 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
         let _ = device.config_tap_set_enabled(c.tap);
         let _ = device.config_dwt_set_enabled(c.dwt);
         let _ = device.config_dwtp_set_enabled(c.dwtp);
-        let _ = device.config_tap_set_drag_lock_enabled(c.drag_lock);
+        let _ = device.config_tap_set_drag_lock_enabled(if c.drag_lock {
+            input::DragLockState::EnabledTimeout
+        } else {
+            input::DragLockState::Disabled
+        });
         let _ = device.config_scroll_set_natural_scroll_enabled(c.natural_scroll);
         let _ = device.config_accel_set_speed(c.accel_speed.0);
         let _ = device.config_left_handed_set(c.left_handed);

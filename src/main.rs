@@ -7,6 +7,7 @@ use std::io::{self, Write};
 use std::os::fd::FromRawFd;
 use std::path::PathBuf;
 use std::process::Command;
+use std::sync::atomic::Ordering;
 use std::{env, mem};
 
 use calloop::EventLoop;
@@ -26,7 +27,6 @@ use niri::utils::spawning::{
 use niri::utils::{cause_panic, version, watcher, xwayland, IS_SYSTEMD_SERVICE};
 use niri_config::{Config, ConfigPath};
 use niri_ipc::socket::SOCKET_PATH_ENV;
-use portable_atomic::Ordering;
 use sd_notify::NotifyState;
 use smithay::reexports::wayland_server::Display;
 use tracing_subscriber::EnvFilter;
@@ -55,6 +55,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .compact()
         .with_writer(io::stderr)
         .with_env_filter(env_filter)
+        .with_ansi_sanitization(false)
         .init();
 
     if env::var_os("NOTIFY_SOCKET").is_some() {
@@ -169,6 +170,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Create the compositor.
     let display = Display::new().unwrap();
+
+    // Increase the buffer size so that it's harder to crash a frozen client with a 1000 Hz mouse.
+    display.handle().set_default_max_buffer_size(1024 * 1024);
+
     let mut state = State::new(
         config,
         event_loop.handle(),
@@ -228,9 +233,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         state.niri.a11y.start();
     }
 
-    if env::var_os("NIRI_DISABLE_SYSTEM_MANAGER_NOTIFY").map_or(true, |x| x != "1") {
+    if env::var_os("NIRI_DISABLE_SYSTEM_MANAGER_NOTIFY").is_none_or(|x| x != "1") {
         // Notify systemd we're ready.
-        if let Err(err) = sd_notify::notify(true, &[NotifyState::Ready]) {
+        if let Err(err) = sd_notify::notify(&[NotifyState::Ready]) {
             warn!("error notifying systemd: {err:?}");
         };
 

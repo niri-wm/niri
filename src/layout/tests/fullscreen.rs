@@ -339,6 +339,65 @@ fn interactive_move_unfullscreen_to_floating_stops_dnd_scroll() {
 }
 
 #[test]
+fn interactive_move_restore_to_floating_animates_view_offset() {
+    let ops = [
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+        // Toggle window 1 to floating.
+        Op::FocusWindow(1),
+        Op::ToggleWindowFloating { id: None },
+        // Fullscreen window 1 - it moves to scrolling with restore_to_floating = true.
+        Op::FullscreenWindow(1),
+        Op::Communicate(1),
+        Op::CompleteAnimations,
+    ];
+
+    let mut layout = check_ops(ops);
+
+    // Verify window 1 is in scrolling and has restore_to_floating = true.
+    let scrolling = layout.active_workspace().unwrap().scrolling();
+    let tile1 = scrolling.tiles().find(|t| *t.window().id() == 1).unwrap();
+    assert!(
+        tile1.restore_to_floating,
+        "window 1 should have restore_to_floating = true"
+    );
+
+    let ops = [
+        // Start interactive move on window 1.
+        Op::InteractiveMoveBegin {
+            window: 1,
+            output_idx: 1,
+            px: 100.,
+            py: 100.,
+        },
+        // Update with a large delta to trigger the unmaximize.
+        Op::InteractiveMoveUpdate {
+            window: 1,
+            dx: 1000.,
+            dy: 1000.,
+            output_idx: 1,
+            px: 0.,
+            py: 0.,
+        },
+    ];
+    check_ops_on_layout(&mut layout, ops);
+
+    // Window 1 should now be removed from the workspace (in the interactive move state).
+    // Window 2 should be the only window in the scrolling space.
+    let scrolling = layout.active_workspace().unwrap().scrolling();
+    assert_eq!(scrolling.tiles().count(), 1);
+    assert!(scrolling.tiles().next().unwrap().window().id() == &2);
+
+    // The view offset should be animating to show window 2.
+    assert!(scrolling.view_offset().is_animation_ongoing());
+}
+
+#[test]
 fn unfullscreen_view_offset_not_reset_during_dnd_gesture() {
     let ops = [
         Op::AddOutput(1),

@@ -158,7 +158,7 @@ impl TransactionBlocker {
 
 impl Blocker for TransactionBlocker {
     fn state(&self) -> BlockerState {
-        if self.0.upgrade().map_or(true, |x| x.is_completed()) {
+        if self.0.upgrade().is_none_or(|x| x.is_completed()) {
             BlockerState::Released
         } else {
             BlockerState::Pending

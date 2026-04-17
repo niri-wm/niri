@@ -2,14 +2,19 @@
 
 Electron-based applications can run directly on Wayland, but it's not the default.
 
-For Electron > 28, you can set an environment variable:
+For Electron ≥ 39, you can use the command-line flag if the app does not default to Wayland:
+```
+--ozone-platform=wayland
+```
+
+For Electron < 39, you can set an environment variable:
 ```kdl
 environment {
     ELECTRON_OZONE_PLATFORM_HINT "auto"
 }
 ```
 
-For previous versions, you need to pass command-line flags to the target application:
+For Electron ≤ 28, you need to pass command-line flags to the target application:
 ```
 --enable-features=UseOzonePlatform --ozone-platform-hint=auto
 ```
@@ -68,6 +73,9 @@ environment {
     GTK_IM_MODULE "simple"
 }
 ```
+
+Note that the niri environment config does not propagate to apps and shells started by systemd, for example to DankMaterialShell and its application launcher.
+You can set the variable in your login shell config (i.e. `~/.bash_profile`) instead, though keep in mind that then it will be set for all compositors, not just niri.
 
 ### Fullscreen games
 

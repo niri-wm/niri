@@ -116,10 +116,12 @@ impl TestWindow {
                 if self.0.animate_next_configure.get() {
                     self.0.animation_snapshot.replace(Some(RenderSnapshot {
                         contents: Vec::new(),
+                        contents_with_blocked_out_bg: None,
                         blocked_out_contents: Vec::new(),
                         block_out_from: None,
                         size: self.0.bbox.get().size.to_f64(),
                         texture: OnceCell::new(),
+                        texture_with_blocked_out_bg: Default::default(),
                         blocked_out_texture: OnceCell::new(),
                     }));
                 }
@@ -164,17 +166,6 @@ impl LayoutElement for TestWindow {
 
     fn is_in_input_region(&self, _point: Point<f64, Logical>) -> bool {
         false
-    }
-
-    fn render<R: NiriRenderer>(
-        &self,
-        _renderer: &mut R,
-        _location: Point<f64, Logical>,
-        _scale: Scale<f64>,
-        _alpha: f32,
-        _target: RenderTarget,
-    ) -> SplitElements<LayoutElementRenderElement<R>> {
-        SplitElements::default()
     }
 
     fn request_size(
@@ -250,6 +241,10 @@ impl LayoutElement for TestWindow {
 
     fn requested_size(&self) -> Option<Size<i32, Logical>> {
         self.0.requested_size.get()
+    }
+
+    fn is_windowed_fullscreen(&self) -> bool {
+        self.0.is_windowed_fullscreen.get()
     }
 
     fn is_pending_windowed_fullscreen(&self) -> bool {
@@ -3672,6 +3667,69 @@ fn tabs_with_different_border() {
         ..Default::default()
     };
     check_ops_with_options(options, ops);
+}
+
+#[test]
+fn expel_pending_left_from_fullscreen_tabbed_column() {
+    let ops = [
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::FullscreenWindow(1),
+        Op::Communicate(1),
+        // 1 is now fullscreen, view_offset_to_restore is set.
+        Op::ToggleColumnTabbedDisplay,
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+        Op::ConsumeOrExpelWindowLeft { id: Some(2) },
+        // 2 is consumed into a fullscreen column, fullscreen is requested but not applied.
+        //
+        // Now, get it back out while keeping it focused.
+        //
+        // Importantly, we expel it *left*, which results in adding a new column with the exact
+        // same active_column_idx.
+        Op::FocusWindow(2),
+        Op::ConsumeOrExpelWindowLeft { id: None },
+    ];
+
+    check_ops(ops);
+}
+
+#[test]
+fn workspace_render_geo_at_fractional_scale() {
+    let ops = [
+        Op::AddScaledOutput {
+            id: 1,
+            scale: 1.1,
+            layout_config: None,
+        },
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::FocusWorkspaceDown,
+        Op::CompleteAnimations,
+    ];
+
+    let layout = check_ops(ops);
+
+    let MonitorSet::Normal { monitors, .. } = &layout.monitor_set else {
+        unreachable!()
+    };
+
+    let mon = &monitors[0];
+    let mut iter = mon.workspaces_with_render_geo();
+    let (_ws, geo) = iter.next().unwrap();
+    assert!(
+        iter.next().is_none(),
+        "animations are completed, only one workspace should be visible"
+    );
+    assert_eq!(
+        geo.loc.y, 0.,
+        "active workspace must be at y = 0 exactly, \
+         otherwise a pointer against the screen edge at y = 0 won't hit it"
+    );
 }
 
 fn parent_id_causes_loop(layout: &Layout<TestWindow>, id: usize, mut parent_id: usize) -> bool {

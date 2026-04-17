@@ -623,7 +623,8 @@ impl ScreenshotUi {
         &self,
         output: &Output,
         target: RenderTarget,
-    ) -> ArrayVec<ScreenshotUiRenderElement, 11> {
+        push: &mut dyn FnMut(ScreenshotUiRenderElement),
+    ) {
         let _span = tracy_client::span!("ScreenshotUi::render_output");
 
         let Self::Open {
@@ -637,10 +638,8 @@ impl ScreenshotUi {
             panic!("screenshot UI must be open to render it");
         };
 
-        let mut elements = ArrayVec::new();
-
         let Some(output_data) = output_data.get(output) else {
-            return elements;
+            return;
         };
 
         let scale = output_data.scale;
@@ -666,19 +665,18 @@ impl ScreenshotUi {
                 None,
                 Kind::Unspecified,
             ));
-            elements.push(elem.into());
+            push(elem.into());
         }
 
-        let buf_loc = zip(&output_data.buffers, &output_data.locations);
-        elements.extend(buf_loc.map(|(buffer, loc)| {
-            SolidColorRenderElement::from_buffer(
+        for (buffer, loc) in zip(&output_data.buffers, &output_data.locations) {
+            let elem = SolidColorRenderElement::from_buffer(
                 buffer,
                 loc.to_f64().to_logical(scale),
                 progress,
                 Kind::Unspecified,
-            )
-            .into()
-        }));
+            );
+            push(elem.into());
+        }
 
         // The screenshot itself goes last.
         let index = match target {
@@ -690,12 +688,10 @@ impl ScreenshotUi {
 
         if *show_pointer {
             if let Some(pointer) = screenshot.pointer.clone() {
-                elements.push(pointer.into());
+                push(pointer.into());
             }
         }
-        elements.push(screenshot.buffer.clone().into());
-
-        elements
+        push(screenshot.buffer.clone().into());
     }
 
     pub fn capture(

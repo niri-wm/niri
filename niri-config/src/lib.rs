@@ -59,7 +59,9 @@ use crate::recent_windows::RecentWindowsPart;
 pub use crate::recent_windows::{MruDirection, MruFilter, MruPreviews, MruScope, RecentWindows};
 pub use crate::utils::FloatOrInt;
 use crate::utils::{Flag, MergeWith as _};
-pub use crate::window_rule::{FloatingPosition, RelativeTo, WindowRule};
+pub use crate::window_rule::{
+    FloatingPosition, PopupsRule, RelativeTo, ResolvedPopupsRules, WindowRule,
+};
 pub use crate::workspace::{Workspace, WorkspaceLayoutPart};
 
 const RECURSION_LIMIT: u8 = 10;
@@ -78,6 +80,7 @@ pub struct Config {
     pub hotkey_overlay: HotkeyOverlay,
     pub config_notification: ConfigNotification,
     pub animations: Animations,
+    pub blur: Blur,
     pub gestures: Gestures,
     pub overview: Overview,
     pub environment: Environment,
@@ -194,6 +197,7 @@ where
                 "hotkey-overlay" => m_merge!(hotkey_overlay),
                 "config-notification" => m_merge!(config_notification),
                 "animations" => m_merge!(animations),
+                "blur" => m_merge!(blur),
                 "gestures" => m_merge!(gestures),
                 "overview" => m_merge!(overview),
                 "xwayland-satellite" => m_merge!(xwayland_satellite),
@@ -291,7 +295,51 @@ where
                 }
 
                 "include" => {
-                    let path: PathBuf = utils::parse_arg_node("include", node, ctx)?;
+                    // Parse the path argument
+                    let mut iter_args = node.arguments.iter();
+                    let path_val = iter_args.next().ok_or_else(|| {
+                        DecodeError::missing(
+                            node,
+                            "additional argument for include path is required",
+                        )
+                    })?;
+                    let path: PathBuf = knuffel::traits::DecodeScalar::decode(path_val, ctx)?;
+
+                    // Check for extra arguments
+                    if let Some(val) = iter_args.next() {
+                        ctx.emit_error(DecodeError::unexpected(
+                            &val.literal,
+                            "argument",
+                            "unexpected argument",
+                        ));
+                    }
+
+                    // Parse the optional property
+                    let mut optional = false;
+                    for (name, val) in &node.properties {
+                        match &***name {
+                            "optional" => {
+                                optional = knuffel::traits::DecodeScalar::decode(val, ctx)?;
+                            }
+                            name_str => {
+                                ctx.emit_error(DecodeError::unexpected(
+                                    name,
+                                    "property",
+                                    format!("unexpected property `{}`", name_str.escape_default()),
+                                ));
+                            }
+                        }
+                    }
+
+                    // Check for unexpected children
+                    for child in node.children() {
+                        ctx.emit_error(DecodeError::unexpected(
+                            child,
+                            "node",
+                            format!("unexpected node `{}`", child.node_name.escape_default()),
+                        ));
+                    }
+
                     let base = ctx.get::<BasePath>().unwrap();
                     let path = base.0.join(path);
 
@@ -369,10 +417,16 @@ where
                             }
                         }
                         Err(err) => {
-                            ctx.emit_error(DecodeError::missing(
-                                node,
-                                format!("failed to read included config from {path:?}: {err}"),
-                            ));
+                            if optional && err.kind() == std::io::ErrorKind::NotFound {
+                                // Warn about missing optional includes
+                                warn!("optional include not found: {path:?}");
+                            } else {
+                                // Report all other errors normally
+                                ctx.emit_error(DecodeError::missing(
+                                    node,
+                                    format!("failed to read included config from {path:?}: {err}"),
+                                ));
+                            }
                         }
                     }
                 }
@@ -1572,6 +1626,13 @@ mod tests {
                     },
                 ),
             },
+            blur: Blur {
+                off: false,
+                passes: 3,
+                offset: 3.0,
+                noise: 0.02,
+                saturation: 1.5,
+            },
             gestures: Gestures {
                 dnd_edge_view_scroll: DndEdgeViewScroll {
                     trigger_width: 10.0,
@@ -1801,6 +1862,22 @@ mod tests {
                     ),
                     scroll_factor: None,
                     tiled_state: None,
+                    background_effect: BackgroundEffectRule {
+                        xray: None,
+                        blur: None,
+                        noise: None,
+                        saturation: None,
+                    },
+                    popups: PopupsRule {
+                        opacity: None,
+                        geometry_corner_radius: None,
+                        background_effect: BackgroundEffectRule {
+                            xray: None,
+                            blur: None,
+                            noise: None,
+                            saturation: None,
+                        },
+                    },
                 },
             ],
             layer_rules: [
@@ -1815,6 +1892,7 @@ mod tests {
                                 ),
                             ),
                             at_startup: None,
+                            layer: None,
                         },
                     ],
                     excludes: [],
@@ -1835,6 +1913,22 @@ mod tests {
                     geometry_corner_radius: None,
                     place_within_backdrop: None,
                     baba_is_float: None,
+                    background_effect: BackgroundEffectRule {
+                        xray: None,
+                        blur: None,
+                        noise: None,
+                        saturation: None,
+                    },
+                    popups: PopupsRule {
+                        opacity: None,
+                        geometry_corner_radius: None,
+                        background_effect: BackgroundEffectRule {
+                            xray: None,
+                            blur: None,
+                            noise: None,
+                            saturation: None,
+                        },
+                    },
                 },
             ],
             binds: Binds(
@@ -2140,6 +2234,7 @@ mod tests {
                 disable_direct_scanout: false,
                 keep_max_bpc_unchanged: false,
                 restrict_primary_scanout_to_matching_format: false,
+                force_disable_connectors_on_resume: false,
                 render_drm_device: Some(
                     "/dev/dri/renderD129",
                 ),
