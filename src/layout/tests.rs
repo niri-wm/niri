@@ -572,23 +572,21 @@ enum Op {
         target_ws_idx: Option<usize>,
         activate: bool,
     },
-    SwitchPresetColumnWidth,
-    SwitchPresetColumnWidthBack,
+    SwitchPresetColumnWidth {
+        forwards: bool,
+        wrap: bool,
+    },
     SwitchPresetWindowWidth {
         #[proptest(strategy = "proptest::option::of(1..=5usize)")]
         id: Option<usize>,
-    },
-    SwitchPresetWindowWidthBack {
-        #[proptest(strategy = "proptest::option::of(1..=5usize)")]
-        id: Option<usize>,
+        forwards: bool,
+        wrap: bool,
     },
     SwitchPresetWindowHeight {
         #[proptest(strategy = "proptest::option::of(1..=5usize)")]
         id: Option<usize>,
-    },
-    SwitchPresetWindowHeightBack {
-        #[proptest(strategy = "proptest::option::of(1..=5usize)")]
-        id: Option<usize>,
+        forwards: bool,
+        wrap: bool,
     },
     MaximizeColumn,
     MaximizeWindowToEdges {
@@ -1304,23 +1302,14 @@ impl Op {
 
                 layout.move_workspace_to_output_by_id(old_idx, Some(old_output), &output);
             }
-            Op::SwitchPresetColumnWidth => layout.toggle_width(true),
-            Op::SwitchPresetColumnWidthBack => layout.toggle_width(false),
-            Op::SwitchPresetWindowWidth { id } => {
+            Op::SwitchPresetColumnWidth { forwards, wrap } => layout.toggle_width(forwards, wrap),
+            Op::SwitchPresetWindowWidth { id, forwards, wrap } => {
                 let id = id.filter(|id| layout.has_window(id));
-                layout.toggle_window_width(id.as_ref(), true);
+                layout.toggle_window_width(id.as_ref(), forwards, wrap);
             }
-            Op::SwitchPresetWindowWidthBack { id } => {
+            Op::SwitchPresetWindowHeight { id, forwards, wrap } => {
                 let id = id.filter(|id| layout.has_window(id));
-                layout.toggle_window_width(id.as_ref(), false);
-            }
-            Op::SwitchPresetWindowHeight { id } => {
-                let id = id.filter(|id| layout.has_window(id));
-                layout.toggle_window_height(id.as_ref(), true);
-            }
-            Op::SwitchPresetWindowHeightBack { id } => {
-                let id = id.filter(|id| layout.has_window(id));
-                layout.toggle_window_height(id.as_ref(), false);
+                layout.toggle_window_height(id.as_ref(), forwards, wrap);
             }
             Op::MaximizeColumn => layout.toggle_full_width(),
             Op::MaximizeWindowToEdges { id } => {
@@ -2422,8 +2411,11 @@ fn preset_height_change_removes_preset() {
             params: TestWindowParams::new(2),
         },
         Op::ConsumeOrExpelWindowLeft { id: None },
-        Op::SwitchPresetWindowHeight { id: None },
-        Op::SwitchPresetWindowHeight { id: None },
+        Op::SwitchPresetWindowHeight {
+            id: None,
+            forwards: true,
+            wrap: true,
+        },
     ];
     for op in ops {
         op.apply(&mut layout);
@@ -3345,7 +3337,10 @@ fn preset_column_width_fixed_correct_with_border() {
         Op::AddWindow {
             params: TestWindowParams::new(0),
         },
-        Op::SwitchPresetColumnWidth,
+        Op::SwitchPresetColumnWidth {
+            forwards: true,
+            wrap: true,
+        },
     ];
 
     let options = Options {
@@ -3380,7 +3375,7 @@ fn preset_column_width_fixed_correct_with_border() {
     assert_eq!(win.requested_size().unwrap().w, 490);
 
     // However, preset fixed width will still work correctly.
-    layout.toggle_width(true);
+    layout.toggle_width(true, true);
     let win = layout.windows().next().unwrap().1;
     assert_eq!(win.requested_size().unwrap().w, 500);
 }
@@ -3392,12 +3387,18 @@ fn preset_column_width_reset_after_set_width() {
         Op::AddWindow {
             params: TestWindowParams::new(0),
         },
-        Op::SwitchPresetColumnWidth,
+        Op::SwitchPresetColumnWidth {
+            forwards: true,
+            wrap: true,
+        },
         Op::SetWindowWidth {
             id: None,
             change: SizeChange::AdjustFixed(-10),
         },
-        Op::SwitchPresetColumnWidth,
+        Op::SwitchPresetColumnWidth {
+            forwards: true,
+            wrap: true,
+        },
     ];
 
     let options = Options {
@@ -3646,7 +3647,11 @@ fn tabs_with_different_border() {
                 ..TestWindowParams::new(2)
             },
         },
-        Op::SwitchPresetWindowHeight { id: None },
+        Op::SwitchPresetWindowHeight {
+            id: None,
+            forwards: true,
+            wrap: true,
+        },
         Op::ToggleColumnTabbedDisplay,
         Op::AddWindow {
             params: TestWindowParams::new(3),
