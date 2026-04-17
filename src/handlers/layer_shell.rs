@@ -4,7 +4,9 @@ use smithay::output::Output;
 use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Rectangle, Scale};
-use smithay::wayland::compositor::{add_pre_commit_hook, get_parent, with_states, HookId};
+use smithay::wayland::compositor::{
+    add_pre_commit_hook, get_parent, with_states, BufferAssignment, HookId, SurfaceAttributes,
+};
 use smithay::wayland::shell::wlr_layer::{
     self, Anchor, ExclusiveZone, Layer, LayerSurface as WlrLayerSurface, LayerSurfaceCachedState,
     LayerSurfaceData, WlrLayerShellHandler, WlrLayerShellState,
@@ -225,14 +227,6 @@ impl State {
                 }
             }
 
-            // Keep the latest renderable mapped snapshot around for the close animation.
-            // This avoids depending on the final unmap commit to still have renderable content.
-            if let Some(mapped) = self.niri.mapped_layer_surfaces.get_mut(layer) {
-                self.backend.with_primary_renderer(|renderer| {
-                    mapped.store_unmap_snapshot(renderer);
-                });
-            }
-
             // Give focus to newly mapped on-demand surfaces. Some launchers like lxqt-runner rely
             // on this behavior. While this behavior doesn't make much sense for other clients like
             // panels, the consensus seems to be that it's not a big deal since panels generally
@@ -432,17 +426,41 @@ fn resolve_layer_animation_kind(layer: &LayerSurface) -> LayerAnimationKind {
 
 fn add_mapped_layer_pre_commit_hook(layer: &LayerSurface) -> HookId {
     add_pre_commit_hook::<State, _>(layer.wl_surface(), move |state, _dh, surface| {
-        let layer_changed = with_states(surface, |states| {
-            let mut guard = states.cached_state.get::<LayerSurfaceCachedState>();
-            let pending_layer = guard.pending().layer;
-            let current_layer = guard.current().layer;
-            pending_layer != current_layer
+        let (layer_changed, got_unmapped) = with_states(surface, |states| {
+            let layer_changed = {
+                let mut guard = states.cached_state.get::<LayerSurfaceCachedState>();
+                let pending_layer = guard.pending().layer;
+                let current_layer = guard.current().layer;
+                pending_layer != current_layer
+            };
+
+            let got_unmapped = with_states(surface, |states| {
+                let mut guard = states.cached_state.get::<SurfaceAttributes>();
+                match guard.pending().buffer.as_ref() {
+                    Some(BufferAssignment::Removed) => true,
+                    Some(BufferAssignment::NewBuffer(_)) => true,
+                    None => false,
+                }
+            });
+
+            (layer_changed, got_unmapped)
         });
 
         if layer_changed {
             for mapped in state.niri.mapped_layer_surfaces.values_mut() {
                 if mapped.surface().wl_surface() == surface {
                     mapped.set_recompute_rules_on_commit();
+                    break;
+                }
+            }
+        }
+
+        if got_unmapped {
+            for mapped in state.niri.mapped_layer_surfaces.values_mut() {
+                if mapped.surface().wl_surface() == surface {
+                    state.backend.with_primary_renderer(|renderer| {
+                        mapped.store_unmap_snapshot(renderer);
+                    });
                     break;
                 }
             }
