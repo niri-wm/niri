@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex};
 
 use niri_config::{Config, OutputName};
 use smithay::backend::allocator::dmabuf::Dmabuf;
+use smithay::backend::egl::EGLDevice;
 use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::renderer::{DebugFlags, ImportDma, ImportEgl, Renderer};
@@ -16,6 +17,7 @@ use smithay::reexports::wayland_protocols::wp::presentation_time::server::wp_pre
 use smithay::reexports::winit::dpi::LogicalSize;
 use smithay::reexports::winit::platform::wayland::WindowAttributesExtWayland;
 use smithay::reexports::winit::window::Window;
+use smithay::wayland::dmabuf::{DmabufFeedbackBuilder, DmabufGlobal};
 use smithay::wayland::presentation::Refresh;
 
 use super::{IpcOutputMap, OutputId, RenderResult};
@@ -29,6 +31,7 @@ pub struct Winit {
     output: Output,
     backend: WinitGraphicsBackend<GlesRenderer>,
     damage_tracker: OutputDamageTracker,
+    dmabuf_global: Option<DmabufGlobal>,
     ipc_outputs: Arc<Mutex<IpcOutputMap>>,
 }
 
@@ -137,6 +140,7 @@ impl Winit {
             output,
             backend,
             damage_tracker,
+            dmabuf_global: None,
             ipc_outputs,
         })
     }
@@ -146,6 +150,35 @@ impl Winit {
         if let Err(err) = renderer.bind_wl_display(&niri.display_handle) {
             warn!("error binding renderer wl_display: {err}");
         }
+
+        // Create the dmabuf global.
+        let render_node = EGLDevice::device_for_display(renderer.egl_context().display())
+            .and_then(|device| device.try_get_render_node());
+
+        let default_feedback = match render_node {
+            Ok(Some(node)) => {
+                let primary_formats = renderer.dmabuf_formats();
+                let default_feedback = DmabufFeedbackBuilder::new(node.dev_id(), primary_formats)
+                    .build()
+                    .unwrap();
+                Some(default_feedback)
+            }
+            Ok(None) | Err(_) => None,
+        };
+
+        // Fallback to dmabuf v3 if we failed to build feedback
+        let dmabuf_global = match default_feedback {
+            Some(feedback) => niri
+                .dmabuf_state
+                .create_global_with_default_feedback::<State>(&niri.display_handle, &feedback),
+            None => {
+                warn!("Failed building default dmabuf feedback, falling back to v3");
+                let primary_formats = renderer.dmabuf_formats();
+                niri.dmabuf_state
+                    .create_global::<State>(&niri.display_handle, primary_formats)
+            }
+        };
+        assert!(self.dmabuf_global.replace(dmabuf_global).is_none());
 
         resources::init(renderer);
         shaders::init(renderer);
