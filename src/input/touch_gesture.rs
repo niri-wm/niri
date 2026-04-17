@@ -214,11 +214,15 @@ impl State {
             self.niri.touch_gesture_cumulative = Some((0., 0.));
         }
 
-        // Check if we're tracking a multi-finger gesture (2+ fingers),
-        // a locked gesture (direction decided), or an edge swipe.
-        // If so, don't forward events to clients.
-        // Passthrough mode overrides — when set, the whole gesture forwards
-        // raw to the client regardless of finger count.
+        // Check if we're tracking a multi-finger gesture (3+ fingers),
+        // a locked gesture (direction decided), or an edge swipe. If so,
+        // this event is not forwarded to the client. If earlier fingers
+        // in the same sequence WERE forwarded (first two fingers pre-
+        // transition), they are terminated via `up` + `wl_touch.cancel`
+        // at the transition in the `else` branch below so the client
+        // doesn't hold them as phantom down touches.
+        // Passthrough mode overrides — when set, the whole gesture
+        // forwards raw to the client regardless of finger count.
         let tracking_gesture = (self.niri.touch_gesture_points.len() > 2
             || self.niri.touch_gesture_locked)
             && !self.niri.touchscreen_gesture_passthrough;
@@ -357,6 +361,12 @@ impl State {
 
         // Only forward to client if not tracking a multi-finger gesture or edge swipe.
         if !tracking_gesture && !in_edge_zone {
+            tracing::debug!(
+                target: "niri::input::touch_gesture",
+                "TOUCH-DBG FORWARD slot={:?} has_surface={}",
+                slot,
+                under.surface.is_some(),
+            );
             handle.down(
                 self,
                 under.surface,
@@ -367,6 +377,44 @@ impl State {
                     time: evt.time_msec(),
                 },
             );
+            self.niri.touch_forwarded_slots.insert(slot);
+        } else {
+            tracing::debug!(
+                target: "niri::input::touch_gesture",
+                "TOUCH-DBG BLOCKED slot={:?} tracking_gesture={} in_edge_zone={}",
+                slot,
+                tracking_gesture,
+                in_edge_zone,
+            );
+            // Transition into gesture tracking — if earlier fingers in this
+            // sequence were already forwarded to a client as wl_touch.down,
+            // their matching .up events will be suppressed by this same
+            // gate. Emit explicit wl_touch.up for each forwarded slot AND
+            // wl_touch.cancel so the client can't hold them as phantoms.
+            if !self.niri.touch_forwarded_slots.is_empty() {
+                let forwarded: Vec<_> =
+                    self.niri.touch_forwarded_slots.drain().collect();
+                tracing::debug!(
+                    target: "niri::input::touch_gesture",
+                    "TOUCH-DBG CANCEL-CLIENT reason=gesture-start trigger_slot={:?} points={} forwarded_slots={:?}",
+                    slot,
+                    self.niri.touch_gesture_points.len(),
+                    forwarded,
+                );
+                for fwd_slot in forwarded {
+                    let up_serial = SERIAL_COUNTER.next_serial();
+                    handle.up(
+                        self,
+                        &UpEvent {
+                            slot: fwd_slot,
+                            serial: up_serial,
+                            time: evt.time_msec(),
+                        },
+                    );
+                }
+                handle.cancel(self);
+                handle.frame(self);
+            }
         }
 
         // We're using touch, hide the pointer.
@@ -562,6 +610,7 @@ impl State {
 
             self.niri.touch_gesture_cumulative = None;
             self.niri.touch_gesture_locked = false;
+            self.niri.touch_forwarded_slots.clear();
             self.niri.touchscreen_gesture_passthrough = false;
             self.niri.touch_frame_dirty = false;
             self.niri.touch_frame_delta = (0., 0.);
@@ -1325,6 +1374,15 @@ impl State {
             return;
         };
 
+        tracing::debug!(
+            target: "niri::input::touch_gesture",
+            "TOUCH-DBG CANCEL points={} locked={} passthrough={} edge_swipe={}",
+            self.niri.touch_gesture_points.len(),
+            self.niri.touch_gesture_locked,
+            self.niri.touchscreen_gesture_passthrough,
+            self.niri.touch_edge_swipe.is_some(),
+        );
+
         // Collect tags for IPC GestureEnd before clearing state.
         // Track `had_active` separately so we can emit a cancelled
         // GestureEnd for untagged multi-finger binds too.
@@ -1341,6 +1399,7 @@ impl State {
         self.niri.touch_gesture_cumulative = None;
         self.niri.touch_edge_swipe = None;
         self.niri.touch_gesture_locked = false;
+        self.niri.touch_forwarded_slots.clear();
         self.niri.touch_gesture_initial_spread = None;
         self.niri.touch_gesture_cumulative_rotation = 0.0;
         self.niri.touch_gesture_previous_angles.clear();

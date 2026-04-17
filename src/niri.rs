@@ -519,9 +519,19 @@ pub struct Niri {
     /// Edge swipe gesture state for touchscreen.
     pub touch_edge_swipe: Option<TouchEdgeSwipeState>,
     /// Set when a multi-finger touch gesture is locked (direction decided).
-    /// While locked, all touch events are suppressed from clients until
-    /// all fingers are lifted, preventing leaked inputs mid-gesture.
+    /// While locked, touch events are suppressed from clients until all
+    /// fingers are lifted. Any slots that were already forwarded before
+    /// the recognizer decided this was a gesture have their matching up
+    /// plus a `wl_touch.cancel` emitted at the transition — see
+    /// `touch_forwarded_slots`.
     pub touch_gesture_locked: bool,
+    /// Slots whose `wl_touch.down` was forwarded to a client but whose
+    /// matching `wl_touch.up` has not yet been sent. When the recognizer
+    /// decides the sequence is a compositor gesture, we must emit `up`
+    /// (and `cancel`) for these slots so the client doesn't hold them as
+    /// phantom "still-down" touches — the gesture gate will otherwise
+    /// suppress their real up events.
+    pub touch_forwarded_slots: HashSet<TouchSlot>,
     /// Set when the first finger of a touch gesture landed on a window with
     /// `touchscreen-gesture-passthrough true`. While set, the gesture
     /// recognizer is bypassed and touch events forward directly to the
@@ -2772,6 +2782,7 @@ impl Niri {
             touch_gesture_cumulative: None,
             touch_edge_swipe: None,
             touch_gesture_locked: false,
+            touch_forwarded_slots: HashSet::new(),
             touchscreen_gesture_passthrough: false,
             touch_active_bind: None,
             touch_gesture_initial_spread: None,
