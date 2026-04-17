@@ -4,6 +4,7 @@ use std::rc::Rc;
 use niri_config::utils::MergeWith as _;
 use niri_config::{Color, CornerRadius, GradientInterpolation};
 use niri_ipc::WindowLayout;
+use smithay::backend::renderer::element::utils::CropRenderElement;
 use smithay::backend::renderer::element::{Element, Kind};
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Size};
@@ -22,6 +23,7 @@ use crate::render_helpers::background_effect::BackgroundEffectElement;
 use crate::render_helpers::border::BorderRenderElement;
 use crate::render_helpers::clipped_surface::{ClippedSurfaceRenderElement, RoundedCornerDamage};
 use crate::render_helpers::damage::ExtraDamage;
+use crate::render_helpers::masked_offscreen::MaskedOffscreenRenderElement;
 use crate::render_helpers::offscreen::{OffscreenBuffer, OffscreenRenderElement};
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::resize::ResizeRenderElement;
@@ -102,6 +104,9 @@ pub struct Tile<W: LayoutElement> {
     /// Snapshot of the last render for use in the close animation.
     unmap_snapshot: Option<TileRenderSnapshot>,
 
+    /// Cached offscreen for the tab-switch strip.
+    tab_switch_offscreen: OffscreenBuffer,
+
     /// Extra damage for clipped surface corner radius changes.
     rounded_corner_damage: RoundedCornerDamage,
 
@@ -129,6 +134,7 @@ niri_render_elements! {
         Resize = ResizeRenderElement,
         Border = BorderRenderElement,
         Shadow = ShadowRenderElement,
+        CroppedMaskedOffscreen = CropRenderElement<MaskedOffscreenRenderElement>,
         ClippedSurface = ClippedSurfaceRenderElement<R>,
         Offscreen = OffscreenRenderElement,
         ExtraDamage = ExtraDamage,
@@ -207,6 +213,7 @@ impl<W: LayoutElement> Tile<W> {
             alpha_animation: None,
             interactive_move_offset: Point::from((0., 0.)),
             unmap_snapshot: None,
+            tab_switch_offscreen: Default::default(),
             rounded_corner_damage: Default::default(),
             view_size,
             scale,
@@ -1021,15 +1028,14 @@ impl<W: LayoutElement> Tile<W> {
         Point::from((0., y))
     }
 
-    fn render_inner<R: NiriRenderer>(
+    fn render_contents<R: NiriRenderer>(
         &self,
         mut ctx: RenderCtx<R>,
         location: Point<f64, Logical>,
         mut xray_pos: XrayPos,
-        focus_ring: bool,
         push: &mut dyn FnMut(TileRenderElement<R>),
     ) {
-        let _span = tracy_client::span!("Tile::render_inner");
+        let _span = tracy_client::span!("Tile::render_contents");
 
         let scale = Scale::from(self.scale);
         let fullscreen_progress = self.fullscreen_progress();
@@ -1237,6 +1243,79 @@ impl<W: LayoutElement> Tile<W> {
                     push(clip(elem))
                 });
         }
+    }
+
+    fn render_inner<R: NiriRenderer>(
+        &self,
+        mut ctx: RenderCtx<R>,
+        location: Point<f64, Logical>,
+        xray_pos: XrayPos,
+        focus_ring: bool,
+        push: &mut dyn FnMut(TileRenderElement<R>),
+    ) {
+        let _span = tracy_client::span!("Tile::render_inner");
+
+        let bob_offset = self.bob_offset();
+        let location = location + bob_offset;
+
+        self.render_contents(ctx.r(), location - bob_offset, xray_pos, push);
+        self.render_frame(ctx.renderer, location, focus_ring, push);
+
+        let window_loc = self.window_loc();
+        let window_size = self.window_size();
+        let animated_window_size = self.animated_window_size();
+        let area = Rectangle::new(location + window_loc, animated_window_size);
+        let rules = self.window.rules();
+        let clip_to_geometry =
+            self.fullscreen_progress() < 1. && rules.clip_to_geometry == Some(true);
+        let radius = self
+            .window
+            .geometry_corner_radius()
+            .scaled_by(1. - self.expanded_progress() as f32);
+        let surface_anim_scale = animated_window_size / window_size;
+        self.window.render_background_effect(
+            ctx.as_gles(),
+            area,
+            self.scale,
+            clip_to_geometry,
+            surface_anim_scale,
+            radius,
+            xray_pos.offset(window_loc),
+            &mut |elem| push(elem.into()),
+        );
+    }
+
+    fn collect_render_contents(
+        &self,
+        renderer: &mut GlesRenderer,
+        target: RenderTarget,
+    ) -> Vec<TileRenderElement<GlesRenderer>> {
+        let mut elements = Vec::new();
+        self.render_contents(
+            RenderCtx {
+                renderer,
+                target,
+                xray: None,
+            },
+            Point::from((0., 0.)),
+            XrayPos::default(),
+            &mut |elem| elements.push(elem),
+        );
+        elements
+    }
+
+    pub fn render_frame<R: NiriRenderer>(
+        &self,
+        renderer: &mut R,
+        location: Point<f64, Logical>,
+        focus_ring: bool,
+        push: &mut dyn FnMut(TileRenderElement<R>),
+    ) {
+        let scale = Scale::from(self.scale);
+        let fullscreen_progress = self.fullscreen_progress();
+        let expanded_progress = self.expanded_progress();
+        let rules = self.window.rules();
+        let has_border_shader = BorderRenderElement::has_shader(renderer);
 
         if fullscreen_progress > 0. {
             let alpha = fullscreen_progress as f32;
@@ -1281,7 +1360,7 @@ impl<W: LayoutElement> Tile<W> {
 
         if let Some(width) = self.visual_border_width() {
             self.border.render(
-                ctx.renderer,
+                renderer,
                 location + Point::from((width, width)),
                 &mut |elem| push(elem.into()),
             );
@@ -1293,25 +1372,93 @@ impl<W: LayoutElement> Tile<W> {
         // a bit weird).
         if focus_ring && expanded_progress < 1. {
             self.focus_ring
-                .render(ctx.renderer, location, &mut |elem| push(elem.into()));
+                .render(renderer, location, &mut |elem| push(elem.into()));
         }
 
         if expanded_progress < 1. {
             self.shadow
-                .render(ctx.renderer, location, &mut |elem| push(elem.into()));
+                .render(renderer, location, &mut |elem| push(elem.into()));
         }
+    }
 
-        let surface_anim_scale = animated_window_size / window_size;
-        self.window.render_background_effect(
-            ctx.as_gles(),
-            area,
-            self.scale,
-            clip_to_geometry,
-            surface_anim_scale,
-            radius,
-            xray_pos,
-            &mut |elem| push(elem.into()),
+    pub fn tab_switch_content_origin(&self) -> Point<f64, Logical> {
+        self.bob_offset() + self.window_loc()
+    }
+
+    pub fn tab_switch_mask(
+        &self,
+        location: Point<f64, Logical>,
+    ) -> (Rectangle<f64, Logical>, CornerRadius) {
+        let geometry = Rectangle::new(
+            location + self.tab_switch_content_origin(),
+            self.animated_window_size(),
         );
+        let radius = self
+            .window
+            .rules()
+            .geometry_corner_radius
+            .unwrap_or_default()
+            .scaled_by(1. - self.expanded_progress() as f32)
+            .fit_to(geometry.size.w as f32, geometry.size.h as f32);
+
+        (geometry, radius)
+    }
+
+    pub fn render_tab_switch_contents<R: NiriRenderer>(
+        &self,
+        renderer: &mut R,
+        location: Point<f64, Logical>,
+        clip_geo: Rectangle<f64, Logical>,
+        crop_geo: Rectangle<f64, Logical>,
+        clip_radius: CornerRadius,
+        target: RenderTarget,
+        push: &mut dyn FnMut(TileRenderElement<R>),
+    ) {
+        self.window().set_offscreen_data(None);
+
+        let scale = Scale::from(self.scale);
+        let Some(shader) = MaskedOffscreenRenderElement::shader(renderer).cloned() else {
+            self.render_contents(
+                RenderCtx {
+                    renderer,
+                    target,
+                    xray: None,
+                },
+                location,
+                XrayPos::default(),
+                push,
+            );
+            return;
+        };
+
+        let gles = renderer.as_gles_renderer();
+        let elements = self.collect_render_contents(gles, target);
+        match self.tab_switch_offscreen.render(gles, scale, &elements) {
+            Ok((elem, _sync, data)) => {
+                self.window().set_offscreen_data(Some(data));
+                let offset = elem.offset();
+                let elem = elem.with_offset(location + offset);
+                let elem =
+                    MaskedOffscreenRenderElement::new(elem, scale, clip_geo, shader, clip_radius);
+                let crop = crop_geo.to_physical_precise_round(scale);
+                if let Some(elem) = CropRenderElement::from_element(elem, scale, crop) {
+                    push(elem.into());
+                }
+            }
+            Err(err) => {
+                warn!("error rendering tab switch contents to offscreen: {err:?}");
+                self.render_contents(
+                    RenderCtx {
+                        renderer,
+                        target,
+                        xray: None,
+                    },
+                    location,
+                    XrayPos::default(),
+                    push,
+                );
+            }
+        }
     }
 
     pub fn render<R: NiriRenderer>(
