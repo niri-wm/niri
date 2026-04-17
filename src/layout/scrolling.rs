@@ -4209,21 +4209,29 @@ impl<W: LayoutElement> Column<W> {
         tile_idx: usize,
         progress: f64,
     ) -> Point<f64, Logical> {
+        let strip_size = |idx: usize| self.tiles[idx].animated_window_size();
         let strip_offset = |active_idx| -> Point<f64, Logical> {
             match self.options.animations.tab_switch.direction {
                 TabSwitchDirection::Horizontal => {
-                    Point::from(((tile_idx as f64 - active_idx as f64) * self.width(), 0.))
+                    let offset = if tile_idx < active_idx {
+                        -(tile_idx..active_idx)
+                            .map(|idx| strip_size(idx).w)
+                            .sum::<f64>()
+                    } else {
+                        (active_idx..tile_idx)
+                            .map(|idx| strip_size(idx).w)
+                            .sum::<f64>()
+                    };
+                    Point::from((offset, 0.))
                 }
                 TabSwitchDirection::Vertical => {
                     let offset = if tile_idx < active_idx {
-                        -self.data[tile_idx..active_idx]
-                            .iter()
-                            .map(|data| data.size.h)
+                        -(tile_idx..active_idx)
+                            .map(|idx| strip_size(idx).h)
                             .sum::<f64>()
                     } else {
-                        self.data[active_idx..tile_idx]
-                            .iter()
-                            .map(|data| data.size.h)
+                        (active_idx..tile_idx)
+                            .map(|idx| strip_size(idx).h)
                             .sum::<f64>()
                     };
                     Point::from((0., offset))
@@ -4272,7 +4280,8 @@ impl<W: LayoutElement> Column<W> {
                 let location =
                     frame_loc + offset + active_content_origin - tile.tab_switch_content_origin();
                 let content_loc = location + tile.tab_switch_content_origin();
-                (tile, location, content_loc)
+                let content_size = tile.animated_window_size();
+                (tile, location, content_loc, content_size)
             })
             .collect::<Vec<_>>();
 
@@ -4287,36 +4296,25 @@ impl<W: LayoutElement> Column<W> {
             } else {
                 clip_geo.size.h
             };
-
-        let mut crops = vec![None; strip.len()];
-        let mut sorted = strip
-            .iter()
-            .enumerate()
-            .map(|(order, (_, _, content_loc))| {
-                (
-                    order,
-                    if horizontal {
-                        content_loc.x
-                    } else {
-                        content_loc.y
-                    },
-                )
-            })
-            .collect::<Vec<_>>();
-        sorted.sort_by(|(_, lhs), (_, rhs)| lhs.total_cmp(rhs));
-
-        for sorted_idx in 0..sorted.len() {
-            let (order, start) = sorted[sorted_idx];
+        for (tile, location, content_loc, content_size) in strip {
+            let start = if horizontal {
+                content_loc.x
+            } else {
+                content_loc.y
+            };
+            let end = start
+                + if horizontal {
+                    content_size.w
+                } else {
+                    content_size.h
+            };
             let start = clip_start.max(start);
-            let end = sorted
-                .get(sorted_idx + 1)
-                .map(|(_, next)| clip_end.min(*next))
-                .unwrap_or(clip_end);
+            let end = clip_end.min(end);
             if end <= start {
                 continue;
             }
 
-            crops[order] = Some(if horizontal {
+            let crop_geo = if horizontal {
                 Rectangle::new(
                     Point::from((start, clip_geo.loc.y)),
                     Size::from((end - start, clip_geo.size.h)),
@@ -4326,12 +4324,6 @@ impl<W: LayoutElement> Column<W> {
                     Point::from((clip_geo.loc.x, start)),
                     Size::from((clip_geo.size.w, end - start)),
                 )
-            });
-        }
-
-        for ((tile, location, _), crop_geo) in zip(strip, crops) {
-            let Some(crop_geo) = crop_geo else {
-                continue;
             };
 
             tile.render_tab_switch_contents(
@@ -4531,17 +4523,18 @@ impl<W: LayoutElement> Column<W> {
     }
 
     fn update_window(&mut self, window: &W::Id) {
-        let (tile_idx, tile) = self
+        let tile_idx = self
             .tiles
-            .iter_mut()
-            .enumerate()
-            .find(|(_, tile)| tile.window().id() == window)
+            .iter()
+            .position(|tile| tile.window().id() == window)
             .unwrap();
 
         let prev_height = self.data[tile_idx].size.h;
-
-        tile.update_window();
-        self.data[tile_idx].update(tile);
+        {
+            let tile = &mut self.tiles[tile_idx];
+            tile.update_window();
+            self.data[tile_idx].update(tile);
+        }
 
         let offset = prev_height - self.data[tile_idx].size.h;
 
@@ -4554,7 +4547,7 @@ impl<W: LayoutElement> Column<W> {
         // animated vs. non-animated resizes? For example, an animated +20 resize followed by two
         // non-animated -10 resizes.
         if !is_tabbed && offset != 0. {
-            if tile.resize_animation().is_some() {
+            if self.tiles[tile_idx].resize_animation().is_some() {
                 // If there's a resize animation (that may have just started in
                 // tile.update_window()), then the apparent size change is smooth with no sudden
                 // jumps. This corresponds to adding an Y animation to tiles below.
