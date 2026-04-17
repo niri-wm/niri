@@ -263,7 +263,7 @@ impl MappedLayer {
             texture: Default::default(),
             texture_with_blocked_out_bg: Default::default(),
             blocked_out_texture: Default::default(),
-        })
+        });
     }
 
     pub fn take_unmap_snapshot(&mut self) -> Option<LayerSurfaceRenderSnapshot> {
