@@ -36,7 +36,7 @@ use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
 use crate::render_helpers::texture::{TextureBuffer, TextureRenderElement};
-use crate::render_helpers::RenderCtx;
+use crate::render_helpers::{RenderCtx, RenderTarget};
 use crate::utils::{
     baba_is_float_offset, output_size, round_logical_in_physical, to_physical_precise_round,
     with_toplevel_role,
@@ -1839,14 +1839,18 @@ impl Inner {
             let is_active = Some(id) == current_id;
             if previews_off {
                 thumbnail.render_list_item(
-                    renderer, config, mapped, geo, scale, is_active, target, push,
+                    ctx.renderer,
+                    config,
+                    mapped,
+                    geo,
+                    scale,
+                    is_active,
+                    ctx.target,
+                    push,
                 );
                 continue;
             }
 
-            thumbnail.render(
-                renderer, config, mapped, geo, scale, is_active, bob_y, target, push,
-            );
             thumbnail.render(ctx.r(), config, mapped, geo, scale, is_active, bob_y, push);
         }
     }
