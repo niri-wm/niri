@@ -4,14 +4,28 @@ use std::collections::hash_map::Entry;
 use std::collections::HashSet;
 use std::time::Duration;
 
+use crate::niri::ActiveSwipeBind;
 use calloop::timer::{TimeoutAction, Timer};
 use input::event::gesture::GestureEventCoordinates as _;
 use niri_config::touch_binds::{continuous_gesture_kind, ContinuousGestureKind};
-use crate::niri::ActiveSwipeBind;
 
 /// Default sensitivity for touchpad gestures.
 /// Higher than touchscreen (0.4) because touchpad deltas are smaller libinput units.
 const TOUCHPAD_DEFAULT_SENSITIVITY: f64 = 1.0;
+use self::move_grab::MoveGrab;
+use self::pick_color_grab::PickColorGrab;
+use self::pick_window_grab::PickWindowGrab;
+use self::resize_grab::ResizeGrab;
+use self::spatial_movement_grab::SpatialMovementGrab;
+#[cfg(feature = "dbus")]
+use crate::dbus::freedesktop_a11y::KbMonBlock;
+use crate::layout::scrolling::ScrollDirection;
+use crate::layout::{ActivateWindow, LayoutElement as _};
+use crate::niri::{CastTarget, PointerVisibility, State};
+use crate::ui::mru::{WindowMru, WindowMruUi};
+use crate::ui::screenshot_ui::ScreenshotUi;
+use crate::utils::spawning::{spawn, spawn_sh};
+use crate::utils::{center, get_monotonic_time, CastSessionId, ResizeEdge};
 use niri_config::{
     Action, Bind, Binds, Config, Key, ModKey, Modifiers, MruDirection, SwipeDirection, SwitchBinds,
     Trigger, MAX_FINGERS, MIN_FINGERS,
@@ -43,20 +57,6 @@ use smithay::utils::{Logical, Point, Rectangle, Transform, SERIAL_COUNTER};
 use smithay::wayland::keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitor;
 use smithay::wayland::pointer_constraints::{with_pointer_constraint, PointerConstraint};
 use smithay::wayland::tablet_manager::{TabletDescriptor, TabletSeatTrait};
-use self::move_grab::MoveGrab;
-use self::pick_color_grab::PickColorGrab;
-use self::pick_window_grab::PickWindowGrab;
-use self::resize_grab::ResizeGrab;
-use self::spatial_movement_grab::SpatialMovementGrab;
-#[cfg(feature = "dbus")]
-use crate::dbus::freedesktop_a11y::KbMonBlock;
-use crate::layout::scrolling::ScrollDirection;
-use crate::layout::{ActivateWindow, LayoutElement as _};
-use crate::niri::{CastTarget, PointerVisibility, State};
-use crate::ui::mru::{WindowMru, WindowMruUi};
-use crate::ui::screenshot_ui::ScreenshotUi;
-use crate::utils::spawning::{spawn, spawn_sh};
-use crate::utils::{center, get_monotonic_time, CastSessionId, ResizeEdge};
 
 pub mod backend_ext;
 pub mod move_grab;
@@ -3130,9 +3130,9 @@ impl State {
                                 allow_when_locked: false,
                                 allow_inhibiting: false,
                                 hotkey_overlay_title: None,
-                        sensitivity: None,
-                        natural_scroll: false,
-                        tag: None,
+                                sensitivity: None,
+                                natural_scroll: false,
+                                tag: None,
                             });
                             let bind_right = Some(Bind {
                                 key: Key {
@@ -3145,9 +3145,9 @@ impl State {
                                 allow_when_locked: false,
                                 allow_inhibiting: false,
                                 hotkey_overlay_title: None,
-                        sensitivity: None,
-                        natural_scroll: false,
-                        tag: None,
+                                sensitivity: None,
+                                natural_scroll: false,
+                                tag: None,
                             });
                             (bind_left, bind_right)
                         } else {
@@ -3197,9 +3197,9 @@ impl State {
                             allow_when_locked: false,
                             allow_inhibiting: false,
                             hotkey_overlay_title: None,
-                        sensitivity: None,
-                        natural_scroll: false,
-                        tag: None,
+                            sensitivity: None,
+                            natural_scroll: false,
+                            tag: None,
                         });
                         let bind_down = Some(Bind {
                             key: Key {
@@ -3212,9 +3212,9 @@ impl State {
                             allow_when_locked: false,
                             allow_inhibiting: false,
                             hotkey_overlay_title: None,
-                        sensitivity: None,
-                        natural_scroll: false,
-                        tag: None,
+                            sensitivity: None,
+                            natural_scroll: false,
+                            tag: None,
                         });
                         (bind_up, bind_down)
                     } else if should_handle_in_overview && modifiers == Modifiers::SHIFT {
@@ -3229,9 +3229,9 @@ impl State {
                             allow_when_locked: false,
                             allow_inhibiting: false,
                             hotkey_overlay_title: None,
-                        sensitivity: None,
-                        natural_scroll: false,
-                        tag: None,
+                            sensitivity: None,
+                            natural_scroll: false,
+                            tag: None,
                         });
                         let bind_down = Some(Bind {
                             key: Key {
@@ -3244,9 +3244,9 @@ impl State {
                             allow_when_locked: false,
                             allow_inhibiting: false,
                             hotkey_overlay_title: None,
-                        sensitivity: None,
-                        natural_scroll: false,
-                        tag: None,
+                            sensitivity: None,
+                            natural_scroll: false,
+                            tag: None,
                         });
                         (bind_up, bind_down)
                     } else {
@@ -3769,13 +3769,14 @@ impl State {
 
         // Check for tap-hold-drag: a hold preceded this swipe.
         if let Some(drag_fingers) = self.niri.touchpad_drag_pending.take() {
-            let trigger = Trigger::TouchpadTapHoldDrag { fingers: drag_fingers };
+            let trigger = Trigger::TouchpadTapHoldDrag {
+                fingers: drag_fingers,
+            };
             let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
             let mod_key = self.backend.mod_key(&self.niri.config.borrow());
             let config = self.niri.config.borrow();
             let modifiers = modifiers_from_state(mods);
-            let bindings =
-                make_binds_iter(&config, &mut self.niri.window_mru_ui, modifiers);
+            let bindings = make_binds_iter(&config, &mut self.niri.window_mru_ui, modifiers);
             let bind = find_configured_bind(bindings, mod_key, trigger, mods);
             drop(config);
 
@@ -3786,14 +3787,8 @@ impl State {
 
                 // Emit IPC GestureBegin if tagged.
                 if let Some(ref tag) = tag {
-                    let trigger_name =
-                        crate::input::touch_gesture::trigger_to_ipc_name(trigger);
-                    self.ipc_gesture_begin(
-                        tag.clone(),
-                        trigger_name,
-                        drag_fingers,
-                        kind.is_some(),
-                    );
+                    let trigger_name = crate::input::touch_gesture::trigger_to_ipc_name(trigger);
+                    self.ipc_gesture_begin(tag.clone(), trigger_name, drag_fingers, kind.is_some());
                 }
 
                 if let Some(kind) = kind {
@@ -3819,16 +3814,17 @@ impl State {
                                     self.niri.workspace_under_cursor(true)
                                 } else {
                                     self.niri.output_under_cursor().and_then(|output| {
-                                        let mon = self.niri.layout
-                                            .monitor_for_output(&output)?;
+                                        let mon = self.niri.layout.monitor_for_output(&output)?;
                                         Some((output, mon.active_workspace_ref()))
                                     })
                                 };
                                 if let Some((output, ws)) = output_ws {
-                                    let ws_idx = self.niri.layout
-                                        .find_workspace_by_id(ws.id()).unwrap().0;
+                                    let ws_idx =
+                                        self.niri.layout.find_workspace_by_id(ws.id()).unwrap().0;
                                     self.niri.layout.view_offset_gesture_begin(
-                                        &output, Some(ws_idx), true,
+                                        &output,
+                                        Some(ws_idx),
+                                        true,
                                     );
                                 }
                             }
@@ -3924,9 +3920,7 @@ impl State {
 
         let is_overview_open = self.niri.layout.is_overview_open();
 
-        if let Some((cx, cy, fingers)) =
-            &mut self.niri.gesture_swipe_3f_cumulative
-        {
+        if let Some((cx, cy, fingers)) = &mut self.niri.gesture_swipe_3f_cumulative {
             *cx += delta_x;
             *cy += delta_y;
 
@@ -3984,16 +3978,22 @@ impl State {
                                             self.niri.workspace_under_cursor(true)
                                         } else {
                                             self.niri.output_under_cursor().and_then(|output| {
-                                                let mon = self.niri.layout
-                                                    .monitor_for_output(&output)?;
+                                                let mon =
+                                                    self.niri.layout.monitor_for_output(&output)?;
                                                 Some((output, mon.active_workspace_ref()))
                                             })
                                         };
                                         if let Some((output, ws)) = output_ws {
-                                            let ws_idx = self.niri.layout
-                                                .find_workspace_by_id(ws.id()).unwrap().0;
+                                            let ws_idx = self
+                                                .niri
+                                                .layout
+                                                .find_workspace_by_id(ws.id())
+                                                .unwrap()
+                                                .0;
                                             self.niri.layout.view_offset_gesture_begin(
-                                                &output, Some(ws_idx), true,
+                                                &output,
+                                                Some(ws_idx),
+                                                true,
                                             );
                                         }
                                     }
@@ -4035,7 +4035,9 @@ impl State {
             match kind {
                 ContinuousGestureKind::WorkspaceSwitch => {
                     let res = self.niri.layout.workspace_switch_gesture_update(
-                        delta_y * sensitivity, timestamp, true,
+                        delta_y * sensitivity,
+                        timestamp,
+                        true,
                     );
                     if let Some(output) = res {
                         if let Some(output) = output {
@@ -4046,7 +4048,9 @@ impl State {
                 }
                 ContinuousGestureKind::ViewScroll => {
                     let res = self.niri.layout.view_offset_gesture_update(
-                        delta_x * sensitivity, timestamp, true,
+                        delta_x * sensitivity,
+                        timestamp,
+                        true,
                     );
                     if let Some(output) = res {
                         if let Some(output) = output {
@@ -4056,9 +4060,10 @@ impl State {
                     }
                 }
                 ContinuousGestureKind::OverviewToggle => {
-                    let res = self.niri.layout.overview_gesture_update(
-                        -uninverted_delta_y * sensitivity, timestamp,
-                    );
+                    let res = self
+                        .niri
+                        .layout
+                        .overview_gesture_update(-uninverted_delta_y * sensitivity, timestamp);
                     if let Some(redraw) = res {
                         if redraw {
                             self.niri.queue_redraw_all();
@@ -4080,12 +4085,8 @@ impl State {
                     };
                     let adjusted_delta = match kind {
                         ContinuousGestureKind::WorkspaceSwitch
-                        | ContinuousGestureKind::OverviewToggle => {
-                            delta_y * sensitivity
-                        }
-                        ContinuousGestureKind::ViewScroll => {
-                            delta_x * sensitivity
-                        }
+                        | ContinuousGestureKind::OverviewToggle => delta_y * sensitivity,
+                        ContinuousGestureKind::ViewScroll => delta_x * sensitivity,
                         ContinuousGestureKind::Noop => {
                             if delta_y.abs() > delta_x.abs() {
                                 delta_y * sensitivity
@@ -4276,8 +4277,7 @@ impl State {
                 let mod_key = self.backend.mod_key(&self.niri.config.borrow());
                 let config = self.niri.config.borrow();
                 let modifiers = modifiers_from_state(mods);
-                let bindings =
-                    make_binds_iter(&config, &mut self.niri.window_mru_ui, modifiers);
+                let bindings = make_binds_iter(&config, &mut self.niri.window_mru_ui, modifiers);
                 let bind = find_configured_bind(bindings, mod_key, trigger, mods);
                 drop(config);
 
@@ -4450,9 +4450,9 @@ fn should_intercept_key<'a>(
                     // inhibited.
                     allow_inhibiting: false,
                     hotkey_overlay_title: None,
-                        sensitivity: None,
-                        natural_scroll: false,
-                        tag: None,
+                    sensitivity: None,
+                    natural_scroll: false,
+                    tag: None,
                 });
             }
         }
@@ -4519,9 +4519,9 @@ fn find_bind<'a>(
             // Hardcoded binds must never be inhibited.
             allow_inhibiting: false,
             hotkey_overlay_title: None,
-                        sensitivity: None,
-                        natural_scroll: false,
-                        tag: None,
+            sensitivity: None,
+            natural_scroll: false,
+            tag: None,
         });
     }
 
@@ -4757,9 +4757,9 @@ fn hardcoded_overview_bind(raw: Keysym, mods: ModifiersState) -> Option<Bind> {
         allow_when_locked: false,
         allow_inhibiting: false,
         hotkey_overlay_title: None,
-                        sensitivity: None,
-                        natural_scroll: false,
-                        tag: None,
+        sensitivity: None,
+        natural_scroll: false,
+        tag: None,
     })
 }
 
@@ -5200,9 +5200,9 @@ mod tests {
             allow_when_locked: false,
             allow_inhibiting: true,
             hotkey_overlay_title: None,
-                        sensitivity: None,
-                        natural_scroll: false,
-                        tag: None,
+            sensitivity: None,
+            natural_scroll: false,
+            tag: None,
         }]);
 
         let comp_mod = ModKey::Super;
@@ -5389,9 +5389,9 @@ mod tests {
                 allow_when_locked: false,
                 allow_inhibiting: true,
                 hotkey_overlay_title: None,
-                        sensitivity: None,
-                        natural_scroll: false,
-                        tag: None,
+                sensitivity: None,
+                natural_scroll: false,
+                tag: None,
             },
             Bind {
                 key: Key {
@@ -5404,9 +5404,9 @@ mod tests {
                 allow_when_locked: false,
                 allow_inhibiting: true,
                 hotkey_overlay_title: None,
-                        sensitivity: None,
-                        natural_scroll: false,
-                        tag: None,
+                sensitivity: None,
+                natural_scroll: false,
+                tag: None,
             },
             Bind {
                 key: Key {
@@ -5419,9 +5419,9 @@ mod tests {
                 allow_when_locked: false,
                 allow_inhibiting: true,
                 hotkey_overlay_title: None,
-                        sensitivity: None,
-                        natural_scroll: false,
-                        tag: None,
+                sensitivity: None,
+                natural_scroll: false,
+                tag: None,
             },
             Bind {
                 key: Key {
@@ -5434,9 +5434,9 @@ mod tests {
                 allow_when_locked: false,
                 allow_inhibiting: true,
                 hotkey_overlay_title: None,
-                        sensitivity: None,
-                        natural_scroll: false,
-                        tag: None,
+                sensitivity: None,
+                natural_scroll: false,
+                tag: None,
             },
             Bind {
                 key: Key {
@@ -5449,9 +5449,9 @@ mod tests {
                 allow_when_locked: false,
                 allow_inhibiting: true,
                 hotkey_overlay_title: None,
-                        sensitivity: None,
-                        natural_scroll: false,
-                        tag: None,
+                sensitivity: None,
+                natural_scroll: false,
+                tag: None,
             },
         ]);
 

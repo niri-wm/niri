@@ -311,17 +311,15 @@ pub enum ActiveTouchBind {
 impl ActiveTouchBind {
     pub fn kind(&self) -> ContinuousGestureKind {
         match self {
-            Self::Swipe { kind, .. }
-            | Self::Pinch { kind, .. }
-            | Self::Rotate { kind, .. } => *kind,
+            Self::Swipe { kind, .. } | Self::Pinch { kind, .. } | Self::Rotate { kind, .. } => {
+                *kind
+            }
         }
     }
 
     pub fn into_tag(self) -> Option<String> {
         match self {
-            Self::Swipe { tag, .. }
-            | Self::Pinch { tag, .. }
-            | Self::Rotate { tag, .. } => tag,
+            Self::Swipe { tag, .. } | Self::Pinch { tag, .. } | Self::Rotate { tag, .. } => tag,
         }
     }
 }

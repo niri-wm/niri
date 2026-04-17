@@ -557,7 +557,6 @@ impl Touchscreen {
             .and_then(|g| g.tap_hold_trigger_delay_ms)
             .unwrap_or(200.0)
     }
-
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

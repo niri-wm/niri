@@ -1851,9 +1851,8 @@ mod tests {
     fn decode_node_touchswipe_with_modifier() {
         // `Mod+TouchSwipe ...` should strip the modifier and still parse
         // the property form correctly.
-        let cfg = parse_binds(
-            r#"Mod+TouchSwipe fingers=4 direction="left" { focus-column-right; }"#,
-        );
+        let cfg =
+            parse_binds(r#"Mod+TouchSwipe fingers=4 direction="left" { focus-column-right; }"#);
         let bind = first_bind(&cfg);
         assert_eq!(
             bind.key.trigger,
@@ -1902,9 +1901,8 @@ mod tests {
         // `fingers=3 fingers=5` silently keeps the last value. Document
         // that observed behavior — this is *not* something niri controls
         // and it applies to every bind property, not just gesture ones.
-        let cfg = parse_binds(
-            r#"TouchSwipe fingers=3 fingers=5 direction="up" { focus-workspace-up; }"#,
-        );
+        let cfg =
+            parse_binds(r#"TouchSwipe fingers=3 fingers=5 direction="up" { focus-workspace-up; }"#);
         let bind = first_bind(&cfg);
         assert_eq!(
             bind.key.trigger,
@@ -1928,8 +1926,7 @@ mod tests {
 
     #[test]
     fn decode_node_touchedge_with_zone() {
-        let cfg =
-            parse_binds(r#"TouchEdge edge="top" zone="right" { spawn "screenshot"; }"#);
+        let cfg = parse_binds(r#"TouchEdge edge="top" zone="right" { spawn "screenshot"; }"#);
         let bind = first_bind(&cfg);
         assert_eq!(
             bind.key.trigger,
@@ -1943,20 +1940,14 @@ mod tests {
     #[test]
     fn decode_node_touchedge_missing_edge_rejected() {
         let err = parse_binds_err(r#"TouchEdge { focus-column-right; }"#);
-        assert!(
-            err.contains("requires `edge="),
-            "unexpected error: {err}"
-        );
+        assert!(err.contains("requires `edge="), "unexpected error: {err}");
     }
 
     #[test]
     fn decode_node_touchedge_zone_vocab_mismatch_rejected() {
         // edge="left" doesn't take zone="left".
         let err = parse_binds_err(r#"TouchEdge edge="left" zone="left" { noop; }"#);
-        assert!(
-            err.contains("invalid zone"),
-            "unexpected error: {err}"
-        );
+        assert!(err.contains("invalid zone"), "unexpected error: {err}");
     }
 
     #[test]
@@ -1981,9 +1972,8 @@ mod tests {
 
     #[test]
     fn decode_node_touchpad_swipe_parses() {
-        let cfg = parse_binds(
-            r#"TouchpadSwipe fingers=3 direction="right" { focus-column-left; }"#,
-        );
+        let cfg =
+            parse_binds(r#"TouchpadSwipe fingers=3 direction="right" { focus-column-left; }"#);
         let bind = first_bind(&cfg);
         assert_eq!(
             bind.key.trigger,
@@ -1996,26 +1986,16 @@ mod tests {
 
     #[test]
     fn decode_node_touchpad_tap_parses() {
-        let cfg = parse_binds(
-            r#"TouchpadTapHold fingers=3 { screenshot; }"#,
-        );
+        let cfg = parse_binds(r#"TouchpadTapHold fingers=3 { screenshot; }"#);
         let bind = first_bind(&cfg);
-        assert_eq!(
-            bind.key.trigger,
-            Trigger::TouchpadTapHold { fingers: 3 }
-        );
+        assert_eq!(bind.key.trigger, Trigger::TouchpadTapHold { fingers: 3 });
     }
 
     #[test]
     fn decode_node_touchpad_tap_with_modifier() {
-        let cfg = parse_binds(
-            r#"Mod+TouchpadTapHold fingers=4 { close-window; }"#,
-        );
+        let cfg = parse_binds(r#"Mod+TouchpadTapHold fingers=4 { close-window; }"#);
         let bind = first_bind(&cfg);
-        assert_eq!(
-            bind.key.trigger,
-            Trigger::TouchpadTapHold { fingers: 4 }
-        );
+        assert_eq!(bind.key.trigger, Trigger::TouchpadTapHold { fingers: 4 });
         assert!(bind.key.modifiers.contains(Modifiers::COMPOSITOR));
     }
 
@@ -2051,9 +2031,7 @@ mod tests {
 
     #[test]
     fn decode_node_touchpad_tap_hold_drag_parses() {
-        let cfg = parse_binds(
-            r#"TouchpadTapHoldDrag fingers=3 { focus-workspace-up; }"#,
-        );
+        let cfg = parse_binds(r#"TouchpadTapHoldDrag fingers=3 { focus-workspace-up; }"#);
         let bind = first_bind(&cfg);
         assert_eq!(
             bind.key.trigger,
@@ -2063,9 +2041,7 @@ mod tests {
 
     #[test]
     fn decode_node_touchpad_tap_hold_drag_with_modifier() {
-        let cfg = parse_binds(
-            r#"Mod+TouchpadTapHoldDrag fingers=4 { move-window-down; }"#,
-        );
+        let cfg = parse_binds(r#"Mod+TouchpadTapHoldDrag fingers=4 { move-window-down; }"#);
         let bind = first_bind(&cfg);
         assert_eq!(
             bind.key.trigger,
@@ -2090,21 +2066,21 @@ mod tests {
 
     #[test]
     fn decode_node_touch_tap_hold_drag_omnidirectional() {
-        let cfg = parse_binds(
-            r#"TouchTapHoldDrag fingers=3 { screenshot; }"#,
-        );
+        let cfg = parse_binds(r#"TouchTapHoldDrag fingers=3 { screenshot; }"#);
         let bind = first_bind(&cfg);
         assert_eq!(
             bind.key.trigger,
-            Trigger::TouchTapHoldDrag { fingers: 3, direction: None }
+            Trigger::TouchTapHoldDrag {
+                fingers: 3,
+                direction: None
+            }
         );
     }
 
     #[test]
     fn decode_node_touch_tap_hold_drag_directional() {
-        let cfg = parse_binds(
-            r#"TouchTapHoldDrag fingers=3 direction="left" { spawn "wl-copy"; }"#,
-        );
+        let cfg =
+            parse_binds(r#"TouchTapHoldDrag fingers=3 direction="left" { spawn "wl-copy"; }"#);
         let bind = first_bind(&cfg);
         assert_eq!(
             bind.key.trigger,
@@ -2117,9 +2093,8 @@ mod tests {
 
     #[test]
     fn decode_node_touch_tap_hold_drag_with_modifier() {
-        let cfg = parse_binds(
-            r#"Mod+TouchTapHoldDrag fingers=4 direction="up" { toggle-overview; }"#,
-        );
+        let cfg =
+            parse_binds(r#"Mod+TouchTapHoldDrag fingers=4 direction="up" { toggle-overview; }"#);
         let bind = first_bind(&cfg);
         assert_eq!(
             bind.key.trigger,
@@ -2133,9 +2108,7 @@ mod tests {
 
     #[test]
     fn decode_node_rotation_parses() {
-        let cfg = parse_binds(
-            r#"TouchRotate fingers=4 direction="cw" { focus-column-right; }"#,
-        );
+        let cfg = parse_binds(r#"TouchRotate fingers=4 direction="cw" { focus-column-right; }"#);
         let bind = first_bind(&cfg);
         assert_eq!(
             bind.key.trigger,
@@ -2161,16 +2134,13 @@ mod tests {
 
     #[test]
     fn decode_node_fingers_out_of_range_rejected() {
-        let err = parse_binds_err(
-            r#"TouchSwipe fingers=2 direction="up" { focus-workspace-up; }"#,
-        );
+        let err = parse_binds_err(r#"TouchSwipe fingers=2 direction="up" { focus-workspace-up; }"#);
         assert!(err.contains("out of range"), "unexpected error: {err}");
     }
 
     #[test]
     fn decode_node_pinch_direction_out_parses() {
-        let cfg =
-            parse_binds(r#"TouchPinch fingers=4 direction="out" { close-overview; }"#);
+        let cfg = parse_binds(r#"TouchPinch fingers=4 direction="out" { close-overview; }"#);
         let bind = first_bind(&cfg);
         assert_eq!(
             bind.key.trigger,
@@ -2186,22 +2156,16 @@ mod tests {
         // `direction="cw"` is valid for TouchRotate but not TouchSwipe.
         // Integration-layer coverage that per-family direction validation
         // actually reaches the user through the full parse path.
-        let err = parse_binds_err(
-            r#"TouchSwipe fingers=3 direction="cw" { focus-workspace-up; }"#,
-        );
-        assert!(
-            err.contains("invalid direction"),
-            "unexpected error: {err}"
-        );
+        let err = parse_binds_err(r#"TouchSwipe fingers=3 direction="cw" { focus-workspace-up; }"#);
+        assert!(err.contains("invalid direction"), "unexpected error: {err}");
     }
 
     #[test]
     fn decode_node_touchpad_swipe_with_modifier() {
         // Modifier-stripping on the touchpad family, mirroring the
         // touchscreen `decode_node_touchswipe_with_modifier` test.
-        let cfg = parse_binds(
-            r#"Mod+TouchpadSwipe fingers=4 direction="down" { toggle-overview; }"#,
-        );
+        let cfg =
+            parse_binds(r#"Mod+TouchpadSwipe fingers=4 direction="down" { toggle-overview; }"#);
         let bind = first_bind(&cfg);
         assert_eq!(
             bind.key.trigger,

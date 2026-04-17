@@ -565,7 +565,10 @@ fn key_name(screen_reader: bool, mod_key: ModKey, key: &Key) -> String {
         Trigger::TouchpadScrollLeft => String::from("Touchpad Scroll Left"),
         Trigger::TouchpadScrollRight => String::from("Touchpad Scroll Right"),
         Trigger::TouchpadSwipe { fingers, direction } => {
-            format!("Touchpad {fingers}-Finger Swipe {}", swipe_dir_label(direction))
+            format!(
+                "Touchpad {fingers}-Finger Swipe {}",
+                swipe_dir_label(direction)
+            )
         }
         Trigger::TouchpadTapHold { fingers } => {
             format!("Touchpad {fingers}-Finger Tap-Hold")
@@ -574,19 +577,31 @@ fn key_name(screen_reader: bool, mod_key: ModKey, key: &Key) -> String {
             format!("Touchpad {fingers}-Finger Tap-Hold-Drag")
         }
         Trigger::TouchSwipe { fingers, direction } => {
-            format!("Touch {fingers}-Finger Swipe {}", swipe_dir_label(direction))
+            format!(
+                "Touch {fingers}-Finger Swipe {}",
+                swipe_dir_label(direction)
+            )
         }
         Trigger::TouchPinch { fingers, direction } => {
-            format!("Touch {fingers}-Finger Pinch {}", pinch_dir_label(direction))
+            format!(
+                "Touch {fingers}-Finger Pinch {}",
+                pinch_dir_label(direction)
+            )
         }
         Trigger::TouchRotate { fingers, direction } => {
-            format!("Touch {fingers}-Finger Rotate {}", rotate_dir_label(direction))
+            format!(
+                "Touch {fingers}-Finger Rotate {}",
+                rotate_dir_label(direction)
+            )
         }
         Trigger::TouchTap { fingers } => {
             format!("Touch {fingers}-Finger Tap")
         }
         Trigger::TouchTapHoldDrag { fingers, direction } => match direction {
-            Some(d) => format!("Touch {fingers}-Finger Tap-Hold-Drag {}", swipe_dir_label(d)),
+            Some(d) => format!(
+                "Touch {fingers}-Finger Tap-Hold-Drag {}",
+                swipe_dir_label(d)
+            ),
             None => format!("Touch {fingers}-Finger Tap-Hold-Drag"),
         },
         Trigger::TouchEdge { edge, zone } => format_touch_edge_label(edge, zone),
