@@ -4500,16 +4500,21 @@ impl Niri {
         for_backdrop: bool,
     ) -> impl Iterator<Item = (&'a MappedLayer, Rectangle<i32, Logical>)> {
         // LayerMap returns layers in reverse stacking order.
-        layer_map.layers_on(layer).rev().filter_map(move |surface| {
-            let mapped = self.mapped_layer_surfaces.get(surface)?;
+        let mut layers = layer_map
+            .layers_on(layer)
+            .filter_map(move |surface| {
+                let mapped = self.mapped_layer_surfaces.get(surface)?;
 
-            if for_backdrop != mapped.place_within_backdrop() {
-                return None;
-            }
+                if for_backdrop != mapped.place_within_backdrop() {
+                    return None;
+                }
 
-            let geo = layer_map.layer_geometry(surface)?;
-            Some((mapped, geo))
-        })
+                let geo = layer_map.layer_geometry(surface)?;
+                Some((mapped, geo))
+            })
+            .collect::<Vec<_>>();
+        layers.sort_by_key(|(mapped, _)| mapped.rules().priority);
+        layers.into_iter().rev()
     }
 
     #[allow(clippy::too_many_arguments)]
