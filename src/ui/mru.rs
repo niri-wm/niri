@@ -36,7 +36,7 @@ use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
 use crate::render_helpers::texture::{TextureBuffer, TextureRenderElement};
-use crate::render_helpers::RenderCtx;
+use crate::render_helpers::{RenderCtx, RenderTarget};
 use crate::utils::{
     baba_is_float_offset, output_size, round_logical_in_physical, to_physical_precise_round,
     with_toplevel_role,
@@ -58,6 +58,18 @@ const TITLE_GAP: f64 = 14.;
 
 /// Gap between thumbnails.
 const GAP: f64 = 16.;
+
+/// Gap between list items in compact list mode.
+const LIST_GAP: f64 = 8.;
+
+/// Height of one list item in compact list mode.
+const LIST_ITEM_HEIGHT: f64 = 32.;
+
+/// Width multiplier for compact list mode.
+const LIST_WIDTH_FACTOR: f64 = 0.6;
+
+/// Horizontal padding inside a list item.
+const LIST_ITEM_HPAD: f64 = 8.;
 
 /// How much of the next window will always peek from the side of the screen.
 const STRUT: f64 = 192.;
@@ -322,6 +334,13 @@ impl Thumbnail {
         size.to_physical_precise_round(scale).to_logical(scale)
     }
 
+    fn list_item_size(output_size: Size<f64, Logical>, scale: f64) -> Size<f64, Logical> {
+        let width = (output_size.w * LIST_WIDTH_FACTOR).clamp(280., 960.);
+        let width = round_logical_in_physical(scale, width);
+        let height = round_logical_in_physical(scale, LIST_ITEM_HEIGHT);
+        Size::new(width, height)
+    }
+
     fn title_texture(
         &self,
         renderer: &mut GlesRenderer,
@@ -564,6 +583,111 @@ impl Thumbnail {
             border.render(ctx.renderer, loc, &mut |elem| {
                 push(WindowMruUiRenderElement::FocusRing(elem))
             });
+        }
+    }
+
+    fn render_list_item<R: NiriRenderer>(
+        &self,
+        renderer: &mut R,
+        config: &niri_config::RecentWindows,
+        mapped: &Mapped,
+        geo: Rectangle<f64, Logical>,
+        scale: f64,
+        is_active: bool,
+        target: RenderTarget,
+        push: &mut dyn FnMut(WindowMruUiRenderElement<R>),
+    ) {
+        let round = move |logical: f64| round_logical_in_physical(scale, logical);
+        let hpad = round(LIST_ITEM_HPAD);
+        let radius = CornerRadius::from(config.highlight.corner_radius as f32);
+
+        let is_urgent = mapped.is_urgent();
+        let (bg_color, border_color) = match (is_urgent, is_active) {
+            (true, _) => (config.highlight.urgent_color * 0.35, config.highlight.urgent_color),
+            (false, true) => (
+                config.highlight.active_color * 0.35,
+                config.highlight.active_color,
+            ),
+            (false, false) => (
+                Color::new_unpremul(0.1, 0.1, 0.1, 0.75),
+                config.highlight.active_color * 0.35,
+            ),
+        };
+
+        let mut background = self.background.borrow_mut();
+        let mut bg_cfg = *background.config();
+        bg_cfg.off = false;
+        bg_cfg.width = 0.;
+        bg_cfg.active_color = bg_color;
+        background.update_config(bg_cfg);
+        background.update_render_elements(
+            geo.size,
+            true,
+            false,
+            false,
+            Rectangle::default(),
+            radius,
+            scale,
+            1.,
+        );
+        background.render(renderer, geo.loc, &mut |elem| {
+            push(WindowMruUiRenderElement::FocusRing(elem))
+        });
+
+        if is_active || is_urgent {
+            let mut border = self.border.borrow_mut();
+            let mut border_cfg = *border.config();
+            border_cfg.off = false;
+            border_cfg.width = round(BORDER);
+            border_cfg.active_color = border_color;
+            border.update_config(border_cfg);
+            border.set_thicken_corners(false);
+            border.update_render_elements(
+                geo.size,
+                true,
+                true,
+                false,
+                Rectangle::default(),
+                radius.expanded_by(border_cfg.width as f32),
+                scale,
+                1.,
+            );
+            border.render(renderer, geo.loc, &mut |elem| {
+                push(WindowMruUiRenderElement::FocusRing(elem))
+            });
+        }
+
+        let should_block_out = target.should_block_out(mapped.rules().block_out_from);
+
+        let title_texture = self
+            .title_texture(renderer.as_gles_renderer(), mapped, scale)
+            .filter(|_| !should_block_out);
+
+        if let Some(texture) = title_texture {
+            let mut text_size = texture.logical_size();
+            text_size.w = f64::min(text_size.w, geo.size.w - hpad * 2.);
+            if text_size.w > 0. {
+                let src = Rectangle::from_size(text_size);
+                let loc = geo.loc + Point::new(hpad, (geo.size.h - text_size.h) / 2.);
+                let loc = loc.to_physical_precise_round(scale).to_logical(scale);
+                let texture = TextureRenderElement::from_texture_buffer(
+                    texture,
+                    loc,
+                    1.,
+                    Some(src),
+                    None,
+                    Kind::Unspecified,
+                );
+
+                let renderer = renderer.as_gles_renderer();
+                if let Some(program) = GradientFadeTextureRenderElement::shader(renderer) {
+                    let elem = GradientFadeTextureRenderElement::new(texture, program);
+                    push(WindowMruUiRenderElement::GradientFadeElem(elem));
+                } else {
+                    let elem = PrimaryGpuTextureRenderElement(texture);
+                    push(WindowMruUiRenderElement::TextureElement(elem));
+                }
+            }
         }
     }
 }
@@ -814,7 +938,9 @@ impl WindowMru {
             if Some(thumbnail.id) == self.current_id {
                 // We found the current window first, so the queried one is *not* to the left.
                 return None;
-            } else if thumbnail.id == id {
+            }
+
+            if thumbnail.id == id {
                 // We found the queried window first, so the current one is to the right of it.
                 return Some(thumbnail);
             }
@@ -1296,32 +1422,78 @@ impl Inner {
             .animate_from_with_config(from, config, self.clock.clone());
     }
 
+    fn item_gap(&self, scale: f64) -> f64 {
+        let round = move |logical: f64| round_logical_in_physical(scale, logical);
+        if self.config.borrow().recent_windows.previews.off {
+            return round(LIST_GAP);
+        }
+
+        let padding = self.config.borrow().recent_windows.highlight.padding;
+        let padding = round(padding) + round(BORDER);
+        padding + round(GAP) + padding
+    }
+
+    fn list_start_y(&self, scale: f64) -> f64 {
+        let round = move |logical: f64| round_logical_in_physical(scale, logical);
+        round(f64::from(PANEL_PADDING) * 4. + 24.)
+    }
+
     fn compute_view_pos(&self) -> f64 {
         let Some(current_id) = self.wmru.current_id else {
             return 0.;
         };
 
         let output_size = output_size(&self.output);
+        let thumbnails = self.thumbnails();
+
+        if self.config.borrow().recent_windows.previews.off {
+            let scale = self.output.current_scale().fractional_scale();
+            let working_y = self.list_start_y(scale);
+            let working_height = (output_size.h - working_y - LIST_GAP * 2.).max(0.);
+
+            let mut current_geo = Rectangle::default();
+            let mut list_height = 0.;
+            for (thumbnail, geo) in thumbnails {
+                if thumbnail.id == current_id {
+                    current_geo = geo;
+                }
+                list_height = geo.loc.y + geo.size.h - working_y;
+
+                if current_geo.size.h != 0. && list_height > working_height {
+                    break;
+                }
+            }
+
+            if list_height <= working_height {
+                let center_top = (output_size.h - list_height) / 2.;
+                return working_y - center_top;
+            }
+
+            return compute_view_offset(
+                self.view_pos.target() + working_y,
+                working_height,
+                current_geo.loc.y,
+                current_geo.size.h,
+            ) + current_geo.loc.y
+                - working_y;
+        }
 
         let working_x = STRUT + GAP;
         let working_width = (output_size.w - working_x * 2.).max(0.);
 
         let mut current_geo = Rectangle::default();
         let mut strip_width = 0.;
-        for (thumbnail, geo) in self.thumbnails() {
+        for (thumbnail, geo) in thumbnails {
             if thumbnail.id == current_id {
                 current_geo = geo;
             }
             strip_width = geo.loc.x + geo.size.w;
 
-            // If we found current_geo, and the strip width is already bigger than the working
-            // width, no need to compute further.
             if current_geo.size.w != 0. && strip_width > working_width {
                 break;
             }
         }
 
-        // If the whole strip fits on screen, center it.
         if strip_width <= working_width {
             return -(output_size.w - strip_width) / 2.;
         }
@@ -1336,13 +1508,22 @@ impl Inner {
     }
 
     fn update_window(&mut self, layout: &Layout<Mapped>, id: MappedId) {
-        let output_size = output_size(&self.output);
-        let scale = self.output.current_scale().fractional_scale();
+        let previews_off = self.config.borrow().recent_windows.previews.off;
+        let mut out_size = Size::new(0., 0.);
+        let mut scale = 1.;
+        let mut prev_size = None;
+        if !previews_off {
+            let new_output_size = output_size(&self.output);
+            let new_scale = self.output.current_scale().fractional_scale();
 
-        // If the updated window is to the left of the currently selected one, we need to offset
-        // the view position to compensate for the change in size.
-        let left = self.wmru.thumbnail_left_of_current(id);
-        let prev_size = left.map(|thumbnail| thumbnail.preview_size(output_size, scale));
+            // If the updated window is to the left of the currently selected one, we need to
+            // offset the view position to compensate for the change in size.
+            let left = self.wmru.thumbnail_left_of_current(id);
+            let new_prev_size = left.map(|thumbnail| thumbnail.preview_size(new_output_size, new_scale));
+            out_size = new_output_size;
+            scale = new_scale;
+            prev_size = new_prev_size;
+        }
 
         let Some(thumbnail) = self.wmru.thumbnails.iter_mut().find(|t| t.id == id) else {
             return;
@@ -1356,7 +1537,7 @@ impl Inner {
         thumbnail.update_window(mapped);
 
         if let Some(prev) = prev_size {
-            let new = thumbnail.preview_size(output_size, scale);
+            let new = thumbnail.preview_size(out_size, scale);
             let delta = new.w - prev.w;
             self.view_pos.offset(delta);
         }
@@ -1375,27 +1556,31 @@ impl Inner {
         if !removing_last_visible {
             let output_size = output_size(&self.output);
             let scale = self.output.current_scale().fractional_scale();
-            let round = move |logical: f64| round_logical_in_physical(scale, logical);
-
-            let padding = self.config.borrow().recent_windows.highlight.padding;
-            let padding = round(padding) + round(BORDER);
-            let gap = padding + round(GAP) + padding;
-
-            let prev_size = self.wmru.thumbnails[idx].preview_size(output_size, scale);
-            let delta = prev_size.w + gap;
+            let gap = self.item_gap(scale);
+            let previews_off = self.config.borrow().recent_windows.previews.off;
+            let mut delta = {
+                let prev_size = self.wmru.thumbnails[idx].preview_size(output_size, scale);
+                prev_size.w + gap
+            };
+            if previews_off {
+                let prev_size = Thumbnail::list_item_size(output_size, scale);
+                delta = prev_size.h + gap;
+            }
 
             let config = self.config.borrow().animations.window_movement.0;
 
             // If the removed window is to the left of the currently selected one, we need to offset
             // the view position to compensate for the change.
-            if self.wmru.thumbnail_left_of_current(id).is_some() {
+            let left_of_current = self.wmru.thumbnail_left_of_current(id).is_some();
+            if left_of_current {
                 self.view_pos.offset(-delta);
 
                 // And animate movement of windows left of it.
                 for thumbnail in self.wmru.thumbnails_mut().take_while(|t| t.id != id) {
                     thumbnail.animate_move_from_with_config(-delta, config);
                 }
-            } else {
+            }
+            if !left_of_current {
                 // Otherwise, animate movement of windows right of it.
                 for thumbnail in self.wmru.thumbnails_mut().rev().take_while(|t| t.id != id) {
                     thumbnail.animate_move_from_with_config(delta, config);
@@ -1452,20 +1637,29 @@ impl Inner {
 
         let output_size = output_size(&self.output);
         let scale = self.output.current_scale().fractional_scale();
-        let round = move |logical: f64| round_logical_in_physical(scale, logical);
-
-        let padding = self.config.borrow().recent_windows.highlight.padding;
-        let padding = round(padding) + round(BORDER);
-        let gap = padding + round(GAP) + padding;
-
+        let gap = self.item_gap(scale);
+        let previews_off = self.config.borrow().recent_windows.previews.off;
         let config = self.config.borrow().animations.window_movement.0;
+        let list_item_extent = Thumbnail::list_item_size(output_size, scale).h;
+        let item_extent = |t: &Thumbnail| {
+            match previews_off {
+                true => list_item_extent,
+                false => t.preview_size(output_size, scale).w,
+            }
+        };
 
         let mut delta = 0.;
         for t in &mut self.wmru.thumbnails[idx + 1..] {
             match (matches_old(t), matches_new(t)) {
                 (true, true) => t.animate_move_from_with_config(delta, config),
-                (true, false) => delta += t.preview_size(output_size, scale).w + gap,
-                (false, true) => delta -= t.preview_size(output_size, scale).w + gap,
+                (true, false) => {
+                    let size = item_extent(t);
+                    delta += size + gap;
+                }
+                (false, true) => {
+                    let size = item_extent(t);
+                    delta -= size + gap;
+                }
                 (false, false) => (),
             }
         }
@@ -1474,8 +1668,14 @@ impl Inner {
         for t in self.wmru.thumbnails[..idx].iter_mut().rev() {
             match (matches_old(t), matches_new(t)) {
                 (true, true) => t.animate_move_from_with_config(-delta, config),
-                (true, false) => delta += t.preview_size(output_size, scale).w + gap,
-                (false, true) => delta -= t.preview_size(output_size, scale).w + gap,
+                (true, false) => {
+                    let size = item_extent(t);
+                    delta += size + gap;
+                }
+                (false, true) => {
+                    let size = item_extent(t);
+                    delta -= size + gap;
+                }
                 (false, false) => (),
             }
         }
@@ -1483,71 +1683,111 @@ impl Inner {
         self.view_pos.offset(-delta);
     }
 
-    fn thumbnails(&self) -> impl Iterator<Item = (&Thumbnail, Rectangle<f64, Logical>)> {
+    fn thumbnails(&self) -> Vec<(&Thumbnail, Rectangle<f64, Logical>)> {
         let output_size = output_size(&self.output);
         let scale = self.output.current_scale().fractional_scale();
         let round = move |logical: f64| round_logical_in_physical(scale, logical);
+        let previews_off = self.config.borrow().recent_windows.previews.off;
 
-        let padding = self.config.borrow().recent_windows.highlight.padding;
-        let padding = round(padding) + round(BORDER);
-        let gap = padding + round(GAP) + padding;
+        let gap = self.item_gap(scale);
+        if previews_off {
+            let start_y = self.list_start_y(scale);
+            let mut y = start_y;
+            return self.wmru
+                .thumbnails()
+                .map(move |thumbnail| {
+                    let size = Thumbnail::list_item_size(output_size, scale);
+                    let x = round((output_size.w - size.w) / 2.);
+                    let loc = Point::new(x, y);
+                    y += size.h + gap;
+                    (thumbnail, Rectangle::new(loc, size))
+                })
+                .collect()
+        }
 
         let mut x = 0.;
-        self.wmru.thumbnails().map(move |thumbnail| {
-            let size = thumbnail.preview_size(output_size, scale);
-            let y = round((output_size.h - size.h) / 2.);
-
-            let loc = Point::new(x, y);
-            x += size.w + gap;
-
-            let geo = Rectangle::new(loc, size);
-            (thumbnail, geo)
-        })
+        self.wmru
+            .thumbnails()
+            .map(move |thumbnail| {
+                let size = thumbnail.preview_size(output_size, scale);
+                let y = round((output_size.h - size.h) / 2.);
+                let loc = Point::new(x, y);
+                x += size.w + gap;
+                (thumbnail, Rectangle::new(loc, size))
+            })
+            .collect()
     }
 
-    fn thumbnails_in_view_static(
-        &self,
-    ) -> impl Iterator<Item = (&Thumbnail, Rectangle<f64, Logical>)> {
+    fn thumbnails_in_view_static(&self) -> Vec<(&Thumbnail, Rectangle<f64, Logical>)> {
         let output_size = output_size(&self.output);
         let scale = self.output.current_scale().fractional_scale();
         let round = |logical: f64| round_logical_in_physical(scale, logical);
 
         let view_pos = round(self.view_pos.current());
 
+        if self.config.borrow().recent_windows.previews.off {
+            let top = view_pos;
+            let bottom = view_pos + output_size.h;
+            return self.thumbnails()
+                .into_iter()
+                .skip_while(move |(_, geo)| geo.loc.y + geo.size.h <= top)
+                .map_while(move |(thumbnail, mut geo)| {
+                    if bottom <= geo.loc.y {
+                        return None;
+                    }
+                    geo.loc.y -= view_pos;
+                    Some((thumbnail, geo))
+                })
+                .collect()
+        }
+
         let leftmost = view_pos;
         let rightmost = view_pos + output_size.w;
-
         self.thumbnails()
+            .into_iter()
             .skip_while(move |(_, geo)| geo.loc.x + geo.size.w <= leftmost)
             .map_while(move |(thumbnail, mut geo)| {
                 if rightmost <= geo.loc.x {
                     return None;
                 }
-
                 geo.loc.x -= view_pos;
                 Some((thumbnail, geo))
             })
+            .collect()
     }
 
-    fn thumbnails_in_view_render(
-        &self,
-    ) -> impl Iterator<Item = (&Thumbnail, Rectangle<f64, Logical>)> {
+    fn thumbnails_in_view_render(&self) -> Vec<(&Thumbnail, Rectangle<f64, Logical>)> {
         let output_size = output_size(&self.output);
         let scale = self.output.current_scale().fractional_scale();
         let round = move |logical: f64| round_logical_in_physical(scale, logical);
 
         let view_pos = round(self.view_pos.current());
 
-        self.thumbnails().filter_map(move |(thumbnail, mut geo)| {
-            geo.loc.x -= view_pos;
-            geo.loc.x += round(thumbnail.render_offset());
+        if self.config.borrow().recent_windows.previews.off {
+            return self.thumbnails()
+                .into_iter()
+                .filter_map(move |(thumbnail, mut geo)| {
+                    geo.loc.y -= view_pos;
+                    geo.loc.y += round(thumbnail.render_offset());
+                    if geo.loc.y + geo.size.h < 0. || output_size.h < geo.loc.y {
+                        return None;
+                    }
+                    Some((thumbnail, geo))
+                })
+                .collect()
+        }
 
-            if geo.loc.x + geo.size.w < 0. || output_size.w < geo.loc.x {
-                return None;
-            }
-
-            Some((thumbnail, geo))
-        })
+        self.thumbnails()
+            .into_iter()
+            .filter_map(move |(thumbnail, mut geo)| {
+                geo.loc.x -= view_pos;
+                geo.loc.x += round(thumbnail.render_offset());
+                if geo.loc.x + geo.size.w < 0. || output_size.w < geo.loc.x {
+                    return None;
+                }
+                Some((thumbnail, geo))
+            })
+            .collect()
     }
 
     fn render<R: NiriRenderer>(
@@ -1585,8 +1825,9 @@ impl Inner {
         let bob_y = round_logical_in_physical(scale, bob_y);
 
         let config = self.config.borrow();
+        let previews_off = config.recent_windows.previews.off;
 
-        for (thumbnail, geo) in self.thumbnails_in_view_render() {
+        for (thumbnail, geo) in self.thumbnails_in_view_render().into_iter() {
             let id = thumbnail.id;
             let Some((_, mapped)) = niri.layout.windows().find(|(_, m)| m.id() == id) else {
                 error!("window in the MRU must be present in the layout");
@@ -1596,6 +1837,20 @@ impl Inner {
             let config = &config.recent_windows;
 
             let is_active = Some(id) == current_id;
+            if previews_off {
+                thumbnail.render_list_item(
+                    ctx.renderer,
+                    config,
+                    mapped,
+                    geo,
+                    scale,
+                    is_active,
+                    ctx.target,
+                    push,
+                );
+                continue;
+            }
+
             thumbnail.render(ctx.r(), config, mapped, geo, scale, is_active, bob_y, push);
         }
     }
@@ -1607,19 +1862,23 @@ impl Inner {
         let padding = round(padding) + round(BORDER);
         let padding = Point::new(padding, padding);
         let title_gap = round(TITLE_GAP);
+        let previews_off = self.config.borrow().recent_windows.previews.off;
 
-        for (thumbnail, mut geo) in self.thumbnails_in_view_static() {
+        for (thumbnail, mut geo) in self.thumbnails_in_view_static().into_iter() {
             geo.loc -= padding;
             geo.size += padding.to_size().upscale(2.);
 
-            // It doesn't really matter all that much if the title texture is stale here, and it
-            // would be annoying to thread the rendering into this function. The texture might be
-            // one frame stale or so.
-            if let Some(texture) = thumbnail.title_texture.borrow().get_stale() {
-                let title_size = texture.logical_size();
-                geo.size.h += title_gap + title_size.h;
-                // Subtract half the padding so it looks more balanced visually.
-                geo.size.h -= round(padding.y / 2.);
+            // Only preview mode adds title text below the preview card.
+            if !previews_off {
+                // It doesn't really matter all that much if the title texture is stale here, and
+                // it would be annoying to thread the rendering into this function. The texture
+                // might be one frame stale or so.
+                if let Some(texture) = thumbnail.title_texture.borrow().get_stale() {
+                    let title_size = texture.logical_size();
+                    geo.size.h += title_gap + title_size.h;
+                    // Subtract half the padding so it looks more balanced visually.
+                    geo.size.h -= round(padding.y / 2.);
+                }
             }
 
             if geo.contains(pos) {

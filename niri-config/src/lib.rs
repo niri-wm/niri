@@ -2293,6 +2293,7 @@ mod tests {
                     corner_radius: 0.0,
                 },
                 previews: MruPreviews {
+                    off: false,
                     max_height: 960.0,
                     max_scale: 0.5,
                 },
