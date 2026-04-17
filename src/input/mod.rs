@@ -726,8 +726,11 @@ impl State {
                     });
                 }
             }
-            Action::ConfirmScreenshot { write_to_disk } => {
-                self.confirm_screenshot(write_to_disk);
+            Action::ConfirmScreenshot {
+                write_to_disk,
+                copy_path,
+            } => {
+                self.confirm_screenshot(write_to_disk, copy_path);
             }
             Action::CancelScreenshot => {
                 if !self.niri.screenshot_ui.is_open() {
@@ -3040,7 +3043,7 @@ impl State {
                 }
             } else if let Some(capture) = self.niri.screenshot_ui.pointer_up(None) {
                 if capture {
-                    self.confirm_screenshot(true);
+                    self.confirm_screenshot(true, false);
                 } else {
                     self.niri.queue_redraw_all();
                 }
@@ -3668,7 +3671,7 @@ impl State {
             TabletToolTipState::Up => {
                 if let Some(capture) = self.niri.screenshot_ui.pointer_up(None) {
                     if capture {
-                        self.confirm_screenshot(true);
+                        self.confirm_screenshot(true, false);
                     } else {
                         self.niri.queue_redraw_all();
                     }
@@ -4198,7 +4201,7 @@ impl State {
 
         if let Some(capture) = self.niri.screenshot_ui.pointer_up(Some(slot)) {
             if capture {
-                self.confirm_screenshot(true);
+                self.confirm_screenshot(true, false);
             } else {
                 self.niri.queue_redraw_all();
             }
