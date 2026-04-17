@@ -44,9 +44,7 @@ use niri_config::binds::{
     PinchDirection, RotateDirection, SwipeDirection, Trigger, MAX_FINGERS, MIN_FINGERS,
 };
 use niri_config::input::{EdgeZone, ScreenEdge};
-use niri_config::touch_binds::{
-    continuous_gesture_kind, ContinuousGestureKind, TouchGestureType,
-};
+use niri_config::touch_binds::{continuous_gesture_kind, ContinuousGestureKind, TouchGestureType};
 use niri_config::Action;
 use niri_ipc::GestureDelta;
 
@@ -62,10 +60,22 @@ const TOUCH_DEFAULT_SENSITIVITY: f64 = 0.4;
 /// natural scroll, tag, and action.
 fn extract_bind_info(
     bind: niri_config::Bind,
-) -> (Option<ContinuousGestureKind>, f64, bool, Option<String>, Action) {
+) -> (
+    Option<ContinuousGestureKind>,
+    f64,
+    bool,
+    Option<String>,
+    Action,
+) {
     let kind = continuous_gesture_kind(&bind.action);
     let sensitivity = bind.sensitivity.unwrap_or(TOUCH_DEFAULT_SENSITIVITY);
-    (kind, sensitivity, bind.natural_scroll, bind.tag, bind.action)
+    (
+        kind,
+        sensitivity,
+        bind.natural_scroll,
+        bind.tag,
+        bind.action,
+    )
 }
 
 impl State {
@@ -172,26 +182,23 @@ impl State {
                     // downstream lookups and the IPC name emitted on
                     // gesture-begin stay consistent with the bind that fired.
                     let mod_key = self.backend.mod_key(&config);
-                    let mods = self.niri.seat.get_keyboard().unwrap()
-                        .modifier_state();
+                    let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
                     let zoned_trigger = Trigger::TouchEdge {
                         edge,
                         zone: Some(zone),
                     };
                     let parent_trigger = Trigger::TouchEdge { edge, zone: None };
-                    let zoned_hit = find_configured_bind(
-                        config.binds.0.iter(),
-                        mod_key,
-                        zoned_trigger,
-                        mods,
-                    ).is_some();
+                    let zoned_hit =
+                        find_configured_bind(config.binds.0.iter(), mod_key, zoned_trigger, mods)
+                            .is_some();
                     let parent_hit = !zoned_hit
                         && find_configured_bind(
                             config.binds.0.iter(),
                             mod_key,
                             parent_trigger,
                             mods,
-                        ).is_some();
+                        )
+                        .is_some();
                     if zoned_hit || parent_hit {
                         self.niri.touch_edge_swipe = Some(TouchEdgeSwipeState::Pending {
                             edge,
@@ -392,8 +399,7 @@ impl State {
             // gate. Emit explicit wl_touch.up for each forwarded slot AND
             // wl_touch.cancel so the client can't hold them as phantoms.
             if !self.niri.touch_forwarded_slots.is_empty() {
-                let forwarded: Vec<_> =
-                    self.niri.touch_forwarded_slots.drain().collect();
+                let forwarded: Vec<_> = self.niri.touch_forwarded_slots.drain().collect();
                 tracing::debug!(
                     target: "niri::input::touch_gesture",
                     "TOUCH-DBG CANCEL-CLIENT reason=gesture-start trigger_slot={:?} points={} forwarded_slots={:?}",
@@ -430,7 +436,9 @@ impl State {
         // Handle edge swipe state on finger lift.
         if let Some(ref state) = self.niri.touch_edge_swipe {
             match state {
-                TouchEdgeSwipeState::Pending { slot: edge_slot, .. } => {
+                TouchEdgeSwipeState::Pending {
+                    slot: edge_slot, ..
+                } => {
                     if Some(slot) == *edge_slot {
                         // Finger lifted before threshold — normal tap, clear state.
                         self.niri.touch_edge_swipe = None;
@@ -561,14 +569,8 @@ impl State {
                         let bind_info = {
                             let config = self.niri.config.borrow();
                             let mod_key = self.backend.mod_key(&config);
-                            let mods = self.niri.seat.get_keyboard().unwrap()
-                                .modifier_state();
-                            find_configured_bind(
-                                config.binds.0.iter(),
-                                mod_key,
-                                trigger,
-                                mods,
-                            )
+                            let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
+                            find_configured_bind(config.binds.0.iter(), mod_key, trigger, mods)
                         };
                         let bind_matched = bind_info.is_some();
                         tracing::debug!(
@@ -580,9 +582,7 @@ impl State {
                         );
                         if let Some(bind) = bind_info {
                             let tag = bind.tag.clone();
-                            let trigger_name = format!(
-                                "TouchTap fingers={}", tap.peak_fingers,
-                            );
+                            let trigger_name = format!("TouchTap fingers={}", tap.peak_fingers,);
                             // Emit GestureBegin + immediate GestureEnd for IPC.
                             self.ipc_gesture_begin(
                                 tag.clone().unwrap_or_default(),
@@ -593,10 +593,7 @@ impl State {
                             if !matches!(bind.action, Action::Noop) {
                                 self.do_action(bind.action, false);
                             }
-                            self.ipc_gesture_end(
-                                tag.unwrap_or_default(),
-                                true,
-                            );
+                            self.ipc_gesture_end(tag.unwrap_or_default(), true);
                         }
                     } else {
                         tracing::debug!(
@@ -702,9 +699,9 @@ impl State {
                         cumulative.0 += delta_x;
                         cumulative.1 += delta_y;
                     }
-                    TouchEdgeSwipeState::Active { slot: edge_slot, .. }
-                        if Some(slot) == *edge_slot =>
-                    {
+                    TouchEdgeSwipeState::Active {
+                        slot: edge_slot, ..
+                    } if Some(slot) == *edge_slot => {
                         // Track edge slot's delta separately so the feed
                         // doesn't include other fingers' motion.
                         self.niri.touch_frame_edge_delta.0 += delta_x;
@@ -790,8 +787,7 @@ impl State {
 
                             let config = self.niri.config.borrow();
                             let mod_key = self.backend.mod_key(&config);
-                            let mods = self.niri.seat.get_keyboard().unwrap()
-                                .modifier_state();
+                            let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
                             // Try directional first.
                             let directional = Trigger::TouchTapHoldDrag {
                                 fingers: peak_fingers,
@@ -811,12 +807,8 @@ impl State {
                                     fingers: peak_fingers,
                                     direction: None,
                                 };
-                                find_configured_bind(
-                                    config.binds.0.iter(),
-                                    mod_key,
-                                    omni,
-                                    mods,
-                                ).map(|b| (extract_bind_info(b), omni))
+                                find_configured_bind(config.binds.0.iter(), mod_key, omni, mods)
+                                    .map(|b| (extract_bind_info(b), omni))
                             }
                         } else {
                             None
@@ -862,10 +854,7 @@ impl State {
                                 if !matches!(action, Action::Noop) {
                                     self.do_action(action, false);
                                 }
-                                self.ipc_gesture_end(
-                                    tag.clone().unwrap_or_default(),
-                                    true,
-                                );
+                                self.ipc_gesture_end(tag.clone().unwrap_or_default(), true);
                             }
                         } else {
                             tracing::debug!(
@@ -955,9 +944,9 @@ impl State {
                     smithay::utils::Point::from((0., 0.))
                 } else {
                     let n = points.len() as f64;
-                    let (sx, sy) = points.values().fold((0., 0.), |(ax, ay), p| {
-                        (ax + p.x, ay + p.y)
-                    });
+                    let (sx, sy) = points
+                        .values()
+                        .fold((0., 0.), |(ax, ay), p| (ax + p.x, ay + p.y));
                     smithay::utils::Point::from((sx / n, sy / n))
                 }
             };
@@ -967,7 +956,12 @@ impl State {
             if let Some(ref state) = self.niri.touch_edge_swipe {
                 match state {
                     TouchEdgeSwipeState::Pending {
-                        edge, zone, zoned, cumulative, slot: edge_slot, ..
+                        edge,
+                        zone,
+                        zoned,
+                        cumulative,
+                        slot: edge_slot,
+                        ..
                     } => {
                         let edge = *edge;
                         let zone = *zone;
@@ -987,18 +981,14 @@ impl State {
                             let bind_info = {
                                 let config = self.niri.config.borrow();
                                 let mod_key = self.backend.mod_key(&config);
-                                let mods = self.niri.seat.get_keyboard().unwrap()
-                                    .modifier_state();
-                                find_configured_bind(
-                                    config.binds.0.iter(),
-                                    mod_key,
-                                    trigger,
-                                    mods,
-                                )
+                                let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
+                                find_configured_bind(config.binds.0.iter(), mod_key, trigger, mods)
                             };
                             let bind_info = bind_info.map(extract_bind_info);
 
-                            if let Some((kind, sensitivity, natural_scroll, tag, action)) = bind_info {
+                            if let Some((kind, sensitivity, natural_scroll, tag, action)) =
+                                bind_info
+                            {
                                 if let Some(ref tag) = tag {
                                     let trigger_name = trigger_to_ipc_name(trigger);
                                     self.ipc_gesture_begin(
@@ -1041,7 +1031,11 @@ impl State {
                         }
                     }
                     TouchEdgeSwipeState::Active {
-                        kind, sensitivity, natural_scroll, tag, ..
+                        kind,
+                        sensitivity,
+                        natural_scroll,
+                        tag,
+                        ..
                     } => {
                         let kind = *kind;
                         let sensitivity = *sensitivity;
@@ -1052,7 +1046,13 @@ impl State {
                         let (edge_dx, edge_dy) = self.niri.touch_frame_edge_delta;
                         self.niri.touch_frame_edge_delta = (0., 0.);
                         feed_continuous_gesture(
-                            self, kind, edge_dx, edge_dy, sensitivity, natural, timestamp,
+                            self,
+                            kind,
+                            edge_dx,
+                            edge_dy,
+                            sensitivity,
+                            natural,
+                            timestamp,
                             tag.as_deref(),
                         );
                     }
@@ -1078,7 +1078,13 @@ impl State {
                             let natural = *natural_scroll;
                             let tag = tag.clone();
                             feed_continuous_gesture(
-                                self, kind, delta_x, delta_y, sensitivity, natural, timestamp,
+                                self,
+                                kind,
+                                delta_x,
+                                delta_y,
+                                sensitivity,
+                                natural,
+                                timestamp,
                                 tag.as_deref(),
                             );
                         }
@@ -1109,13 +1115,7 @@ impl State {
                     self.niri.touch_gesture_previous_angles = new_angles;
                     self.niri.touch_gesture_cumulative_rotation += frame_rotation;
 
-                    let (
-                        swipe_trigger,
-                        pinch_trigger,
-                        pinch_dom,
-                        rotation_trigger,
-                        rotation_dom,
-                    ) = {
+                    let (swipe_trigger, pinch_trigger, pinch_dom, rotation_trigger, rotation_dom) = {
                         let config = self.niri.config.borrow();
                         (
                             config
@@ -1130,15 +1130,15 @@ impl State {
                     };
 
                     let current_spread = calculate_spread(&self.niri.touch_gesture_points);
-                    let initial_spread =
-                        self.niri.touch_gesture_initial_spread.unwrap_or(current_spread);
+                    let initial_spread = self
+                        .niri
+                        .touch_gesture_initial_spread
+                        .unwrap_or(current_spread);
                     let spread_change = (current_spread - initial_spread).abs();
 
-                    let cumulative_rotation =
-                        self.niri.touch_gesture_cumulative_rotation;
+                    let cumulative_rotation = self.niri.touch_gesture_cumulative_rotation;
                     let rotation_arc = cumulative_rotation.abs() * current_spread;
-                    let rotation_arc_trigger_distance =
-                        rotation_trigger * current_spread;
+                    let rotation_arc_trigger_distance = rotation_trigger * current_spread;
 
                     let is_rotate = finger_count >= 3
                         && rotation_arc >= rotation_arc_trigger_distance
@@ -1152,8 +1152,7 @@ impl State {
                     let closest = {
                         let swipe_frac = swipe_distance / swipe_trigger.max(1e-9);
                         let pinch_frac = spread_change / pinch_trigger.max(1e-9);
-                        let rotate_frac =
-                            cumulative_rotation.abs() / rotation_trigger.max(1e-9);
+                        let rotate_frac = cumulative_rotation.abs() / rotation_trigger.max(1e-9);
                         if rotate_frac >= swipe_frac && rotate_frac >= pinch_frac {
                             "rotate"
                         } else if pinch_frac >= swipe_frac {
@@ -1196,8 +1195,8 @@ impl State {
                         timestamp.as_millis() as u32,
                     );
 
-                    let rotation_candidate = finger_count >= 3
-                        && rotation_arc >= rotation_arc_trigger_distance;
+                    let rotation_candidate =
+                        finger_count >= 3 && rotation_arc >= rotation_arc_trigger_distance;
 
                     if is_rotate
                         || (swipe_distance >= swipe_trigger && !rotation_candidate)
@@ -1216,9 +1215,8 @@ impl State {
                         }
 
                         if let Some(mapped) = self.niri.window_under(pos) {
-                            let app_id = with_toplevel_role(mapped.toplevel(), |role| {
-                                role.app_id.clone()
-                            });
+                            let app_id =
+                                with_toplevel_role(mapped.toplevel(), |role| role.app_id.clone());
                             tracing::debug!(
                                 "touch: captured {}-finger gesture over app-id={:?}",
                                 finger_count,
@@ -1258,45 +1256,30 @@ impl State {
 
                         let bind_info = {
                             let config = self.niri.config.borrow();
-                            let trigger = touch_gesture_to_trigger(
-                                gesture_type,
-                                finger_count as u8,
-                            );
+                            let trigger =
+                                touch_gesture_to_trigger(gesture_type, finger_count as u8);
                             let mod_key = self.backend.mod_key(&config);
-                            let mods = self.niri.seat.get_keyboard().unwrap()
-                                .modifier_state();
+                            let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
                             trigger.and_then(|t| {
-                                find_configured_bind(
-                                    config.binds.0.iter(),
-                                    mod_key,
-                                    t,
-                                    mods,
-                                )
+                                find_configured_bind(config.binds.0.iter(), mod_key, t, mods)
                             })
                         };
                         let bind_info = bind_info.map(extract_bind_info);
 
                         {
-                            let trigger_name = touch_gesture_to_trigger(
-                                gesture_type,
-                                finger_count as u8,
-                            )
-                            .map(trigger_to_ipc_name)
-                            .unwrap_or_else(|| "Unknown".to_string());
-                            let (bind_matched, kind_str, tag_str) =
-                                match bind_info.as_ref() {
-                                    Some((kind, _, _, tag, _)) => (
-                                        "yes",
-                                        kind.map(|k| format!("{:?}", k))
-                                            .unwrap_or_else(|| "discrete".to_string()),
-                                        tag.clone().unwrap_or_else(|| "-".to_string()),
-                                    ),
-                                    None => (
-                                        "no",
-                                        "-".to_string(),
-                                        "-".to_string(),
-                                    ),
-                                };
+                            let trigger_name =
+                                touch_gesture_to_trigger(gesture_type, finger_count as u8)
+                                    .map(trigger_to_ipc_name)
+                                    .unwrap_or_else(|| "Unknown".to_string());
+                            let (bind_matched, kind_str, tag_str) = match bind_info.as_ref() {
+                                Some((kind, _, _, tag, _)) => (
+                                    "yes",
+                                    kind.map(|k| format!("{:?}", k))
+                                        .unwrap_or_else(|| "discrete".to_string()),
+                                    tag.clone().unwrap_or_else(|| "-".to_string()),
+                                ),
+                                None => ("no", "-".to_string(), "-".to_string()),
+                            };
                             tracing::debug!(
                                 target: "niri::input::touch_gesture",
                                 "TOUCH-DBG LOCK fingers={} type={:?} \
@@ -1355,10 +1338,7 @@ impl State {
                                 if !matches!(action, Action::Noop) {
                                     self.do_action(action, false);
                                 }
-                                self.ipc_gesture_end(
-                                    tag.clone().unwrap_or_default(),
-                                    true,
-                                );
+                                self.ipc_gesture_end(tag.clone().unwrap_or_default(), true);
                             }
                         }
                     }
@@ -1585,12 +1565,7 @@ fn begin_continuous_gesture(
                 };
 
                 if let Some((output, ws)) = output_ws {
-                    let ws_idx = state
-                        .niri
-                        .layout
-                        .find_workspace_by_id(ws.id())
-                        .unwrap()
-                        .0;
+                    let ws_idx = state.niri.layout.find_workspace_by_id(ws.id()).unwrap().0;
                     state
                         .niri
                         .layout
@@ -1678,7 +1653,11 @@ fn feed_continuous_gesture(
                 // Use the dominant axis
                 let dy = if natural { -delta_y } else { delta_y };
                 let dx = if natural { -delta_x } else { delta_x };
-                if dy.abs() > dx.abs() { dy * sensitivity } else { dx * sensitivity }
+                if dy.abs() > dx.abs() {
+                    dy * sensitivity
+                } else {
+                    dx * sensitivity
+                }
             }
         };
 
@@ -1690,7 +1669,8 @@ fn feed_continuous_gesture(
             *ipc_progress += adjusted_delta / progress_unit;
             *ipc_progress
         } else if let Some(TouchEdgeSwipeState::Active {
-            ref mut ipc_progress, ..
+            ref mut ipc_progress,
+            ..
         }) = state.niri.touch_edge_swipe
         {
             *ipc_progress += adjusted_delta / progress_unit;
@@ -1767,11 +1747,7 @@ fn feed_continuous_pinch(
         ContinuousGestureKind::OverviewToggle => {
             // Pinch-in (negative incremental) → positive anim delta → overview opens.
             let delta = -incremental * pinch_sensitivity;
-            if let Some(redraw) = state
-                .niri
-                .layout
-                .overview_gesture_update(delta, timestamp)
-            {
+            if let Some(redraw) = state.niri.layout.overview_gesture_update(delta, timestamp) {
                 if redraw {
                     state.niri.queue_redraw_all();
                 }
@@ -1981,17 +1957,20 @@ fn calculate_spread(
     }
 
     let n = points.len() as f64;
-    let (sum_x, sum_y) = points.values().fold((0.0, 0.0), |(sx, sy), p| {
-        (sx + p.x, sy + p.y)
-    });
+    let (sum_x, sum_y) = points
+        .values()
+        .fold((0.0, 0.0), |(sx, sy), p| (sx + p.x, sy + p.y));
     let centroid_x = sum_x / n;
     let centroid_y = sum_y / n;
 
-    let total_dist: f64 = points.values().map(|p| {
-        let dx = p.x - centroid_x;
-        let dy = p.y - centroid_y;
-        (dx * dx + dy * dy).sqrt()
-    }).sum();
+    let total_dist: f64 = points
+        .values()
+        .map(|p| {
+            let dx = p.x - centroid_x;
+            let dy = p.y - centroid_y;
+            (dx * dx + dy * dy).sqrt()
+        })
+        .sum();
 
     total_dist / n
 }
@@ -2017,9 +1996,9 @@ fn calculate_per_slot_angles(
         return out;
     }
     let n = slotted.len() as f64;
-    let (sx, sy) = slotted.iter().fold((0.0, 0.0), |(ax, ay), (_, p)| {
-        (ax + p.x, ay + p.y)
-    });
+    let (sx, sy) = slotted
+        .iter()
+        .fold((0.0, 0.0), |(ax, ay), (_, p)| (ax + p.x, ay + p.y));
     let cx = sx / n;
     let cy = sy / n;
     for (slot, pt) in slotted {
@@ -2189,7 +2168,6 @@ fn rotate_dir_name(d: RotateDirection) -> &'static str {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
@@ -2235,12 +2213,24 @@ mod tests {
         let r: f64 = 10.0;
         let pts = points_from(&[
             (0, r, 0.0),
-            (1, r * 120.0_f64.to_radians().cos(), -r * 120.0_f64.to_radians().sin()),
-            (2, r * (-120.0_f64).to_radians().cos(), -r * (-120.0_f64).to_radians().sin()),
+            (
+                1,
+                r * 120.0_f64.to_radians().cos(),
+                -r * 120.0_f64.to_radians().sin(),
+            ),
+            (
+                2,
+                r * (-120.0_f64).to_radians().cos(),
+                -r * (-120.0_f64).to_radians().sin(),
+            ),
         ]);
         let angles = calculate_per_slot_angles(&pts);
         let tolerance = 1e-9;
-        assert!((angles[&slot(0)] - 0.0).abs() < tolerance, "slot 0 = {}", angles[&slot(0)]);
+        assert!(
+            (angles[&slot(0)] - 0.0).abs() < tolerance,
+            "slot 0 = {}",
+            angles[&slot(0)]
+        );
         assert!(
             (angles[&slot(1)] - 120.0_f64.to_radians()).abs() < tolerance,
             "slot 1 = {}",
@@ -2269,7 +2259,11 @@ mod tests {
 
     #[test]
     fn rotation_static_frames_is_zero() {
-        let pts = ring_points(&[(0, 0.0), (1, 120.0_f64.to_radians()), (2, -120.0_f64.to_radians())]);
+        let pts = ring_points(&[
+            (0, 0.0),
+            (1, 120.0_f64.to_radians()),
+            (2, -120.0_f64.to_radians()),
+        ]);
         let prev = calculate_per_slot_angles(&pts);
         let (delta, _) = calculate_rotation_delta(&pts, &prev);
         assert_eq!(delta, 0.0);
@@ -2303,15 +2297,9 @@ mod tests {
         //   slot 1: -10°  → +10°            (normal)
         // Raw subtraction for slot 0 is (-170 - 170) = -340°, unwrap → +20°.
         // Average across fingers = +20° = +0.349 rad.
-        let prev_points = ring_points(&[
-            (0, 170.0_f64.to_radians()),
-            (1, -10.0_f64.to_radians()),
-        ]);
+        let prev_points = ring_points(&[(0, 170.0_f64.to_radians()), (1, -10.0_f64.to_radians())]);
         let prev = calculate_per_slot_angles(&prev_points);
-        let curr = ring_points(&[
-            (0, -170.0_f64.to_radians()),
-            (1, 10.0_f64.to_radians()),
-        ]);
+        let curr = ring_points(&[(0, -170.0_f64.to_radians()), (1, 10.0_f64.to_radians())]);
         let (delta, _) = calculate_rotation_delta(&curr, &prev);
         let expected = 20.0_f64.to_radians();
         assert!(

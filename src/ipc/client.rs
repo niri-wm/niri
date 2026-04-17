@@ -512,7 +512,11 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
                         finger_count,
                         is_continuous,
                     } => {
-                        let kind = if is_continuous { "continuous" } else { "discrete" };
+                        let kind = if is_continuous {
+                            "continuous"
+                        } else {
+                            "discrete"
+                        };
                         println!(
                             "Gesture begin: tag={tag} trigger={trigger} \
                              fingers={finger_count} ({kind})"

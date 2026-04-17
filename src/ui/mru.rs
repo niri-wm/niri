@@ -1840,9 +1840,9 @@ fn make_preset_opened_binds() -> Vec<Bind> {
             allow_when_locked: false,
             allow_inhibiting: false,
             hotkey_overlay_title: None,
-                        sensitivity: None,
-                        natural_scroll: false,
-                        tag: None,
+            sensitivity: None,
+            natural_scroll: false,
+            tag: None,
         })
     };
 
