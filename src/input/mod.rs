@@ -41,6 +41,8 @@ use smithay::wayland::tablet_manager::{TabletDescriptor, TabletSeatTrait};
 use touch_overview_grab::TouchOverviewGrab;
 
 use self::move_grab::MoveGrab;
+use self::pick_color_grab::PickColorGrab;
+use self::pick_window_grab::PickWindowGrab;
 use self::resize_grab::ResizeGrab;
 use self::spatial_movement_grab::SpatialMovementGrab;
 #[cfg(feature = "dbus")]
@@ -488,19 +490,22 @@ impl State {
                     }
                 }
 
-                if pressed
-                    && raw == Some(Keysym::Escape)
-                    && (this.niri.pick_window.is_some() || this.niri.pick_color.is_some())
-                {
-                    // We window picking state so the pick window grab must be active.
-                    // Unsetting it cancels window picking.
-                    this.niri
-                        .seat
-                        .get_pointer()
-                        .unwrap()
-                        .unset_grab(this, serial, time);
-                    this.niri.suppressed_keys.insert(key_code);
-                    return FilterResult::Intercept(None);
+                if pressed && raw == Some(Keysym::Escape) {
+                    // Cancel certain grabs on Escape.
+                    let pointer = this.niri.seat.get_pointer().unwrap();
+                    if pointer
+                        .with_grab(|_, grab| Self::grab_can_be_cancelled_with_esc(grab))
+                        .unwrap_or(false)
+                    {
+                        pointer.unset_grab(this, serial, time);
+
+                        // If this was a DnD, we won't get DndGrabHandler::dropped(), so we need to
+                        // call the cleanup.
+                        this.niri.on_maybe_dnd_ended();
+
+                        this.niri.suppressed_keys.insert(key_code);
+                        return FilterResult::Intercept(None);
+                    }
                 }
 
                 if let Some(Keysym::space) = raw {
@@ -3260,8 +3265,8 @@ impl State {
         let horizontal_amount = event.amount(Axis::Horizontal);
         let vertical_amount = event.amount(Axis::Vertical);
 
-        // Handle touchpad scroll bindings.
-        if source == AxisSource::Finger {
+        // Handle touchpad and continuous scroll bindings.
+        if source == AxisSource::Finger || source == AxisSource::Continuous {
             let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
             let modifiers = modifiers_from_state(mods);
 
@@ -4296,6 +4301,12 @@ impl State {
             // Null-source DnD: weston-dnd --self-only
             || grab.is::<DnDGrab<Self, WlSurface, WlSurface>>()
     }
+
+    fn grab_can_be_cancelled_with_esc(grab: &(dyn PointerGrab<State> + 'static)) -> bool {
+        let grab = grab.as_any();
+
+        grab.is::<PickWindowGrab>() || grab.is::<PickColorGrab>() || Self::is_dnd_grab(grab)
+    }
 }
 
 /// Check whether the key should be intercepted and mark intercepted
@@ -4678,7 +4689,11 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
         let _ = device.config_tap_set_enabled(c.tap);
         let _ = device.config_dwt_set_enabled(c.dwt);
         let _ = device.config_dwtp_set_enabled(c.dwtp);
-        let _ = device.config_tap_set_drag_lock_enabled(c.drag_lock);
+        let _ = device.config_tap_set_drag_lock_enabled(if c.drag_lock {
+            input::DragLockState::EnabledTimeout
+        } else {
+            input::DragLockState::Disabled
+        });
         let _ = device.config_scroll_set_natural_scroll_enabled(c.natural_scroll);
         let _ = device.config_accel_set_speed(c.accel_speed.0);
         let _ = device.config_left_handed_set(c.left_handed);

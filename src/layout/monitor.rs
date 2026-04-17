@@ -24,7 +24,8 @@ use crate::niri_render_elements;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::shadow::ShadowRenderElement;
 use crate::render_helpers::solid_color::SolidColorRenderElement;
-use crate::render_helpers::RenderTarget;
+use crate::render_helpers::xray::XrayPos;
+use crate::render_helpers::RenderCtx;
 use crate::rubber_band::RubberBand;
 use crate::utils::transaction::Transaction;
 use crate::utils::{
@@ -1669,8 +1670,7 @@ impl<W: LayoutElement> Monitor<W> {
 
     pub fn render_workspaces<R: NiriRenderer>(
         &self,
-        renderer: &mut R,
-        target: RenderTarget,
+        mut ctx: RenderCtx<R>,
         focus_ring: bool,
         push: &mut dyn FnMut(MonitorRenderElement<R>),
     ) {
@@ -1734,16 +1734,18 @@ impl<W: LayoutElement> Monitor<W> {
                 }};
             }
 
-            ws.render_floating(renderer, target, focus_ring, push!());
+            let xray_pos = XrayPos::new(geo.loc, zoom);
+
+            ws.render_floating(ctx.r(), xray_pos, focus_ring, push!());
 
             if let Some(loc) = insert_hint_render_loc {
                 if loc.workspace == InsertWorkspace::Existing(ws.id()) {
                     self.insert_hint_element
-                        .render(renderer, loc.location, push!());
+                        .render(ctx.renderer, loc.location, push!());
                 }
             }
 
-            ws.render_scrolling(renderer, target, focus_ring, push!());
+            ws.render_scrolling(ctx.r(), xray_pos, focus_ring, push!());
         }
     }
 
