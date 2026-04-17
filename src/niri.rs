@@ -5749,7 +5749,11 @@ impl Niri {
                     target,
                     xray: None,
                 };
-                let elements = self.render_to_vec(ctx, &output, false);
+                let mut elements = Vec::new();
+                self.render(ctx, &output, false, &mut |elem| {
+                    // Use un-zoomed elements to sample at the correct position in the screenshot.
+                    elements.push(elem)
+                });
                 let elements = elements.iter().rev();
 
                 let res = render_to_texture(
