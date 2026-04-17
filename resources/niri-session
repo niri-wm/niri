@@ -32,8 +32,21 @@ if hash systemctl >/dev/null 2>&1; then
     # Reset failed state of all user units.
     systemctl --user reset-failed
 
-    # Import the login manager environment.
-    systemctl --user import-environment
+    # Import only session-identifying variables from the login manager.
+    # A blanket `import-environment` would copy our entire PAM env into the
+    # systemd user manager, overwriting variables already set there from
+    # /etc/environment.d/ and ~/.config/environment.d/ (notably PATH) with
+    # the display manager's values — unless the user happens to redefine
+    # the same variables in their login shell config.
+    systemctl --user import-environment \
+        DESKTOP_SESSION \
+        XDG_CURRENT_DESKTOP \
+        XDG_SEAT \
+        XDG_SESSION_CLASS \
+        XDG_SESSION_DESKTOP \
+        XDG_SESSION_ID \
+        XDG_SESSION_TYPE \
+        XDG_VTNR
 
     # DBus activation environment is independent from systemd. While most of
     # dbus-activated services are already using `SystemdService` directive, some
