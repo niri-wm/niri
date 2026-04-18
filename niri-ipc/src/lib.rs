@@ -1565,6 +1565,41 @@ pub enum CastTarget {
     },
 }
 
+/// Physical delta carried by a `GestureProgress` event, typed per gesture kind.
+///
+/// Consumers that only drive animations can ignore this and use `progress`.
+/// Consumers that need raw physical units (pixels, radians) match on the
+/// variant. A future gesture kind shows up as a new variant, so exhaustively
+/// matching consumers fail to compile until they handle it.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(tag = "kind")]
+pub enum GestureDelta {
+    /// Swipe / edge swipe. Raw pixel delta on both axes since the previous
+    /// event. Sensitivity and natural-scroll adjustments are **not** applied
+    /// here — this is the raw finger motion.
+    Swipe {
+        /// Horizontal delta in pixels since the previous event.
+        dx: f64,
+        /// Vertical delta in pixels since the previous event.
+        dy: f64,
+    },
+    /// Pinch. Change in cluster spread (pixels) since the previous event.
+    /// Positive = fingers spreading, negative = fingers coming together.
+    Pinch {
+        /// Change in finger spread (average distance from the cluster
+        /// centroid) in pixels since the previous event.
+        d_spread: f64,
+    },
+    /// Rotation. Change in cluster angle (radians) since the previous event.
+    /// Positive = counter-clockwise (mathematical convention).
+    Rotate {
+        /// Change in cluster angle in radians since the previous event.
+        /// Positive = counter-clockwise.
+        d_radians: f64,
+    },
+}
+
 /// A compositor event.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
@@ -1704,6 +1739,156 @@ pub enum Event {
     CastStopped {
         /// Stream ID of the stopped screencast.
         stream_id: u64,
+    },
+    /// A gesture began (finger(s) crossed recognition threshold and matched a bind).
+    ///
+    /// Multi-finger touchscreen gesture commits emit this event for **every**
+    /// matched bind, tagged or not — untagged commits arrive with an empty
+    /// `tag` so debug tools (e.g. niri-gesture-inspector) can observe every
+    /// classification result. External consumers should filter on the tags
+    /// they care about and ignore empty-tag events.
+    ///
+    /// Edge swipes and touchpad gestures still only emit this event for
+    /// tagged binds.
+    GestureBegin {
+        /// User-defined tag from the bind config. Empty string for
+        /// untagged multi-finger touchscreen commits.
+        tag: String,
+        /// The trigger name, echoed back in the same property form used in
+        /// `binds {}`. Examples:
+        /// - `TouchSwipe fingers=3 direction="up"`
+        /// - `TouchpadSwipe fingers=4 direction="left"`
+        /// - `TouchPinch fingers=3 direction="in"`
+        /// - `TouchRotate fingers=4 direction="cw"`
+        /// - `TouchEdge edge="left"` (parent, no zone)
+        /// - `TouchEdge edge="top" zone="right"` (zoned)
+        /// Edge triggers emit the zoned form when a zoned bind fired and
+        /// the parent form when an unzoned bind fired.
+        trigger: String,
+        /// Number of fingers in the gesture.
+        finger_count: u8,
+        /// Whether this is a continuous (animation-driving) gesture.
+        /// Continuous gestures will emit `GestureProgress` events.
+        is_continuous: bool,
+    },
+    /// A continuous gesture made progress (fires many times per second).
+    ///
+    /// Only emitted for continuous gestures on binds with a `tag` property.
+    GestureProgress {
+        /// User-defined tag from the bind config.
+        tag: String,
+        /// Signed, normalized progress. **Non-monotonic** — consumers must
+        /// handle the value going up and down as the user moves their fingers.
+        ///
+        /// Starts at `0.0` at the moment the gesture is recognized, then
+        /// changes as the gesture continues. The gesture's "natural" direction
+        /// (e.g. swipe-up, pinch-out, rotate-ccw) produces positive progress;
+        /// reversing direction produces negative values. Can exceed `±1.0` on
+        /// overshoot, and can return to `0.0` (or keep going negative) if the
+        /// user reverses a gesture mid-motion. Consumers that want a
+        /// commit/cancel decision should apply their own threshold to the
+        /// final value on `GestureEnd`, not assume progress is clamped or
+        /// monotonic.
+        ///
+        /// Normalization depends on the gesture kind (see `delta`):
+        /// - Swipes and edge gestures accumulate adjusted (sensitivity-scaled,
+        ///   natural-scroll-adjusted) finger delta on the dominant axis,
+        ///   normalized by `swipe-progress-distance` (default 200 px for
+        ///   touchscreen, 40 libinput units for touchpad — same knob name,
+        ///   separate config block).
+        /// - Pinches use `(current_spread - start_spread) / pinch-progress-distance`
+        ///   (default 100 px) — an absolute measurement (not accumulated),
+        ///   so pinching in then out returns progress cleanly to near 0
+        ///   with no float drift. Positive = pinch-out, negative = pinch-in.
+        /// - Rotations use `cumulative_rotation / rotation-progress-angle`
+        ///   (default 90°). Positive = counter-clockwise.
+        progress: f64,
+        /// Physical delta since the previous event, typed per gesture kind.
+        /// Consumers that only drive animations can read `progress` and
+        /// ignore this; consumers that need raw physical units (pixels,
+        /// radians) match on the variant.
+        delta: GestureDelta,
+        /// Timestamp in milliseconds.
+        timestamp_ms: u32,
+    },
+    /// A gesture ended (all fingers lifted).
+    ///
+    /// Emitted for both continuous and discrete tagged gestures.
+    GestureEnd {
+        /// User-defined tag from the bind config.
+        tag: String,
+        /// Whether the gesture completed (snapped to target) or cancelled (snapped back).
+        /// For discrete gestures, this is always `true`.
+        completed: bool,
+    },
+    /// Per-frame recognition telemetry for the touchscreen gesture recognizer.
+    ///
+    /// Emitted at touch frame rate (~120 Hz) during the recognition phase of
+    /// a multi-finger gesture, before any LOCK decision is made. Intended
+    /// for debug / playground tooling (see `niri-gesture-inspector`) that
+    /// wants to visualize threshold crossings, dominance races, and the
+    /// `is_rotate` / `is_pinch` / `closest` classification state in real time.
+    ///
+    /// **Debug builds only.** The emission site in the compositor is gated
+    /// with `#[cfg(debug_assertions)]`, so release builds never produce this
+    /// event and pay zero cost. The enum variant itself is always defined
+    /// so that both debug and release clients compile against the same
+    /// `niri-ipc` crate — release clients simply never receive this variant
+    /// over the wire. Consumers must still handle the variant (even if just
+    /// with an empty match arm) because the type is always in scope.
+    ///
+    /// **Wire format stability.** This is a debug channel. Fields may be
+    /// added, renamed, or removed between niri versions without a deprecation
+    /// cycle. Consumers should tolerate missing/extra fields and treat the
+    /// event as best-effort telemetry, not a load-bearing API.
+    RecognitionFrame {
+        /// Current number of fingers on the touchscreen.
+        finger_count: u8,
+        /// Accumulated linear displacement of the finger cluster centroid
+        /// since recognition began, in screen pixels.
+        swipe_distance: f64,
+        /// Resolved swipe trigger distance in pixels (from
+        /// `swipe-trigger-distance`, scaled by finger count via
+        /// `swipe-multi-finger-scale`).
+        swipe_trigger_distance: f64,
+        /// `current_spread - initial_spread` — **signed** change in average
+        /// finger-to-centroid distance since recognition began, in pixels.
+        /// Negative = pinch-in, positive = pinch-out. The classifier
+        /// compares against `|spread_change|`; this raw signed value is
+        /// useful for visual direction display.
+        spread_change: f64,
+        /// Pinch trigger distance in pixels, from `pinch-trigger-distance`
+        /// (compared against `|spread_change|`).
+        pinch_trigger_distance: f64,
+        /// **Signed** cumulative rotation since recognition began, in
+        /// radians. Negative = counter-clockwise, positive = clockwise.
+        /// The classifier compares against `|rotation_rad|`.
+        rotation_rad: f64,
+        /// Rotation trigger angle in radians (from `rotation-trigger-angle`,
+        /// which the config accepts in degrees).
+        rotation_trigger_angle_rad: f64,
+        /// Rotation arc length (`|rotation_rad| × current_spread`) in pixels —
+        /// the tangential distance each finger would travel if the cluster
+        /// were rotating purely about its centroid. Commensurable with
+        /// `swipe_distance` and `spread_change` for dominance comparisons.
+        rotation_arc: f64,
+        /// Rotation arc trigger distance
+        /// (`rotation_trigger_angle_rad × current_spread`) in pixels — the
+        /// arc-length equivalent of the rotation angle trigger at the
+        /// current finger spread.
+        rotation_arc_trigger_distance: f64,
+        /// Whether all `is_rotate` commit gates are satisfied on this frame
+        /// (arc ≥ arc trigger AND dominates swipe/spread by
+        /// `rotation-dominance-ratio`).
+        is_rotate: bool,
+        /// Whether all `is_pinch` commit gates are satisfied on this frame.
+        is_pinch: bool,
+        /// Leading classification candidate by % of its own trigger on this
+        /// frame. One of `"swipe"`, `"pinch"`, `"rotate"`.
+        closest: String,
+        /// Timestamp in milliseconds, matching the per-frame timestamp used
+        /// elsewhere in the recognizer.
+        timestamp_ms: u32,
     },
 }
 

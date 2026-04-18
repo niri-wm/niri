@@ -5,7 +5,11 @@ use std::fmt::Write as _;
 use std::iter::zip;
 use std::rc::Rc;
 
-use niri_config::{Action, Bind, Config, Key, ModKey, Modifiers, Trigger};
+use niri_config::input::{EdgeZone, ScreenEdge};
+use niri_config::{
+    Action, Bind, Config, Key, ModKey, Modifiers, PinchDirection, RotateDirection, SwipeDirection,
+    Trigger,
+};
 use pangocairo::cairo::{self, ImageSurface};
 use pangocairo::pango::{AttrColor, AttrInt, AttrList, AttrString, FontDescription, Weight};
 use smithay::backend::renderer::element::Kind;
@@ -560,10 +564,100 @@ fn key_name(screen_reader: bool, mod_key: ModKey, key: &Key) -> String {
         Trigger::TouchpadScrollUp => String::from("Touchpad Scroll Up"),
         Trigger::TouchpadScrollLeft => String::from("Touchpad Scroll Left"),
         Trigger::TouchpadScrollRight => String::from("Touchpad Scroll Right"),
+        Trigger::TouchpadSwipe { fingers, direction } => {
+            format!(
+                "Touchpad {fingers}-Finger Swipe {}",
+                swipe_dir_label(direction)
+            )
+        }
+        Trigger::TouchpadTapHold { fingers } => {
+            format!("Touchpad {fingers}-Finger Tap-Hold")
+        }
+        Trigger::TouchpadTapHoldDrag { fingers } => {
+            format!("Touchpad {fingers}-Finger Tap-Hold-Drag")
+        }
+        Trigger::TouchpadPinch { fingers, direction } => {
+            format!(
+                "Touchpad {fingers}-Finger Pinch {}",
+                pinch_dir_label(direction)
+            )
+        }
+        Trigger::TouchSwipe { fingers, direction } => {
+            format!(
+                "Touch {fingers}-Finger Swipe {}",
+                swipe_dir_label(direction)
+            )
+        }
+        Trigger::TouchPinch { fingers, direction } => {
+            format!(
+                "Touch {fingers}-Finger Pinch {}",
+                pinch_dir_label(direction)
+            )
+        }
+        Trigger::TouchRotate { fingers, direction } => {
+            format!(
+                "Touch {fingers}-Finger Rotate {}",
+                rotate_dir_label(direction)
+            )
+        }
+        Trigger::TouchTap { fingers } => {
+            format!("Touch {fingers}-Finger Tap")
+        }
+        Trigger::TouchTapHoldDrag { fingers, direction } => match direction {
+            Some(d) => format!(
+                "Touch {fingers}-Finger Tap-Hold-Drag {}",
+                swipe_dir_label(d)
+            ),
+            None => format!("Touch {fingers}-Finger Tap-Hold-Drag"),
+        },
+        Trigger::TouchEdge { edge, zone } => format_touch_edge_label(edge, zone),
     };
     name.push_str(&pretty);
 
     name
+}
+
+fn swipe_dir_label(d: SwipeDirection) -> &'static str {
+    match d {
+        SwipeDirection::Up => "Up",
+        SwipeDirection::Down => "Down",
+        SwipeDirection::Left => "Left",
+        SwipeDirection::Right => "Right",
+    }
+}
+
+fn pinch_dir_label(d: PinchDirection) -> &'static str {
+    match d {
+        PinchDirection::In => "In",
+        PinchDirection::Out => "Out",
+    }
+}
+
+fn rotate_dir_label(d: RotateDirection) -> &'static str {
+    match d {
+        RotateDirection::Cw => "CW",
+        RotateDirection::Ccw => "CCW",
+    }
+}
+
+fn format_touch_edge_label(edge: ScreenEdge, zone: Option<EdgeZone>) -> String {
+    // Use niri_config's shared edge/zone naming, capitalized for display.
+    let edge_name = capitalize_first(edge.as_kdl_name());
+    match zone {
+        None => format!("Touch Edge {edge_name}"),
+        Some(z) => {
+            let zone_name = capitalize_first(niri_config::input::zone_kdl_name(edge, z));
+            format!("Touch Edge {edge_name}-{zone_name}")
+        }
+    }
+}
+
+fn capitalize_first(s: &str) -> String {
+    let mut chars = s.chars();
+    match chars.next() {
+        None => String::new(),
+        Some(c) => c.to_ascii_uppercase().to_string() + chars.as_str(),
+    }
 }
 
 fn prettify_keysym_name(screen_reader: bool, name: &str) -> String {

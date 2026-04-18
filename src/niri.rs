@@ -14,12 +14,14 @@ use _server_decoration::server::org_kde_kwin_server_decoration_manager::Mode as 
 use anyhow::{bail, ensure, Context};
 use calloop::futures::Scheduler;
 use niri_config::debug::PreviewRender;
+use niri_config::input::{EdgeZone, ScreenEdge};
+use niri_config::touch_binds::ContinuousGestureKind;
 use niri_config::{
     Config, FloatOrInt, Key, Modifiers, OutputName, TrackLayout, WarpMouseToFocusMode,
     WorkspaceReference, Xkb,
 };
 use smithay::backend::allocator::Fourcc;
-use smithay::backend::input::Keycode;
+use smithay::backend::input::{Keycode, TouchSlot};
 use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::element::memory::MemoryRenderBufferRenderElement;
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
@@ -189,6 +191,137 @@ const CLEAR_COLOR_LOCKED: [f32; 4] = [0.3, 0.1, 0.1, 1.];
 // second, so with the worst timing the maximum interval between two frame callbacks for a surface
 // should be ~1.995 seconds.
 const FRAME_CALLBACK_THROTTLE: Option<Duration> = Some(Duration::from_millis(995));
+
+/// Tap candidate tracking for N-finger tap detection.
+///
+/// Runs in parallel with swipe/pinch/rotate recognition. Killed when any
+/// finger drifts beyond `tap-wobble-threshold` or when the recognizer locks.
+/// If still alive when all fingers lift within `tap-timeout-ms`, fires the
+/// `TouchTap { fingers }` trigger.
+pub struct TapCandidate {
+    pub start_time: Instant,
+    /// Highest finger count observed during this tap sequence.
+    pub peak_fingers: u8,
+    /// Initial landing position for each finger slot, used to compute
+    /// per-finger displacement for the wobble check.
+    pub initial_positions: HashMap<Option<TouchSlot>, Point<f64, Logical>>,
+    /// Set to false when wobble threshold exceeded or recognizer locks.
+    /// Single-shot: once dead, cannot resurrect.
+    pub alive: bool,
+}
+
+/// State for touchscreen edge swipe gesture detection.
+pub enum TouchEdgeSwipeState {
+    /// First touch landed in edge zone; waiting for motion to confirm swipe.
+    Pending {
+        edge: ScreenEdge,
+        /// Which third of the edge the touch landed in. Carried through so
+        /// the gesture stays locked to whichever bind (zoned or unzoned) hit
+        /// at touch-down, even if later lookups need to re-derive the trigger.
+        zone: EdgeZone,
+        /// True if the zoned trigger was the one that matched. False if the
+        /// unzoned parent trigger was the one that matched (fallback path).
+        /// Determines which Trigger name to emit for IPC events.
+        zoned: bool,
+        cumulative: (f64, f64),
+        slot: Option<TouchSlot>,
+    },
+    /// Swipe recognized; gesture animation is active (continuous gesture).
+    Active {
+        edge: ScreenEdge,
+        zone: EdgeZone,
+        zoned: bool,
+        kind: ContinuousGestureKind,
+        sensitivity: f64,
+        natural_scroll: bool,
+        slot: Option<TouchSlot>,
+        /// IPC tag for gesture events.
+        tag: Option<String>,
+        /// Accumulated progress for IPC (0.0 = start, 1.0 = one unit).
+        ipc_progress: f64,
+    },
+}
+
+/// State for an active touchpad swipe gesture (after bind matched).
+pub struct ActiveSwipeBind {
+    pub kind: ContinuousGestureKind,
+    pub sensitivity: f64,
+    /// IPC tag for gesture events.
+    pub tag: Option<String>,
+    /// Accumulated progress for IPC (0.0 = start, 1.0 = one unit).
+    pub ipc_progress: f64,
+}
+
+/// State for an active multi-finger touch gesture (after bind matched).
+///
+/// Split by gesture shape: swipes carry linear dx/dy state; pinches carry
+/// finger-spread state. Using an enum here (rather than a shared struct
+/// with a flag) means illegal states like "swipe with a pinch start spread"
+/// are unrepresentable, mirroring the `TouchEdgeSwipeState::Pending/Active`
+/// pattern used elsewhere in this file.
+pub enum ActiveTouchBind {
+    Swipe {
+        kind: ContinuousGestureKind,
+        sensitivity: f64,
+        natural_scroll: bool,
+        /// IPC tag for gesture events.
+        tag: Option<String>,
+        /// Accumulated progress for IPC. Signed and unbounded — grows as the
+        /// finger moves in the recognized direction, goes negative on reversal,
+        /// and can exceed `±1.0` on overshoot.
+        ipc_progress: f64,
+    },
+    Pinch {
+        kind: ContinuousGestureKind,
+        /// IPC tag for gesture events.
+        tag: Option<String>,
+        /// Absolute IPC progress — recomputed each feed frame as
+        /// `(current - start) / pinch_progress_distance`. Signed: positive
+        /// for pinch-out, negative for pinch-in. Non-monotonic: reversing
+        /// the pinch reverses the progress.
+        ipc_progress: f64,
+        /// Finger spread at the moment the pinch was recognized.
+        start_spread: f64,
+        /// Finger spread at the previous motion event. Subtracted from the
+        /// current spread to produce the incremental delta that drives the
+        /// animation.
+        last_spread: f64,
+    },
+    Rotate {
+        kind: ContinuousGestureKind,
+        /// IPC tag for gesture events.
+        tag: Option<String>,
+        /// IPC progress — recomputed each feed frame as
+        /// `(cumulative_rotation - start_rotation) / rotation_progress_distance`.
+        /// Signed: positive for CCW, negative for CW. Non-monotonic.
+        ipc_progress: f64,
+        /// Value of `touch_gesture_cumulative_rotation` at the moment the
+        /// gesture was recognized. Subtracted from the running cumulative to
+        /// produce the rotation *since recognition*, so the recognition-phase
+        /// rotation doesn't bleed into the animated progress. Unlike pinch's
+        /// absolute `current - start` comparison, the underlying metric must
+        /// accumulate per-frame because `atan2` wraps at ±π and because
+        /// fingers lifting mid-gesture shift the centroid. See
+        /// `calculate_rotation_delta` for the per-frame math.
+        start_rotation: f64,
+    },
+}
+
+impl ActiveTouchBind {
+    pub fn kind(&self) -> ContinuousGestureKind {
+        match self {
+            Self::Swipe { kind, .. } | Self::Pinch { kind, .. } | Self::Rotate { kind, .. } => {
+                *kind
+            }
+        }
+    }
+
+    pub fn into_tag(self) -> Option<String> {
+        match self {
+            Self::Swipe { tag, .. } | Self::Pinch { tag, .. } | Self::Rotate { tag, .. } => tag,
+        }
+    }
+}
 
 pub struct Niri {
     pub config: Rc<RefCell<Config>>,
@@ -368,7 +501,87 @@ pub struct Niri {
     pub notified_activity_this_iteration: bool,
     pub pointer_inside_hot_corner: bool,
     pub tablet_cursor_location: Option<Point<f64, Logical>>,
-    pub gesture_swipe_3f_cumulative: Option<(f64, f64)>,
+    /// Cumulative (x, y) delta, plus which gestures are valid for this finger count,
+    /// Cumulative touchpad swipe delta and finger count during recognition phase.
+    /// (cx, cy, fingers)
+    pub gesture_swipe_3f_cumulative: Option<(f64, f64, usize)>,
+    /// Active touchpad swipe gesture from binds.
+    pub gesture_swipe_bind: Option<ActiveSwipeBind>,
+    /// Active touch points for multi-finger gesture detection.
+    pub touch_gesture_points: HashMap<Option<TouchSlot>, Point<f64, Logical>>,
+    /// Cumulative delta when tracking a 2+ finger touch gesture.
+    /// Set to Some((0, 0)) when gesture recognition starts (2nd finger down),
+    /// cleared when gesture completes or is cancelled.
+    pub touch_gesture_cumulative: Option<(f64, f64)>,
+    /// Edge swipe gesture state for touchscreen.
+    pub touch_edge_swipe: Option<TouchEdgeSwipeState>,
+    /// Set when a multi-finger touch gesture is locked (direction decided).
+    /// While locked, touch events are suppressed from clients until all
+    /// fingers are lifted. Any slots that were already forwarded before
+    /// the recognizer decided this was a gesture have their matching up
+    /// plus a `wl_touch.cancel` emitted at the transition — see
+    /// `touch_forwarded_slots`.
+    pub touch_gesture_locked: bool,
+    /// Slots whose `wl_touch.down` was forwarded to a client but whose
+    /// matching `wl_touch.up` has not yet been sent. When the recognizer
+    /// decides the sequence is a compositor gesture, we must emit `up`
+    /// (and `cancel`) for these slots so the client doesn't hold them as
+    /// phantom "still-down" touches — the gesture gate will otherwise
+    /// suppress their real up events.
+    pub touch_forwarded_slots: HashSet<TouchSlot>,
+    /// Set when the first finger of a touch gesture landed on a window with
+    /// `touchscreen-gesture-passthrough true`. While set, the gesture
+    /// recognizer is bypassed and touch events forward directly to the
+    /// client for the lifetime of the gesture (until all fingers lift).
+    /// Cleared in `on_touch_up` when `touch_gesture_points` becomes empty.
+    pub touchscreen_gesture_passthrough: bool,
+    /// Active touch gesture bind (after direction decided and bind matched).
+    pub touch_active_bind: Option<ActiveTouchBind>,
+    /// Initial spread (average distance from centroid) when 3+ fingers first tracked.
+    pub touch_gesture_initial_spread: Option<f64>,
+    /// Cumulative signed rotation in radians accumulated across motion frames
+    /// while 3+ fingers are tracked. Positive = CCW. Reset to 0 when the
+    /// gesture starts or ends.
+    pub touch_gesture_cumulative_rotation: f64,
+    /// Per-slot angle (radians, from the cluster centroid) recorded at the
+    /// previous motion frame. Used to compute the per-finger delta each frame
+    /// before averaging. Rebuilt on finger-lift to avoid centroid-shift
+    /// artifacts (see `rebase_rotation_basis`).
+    pub touch_gesture_previous_angles: HashMap<TouchSlot, f64>,
+    /// Tap candidate for N-finger tap detection. Runs in parallel with
+    /// swipe/pinch/rotate recognition. Killed by wobble or recognizer lock.
+    pub touch_tap_candidate: Option<TapCandidate>,
+    /// Touchpad hold-gesture tracking for N-finger tap-hold detection.
+    /// Stores finger_count from GestureHoldBegin. Cleared on
+    /// GestureHoldEnd; if !cancelled and fingers >= 3, fires a
+    /// TouchpadTapHold bind before clearing.
+    pub touchpad_hold_begin: Option<u8>,
+    /// Set when a hold ends with `cancelled=true` (fingers started moving)
+    /// and we had a 3+ finger hold candidate. The next `SwipeBegin` checks
+    /// this to decide whether to enter tap-hold-drag mode instead of
+    /// normal swipe. Stores finger count.
+    pub touchpad_drag_pending: Option<u8>,
+    /// Active touchpad pinch gesture's finger count (from
+    /// `GesturePinchBegin.fingers`). `None` outside a pinch. Used to
+    /// build the `TouchpadPinch{fingers, direction}` trigger when the
+    /// scale threshold is crossed.
+    pub touchpad_pinch_fingers: Option<u8>,
+    /// Whether the current pinch gesture has already fired a discrete
+    /// `TouchpadPinch` bind. Prevents double-firing within one gesture.
+    /// Reset on pinch begin/end.
+    pub touchpad_pinch_latched: bool,
+    /// Accumulated per-frame deltas for touchscreen gesture batching.
+    /// Summed across all per-slot TouchMotion events within a single
+    /// hardware scan frame; consumed and zeroed in on_touch_frame.
+    pub touch_frame_delta: (f64, f64),
+    /// Per-frame delta for the edge swipe slot only. Edge swipes are
+    /// single-finger, so their feed must not include other fingers' motion.
+    pub touch_frame_edge_delta: (f64, f64),
+    /// Set true when any touch_gesture_points position changed in this
+    /// frame. Cleared after on_touch_frame processes the batch.
+    pub touch_frame_dirty: bool,
+    /// Timestamp of the last TouchMotion in this frame (for gesture feeds).
+    pub touch_frame_timestamp: Duration,
     pub overview_scroll_swipe_gesture: ScrollSwipeGesture,
     pub vertical_wheel_tracker: ScrollTracker,
     pub horizontal_wheel_tracker: ScrollTracker,
@@ -1496,7 +1709,7 @@ impl State {
             || config.input.trackball != old_config.input.trackball
             || config.input.trackpoint != old_config.input.trackpoint
             || config.input.tablet != old_config.input.tablet
-            || config.input.touch != old_config.input.touch
+            || config.input.touchscreen != old_config.input.touchscreen
         {
             libinput_config_changed = true;
         }
@@ -2572,6 +2785,26 @@ impl Niri {
             pointer_inside_hot_corner: false,
             tablet_cursor_location: None,
             gesture_swipe_3f_cumulative: None,
+            gesture_swipe_bind: None,
+            touch_gesture_points: HashMap::new(),
+            touch_gesture_cumulative: None,
+            touch_edge_swipe: None,
+            touch_gesture_locked: false,
+            touch_forwarded_slots: HashSet::new(),
+            touchscreen_gesture_passthrough: false,
+            touch_active_bind: None,
+            touch_gesture_initial_spread: None,
+            touch_gesture_cumulative_rotation: 0.0,
+            touch_gesture_previous_angles: HashMap::new(),
+            touch_tap_candidate: None,
+            touchpad_hold_begin: None,
+            touchpad_drag_pending: None,
+            touchpad_pinch_fingers: None,
+            touchpad_pinch_latched: false,
+            touch_frame_delta: (0., 0.),
+            touch_frame_edge_delta: (0., 0.),
+            touch_frame_dirty: false,
+            touch_frame_timestamp: Duration::ZERO,
             overview_scroll_swipe_gesture: ScrollSwipeGesture::new(),
             vertical_wheel_tracker: ScrollTracker::new(120),
             horizontal_wheel_tracker: ScrollTracker::new(120),
@@ -3592,7 +3825,7 @@ impl Niri {
 
     pub fn output_for_touch(&self) -> Option<&Output> {
         let config = self.config.borrow();
-        let map_to_output = config.input.touch.map_to_output.as_ref();
+        let map_to_output = config.input.touchscreen.map_to_output.as_ref();
         map_to_output
             .and_then(|name| self.output_by_name_match(name))
             .or_else(|| self.global_space.outputs().next())

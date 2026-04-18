@@ -17,8 +17,8 @@ use futures_util::{select_biased, AsyncBufReadExt, AsyncWrite, AsyncWriteExt, Fu
 use niri_config::OutputName;
 use niri_ipc::state::{EventStreamState, EventStreamStatePart as _};
 use niri_ipc::{
-    Action, Event, KeyboardLayouts, OutputConfigChanged, Overview, Reply, Request, Response,
-    Timestamp, WindowLayout, Workspace,
+    Action, Event, GestureDelta, KeyboardLayouts, OutputConfigChanged, Overview, Reply, Request,
+    Response, Timestamp, WindowLayout, Workspace,
 };
 use smithay::desktop::layer_map_for_output;
 use smithay::input::pointer::{
@@ -940,6 +940,103 @@ impl State {
 
         let event = Event::ScreenshotCaptured { path };
         state.apply(event.clone());
+        server.send_event(event);
+    }
+
+    /// Emit a GestureBegin IPC event for a tagged bind.
+    pub fn ipc_gesture_begin(
+        &mut self,
+        tag: String,
+        trigger: String,
+        finger_count: u8,
+        is_continuous: bool,
+    ) {
+        let Some(server) = &self.niri.ipc_server else {
+            return;
+        };
+        let mut state = server.event_stream_state.borrow_mut();
+        let event = Event::GestureBegin {
+            tag,
+            trigger,
+            finger_count,
+            is_continuous,
+        };
+        state.apply(event.clone());
+        server.send_event(event);
+    }
+
+    /// Emit a GestureProgress IPC event for a tagged continuous gesture.
+    pub fn ipc_gesture_progress(
+        &mut self,
+        tag: String,
+        progress: f64,
+        delta: GestureDelta,
+        timestamp_ms: u32,
+    ) {
+        let Some(server) = &self.niri.ipc_server else {
+            return;
+        };
+        let event = Event::GestureProgress {
+            tag,
+            progress,
+            delta,
+            timestamp_ms,
+        };
+        // No state.apply needed — progress doesn't change tracked state.
+        server.send_event(event);
+    }
+
+    /// Emit a GestureEnd IPC event for a tagged bind.
+    pub fn ipc_gesture_end(&mut self, tag: String, completed: bool) {
+        let Some(server) = &self.niri.ipc_server else {
+            return;
+        };
+        let mut state = server.event_stream_state.borrow_mut();
+        let event = Event::GestureEnd { tag, completed };
+        state.apply(event.clone());
+        server.send_event(event);
+    }
+
+    /// Emit a RecognitionFrame IPC event with per-frame touchscreen
+    /// recognizer telemetry. Compiled out of release builds via
+    /// `#[cfg(debug_assertions)]` at the call site. No `state.apply`
+    /// because recognition telemetry doesn't mutate tracked state; it's
+    /// pure stream output.
+    #[allow(clippy::too_many_arguments)]
+    pub fn ipc_recognition_frame(
+        &mut self,
+        finger_count: u8,
+        swipe_distance: f64,
+        swipe_trigger_distance: f64,
+        spread_change: f64,
+        pinch_trigger_distance: f64,
+        rotation_rad: f64,
+        rotation_trigger_angle_rad: f64,
+        rotation_arc: f64,
+        rotation_arc_trigger_distance: f64,
+        is_rotate: bool,
+        is_pinch: bool,
+        closest: String,
+        timestamp_ms: u32,
+    ) {
+        let Some(server) = &self.niri.ipc_server else {
+            return;
+        };
+        let event = Event::RecognitionFrame {
+            finger_count,
+            swipe_distance,
+            swipe_trigger_distance,
+            spread_change,
+            pinch_trigger_distance,
+            rotation_rad,
+            rotation_trigger_angle_rad,
+            rotation_arc,
+            rotation_arc_trigger_distance,
+            is_rotate,
+            is_pinch,
+            closest,
+            timestamp_ms,
+        };
         server.send_event(event);
     }
 }
