@@ -123,6 +123,19 @@ pub enum Trigger {
     TouchpadTapHoldDrag {
         fingers: u8,
     },
+    /// Multi-finger touchpad pinch (fingers converging / diverging around
+    /// the cluster centroid). libinput pre-classifies swipe-vs-pinch, so
+    /// niri only needs a scale threshold — see
+    /// `touchpad.gestures.pinch-trigger-scale`. Fires once per gesture
+    /// when `|scale - 1.0|` crosses the threshold; direction is picked
+    /// from the sign of the scale change. Raw pinch events still forward
+    /// to Wayland clients, so app-side zoom keeps working.
+    ///
+    /// KDL syntax: `TouchpadPinch fingers=2 direction="in"`.
+    TouchpadPinch {
+        fingers: u8,
+        direction: PinchDirection,
+    },
     /// Multi-finger touchscreen swipe.
     ///
     /// KDL syntax: `TouchSwipe fingers=3 direction="up"`.
@@ -197,6 +210,7 @@ impl Trigger {
             Trigger::TouchpadSwipe { .. }
                 | Trigger::TouchpadTapHold { .. }
                 | Trigger::TouchpadTapHoldDrag { .. }
+                | Trigger::TouchpadPinch { .. }
                 | Trigger::TouchSwipe { .. }
                 | Trigger::TouchPinch { .. }
                 | Trigger::TouchRotate { .. }
@@ -1220,6 +1234,7 @@ pub(crate) fn is_gesture_family_name(s: &str) -> bool {
     s.eq_ignore_ascii_case("TouchpadSwipe")
         || s.eq_ignore_ascii_case("TouchpadTapHold")
         || s.eq_ignore_ascii_case("TouchpadTapHoldDrag")
+        || s.eq_ignore_ascii_case("TouchpadPinch")
         || s.eq_ignore_ascii_case("TouchSwipe")
         || s.eq_ignore_ascii_case("TouchPinch")
         || s.eq_ignore_ascii_case("TouchRotate")
@@ -1276,15 +1291,15 @@ pub(crate) fn build_gesture_trigger(
     family: &str,
     props: &GestureTriggerProps<'_>,
 ) -> Result<Trigger, String> {
-    let expect_fingers = |props: &GestureTriggerProps<'_>| -> Result<u8, String> {
+    let expect_fingers = |props: &GestureTriggerProps<'_>, min: u8| -> Result<u8, String> {
         let Some(n) = props.fingers else {
             return Err(format!(
-                "{family} requires `fingers=N` (valid range {MIN_FINGERS}..={MAX_FINGERS})"
+                "{family} requires `fingers=N` (valid range {min}..={MAX_FINGERS})"
             ));
         };
-        if !(MIN_FINGERS..=MAX_FINGERS).contains(&n) {
+        if !(min..=MAX_FINGERS).contains(&n) {
             return Err(format!(
-                "fingers={n} out of range (valid range {MIN_FINGERS}..={MAX_FINGERS})"
+                "fingers={n} out of range (valid range {min}..={MAX_FINGERS})"
             ));
         }
         Ok(n)
@@ -1301,7 +1316,7 @@ pub(crate) fn build_gesture_trigger(
 
     if family.eq_ignore_ascii_case("TouchSwipe") || family.eq_ignore_ascii_case("TouchpadSwipe") {
         reject_edge_zone(props)?;
-        let fingers = expect_fingers(props)?;
+        let fingers = expect_fingers(props, MIN_FINGERS)?;
         let direction = props
             .direction
             .ok_or_else(|| format!("{family} requires `direction=\"up|down|left|right\"`"))?;
@@ -1323,27 +1338,39 @@ pub(crate) fn build_gesture_trigger(
         });
     }
 
-    if family.eq_ignore_ascii_case("TouchPinch") {
+    if family.eq_ignore_ascii_case("TouchPinch") || family.eq_ignore_ascii_case("TouchpadPinch") {
         reject_edge_zone(props)?;
-        let fingers = expect_fingers(props)?;
+        // Touchpad pinch accepts 2 fingers — libinput emits pinch events
+        // natively for 2/3/4 fingers. Touchscreen pinch stays at 3+ to
+        // preserve 2-finger client passthrough (scroll/zoom).
+        let min = if family.eq_ignore_ascii_case("TouchpadPinch") {
+            2
+        } else {
+            MIN_FINGERS
+        };
+        let fingers = expect_fingers(props, min)?;
         let direction = props
             .direction
-            .ok_or_else(|| "TouchPinch requires `direction=\"in|out\"`".to_string())?;
+            .ok_or_else(|| format!("{family} requires `direction=\"in|out\"`"))?;
         let direction = match direction.to_ascii_lowercase().as_str() {
             "in" => PinchDirection::In,
             "out" => PinchDirection::Out,
             other => {
                 return Err(format!(
-                    "invalid direction=\"{other}\" for TouchPinch (expected in|out)"
+                    "invalid direction=\"{other}\" for {family} (expected in|out)"
                 ))
             }
         };
-        return Ok(Trigger::TouchPinch { fingers, direction });
+        return Ok(if family.eq_ignore_ascii_case("TouchPinch") {
+            Trigger::TouchPinch { fingers, direction }
+        } else {
+            Trigger::TouchpadPinch { fingers, direction }
+        });
     }
 
     if family.eq_ignore_ascii_case("TouchRotate") {
         reject_edge_zone(props)?;
-        let fingers = expect_fingers(props)?;
+        let fingers = expect_fingers(props, MIN_FINGERS)?;
         let direction = props
             .direction
             .ok_or_else(|| "TouchRotate requires `direction=\"cw|ccw\"`".to_string())?;
@@ -1364,7 +1391,7 @@ pub(crate) fn build_gesture_trigger(
         || family.eq_ignore_ascii_case("TouchpadTapHoldDrag")
     {
         reject_edge_zone(props)?;
-        let fingers = expect_fingers(props)?;
+        let fingers = expect_fingers(props, MIN_FINGERS)?;
         if props.direction.is_some() {
             return Err(format!("{family} does not accept a `direction=` property"));
         }
@@ -1379,7 +1406,7 @@ pub(crate) fn build_gesture_trigger(
 
     if family.eq_ignore_ascii_case("TouchTapHoldDrag") {
         reject_edge_zone(props)?;
-        let fingers = expect_fingers(props)?;
+        let fingers = expect_fingers(props, MIN_FINGERS)?;
         // direction= is optional for TouchTapHoldDrag (unlike TouchSwipe
         // where it's required). None = omnidirectional.
         let direction = match props.direction {
@@ -1620,6 +1647,7 @@ mod tests {
         assert!("TouchpadSwipe".parse::<Key>().is_err());
         assert!("TouchpadTapHold".parse::<Key>().is_err());
         assert!("TouchpadTapHoldDrag".parse::<Key>().is_err());
+        assert!("TouchpadPinch".parse::<Key>().is_err());
         assert!("TouchTapHoldDrag".parse::<Key>().is_err());
     }
 
@@ -1707,6 +1735,7 @@ mod tests {
             zone: None,
         };
         assert!(build_gesture_trigger("TouchPinch", &pinch_in).is_ok());
+        assert!(build_gesture_trigger("TouchpadPinch", &pinch_in).is_ok());
         assert!(build_gesture_trigger("TouchSwipe", &pinch_in).is_err());
         assert!(build_gesture_trigger("TouchRotate", &pinch_in).is_err());
 
@@ -1720,6 +1749,65 @@ mod tests {
         assert!(build_gesture_trigger("TouchRotate", &rotate_cw).is_ok());
         assert!(build_gesture_trigger("TouchSwipe", &rotate_cw).is_err());
         assert!(build_gesture_trigger("TouchPinch", &rotate_cw).is_err());
+        assert!(build_gesture_trigger("TouchpadPinch", &rotate_cw).is_err());
+    }
+
+    #[test]
+    fn build_touchpadpinch() {
+        let props = GestureTriggerProps {
+            fingers: Some(2),
+            direction: Some("in"),
+            edge: None,
+            zone: None,
+        };
+        assert_eq!(
+            build_gesture_trigger("TouchpadPinch", &props).unwrap(),
+            Trigger::TouchpadPinch {
+                fingers: 2,
+                direction: PinchDirection::In
+            }
+        );
+
+        let props = GestureTriggerProps {
+            fingers: Some(3),
+            direction: Some("out"),
+            edge: None,
+            zone: None,
+        };
+        assert_eq!(
+            build_gesture_trigger("TouchpadPinch", &props).unwrap(),
+            Trigger::TouchpadPinch {
+                fingers: 3,
+                direction: PinchDirection::Out
+            }
+        );
+    }
+
+    #[test]
+    fn touchpadpinch_requires_direction() {
+        let props = GestureTriggerProps {
+            fingers: Some(2),
+            direction: None,
+            edge: None,
+            zone: None,
+        };
+        assert!(build_gesture_trigger("TouchpadPinch", &props).is_err());
+    }
+
+    #[test]
+    fn touchpadpinch_rejects_invalid_direction() {
+        for bad in ["up", "down", "left", "right", "cw", "ccw"] {
+            let props = GestureTriggerProps {
+                fingers: Some(2),
+                direction: Some(bad),
+                edge: None,
+                zone: None,
+            };
+            assert!(
+                build_gesture_trigger("TouchpadPinch", &props).is_err(),
+                "direction=\"{bad}\" should be rejected for TouchpadPinch"
+            );
+        }
     }
 
     #[test]

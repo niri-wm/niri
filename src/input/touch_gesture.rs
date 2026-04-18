@@ -2100,6 +2100,12 @@ pub(crate) fn trigger_to_ipc_name(trigger: Trigger) -> String {
                 pinch_dir_name(direction)
             )
         }
+        Trigger::TouchpadPinch { fingers, direction } => {
+            format!(
+                "TouchpadPinch fingers={fingers} direction=\"{}\"",
+                pinch_dir_name(direction)
+            )
+        }
         Trigger::TouchRotate { fingers, direction } => {
             format!(
                 "TouchRotate fingers={fingers} direction=\"{}\"",

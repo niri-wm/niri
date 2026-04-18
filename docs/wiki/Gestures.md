@@ -67,7 +67,7 @@ binds {
 }
 ```
 
-Tuning parameters for touchpad gesture recognition (`swipe-trigger-distance`, `swipe-progress-distance`) live in the `input { touchpad { gestures { } } }` subblock — see [Configuration: Input](./Configuration:-Input.md#touchpad-gesture-tuning).
+Tuning parameters for touchpad gesture recognition (`swipe-trigger-distance`, `swipe-progress-distance`, `pinch-trigger-scale`) live in the `input { touchpad { gestures { } } }` subblock — see [Configuration: Input](./Configuration:-Input.md#touchpad-gesture-tuning).
 
 #### Workspace Switch
 
@@ -128,6 +128,30 @@ binds {
 - No `direction=` — the drag direction is not part of the trigger. Including `direction=` is an error.
 
 The distinction between tap-hold-drag and a direct swipe is made by libinput: a tap-hold-drag is preceded by a `GestureHoldBegin` event (fingers were stationary first), while a direct swipe skips the hold phase entirely. This means the same finger count can be used for both without conflict — intent is distinguished by the pause before moving.
+
+#### Pinch Gestures
+
+<sup>Since: next</sup>
+
+N-finger touchpad pinch — fingers converging toward (or diverging from) the cluster centroid. libinput pre-classifies swipe-vs-pinch, so niri only needs a scale threshold to decide when the pinch is committed.
+
+```kdl
+binds {
+    TouchpadPinch fingers=2 direction="in"  { open-overview; }
+    TouchpadPinch fingers=2 direction="out" { close-overview; }
+    TouchpadPinch fingers=3 direction="in"  { spawn "rofi" "-show" "drun"; }
+}
+```
+
+- `fingers=` — integer in `2..=10`. Required. Unlike touchscreen pinch (which starts at 3 fingers to preserve 2-finger client passthrough), libinput emits touchpad pinch events natively for 2/3/4 fingers. 2-finger pinch is the most reliable.
+- `direction=` — `"in"` (scale shrinking) or `"out"` (scale growing). Required.
+
+Pinch is always **discrete** (fires once per gesture when `|scale - 1.0|` crosses `pinch-trigger-scale`). Raw pinch events still forward to Wayland clients, so app-level pinch-to-zoom (e.g. Firefox, image viewers) keeps working — the bind fires in addition to the app's own handling. Bind 3+ fingers if you want compositor-only actions without app overlap.
+
+The threshold is configured via `input { touchpad { gestures { pinch-trigger-scale <float> } } }` — see [Configuration: Input](./Configuration:-Input.md#touchpad-gesture-tuning).
+
+> [!NOTE]
+> 3+ finger pinch works but requires fingers moving distinctly toward or away from the cluster centroid. If fingers mostly translate together, libinput classifies the motion as swipe instead and no pinch event is emitted. Rotation is not exposed on touchpad — it rides inside pinch events for 2-finger gestures only, and niri does not currently surface a `TouchpadRotate` trigger.
 
 ### Touchscreen
 
