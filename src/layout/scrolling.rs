@@ -22,7 +22,7 @@ use crate::layout::SizingMode;
 use crate::niri_render_elements;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::xray::XrayPos;
-use crate::render_helpers::RenderCtx;
+use crate::render_helpers::{RenderCtx, RenderTarget};
 use crate::utils::transaction::{Transaction, TransactionBlocker};
 use crate::utils::ResizeEdge;
 use crate::window::ResolvedWindowRules;
@@ -2942,10 +2942,10 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             }
 
             if col.render_tab_switch(
-                renderer,
+                ctx.renderer,
                 view_off + col_off + col_render_off,
                 focus_ring && first,
-                target,
+                ctx.target,
                 &mut |elem| push(elem.into()),
             ) {
                 first = false;
@@ -4307,7 +4307,7 @@ impl<W: LayoutElement> Column<W> {
                     content_size.w
                 } else {
                     content_size.h
-            };
+                };
             let start = clip_start.max(start);
             let end = clip_end.min(end);
             if end <= start {
