@@ -27,8 +27,8 @@ use crate::ui::screenshot_ui::ScreenshotUi;
 use crate::utils::spawning::{spawn, spawn_sh};
 use crate::utils::{center, get_monotonic_time, CastSessionId, ResizeEdge};
 use niri_config::{
-    Action, Bind, Binds, Config, Key, ModKey, Modifiers, MruDirection, SwipeDirection, SwitchBinds,
-    Trigger, MAX_FINGERS, MIN_FINGERS,
+    Action, Bind, Binds, Config, Key, ModKey, Modifiers, MruDirection, PinchDirection,
+    SwipeDirection, SwitchBinds, Trigger, MAX_FINGERS, MIN_FINGERS,
 };
 use niri_ipc::{GestureDelta, LayoutSwitchTarget};
 use smithay::backend::input::{
@@ -4188,6 +4188,12 @@ impl State {
         self.niri.touchpad_hold_begin = None;
         self.niri.touchpad_drag_pending = None;
 
+        // Arm the touchpad-pinch classifier. libinput reports fingers as
+        // u32 but the MIN..=MAX range is small; clamp defensively.
+        let fingers = u8::try_from(event.fingers()).unwrap_or(u8::MAX);
+        self.niri.touchpad_pinch_fingers = Some(fingers);
+        self.niri.touchpad_pinch_latched = false;
+
         let serial = SERIAL_COUNTER.next_serial();
         let pointer = self.niri.seat.get_pointer().unwrap();
 
@@ -4206,6 +4212,57 @@ impl State {
     }
 
     fn on_gesture_pinch_update<I: InputBackend>(&mut self, event: I::GesturePinchUpdateEvent) {
+        // Classify pinch for discrete TouchpadPinch bind. libinput's
+        // scale() is normalized to gesture-start (1.0 = no change); we
+        // fire once per gesture when |scale - 1.0| crosses the
+        // threshold. Raw events still forward to clients below so
+        // app-level pinch-to-zoom keeps working.
+        if !self.niri.touchpad_pinch_latched {
+            if let Some(fingers) = self.niri.touchpad_pinch_fingers {
+                let scale = event.scale();
+                let threshold = self
+                    .niri
+                    .config
+                    .borrow()
+                    .input
+                    .touchpad
+                    .pinch_trigger_scale();
+                if (scale - 1.0).abs() > threshold {
+                    let direction = if scale > 1.0 {
+                        PinchDirection::Out
+                    } else {
+                        PinchDirection::In
+                    };
+                    self.niri.touchpad_pinch_latched = true;
+
+                    let trigger = Trigger::TouchpadPinch { fingers, direction };
+                    let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
+                    let mod_key = self.backend.mod_key(&self.niri.config.borrow());
+                    let config = self.niri.config.borrow();
+                    let modifiers = modifiers_from_state(mods);
+                    let bindings =
+                        make_binds_iter(&config, &mut self.niri.window_mru_ui, modifiers);
+                    let bind = find_configured_bind(bindings, mod_key, trigger, mods);
+                    drop(config);
+
+                    if let Some(bind) = bind {
+                        if let Some(ref tag) = bind.tag {
+                            let trigger_name =
+                                crate::input::touch_gesture::trigger_to_ipc_name(trigger);
+                            self.ipc_gesture_begin(
+                                tag.clone(),
+                                trigger_name,
+                                fingers,
+                                false, // discrete
+                            );
+                            self.ipc_gesture_end(tag.clone(), true);
+                        }
+                        self.do_action(bind.action, bind.allow_when_locked);
+                    }
+                }
+            }
+        }
+
         let pointer = self.niri.seat.get_pointer().unwrap();
 
         if self.update_pointer_contents() {
@@ -4224,6 +4281,9 @@ impl State {
     }
 
     fn on_gesture_pinch_end<I: InputBackend>(&mut self, event: I::GesturePinchEndEvent) {
+        self.niri.touchpad_pinch_fingers = None;
+        self.niri.touchpad_pinch_latched = false;
+
         let serial = SERIAL_COUNTER.next_serial();
         let pointer = self.niri.seat.get_pointer().unwrap();
 

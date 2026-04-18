@@ -349,10 +349,11 @@ input {
 
 <sup>Since: next</sup>
 
-The `touchpad { gestures { } }` subblock contains tuning parameters for touchpad swipe recognition. Like touchscreen, the actual gesture binds (`TouchpadSwipe fingers=N direction="..."`) live in the main `binds {}` block.
+The `touchpad { gestures { } }` subblock contains tuning parameters for touchpad gesture recognition. Like touchscreen, the actual gesture binds (`TouchpadSwipe fingers=N direction="..."`, `TouchpadPinch fingers=N direction="..."`) live in the main `binds {}` block.
 
 - `swipe-trigger-distance <float>`: libinput delta units of centroid motion before a swipe gesture commits. These units are acceleration-adjusted and not directly comparable to touchscreen pixels. Default: `16.0`.
 - `swipe-progress-distance <float>`: libinput delta units of swipe motion that map to IPC `GestureProgress = 1.0`. Because libinput acceleration curves are nonlinear, the same physical swipe can produce different delta magnitudes depending on speed — this value is **not** directly comparable to the touchscreen `swipe-progress-distance`. Default: `40.0`.
+- `pinch-trigger-scale <float>`: `|scale - 1.0|` required before a `TouchpadPinch` bind fires. libinput normalizes pinch scale (1.0 = no change, 1.5 = 50% spread out, 0.5 = 50% spread in), so this is a unitless ratio and **not** directly comparable to the touchscreen `pinch-trigger-distance` (which is in pixels). Fires once per gesture when the threshold is crossed; direction is picked from the sign of the scale change. Default: `0.15`.
 
 Example:
 
@@ -362,6 +363,7 @@ input {
         gestures {
             swipe-trigger-distance 16.0
             swipe-progress-distance 40.0
+            pinch-trigger-scale 0.15
         }
     }
 }

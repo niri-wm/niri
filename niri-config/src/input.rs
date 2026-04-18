@@ -243,6 +243,16 @@ impl Touchpad {
             .and_then(|g| g.swipe_progress_distance)
             .unwrap_or(40.0)
     }
+
+    /// Pinch commit gate in scale-ratio units (from
+    /// `pinch-trigger-scale`). `|scale - 1.0|` must exceed this before a
+    /// `TouchpadPinch` bind fires. Default 0.15.
+    pub fn pinch_trigger_scale(&self) -> f64 {
+        self.gestures
+            .as_ref()
+            .and_then(|g| g.pinch_trigger_scale)
+            .unwrap_or(0.15)
+    }
 }
 
 #[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]
@@ -727,6 +737,15 @@ pub struct TouchpadGesturesConfig {
     /// Default: 40.0.
     #[knuffel(child, unwrap(argument))]
     pub swipe_progress_distance: Option<f64>,
+    /// Pinch commit gate: `|scale - 1.0|` must exceed this unitless scale
+    /// ratio before a `TouchpadPinch` bind fires. libinput normalizes
+    /// pinch scale (1.0 = no change, 1.5 = 50% spread out, 0.5 = 50%
+    /// spread in), so this is not comparable to the touchscreen
+    /// `pinch-trigger-distance` (which is in pixels). Fires once per
+    /// gesture when the threshold is crossed; direction is picked from
+    /// the sign of the scale change. Default: 0.15.
+    #[knuffel(child, unwrap(argument))]
+    pub pinch_trigger_scale: Option<f64>,
 }
 
 #[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]

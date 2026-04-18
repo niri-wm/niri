@@ -562,6 +562,15 @@ pub struct Niri {
     /// this to decide whether to enter tap-hold-drag mode instead of
     /// normal swipe. Stores finger count.
     pub touchpad_drag_pending: Option<u8>,
+    /// Active touchpad pinch gesture's finger count (from
+    /// `GesturePinchBegin.fingers`). `None` outside a pinch. Used to
+    /// build the `TouchpadPinch{fingers, direction}` trigger when the
+    /// scale threshold is crossed.
+    pub touchpad_pinch_fingers: Option<u8>,
+    /// Whether the current pinch gesture has already fired a discrete
+    /// `TouchpadPinch` bind. Prevents double-firing within one gesture.
+    /// Reset on pinch begin/end.
+    pub touchpad_pinch_latched: bool,
     /// Accumulated per-frame deltas for touchscreen gesture batching.
     /// Summed across all per-slot TouchMotion events within a single
     /// hardware scan frame; consumed and zeroed in on_touch_frame.
@@ -2789,6 +2798,8 @@ impl Niri {
             touch_tap_candidate: None,
             touchpad_hold_begin: None,
             touchpad_drag_pending: None,
+            touchpad_pinch_fingers: None,
+            touchpad_pinch_latched: false,
             touch_frame_delta: (0., 0.),
             touch_frame_edge_delta: (0., 0.),
             touch_frame_dirty: false,

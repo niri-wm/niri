@@ -576,6 +576,12 @@ fn key_name(screen_reader: bool, mod_key: ModKey, key: &Key) -> String {
         Trigger::TouchpadTapHoldDrag { fingers } => {
             format!("Touchpad {fingers}-Finger Tap-Hold-Drag")
         }
+        Trigger::TouchpadPinch { fingers, direction } => {
+            format!(
+                "Touchpad {fingers}-Finger Pinch {}",
+                pinch_dir_label(direction)
+            )
+        }
         Trigger::TouchSwipe { fingers, direction } => {
             format!(
                 "Touch {fingers}-Finger Swipe {}",
