@@ -222,6 +222,34 @@ impl CompositorHandler for State {
                     );
                     let output = output.cloned();
 
+                    // If a spawn position was requested, rearrange the newly added window.
+                    if let Some(direction) = self.niri.pending_spawn_position.take() {
+                        use crate::ui::spawn_overlay::SpawnDirection;
+                        // Close the overlay now that the window has been placed.
+                        self.niri.spawn_overlay.close();
+
+                        match direction {
+                            SpawnDirection::Left => {
+                                // Window was added as a new column to the right.
+                                // Move it to the left of where it was.
+                                self.niri.layout.move_left();
+                            }
+                            SpawnDirection::Right => {
+                                // Default behavior: new column to the right. Nothing extra.
+                            }
+                            SpawnDirection::Up | SpawnDirection::Down => {
+                                // Window was added as a new column to the right.
+                                // Consume it into the column on its left (the previously
+                                // focused column), which stacks it vertically.
+                                self.niri.layout.consume_or_expel_window_left(None);
+                                if direction == SpawnDirection::Up {
+                                    // It was added at the bottom; move it up.
+                                    self.niri.layout.move_up();
+                                }
+                            }
+                        }
+                    }
+
                     // The window state cannot contain Fullscreen and Maximized at once. Therefore,
                     // if the window ended up fullscreen, then we only know that it is also
                     // maximized from the is_pending_maximized variable. Tell the layout about it
