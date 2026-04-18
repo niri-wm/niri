@@ -5598,8 +5598,87 @@ impl Niri {
             &mut |elem| elements.push(elem.into()),
         );
 
-        // The pointer is not included in encompassing_geo because we don't want it to expand the
-        // screenshot size.
+        let geo = encompassing_geo(scale, elements.iter().skip(pointer_count));
+        let elements = elements.iter().rev().map(|elem| {
+            RelocateRenderElement::from_element(elem, geo.loc.upscale(-1), Relocate::Relative)
+        });
+        let pixels = render_to_vec(
+            renderer,
+            geo.size,
+            scale,
+            Transform::Normal,
+            Fourcc::Abgr8888,
+            elements,
+        )?;
+
+        self.save_screenshot(geo.size, pixels, write_to_disk, path)
+            .context("error saving screenshot")
+    }
+
+    pub fn screenshot_tile(
+        &self,
+        renderer: &mut GlesRenderer,
+        output: &Output,
+        mapped: &Mapped,
+        write_to_disk: bool,
+        show_pointer: bool,
+        path: Option<String>,
+    ) -> anyhow::Result<()> {
+        let _span = tracy_client::span!("Niri::screenshot_tile");
+
+        let scale = Scale::from(output.current_scale().fractional_scale());
+
+        let mut elements: Vec<WindowScreenshotRenderElement<GlesRenderer>> = Vec::new();
+
+        // Add pointer if requested and it's over this window.
+        if show_pointer {
+            if let Some((_, win_pos)) = self.pointer_pos_for_window_cast(mapped) {
+                let pos = win_pos.to_physical_precise_round(scale).upscale(-1);
+                self.render_pointer(renderer, output, &mut |elem| {
+                    let elem = RelocateRenderElement::from_element(elem, pos, Relocate::Relative);
+                    elements.push(elem.into());
+                });
+            }
+        }
+        let pointer_count = elements.len();
+
+        if let Some(tile) = self.layout.tile_for_window(mapped) {
+            let ctx = RenderCtx {
+                renderer,
+                target: RenderTarget::ScreenCapture,
+                xray: None,
+            };
+            tile.render_for_screenshot(
+                ctx,
+                Point::from((0., 0.)),
+                XrayPos::default(),
+                mapped.is_focused(),
+                &mut |elem| elements.push(elem.into()),
+            );
+        } else {
+            // Fallback to bare window if tile not found (e.g. during drag-and-drop).
+            let alpha =
+                if mapped.sizing_mode().is_fullscreen() || mapped.is_ignoring_opacity_window_rule()
+                {
+                    1.
+                } else {
+                    mapped.rules().opacity.unwrap_or(1.).clamp(0., 1.)
+                };
+            let ctx = RenderCtx {
+                renderer,
+                target: RenderTarget::ScreenCapture,
+                xray: None,
+            };
+            mapped.render(
+                ctx,
+                mapped.window.geometry().loc.to_f64(),
+                scale,
+                alpha,
+                XrayPos::default(),
+                &mut |elem| elements.push(elem.into()),
+            );
+        }
+
         let geo = encompassing_geo(scale, elements.iter().skip(pointer_count));
         let elements = elements.iter().rev().map(|elem| {
             RelocateRenderElement::from_element(elem, geo.loc.upscale(-1), Relocate::Relative)
@@ -6479,6 +6558,7 @@ niri_render_elements! {
 niri_render_elements! {
     WindowScreenshotRenderElement<R> => {
         Layout = LayoutElementRenderElement<R>,
+        Tile = TileRenderElement<R>,
         Pointer = RelocateRenderElement<PointerRenderElements<R>>,
     }
 }
