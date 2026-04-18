@@ -30,6 +30,12 @@ animations {
         curve "ease-out-quad"
     }
 
+    tab-switch {
+        duration-ms 150
+        curve "ease-out-expo"
+        direction "vertical"
+    }
+
     horizontal-view-movement {
         spring damping-ratio=1.0 stiffness=800 epsilon=0.0001
     }
@@ -317,6 +323,32 @@ animations {
     }
 }
 ```
+
+#### `tab-switch`
+
+Animation used when switching the active window inside a tabbed column.
+
+This animation is separate from `window-movement`: it only applies to changes of the active tab,
+for example when using `focus-window-up`, `focus-window-down`, or direct index-based tab focus.
+
+```kdl
+animations {
+    tab-switch {
+        duration-ms 150
+        curve "ease-out-expo"
+        direction "vertical"
+    }
+}
+```
+
+##### `direction`
+
+Controls the axis of the tab-switch animation.
+
+Possible values:
+
+- `"vertical"`: tabs move up and down.
+- `"horizontal"`: tabs move left and right.
 
 #### `window-resize`
 
