@@ -7,8 +7,8 @@ use std::time::Duration;
 
 use anyhow::ensure;
 use niri_config::{
-    Action, Bind, Color, Config, CornerRadius, GradientInterpolation, Key, Modifiers, MruDirection,
-    MruFilter, MruScope, Trigger,
+    Action, Color, Config, CornerRadius, GradientInterpolation, Modifiers, MruDirection, MruFilter,
+    MruScope,
 };
 use pango::FontDescription;
 use pangocairo::cairo::{self, ImageSurface};
@@ -24,6 +24,7 @@ use smithay::output::Output;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Size, Transform};
 
 use crate::animation::{Animation, Clock};
+use crate::input::{CompiledBind, CompiledKey, CompiledTrigger};
 use crate::layout::focus_ring::{FocusRing, FocusRingRenderElement};
 use crate::layout::{Layout, LayoutElement as _, LayoutElementRenderElement};
 use crate::niri::Niri;
@@ -97,8 +98,8 @@ pub struct WindowMru {
 
 pub struct WindowMruUi {
     state: UiState,
-    preset_opened_binds: Vec<Bind>,
-    dynamic_opened_binds: Vec<Bind>,
+    preset_opened_binds: Vec<CompiledBind>,
+    dynamic_opened_binds: Vec<CompiledBind>,
     config: Rc<RefCell<Config>>,
 }
 
@@ -894,7 +895,7 @@ impl ViewPos {
 }
 
 impl WindowMruUi {
-    pub fn new(config: Rc<RefCell<Config>>) -> Self {
+    pub fn new(config: Rc<RefCell<Config>>, compiled_binds: &[CompiledBind]) -> Self {
         let mut rv = Self {
             state: UiState::Closed {
                 previous_scope: MruScope::default(),
@@ -903,12 +904,12 @@ impl WindowMruUi {
             dynamic_opened_binds: Vec::new(),
             config,
         };
-        rv.update_binds();
+        rv.update_binds(compiled_binds);
         rv
     }
 
-    pub fn update_binds(&mut self) {
-        self.dynamic_opened_binds = make_dynamic_opened_binds(&self.config.borrow());
+    pub fn update_binds(&mut self, compiled_binds: &[CompiledBind]) {
+        self.dynamic_opened_binds = make_dynamic_opened_binds(compiled_binds);
     }
 
     pub fn update_config(&mut self) {
@@ -1204,7 +1205,10 @@ impl WindowMruUi {
         }
     }
 
-    pub fn opened_bindings(&mut self, mods: Modifiers) -> impl Iterator<Item = &Bind> + Clone {
+    pub fn opened_bindings(
+        &mut self,
+        mods: Modifiers,
+    ) -> impl Iterator<Item = &CompiledBind> + Clone {
         // Fill modifiers with the current mods.
         for bind in &mut self.preset_opened_binds {
             bind.key.modifiers = mods;
@@ -1824,13 +1828,13 @@ fn render_panel(renderer: &mut GlesRenderer, scale: f64, text: &str) -> anyhow::
 }
 
 /// Returns key bindings available when the MRU UI is open.
-fn make_preset_opened_binds() -> Vec<Bind> {
+fn make_preset_opened_binds() -> Vec<CompiledBind> {
     let mut rv = Vec::new();
 
     let mut push = |trigger, action| {
-        rv.push(Bind {
-            key: Key {
-                trigger: Trigger::Keysym(trigger),
+        rv.push(CompiledBind {
+            key: CompiledKey {
+                trigger: CompiledTrigger::Keysym(trigger),
                 // The modifier is filled dynamically.
                 modifiers: Modifiers::empty(),
             },
@@ -1839,7 +1843,6 @@ fn make_preset_opened_binds() -> Vec<Bind> {
             cooldown: None,
             allow_when_locked: false,
             allow_inhibiting: false,
-            hotkey_overlay_title: None,
         })
     };
 
@@ -1878,10 +1881,10 @@ fn make_preset_opened_binds() -> Vec<Bind> {
 /// Returns dynamic key bindings available when the MRU UI is open.
 ///
 /// These ones are generated based on the normal bindings.
-fn make_dynamic_opened_binds(config: &Config) -> Vec<Bind> {
-    let mut binds: HashMap<Trigger, Vec<Bind>> = HashMap::new();
+fn make_dynamic_opened_binds(general_binds: &[CompiledBind]) -> Vec<CompiledBind> {
+    let mut binds: HashMap<CompiledTrigger, Vec<CompiledBind>> = HashMap::new();
 
-    for bind in &config.binds.0 {
+    for bind in general_binds {
         let action = match &bind.action {
             Action::FocusColumnRight
             | Action::FocusColumnRightOrFirst
@@ -1906,10 +1909,13 @@ fn make_dynamic_opened_binds(config: &Config) -> Vec<Bind> {
             _ => continue,
         };
 
-        binds.entry(bind.key.trigger).or_default().push(Bind {
-            action,
-            ..bind.clone()
-        });
+        binds
+            .entry(bind.key.trigger)
+            .or_default()
+            .push(CompiledBind {
+                action,
+                ..bind.clone()
+            });
     }
 
     let mut rv = Vec::new();
@@ -1921,8 +1927,8 @@ fn make_dynamic_opened_binds(config: &Config) -> Vec<Bind> {
             .min_by_key(|bind| bind.key.modifiers.iter().count())
             .unwrap();
 
-        rv.push(Bind {
-            key: Key {
+        rv.push(CompiledBind {
+            key: CompiledKey {
                 trigger: bind.key.trigger,
                 // The modifier is filled dynamically.
                 modifiers: Modifiers::empty(),
