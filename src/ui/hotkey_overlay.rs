@@ -560,6 +560,10 @@ fn key_name(screen_reader: bool, mod_key: ModKey, key: &Key) -> String {
         Trigger::TouchpadScrollUp => String::from("Touchpad Scroll Up"),
         Trigger::TouchpadScrollLeft => String::from("Touchpad Scroll Left"),
         Trigger::TouchpadScrollRight => String::from("Touchpad Scroll Right"),
+        Trigger::TrackpointScrollDown => String::from("Trackpoint Scroll Down"),
+        Trigger::TrackpointScrollUp => String::from("Trackpoint Scroll Up"),
+        Trigger::TrackpointScrollLeft => String::from("Trackpoint Scroll Left"),
+        Trigger::TrackpointScrollRight => String::from("Trackpoint Scroll Right"),
     };
     name.push_str(&pretty);
 

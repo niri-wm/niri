@@ -506,6 +506,14 @@ binds {
     // Mod+TouchpadScrollDown { spawn-sh "wpctl set-volume @DEFAULT_AUDIO_SINK@ 0.02+"; }
     // Mod+TouchpadScrollUp   { spawn-sh "wpctl set-volume @DEFAULT_AUDIO_SINK@ 0.02-"; }
 
+    // Trackpoint scroll binds work similarly to touchpad binds. You can use them
+    // to switch workspaces or navigate columns.
+    // Uncomment these binds to enable trackpoint scroll for workspace switching:
+    // Mod+TrackpointScrollDown cooldown-ms=150 { focus-workspace-down; }
+    // Mod+TrackpointScrollUp   cooldown-ms=150 { focus-workspace-up; }
+    // Mod+TrackpointScrollRight cooldown-ms=150 { focus-column-right; }
+    // Mod+TrackpointScrollLeft  cooldown-ms=150 { focus-column-left; }
+
     // You can refer to workspaces by index. However, keep in mind that
     // niri is a dynamic workspace system, so these commands are kind of
     // "best effort". Trying to refer to a workspace index bigger than

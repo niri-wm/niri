@@ -51,6 +51,10 @@ pub enum Trigger {
     TouchpadScrollUp,
     TouchpadScrollLeft,
     TouchpadScrollRight,
+    TrackpointScrollDown,
+    TrackpointScrollUp,
+    TrackpointScrollLeft,
+    TrackpointScrollRight,
 }
 
 bitflags! {
@@ -1012,6 +1016,14 @@ impl FromStr for Key {
             Trigger::TouchpadScrollLeft
         } else if key.eq_ignore_ascii_case("TouchpadScrollRight") {
             Trigger::TouchpadScrollRight
+        } else if key.eq_ignore_ascii_case("TrackpointScrollDown") {
+            Trigger::TrackpointScrollDown
+        } else if key.eq_ignore_ascii_case("TrackpointScrollUp") {
+            Trigger::TrackpointScrollUp
+        } else if key.eq_ignore_ascii_case("TrackpointScrollLeft") {
+            Trigger::TrackpointScrollLeft
+        } else if key.eq_ignore_ascii_case("TrackpointScrollRight") {
+            Trigger::TrackpointScrollRight
         } else {
             let mut keysym = keysym_from_name(key, KEYSYM_CASE_INSENSITIVE);
             // The keyboard event handling code can receive either
