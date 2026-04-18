@@ -41,6 +41,16 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
             output: output.clone(),
             action: action.clone(),
         },
+        Msg::CreateVirtualOutput {
+            width,
+            height,
+            refresh_rate,
+        } => Request::CreateVirtualOutput {
+            width: Some(*width),
+            height: Some(*height),
+            refresh_rate: Some(*refresh_rate),
+        },
+        Msg::RemoveVirtualOutput { name } => Request::RemoveVirtualOutput { name: name.clone() },
         Msg::Workspaces => Request::Workspaces,
         Msg::Windows => Request::Windows,
         Msg::Layers => Request::Layers,
@@ -338,6 +348,31 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
                 println!("Output \"{output}\" is not connected.");
                 println!("The change will apply when it is connected.");
             }
+        }
+        Msg::CreateVirtualOutput { .. } => {
+            let Response::VirtualOutputCreated(name) = response else {
+                bail!("unexpected response: expected VirtualOutputCreated, got {response:?}");
+            };
+
+            if json {
+                let response = json!({ "name": name });
+                println!("{response}");
+                return Ok(());
+            }
+
+            println!("Created virtual output: {name}");
+        }
+        Msg::RemoveVirtualOutput { name } => {
+            let Response::Handled = response else {
+                bail!("unexpected response: expected Handled, got {response:?}");
+            };
+
+            if json {
+                println!("{{}}");
+                return Ok(());
+            }
+
+            println!("Removed virtual output: {name}");
         }
         Msg::Workspaces => {
             let Response::Workspaces(mut response) = response else {
