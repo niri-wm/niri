@@ -2,11 +2,11 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use std::time::Duration;
 
 use niri_config::Config;
 use ordered_float::NotNan;
 use pangocairo::cairo::{self, ImageSurface};
+use pangocairo::pango::glib;
 use pangocairo::pango::FontDescription;
 use smithay::backend::renderer::element::Kind;
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
@@ -31,6 +31,7 @@ pub struct ConfigErrorNotification {
     // If set, this is a "Created config at {path}" notification. If unset, this is a config error
     // notification.
     created_path: Option<PathBuf>,
+    error_report: Option<String>,
 
     clock: Clock,
     config: Rc<RefCell<Config>>,
@@ -39,7 +40,7 @@ pub struct ConfigErrorNotification {
 enum State {
     Hidden,
     Showing(Animation),
-    Shown(Duration),
+    Shown,
     Hiding(Animation),
 }
 
@@ -49,6 +50,7 @@ impl ConfigErrorNotification {
             state: State::Hidden,
             buffers: RefCell::new(HashMap::new()),
             created_path: None,
+            error_report: None,
             clock,
             config,
         }
@@ -68,20 +70,22 @@ impl ConfigErrorNotification {
     pub fn show_created(&mut self, created_path: &Path) {
         if self.created_path.as_deref() != Some(created_path) {
             self.created_path = Some(created_path.to_owned());
+            self.error_report = None;
             self.buffers.borrow_mut().clear();
         }
 
         self.state = State::Showing(self.animation(0., 1.));
     }
 
-    pub fn show(&mut self) {
+    pub fn show(&mut self, report: String) {
         let c = self.config.borrow();
         if c.config_notification.disable_failed {
             return;
         }
 
-        if self.created_path.is_some() {
+        if self.created_path.is_some() || self.error_report.as_deref() != Some(&report) {
             self.created_path = None;
+            self.error_report = Some(report);
             self.buffers.borrow_mut().clear();
         }
 
@@ -97,27 +101,19 @@ impl ConfigErrorNotification {
         self.state = State::Hiding(self.animation(1., 0.));
     }
 
+    pub fn is_open(&self) -> bool {
+        matches!(self.state, State::Showing(_) | State::Shown)
+    }
+
     pub fn advance_animations(&mut self) {
         match &mut self.state {
             State::Hidden => (),
             State::Showing(anim) => {
                 if anim.is_done() {
-                    let duration = if self.created_path.is_some() {
-                        // Make this quite a bit longer because it comes with a monitor modeset
-                        // (can take a while) and an important hotkeys popup diverting the
-                        // attention.
-                        Duration::from_secs(8)
-                    } else {
-                        Duration::from_secs(4)
-                    };
-                    self.state = State::Shown(self.clock.now_unadjusted() + duration);
+                    self.state = State::Shown;
                 }
             }
-            State::Shown(deadline) => {
-                if self.clock.now_unadjusted() >= *deadline {
-                    self.hide();
-                }
-            }
+            State::Shown => (),
             State::Hiding(anim) => {
                 if anim.is_clamped_done() {
                     self.state = State::Hidden;
@@ -142,11 +138,12 @@ impl ConfigErrorNotification {
         let scale = output.current_scale().fractional_scale();
         let output_size = output_size(output);
         let path = self.created_path.as_deref();
+        let report = self.error_report.as_deref();
 
         let mut buffers = self.buffers.borrow_mut();
         let buffer = buffers
             .entry(NotNan::new(scale).unwrap())
-            .or_insert_with(move || render(renderer.as_gles_renderer(), scale, path).ok());
+            .or_insert_with(move || render(renderer.as_gles_renderer(), scale, path, report).ok());
         let buffer = buffer.clone()?;
 
         let size = buffer.logical_size();
@@ -156,7 +153,7 @@ impl ConfigErrorNotification {
         let y = match &self.state {
             State::Hidden => unreachable!(),
             State::Showing(anim) | State::Hiding(anim) => -size.h + anim.value() * y_range,
-            State::Shown(_) => f64::from(PADDING) * 2.,
+            State::Shown => f64::from(PADDING) * 2.,
         };
 
         let location = Point::from((x, y));
@@ -178,12 +175,13 @@ fn render(
     renderer: &mut GlesRenderer,
     scale: f64,
     created_path: Option<&Path>,
+    error_report: Option<&str>,
 ) -> anyhow::Result<TextureBuffer<GlesTexture>> {
     let _span = tracy_client::span!("config_error_notification::render");
 
     let padding: i32 = to_physical_precise_round(scale, PADDING);
 
-    let mut text = error_text(true);
+    let mut text = error_text(true, error_report);
     let mut border_color = (1., 0.3, 0.3);
     if let Some(path) = created_path {
         text = format!(
@@ -247,12 +245,26 @@ fn render(
     Ok(buffer)
 }
 
-pub fn error_text(markup: bool) -> String {
+pub fn error_text(markup: bool, error_report: Option<&str>) -> String {
     let command = if markup {
         "<span face='monospace' bgcolor='#000000'>niri validate</span>"
     } else {
         "niri validate"
     };
 
-    format!("Failed to parse the config file. Please run {command} to see the errors.")
+    let mut text =
+        format!("Failed to parse the config file. Run {command} for the full error report.");
+
+    if let Some(report) = error_report.filter(|report| !report.is_empty()) {
+        if markup {
+            text.push_str("\n<span face='monospace' bgcolor='#000000' foreground='#ffb0b0'>");
+            text.push_str(&glib::markup_escape_text(report));
+            text.push_str("</span>");
+        } else {
+            text.push('\n');
+            text.push_str(report);
+        }
+    }
+
+    text
 }
