@@ -1314,7 +1314,6 @@ impl<W: LayoutElement> Tile<W> {
         let scale = Scale::from(self.scale);
         let fullscreen_progress = self.fullscreen_progress();
         let expanded_progress = self.expanded_progress();
-        let rules = self.window.rules();
         let has_border_shader = BorderRenderElement::has_shader(renderer);
 
         if fullscreen_progress > 0. {
