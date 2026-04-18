@@ -4489,9 +4489,7 @@ fn find_configured_switch_action(
         (Switch::TabletMode, SwitchState::On) => &bindings.tablet_mode_on,
         _ => unreachable!(),
     };
-    switch_action
-        .as_ref()
-        .map(|switch_action| Action::Spawn(switch_action.spawn.clone()))
+    switch_action.as_ref().map(|sa| sa.action.clone())
 }
 
 fn modifiers_from_state(mods: ModifiersState) -> Modifiers {
