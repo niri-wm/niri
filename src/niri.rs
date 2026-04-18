@@ -325,6 +325,10 @@ pub struct Niri {
     pub suppressed_keys: HashSet<Keycode>,
     /// Button codes of the mouse buttons to suppress.
     pub suppressed_buttons: HashSet<u32>,
+    /// Button code of the key that can trigger a release action.
+    pub valid_release_trigger: Option<Keycode>,
+    /// Button code of the mouse button that can trigger a release action.
+    pub valid_mouse_release_trigger: Option<u32>,
     pub bind_cooldown_timers: HashMap<Key, RegistrationToken>,
     pub bind_repeat_timer: Option<RegistrationToken>,
     pub keyboard_focus: KeyboardFocus,
@@ -2543,6 +2547,8 @@ impl Niri {
             popup_grab: None,
             suppressed_keys: HashSet::new(),
             suppressed_buttons: HashSet::new(),
+            valid_release_trigger: None,
+            valid_mouse_release_trigger: None,
             bind_cooldown_timers: HashMap::new(),
             bind_repeat_timer: Option::default(),
             presentation_state,
