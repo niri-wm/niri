@@ -96,7 +96,7 @@ tracing.workspace = true
 tracy-client.workspace = true
 wayland-backend = "0.3.15"
 wayland-scanner = "0.31.10"
-wayland-server = { version = "0.31.13", features = ["libwayland_1_23"] }
+wayland-server = "0.31.13"
 xcursor = "0.3.10"
 zbus = { version = "5.13.2", optional = true }
 
