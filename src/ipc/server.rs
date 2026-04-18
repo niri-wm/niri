@@ -17,8 +17,8 @@ use futures_util::{select_biased, AsyncBufReadExt, AsyncWrite, AsyncWriteExt, Fu
 use niri_config::OutputName;
 use niri_ipc::state::{EventStreamState, EventStreamStatePart as _};
 use niri_ipc::{
-    Action, Event, KeyboardLayouts, OutputConfigChanged, Overview, Reply, Request, Response,
-    Timestamp, WindowLayout, Workspace,
+    Action, Event, KeyboardLayouts, OutputConfigChanged, Overview, Reply, ReplyError, Request,
+    Response, Timestamp, WindowLayout, Workspace,
 };
 use smithay::desktop::layer_map_for_output;
 use smithay::input::pointer::{
@@ -204,7 +204,7 @@ async fn handle_client(ctx: ClientCtx, stream: Async<'static, UnixStream>) -> an
 
         let request = serde_json::from_slice(&buf)
             .context("error parsing request")
-            .map_err(|err| err.to_string());
+            .map_err(|err| ReplyError::from(err.to_string()));
         let requested_error = matches!(request, Ok(Request::ReturnError));
         let requested_event_stream = matches!(request, Ok(Request::EventStream));
 
@@ -270,7 +270,7 @@ async fn handle_client(ctx: ClientCtx, stream: Async<'static, UnixStream>) -> an
 
 async fn process(ctx: &ClientCtx, request: Request) -> Reply {
     let response = match request {
-        Request::ReturnError => return Err(String::from("example compositor error")),
+        Request::ReturnError => return Err(ReplyError::Example),
         Request::Version => Response::Version(version()),
         Request::Outputs => {
             let ipc_outputs = ctx.ipc_outputs.lock().unwrap().clone();
@@ -325,7 +325,7 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
                 let _ = tx.send_blocking(layers);
             });
             let result = rx.recv().await;
-            let layers = result.map_err(|_| String::from("error getting layers info"))?;
+            let layers = result.map_err(|_| ReplyError::Layer)?;
             Response::Layers(layers)
         }
         Request::KeyboardLayouts => {
@@ -362,7 +362,7 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
                 state.niri.queue_redraw_all();
             });
             let result = rx.recv().await;
-            let id = result.map_err(|_| String::from("error getting picked window info"))?;
+            let id = result.map_err(|_| ReplyError::PickedWindow)?;
             let window = id.and_then(|id| {
                 let state = ctx.event_stream_state.borrow();
                 state.windows.windows.get(&id.get()).cloned()
@@ -375,7 +375,7 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
                 state.handle_pick_color(tx);
             });
             let result = rx.recv().await;
-            let color = result.map_err(|_| String::from("error getting picked color"))?;
+            let color = result.map_err(|_| ReplyError::PickColor)?;
             Response::PickedColor(color)
         }
         Request::Action(action) => {
@@ -441,7 +441,7 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
                 let _ = tx.send_blocking(output);
             });
             let result = rx.recv().await;
-            let output = result.map_err(|_| String::from("error getting active output info"))?;
+            let output = result.map_err(|_| ReplyError::FocusedOutput)?;
             Response::FocusedOutput(output)
         }
         Request::EventStream => Response::Handled,
@@ -460,7 +460,7 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
     Ok(response)
 }
 
-fn validate_action(action: &Action) -> Result<(), String> {
+fn validate_action(action: &Action) -> Result<(), ReplyError> {
     if let Action::Screenshot { path, .. }
     | Action::ScreenshotScreen { path, .. }
     | Action::ScreenshotWindow { path, .. }
@@ -470,7 +470,7 @@ fn validate_action(action: &Action) -> Result<(), String> {
             // Relative paths are resolved against the niri compositor's working directory, which
             // is almost certainly not what you want.
             if !Path::new(path).is_absolute() {
-                return Err(format!("path must be absolute: {path}"));
+                return Err(format!("path must be absolute: {path}").into());
             }
         }
     }
