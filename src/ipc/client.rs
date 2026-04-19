@@ -227,6 +227,18 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
                     niri_ipc::LayerSurfaceKeyboardInteractivity::Exclusive => "exclusive",
                     niri_ipc::LayerSurfaceKeyboardInteractivity::OnDemand => "on-demand",
                 };
+                let exclusive_zone = match surface.exclusive_zone {
+                    niri_ipc::LayerSurfaceExclusiveZone::Exclusive => "exclusive",
+                    niri_ipc::LayerSurfaceExclusiveZone::Neutral => "neutral",
+                };
+                let anchors = if surface.anchors.is_empty() {
+                    String::from("none")
+                } else {
+                    surface.anchors.join(",")
+                };
+                println!("      Anchors: {anchors}");
+                println!("      Anchor sides: {}", surface.anchor_sides);
+                println!("      Exclusive zone: {exclusive_zone}");
                 println!("      Keyboard interactivity: {interactivity}");
             };
 
