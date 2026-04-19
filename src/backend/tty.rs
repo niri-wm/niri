@@ -441,11 +441,11 @@ impl Tty {
         }
         .map_err(|()| anyhow!("error assigning the seat to libinput"))?;
 
-        //  If the session is not active at startup (e.g. Niri was launched from a different TTY),
+        // If the session is not active at startup (e.g. niri was launched from a different TTY),
         // suspend libinput now so that when ActivateSession fires, libinput.resume() performs a
         // full re-enumeration of input devices instead of being a no-op.
         if !session.is_active() {
-            debug!("session is not active, starting in paused state");
+            debug!("session is not active, starting libinput in paused state");
             libinput.suspend();
         }
 
