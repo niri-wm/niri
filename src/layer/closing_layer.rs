@@ -16,8 +16,10 @@ use smithay::utils::{Logical, Point, Rectangle, Scale, Size, Transform};
 use crate::animation::Animation;
 use crate::niri_render_elements;
 use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
-use crate::render_helpers::shader_element::ShaderRenderElement;
-use crate::render_helpers::shaders::{mat3_uniform, ProgramType, Shaders};
+use crate::render_helpers::shader_element::{ShaderProgram, ShaderRenderElement};
+use crate::render_helpers::shaders::{
+    layer_close_program_for_source, mat3_uniform, ProgramType, Shaders,
+};
 use crate::render_helpers::snapshot::RenderSnapshot;
 use crate::render_helpers::texture::{TextureBuffer, TextureRenderElement};
 use crate::render_helpers::{render_to_encompassing_texture, RenderTarget};
@@ -57,6 +59,9 @@ pub struct ClosingLayer {
     /// Program type for shader selection.
     program: ProgramType,
 
+    /// Optional custom shader source from layer rules.
+    custom_shader: Option<String>,
+
     /// Random seed for the shader.
     random_seed: f32,
 }
@@ -77,6 +82,7 @@ impl ClosingLayer {
         pos: Point<f64, Logical>,
         anim: Animation,
         program: ProgramType,
+        custom_shader: Option<String>,
     ) -> anyhow::Result<Self> {
         let _span = tracy_client::span!("ClosingLayer::new");
 
@@ -146,6 +152,7 @@ impl ClosingLayer {
             blocked_out_buffer_offset,
             anim,
             program,
+            custom_shader,
             random_seed: fastrand::f32(),
         })
     }
@@ -182,9 +189,7 @@ impl ClosingLayer {
 
         let progress = anim.value();
         let clamped_progress = anim.clamped_value().clamp(0., 1.);
-        let has_shader = Shaders::get(renderer).program(self.program).is_some();
-
-        if has_shader {
+        if let Some(shader) = self.resolve_shader(renderer) {
             let area_loc = Vec2::new(view_rect.loc.x as f32, view_rect.loc.y as f32);
             let area_size = Vec2::new(view_rect.size.w as f32, view_rect.size.h as f32);
 
@@ -208,8 +213,8 @@ impl ClosingLayer {
             let geo_to_tex =
                 Mat3::from_translation(-tex_loc / tex_size) * Mat3::from_scale(geo_size / tex_size);
 
-            return ShaderRenderElement::new(
-                self.program,
+            return ShaderRenderElement::new_with_shader(
+                shader,
                 view_rect.size,
                 None,
                 scale.x as f32,
@@ -256,5 +261,13 @@ impl ClosingLayer {
         );
 
         elem.into()
+    }
+
+    fn resolve_shader(&self, renderer: &mut GlesRenderer) -> Option<ShaderProgram> {
+        if let Some(src) = self.custom_shader.as_deref() {
+            return layer_close_program_for_source(renderer, src);
+        }
+
+        Shaders::get(renderer).program(self.program)
     }
 }

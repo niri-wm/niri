@@ -290,7 +290,12 @@ impl MappedLayer {
         }
     }
 
-    pub fn start_open_animation(&mut self, anim_config: &LayerOpenAnim, program: ProgramType) {
+    pub fn start_open_animation(
+        &mut self,
+        anim_config: &LayerOpenAnim,
+        program: ProgramType,
+        custom_shader: Option<String>,
+    ) {
         if self.open_animation.is_some() {
             return;
         }
@@ -298,6 +303,7 @@ impl MappedLayer {
         self.open_animation = Some(OpenAnimation::new(
             Animation::new(self.clock.clone(), 0., 1., 0., anim_config.anim),
             program,
+            custom_shader,
         ));
     }
 

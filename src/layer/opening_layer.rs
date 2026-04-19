@@ -14,8 +14,10 @@ use smithay::utils::{Logical, Point, Rectangle, Scale, Size};
 use crate::animation::Animation;
 use crate::niri_render_elements;
 use crate::render_helpers::offscreen::{OffscreenBuffer, OffscreenData, OffscreenRenderElement};
-use crate::render_helpers::shader_element::ShaderRenderElement;
-use crate::render_helpers::shaders::{mat3_uniform, ProgramType, Shaders};
+use crate::render_helpers::shader_element::{ShaderProgram, ShaderRenderElement};
+use crate::render_helpers::shaders::{
+    layer_open_program_for_source, mat3_uniform, ProgramType, Shaders,
+};
 
 #[derive(Debug)]
 pub struct OpenAnimation {
@@ -23,6 +25,7 @@ pub struct OpenAnimation {
     random_seed: f32,
     buffer: OffscreenBuffer,
     program: ProgramType,
+    custom_shader: Option<String>,
 }
 
 niri_render_elements! {
@@ -33,12 +36,13 @@ niri_render_elements! {
 }
 
 impl OpenAnimation {
-    pub fn new(anim: Animation, program: ProgramType) -> Self {
+    pub fn new(anim: Animation, program: ProgramType, custom_shader: Option<String>) -> Self {
         Self {
             anim,
             random_seed: fastrand::f32(),
             buffer: OffscreenBuffer::default(),
             program,
+            custom_shader,
         }
     }
 
@@ -65,7 +69,8 @@ impl OpenAnimation {
             .render(renderer, scale, elements)
             .context("error rendering to offscreen buffer")?;
 
-        if Shaders::get(renderer).program(self.program).is_some() {
+        let shader = self.resolve_shader(renderer);
+        if let Some(shader) = shader {
             // OffscreenBuffer renders with Transform::Normal and the scale that we passed, so we
             // can assume that below.
             let offset = elem.offset();
@@ -99,8 +104,8 @@ impl OpenAnimation {
             let geo_to_tex =
                 Mat3::from_translation(-tex_loc / tex_size) * Mat3::from_scale(geo_size / tex_size);
 
-            let elem = ShaderRenderElement::new(
-                self.program,
+            let elem = ShaderRenderElement::new_with_shader(
+                shader,
                 area.size,
                 None,
                 scale.x as f32,
@@ -140,5 +145,13 @@ impl OpenAnimation {
         );
 
         Ok((elem.into(), data))
+    }
+
+    fn resolve_shader(&self, renderer: &mut GlesRenderer) -> Option<ShaderProgram> {
+        if let Some(src) = self.custom_shader.as_deref() {
+            return layer_open_program_for_source(renderer, src);
+        }
+
+        Shaders::get(renderer).program(self.program)
     }
 }

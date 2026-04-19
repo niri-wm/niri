@@ -9,8 +9,8 @@ use smithay::wayland::compositor::{
     add_pre_commit_hook, get_parent, with_states, BufferAssignment, HookId, SurfaceAttributes,
 };
 use smithay::wayland::shell::wlr_layer::{
-    self, Anchor, ExclusiveZone, Layer, LayerSurface as WlrLayerSurface, LayerSurfaceCachedState,
-    LayerSurfaceData, WlrLayerShellHandler, WlrLayerShellState,
+    self, Layer, LayerSurface as WlrLayerSurface, LayerSurfaceCachedState, LayerSurfaceData,
+    WlrLayerShellHandler, WlrLayerShellState,
 };
 use smithay::wayland::shell::xdg::PopupSurface;
 
@@ -20,13 +20,6 @@ use crate::layer::{MappedLayer, ResolvedLayerRules};
 use crate::niri::{ClosingLayerState, State};
 use crate::render_helpers::shaders::ProgramType;
 use crate::utils::{is_mapped, output_size, send_scale_transform};
-
-#[derive(Clone, Copy)]
-enum LayerAnimationKind {
-    Bar,
-    Wallpaper,
-    Launcher,
-}
 
 impl WlrLayerShellHandler for State {
     fn shell_state(&mut self) -> &mut WlrLayerShellState {
@@ -158,34 +151,12 @@ impl State {
 
                 let rules = &config.layer_rules;
                 let rules = ResolvedLayerRules::compute(rules, layer, self.niri.is_at_startup);
-
-                let kind = resolve_layer_animation_kind(layer);
-                let (anim_config, program) = match kind {
-                    LayerAnimationKind::Bar => (
-                        config
-                            .animations
-                            .layer_bar_open
-                            .as_ref()
-                            .unwrap_or(&config.animations.layer_open),
-                        ProgramType::LayerBarOpen,
-                    ),
-                    LayerAnimationKind::Wallpaper => (
-                        config
-                            .animations
-                            .layer_wallpaper_open
-                            .as_ref()
-                            .unwrap_or(&config.animations.layer_open),
-                        ProgramType::LayerWallpaperOpen,
-                    ),
-                    LayerAnimationKind::Launcher => (
-                        config
-                            .animations
-                            .layer_launcher_open
-                            .as_ref()
-                            .unwrap_or(&config.animations.layer_open),
-                        ProgramType::LayerLauncherOpen,
-                    ),
-                };
+                let anim_config = rules
+                    .layer_open
+                    .as_ref()
+                    .unwrap_or(&config.animations.layer_open)
+                    .clone();
+                let program = ProgramType::LayerOpen;
 
                 let output_size = output_size(&output);
                 let scale = output.current_scale().fractional_scale();
@@ -202,7 +173,11 @@ impl State {
                 );
 
                 // Start the open animation immediately on map.
-                mapped.start_open_animation(anim_config, program);
+                mapped.start_open_animation(
+                    &anim_config,
+                    program,
+                    anim_config.custom_shader.clone(),
+                );
 
                 let prev = self
                     .niri
@@ -321,38 +296,15 @@ impl State {
         mut mapped: MappedLayer,
     ) {
         let scale = Scale::from(output.current_scale().fractional_scale());
-        let kind = resolve_layer_animation_kind(layer);
         let config = self.niri.config.borrow();
+        let rules = mapped.rules();
 
-        let (anim_config, program) = match kind {
-            LayerAnimationKind::Bar => (
-                config
-                    .animations
-                    .layer_bar_close
-                    .as_ref()
-                    .unwrap_or(&config.animations.layer_close)
-                    .anim,
-                ProgramType::LayerBarClose,
-            ),
-            LayerAnimationKind::Wallpaper => (
-                config
-                    .animations
-                    .layer_wallpaper_close
-                    .as_ref()
-                    .unwrap_or(&config.animations.layer_close)
-                    .anim,
-                ProgramType::LayerWallpaperClose,
-            ),
-            LayerAnimationKind::Launcher => (
-                config
-                    .animations
-                    .layer_launcher_close
-                    .as_ref()
-                    .unwrap_or(&config.animations.layer_close)
-                    .anim,
-                ProgramType::LayerLauncherClose,
-            ),
-        };
+        let anim_config = rules
+            .layer_close
+            .as_ref()
+            .unwrap_or(&config.animations.layer_close)
+            .clone();
+        let program = ProgramType::LayerClose;
 
         self.backend.with_primary_renderer(|renderer| {
             let snapshot = mapped.take_unmap_snapshot().or_else(|| {
@@ -370,7 +322,7 @@ impl State {
                 return;
             }
 
-            let anim = Animation::new(self.niri.clock.clone(), 0., 1., 0., anim_config);
+            let anim = Animation::new(self.niri.clock.clone(), 0., 1., 0., anim_config.anim);
 
             let res = ClosingLayer::new(
                 renderer,
@@ -380,6 +332,7 @@ impl State {
                 geo.loc.to_f64(),
                 anim,
                 program,
+                anim_config.custom_shader.clone(),
             );
 
             let for_backdrop = mapped.place_within_backdrop();
@@ -397,31 +350,6 @@ impl State {
                 Err(err) => warn!("error starting layer close animation: {err:?}"),
             }
         });
-    }
-}
-
-/// Classifies a layer surface into one of three animation kinds based on its geometry hints.
-///
-/// The heuristic, in priority order:
-/// - **Bar**: has an exclusive zone (reserves screen space) — e.g. panels, docks.
-/// - **Wallpaper**: anchored to all four edges with no exclusive zone — e.g. desktop backgrounds.
-/// - **Launcher**: everything else — e.g. app launchers, notification overlays.
-fn resolve_layer_animation_kind(layer: &LayerSurface) -> LayerAnimationKind {
-    let state = layer.cached_state();
-    let anchor = state.anchor;
-    let has_exclusive_zone = matches!(state.exclusive_zone, ExclusiveZone::Exclusive(_));
-    let has_all_edges = anchor
-        .contains(Anchor::TOP | Anchor::BOTTOM | Anchor::LEFT | Anchor::RIGHT)
-        && anchor.bits().count_ones() == 4;
-    let is_edge = anchor.intersects(Anchor::TOP | Anchor::BOTTOM | Anchor::LEFT | Anchor::RIGHT)
-        && anchor.bits().count_ones() <= 3;
-
-    if has_exclusive_zone && is_edge {
-        LayerAnimationKind::Bar
-    } else if has_all_edges && !has_exclusive_zone {
-        LayerAnimationKind::Wallpaper
-    } else {
-        LayerAnimationKind::Launcher
     }
 }
 
