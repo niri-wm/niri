@@ -944,6 +944,9 @@ See the [window effects page](./Window-Effects.md) for an overview of background
 ```kdl
 // Make floating windows use the regular blur (if enabled),
 // while tiled windows keep using the efficient xray blur.
+//
+// Warning: non-xray blur is currently experimental and has known limitations.
+// In particular, it doesn't work during window opening and closing animations.
 window-rule {
     match is-floating=true
 

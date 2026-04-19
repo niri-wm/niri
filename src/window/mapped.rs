@@ -216,6 +216,24 @@ impl MappedId {
     pub fn get(self) -> u64 {
         self.0
     }
+
+    /// Converts the ID to a string that can be used as an identifier in
+    /// ext_foreign_toplevel_handle_v1::identifier
+    ///
+    /// > An identifier is a string that contains up to 32 printable ASCII bytes.
+    /// > An identifier must not be an empty string.
+    ///
+    /// Since the ID is exposed to IPC, it's useful for this conversion to be stable and reversible.
+    /// That way, clients can associate a foreign toplevel handle with an IPC window ID.
+    ///
+    /// We use the decimal representation of the ID, which is up to 20 characters long for u64::MAX.
+    /// This is within the 32-character limit, and is nice because it matches up with how `niri msg`
+    /// prints the IDs to the console.
+    ///
+    /// This namespace can be extended in the future, with any non-numeric prefix to disambiguate.
+    pub fn to_protocol_identifier(self) -> String {
+        format!("{}", self.0)
+    }
 }
 
 /// Interactive resize state.
@@ -486,8 +504,7 @@ impl Mapped {
         let bbox = self.window.bbox_with_popups().to_physical_precise_up(scale);
 
         let has_border_shader = BorderRenderElement::has_shader(renderer);
-        let rules = self.rules();
-        let radius = rules.geometry_corner_radius.unwrap_or_default();
+        let radius = self.geometry_corner_radius();
         let window_size = self
             .size()
             .to_f64()
@@ -1291,6 +1308,10 @@ impl LayoutElement for Mapped {
             // No pending size, return the current size if it's non-fullscreen.
             current_size
         }
+    }
+
+    fn is_windowed_fullscreen(&self) -> bool {
+        self.is_windowed_fullscreen
     }
 
     fn is_pending_windowed_fullscreen(&self) -> bool {

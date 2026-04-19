@@ -295,6 +295,7 @@ impl State {
         I::Device: 'static,
     {
         let device_output = event.device().output(self);
+        let device_output = device_output.filter(|output| self.niri.output_exists(output));
         let device_output = device_output.as_ref();
         let (target_geo, keep_ratio, px, transform) =
             if let Some(output) = device_output.or_else(|| self.niri.output_for_tablet()) {
@@ -3265,8 +3266,8 @@ impl State {
         let horizontal_amount = event.amount(Axis::Horizontal);
         let vertical_amount = event.amount(Axis::Vertical);
 
-        // Handle touchpad scroll bindings.
-        if source == AxisSource::Finger {
+        // Handle touchpad and continuous scroll bindings.
+        if source == AxisSource::Finger || source == AxisSource::Continuous {
             let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
             let modifiers = modifiers_from_state(mods);
 
@@ -4039,6 +4040,7 @@ impl State {
         fallback_output: Option<&Output>,
     ) -> Option<Point<f64, Logical>> {
         let output = evt.device().output(self);
+        let output = output.filter(|output| self.niri.output_exists(output));
         let output = output.as_ref().or(fallback_output)?;
         let output_geo = self.niri.global_space.output_geometry(output).unwrap();
         let transform = output.current_transform();

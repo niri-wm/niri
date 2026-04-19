@@ -466,7 +466,7 @@ impl SessionLockHandler for State {
     }
 
     fn new_surface(&mut self, surface: LockSurface, output: WlOutput) {
-        let Some(output) = Output::from_resource(&output) else {
+        let Some(output) = self.niri.output_from_resource(&output) else {
             warn!("no Output matching WlOutput");
             return;
         };
@@ -551,7 +551,9 @@ impl ForeignToplevelHandler for State {
         {
             let window = mapped.window.clone();
 
-            if let Some(requested_output) = wl_output.as_ref().and_then(Output::from_resource) {
+            if let Some(requested_output) =
+                wl_output.and_then(|o| self.niri.output_from_resource(&o))
+            {
                 if Some(&requested_output) != current_output {
                     self.niri.layout.move_to_output(
                         Some(&window),
@@ -627,6 +629,12 @@ delegate_ext_workspace!(State);
 
 impl ScreencopyHandler for State {
     fn frame(&mut self, manager: &ZwlrScreencopyManagerV1, screencopy: Screencopy) {
+        // This can happen if the output was removed before this was called.
+        if !self.niri.output_exists(screencopy.output()) {
+            trace!("screencopy output no longer exists");
+            return;
+        }
+
         // If with_damage then push it onto the queue for redraw of the output,
         // otherwise render it immediately.
         if screencopy.with_damage() {

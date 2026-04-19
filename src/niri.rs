@@ -110,6 +110,7 @@ use smithay::wayland::viewporter::ViewporterState;
 use smithay::wayland::virtual_keyboard::VirtualKeyboardManagerState;
 use smithay::wayland::xdg_activation::XdgActivationState;
 use smithay::wayland::xdg_foreign::XdgForeignState;
+use wayland_server::protocol::wl_output::WlOutput;
 
 #[cfg(feature = "dbus")]
 use crate::a11y::A11y;
@@ -1320,6 +1321,7 @@ impl State {
                         get_monotonic_time().as_millis() as u32,
                     );
                     self.niri.popup_grab = None;
+                    self.niri.on_maybe_dnd_ended();
                 }
             }
 
@@ -1975,6 +1977,7 @@ impl State {
         if let Some(touch) = self.niri.seat.get_touch() {
             touch.unset_grab(self);
         }
+        self.niri.on_maybe_dnd_ended();
 
         self.backend.with_primary_renderer(|renderer| {
             self.niri
@@ -2872,6 +2875,20 @@ impl Niri {
         self.reposition_outputs(Some(&output));
     }
 
+    pub fn output_exists(&self, output: &Output) -> bool {
+        self.output_state.contains_key(output)
+    }
+
+    /// Converts a `WlOutput` to a corresponding `Output` if it exists.
+    ///
+    /// Compared to raw `Output::from_resource`, this method also verifies that the output still
+    /// exists in niri. Right after the output global is disabled, but before it is removed for
+    /// good, `Output::from_resource` will succeed, but since niri already forgot the output,
+    /// accessing it can cause logic bugs.
+    pub fn output_from_resource(&self, wl_output: &WlOutput) -> Option<Output> {
+        Output::from_resource(wl_output).filter(|output| self.output_exists(output))
+    }
+
     pub fn remove_output(&mut self, output: &Output) {
         for layer in layer_map_for_output(output).layers() {
             layer.layer_surface().send_close();
@@ -3580,8 +3597,12 @@ impl Niri {
 
     pub fn output_for_tablet(&self) -> Option<&Output> {
         let config = self.config.borrow();
-        let map_to_output = config.input.tablet.map_to_output.as_ref();
-        map_to_output.and_then(|name| self.output_by_name_match(name))
+        if config.input.tablet.map_to_focused_output {
+            self.layout.active_output()
+        } else {
+            let map_to_output = config.input.tablet.map_to_output.as_ref();
+            map_to_output.and_then(|name| self.output_by_name_match(name))
+        }
     }
 
     pub fn output_for_touch(&self) -> Option<&Output> {
