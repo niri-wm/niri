@@ -15,7 +15,7 @@ use anyhow::{bail, ensure, Context};
 use calloop::futures::Scheduler;
 use niri_config::debug::PreviewRender;
 use niri_config::{
-    Config, FloatOrInt, Key, Modifiers, OutputName, TrackLayout, WarpMouseToFocusMode,
+    Config, FloatOrInt, Modifiers, OutputName, TrackLayout, WarpMouseToFocusMode,
     WorkspaceReference, Xkb,
 };
 use smithay::backend::allocator::Fourcc;
@@ -131,8 +131,8 @@ use crate::input::pick_color_grab::PickColorGrab;
 use crate::input::scroll_swipe_gesture::ScrollSwipeGesture;
 use crate::input::scroll_tracker::ScrollTracker;
 use crate::input::{
-    apply_libinput_settings, mods_with_finger_scroll_binds, mods_with_mouse_binds,
-    mods_with_wheel_binds, TabletData,
+    apply_libinput_settings, compile_binds, mods_with_finger_scroll_binds, mods_with_mouse_binds,
+    mods_with_wheel_binds, CompiledBind, CompiledKey, TabletData,
 };
 use crate::ipc::server::IpcServer;
 use crate::layer::mapped::LayerSurfaceRenderElement;
@@ -325,7 +325,8 @@ pub struct Niri {
     pub suppressed_keys: HashSet<Keycode>,
     /// Button codes of the mouse buttons to suppress.
     pub suppressed_buttons: HashSet<u32>,
-    pub bind_cooldown_timers: HashMap<Key, RegistrationToken>,
+    pub compiled_binds: Vec<CompiledBind>,
+    pub bind_cooldown_timers: HashMap<CompiledKey, RegistrationToken>,
     pub bind_repeat_timer: Option<RegistrationToken>,
     pub keyboard_focus: KeyboardFocus,
     pub layer_shell_on_demand_focus: Option<LayerSurface>,
@@ -697,15 +698,21 @@ pub struct State {
     pub niri: Niri,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct SessionOptions {
+    pub create_wayland_socket: bool,
+    pub is_session_instance: bool,
+}
+
 impl State {
     pub fn new(
         config: Config,
+        compiled_binds: Vec<CompiledBind>,
         event_loop: LoopHandle<'static, State>,
         stop_signal: LoopSignal,
         display: Display<State>,
         headless: bool,
-        create_wayland_socket: bool,
-        is_session_instance: bool,
+        session_options: SessionOptions,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let _span = tracy_client::span!("State::new");
 
@@ -729,12 +736,12 @@ impl State {
 
         let mut niri = Niri::new(
             config.clone(),
+            compiled_binds,
             event_loop,
             stop_signal,
             display,
             &backend,
-            create_wayland_socket,
-            is_session_instance,
+            session_options,
         );
         backend.init(&mut niri);
 
@@ -1424,11 +1431,44 @@ impl State {
             }
         };
 
+        let mut reload_xkb = None;
+        let mut libinput_config_changed = false;
+        let mut output_config_changed = false;
+        let mut preserved_output_config = None;
+        let mut window_rules_changed = false;
+        let mut layer_rules_changed = false;
+        let mut shaders_changed = false;
+        let mut cursor_inactivity_timeout_changed = false;
+        let mut recent_windows_changed = false;
+        let mut xwls_changed = false;
+        let binds_changed = {
+            let old_config = self.niri.config.borrow();
+            config.binds != old_config.binds
+        };
+        let compiled_binds = if binds_changed {
+            match compile_binds(&config.binds) {
+                Ok(compiled_binds) => Some(compiled_binds),
+                Err(err) => {
+                    warn!("error compiling layout-independent binds: {err:#}");
+                    self.niri.config_error_notification.show();
+                    self.niri.queue_redraw_all();
+
+                    #[cfg(feature = "dbus")]
+                    self.niri.a11y_announce_config_error();
+
+                    return;
+                }
+            }
+        } else {
+            None
+        };
+
         self.niri.config_error_notification.hide();
+        let mut old_config = self.niri.config.borrow_mut();
 
         // Find & orphan removed named workspaces.
         let mut removed_workspaces: Vec<String> = vec![];
-        for ws in &self.niri.config.borrow().workspaces {
+        for ws in &old_config.workspaces {
             if !config.workspaces.iter().any(|w| w.name == ws.name) {
                 removed_workspaces.push(ws.name.0.clone());
             }
@@ -1454,18 +1494,6 @@ impl State {
             .set_complete_instantly(config.animations.off);
 
         *CHILD_ENV.write().unwrap() = mem::take(&mut config.environment);
-
-        let mut reload_xkb = None;
-        let mut libinput_config_changed = false;
-        let mut output_config_changed = false;
-        let mut preserved_output_config = None;
-        let mut window_rules_changed = false;
-        let mut layer_rules_changed = false;
-        let mut shaders_changed = false;
-        let mut cursor_inactivity_timeout_changed = false;
-        let mut recent_windows_changed = false;
-        let mut xwls_changed = false;
-        let mut old_config = self.niri.config.borrow_mut();
 
         // Reload the cursor.
         if config.cursor != old_config.cursor {
@@ -1515,12 +1543,14 @@ impl State {
             preserved_output_config = Some(mem::take(&mut old_config.outputs));
         }
 
-        let binds_changed = config.binds != old_config.binds;
         let new_mod_key = self.backend.mod_key(&config);
         if new_mod_key != self.backend.mod_key(&old_config) || binds_changed {
             self.niri
                 .hotkey_overlay
                 .on_hotkey_config_updated(new_mod_key);
+            if let Some(compiled_binds) = compiled_binds {
+                self.niri.compiled_binds = compiled_binds;
+            }
             self.niri.mods_with_mouse_binds = mods_with_mouse_binds(new_mod_key, &config.binds);
             self.niri.mods_with_wheel_binds = mods_with_wheel_binds(new_mod_key, &config.binds);
             self.niri.mods_with_finger_scroll_binds =
@@ -1666,7 +1696,9 @@ impl State {
         }
 
         if binds_changed {
-            self.niri.window_mru_ui.update_binds();
+            self.niri
+                .window_mru_ui
+                .update_binds(&self.niri.compiled_binds);
         }
 
         if recent_windows_changed {
@@ -2216,12 +2248,12 @@ impl State {
 impl Niri {
     pub fn new(
         config: Rc<RefCell<Config>>,
+        compiled_binds: Vec<CompiledBind>,
         event_loop: LoopHandle<'static, State>,
         stop_signal: LoopSignal,
         display: Display<State>,
         backend: &Backend,
-        create_wayland_socket: bool,
-        is_session_instance: bool,
+        session_options: SessionOptions,
     ) -> Self {
         let _span = tracy_client::span!("Niri::new");
 
@@ -2398,7 +2430,7 @@ impl Niri {
         let mods_with_finger_scroll_binds = mods_with_finger_scroll_binds(mod_key, &config_.binds);
 
         let screenshot_ui = ScreenshotUi::new(animation_clock.clone(), config.clone());
-        let window_mru_ui = WindowMruUi::new(config.clone());
+        let window_mru_ui = WindowMruUi::new(config.clone(), &compiled_binds);
         let config_error_notification =
             ConfigErrorNotification::new(animation_clock.clone(), config.clone());
 
@@ -2422,7 +2454,7 @@ impl Niri {
             )
             .unwrap();
 
-        let socket_name = create_wayland_socket.then(|| {
+        let socket_name = session_options.create_wayland_socket.then(|| {
             let socket_source = ListeningSocketSource::new_auto().unwrap();
             let socket_name = socket_source.socket_name().to_os_string();
             event_loop
@@ -2483,7 +2515,7 @@ impl Niri {
             stop_signal,
             socket_name,
             display_handle,
-            is_session_instance,
+            is_session_instance: session_options.is_session_instance,
             start_time: Instant::now(),
             is_at_startup: true,
             clock: animation_clock,
@@ -2543,6 +2575,7 @@ impl Niri {
             popup_grab: None,
             suppressed_keys: HashSet::new(),
             suppressed_buttons: HashSet::new(),
+            compiled_binds,
             bind_cooldown_timers: HashMap::new(),
             bind_repeat_timer: Option::default(),
             presentation_state,

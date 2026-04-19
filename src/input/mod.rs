@@ -1,13 +1,17 @@
 use std::any::Any;
 use std::cmp::min;
 use std::collections::hash_map::Entry;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+use std::fmt;
+use std::path::PathBuf;
 use std::time::Duration;
 
+use anyhow::Context as _;
 use calloop::timer::{TimeoutAction, Timer};
 use input::event::gesture::GestureEventCoordinates as _;
 use niri_config::{
-    Action, Bind, Binds, Config, Key, ModKey, Modifiers, MruDirection, SwitchBinds, Trigger,
+    Action, Bind as ConfigBind, Binds, Config, Key, ModKey, Modifiers, MruDirection, SwitchBinds,
+    Trigger,
 };
 use niri_ipc::LayoutSwitchTarget;
 use smithay::backend::input::{
@@ -20,7 +24,7 @@ use smithay::backend::input::{
 };
 use smithay::backend::libinput::LibinputInputBackend;
 use smithay::input::dnd::DnDGrab;
-use smithay::input::keyboard::{keysyms, FilterResult, Keysym, Layout, ModifiersState};
+use smithay::input::keyboard::{keysyms, xkb, FilterResult, Keysym, Layout, ModifiersState};
 use smithay::input::pointer::{
     AxisFrame, ButtonEvent, CursorIcon, CursorImageStatus, Focus, GestureHoldBeginEvent,
     GestureHoldEndEvent, GesturePinchBeginEvent, GesturePinchEndEvent, GesturePinchUpdateEvent,
@@ -53,7 +57,7 @@ use crate::niri::{CastTarget, PointerVisibility, State};
 use crate::ui::mru::{WindowMru, WindowMruUi};
 use crate::ui::screenshot_ui::ScreenshotUi;
 use crate::utils::spawning::{spawn, spawn_sh};
-use crate::utils::{center, get_monotonic_time, CastSessionId, ResizeEdge};
+use crate::utils::{center, expand_home, get_monotonic_time, CastSessionId, ResizeEdge};
 
 pub mod backend_ext;
 pub mod move_grab;
@@ -70,6 +74,191 @@ pub mod touch_resize_grab;
 use backend_ext::{NiriInputBackend as InputBackend, NiriInputDevice as _};
 
 pub const DOUBLE_CLICK_TIME: Duration = Duration::from_millis(400);
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CompiledBind {
+    pub key: CompiledKey,
+    pub action: Action,
+    pub repeat: bool,
+    pub cooldown: Option<Duration>,
+    pub allow_when_locked: bool,
+    pub allow_inhibiting: bool,
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
+pub struct CompiledKey {
+    pub trigger: CompiledTrigger,
+    pub modifiers: Modifiers,
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
+pub enum CompiledTrigger {
+    Keysym(Keysym),
+    PhysicalKey(Keycode),
+    MouseLeft,
+    MouseRight,
+    MouseMiddle,
+    MouseBack,
+    MouseForward,
+    WheelScrollDown,
+    WheelScrollUp,
+    WheelScrollLeft,
+    WheelScrollRight,
+    TouchpadScrollDown,
+    TouchpadScrollUp,
+    TouchpadScrollLeft,
+    TouchpadScrollRight,
+}
+
+struct ModifierNameEntry {
+    modifier: Option<Modifiers>,
+    display_name: Option<&'static str>,
+    xkb_names: &'static [&'static str],
+}
+
+fn modifier_name_entries() -> &'static [ModifierNameEntry] {
+    &[
+        ModifierNameEntry {
+            modifier: Some(Modifiers::COMPOSITOR),
+            display_name: Some("Compositor"),
+            xkb_names: &[],
+        },
+        ModifierNameEntry {
+            modifier: Some(Modifiers::SUPER),
+            display_name: Some("Super"),
+            xkb_names: &[xkb::MOD_NAME_LOGO, "Logo", "Super", "Meta", "Win"],
+        },
+        ModifierNameEntry {
+            modifier: Some(Modifiers::CTRL),
+            display_name: Some("Ctrl"),
+            xkb_names: &[xkb::MOD_NAME_CTRL, "Ctrl"],
+        },
+        ModifierNameEntry {
+            modifier: Some(Modifiers::SHIFT),
+            display_name: Some("Shift"),
+            xkb_names: &[xkb::MOD_NAME_SHIFT],
+        },
+        ModifierNameEntry {
+            modifier: Some(Modifiers::ALT),
+            display_name: Some("Alt"),
+            xkb_names: &[xkb::MOD_NAME_ALT, "Alt"],
+        },
+        ModifierNameEntry {
+            modifier: Some(Modifiers::ISO_LEVEL3_SHIFT),
+            display_name: Some("ISO_Level3_Shift"),
+            xkb_names: &[
+                xkb::MOD_NAME_ISO_LEVEL3_SHIFT,
+                "ISO_Level3_Shift",
+                "LevelThree",
+                "AltGr",
+            ],
+        },
+        ModifierNameEntry {
+            modifier: Some(Modifiers::ISO_LEVEL5_SHIFT),
+            display_name: Some("ISO_Level5_Shift"),
+            xkb_names: &[xkb::MOD_NAME_MOD3, "ISO_Level5_Shift", "LevelFive"],
+        },
+        ModifierNameEntry {
+            modifier: None,
+            display_name: None,
+            xkb_names: &[xkb::MOD_NAME_CAPS, "Caps", "CapsLock"],
+        },
+        ModifierNameEntry {
+            modifier: None,
+            display_name: None,
+            xkb_names: &[xkb::MOD_NAME_NUM, "Num", "NumLock"],
+        },
+    ]
+}
+
+impl fmt::Display for CompiledTrigger {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Keysym(keysym) => f.write_str(&xkb::keysym_get_name(*keysym)),
+            Self::PhysicalKey(keycode) => write!(f, "keycode {}", keycode.raw()),
+            Self::MouseLeft => f.write_str("Mouse Left"),
+            Self::MouseRight => f.write_str("Mouse Right"),
+            Self::MouseMiddle => f.write_str("Mouse Middle"),
+            Self::MouseBack => f.write_str("Mouse Back"),
+            Self::MouseForward => f.write_str("Mouse Forward"),
+            Self::WheelScrollDown => f.write_str("Wheel Scroll Down"),
+            Self::WheelScrollUp => f.write_str("Wheel Scroll Up"),
+            Self::WheelScrollLeft => f.write_str("Wheel Scroll Left"),
+            Self::WheelScrollRight => f.write_str("Wheel Scroll Right"),
+            Self::TouchpadScrollDown => f.write_str("Touchpad Scroll Down"),
+            Self::TouchpadScrollUp => f.write_str("Touchpad Scroll Up"),
+            Self::TouchpadScrollLeft => f.write_str("Touchpad Scroll Left"),
+            Self::TouchpadScrollRight => f.write_str("Touchpad Scroll Right"),
+        }
+    }
+}
+
+impl fmt::Display for CompiledKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut wrote_modifier = false;
+        for entry in modifier_name_entries() {
+            let (Some(modifier), Some(name)) = (entry.modifier, entry.display_name) else {
+                continue;
+            };
+
+            if !self.modifiers.contains(modifier) {
+                continue;
+            }
+
+            write!(f, "{name}+")?;
+            wrote_modifier = true;
+        }
+
+        if !wrote_modifier {
+            return write!(f, "{}", self.trigger);
+        }
+
+        write!(f, "{}", self.trigger)
+    }
+}
+
+impl From<Trigger> for CompiledTrigger {
+    fn from(value: Trigger) -> Self {
+        match value {
+            Trigger::Keysym(keysym) => Self::Keysym(keysym),
+            Trigger::MouseLeft => Self::MouseLeft,
+            Trigger::MouseRight => Self::MouseRight,
+            Trigger::MouseMiddle => Self::MouseMiddle,
+            Trigger::MouseBack => Self::MouseBack,
+            Trigger::MouseForward => Self::MouseForward,
+            Trigger::WheelScrollDown => Self::WheelScrollDown,
+            Trigger::WheelScrollUp => Self::WheelScrollUp,
+            Trigger::WheelScrollLeft => Self::WheelScrollLeft,
+            Trigger::WheelScrollRight => Self::WheelScrollRight,
+            Trigger::TouchpadScrollDown => Self::TouchpadScrollDown,
+            Trigger::TouchpadScrollUp => Self::TouchpadScrollUp,
+            Trigger::TouchpadScrollLeft => Self::TouchpadScrollLeft,
+            Trigger::TouchpadScrollRight => Self::TouchpadScrollRight,
+        }
+    }
+}
+
+impl From<Key> for CompiledKey {
+    fn from(value: Key) -> Self {
+        Self {
+            trigger: value.trigger.into(),
+            modifiers: value.modifiers,
+        }
+    }
+}
+
+impl From<ConfigBind> for CompiledBind {
+    fn from(value: ConfigBind) -> Self {
+        Self {
+            key: value.key.into(),
+            action: value.action,
+            repeat: value.repeat,
+            cooldown: value.cooldown,
+            allow_when_locked: value.allow_when_locked,
+            allow_inhibiting: value.allow_inhibiting,
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TabletData {
@@ -514,8 +703,12 @@ impl State {
 
                 let res = {
                     let config = this.niri.config.borrow();
-                    let bindings =
-                        make_binds_iter(&config, &mut this.niri.window_mru_ui, modifiers);
+                    let bindings = make_binds_iter(
+                        &this.niri.compiled_binds,
+                        &config,
+                        &mut this.niri.window_mru_ui,
+                        modifiers,
+                    );
 
                     should_intercept_key(
                         &mut this.niri.suppressed_keys,
@@ -562,7 +755,7 @@ impl State {
         self.start_key_repeat(bind);
     }
 
-    fn start_key_repeat(&mut self, bind: Bind) {
+    fn start_key_repeat(&mut self, bind: CompiledBind) {
         if !bind.repeat {
             return;
         }
@@ -618,7 +811,7 @@ impl State {
         self.niri.queue_redraw_all();
     }
 
-    pub fn handle_bind(&mut self, bind: Bind) {
+    pub fn handle_bind(&mut self, bind: CompiledBind) {
         let Some(cooldown) = bind.cooldown else {
             self.do_action(bind.action, bind.allow_when_locked);
             return;
@@ -2792,9 +2985,13 @@ impl State {
                 }
                 .and_then(|trigger| {
                     let config = self.niri.config.borrow();
-                    let bindings =
-                        make_binds_iter(&config, &mut self.niri.window_mru_ui, modifiers);
-                    find_configured_bind(bindings, mod_key, trigger, mods)
+                    let bindings = make_binds_iter(
+                        &self.niri.compiled_binds,
+                        &config,
+                        &mut self.niri.window_mru_ui,
+                        modifiers,
+                    );
+                    find_configured_bind(bindings, mod_key, trigger.into(), mods)
                 }) {
                     self.niri.suppressed_buttons.insert(button_code);
                     self.handle_bind(bind.clone());
@@ -3116,9 +3313,9 @@ impl State {
                 if ticks != 0 {
                     let (bind_left, bind_right) =
                         if should_handle_in_overview && modifiers.is_empty() {
-                            let bind_left = Some(Bind {
-                                key: Key {
-                                    trigger: Trigger::WheelScrollLeft,
+                            let bind_left = Some(CompiledBind {
+                                key: CompiledKey {
+                                    trigger: CompiledTrigger::WheelScrollLeft,
                                     modifiers: Modifiers::empty(),
                                 },
                                 action: Action::FocusColumnLeftUnderMouse,
@@ -3126,11 +3323,10 @@ impl State {
                                 cooldown: None,
                                 allow_when_locked: false,
                                 allow_inhibiting: false,
-                                hotkey_overlay_title: None,
                             });
-                            let bind_right = Some(Bind {
-                                key: Key {
-                                    trigger: Trigger::WheelScrollRight,
+                            let bind_right = Some(CompiledBind {
+                                key: CompiledKey {
+                                    trigger: CompiledTrigger::WheelScrollRight,
                                     modifiers: Modifiers::empty(),
                                 },
                                 action: Action::FocusColumnRightUnderMouse,
@@ -3138,23 +3334,26 @@ impl State {
                                 cooldown: None,
                                 allow_when_locked: false,
                                 allow_inhibiting: false,
-                                hotkey_overlay_title: None,
                             });
                             (bind_left, bind_right)
                         } else {
                             let config = self.niri.config.borrow();
-                            let bindings =
-                                make_binds_iter(&config, &mut self.niri.window_mru_ui, modifiers);
+                            let bindings = make_binds_iter(
+                                &self.niri.compiled_binds,
+                                &config,
+                                &mut self.niri.window_mru_ui,
+                                modifiers,
+                            );
                             let bind_left = find_configured_bind(
                                 bindings.clone(),
                                 mod_key,
-                                Trigger::WheelScrollLeft,
+                                CompiledTrigger::WheelScrollLeft,
                                 mods,
                             );
                             let bind_right = find_configured_bind(
                                 bindings,
                                 mod_key,
-                                Trigger::WheelScrollRight,
+                                CompiledTrigger::WheelScrollRight,
                                 mods,
                             );
                             (bind_left, bind_right)
@@ -3177,9 +3376,9 @@ impl State {
                 if ticks != 0 {
                     let (bind_up, bind_down) = if should_handle_in_overview && modifiers.is_empty()
                     {
-                        let bind_up = Some(Bind {
-                            key: Key {
-                                trigger: Trigger::WheelScrollUp,
+                        let bind_up = Some(CompiledBind {
+                            key: CompiledKey {
+                                trigger: CompiledTrigger::WheelScrollUp,
                                 modifiers: Modifiers::empty(),
                             },
                             action: Action::FocusWorkspaceUpUnderMouse,
@@ -3187,11 +3386,10 @@ impl State {
                             cooldown: Some(Duration::from_millis(50)),
                             allow_when_locked: false,
                             allow_inhibiting: false,
-                            hotkey_overlay_title: None,
                         });
-                        let bind_down = Some(Bind {
-                            key: Key {
-                                trigger: Trigger::WheelScrollDown,
+                        let bind_down = Some(CompiledBind {
+                            key: CompiledKey {
+                                trigger: CompiledTrigger::WheelScrollDown,
                                 modifiers: Modifiers::empty(),
                             },
                             action: Action::FocusWorkspaceDownUnderMouse,
@@ -3199,13 +3397,12 @@ impl State {
                             cooldown: Some(Duration::from_millis(50)),
                             allow_when_locked: false,
                             allow_inhibiting: false,
-                            hotkey_overlay_title: None,
                         });
                         (bind_up, bind_down)
                     } else if should_handle_in_overview && modifiers == Modifiers::SHIFT {
-                        let bind_up = Some(Bind {
-                            key: Key {
-                                trigger: Trigger::WheelScrollUp,
+                        let bind_up = Some(CompiledBind {
+                            key: CompiledKey {
+                                trigger: CompiledTrigger::WheelScrollUp,
                                 modifiers: Modifiers::empty(),
                             },
                             action: Action::FocusColumnLeftUnderMouse,
@@ -3213,11 +3410,10 @@ impl State {
                             cooldown: Some(Duration::from_millis(50)),
                             allow_when_locked: false,
                             allow_inhibiting: false,
-                            hotkey_overlay_title: None,
                         });
-                        let bind_down = Some(Bind {
-                            key: Key {
-                                trigger: Trigger::WheelScrollDown,
+                        let bind_down = Some(CompiledBind {
+                            key: CompiledKey {
+                                trigger: CompiledTrigger::WheelScrollDown,
                                 modifiers: Modifiers::empty(),
                             },
                             action: Action::FocusColumnRightUnderMouse,
@@ -3225,21 +3421,28 @@ impl State {
                             cooldown: Some(Duration::from_millis(50)),
                             allow_when_locked: false,
                             allow_inhibiting: false,
-                            hotkey_overlay_title: None,
                         });
                         (bind_up, bind_down)
                     } else {
                         let config = self.niri.config.borrow();
-                        let bindings =
-                            make_binds_iter(&config, &mut self.niri.window_mru_ui, modifiers);
+                        let bindings = make_binds_iter(
+                            &self.niri.compiled_binds,
+                            &config,
+                            &mut self.niri.window_mru_ui,
+                            modifiers,
+                        );
                         let bind_up = find_configured_bind(
                             bindings.clone(),
                             mod_key,
-                            Trigger::WheelScrollUp,
+                            CompiledTrigger::WheelScrollUp,
                             mods,
                         );
-                        let bind_down =
-                            find_configured_bind(bindings, mod_key, Trigger::WheelScrollDown, mods);
+                        let bind_down = find_configured_bind(
+                            bindings,
+                            mod_key,
+                            CompiledTrigger::WheelScrollDown,
+                            mods,
+                        );
                         (bind_up, bind_down)
                     };
 
@@ -3375,16 +3578,24 @@ impl State {
                     .accumulate(horizontal);
                 if ticks != 0 {
                     let config = self.niri.config.borrow();
-                    let bindings =
-                        make_binds_iter(&config, &mut self.niri.window_mru_ui, modifiers);
+                    let bindings = make_binds_iter(
+                        &self.niri.compiled_binds,
+                        &config,
+                        &mut self.niri.window_mru_ui,
+                        modifiers,
+                    );
                     let bind_left = find_configured_bind(
                         bindings.clone(),
                         mod_key,
-                        Trigger::TouchpadScrollLeft,
+                        CompiledTrigger::TouchpadScrollLeft,
                         mods,
                     );
-                    let bind_right =
-                        find_configured_bind(bindings, mod_key, Trigger::TouchpadScrollRight, mods);
+                    let bind_right = find_configured_bind(
+                        bindings,
+                        mod_key,
+                        CompiledTrigger::TouchpadScrollRight,
+                        mods,
+                    );
                     drop(config);
 
                     if let Some(right) = bind_right {
@@ -3405,16 +3616,24 @@ impl State {
                     .accumulate(vertical);
                 if ticks != 0 {
                     let config = self.niri.config.borrow();
-                    let bindings =
-                        make_binds_iter(&config, &mut self.niri.window_mru_ui, modifiers);
+                    let bindings = make_binds_iter(
+                        &self.niri.compiled_binds,
+                        &config,
+                        &mut self.niri.window_mru_ui,
+                        modifiers,
+                    );
                     let bind_up = find_configured_bind(
                         bindings.clone(),
                         mod_key,
-                        Trigger::TouchpadScrollUp,
+                        CompiledTrigger::TouchpadScrollUp,
                         mods,
                     );
-                    let bind_down =
-                        find_configured_bind(bindings, mod_key, Trigger::TouchpadScrollDown, mods);
+                    let bind_down = find_configured_bind(
+                        bindings,
+                        mod_key,
+                        CompiledTrigger::TouchpadScrollDown,
+                        mods,
+                    );
                     drop(config);
 
                     if let Some(down) = bind_down {
@@ -4313,9 +4532,9 @@ impl State {
 /// pressed keys as `suppressed`, thus preventing `releases` corresponding
 /// to them from being delivered.
 #[allow(clippy::too_many_arguments)]
-fn should_intercept_key<'a>(
+fn should_intercept_key(
     suppressed_keys: &mut HashSet<Keycode>,
-    bindings: impl IntoIterator<Item = &'a Bind>,
+    bindings: impl IntoIterator<Item = CompiledBind>,
     mod_key: ModKey,
     key_code: Keycode,
     modified: Keysym,
@@ -4325,7 +4544,7 @@ fn should_intercept_key<'a>(
     screenshot_ui: &ScreenshotUi,
     disable_power_key_handling: bool,
     is_inhibiting_shortcuts: bool,
-) -> FilterResult<Option<Bind>> {
+) -> FilterResult<Option<CompiledBind>> {
     // Actions are only triggered on presses, release of the key
     // shouldn't try to intercept anything unless we have marked
     // the key to suppress.
@@ -4336,6 +4555,7 @@ fn should_intercept_key<'a>(
     let mut final_bind = find_bind(
         bindings,
         mod_key,
+        key_code,
         modified,
         raw,
         mods,
@@ -4355,9 +4575,9 @@ fn should_intercept_key<'a>(
 
         if use_screenshot_ui_action {
             if let Some(raw) = raw {
-                final_bind = screenshot_ui.action(raw, mods).map(|action| Bind {
-                    key: Key {
-                        trigger: Trigger::Keysym(raw),
+                final_bind = screenshot_ui.action(raw, mods).map(|action| CompiledBind {
+                    key: CompiledKey {
+                        trigger: CompiledTrigger::Keysym(raw),
                         // Not entirely correct but it doesn't matter in how we currently use it.
                         modifiers: Modifiers::empty(),
                     },
@@ -4369,7 +4589,6 @@ fn should_intercept_key<'a>(
                     // But logically, nothing can inhibit its actions. Only opening it can be
                     // inhibited.
                     allow_inhibiting: false,
-                    hotkey_overlay_title: None,
                 });
             }
         }
@@ -4397,14 +4616,15 @@ fn should_intercept_key<'a>(
     }
 }
 
-fn find_bind<'a>(
-    bindings: impl IntoIterator<Item = &'a Bind>,
+fn find_bind(
+    bindings: impl IntoIterator<Item = CompiledBind>,
     mod_key: ModKey,
+    key_code: Keycode,
     modified: Keysym,
     raw: Option<Keysym>,
     mods: ModifiersState,
     disable_power_key_handling: bool,
-) -> Option<Bind> {
+) -> Option<CompiledBind> {
     use keysyms::*;
 
     // Handle hardcoded binds.
@@ -4419,10 +4639,10 @@ fn find_bind<'a>(
     };
 
     if let Some(action) = hardcoded_action {
-        return Some(Bind {
-            key: Key {
+        return Some(CompiledBind {
+            key: CompiledKey {
                 // Not entirely correct but it doesn't matter in how we currently use it.
-                trigger: Trigger::Keysym(modified),
+                trigger: CompiledTrigger::Keysym(modified),
                 modifiers: Modifiers::empty(),
             },
             action,
@@ -4435,46 +4655,335 @@ fn find_bind<'a>(
             // It also makes no sense to inhibit the default power key handling.
             // Hardcoded binds must never be inhibited.
             allow_inhibiting: false,
-            hotkey_overlay_title: None,
         });
     }
 
-    let trigger = Trigger::Keysym(raw?);
-    find_configured_bind(bindings, mod_key, trigger, mods)
-}
-
-fn find_configured_bind<'a>(
-    bindings: impl IntoIterator<Item = &'a Bind>,
-    mod_key: ModKey,
-    trigger: Trigger,
-    mods: ModifiersState,
-) -> Option<Bind> {
-    // Handle configured binds.
-    let mut modifiers = modifiers_from_state(mods);
-
-    let mod_down = modifiers_from_state(mods).contains(mod_key.to_modifiers());
-    if mod_down {
-        modifiers |= Modifiers::COMPOSITOR;
-    }
+    // Layout-independent binds compile to physical keys and intentionally win over symbol-based
+    // binds when both would match the same event.
+    let modifiers = configured_bind_modifiers(mod_key, mods);
+    let physical_trigger = CompiledTrigger::PhysicalKey(key_code);
+    let keysym_trigger = raw.map(CompiledTrigger::Keysym);
+    let mut keysym_bind = None;
 
     for bind in bindings {
-        if bind.key.trigger != trigger {
+        let trigger = bind.key.trigger;
+        if trigger != physical_trigger && Some(trigger) != keysym_trigger {
+            continue;
+        }
+        if !configured_bind_matches(&bind, mod_key, trigger, modifiers) {
             continue;
         }
 
-        let mut bind_modifiers = bind.key.modifiers;
-        if bind_modifiers.contains(Modifiers::COMPOSITOR) {
-            bind_modifiers |= mod_key.to_modifiers();
-        } else if bind_modifiers.contains(mod_key.to_modifiers()) {
-            bind_modifiers |= Modifiers::COMPOSITOR;
+        if trigger == physical_trigger {
+            return Some(bind);
         }
 
-        if bind_modifiers == modifiers {
-            return Some(bind.clone());
+        if keysym_bind.is_none() {
+            keysym_bind = Some(bind);
         }
     }
 
-    None
+    keysym_bind
+}
+
+fn find_configured_bind(
+    bindings: impl IntoIterator<Item = CompiledBind>,
+    mod_key: ModKey,
+    trigger: CompiledTrigger,
+    mods: ModifiersState,
+) -> Option<CompiledBind> {
+    // Handle configured binds.
+    let modifiers = configured_bind_modifiers(mod_key, mods);
+
+    bindings
+        .into_iter()
+        .find(|bind| configured_bind_matches(bind, mod_key, trigger, modifiers))
+}
+
+fn configured_bind_modifiers(mod_key: ModKey, mods: ModifiersState) -> Modifiers {
+    let mut modifiers = modifiers_from_state(mods);
+
+    if modifiers.contains(mod_key.to_modifiers()) {
+        modifiers |= Modifiers::COMPOSITOR;
+    }
+
+    modifiers
+}
+
+fn configured_bind_matches(
+    bind: &CompiledBind,
+    mod_key: ModKey,
+    trigger: CompiledTrigger,
+    modifiers: Modifiers,
+) -> bool {
+    if bind.key.trigger != trigger {
+        return false;
+    }
+
+    let mut bind_modifiers = bind.key.modifiers;
+    if bind_modifiers.contains(Modifiers::COMPOSITOR) {
+        bind_modifiers |= mod_key.to_modifiers();
+    } else if bind_modifiers.contains(mod_key.to_modifiers()) {
+        bind_modifiers |= Modifiers::COMPOSITOR;
+    }
+
+    bind_modifiers == modifiers
+}
+
+fn load_bind_keymap_from_file(path: &str) -> anyhow::Result<xkb::Keymap> {
+    let path = PathBuf::from(path);
+    let path = match expand_home(&path).context("failed to expand `~` in binds.xkb.file")? {
+        Some(path) => path,
+        None => path,
+    };
+
+    let keymap = std::fs::read_to_string(&path)
+        .with_context(|| format!("failed to read binds.xkb.file at {path:?}"))?;
+
+    let context = xkb::Context::new(xkb::CONTEXT_NO_FLAGS);
+    xkb::Keymap::new_from_string(
+        &context,
+        keymap,
+        xkb::KEYMAP_FORMAT_TEXT_V1,
+        xkb::COMPILE_NO_FLAGS,
+    )
+    .with_context(|| format!("failed to compile binds.xkb keymap from file {path:?}"))
+}
+
+fn load_bind_keymap(xkb_config: &niri_config::Xkb) -> anyhow::Result<xkb::Keymap> {
+    if let Some(path) = &xkb_config.file {
+        return load_bind_keymap_from_file(path);
+    }
+
+    let context = xkb::Context::new(xkb::CONTEXT_NO_FLAGS);
+    xkb::Keymap::new_from_names(
+        &context,
+        &xkb_config.rules,
+        &xkb_config.model,
+        &xkb_config.layout,
+        &xkb_config.variant,
+        xkb_config.options.clone(),
+        xkb::COMPILE_NO_FLAGS,
+    )
+    .context("failed to compile binds.xkb keymap from rules/model/layout/variant/options")
+}
+
+fn modifier_from_xkb_name(name: &str) -> Option<Option<Modifiers>> {
+    modifier_name_entries().iter().find_map(|entry| {
+        entry
+            .xkb_names
+            .iter()
+            .any(|candidate| name.eq_ignore_ascii_case(candidate))
+            .then_some(entry.modifier)
+    })
+}
+
+fn modifiers_from_xkb_mask(
+    keymap: &xkb::Keymap,
+    mask: xkb::ModMask,
+) -> Result<Modifiers, Vec<String>> {
+    let mut modifiers = Modifiers::empty();
+    let mut unsupported = Vec::new();
+    let mut known_mask = 0;
+
+    for mod_index in 0..keymap.num_mods() {
+        let Some(bit) = 1u32.checked_shl(mod_index) else {
+            continue;
+        };
+
+        if mask & bit == 0 {
+            continue;
+        }
+
+        known_mask |= bit;
+
+        let name = keymap.mod_get_name(mod_index);
+        match modifier_from_xkb_name(name) {
+            Some(Some(modifier)) => modifiers |= modifier,
+            Some(None) => (),
+            None => unsupported.push(name.to_owned()),
+        }
+    }
+
+    if mask & !known_mask != 0 {
+        unsupported.push(String::from("<unknown>"));
+    }
+
+    if unsupported.is_empty() {
+        Ok(modifiers)
+    } else {
+        unsupported.sort();
+        unsupported.dedup();
+        Err(unsupported)
+    }
+}
+
+fn resolve_bind_physical_keys(
+    keymap: &xkb::Keymap,
+    keysym: Keysym,
+) -> anyhow::Result<Vec<CompiledKey>> {
+    let mut matching_keys = Vec::new();
+    let mut masks = [xkb::ModMask::default(); 32];
+    let mut unsupported_modifiers = Vec::new();
+
+    for raw in keymap.min_keycode().raw()..=keymap.max_keycode().raw() {
+        let keycode = Keycode::from(raw);
+
+        'layouts: for layout in 0..keymap.num_layouts_for_key(keycode) {
+            for level in 0..keymap.num_levels_for_key(keycode, layout) {
+                let syms = keymap.key_get_syms_by_level(keycode, layout, level);
+                if !syms.contains(&keysym) {
+                    continue;
+                }
+
+                let num_masks = keymap.key_get_mods_for_level(keycode, layout, level, &mut masks);
+                let masks = if num_masks == 0 {
+                    &[0]
+                } else {
+                    &masks[..num_masks]
+                };
+
+                for mask in masks {
+                    match modifiers_from_xkb_mask(keymap, *mask) {
+                        Ok(modifiers) => matching_keys.push(CompiledKey {
+                            trigger: CompiledTrigger::PhysicalKey(keycode),
+                            modifiers,
+                        }),
+                        Err(names) => unsupported_modifiers.extend(names),
+                    }
+                }
+
+                break 'layouts;
+            }
+        }
+    }
+
+    matching_keys.sort_by_key(|key| match key.trigger {
+        CompiledTrigger::PhysicalKey(keycode) => (keycode.raw(), key.modifiers.bits()),
+        _ => unreachable!(),
+    });
+    matching_keys.dedup();
+
+    match matching_keys.as_slice() {
+        [] => {
+            unsupported_modifiers.sort();
+            unsupported_modifiers.dedup();
+
+            if unsupported_modifiers.is_empty() {
+                anyhow::bail!(
+                    "keysym {} does not exist in the reference binds.xkb keymap",
+                    xkb::keysym_get_name(keysym)
+                )
+            } else {
+                anyhow::bail!(
+                    "keysym {} in the reference binds.xkb keymap requires unsupported modifiers: {}",
+                    xkb::keysym_get_name(keysym),
+                    unsupported_modifiers.join(", ")
+                )
+            }
+        }
+        _ => Ok(matching_keys),
+    }
+}
+
+pub fn compile_binds(binds: &Binds) -> anyhow::Result<Vec<CompiledBind>> {
+    let needs_layout_independent = binds.binds.iter().any(|bind| bind.xkb.is_some());
+
+    if !needs_layout_independent {
+        return Ok(binds
+            .binds
+            .iter()
+            .cloned()
+            .map(CompiledBind::from)
+            .collect());
+    }
+
+    let mut keymaps: Vec<(niri_config::Xkb, xkb::Keymap)> = Vec::new();
+    let mut errors = Vec::new();
+
+    let mut compiled = Vec::new();
+
+    for source_bind in &binds.binds {
+        let bind = CompiledBind::from(source_bind.clone());
+
+        if source_bind.xkb.is_none() {
+            compiled.push(bind);
+            continue;
+        }
+
+        let xkb_config = source_bind.xkb.as_ref().unwrap();
+
+        let keymap = if let Some((_, keymap)) = keymaps.iter().find(|(xkb, _)| xkb == xkb_config) {
+            keymap
+        } else {
+            match load_bind_keymap(xkb_config) {
+                Ok(keymap) => {
+                    keymaps.push((xkb_config.clone(), keymap));
+                    &keymaps.last().unwrap().1
+                }
+                Err(err) => {
+                    errors.push(format!(
+                        "failed to compile layout-independent bind {}: {err:#}",
+                        bind.key
+                    ));
+                    continue;
+                }
+            }
+        };
+
+        let CompiledTrigger::Keysym(keysym) = bind.key.trigger else {
+            compiled.push(bind);
+            continue;
+        };
+
+        match resolve_bind_physical_keys(keymap, keysym) {
+            Ok(keys) => {
+                // Ambiguous symbols intentionally expand to every physical key that produces them
+                // in the reference keymap. We reject only if the expanded bindings collide later.
+                for key in keys {
+                    let mut bind = bind.clone();
+                    bind.key.trigger = key.trigger;
+                    bind.key.modifiers |= key.modifiers;
+                    compiled.push(bind);
+                }
+            }
+            Err(err) => errors.push(format!(
+                "failed to compile layout-independent bind {}: {err:#}",
+                bind.key
+            )),
+        }
+    }
+
+    errors.extend(duplicate_compiled_bind_errors(&compiled));
+
+    if !errors.is_empty() {
+        anyhow::bail!(errors.join("\n"));
+    }
+
+    Ok(compiled)
+}
+
+fn duplicate_compiled_bind_errors(binds: &[CompiledBind]) -> Vec<String> {
+    let mut seen: HashMap<CompiledKey, &CompiledBind> = HashMap::new();
+    let mut errors = Vec::new();
+
+    for bind in binds {
+        match seen.entry(bind.key) {
+            Entry::Vacant(entry) => {
+                entry.insert(bind);
+            }
+            Entry::Occupied(entry) => {
+                errors.push(format!(
+                    "duplicate compiled keybind after layout-independent resolution: key={}, first_action={:?}, duplicate_action={:?}",
+                    bind.key,
+                    entry.get().action,
+                    bind.action,
+                ));
+            }
+        }
+    }
+
+    errors
 }
 
 fn find_configured_switch_action(
@@ -4639,7 +5148,7 @@ fn allowed_during_screenshot(action: &Action) -> bool {
     )
 }
 
-fn hardcoded_overview_bind(raw: Keysym, mods: ModifiersState) -> Option<Bind> {
+fn hardcoded_overview_bind(raw: Keysym, mods: ModifiersState) -> Option<CompiledBind> {
     let mods = modifiers_from_state(mods);
     if !mods.is_empty() {
         return None;
@@ -4660,9 +5169,9 @@ fn hardcoded_overview_bind(raw: Keysym, mods: ModifiersState) -> Option<Bind> {
         }
     };
 
-    Some(Bind {
-        key: Key {
-            trigger: Trigger::Keysym(raw),
+    Some(CompiledBind {
+        key: CompiledKey {
+            trigger: CompiledTrigger::Keysym(raw),
             modifiers: Modifiers::empty(),
         },
         action,
@@ -4670,7 +5179,6 @@ fn hardcoded_overview_bind(raw: Keysym, mods: ModifiersState) -> Option<Bind> {
         cooldown: None,
         allow_when_locked: false,
         allow_inhibiting: false,
-        hotkey_overlay_title: None,
     })
 }
 
@@ -4966,7 +5474,7 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
 
 pub fn mods_with_binds(mod_key: ModKey, binds: &Binds, triggers: &[Trigger]) -> HashSet<Modifiers> {
     let mut rv = HashSet::new();
-    for bind in &binds.0 {
+    for bind in &binds.binds {
         if !triggers.contains(&bind.key.trigger) {
             continue;
         }
@@ -5052,19 +5560,26 @@ fn grab_allows_hot_corner(grab: &(dyn PointerGrab<State> + 'static)) -> bool {
 ///
 /// Includes dynamically populated bindings like the MRU UI.
 fn make_binds_iter<'a>(
+    general_binds: &'a [CompiledBind],
     config: &'a Config,
     mru: &'a mut WindowMruUi,
     mods: Modifiers,
-) -> impl Iterator<Item = &'a Bind> + Clone {
+) -> impl Iterator<Item = CompiledBind> + Clone + 'a {
     // Figure out the binds to use depending on whether the MRU is enabled and/or open.
-    let general_binds = (!mru.is_open()).then_some(config.binds.0.iter());
+    let general_binds = (!mru.is_open()).then_some(general_binds.iter().cloned());
     let general_binds = general_binds.into_iter().flatten();
 
-    let mru_binds =
-        (config.recent_windows.on || mru.is_open()).then_some(config.recent_windows.binds.iter());
+    let mru_binds = (config.recent_windows.on || mru.is_open()).then_some(
+        config
+            .recent_windows
+            .binds
+            .iter()
+            .cloned()
+            .map(CompiledBind::from),
+    );
     let mru_binds = mru_binds.into_iter().flatten();
 
-    let mru_open_binds = mru.is_open().then(|| mru.opened_bindings(mods));
+    let mru_open_binds = mru.is_open().then(|| mru.opened_bindings(mods).cloned());
     let mru_open_binds = mru_open_binds.into_iter().flatten();
 
     // General binds take precedence over the MRU binds.
@@ -5074,14 +5589,48 @@ fn make_binds_iter<'a>(
 #[cfg(test)]
 mod tests {
     use std::cell::Cell;
+    use std::fs;
+    use std::path::{Path, PathBuf};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use niri_config::Bind as SourceBind;
 
     use super::*;
     use crate::animation::Clock;
 
+    fn test_binds(binds: Vec<SourceBind>) -> Vec<CompiledBind> {
+        compile_binds(&Binds { binds }).unwrap()
+    }
+
+    struct TestTempDir(PathBuf);
+
+    impl TestTempDir {
+        fn path(&self) -> &Path {
+            &self.0
+        }
+    }
+
+    impl Drop for TestTempDir {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn test_tempdir() -> TestTempDir {
+        static COUNTER: AtomicUsize = AtomicUsize::new(0);
+
+        let suffix = COUNTER.fetch_add(1, Ordering::Relaxed);
+        let pid = std::process::id();
+        let path =
+            std::env::temp_dir().join(format!("niri-layout-independent-binds-{pid}-{suffix}"));
+        fs::create_dir_all(&path).unwrap();
+        TestTempDir(path)
+    }
+
     #[test]
     fn bindings_suppress_keys() {
         let close_keysym = Keysym::q;
-        let bindings = Binds(vec![Bind {
+        let bindings = test_binds(vec![SourceBind {
             key: Key {
                 trigger: Trigger::Keysym(close_keysym),
                 modifiers: Modifiers::COMPOSITOR | Modifiers::CTRL,
@@ -5092,6 +5641,7 @@ mod tests {
             allow_when_locked: false,
             allow_inhibiting: true,
             hotkey_overlay_title: None,
+            xkb: None,
         }]);
 
         let comp_mod = ModKey::Super;
@@ -5108,7 +5658,7 @@ mod tests {
         let close_key_event = |suppr: &mut HashSet<Keycode>, mods: ModifiersState, pressed| {
             should_intercept_key(
                 suppr,
-                &bindings.0,
+                bindings.iter().cloned(),
                 comp_mod,
                 close_key_code,
                 close_keysym,
@@ -5125,7 +5675,7 @@ mod tests {
         let none_key_event = |suppr: &mut HashSet<Keycode>, mods: ModifiersState, pressed| {
             should_intercept_key(
                 suppr,
-                &bindings.0,
+                bindings.iter().cloned(),
                 comp_mod,
                 Keycode::from(Keysym::l.raw() + 8),
                 Keysym::l,
@@ -5149,7 +5699,7 @@ mod tests {
         let filter = close_key_event(&mut suppressed_keys, mods, true);
         assert!(matches!(
             filter,
-            FilterResult::Intercept(Some(Bind {
+            FilterResult::Intercept(Some(CompiledBind {
                 action: Action::CloseWindow,
                 ..
             }))
@@ -5183,7 +5733,7 @@ mod tests {
         let filter = close_key_event(&mut suppressed_keys, mods, true);
         assert!(matches!(
             filter,
-            FilterResult::Intercept(Some(Bind {
+            FilterResult::Intercept(Some(CompiledBind {
                 action: Action::CloseWindow,
                 ..
             }))
@@ -5203,7 +5753,7 @@ mod tests {
         let filter = close_key_event(&mut suppressed_keys, mods, true);
         assert!(matches!(
             filter,
-            FilterResult::Intercept(Some(Bind {
+            FilterResult::Intercept(Some(CompiledBind {
                 action: Action::CloseWindow,
                 ..
             }))
@@ -5250,7 +5800,7 @@ mod tests {
         let filter = close_key_event(&mut suppressed_keys, mods, true);
         assert!(matches!(
             filter,
-            FilterResult::Intercept(Some(Bind {
+            FilterResult::Intercept(Some(CompiledBind {
                 action: Action::CloseWindow,
                 ..
             }))
@@ -5265,9 +5815,56 @@ mod tests {
     }
 
     #[test]
+    fn physical_binds_take_priority_over_keysym_binds() {
+        let key_code = Keycode::from(24u32);
+        let keysym = Keysym::q;
+        let bindings = vec![
+            CompiledBind {
+                key: CompiledKey {
+                    trigger: CompiledTrigger::Keysym(keysym),
+                    modifiers: Modifiers::COMPOSITOR,
+                },
+                action: Action::CloseWindow,
+                repeat: true,
+                cooldown: None,
+                allow_when_locked: false,
+                allow_inhibiting: true,
+            },
+            CompiledBind {
+                key: CompiledKey {
+                    trigger: CompiledTrigger::PhysicalKey(key_code),
+                    modifiers: Modifiers::COMPOSITOR,
+                },
+                action: Action::ToggleOverview,
+                repeat: true,
+                cooldown: None,
+                allow_when_locked: false,
+                allow_inhibiting: true,
+            },
+        ];
+
+        assert_eq!(
+            find_bind(
+                bindings.clone(),
+                ModKey::Super,
+                key_code,
+                keysym,
+                Some(keysym),
+                ModifiersState {
+                    logo: true,
+                    ..Default::default()
+                },
+                false,
+            )
+            .as_ref(),
+            Some(&bindings[1]),
+        );
+    }
+
+    #[test]
     fn comp_mod_handling() {
-        let bindings = Binds(vec![
-            Bind {
+        let bindings = test_binds(vec![
+            SourceBind {
                 key: Key {
                     trigger: Trigger::Keysym(Keysym::q),
                     modifiers: Modifiers::COMPOSITOR,
@@ -5278,8 +5875,9 @@ mod tests {
                 allow_when_locked: false,
                 allow_inhibiting: true,
                 hotkey_overlay_title: None,
+                xkb: None,
             },
-            Bind {
+            SourceBind {
                 key: Key {
                     trigger: Trigger::Keysym(Keysym::h),
                     modifiers: Modifiers::SUPER,
@@ -5290,8 +5888,9 @@ mod tests {
                 allow_when_locked: false,
                 allow_inhibiting: true,
                 hotkey_overlay_title: None,
+                xkb: None,
             },
-            Bind {
+            SourceBind {
                 key: Key {
                     trigger: Trigger::Keysym(Keysym::j),
                     modifiers: Modifiers::empty(),
@@ -5302,8 +5901,9 @@ mod tests {
                 allow_when_locked: false,
                 allow_inhibiting: true,
                 hotkey_overlay_title: None,
+                xkb: None,
             },
-            Bind {
+            SourceBind {
                 key: Key {
                     trigger: Trigger::Keysym(Keysym::k),
                     modifiers: Modifiers::COMPOSITOR | Modifiers::SUPER,
@@ -5314,8 +5914,9 @@ mod tests {
                 allow_when_locked: false,
                 allow_inhibiting: true,
                 hotkey_overlay_title: None,
+                xkb: None,
             },
-            Bind {
+            SourceBind {
                 key: Key {
                     trigger: Trigger::Keysym(Keysym::l),
                     modifiers: Modifiers::SUPER | Modifiers::ALT,
@@ -5326,27 +5927,28 @@ mod tests {
                 allow_when_locked: false,
                 allow_inhibiting: true,
                 hotkey_overlay_title: None,
+                xkb: None,
             },
         ]);
 
         assert_eq!(
             find_configured_bind(
-                &bindings.0,
+                bindings.iter().cloned(),
                 ModKey::Super,
-                Trigger::Keysym(Keysym::q),
+                Trigger::Keysym(Keysym::q).into(),
                 ModifiersState {
                     logo: true,
                     ..Default::default()
                 }
             )
             .as_ref(),
-            Some(&bindings.0[0])
+            Some(&bindings[0])
         );
         assert_eq!(
             find_configured_bind(
-                &bindings.0,
+                bindings.iter().cloned(),
                 ModKey::Super,
-                Trigger::Keysym(Keysym::q),
+                Trigger::Keysym(Keysym::q).into(),
                 ModifiersState::default(),
             ),
             None,
@@ -5354,22 +5956,22 @@ mod tests {
 
         assert_eq!(
             find_configured_bind(
-                &bindings.0,
+                bindings.iter().cloned(),
                 ModKey::Super,
-                Trigger::Keysym(Keysym::h),
+                Trigger::Keysym(Keysym::h).into(),
                 ModifiersState {
                     logo: true,
                     ..Default::default()
                 }
             )
             .as_ref(),
-            Some(&bindings.0[1])
+            Some(&bindings[1])
         );
         assert_eq!(
             find_configured_bind(
-                &bindings.0,
+                bindings.iter().cloned(),
                 ModKey::Super,
-                Trigger::Keysym(Keysym::h),
+                Trigger::Keysym(Keysym::h).into(),
                 ModifiersState::default(),
             ),
             None,
@@ -5377,9 +5979,9 @@ mod tests {
 
         assert_eq!(
             find_configured_bind(
-                &bindings.0,
+                bindings.iter().cloned(),
                 ModKey::Super,
-                Trigger::Keysym(Keysym::j),
+                Trigger::Keysym(Keysym::j).into(),
                 ModifiersState {
                     logo: true,
                     ..Default::default()
@@ -5389,33 +5991,33 @@ mod tests {
         );
         assert_eq!(
             find_configured_bind(
-                &bindings.0,
+                bindings.iter().cloned(),
                 ModKey::Super,
-                Trigger::Keysym(Keysym::j),
+                Trigger::Keysym(Keysym::j).into(),
                 ModifiersState::default(),
             )
             .as_ref(),
-            Some(&bindings.0[2])
+            Some(&bindings[2])
         );
 
         assert_eq!(
             find_configured_bind(
-                &bindings.0,
+                bindings.iter().cloned(),
                 ModKey::Super,
-                Trigger::Keysym(Keysym::k),
+                Trigger::Keysym(Keysym::k).into(),
                 ModifiersState {
                     logo: true,
                     ..Default::default()
                 }
             )
             .as_ref(),
-            Some(&bindings.0[3])
+            Some(&bindings[3])
         );
         assert_eq!(
             find_configured_bind(
-                &bindings.0,
+                bindings.iter().cloned(),
                 ModKey::Super,
-                Trigger::Keysym(Keysym::k),
+                Trigger::Keysym(Keysym::k).into(),
                 ModifiersState::default(),
             ),
             None,
@@ -5423,9 +6025,9 @@ mod tests {
 
         assert_eq!(
             find_configured_bind(
-                &bindings.0,
+                bindings.iter().cloned(),
                 ModKey::Super,
-                Trigger::Keysym(Keysym::l),
+                Trigger::Keysym(Keysym::l).into(),
                 ModifiersState {
                     logo: true,
                     alt: true,
@@ -5433,13 +6035,13 @@ mod tests {
                 }
             )
             .as_ref(),
-            Some(&bindings.0[4])
+            Some(&bindings[4])
         );
         assert_eq!(
             find_configured_bind(
-                &bindings.0,
+                bindings.iter().cloned(),
                 ModKey::Super,
-                Trigger::Keysym(Keysym::l),
+                Trigger::Keysym(Keysym::l).into(),
                 ModifiersState {
                     logo: true,
                     ..Default::default()
@@ -5447,5 +6049,431 @@ mod tests {
             ),
             None,
         );
+    }
+
+    #[test]
+    fn modifier_from_xkb_name_accepts_common_aliases() {
+        assert_eq!(
+            modifier_from_xkb_name("Control"),
+            Some(Some(Modifiers::CTRL))
+        );
+        assert_eq!(modifier_from_xkb_name("Alt"), Some(Some(Modifiers::ALT)));
+        assert_eq!(
+            modifier_from_xkb_name("Super"),
+            Some(Some(Modifiers::SUPER))
+        );
+        assert_eq!(
+            modifier_from_xkb_name("ISO_Level3_Shift"),
+            Some(Some(Modifiers::ISO_LEVEL3_SHIFT))
+        );
+        assert_eq!(
+            modifier_from_xkb_name("LevelFive"),
+            Some(Some(Modifiers::ISO_LEVEL5_SHIFT))
+        );
+        assert_eq!(modifier_from_xkb_name("CapsLock"), Some(None));
+        assert_eq!(modifier_from_xkb_name("NumLock"), Some(None));
+    }
+
+    #[test]
+    fn modifier_from_xkb_name_rejects_unknown_names() {
+        assert_eq!(modifier_from_xkb_name("Hyper"), None);
+    }
+
+    #[test]
+    fn compile_layout_independent_punctuation_bind_matches_physical_key() {
+        let binds = Binds {
+            binds: vec![SourceBind {
+                key: Key {
+                    trigger: Trigger::Keysym(Keysym::slash),
+                    modifiers: Modifiers::COMPOSITOR,
+                },
+                action: Action::CloseWindow,
+                repeat: true,
+                cooldown: None,
+                allow_when_locked: false,
+                allow_inhibiting: true,
+                hotkey_overlay_title: None,
+                xkb: Some(niri_config::Xkb {
+                    layout: String::from("us"),
+                    ..Default::default()
+                }),
+            }],
+        };
+
+        let compiled = compile_binds(&binds).unwrap();
+        let keymap = load_bind_keymap(binds.binds[0].xkb.as_ref().unwrap()).unwrap();
+        let keycode = match resolve_bind_physical_keys(&keymap, Keysym::slash).unwrap()[0].trigger {
+            CompiledTrigger::PhysicalKey(keycode) => keycode,
+            _ => unreachable!(),
+        };
+
+        assert!(matches!(
+            compiled[0].key.trigger,
+            CompiledTrigger::PhysicalKey(compiled_keycode) if compiled_keycode == keycode
+        ));
+
+        let mut mods = ModifiersState::default();
+        mods.logo = true;
+
+        let bind = find_bind(
+            compiled.iter().cloned(),
+            ModKey::Super,
+            keycode,
+            Keysym::period,
+            Some(Keysym::period),
+            mods,
+            false,
+        )
+        .unwrap();
+
+        assert_eq!(bind.action, Action::CloseWindow);
+    }
+
+    #[test]
+    fn compile_layout_independent_shifted_symbol_uses_reference_key_level() {
+        let binds = Binds {
+            binds: vec![SourceBind {
+                key: Key {
+                    trigger: Trigger::Keysym(Keysym::exclam),
+                    modifiers: Modifiers::COMPOSITOR,
+                },
+                action: Action::CloseWindow,
+                repeat: true,
+                cooldown: None,
+                allow_when_locked: false,
+                allow_inhibiting: true,
+                hotkey_overlay_title: None,
+                xkb: Some(niri_config::Xkb {
+                    layout: String::from("us"),
+                    ..Default::default()
+                }),
+            }],
+        };
+
+        let compiled = compile_binds(&binds).unwrap();
+        let keymap = load_bind_keymap(binds.binds[0].xkb.as_ref().unwrap()).unwrap();
+        let exclam = match resolve_bind_physical_keys(&keymap, Keysym::exclam).unwrap()[0].trigger {
+            CompiledTrigger::PhysicalKey(keycode) => keycode,
+            _ => unreachable!(),
+        };
+        let one = match resolve_bind_physical_keys(&keymap, Keysym::_1).unwrap()[0].trigger {
+            CompiledTrigger::PhysicalKey(keycode) => keycode,
+            _ => unreachable!(),
+        };
+
+        assert_eq!(exclam, one);
+        assert!(matches!(
+            compiled[0].key.trigger,
+            CompiledTrigger::PhysicalKey(compiled_keycode) if compiled_keycode == exclam
+        ));
+        assert_eq!(
+            compiled[0].key.modifiers,
+            Modifiers::COMPOSITOR | Modifiers::SHIFT
+        );
+
+        let super_only = find_bind(
+            compiled.iter().cloned(),
+            ModKey::Super,
+            exclam,
+            Keysym::_1,
+            Some(Keysym::_1),
+            ModifiersState {
+                logo: true,
+                ..Default::default()
+            },
+            false,
+        );
+        assert_eq!(super_only, None);
+
+        let super_and_shift = find_bind(
+            compiled,
+            ModKey::Super,
+            exclam,
+            Keysym::exclam,
+            Some(Keysym::exclam),
+            ModifiersState {
+                logo: true,
+                shift: true,
+                ..Default::default()
+            },
+            false,
+        )
+        .unwrap();
+        assert_eq!(super_and_shift.action, Action::CloseWindow);
+    }
+
+    #[test]
+    fn mixed_layout_independent_and_keysym_binds_compile_and_match() {
+        let binds = Binds {
+            binds: vec![
+                SourceBind {
+                    key: Key {
+                        trigger: Trigger::Keysym(Keysym::slash),
+                        modifiers: Modifiers::COMPOSITOR,
+                    },
+                    action: Action::CloseWindow,
+                    repeat: true,
+                    cooldown: None,
+                    allow_when_locked: false,
+                    allow_inhibiting: true,
+                    hotkey_overlay_title: None,
+                    xkb: Some(niri_config::Xkb {
+                        layout: String::from("us"),
+                        ..Default::default()
+                    }),
+                },
+                SourceBind {
+                    key: Key {
+                        trigger: Trigger::Keysym(Keysym::q),
+                        modifiers: Modifiers::COMPOSITOR,
+                    },
+                    action: Action::ToggleOverview,
+                    repeat: true,
+                    cooldown: None,
+                    allow_when_locked: false,
+                    allow_inhibiting: true,
+                    hotkey_overlay_title: None,
+                    xkb: None,
+                },
+            ],
+        };
+
+        let compiled = compile_binds(&binds).unwrap();
+        let keymap = load_bind_keymap(binds.binds[0].xkb.as_ref().unwrap()).unwrap();
+        let slash_keycode =
+            match resolve_bind_physical_keys(&keymap, Keysym::slash).unwrap()[0].trigger {
+                CompiledTrigger::PhysicalKey(keycode) => keycode,
+                _ => unreachable!(),
+            };
+        let q_keycode = match resolve_bind_physical_keys(&keymap, Keysym::q).unwrap()[0].trigger {
+            CompiledTrigger::PhysicalKey(keycode) => keycode,
+            _ => unreachable!(),
+        };
+
+        assert!(matches!(
+            compiled[0].key.trigger,
+            CompiledTrigger::PhysicalKey(compiled_keycode) if compiled_keycode == slash_keycode
+        ));
+        assert_eq!(compiled[1].key.trigger, CompiledTrigger::Keysym(Keysym::q));
+
+        let mut mods = ModifiersState::default();
+        mods.logo = true;
+
+        let slash_bind = find_bind(
+            compiled.iter().cloned(),
+            ModKey::Super,
+            slash_keycode,
+            Keysym::period,
+            Some(Keysym::period),
+            mods,
+            false,
+        )
+        .unwrap();
+        assert_eq!(slash_bind.action, Action::CloseWindow);
+
+        let q_bind = find_bind(
+            compiled.iter().cloned(),
+            ModKey::Super,
+            q_keycode,
+            Keysym::q,
+            Some(Keysym::q),
+            mods,
+            false,
+        )
+        .unwrap();
+        assert_eq!(q_bind.action, Action::ToggleOverview);
+    }
+
+    #[test]
+    fn physical_bind_matches_when_raw_keysym_is_missing() {
+        let binds = Binds {
+            binds: vec![SourceBind {
+                key: Key {
+                    trigger: Trigger::Keysym(Keysym::slash),
+                    modifiers: Modifiers::COMPOSITOR,
+                },
+                action: Action::CloseWindow,
+                repeat: true,
+                cooldown: None,
+                allow_when_locked: false,
+                allow_inhibiting: true,
+                hotkey_overlay_title: None,
+                xkb: Some(niri_config::Xkb {
+                    layout: String::from("us"),
+                    ..Default::default()
+                }),
+            }],
+        };
+
+        let compiled = compile_binds(&binds).unwrap();
+        let keymap = load_bind_keymap(binds.binds[0].xkb.as_ref().unwrap()).unwrap();
+        let keycode = match resolve_bind_physical_keys(&keymap, Keysym::slash).unwrap()[0].trigger {
+            CompiledTrigger::PhysicalKey(keycode) => keycode,
+            _ => unreachable!(),
+        };
+
+        let bind = find_bind(
+            compiled,
+            ModKey::Super,
+            keycode,
+            Keysym::space,
+            None,
+            ModifiersState {
+                logo: true,
+                ..Default::default()
+            },
+            false,
+        )
+        .unwrap();
+
+        assert_eq!(bind.action, Action::CloseWindow);
+    }
+
+    #[test]
+    fn compile_layout_independent_duplicate_binds_fail_after_resolution() {
+        let binds = Binds {
+            binds: vec![
+                SourceBind {
+                    key: Key {
+                        trigger: Trigger::Keysym(Keysym::_1),
+                        modifiers: Modifiers::COMPOSITOR | Modifiers::SHIFT,
+                    },
+                    action: Action::CloseWindow,
+                    repeat: true,
+                    cooldown: None,
+                    allow_when_locked: false,
+                    allow_inhibiting: true,
+                    hotkey_overlay_title: None,
+                    xkb: Some(niri_config::Xkb {
+                        layout: String::from("us"),
+                        ..Default::default()
+                    }),
+                },
+                SourceBind {
+                    key: Key {
+                        trigger: Trigger::Keysym(Keysym::exclam),
+                        modifiers: Modifiers::COMPOSITOR,
+                    },
+                    action: Action::Quit(false),
+                    repeat: true,
+                    cooldown: None,
+                    allow_when_locked: false,
+                    allow_inhibiting: true,
+                    hotkey_overlay_title: None,
+                    xkb: Some(niri_config::Xkb {
+                        layout: String::from("us"),
+                        ..Default::default()
+                    }),
+                },
+            ],
+        };
+
+        let err = compile_binds(&binds).unwrap_err().to_string();
+        assert!(err.contains("duplicate compiled keybind after layout-independent resolution"));
+        assert!(err.contains("keycode "));
+    }
+
+    #[test]
+    fn ambiguous_reference_keymap_file_expands_bind_to_multiple_physical_keys() {
+        let dir = test_tempdir();
+        let config_path = dir.path().join("config.kdl");
+        let keymap_path = dir.path().join("ambiguous.xkb");
+
+        let context = xkb::Context::new(xkb::CONTEXT_NO_FLAGS);
+        let keymap =
+            xkb::Keymap::new_from_names(&context, "", "", "us", "", None, xkb::COMPILE_NO_FLAGS)
+                .unwrap();
+        let keymap = keymap
+            .get_as_string(xkb::KEYMAP_FORMAT_TEXT_V1)
+            .lines()
+            .map(|line| {
+                if line.contains("key <AE02>") {
+                    "\tkey <AE02>               {\t[               2,          exclam ] };"
+                        .to_owned()
+                } else {
+                    line.to_owned()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        fs::write(&keymap_path, keymap).unwrap();
+
+        fs::write(
+            &config_path,
+            format!(
+                r#"
+                binds {{
+                    xkb {{
+                        file "{}"
+                    }}
+
+                    Mod+exclam layout-independent=true {{ close-window; }}
+                }}
+                "#,
+                keymap_path.display()
+            ),
+        )
+        .unwrap();
+
+        let config = Config::load(&config_path).config.unwrap();
+        let keymap = load_bind_keymap_from_file(keymap_path.to_str().unwrap()).unwrap();
+        let keys = resolve_bind_physical_keys(&keymap, Keysym::exclam).unwrap();
+        let compiled = compile_binds(&config.binds).unwrap();
+
+        assert_eq!(keys.len(), 2);
+        assert_eq!(compiled.len(), keys.len());
+        for (bind, key) in compiled.iter().zip(keys) {
+            assert_eq!(bind.action, Action::CloseWindow);
+            assert_eq!(bind.key.trigger, key.trigger);
+            assert_eq!(bind.key.modifiers, Modifiers::COMPOSITOR | key.modifiers);
+        }
+    }
+
+    #[test]
+    fn ambiguous_reference_keymap_file_still_fails_on_expanded_collisions() {
+        let dir = test_tempdir();
+        let config_path = dir.path().join("config.kdl");
+        let keymap_path = dir.path().join("ambiguous.xkb");
+
+        let context = xkb::Context::new(xkb::CONTEXT_NO_FLAGS);
+        let keymap =
+            xkb::Keymap::new_from_names(&context, "", "", "us", "", None, xkb::COMPILE_NO_FLAGS)
+                .unwrap();
+        let keymap = keymap
+            .get_as_string(xkb::KEYMAP_FORMAT_TEXT_V1)
+            .lines()
+            .map(|line| {
+                if line.contains("key <AE02>") {
+                    "\tkey <AE02>               {\t[               2,          exclam ] };"
+                        .to_owned()
+                } else {
+                    line.to_owned()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        fs::write(&keymap_path, keymap).unwrap();
+
+        fs::write(
+            &config_path,
+            format!(
+                r#"
+                binds {{
+                    xkb {{
+                        file "{}"
+                    }}
+
+                    Mod+exclam layout-independent=true {{ close-window; }}
+                    Mod+Shift+1 layout-independent=true {{ quit; }}
+                }}
+                "#,
+                keymap_path.display()
+            ),
+        )
+        .unwrap();
+
+        let config = Config::load(&config_path).config.unwrap();
+        let err = compile_binds(&config.binds).unwrap_err().to_string();
+        assert!(err.contains("duplicate compiled keybind after layout-independent resolution"));
     }
 }
