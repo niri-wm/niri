@@ -139,9 +139,10 @@ impl CursorManager {
 
     /// Get default cursor.
     pub fn get_default_cursor(&self, scale: i32) -> Rc<XCursor> {
-        // The default cursor always has a fallback.
+        // The default cursor always has a fallback via get_cursor_with_name.
+        // If that fails (truly unexpected), use the hardcoded fallback directly.
         self.get_cursor_with_name(CursorIcon::Default, scale)
-            .unwrap()
+            .unwrap_or_else(|| Rc::new(Self::fallback_cursor()))
     }
 
     /// Currently used cursor_image as a cursor provider.
