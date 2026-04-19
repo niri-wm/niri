@@ -129,11 +129,11 @@ impl State {
 
         let mut map = layer_map_for_output(&output);
 
-        if is_mapped(surface) {
-            // Arrange mapped layers before handling commits so initial configures and geometry are
-            // up-to-date for mapped surfaces.
-            map.arrange();
+        // Arrange layers before handling commits so initial configures and geometry are
+        // up-to-date.
+        map.arrange();
 
+        if is_mapped(surface) {
             let layer = map
                 .layer_for_surface(surface, WindowSurfaceType::TOPLEVEL)
                 .unwrap();
