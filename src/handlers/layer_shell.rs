@@ -1,3 +1,4 @@
+use smithay::backend::renderer::utils::with_renderer_surface_state;
 use smithay::delegate_layer_shell;
 use smithay::desktop::{layer_map_for_output, LayerSurface, PopupKind, WindowSurfaceType};
 use smithay::output::Output;
@@ -426,7 +427,7 @@ fn resolve_layer_animation_kind(layer: &LayerSurface) -> LayerAnimationKind {
 
 fn add_mapped_layer_pre_commit_hook(layer: &LayerSurface) -> HookId {
     add_pre_commit_hook::<State, _>(layer.wl_surface(), move |state, _dh, surface| {
-        let (layer_changed, got_unmapped) = with_states(surface, |states| {
+        let (layer_changed, got_unmapped, got_new_buffer) = with_states(surface, |states| {
             let layer_changed = {
                 let mut guard = states.cached_state.get::<LayerSurfaceCachedState>();
                 let pending_layer = guard.pending().layer;
@@ -434,17 +435,27 @@ fn add_mapped_layer_pre_commit_hook(layer: &LayerSurface) -> HookId {
                 pending_layer != current_layer
             };
 
-            let got_unmapped = with_states(surface, |states| {
+            let (got_unmapped, got_new_buffer) = {
                 let mut guard = states.cached_state.get::<SurfaceAttributes>();
                 match guard.pending().buffer.as_ref() {
-                    Some(BufferAssignment::Removed) => true,
-                    Some(BufferAssignment::NewBuffer(_)) => true,
-                    None => false,
-                }
-            });
+                    // Null commit: surface is about to lose its buffer entirely.
+                    // Snapshot now while current state is still live.
+                    Some(BufferAssignment::Removed) => (true, false),
 
-            (layer_changed, got_unmapped)
+                    // New buffer incoming: capture while we still have a valid current frame.
+                    Some(BufferAssignment::NewBuffer(_)) => (false, true),
+
+                    None => (false, false),
+                }
+            };
+
+            (layer_changed, got_unmapped, got_new_buffer)
         });
+
+        let current_has_buffer =
+            with_renderer_surface_state(surface, |s| s.buffer().is_some()).unwrap_or(false);
+
+        let should_snapshot = got_unmapped || (got_new_buffer && current_has_buffer);
 
         if layer_changed {
             for mapped in state.niri.mapped_layer_surfaces.values_mut() {
@@ -455,9 +466,13 @@ fn add_mapped_layer_pre_commit_hook(layer: &LayerSurface) -> HookId {
             }
         }
 
-        if got_unmapped {
+        if should_snapshot {
             for mapped in state.niri.mapped_layer_surfaces.values_mut() {
                 if mapped.surface().wl_surface() == surface {
+                    if mapped.has_non_empty_unmap_snapshot() {
+                        break;
+                    }
+
                     state.backend.with_primary_renderer(|renderer| {
                         mapped.store_unmap_snapshot(renderer);
                     });

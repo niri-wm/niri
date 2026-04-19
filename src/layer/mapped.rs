@@ -154,6 +154,12 @@ impl MappedLayer {
             .update_render_elements(size, true, radius, self.scale, 1.);
     }
 
+    pub fn has_non_empty_unmap_snapshot(&self) -> bool {
+        self.unmap_snapshot
+            .as_ref()
+            .is_some_and(|s| !s.contents.is_empty() || !s.blocked_out_contents.is_empty())
+    }
+
     pub fn store_unmap_snapshot(&mut self, renderer: &mut GlesRenderer) {
         let _span = tracy_client::span!("MappedLayer::store_unmap_snapshot");
         let mut contents = Vec::new();
