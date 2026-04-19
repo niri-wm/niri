@@ -1,3 +1,4 @@
+use niri_config::animations::{LayerCloseAnim, LayerOpenAnim};
 use niri_config::layer_rule::{LayerRule, Match};
 use niri_config::utils::MergeWith as _;
 use niri_config::{BackgroundEffect, BlockOutFrom, CornerRadius, ResolvedPopupsRules, ShadowRule};
@@ -36,6 +37,12 @@ pub struct ResolvedLayerRules {
 
     /// Rules for this layer surface's popups.
     pub popups: ResolvedPopupsRules,
+
+    /// Layer open animation override from layer rules.
+    pub layer_open: Option<LayerOpenAnim>,
+
+    /// Layer close animation override from layer rules.
+    pub layer_close: Option<LayerCloseAnim>,
 }
 
 impl ResolvedLayerRules {
@@ -85,6 +92,16 @@ impl ResolvedLayerRules {
                 .merge_with(&rule.background_effect);
 
             resolved.popups.merge_with(&rule.popups);
+
+            if let Some(animations) = &rule.animations {
+                if let Some(layer_open) = &animations.layer_open {
+                    resolved.layer_open = Some(layer_open.clone());
+                }
+
+                if let Some(layer_close) = &animations.layer_close {
+                    resolved.layer_close = Some(layer_close.clone());
+                }
+            }
         }
 
         resolved

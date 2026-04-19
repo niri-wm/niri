@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::collections::HashMap;
 
 use glam::Mat3;
 use smithay::backend::renderer::gles::{
@@ -23,12 +24,8 @@ pub struct Shaders {
     pub custom_window_open: RefCell<Option<ShaderProgram>>,
     pub custom_layer_close: RefCell<Option<ShaderProgram>>,
     pub custom_layer_open: RefCell<Option<ShaderProgram>>,
-    pub custom_layer_bar_close: RefCell<Option<ShaderProgram>>,
-    pub custom_layer_bar_open: RefCell<Option<ShaderProgram>>,
-    pub custom_layer_wallpaper_close: RefCell<Option<ShaderProgram>>,
-    pub custom_layer_wallpaper_open: RefCell<Option<ShaderProgram>>,
-    pub custom_layer_launcher_close: RefCell<Option<ShaderProgram>>,
-    pub custom_layer_launcher_open: RefCell<Option<ShaderProgram>>,
+    custom_layer_close_cache: RefCell<HashMap<String, ShaderProgram>>,
+    custom_layer_open_cache: RefCell<HashMap<String, ShaderProgram>>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -40,12 +37,6 @@ pub enum ProgramType {
     WindowOpen,
     LayerClose,
     LayerOpen,
-    LayerBarClose,
-    LayerBarOpen,
-    LayerWallpaperClose,
-    LayerWallpaperOpen,
-    LayerLauncherClose,
-    LayerLauncherOpen,
 }
 
 impl Shaders {
@@ -177,12 +168,8 @@ impl Shaders {
             custom_window_open: RefCell::new(None),
             custom_layer_close: RefCell::new(None),
             custom_layer_open: RefCell::new(None),
-            custom_layer_bar_close: RefCell::new(None),
-            custom_layer_bar_open: RefCell::new(None),
-            custom_layer_wallpaper_close: RefCell::new(None),
-            custom_layer_wallpaper_open: RefCell::new(None),
-            custom_layer_launcher_close: RefCell::new(None),
-            custom_layer_launcher_open: RefCell::new(None),
+            custom_layer_close_cache: RefCell::new(HashMap::new()),
+            custom_layer_open_cache: RefCell::new(HashMap::new()),
         }
     }
 
@@ -234,48 +221,6 @@ impl Shaders {
         self.custom_layer_open.replace(program)
     }
 
-    pub fn replace_custom_layer_bar_close_program(
-        &self,
-        program: Option<ShaderProgram>,
-    ) -> Option<ShaderProgram> {
-        self.custom_layer_bar_close.replace(program)
-    }
-
-    pub fn replace_custom_layer_bar_open_program(
-        &self,
-        program: Option<ShaderProgram>,
-    ) -> Option<ShaderProgram> {
-        self.custom_layer_bar_open.replace(program)
-    }
-
-    pub fn replace_custom_layer_wallpaper_close_program(
-        &self,
-        program: Option<ShaderProgram>,
-    ) -> Option<ShaderProgram> {
-        self.custom_layer_wallpaper_close.replace(program)
-    }
-
-    pub fn replace_custom_layer_wallpaper_open_program(
-        &self,
-        program: Option<ShaderProgram>,
-    ) -> Option<ShaderProgram> {
-        self.custom_layer_wallpaper_open.replace(program)
-    }
-
-    pub fn replace_custom_layer_launcher_close_program(
-        &self,
-        program: Option<ShaderProgram>,
-    ) -> Option<ShaderProgram> {
-        self.custom_layer_launcher_close.replace(program)
-    }
-
-    pub fn replace_custom_layer_launcher_open_program(
-        &self,
-        program: Option<ShaderProgram>,
-    ) -> Option<ShaderProgram> {
-        self.custom_layer_launcher_open.replace(program)
-    }
-
     pub fn program(&self, program: ProgramType) -> Option<ShaderProgram> {
         match program {
             ProgramType::Border => self.border.clone(),
@@ -289,36 +234,6 @@ impl Shaders {
             ProgramType::WindowOpen => self.custom_window_open.borrow().clone(),
             ProgramType::LayerClose => self.custom_layer_close.borrow().clone(),
             ProgramType::LayerOpen => self.custom_layer_open.borrow().clone(),
-            ProgramType::LayerBarClose => self
-                .custom_layer_bar_close
-                .borrow()
-                .clone()
-                .or_else(|| self.custom_layer_close.borrow().clone()),
-            ProgramType::LayerBarOpen => self
-                .custom_layer_bar_open
-                .borrow()
-                .clone()
-                .or_else(|| self.custom_layer_open.borrow().clone()),
-            ProgramType::LayerWallpaperClose => self
-                .custom_layer_wallpaper_close
-                .borrow()
-                .clone()
-                .or_else(|| self.custom_layer_close.borrow().clone()),
-            ProgramType::LayerWallpaperOpen => self
-                .custom_layer_wallpaper_open
-                .borrow()
-                .clone()
-                .or_else(|| self.custom_layer_open.borrow().clone()),
-            ProgramType::LayerLauncherClose => self
-                .custom_layer_launcher_close
-                .borrow()
-                .clone()
-                .or_else(|| self.custom_layer_close.borrow().clone()),
-            ProgramType::LayerLauncherOpen => self
-                .custom_layer_launcher_open
-                .borrow()
-                .clone()
-                .or_else(|| self.custom_layer_open.borrow().clone()),
         }
     }
 }
@@ -466,17 +381,7 @@ pub fn set_custom_window_open_program(renderer: &mut GlesRenderer, src: Option<&
 }
 
 pub fn set_custom_layer_open_program(renderer: &mut GlesRenderer, src: Option<&str>) {
-    let program = if let Some(src) = src {
-        match compile_open_program(renderer, src) {
-            Ok(program) => Some(program),
-            Err(err) => {
-                warn!("error compiling custom layer open shader: {err:?}");
-                return;
-            }
-        }
-    } else {
-        None
-    };
+    let program = src.and_then(|src| layer_open_program_for_source(renderer, src));
 
     if let Some(prev) = Shaders::get(renderer).replace_custom_layer_open_program(program) {
         if let Err(err) = prev.destroy(renderer) {
@@ -486,17 +391,7 @@ pub fn set_custom_layer_open_program(renderer: &mut GlesRenderer, src: Option<&s
 }
 
 pub fn set_custom_layer_close_program(renderer: &mut GlesRenderer, src: Option<&str>) {
-    let program = if let Some(src) = src {
-        match compile_close_program(renderer, src) {
-            Ok(program) => Some(program),
-            Err(err) => {
-                warn!("error compiling custom layer close shader: {err:?}");
-                return;
-            }
-        }
-    } else {
-        None
-    };
+    let program = src.and_then(|src| layer_close_program_for_source(renderer, src));
 
     if let Some(prev) = Shaders::get(renderer).replace_custom_layer_close_program(program) {
         if let Err(err) = prev.destroy(renderer) {
@@ -505,127 +400,66 @@ pub fn set_custom_layer_close_program(renderer: &mut GlesRenderer, src: Option<&
     }
 }
 
-pub fn set_custom_layer_bar_open_program(renderer: &mut GlesRenderer, src: Option<&str>) {
-    let program = if let Some(src) = src {
-        match compile_open_program(renderer, src) {
-            Ok(program) => Some(program),
-            Err(err) => {
-                warn!("error compiling custom layer bar open shader: {err:?}");
-                return;
-            }
-        }
-    } else {
-        None
+pub fn layer_open_program_for_source(
+    renderer: &mut GlesRenderer,
+    src: &str,
+) -> Option<ShaderProgram> {
+    let cached = {
+        let shaders = Shaders::get(renderer);
+        shaders.custom_layer_open_cache.borrow().get(src).cloned()
     };
-
-    if let Some(prev) = Shaders::get(renderer).replace_custom_layer_bar_open_program(program) {
-        if let Err(err) = prev.destroy(renderer) {
-            warn!("error destroying previous custom layer bar open shader: {err:?}");
-        }
+    if cached.is_some() {
+        return cached;
     }
-}
 
-pub fn set_custom_layer_bar_close_program(renderer: &mut GlesRenderer, src: Option<&str>) {
-    let program = if let Some(src) = src {
-        match compile_close_program(renderer, src) {
-            Ok(program) => Some(program),
-            Err(err) => {
-                warn!("error compiling custom layer bar close shader: {err:?}");
-                return;
-            }
+    let compiled = match compile_open_program(renderer, src) {
+        Ok(program) => program,
+        Err(err) => {
+            warn!("error compiling custom layer open shader: {err:?}");
+            return None;
         }
-    } else {
-        None
     };
 
-    if let Some(prev) = Shaders::get(renderer).replace_custom_layer_bar_close_program(program) {
-        if let Err(err) = prev.destroy(renderer) {
-            warn!("error destroying previous custom layer bar close shader: {err:?}");
-        }
-    }
-}
-
-pub fn set_custom_layer_wallpaper_open_program(renderer: &mut GlesRenderer, src: Option<&str>) {
-    let program = if let Some(src) = src {
-        match compile_open_program(renderer, src) {
-            Ok(program) => Some(program),
-            Err(err) => {
-                warn!("error compiling custom layer wallpaper open shader: {err:?}");
-                return;
-            }
-        }
-    } else {
-        None
-    };
-
-    if let Some(prev) = Shaders::get(renderer).replace_custom_layer_wallpaper_open_program(program)
     {
-        if let Err(err) = prev.destroy(renderer) {
-            warn!("error destroying previous custom layer wallpaper open shader: {err:?}");
-        }
+        let shaders = Shaders::get(renderer);
+        shaders
+            .custom_layer_open_cache
+            .borrow_mut()
+            .insert(src.to_owned(), compiled.clone());
     }
+
+    Some(compiled)
 }
 
-pub fn set_custom_layer_wallpaper_close_program(renderer: &mut GlesRenderer, src: Option<&str>) {
-    let program = if let Some(src) = src {
-        match compile_close_program(renderer, src) {
-            Ok(program) => Some(program),
-            Err(err) => {
-                warn!("error compiling custom layer wallpaper close shader: {err:?}");
-                return;
-            }
+pub fn layer_close_program_for_source(
+    renderer: &mut GlesRenderer,
+    src: &str,
+) -> Option<ShaderProgram> {
+    let cached = {
+        let shaders = Shaders::get(renderer);
+        shaders.custom_layer_close_cache.borrow().get(src).cloned()
+    };
+    if cached.is_some() {
+        return cached;
+    }
+
+    let compiled = match compile_close_program(renderer, src) {
+        Ok(program) => program,
+        Err(err) => {
+            warn!("error compiling custom layer close shader: {err:?}");
+            return None;
         }
-    } else {
-        None
     };
 
-    if let Some(prev) = Shaders::get(renderer).replace_custom_layer_wallpaper_close_program(program)
     {
-        if let Err(err) = prev.destroy(renderer) {
-            warn!("error destroying previous custom layer wallpaper close shader: {err:?}");
-        }
+        let shaders = Shaders::get(renderer);
+        shaders
+            .custom_layer_close_cache
+            .borrow_mut()
+            .insert(src.to_owned(), compiled.clone());
     }
-}
 
-pub fn set_custom_layer_launcher_open_program(renderer: &mut GlesRenderer, src: Option<&str>) {
-    let program = if let Some(src) = src {
-        match compile_open_program(renderer, src) {
-            Ok(program) => Some(program),
-            Err(err) => {
-                warn!("error compiling custom layer launcher open shader: {err:?}");
-                return;
-            }
-        }
-    } else {
-        None
-    };
-
-    if let Some(prev) = Shaders::get(renderer).replace_custom_layer_launcher_open_program(program) {
-        if let Err(err) = prev.destroy(renderer) {
-            warn!("error destroying previous custom layer launcher open shader: {err:?}");
-        }
-    }
-}
-
-pub fn set_custom_layer_launcher_close_program(renderer: &mut GlesRenderer, src: Option<&str>) {
-    let program = if let Some(src) = src {
-        match compile_close_program(renderer, src) {
-            Ok(program) => Some(program),
-            Err(err) => {
-                warn!("error compiling custom layer launcher close shader: {err:?}");
-                return;
-            }
-        }
-    } else {
-        None
-    };
-
-    if let Some(prev) = Shaders::get(renderer).replace_custom_layer_launcher_close_program(program)
-    {
-        if let Err(err) = prev.destroy(renderer) {
-            warn!("error destroying previous custom layer launcher close shader: {err:?}");
-        }
-    }
+    Some(compiled)
 }
 
 pub fn mat3_uniform(name: &str, mat: Mat3) -> Uniform<'_> {

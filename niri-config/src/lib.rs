@@ -856,7 +856,7 @@ mod tests {
                 window-open { off; }
 
                 window-close {
-                    curve "cubic-bezier" 0.05 0.7 0.1 1  
+                    curve "cubic-bezier" 0.05 0.7 0.1 1
                 }
 
                 recent-windows-close {
@@ -1564,12 +1564,6 @@ mod tests {
                     },
                     custom_shader: None,
                 },
-                layer_bar_open: None,
-                layer_bar_close: None,
-                layer_wallpaper_open: None,
-                layer_wallpaper_close: None,
-                layer_launcher_open: None,
-                layer_launcher_close: None,
                 horizontal_view_movement: HorizontalViewMovementAnim(
                     Animation {
                         off: false,
@@ -1973,6 +1967,7 @@ mod tests {
                             saturation: None,
                         },
                     },
+                    animations: None,
                 },
             ],
             binds: Binds(
@@ -2465,6 +2460,7 @@ mod tests {
         // Some notable omissions: the default config has some window rules, and an empty config
         // will not have any binds. Clear them out so they don't spam the diff.
         default_config.window_rules.clear();
+        default_config.layer_rules.clear();
         default_config.binds.0.clear();
 
         assert_snapshot!(
