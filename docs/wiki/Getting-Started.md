@@ -9,10 +9,9 @@ sudo dnf install niri dms
 systemctl --user add-wants niri.service dms
 ```
 
-Arch Linux (via [paru](https://github.com/morganamilo/paru)):
+Arch Linux:
 ```
-sudo pacman -Syu niri xwayland-satellite xdg-desktop-portal-gnome xdg-desktop-portal-gtk alacritty
-paru -S dms-shell-bin matugen cava qt6-multimedia-ffmpeg
+sudo pacman -Syu niri xwayland-satellite xdg-desktop-portal-gnome xdg-desktop-portal-gtk alacritty dms-shell-niri matugen cava qt6-multimedia-ffmpeg
 systemctl --user add-wants niri.service dms
 ```
 

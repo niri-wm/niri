@@ -14,7 +14,9 @@ use bitflags::bitflags;
 use directories::UserDirs;
 use git_version::git_version;
 use niri_config::{Config, OutputName};
-use smithay::backend::renderer::utils::with_renderer_surface_state;
+use smithay::backend::renderer::utils::{
+    with_renderer_surface_state, RendererSurfaceStateUserData,
+};
 use smithay::input::pointer::CursorIcon;
 use smithay::output::{self, Output};
 use smithay::reexports::rustix::time::{clock_gettime, ClockId};
@@ -35,6 +37,7 @@ use crate::handlers::KdeDecorationsModeState;
 use crate::niri::ClientState;
 
 pub mod id;
+pub mod region;
 pub mod scale;
 pub mod signals;
 pub mod spawning;
@@ -323,6 +326,18 @@ pub fn output_matches_name(output: &Output, target: &str) -> bool {
 
 pub fn is_laptop_panel(connector: &str) -> bool {
     matches!(connector.get(..4), Some("eDP-" | "LVDS" | "DSI-"))
+}
+
+/// Returns the geometry of the surface.
+///
+/// Returns `None` if the surface isn't mapped.
+pub fn surface_geo(states: &SurfaceData) -> Option<Rectangle<i32, Logical>> {
+    let data = states.data_map.get::<RendererSurfaceStateUserData>();
+    data.and_then(|d| d.lock().unwrap().view())
+        .map(|view| Rectangle {
+            loc: view.offset,
+            size: view.dst,
+        })
 }
 
 pub fn with_toplevel_role<T>(
