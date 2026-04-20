@@ -211,8 +211,8 @@ fn refresh_toplevel(
                 data.title.clone_from(&role.title);
                 new_title = role.title.as_deref();
 
-                if new_title.is_none() {
-                    error!("toplevel title changed to None");
+                if new_title.is_none() && data.title.is_some() {
+                    warn!("toplevel title was cleared");
                 }
             }
 
@@ -221,8 +221,8 @@ fn refresh_toplevel(
                 data.app_id.clone_from(&role.app_id);
                 new_app_id = role.app_id.as_deref();
 
-                if new_app_id.is_none() {
-                    error!("toplevel app_id changed to None");
+                if new_app_id.is_none() && data.app_id.is_some() {
+                    warn!("toplevel app_id was cleared");
                 }
             }
 

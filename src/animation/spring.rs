@@ -126,7 +126,7 @@ impl Spring {
         while (self.to - self.from > f64::EPSILON && self.to - y > self.params.epsilon)
             || (self.from - self.to > f64::EPSILON && y - self.to > self.params.epsilon)
         {
-            if i > 3000 {
+            if i > 10_000 {
                 return None;
             }
 
