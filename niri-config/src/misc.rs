@@ -14,7 +14,7 @@ pub struct SpawnShAtStartup {
     pub command: String,
 }
 
-#[derive(knuffel::DecodeScalar, Default, Clone, Debug, PartialEq)]
+#[derive(knuffel::DecodeScalar, Default, Copy, Clone, Debug, PartialEq)]
 pub enum ZoomMovementMode {
     #[default]
     CursorFollow,
@@ -22,14 +22,14 @@ pub enum ZoomMovementMode {
     OnEdge,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, knuffel::DecodeScalar)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, knuffel::DecodeScalar)]
 pub enum ZoomIncrementType {
     #[default]
     Linear,
     Exponential,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Zoom {
     pub movement_mode: ZoomMovementMode,
     pub increment_type: ZoomIncrementType,
