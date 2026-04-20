@@ -2433,7 +2433,7 @@ impl State {
                         .unwrap()
                         .to_f64();
                     let cursor_local = cursor_pos - output_geo.loc;
-                    let movement_mode = self.niri.config.borrow().zoom.movement_mode.clone();
+                    let movement_mode = self.niri.config.borrow().zoom.movement_mode;
                     let locked = self.niri.layout.zoom_locked_for_output(&output);
 
                     self.niri.layout.set_zoom_level(
@@ -2463,7 +2463,7 @@ impl State {
                             .unwrap()
                             .to_f64();
                         let cursor_local = cursor_pos - output_geo.loc;
-                        let movement_mode = self.niri.config.borrow().zoom.movement_mode.clone();
+                        let movement_mode = self.niri.config.borrow().zoom.movement_mode;
                         self.niri
                             .layout
                             .animate_zoom_unlock(&output, cursor_local, &movement_mode);
@@ -4062,7 +4062,7 @@ impl State {
                         .map(|g| g.to_f64());
                     let cursor_local = output_geo.map(|g| cursor_global - g.loc);
                     let output_size = output_geo.map(|g| g.size);
-                    let movement_mode = Some(self.niri.config.borrow().zoom.movement_mode.clone());
+                    let movement_mode = Some(self.niri.config.borrow().zoom.movement_mode);
                     self.niri.layout.zoom_gesture_begin(
                         &output,
                         cursor_local,

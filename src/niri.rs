@@ -1635,7 +1635,7 @@ impl State {
                     .unwrap()
                     .to_f64();
                 let cursor_local = global_pointer_pos - output_geo.loc;
-                let movement_mode = self.niri.config.borrow().zoom.movement_mode.clone();
+                let movement_mode = self.niri.config.borrow().zoom.movement_mode;
                 let (locked, current_level) = (
                     self.niri.layout.zoom_locked_for_output(&output),
                     self.niri.layout.zoom_level_for_output(&output),
