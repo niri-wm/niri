@@ -104,8 +104,8 @@ pub struct Tile<W: LayoutElement> {
     /// Snapshot of the last render for use in the close animation.
     unmap_snapshot: Option<TileRenderSnapshot>,
 
-    /// Cached offscreen for the tab-switch strip.
-    tab_switch_offscreen: OffscreenBuffer,
+    /// Cached offscreen for the column-tab-switch strip.
+    column_tab_switch_offscreen: OffscreenBuffer,
 
     /// Extra damage for clipped surface corner radius changes.
     rounded_corner_damage: RoundedCornerDamage,
@@ -213,7 +213,7 @@ impl<W: LayoutElement> Tile<W> {
             alpha_animation: None,
             interactive_move_offset: Point::from((0., 0.)),
             unmap_snapshot: None,
-            tab_switch_offscreen: Default::default(),
+            column_tab_switch_offscreen: Default::default(),
             rounded_corner_damage: Default::default(),
             view_size,
             scale,
@@ -1380,16 +1380,16 @@ impl<W: LayoutElement> Tile<W> {
         }
     }
 
-    pub fn tab_switch_content_origin(&self) -> Point<f64, Logical> {
+    pub fn column_tab_switch_content_origin(&self) -> Point<f64, Logical> {
         self.bob_offset() + self.window_loc()
     }
 
-    pub fn tab_switch_mask(
+    pub fn column_tab_switch_mask(
         &self,
         location: Point<f64, Logical>,
     ) -> (Rectangle<f64, Logical>, CornerRadius) {
         let geometry = Rectangle::new(
-            location + self.tab_switch_content_origin(),
+            location + self.column_tab_switch_content_origin(),
             self.animated_window_size(),
         );
         let radius = self
@@ -1432,7 +1432,7 @@ impl<W: LayoutElement> Tile<W> {
 
         let gles = renderer.as_gles_renderer();
         let elements = self.collect_render_contents(gles, target);
-        match self.tab_switch_offscreen.render(gles, scale, &elements) {
+        match self.column_tab_switch_offscreen.render(gles, scale, &elements) {
             Ok((elem, _sync, data)) => {
                 self.window().set_offscreen_data(Some(data));
                 let offset = elem.offset();
