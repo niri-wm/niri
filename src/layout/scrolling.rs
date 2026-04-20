@@ -4,7 +4,7 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use niri_config::utils::MergeWith as _;
-use niri_config::{CenterFocusedColumn, PresetSize, Struts, ColumnTabSwitchDirection};
+use niri_config::{CenterFocusedColumn, ColumnTabSwitchDirection, PresetSize, Struts};
 use niri_ipc::{ColumnDisplay, SizeChange, WindowLayout};
 use ordered_float::NotNan;
 use smithay::backend::renderer::gles::GlesRenderer;
@@ -4104,7 +4104,9 @@ impl<W: LayoutElement> Column<W> {
         if self
             .column_tab_switch_animation
             .as_ref()
-            .is_some_and(|animation| animation.anim.is_done() || !self.should_animate_column_tab_switch())
+            .is_some_and(|animation| {
+                animation.anim.is_done() || !self.should_animate_column_tab_switch()
+            })
         {
             self.column_tab_switch_animation = None;
         }
@@ -4209,42 +4211,31 @@ impl<W: LayoutElement> Column<W> {
         tile_idx: usize,
         progress: f64,
     ) -> Point<f64, Logical> {
-        let strip_size = |idx: usize| self.tiles[idx].animated_window_size();
-        let strip_offset = |active_idx| -> Point<f64, Logical> {
-            match self.options.animations.column_tab_switch.direction {
-                ColumnTabSwitchDirection::Horizontal => {
-                    let offset = if tile_idx < active_idx {
-                        -(tile_idx..active_idx)
-                            .map(|idx| strip_size(idx).w)
-                            .sum::<f64>()
-                    } else {
-                        (active_idx..tile_idx)
-                            .map(|idx| strip_size(idx).w)
-                            .sum::<f64>()
-                    };
-                    Point::from((offset, 0.))
-                }
-                ColumnTabSwitchDirection::Vertical => {
-                    let offset = if tile_idx < active_idx {
-                        -(tile_idx..active_idx)
-                            .map(|idx| strip_size(idx).h)
-                            .sum::<f64>()
-                    } else {
-                        (active_idx..tile_idx)
-                            .map(|idx| strip_size(idx).h)
-                            .sum::<f64>()
-                    };
-                    Point::from((0., offset))
-                }
+        let direction = self.options.animations.column_tab_switch.direction;
+        let strip_size = |idx: usize| {
+            let size = self.tiles[idx].animated_window_size();
+            match direction {
+                ColumnTabSwitchDirection::Horizontal => size.w,
+                ColumnTabSwitchDirection::Vertical => size.h,
+            }
+        };
+
+        let strip_offset = |active_idx| {
+            if tile_idx < active_idx {
+                -(tile_idx..active_idx).map(strip_size).sum::<f64>()
+            } else {
+                (active_idx..tile_idx).map(strip_size).sum::<f64>()
             }
         };
 
         let from = strip_offset(animation.from_idx);
         let to = strip_offset(animation.to_idx);
-        Point::from((
-            from.x + (to.x - from.x) * progress,
-            from.y + (to.y - from.y) * progress,
-        ))
+        let offset = from + (to - from) * progress;
+
+        match direction {
+            ColumnTabSwitchDirection::Horizontal => Point::from((offset, 0.)),
+            ColumnTabSwitchDirection::Vertical => Point::from((0., offset)),
+        }
     }
 
     fn render_column_tab_switch<R: NiriRenderer>(
@@ -4269,21 +4260,8 @@ impl<W: LayoutElement> Column<W> {
         let active_content_origin = active_tile.column_tab_switch_content_origin();
         let (clip_geo, clip_radius) = active_tile.column_tab_switch_mask(frame_loc);
         let progress = animation.anim.clamped_value();
-        let horizontal =
-            self.options.animations.column_tab_switch.direction == ColumnTabSwitchDirection::Horizontal;
-
-        let strip = (0..self.tiles.len())
-            .into_iter()
-            .map(|idx| {
-                let tile = &self.tiles[idx];
-                let offset = self.animate_tile_on_column_tab_switch(animation, idx, progress);
-                let location =
-                    frame_loc + offset + active_content_origin - tile.column_tab_switch_content_origin();
-                let content_loc = location + tile.column_tab_switch_content_origin();
-                let content_size = tile.animated_window_size();
-                (tile, location, content_loc, content_size)
-            })
-            .collect::<Vec<_>>();
+        let horizontal = self.options.animations.column_tab_switch.direction
+            == ColumnTabSwitchDirection::Horizontal;
 
         let clip_start = if horizontal {
             clip_geo.loc.x
@@ -4296,7 +4274,15 @@ impl<W: LayoutElement> Column<W> {
             } else {
                 clip_geo.size.h
             };
-        for (tile, location, content_loc, content_size) in strip {
+        
+        // Go through the tiles in order and apply animation to tiles that are affected.
+        for idx in 0..self.tiles.len() {
+            let tile = &self.tiles[idx];
+            let offset = self.animate_tile_on_column_tab_switch(animation, idx, progress);
+            let content_loc = frame_loc + offset + active_content_origin;
+            let location = content_loc - tile.column_tab_switch_content_origin();
+            let content_size = tile.animated_window_size();
+
             let start = if horizontal {
                 content_loc.x
             } else {
