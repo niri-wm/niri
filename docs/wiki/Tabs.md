@@ -15,7 +15,26 @@ binds {
 }
 ```
 
-All other binds remain the same: switch tabs with `focus-window-down/up`, add or remove windows with `consume-window-into-column`/`expel-window-from-column`, and so on.
+All other binds remain the same:
+```kdl
+binds {
+   // Switch tabs / windows
+   Mod+Down       { focus-window-down; }
+   Mod+Up         { focus-window-up; }
+   // Wrap when switching tabs past the end the column
+   Mod+Tab        { focus-window-down-or-top; }
+   Mod+Shift+Tab  { focus-windwo-up-or-bottom; }
+
+   // Add and remove windows
+   Mod+Comma      { consume-or-expel-window-left; }
+   Mod+Period     { consume-or-expel-window-right; }
+   // or alternatively
+   Mod+Comma      { consume-window-into-column; }
+   Mod+Period     { expel-window-from-column; }
+
+   // ...
+}
+```
 
 Unlike regular columns, tabbed columns can go full-screen with multiple windows.
 
