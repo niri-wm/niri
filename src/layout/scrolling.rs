@@ -4274,7 +4274,7 @@ impl<W: LayoutElement> Column<W> {
             } else {
                 clip_geo.size.h
             };
-        
+
         // Go through the tiles in order and apply animation to tiles that are affected.
         for idx in 0..self.tiles.len() {
             let tile = &self.tiles[idx];

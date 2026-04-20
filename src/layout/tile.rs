@@ -1432,7 +1432,10 @@ impl<W: LayoutElement> Tile<W> {
 
         let gles = renderer.as_gles_renderer();
         let elements = self.collect_render_contents(gles, target);
-        match self.column_tab_switch_offscreen.render(gles, scale, &elements) {
+        match self
+            .column_tab_switch_offscreen
+            .render(gles, scale, &elements)
+        {
             Ok((elem, _sync, data)) => {
                 self.window().set_offscreen_data(Some(data));
                 let offset = elem.offset();
