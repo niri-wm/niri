@@ -21,7 +21,7 @@ binds {
    // Switch tabs / windows
    Mod+Down       { focus-window-down; }
    Mod+Up         { focus-window-up; }
-   // Wrap when switching tabs past the end the column
+   // Wrap when switching tabs past the end of the column
    Mod+Tab        { focus-window-down-or-top; }
    Mod+Shift+Tab  { focus-windwo-up-or-bottom; }
 
