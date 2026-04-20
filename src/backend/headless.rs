@@ -170,7 +170,7 @@ impl Headless {
         // on. In tests, the harness explicitly creates predictable `headless-N` outputs; creating
         // an extra default `HEADLESS-1` here causes name collisions and snapshot churn.
         if self.outputs.is_empty() && !cfg!(test) {
-            self.create_virtual_output(niri, 1920, 1080, 60);
+            let _ = self.create_virtual_output(niri, 1920, 1080, 60, None);
         }
     }
 
@@ -299,13 +299,35 @@ impl Headless {
         width: u16,
         height: u16,
         refresh_rate: u32,
-    ) -> String {
+        name: Option<String>,
+    ) -> Result<String, String> {
+        if let Some(name) = name.as_deref() {
+            if name.trim().is_empty() {
+                return Err("virtual output name cannot be empty".to_string());
+            }
+            if self.outputs.contains_key(name)
+                || niri.global_space.outputs().any(|o| o.name() == name)
+            {
+                return Err(format!("output '{name}' already exists"));
+            }
+        }
+
         let built = virtual_output::build_headless_virtual_output(
             &mut self.output_counter,
             width,
             height,
             refresh_rate,
+            name,
         );
+
+        if self.outputs.contains_key(&built.name)
+            || niri
+                .global_space
+                .outputs()
+                .any(|o| o.name() == built.name)
+        {
+            return Err(format!("output '{}' already exists", built.name));
+        }
 
         self.ipc_outputs
             .lock()
@@ -317,7 +339,7 @@ impl Headless {
 
         niri.add_output(built.output, Some(built.refresh_interval), false);
 
-        built.name
+        Ok(built.name)
     }
 
     /// Remove the virtual output with the given name.

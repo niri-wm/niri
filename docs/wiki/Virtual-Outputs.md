@@ -16,9 +16,14 @@ They’re useful for:
 When running niri on a TTY with your physical monitor, you can create additional virtual outputs:
 
 ```bash
-# Create a 1920x1080@144 output
-niri msg create-virtual-output --width 1920 --height 1080 --refresh-rate 144
-# Output: Created virtual output: HEADLESS-1
+# Create a 1920x1080@144 virtual output named "sunshine"
+niri msg create-virtual-output \
+  --name sunshine \
+  --width 1920 \
+  --height 1080 \
+  --refresh-rate 144
+
+# If --name is omitted, a unique HEADLESS-N name is generated.
 ```
 
 If you want to see what exists:
@@ -43,8 +48,8 @@ socket of that headless session.
 ## Removing virtual outputs
 
 ```bash
-niri msg remove-virtual-output HEADLESS-1
-# Output: Removed virtual output: HEADLESS-1
+niri msg remove-virtual-output sunshine
+# Output: Removed virtual output: sunshine
 ```
 
 ## Configuring virtual outputs
@@ -65,7 +70,8 @@ niri msg output HEADLESS-1 transform 90
 You can also configure them in your `config.kdl` file:
 
 ```kdl
-output "HEADLESS-1" {
+output "sunshine" {
+    mode "1920x1080@144.000"
     scale 1.25
     transform "90"
     position x=1920 y=0
@@ -75,7 +81,6 @@ output "HEADLESS-1" {
 ## Using with Sunshine
 
 If you want, you can tell [Sunshine](https://github.com/LizardByte/Sunshine) to create a virtual output that matches the client ([Moonlight](https://github.com/moonlight-stream/moonlight-qt)) resolution + refresh rate when a session starts, and remove it when the session ends.
-resolution + refresh rate when a session starts, and remove it when the session ends.
 
 The snippets below are intentionally minimal; adjust them to your Sunshine setup.
 
@@ -86,11 +91,11 @@ The snippets below are intentionally minimal; adjust them to your Sunshine setup
   "apps": [
     {
       "name": "Remote Desktop",
-      "output": "HEADLESS-1",
+      "output": "sunshine",
       "prep-cmd": [
         {
-          "do": "sh -c \"niri msg create-virtual-output --width ${SUNSHINE_CLIENT_WIDTH} --height ${SUNSHINE_CLIENT_HEIGHT} --refresh-rate ${SUNSHINE_CLIENT_FPS}\"",
-          "undo": "niri msg remove-virtual-output HEADLESS-1"
+          "do": "sh -c \"niri msg create-virtual-output --name sunshine --width ${SUNSHINE_CLIENT_WIDTH} --height ${SUNSHINE_CLIENT_HEIGHT} --refresh-rate ${SUNSHINE_CLIENT_FPS}\"",
+          "undo": "niri msg remove-virtual-output sunshine"
         }
       ]
     }

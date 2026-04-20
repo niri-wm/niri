@@ -39,13 +39,14 @@ pub(super) fn build_headless_virtual_output(
     width: u16,
     height: u16,
     refresh_rate: u32,
+    name: Option<String>,
 ) -> BuiltVirtualOutput {
     let refresh_rate = if refresh_rate < 2 { 60 } else { refresh_rate };
 
     *counter += 1;
     let n = *counter;
 
-    let connector = format!("HEADLESS-{n}");
+    let connector = name.unwrap_or_else(|| format!("HEADLESS-{n}"));
     let make = "niri".to_string();
     let model = "virtual".to_string();
     let serial = n.to_string();

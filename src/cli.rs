@@ -101,6 +101,11 @@ pub enum Msg {
     },
     /// Create a virtual output.
     CreateVirtualOutput {
+        /// Optional name for the created output.
+        ///
+        /// When omitted, a unique `HEADLESS-N` name is generated.
+        #[arg(long)]
+        name: Option<String>,
         /// Width in pixels.
         #[arg(long, default_value = "1920")]
         width: u16,

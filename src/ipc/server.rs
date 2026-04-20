@@ -422,6 +422,7 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
             width,
             height,
             refresh_rate,
+            name,
         } => {
             let width = width.unwrap_or(1920);
             let height = height.unwrap_or(1080);
@@ -435,6 +436,7 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
                     width,
                     height,
                     refresh_rate,
+                    name,
                 );
                 let _ = tx.send_blocking(result);
             });

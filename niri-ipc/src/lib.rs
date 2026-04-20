@@ -107,6 +107,10 @@ pub enum Request {
         height: Option<u16>,
         /// Refresh rate in Hz.
         refresh_rate: Option<u32>,
+        /// Optional output name to use instead of auto-generated `HEADLESS-N`.
+        ///
+        /// When omitted, the compositor will pick a unique name.
+        name: Option<String>,
     },
     /// Remove a virtual headless output by name.
     RemoveVirtualOutput {

@@ -258,12 +258,13 @@ impl Backend {
         width: u16,
         height: u16,
         refresh_rate: u32,
+        name: Option<String>,
     ) -> Result<String, String> {
         match self {
             Backend::Headless(headless) => {
-                Ok(headless.create_virtual_output(niri, width, height, refresh_rate))
+                headless.create_virtual_output(niri, width, height, refresh_rate, name)
             }
-            Backend::Tty(tty) => Ok(tty.create_virtual_output(niri, width, height, refresh_rate)),
+            Backend::Tty(tty) => tty.create_virtual_output(niri, width, height, refresh_rate, name),
             Backend::Winit(_) => {
                 Err("virtual outputs are not supported on the Winit backend".to_string())
             }

@@ -42,10 +42,12 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
             action: action.clone(),
         },
         Msg::CreateVirtualOutput {
+            name,
             width,
             height,
             refresh_rate,
         } => Request::CreateVirtualOutput {
+            name: name.clone(),
             width: Some(*width),
             height: Some(*height),
             refresh_rate: Some(*refresh_rate),
