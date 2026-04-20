@@ -44,7 +44,7 @@ pub mod utils;
 pub mod window_rule;
 pub mod workspace;
 
-pub use crate::animations::{Animation, Animations, TabSwitchAnim, TabSwitchDirection};
+pub use crate::animations::{Animation, Animations, ColumnTabSwitchAnim, ColumnTabSwitchDirection};
 pub use crate::appearance::*;
 pub use crate::binds::*;
 pub use crate::debug::Debug;
@@ -859,7 +859,7 @@ mod tests {
                     curve "cubic-bezier" 0.05 0.7 0.1 1  
                 }
 
-                tab-switch {
+                column-tab-switch {
                     direction "vertical"
                 }
 
@@ -1567,7 +1567,7 @@ mod tests {
                         ),
                     },
                 ),
-                tab_switch: TabSwitchAnim {
+                column_tab_switch: ColumnTabSwitchAnim {
                     anim: Animation {
                         off: false,
                         kind: Easing(
