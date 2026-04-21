@@ -384,10 +384,16 @@ impl DndGrabHandler for State {
             }
         }
     }
+
+    fn cancelled(&mut self, _seat: Seat<Self>, _location: Point<f64, Logical>) {
+        trace!("dnd cancelled");
+
+        self.niri.on_maybe_dnd_ended();
+    }
 }
 
 impl crate::niri::Niri {
-    pub fn on_maybe_dnd_ended(&mut self) {
+    fn on_maybe_dnd_ended(&mut self) {
         self.layout.dnd_end();
         self.dnd_icon = None;
         // FIXME: more granular

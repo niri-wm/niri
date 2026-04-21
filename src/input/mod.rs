@@ -499,11 +499,6 @@ impl State {
                         .unwrap_or(false)
                     {
                         pointer.unset_grab(this, serial, time);
-
-                        // If this was a DnD, we won't get DndGrabHandler::dropped(), so we need to
-                        // call the cleanup.
-                        this.niri.on_maybe_dnd_ended();
-
                         this.niri.suppressed_keys.insert(key_code);
                         return FilterResult::Intercept(None);
                     }

@@ -1321,7 +1321,6 @@ impl State {
                         get_monotonic_time().as_millis() as u32,
                     );
                     self.niri.popup_grab = None;
-                    self.niri.on_maybe_dnd_ended();
                 }
             }
 
@@ -1977,7 +1976,6 @@ impl State {
         if let Some(touch) = self.niri.seat.get_touch() {
             touch.unset_grab(self);
         }
-        self.niri.on_maybe_dnd_ended();
 
         self.backend.with_primary_renderer(|renderer| {
             self.niri
