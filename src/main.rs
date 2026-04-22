@@ -55,6 +55,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .compact()
         .with_writer(io::stderr)
         .with_env_filter(env_filter)
+        .with_ansi_sanitization(false)
         .init();
 
     if env::var_os("NOTIFY_SOCKET").is_some() {
@@ -171,7 +172,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let display = Display::new().unwrap();
 
     // Increase the buffer size so that it's harder to crash a frozen client with a 1000 Hz mouse.
-    display.handle().set_default_max_buffer_size(1024 * 1024);
+    set_default_max_buffer_size(&display, 1024 * 1024);
 
     let mut state = State::new(
         config,
@@ -234,7 +235,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if env::var_os("NIRI_DISABLE_SYSTEM_MANAGER_NOTIFY").is_none_or(|x| x != "1") {
         // Notify systemd we're ready.
-        if let Err(err) = sd_notify::notify(true, &[NotifyState::Ready]) {
+        if let Err(err) = sd_notify::notify(&[NotifyState::Ready]) {
             warn!("error notifying systemd: {err:?}");
         };
 
@@ -372,4 +373,38 @@ fn notify_fd() -> anyhow::Result<()> {
     let mut notif = unsafe { File::from_raw_fd(fd) };
     notif.write_all(b"READY=1\n")?;
     Ok(())
+}
+
+// The wayland-server crate has set_default_max_buffer_size() under a libwayland_1_23 feature, but
+// this hard-requires libwayland-server >= 1.23 which is not present on e.g. Ubuntu 24.04. Since
+// calling this is an optional enhancement, do it optionally at runtime.
+fn set_default_max_buffer_size(display: &Display<State>, size: usize) {
+    use std::ffi::c_void;
+
+    unsafe {
+        // RTLD_NOLOAD ensures we only get a handle to the libwayland-server that wayland-rs has
+        // already loaded into this process, rather than potentially pulling in a different copy.
+        let lib = libc::dlopen(
+            c"libwayland-server.so.0".as_ptr(),
+            libc::RTLD_LAZY | libc::RTLD_NOLOAD,
+        );
+        if lib.is_null() {
+            // It's not really expected that this can happen, maybe if some distro changes the
+            // library name?
+            warn!("cannot set default max buffer size: libwayland-server.so.0 is not loaded");
+            return;
+        }
+
+        let sym = libc::dlsym(lib, c"wl_display_set_default_max_buffer_size".as_ptr());
+        if sym.is_null() {
+            // Expected on libwayland-server < 1.23.
+            trace!("wl_display_set_default_max_buffer_size is missing; skipping");
+        } else {
+            let func: unsafe extern "C" fn(*mut c_void, libc::size_t) = std::mem::transmute(sym);
+            let display_ptr = display.handle().backend_handle().display_ptr();
+            func(display_ptr.cast(), size);
+        }
+
+        libc::dlclose(lib);
+    }
 }

@@ -193,7 +193,7 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
                 return Ok(());
             }
 
-            windows.sort_unstable_by(|a, b| a.id.cmp(&b.id));
+            windows.sort_unstable_by_key(|a| a.id);
 
             for window in windows {
                 print_window(&window);
