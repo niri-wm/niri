@@ -1648,30 +1648,6 @@ mod tests {
                         ),
                     },
                 ),
-                zoom_level_change: ZoomLevelChangeAnim(
-                    Animation {
-                        off: false,
-                        kind: Spring(
-                            SpringParams {
-                                damping_ratio: 1.0,
-                                stiffness: 1200,
-                                epsilon: 0.0001,
-                            },
-                        ),
-                    },
-                ),
-                zoom_focal_pan: ZoomFocalPanAnim(
-                    Animation {
-                        off: false,
-                        kind: Spring(
-                            SpringParams {
-                                damping_ratio: 1.0,
-                                stiffness: 800,
-                                epsilon: 0.0001,
-                            },
-                        ),
-                    },
-                ),
             },
             blur: Blur {
                 off: false,

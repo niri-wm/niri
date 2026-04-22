@@ -1907,6 +1907,7 @@ impl Tty {
             renderer: &mut renderer,
             target: RenderTarget::Output,
             xray: None,
+            apply_zoom: true,
         };
         let mut elements = niri.render_to_vec(ctx, output, true);
 

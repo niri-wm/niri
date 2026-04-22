@@ -1079,6 +1079,7 @@ impl Cast {
             error!("cast must be in Ready state to render");
             return false;
         };
+
         let damage_tracker = damage_tracker
             .get_or_insert_with(|| OutputDamageTracker::new(size, scale, Transform::Normal));
         let cursor_damage_tracker = cursor_damage_tracker.get_or_insert_with(|| {

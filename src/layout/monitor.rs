@@ -92,7 +92,7 @@ pub struct Monitor<W: LayoutElement> {
     layout_config: Option<niri_config::LayoutPart>,
     /// In-progress zoom transition state for this monitor.
     pub(super) zoom_transition: ZoomTransition,
-    /// Per-output zoom snapshot (level, focal, locked, transitioning).
+    /// Per-output zoom state (level, focal, locked, transitioning).
     pub(super) zoom_state: OutputZoomState,
 }
 
@@ -375,6 +375,13 @@ impl<W: LayoutElement> Monitor<W> {
 
     pub fn output_name(&self) -> &String {
         &self.output_name
+    }
+    /// Canonical per-output zoomed-geometry for this monitor.
+    pub fn zoomed_geometry(
+        &self,
+        output_geometry: Rectangle<f64, Logical>,
+    ) -> Rectangle<f64, Logical> {
+        self.zoom_state.viewport_global(output_geometry)
     }
 
     pub fn active_workspace_idx(&self) -> usize {

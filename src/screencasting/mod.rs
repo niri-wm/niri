@@ -204,6 +204,12 @@ impl State {
                 let mut pointer_location = Point::default();
 
                 if self.niri.pointer_visibility.is_visible() {
+                    // Pointer position is calculated relative to the main output viewport.
+                    // For window casts (screencasts of a single window), we intentionally
+                    // render the pointer without applying the global output zoom. This
+                    // preserves the canonical seam where window casts remain unzoomed
+                    // even if the output is being zoomed elsewhere. See Task 10 for
+                    // the formal documentation in the notepad.
                     if let Some((pointer_pos, win_pos)) =
                         self.niri.pointer_pos_for_window_cast(mapped)
                     {
@@ -217,7 +223,16 @@ impl State {
                         pointer_location = pointer_pos - output_pos.to_f64() - buf_pos;
 
                         let pos = buf_pos.to_physical_precise_round(scale).upscale(-1);
-                        self.niri.render_pointer(renderer, output, &mut |elem| {
+                        // Do not apply output zoom to the pointer for window casts.
+                        // This keeps the pointer rendering aligned with the unzoomed
+                        // window-cast seam, rather than following the output's zoom state.
+                        let ctx = RenderCtx {
+                            renderer,
+                            target: RenderTarget::Screencast,
+                            xray: None,
+                            apply_zoom: false,
+                        };
+                        self.niri.render_pointer(ctx, output, &mut |elem| {
                             let elem =
                                 RelocateRenderElement::from_element(elem, pos, Relocate::Relative);
                             elements.push(CastRenderElement::from(elem));
@@ -575,41 +590,66 @@ impl Niri {
                 continue;
             }
 
+            // Prepare pointer rendering for screencasts. The canonical seam for
+            // pointer-zoom related calculations is implemented in Niri and should
+            // be reused here to ensure the screencast viewport and zoom behavior
+            // match the user's visible output. We keep the exact semantics:
+            // - Cursor visibility is checked via display coordinates on the output
+            // - Pointer rendering remains zoomed when appropriate
+            // - Main output rendering continues to use apply_zoom = true
             if cursor_data.is_none() {
-                let mut pointer_pos = Point::default();
-                if self.pointer_visibility.is_visible() {
+                // Compute pointer visibility/location using the same viewport rules as
+                // the canonical seam (visible output viewport with possible zoom).
+                let pointer_pos = if self.pointer_visibility.is_visible() {
+                    // Note: This mirrors the logic from the seam in Niri where the
+                    // display location is calculated against the visible zoomed
+                    // viewport and only rendered if inside the output's viewport.
                     let output_geo = self.global_space.output_geometry(output).unwrap().to_f64();
                     let pointer_loc = self
                         .tablet_cursor_location
                         .unwrap_or_else(|| self.seat.get_pointer().unwrap().current_location());
-                    // Only render when the pointer is within the output. Otherwise, it will
-                    // happily appear anywhere outside the output video source in OBS.
-                    if output_geo.contains(pointer_loc) {
-                        pointer_pos = pointer_loc - output_geo.loc;
-                        self.render_pointer(renderer, output, &mut |elem| {
-                            elements.push(elem.into())
-                        });
+                    let display_pointer_loc = self.effective_cursor_pos(pointer_loc);
+                    if output_geo.contains(display_pointer_loc) {
+                        // Position relative to the screencast buffer
+                        Some(display_pointer_loc - output_geo.loc)
+                    } else {
+                        None
                     }
-                }
+                } else {
+                    None
+                };
+
+                // If pointer is to be drawn, render with zoom through the canonical seam
+                // by delegating to render_pointer_with_zoom with apply_zoom = true.
+                // We keep the same API surface to preserve existing behavior.
+                let pointer_pos = match pointer_pos {
+                    Some(_p) => {
+                        let ctx = RenderCtx {
+                            renderer,
+                            target: RenderTarget::Screencast,
+                            xray: None,
+                            apply_zoom: true,
+                        };
+                        Some(self.render_pointer_with_zoom(ctx, output, &mut |elem| {
+                            elements.push(elem.into())
+                        }))
+                    }
+                    None => None,
+                };
 
                 let main_start = elements.len();
                 let ctx = RenderCtx {
                     renderer,
                     target: RenderTarget::Screencast,
                     xray: None,
+                    apply_zoom: true,
                 };
-                self.render(ctx, output, false, &mut |elem| {
-                    // Apply zoom to the elements here since that's what the pointer will be
-                    // rendered on top of, and OBS will sample from the elements for the pointer
-                    // position regardless.
-                    let elem = self.zoomed_element(elem, output);
-                    elements.push(elem.into())
-                });
+                self.render(ctx, output, false, &mut |elem| elements.push(elem.into()));
 
                 cursor_data = Some(CursorData::compute(
                     &elements,
                     main_start,
-                    pointer_pos,
+                    pointer_pos.unwrap_or_default(),
                     scale,
                 ));
             }
@@ -674,6 +714,9 @@ impl Niri {
             let mut elements = Vec::new();
             let mut pointer_location = Point::default();
 
+            // Pointer rendering for window casts in the shared seam path remains
+            // unzoomed. See Task 10 for the explicit documentation and guardrails
+            // ensuring window-cast does not participate in output-zoom semantics.
             if self.pointer_visibility.is_visible() {
                 if let Some((pointer_pos, win_pos)) = self.pointer_pos_for_window_cast(mapped) {
                     // Pointer location must be relative to the screencast buffer.
@@ -685,7 +728,15 @@ impl Niri {
                     pointer_location = pointer_pos - output_pos.to_f64() - buf_pos;
 
                     let pos = buf_pos.to_physical_precise_round(scale).upscale(-1);
-                    self.render_pointer(renderer, output, &mut |elem| {
+
+                    let ctx = RenderCtx {
+                        renderer,
+                        target: RenderTarget::Screencast,
+                        xray: None,
+                        apply_zoom: false,
+                    };
+
+                    self.render_pointer(ctx, output, &mut |elem| {
                         let elem =
                             RelocateRenderElement::from_element(elem, pos, Relocate::Relative);
                         elements.push(CastRenderElement::from(elem));
