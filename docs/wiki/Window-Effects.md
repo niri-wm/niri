@@ -66,7 +66,7 @@ Keep in mind that non-xray blur and other non-xray effects are more expensive as
 > Non-xray effects are currently experimental because they have some known limitations.
 >
 > - They disappear during window open/close animations and while dragging a tiled window.
-> Fixing this requries a refactor to the niri rendering code to defer offscreen rendering, and possibly other refactors.
+> Fixing this requires a refactor to the niri rendering code to defer offscreen rendering, and possibly other refactors.
 
 ### Implementation notes
 
