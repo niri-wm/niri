@@ -4201,7 +4201,6 @@ impl<W: LayoutElement> Column<W> {
     fn should_animate_column_tab_switch(&self) -> bool {
         self.display_mode == ColumnDisplay::Tabbed
             && self.tiles.len() > 1
-            && self.sizing_mode().is_normal()
             && !self.options.animations.column_tab_switch.anim.off
     }
 
