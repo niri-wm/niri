@@ -73,6 +73,7 @@ drm-ffi = "0.9.1"
 fastrand = "2.4.1"
 futures-util = { version = "0.3.32", default-features = false, features = ["std", "io"] }
 git-version = "0.3.9"
+gio = "0.21.5"
 glam = "0.32.1"
 input = { version = "0.10.0", features = ["libinput_1_21"] }
 keyframe = { version = "1.1.1", default-features = false }

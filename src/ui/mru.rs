@@ -41,6 +41,7 @@ use crate::utils::{
     baba_is_float_offset, output_size, round_logical_in_physical, to_physical_precise_round,
     with_toplevel_role,
 };
+use crate::ui::app_icons::{APP_ICON_SIZE, AppIconTexture, AppIconTextureBuffer};
 use crate::window::mapped::MappedId;
 use crate::window::Mapped;
 
@@ -70,6 +71,9 @@ const LIST_WIDTH_FACTOR: f64 = 0.6;
 
 /// Horizontal padding inside a list item.
 const LIST_ITEM_HPAD: f64 = 8.;
+
+/// Gap between app icon and title.
+const APP_ICON_GAP: f64 = 8.;
 
 /// How much of the next window will always peek from the side of the screen.
 const STRUT: f64 = 192.;
@@ -237,8 +241,46 @@ struct Thumbnail {
     open_animation: Option<Animation>,
     move_animation: Option<MoveAnimation>,
     title_texture: RefCell<TitleTexture>,
+    app_icon_texture: RefCell<AppIconTexture>,
     background: RefCell<FocusRing>,
     border: RefCell<FocusRing>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct PreviewFooterLayout {
+    size: Option<Size<f64, Logical>>,
+    title_width: Option<f64>,
+}
+
+fn compute_preview_footer_layout(
+    preview_width: f64,
+    title_size: Option<Size<f64, Logical>>,
+    icon_size: Option<Size<f64, Logical>>,
+    icon_gap: f64,
+) -> PreviewFooterLayout {
+    let icon_w = icon_size.map_or(0., |s| s.w);
+    let icon_h = icon_size.map_or(0., |s| s.h);
+
+    let mut title_width = title_size.map(|s| s.w).unwrap_or(0.);
+    let title_height = title_size.map_or(0., |s| s.h);
+
+    let max_title_width = if icon_size.is_some() {
+        (preview_width - icon_w - icon_gap).max(0.)
+    } else {
+        preview_width.max(0.)
+    };
+    title_width = title_width.min(max_title_width);
+
+    let has_title = title_size.is_some() && title_width > 0.;
+    let title_width = has_title.then_some(title_width);
+
+    let footer_width = icon_w + if icon_size.is_some() && has_title { icon_gap } else { 0. } +
+        title_width.unwrap_or(0.);
+    let footer_height = icon_h.max(if has_title { title_height } else { 0. });
+
+    let size = (footer_width > 0. && footer_height > 0.).then_some(Size::new(footer_width, footer_height));
+
+    PreviewFooterLayout { size, title_width }
 }
 
 impl Thumbnail {
@@ -269,6 +311,7 @@ impl Thumbnail {
             open_animation: None,
             move_animation: None,
             title_texture: Default::default(),
+            app_icon_texture: Default::default(),
             background: RefCell::new(background),
             border: RefCell::new(border),
         }
@@ -354,6 +397,16 @@ impl Thumbnail {
         })
     }
 
+    fn app_icon_texture(
+        &self,
+        renderer: &mut GlesRenderer,
+        scale: f64,
+    ) -> Option<AppIconTextureBuffer> {
+        self.app_icon_texture
+            .borrow_mut()
+            .get(renderer, self.app_id.as_deref(), scale)
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn render<R: NiriRenderer>(
         &self,
@@ -371,6 +424,7 @@ impl Thumbnail {
         let round = move |logical: f64| round_logical_in_physical(scale, logical);
         let padding = round(config.highlight.padding);
         let title_gap = round(TITLE_GAP);
+        let icon_gap = round(APP_ICON_GAP);
 
         let s = Scale::from(scale);
 
@@ -473,47 +527,87 @@ impl Thumbnail {
             push(elem)
         });
 
-        let mut title_size = None;
-        let title_texture = self.title_texture(ctx.as_gles().renderer, mapped, scale);
-        let title_texture = title_texture.map(|texture| {
-            let mut size = texture.logical_size();
-            size.w = f64::min(size.w, preview_geo.size.w);
-            title_size = Some(size);
-            (texture, size)
-        });
+        let title_texture = self
+            .title_texture(ctx.as_gles().renderer, mapped, scale)
+            .map(|texture| {
+                let size = texture.logical_size();
+                (texture, size)
+            });
+
+        let app_icon_texture = self
+            .app_icon_texture(ctx.as_gles().renderer, scale)
+            .map(|texture| {
+                let size = texture.logical_size();
+                (texture, size)
+            });
+
+        let footer_layout = compute_preview_footer_layout(
+            preview_geo.size.w,
+            title_texture.as_ref().map(|(_, size)| *size),
+            app_icon_texture.as_ref().map(|(_, size)| *size),
+            icon_gap,
+        );
+        let footer_size = footer_layout.size;
 
         // Hide title for blocked-out windows, but only after computing the title size. This way,
         // the background and the border won't have to oscillate in size between normal and
         // screencast renders, causing excessive damage.
         let should_block_out = ctx.target.should_block_out(mapped.rules().block_out_from);
-        let title_texture = title_texture.filter(|_| !should_block_out);
+        let title_texture = title_texture.filter(|_| {
+            !should_block_out && footer_layout.title_width.is_some()
+        });
+        let app_icon_texture = app_icon_texture.filter(|_| !should_block_out);
 
-        if let Some((texture, size)) = title_texture {
-            // Clip from the right if it doesn't fit.
-            let src = Rectangle::from_size(size);
+        if let Some(footer_size) = footer_size {
+            let row_y = preview_geo.loc.y + preview_geo.size.h + title_gap;
+            let row_x = preview_geo.loc.x + (preview_geo.size.w - footer_size.w) / 2.;
 
-            let loc = preview_geo.loc
-                + Point::new(
-                    (preview_geo.size.w - size.w) / 2.,
-                    preview_geo.size.h + title_gap,
+            let mut cursor_x = row_x;
+
+            if let Some((texture, icon_size)) = app_icon_texture {
+                let loc = Point::new(cursor_x, row_y + (footer_size.h - icon_size.h) / 2.);
+                let loc = loc.to_physical_precise_round(scale).to_logical(scale);
+                let texture = TextureRenderElement::from_texture_buffer(
+                    texture,
+                    loc,
+                    preview_alpha,
+                    None,
+                    None,
+                    Kind::Unspecified,
                 );
-            let loc = loc.to_physical_precise_round(scale).to_logical(scale);
-            let texture = TextureRenderElement::from_texture_buffer(
-                texture,
-                loc,
-                preview_alpha,
-                Some(src),
-                None,
-                Kind::Unspecified,
-            );
-
-            let ctx = ctx.as_gles();
-            if let Some(program) = GradientFadeTextureRenderElement::shader(ctx.renderer) {
-                let elem = GradientFadeTextureRenderElement::new(texture, program);
-                push(WindowMruUiRenderElement::GradientFadeElem(elem));
-            } else {
                 let elem = PrimaryGpuTextureRenderElement(texture);
                 push(WindowMruUiRenderElement::TextureElement(elem));
+                cursor_x += icon_size.w;
+            }
+
+            if let Some((texture, mut size)) = title_texture {
+                if cursor_x > row_x {
+                    cursor_x += icon_gap;
+                }
+
+                size.w = footer_layout.title_width.unwrap_or(0.);
+
+                // Clip from the right if it doesn't fit.
+                let src = Rectangle::from_size(size);
+                let loc = Point::new(cursor_x, row_y + (footer_size.h - size.h) / 2.);
+                let loc = loc.to_physical_precise_round(scale).to_logical(scale);
+                let texture = TextureRenderElement::from_texture_buffer(
+                    texture,
+                    loc,
+                    preview_alpha,
+                    Some(src),
+                    None,
+                    Kind::Unspecified,
+                );
+
+                let ctx = ctx.as_gles();
+                if let Some(program) = GradientFadeTextureRenderElement::shader(ctx.renderer) {
+                    let elem = GradientFadeTextureRenderElement::new(texture, program);
+                    push(WindowMruUiRenderElement::GradientFadeElem(elem));
+                } else {
+                    let elem = PrimaryGpuTextureRenderElement(texture);
+                    push(WindowMruUiRenderElement::TextureElement(elem));
+                }
             }
         }
 
@@ -524,8 +618,8 @@ impl Thumbnail {
             let mut size = preview_geo.size;
             size += padding.to_size().upscale(2.);
 
-            if let Some(title_size) = title_size {
-                size.h += title_gap + title_size.h;
+            if let Some(footer_size) = footer_size {
+                size.h += title_gap + footer_size.h;
                 // Subtract half the padding so it looks more balanced visually.
                 size.h -= round(padding.y / 2.);
             }
@@ -599,6 +693,8 @@ impl Thumbnail {
     ) {
         let round = move |logical: f64| round_logical_in_physical(scale, logical);
         let hpad = round(LIST_ITEM_HPAD);
+        let icon_size = round(APP_ICON_SIZE);
+        let icon_gap = round(APP_ICON_GAP);
         let radius = CornerRadius::from(config.highlight.corner_radius as f32);
 
         let is_urgent = mapped.is_urgent();
@@ -659,16 +755,47 @@ impl Thumbnail {
 
         let should_block_out = target.should_block_out(mapped.rules().block_out_from);
 
+        let app_icon_texture = self
+            .app_icon_texture(renderer.as_gles_renderer(), scale)
+            .filter(|_| !should_block_out);
+
+        let text_x = hpad
+            + if app_icon_texture.is_some() {
+                icon_size + icon_gap
+            } else {
+                0.
+            };
+
+        if let Some(texture) = app_icon_texture {
+            let icon_size_actual = texture.logical_size();
+
+            if icon_size_actual.w > 0. && icon_size_actual.h > 0. {
+                let loc = geo.loc
+                    + Point::new(hpad, (geo.size.h - icon_size_actual.h) / 2.);
+                let loc = loc.to_physical_precise_round(scale).to_logical(scale);
+                let texture = TextureRenderElement::from_texture_buffer(
+                    texture,
+                    loc,
+                    1.,
+                    None,
+                    None,
+                    Kind::Unspecified,
+                );
+                let elem = PrimaryGpuTextureRenderElement(texture);
+                push(WindowMruUiRenderElement::TextureElement(elem));
+            }
+        }
+
         let title_texture = self
             .title_texture(renderer.as_gles_renderer(), mapped, scale)
             .filter(|_| !should_block_out);
 
         if let Some(texture) = title_texture {
             let mut text_size = texture.logical_size();
-            text_size.w = f64::min(text_size.w, geo.size.w - hpad * 2.);
+            text_size.w = f64::min(text_size.w, geo.size.w - text_x - hpad);
             if text_size.w > 0. {
                 let src = Rectangle::from_size(text_size);
-                let loc = geo.loc + Point::new(hpad, (geo.size.h - text_size.h) / 2.);
+                let loc = geo.loc + Point::new(text_x, (geo.size.h - text_size.h) / 2.);
                 let loc = loc.to_physical_precise_round(scale).to_logical(scale);
                 let texture = TextureRenderElement::from_texture_buffer(
                     texture,
@@ -1873,9 +2000,23 @@ impl Inner {
                 // It doesn't really matter all that much if the title texture is stale here, and
                 // it would be annoying to thread the rendering into this function. The texture
                 // might be one frame stale or so.
-                if let Some(texture) = thumbnail.title_texture.borrow().get_stale() {
-                    let title_size = texture.logical_size();
-                    geo.size.h += title_gap + title_size.h;
+                let title_size = thumbnail
+                    .title_texture
+                    .borrow()
+                    .get_stale()
+                    .map(|texture| texture.logical_size());
+                let icon_size = thumbnail
+                    .app_icon_texture
+                    .borrow()
+                    .get_stale()
+                    .map(|texture| texture.logical_size());
+                let icon_gap = round(APP_ICON_GAP);
+                let footer_h = compute_preview_footer_layout(geo.size.w, title_size, icon_size, icon_gap)
+                    .size
+                    .map(|size| size.h);
+
+                if let Some(footer_h) = footer_h {
+                    geo.size.h += title_gap + footer_h;
                     // Subtract half the padding so it looks more balanced visually.
                     geo.size.h -= round(padding.y / 2.);
                 }

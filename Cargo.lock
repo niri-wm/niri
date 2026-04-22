@@ -2256,6 +2256,7 @@ dependencies = [
  "drm-ffi",
  "fastrand",
  "futures-util",
+ "gio",
  "git-version",
  "glam",
  "input",
