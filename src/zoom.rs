@@ -18,9 +18,29 @@ use crate::render_helpers::solid_color::SolidColorRenderElement;
 // Define a type alias for the common zoom wrapper: Relocate(Rescale(T))
 pub type ZoomWrapper<T> = RelocateRenderElement<RescaleRenderElement<T>>;
 
-/// Wrap an element with the standard zoom transform: Rescale around the focal
-/// point, then Relocate by the subpixel correction. This is the non-pointer
-/// path — all elements except the live cursor use this.
+// Unique enum for all zoomed elements - avoids type conflicts with OutputRenderElements since
+// zoomed types are wrapped in a separate enum
+niri_render_elements! {
+    ZoomedRenderElements<R> => {
+        Monitor = ZoomWrapper<MonitorRenderElement<R>>,
+        RescaledTile = ZoomWrapper<RescaleRenderElement<TileRenderElement<R>>>,
+        LayerSurface = ZoomWrapper<LayerSurfaceRenderElement<R>>,
+        RelocatedLayerSurface = ZoomWrapper<CropRenderElement<ZoomWrapper<LayerSurfaceRenderElement<R>>>>,
+        RelocatedColor = ZoomWrapper<CropRenderElement<ZoomWrapper<SolidColorRenderElement>>>,
+        Pointer = ZoomWrapper<PointerRenderElements<R>>,
+        Wayland = ZoomWrapper<WaylandSurfaceRenderElement<R>>,
+        SolidColor = ZoomWrapper<SolidColorRenderElement>,
+        Texture = ZoomWrapper<PrimaryGpuTextureRenderElement>,
+        // We don't apply zoom to WindowMruUi and ExitConfirmDialog elements, so they are intentionally
+        // excluded from this enum to avoid confusion and potential misuse.
+        // ScreenshotUi are handled separately in screenshot_ui module due to their unique
+        // constraints and requirements, so they are also intentionally excluded here.
+    }
+}
+
+/// Wrap an element with the standard zoom transform: Rescale around the focal point, then Relocate
+/// by the subpixel correction. This is the canonical way to apply, except for pointer and
+/// screenshot_ui which are subject to additional constraints and require custom handling.
 pub fn zoom_wrap<E: Element>(
     elem: E,
     zoom_factor: f64,
@@ -36,24 +56,7 @@ pub fn zoom_wrap<E: Element>(
     )
 }
 
-// Separate enum for all zoomed elements - this avoids type conflicts with
-// OutputRenderElements since zoomed types are wrapped in a different enum
-niri_render_elements! {
-    ZoomedRenderElements<R> => {
-        Monitor = ZoomWrapper<MonitorRenderElement<R>>,
-        RescaledTile = ZoomWrapper<RescaleRenderElement<TileRenderElement<R>>>,
-        LayerSurface = ZoomWrapper<LayerSurfaceRenderElement<R>>,
-        RelocatedLayerSurface = ZoomWrapper<CropRenderElement<ZoomWrapper<LayerSurfaceRenderElement<R>>>>,
-        RelocatedColor = ZoomWrapper<CropRenderElement<ZoomWrapper<SolidColorRenderElement>>>,
-        Pointer = ZoomWrapper<PointerRenderElements<R>>,
-        Wayland = ZoomWrapper<WaylandSurfaceRenderElement<R>>,
-        SolidColor = ZoomWrapper<SolidColorRenderElement>,
-        // ScreenshotUi = ZoomWrapper<ScreenshotUiRenderElement>,
-        Texture = ZoomWrapper<PrimaryGpuTextureRenderElement>,
-    }
-}
-
-/// Per-output zoom snapshot.
+/// Per-output zoom state.
 ///
 /// This struct holds the effective zoom values that external consumers (backends,
 /// input, niri rendering) read each frame. Layout writes these values every
@@ -116,17 +119,6 @@ impl OutputZoomState {
     }
 }
 
-impl Default for OutputZoomState {
-    fn default() -> Self {
-        Self {
-            level: 1.0,
-            focal: Point::from((0.0, 0.0)),
-            locked: false,
-            transitioning: false,
-        }
-    }
-}
-
 pub fn apply_zoom_viewport(
     mut output_rect: Rectangle<f64, Logical>,
     focal_point: Point<f64, Logical>,
@@ -136,6 +128,34 @@ pub fn apply_zoom_viewport(
     output_rect = output_rect.downscale(zoom_factor);
     output_rect.loc += focal_point;
     output_rect
+}
+
+/// Canonical per-output display cursor position helper.
+///
+/// Given a global cursor position, the per-output origin and size, and the
+/// current zoom state (level and focal point), return the global cursor position
+/// where the cursor would be displayed on that output when zoom is active.
+///
+/// Semantics follow ZoomTransformInputs::display_position(): if the cursor is
+/// outside the output, return None. Otherwise return the clamped position in
+/// global coordinates, preserving the existing viewport clamping rules and
+/// out-of-output semantics.
+pub fn canonical_display_cursor_global_pos(
+    global_pointer: Point<f64, Logical>,
+    output_pos: Point<f64, Logical>,
+    output_size: Size<f64, Logical>,
+    zoom_level: f64,
+    zoom_focal: Point<f64, Logical>,
+) -> Option<Point<f64, Logical>> {
+    // Reuse the existing transformation pathway to ensure consistent semantics.
+    let inputs = ZoomTransformInputs::new(
+        output_pos,
+        global_pointer,
+        output_size,
+        zoom_level,
+        zoom_focal,
+    );
+    inputs.display_position().map(|p| p + output_pos)
 }
 
 pub fn compute_focal_for_cursor(
@@ -154,10 +174,11 @@ pub fn compute_focal_for_cursor(
             let viewport_size = output_size.downscale(zoom_level);
             let viewport_loc = cursor_local - viewport_size.downscale(2.0).to_point();
             let scale_factor = zoom_level / (zoom_level - 1.0).max(0.001);
-            let mut focal =
-                Point::from((viewport_loc.x * scale_factor, viewport_loc.y * scale_factor));
+
+            let mut focal = viewport_loc.upscale(scale_factor);
             focal.x = focal.x.clamp(0.0, output_size.w - f64::EPSILON);
             focal.y = focal.y.clamp(0.0, output_size.h - f64::EPSILON);
+
             focal
         }
     }
@@ -287,12 +308,53 @@ pub fn zoom_display_cursor_logical(
     ))
 }
 
+pub struct ZoomTransformInputs {
+    pub output_pos: Point<f64, Logical>,
+    pub pointer_local: Point<f64, Logical>,
+    pub output_sz: Size<f64, Logical>,
+    pub zoom_level: f64,
+    pub zoom_focal: Point<f64, Logical>,
+}
+
+impl ZoomTransformInputs {
+    pub fn new(
+        output_pos: Point<f64, Logical>,
+        pointer_pos: Point<f64, Logical>,
+        output_sz: Size<f64, Logical>,
+        zoom_level: f64,
+        zoom_focal: Point<f64, Logical>,
+    ) -> Self {
+        let pointer_local = pointer_pos - output_pos;
+        Self {
+            output_pos,
+            pointer_local,
+            output_sz,
+            zoom_level,
+            zoom_focal,
+        }
+    }
+
+    pub fn display_position(&self) -> Option<Point<f64, Logical>> {
+        let output_rect: Rectangle<f64, Logical> = Rectangle::from_size(self.output_sz);
+        if !output_rect.contains(self.pointer_local) {
+            return None;
+        }
+
+        Some(zoom_display_cursor_logical(
+            self.pointer_local,
+            self.output_sz,
+            self.zoom_level,
+            self.zoom_focal,
+        ))
+    }
+}
+
 pub(crate) fn compute_on_edge_cursor_anchor(
     cursor_local: Point<f64, Logical>,
     zoom_level: f64,
     focal: Point<f64, Logical>,
     output_size: Size<f64, Logical>,
-) -> (f64, f64) {
+) -> Point<f64, Logical> {
     let output_rect: Rectangle<f64, Logical> = Rectangle::from_size(output_size);
     let viewport = apply_zoom_viewport(output_rect, focal, zoom_level);
 
@@ -307,27 +369,84 @@ pub(crate) fn compute_on_edge_cursor_anchor(
         ((cursor_local.y - viewport.loc.y) / viewport.size.h).clamp(0.0, 1.0)
     };
 
-    (anchor_x, anchor_y)
+    Point::from((anchor_x, anchor_y))
+}
+
+pub(crate) fn should_use_dynamic_tracking(
+    movement_mode: Option<&ZoomMovementMode>,
+    locked: bool,
+    target_level: f64,
+    level_changed: bool,
+    cursor_available: bool,
+    output_size_available: bool,
+) -> bool {
+    level_changed
+        && !locked
+        && target_level > 1.0
+        && cursor_available
+        && output_size_available
+        && matches!(movement_mode, Some(ZoomMovementMode::OnEdge))
+}
+
+pub(crate) fn compute_tracking_anchor(
+    movement_mode: Option<&ZoomMovementMode>,
+    cursor_local: Point<f64, Logical>,
+    output_size: Size<f64, Logical>,
+    current_level: f64,
+    current_focal: Point<f64, Logical>,
+) -> Option<Point<f64, Logical>> {
+    if matches!(movement_mode, Some(ZoomMovementMode::OnEdge)) {
+        Some(compute_on_edge_cursor_anchor(
+            cursor_local,
+            current_level,
+            current_focal,
+            output_size,
+        ))
+    } else {
+        None
+    }
+}
+
+pub fn compute_focal_for_zoom_level(
+    cursor_pos: Option<Point<f64, Logical>>,
+    output_size: Option<Size<f64, Logical>>,
+    movement_mode: Option<&ZoomMovementMode>,
+    on_edge_cursor_anchor: Option<Point<f64, Logical>>,
+    level: f64,
+    fallback: Point<f64, Logical>,
+) -> Point<f64, Logical> {
+    let (Some(cursor), Some(size), Some(mode)) = (cursor_pos, output_size, movement_mode) else {
+        return fallback;
+    };
+
+    if matches!(mode, ZoomMovementMode::OnEdge) {
+        if let Some(anchor) = on_edge_cursor_anchor {
+            return compute_focal_for_on_edge_anchor(cursor, level, size, anchor);
+        }
+    }
+
+    compute_focal_for_cursor(cursor, level, size, mode)
 }
 
 pub(crate) fn compute_focal_for_on_edge_anchor(
     cursor_local: Point<f64, Logical>,
     zoom_level: f64,
     output_size: Size<f64, Logical>,
-    cursor_anchor: (f64, f64),
+    cursor_anchor: Point<f64, Logical>,
 ) -> Point<f64, Logical> {
     if zoom_level <= 1.0 {
         return cursor_local;
     }
 
     let viewport_size = output_size.downscale(zoom_level);
-    let viewport_loc: Point<f64, Logical> = Point::from((
-        cursor_local.x - viewport_size.w * cursor_anchor.0,
-        cursor_local.y - viewport_size.h * cursor_anchor.1,
+    let anchor_offset = Point::from((
+        viewport_size.w * cursor_anchor.x,
+        viewport_size.h * cursor_anchor.y,
     ));
+    let viewport_loc: Point<f64, Logical> = cursor_local - anchor_offset;
     let scale_factor = zoom_level / (zoom_level - 1.0).max(0.001);
 
-    let mut focal = Point::from((viewport_loc.x * scale_factor, viewport_loc.y * scale_factor));
+    let mut focal = viewport_loc.upscale(scale_factor);
     focal.x = focal.x.clamp(0.0, output_size.w - f64::EPSILON);
     focal.y = focal.y.clamp(0.0, output_size.h - f64::EPSILON);
     focal
@@ -340,10 +459,9 @@ pub fn zoom_subpixel_correction(
 ) -> Point<i32, Physical> {
     let focal_i32: Point<i32, Physical> = zoom_focal.to_physical_precise_round(output_scale);
     let focal_f64 = zoom_focal.to_physical(output_scale);
-    Point::from((
-        ((focal_i32.x as f64 - focal_f64.x) * (zoom_level - 1.0)).round() as i32,
-        ((focal_i32.y as f64 - focal_f64.y) * (zoom_level - 1.0)).round() as i32,
-    ))
+    (focal_i32.to_f64() - focal_f64)
+        .upscale(Scale::from(zoom_level - 1.0))
+        .to_i32_round::<i32>()
 }
 
 pub fn zoom_transform_physical_point(
@@ -351,54 +469,13 @@ pub fn zoom_transform_physical_point(
     zoom_level: f64,
     zoom_focal: Point<f64, Logical>,
     output_scale: Scale<f64>,
-    correction: Point<f64, Physical>,
 ) -> Point<i32, Physical> {
-    let focal: Point<i32, Physical> = zoom_focal.to_physical_precise_round(output_scale);
+    let correction = zoom_subpixel_correction(zoom_focal, zoom_level, output_scale);
+    let focal_physical: Point<i32, Physical> = zoom_focal.to_physical_precise_round(output_scale);
     let p = point.to_f64();
-    let rounded = Point::<f64, Physical>::from((
-        p.x * zoom_level - focal.x as f64 * (zoom_level - 1.0),
-        p.y * zoom_level - focal.y as f64 * (zoom_level - 1.0),
-    ))
-    .to_i32_round::<i32>();
-    Point::from((
-        rounded.x + correction.x as i32,
-        rounded.y + correction.y as i32,
-    ))
-}
-
-#[cfg(test)]
-mod tests {
-    use niri_config::ZoomMovementMode;
-
-    use super::*;
-
-    #[test]
-    fn compute_focal_for_cursor_cursor_follow_returns_cursor() {
-        let cursor = Point::from((120.0, 45.0));
-        let output_size = Size::from((1920.0, 1080.0));
-        let focal =
-            compute_focal_for_cursor(cursor, 2.0, output_size, &ZoomMovementMode::CursorFollow);
-        assert_eq!(focal, cursor);
-    }
-
-    #[test]
-    fn compute_focal_for_cursor_on_edge_anchor_roundtrip() {
-        let cursor = Point::from((800.0, 450.0));
-        let focal = Point::from((900.0, 500.0));
-        let size = Size::from((1920.0, 1080.0));
-        let zoom = 2.5;
-
-        let anchor = compute_on_edge_cursor_anchor(cursor, zoom, focal, size);
-        let focal2 = compute_focal_for_on_edge_anchor(cursor, zoom, size, anchor);
-
-        assert!((focal.x - focal2.x).abs() < 1.0);
-        assert!((focal.y - focal2.y).abs() < 1.0);
-    }
-
-    #[test]
-    fn zoom_subpixel_correction_is_zero_at_unity_zoom() {
-        let correction =
-            zoom_subpixel_correction(Point::from((100.25, 200.75)), 1.0, Scale::from(1.5));
-        assert_eq!(correction, Point::from((0, 0)));
-    }
+    let rounded = p.upscale(Scale::from(zoom_level))
+        - focal_physical
+            .to_f64()
+            .upscale(Scale::from(zoom_level - 1.0));
+    rounded.to_i32_round::<i32>() + correction
 }

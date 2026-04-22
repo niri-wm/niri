@@ -13,26 +13,27 @@ use pango::{Alignment, FontDescription};
 use pangocairo::cairo::{self, ImageSurface};
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::input::TouchSlot;
-use smithay::backend::renderer::element::utils::{Relocate, RelocateRenderElement};
-use smithay::backend::renderer::element::{Element, Id, Kind, RenderElement, UnderlyingStorage};
-use smithay::backend::renderer::gles::{GlesError, GlesFrame, GlesRenderer, GlesTexture};
-use smithay::backend::renderer::utils::{CommitCounter, DamageSet, OpaqueRegions};
+use smithay::backend::renderer::element::utils::{
+    Relocate, RelocateRenderElement, RescaleRenderElement,
+};
+use smithay::backend::renderer::element::{Element, Kind};
+use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
 use smithay::backend::renderer::{ExportMem, Texture as _};
 use smithay::input::keyboard::{Keysym, ModifiersState};
 use smithay::output::{Output, WeakOutput};
-use smithay::utils::user_data::UserDataMap;
 use smithay::utils::{Buffer, Logical, Physical, Point, Rectangle, Scale, Size, Transform};
 
 use crate::animation::{Animation, Clock};
-use crate::backend::tty::{TtyFrame, TtyRenderer, TtyRendererError};
 use crate::layout::floating::DIRECTIONAL_MOVE_PX;
+use crate::niri::OutputRenderElements;
 use crate::niri_render_elements;
 use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
+use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
 use crate::render_helpers::texture::{TextureBuffer, TextureRenderElement};
 use crate::render_helpers::{render_to_texture, RenderTarget};
 use crate::utils::to_physical_precise_round;
-use crate::zoom::{zoom_wrap, ZoomWrapper};
+use crate::zoom::{zoom_transform_physical_point, zoom_wrap, ZoomWrapper, ZoomedRenderElements};
 
 const SELECTION_BORDER: i32 = 2;
 
@@ -107,95 +108,10 @@ pub struct OutputScreenshot {
     pointer: Option<PrimaryGpuTextureRenderElement>,
 }
 
-/// Generate Element + RenderElement delegation impls for marker newtypes that
-/// wrap PrimaryGpuTextureRenderElement. Follows the pattern in
-/// primary_gpu_texture.rs but delegates straight to the inner element.
-macro_rules! impl_screenshot_newtype {
-    ($($Name:ident),* $(,)?) => { $(
-        impl Element for $Name {
-            fn id(&self) -> &Id { self.0.id() }
-            fn current_commit(&self) -> CommitCounter { self.0.current_commit() }
-            fn geometry(&self, scale: Scale<f64>) -> Rectangle<i32, Physical> {
-                self.0.geometry(scale)
-            }
-            fn transform(&self) -> Transform { self.0.transform() }
-            fn src(&self) -> Rectangle<f64, Buffer> { self.0.src() }
-            fn damage_since(
-                &self,
-                scale: Scale<f64>,
-                commit: Option<CommitCounter>,
-            ) -> DamageSet<i32, Physical> {
-                self.0.damage_since(scale, commit)
-            }
-            fn opaque_regions(&self, scale: Scale<f64>) -> OpaqueRegions<i32, Physical> {
-                self.0.opaque_regions(scale)
-            }
-            fn alpha(&self) -> f32 { self.0.alpha() }
-            fn kind(&self) -> Kind { self.0.kind() }
-        }
-
-        impl RenderElement<GlesRenderer> for $Name {
-            fn draw(
-                &self,
-                frame: &mut GlesFrame<'_, '_>,
-                src: Rectangle<f64, Buffer>,
-                dst: Rectangle<i32, Physical>,
-                damage: &[Rectangle<i32, Physical>],
-                opaque_regions: &[Rectangle<i32, Physical>],
-                cache: Option<&UserDataMap>
-            ) -> Result<(), GlesError> {
-                RenderElement::<GlesRenderer>::draw(&self.0, frame, src, dst, damage, opaque_regions, cache)
-            }
-            fn underlying_storage(
-                &self,
-                renderer: &mut GlesRenderer,
-            ) -> Option<UnderlyingStorage<'_>> {
-                self.0.underlying_storage(renderer)
-            }
-        }
-
-        impl<'render> RenderElement<TtyRenderer<'render>> for $Name {
-            fn draw(
-                &self,
-                frame: &mut TtyFrame<'render, '_, '_>,
-                src: Rectangle<f64, Buffer>,
-                dst: Rectangle<i32, Physical>,
-                damage: &[Rectangle<i32, Physical>],
-                opaque_regions: &[Rectangle<i32, Physical>],
-                cache: Option<&UserDataMap>,
-            ) -> Result<(), TtyRendererError<'render>> {
-                RenderElement::<TtyRenderer>::draw(
-                    &self.0, frame, src, dst, damage, opaque_regions, cache
-                )
-            }
-            fn underlying_storage(
-                &self,
-                renderer: &mut TtyRenderer<'render>,
-            ) -> Option<UnderlyingStorage<'_>> {
-                self.0.underlying_storage(renderer)
-            }
-        }
-    )* };
-}
-
-/// Marker newtype for the help panel element (zoom-exempt in the main render
-/// path).
-#[derive(Debug, Clone)]
-pub struct HelpPanelElement(pub PrimaryGpuTextureRenderElement);
-
-/// Marker newtype for the screenshot pointer overlay (zoom-eligible with
-/// scale_with_zoom support).
-#[derive(Debug, Clone)]
-pub struct ScreenshotPointerElement(pub PrimaryGpuTextureRenderElement);
-
-impl_screenshot_newtype!(HelpPanelElement, ScreenshotPointerElement);
-
 niri_render_elements! {
     ScreenshotUiRenderElement => {
         Screenshot = PrimaryGpuTextureRenderElement,
         SolidColor = SolidColorRenderElement,
-        HelpPanel = HelpPanelElement,
-        Pointer = ScreenshotPointerElement,
     }
 }
 
@@ -717,11 +633,16 @@ impl ScreenshotUi {
         }
     }
 
-    pub fn render_output(
+    #[allow(clippy::too_many_arguments)]
+    pub fn render_output<R: NiriRenderer>(
         &self,
         output: &Output,
         target: RenderTarget,
-        push: &mut dyn FnMut(ScreenshotUiRenderElement),
+        apply_zoom: bool,
+        zoom_factor: f64,
+        zoom_focal: Point<f64, Logical>,
+        scale_with_zoom: bool,
+        push: &mut dyn FnMut(OutputRenderElements<R>),
     ) {
         let _span = tracy_client::span!("ScreenshotUi::render_output");
 
@@ -740,10 +661,11 @@ impl ScreenshotUi {
             return;
         };
 
-        let scale = output_data.scale;
+        let output_scale = Scale::from(output_data.scale);
         let progress = open_anim.clamped_value().clamp(0., 1.) as f32;
+        let zoom_active = apply_zoom && zoom_factor > 1.0;
 
-        // The help panel goes on top (zoom-exempt via HelpPanelElement marker).
+        // The help panel goes on top
         if let Some((show, hide)) = &output_data.panel {
             let buffer = if *show_pointer { hide } else { show };
             let alpha = if button.is_dragging_selection() {
@@ -753,7 +675,7 @@ impl ScreenshotUi {
             };
             let location = panel_location(output_data, buffer.texture().size())
                 .to_f64()
-                .to_logical(scale);
+                .to_logical(output_data.scale);
 
             let elem = PrimaryGpuTextureRenderElement(TextureRenderElement::from_texture_buffer(
                 buffer.clone(),
@@ -763,21 +685,69 @@ impl ScreenshotUi {
                 None,
                 Kind::Unspecified,
             ));
-            push(ScreenshotUiRenderElement::HelpPanel(HelpPanelElement(elem)));
+
+            let elem = if zoom_active {
+                let elem = zoom_wrap(elem, 1.0, output_scale, zoom_focal);
+                ZoomedRenderElements::Texture(elem).into()
+            } else {
+                elem.into()
+            };
+
+            push(elem);
         }
 
-        // Solid color overlays — zoomed externally by apply_zoom_to_render_element.
+        // Solid color overlays for selection region borders, and dimming the outside of the
+        // selection.
         for (buffer, loc) in zip(&output_data.buffers, &output_data.locations) {
             let elem = SolidColorRenderElement::from_buffer(
                 buffer,
-                loc.to_f64().to_logical(scale),
+                loc.to_f64().to_logical(output_data.scale),
                 progress,
                 Kind::Unspecified,
             );
-            push(elem.into());
+
+            let elem = if zoom_active {
+                // RescaleRenderElement scales loc and size independently with separate rounding,
+                // which can cause 1-pixel gaps between adjacent elements Recompute physical edges
+                // directly instead to avoid solid-color artifacts under zoom.
+                let phys = elem.geometry(output_scale);
+
+                let base = zoom_transform_physical_point(
+                    Point::from((0, 0)),
+                    zoom_factor,
+                    zoom_focal,
+                    output_scale,
+                );
+
+                let top_left = base
+                    + phys
+                        .loc
+                        .to_f64()
+                        .upscale(Scale::from(zoom_factor))
+                        .to_i32_round::<i32>();
+                let bottom_right = base
+                    + (phys.loc + phys.size)
+                        .to_f64()
+                        .upscale(Scale::from(zoom_factor))
+                        .to_i32_round::<i32>();
+
+                let zoomed_size = bottom_right - top_left;
+                let zoomed_rect = Rectangle::new(
+                    top_left,
+                    Size::from((zoomed_size.x.max(0), zoomed_size.y.max(0))),
+                );
+
+                let elem = elem.with_geometry_physical(zoomed_rect, output_scale);
+                let zoomed_elem = zoom_wrap(elem, 1.0, output_scale, zoom_focal);
+                ZoomedRenderElements::SolidColor(zoomed_elem).into()
+            } else {
+                elem.into()
+            };
+
+            push(elem);
         }
 
-        // The screenshot itself goes last — zoomed externally.
+        // The screenshot itself goes last.
         let index = match target {
             RenderTarget::Output => 0,
             RenderTarget::Screencast => 1,
@@ -785,14 +755,52 @@ impl ScreenshotUi {
         };
         let screenshot = &output_data.screenshot[index];
 
+        // The pointer goes on top of the screenshot, so that it doesn't get hidden under the dimmed
+        // overlay when outside the selection.
         if *show_pointer {
             if let Some(pointer) = screenshot.pointer.clone() {
-                push(ScreenshotUiRenderElement::Pointer(
-                    ScreenshotPointerElement(pointer),
-                ));
+                let elem = if zoom_active {
+                    let elem = if scale_with_zoom {
+                        zoom_wrap(pointer, zoom_factor, output_scale, zoom_focal)
+                    } else {
+                        let pos = pointer.geometry(output_scale).loc;
+                        let new_pos = zoom_transform_physical_point(
+                            pos,
+                            zoom_factor,
+                            zoom_focal,
+                            output_scale,
+                        );
+
+                        RelocateRenderElement::from_element(
+                            RescaleRenderElement::from_element(pointer, Point::from((0, 0)), 1.0),
+                            new_pos,
+                            Relocate::Absolute,
+                        )
+                    };
+
+                    ZoomedRenderElements::Texture(elem).into()
+                } else {
+                    pointer.into()
+                };
+
+                push(elem);
             }
         }
-        push(screenshot.buffer.clone().into());
+
+        // Apply zoom to the screenshot if applicable
+        let elem = if zoom_active {
+            let elem = zoom_wrap(
+                screenshot.buffer.clone(),
+                zoom_factor,
+                output_scale,
+                zoom_focal,
+            );
+            ZoomedRenderElements::Texture(elem).into()
+        } else {
+            screenshot.buffer.clone().into()
+        };
+
+        push(elem);
     }
 
     pub fn capture(
@@ -828,10 +836,11 @@ impl ScreenshotUi {
             let mut elements = ArrayVec::<CaptureRenderElement, 3>::new();
             if *show_pointer {
                 if let Some(pointer) = screenshot.pointer.clone() {
-                    elements.push(CaptureRenderElement::Texture(pointer));
+                    // elements.push(CaptureRenderElement::Texture(pointer));
+                    elements.push(pointer.into());
                 }
             }
-            elements.push(CaptureRenderElement::Texture(screenshot.buffer.clone()));
+            elements.push(screenshot.buffer.clone().into());
 
             if zoom_active {
                 let zoomed = zoom_wrap(
@@ -840,7 +849,7 @@ impl ScreenshotUi {
                     output_scale,
                     zoom_focal,
                 );
-                elements.push(CaptureRenderElement::Zoomed(zoomed));
+                elements.push(zoomed.into());
             }
 
             let elements = elements.iter().rev().map(|elem| {
