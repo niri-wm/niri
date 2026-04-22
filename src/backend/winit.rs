@@ -4,8 +4,10 @@ use std::mem;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
+use anyhow::Context as _;
 use niri_config::{Config, OutputName};
 use smithay::backend::allocator::dmabuf::Dmabuf;
+use smithay::backend::egl::EGLDevice;
 use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::renderer::{DebugFlags, ImportDma, ImportEgl, Renderer};
@@ -16,6 +18,7 @@ use smithay::reexports::wayland_protocols::wp::presentation_time::server::wp_pre
 use smithay::reexports::winit::dpi::LogicalSize;
 use smithay::reexports::winit::platform::wayland::WindowAttributesExtWayland;
 use smithay::reexports::winit::window::Window;
+use smithay::wayland::dmabuf::{DmabufFeedbackBuilder, DmabufGlobal};
 use smithay::wayland::presentation::Refresh;
 
 use super::{IpcOutputMap, OutputId, RenderResult};
@@ -29,6 +32,7 @@ pub struct Winit {
     output: Output,
     backend: WinitGraphicsBackend<GlesRenderer>,
     damage_tracker: OutputDamageTracker,
+    dmabuf_global: Option<DmabufGlobal>,
     ipc_outputs: Arc<Mutex<IpcOutputMap>>,
 }
 
@@ -137,6 +141,7 @@ impl Winit {
             output,
             backend,
             damage_tracker,
+            dmabuf_global: None,
             ipc_outputs,
         })
     }
@@ -144,7 +149,10 @@ impl Winit {
     pub fn init(&mut self, niri: &mut Niri) {
         let renderer = self.backend.renderer();
         if let Err(err) = renderer.bind_wl_display(&niri.display_handle) {
-            warn!("error binding renderer wl_display: {err}");
+            // wl_drm is on its way out so this is expected on most modern distros.
+            trace!("error binding legacy EGL to wl_display: {err}");
+        } else {
+            debug!("bound legacy EGL to wl_display");
         }
 
         resources::init(renderer);
@@ -164,7 +172,42 @@ impl Winit {
 
         niri.update_shaders();
 
+        self.create_dmabuf_global(niri);
+
         niri.add_output(self.output.clone(), None, false);
+    }
+
+    pub fn create_dmabuf_global(&mut self, niri: &mut Niri) {
+        let renderer = self.backend.renderer();
+
+        let default_feedback = || {
+            let display = renderer.egl_context().display();
+            let device =
+                EGLDevice::device_for_display(display).context("error getting EGL device")?;
+            let node = device
+                .try_get_render_node()
+                .context("error getting EGL device render node")?
+                .context("failed to query EGL device render node")?;
+
+            let primary_formats = renderer.dmabuf_formats();
+            DmabufFeedbackBuilder::new(node.dev_id(), primary_formats)
+                .build()
+                .context("error building dmabuf feedback")
+        };
+
+        // Fallback to dmabuf v3 if we failed to build feedback.
+        let dmabuf_global = match default_feedback() {
+            Ok(feedback) => niri
+                .dmabuf_state
+                .create_global_with_default_feedback::<State>(&niri.display_handle, &feedback),
+            Err(err) => {
+                debug!("failed building default dmabuf feedback, falling back to v3: {err:?}");
+                let primary_formats = renderer.dmabuf_formats();
+                niri.dmabuf_state
+                    .create_global::<State>(&niri.display_handle, primary_formats)
+            }
+        };
+        assert!(self.dmabuf_global.replace(dmabuf_global).is_none());
     }
 
     pub fn seat_name(&self) -> String {

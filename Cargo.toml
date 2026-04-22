@@ -28,14 +28,14 @@ tracy-client = { version = "0.18.4", default-features = false }
 [workspace.dependencies.smithay]
 # version = "0.4.1"
 git = "https://github.com/Smithay/smithay.git"
-rev = "dba255cd18c1a808c85a1d1144ad48e0b3f44b8f"
+rev = "27af99ef492ab4d7dc5cd2e625374d2beb2772f7"
 # path = "../smithay"
 default-features = false
 
 [workspace.dependencies.smithay-drm-extras]
 # version = "0.1.0"
 git = "https://github.com/Smithay/smithay.git"
-rev = "dba255cd18c1a808c85a1d1144ad48e0b3f44b8f"
+rev = "27af99ef492ab4d7dc5cd2e625374d2beb2772f7"
 # path = "../smithay/smithay-drm-extras"
 
 [package]
@@ -96,7 +96,7 @@ tracing.workspace = true
 tracy-client.workspace = true
 wayland-backend = "0.3.15"
 wayland-scanner = "0.31.10"
-wayland-server = { version = "0.31.13", features = ["libwayland_1_23"] }
+wayland-server = "0.31.13"
 xcursor = "0.3.10"
 zbus = { version = "5.13.2", optional = true }
 
@@ -150,6 +150,7 @@ dinit = []
 
 [lints.clippy]
 new_without_default = "allow"
+collapsible_match = "allow"
 
 [profile.release]
 debug = "line-tables-only"

@@ -295,6 +295,7 @@ impl State {
         I::Device: 'static,
     {
         let device_output = event.device().output(self);
+        let device_output = device_output.filter(|output| self.niri.output_exists(output));
         let device_output = device_output.as_ref();
         let (target_geo, keep_ratio, px, transform) =
             if let Some(output) = device_output.or_else(|| self.niri.output_for_tablet()) {
@@ -498,11 +499,6 @@ impl State {
                         .unwrap_or(false)
                     {
                         pointer.unset_grab(this, serial, time);
-
-                        // If this was a DnD, we won't get DndGrabHandler::dropped(), so we need to
-                        // call the cleanup.
-                        this.niri.on_maybe_dnd_ended();
-
                         this.niri.suppressed_keys.insert(key_code);
                         return FilterResult::Intercept(None);
                     }
@@ -4039,6 +4035,7 @@ impl State {
         fallback_output: Option<&Output>,
     ) -> Option<Point<f64, Logical>> {
         let output = evt.device().output(self);
+        let output = output.filter(|output| self.niri.output_exists(output));
         let output = output.as_ref().or(fallback_output)?;
         let output_geo = self.niri.global_space.output_geometry(output).unwrap();
         let transform = output.current_transform();

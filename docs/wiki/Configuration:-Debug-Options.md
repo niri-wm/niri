@@ -107,6 +107,8 @@ debug {
 
 ### `force-disable-connectors-on-resume`
 
+<sup>Since: next release</sup>
+
 Force-disables all outputs upon resuming niri (TTY switch or waking up from suspend).
 This causes a modeset/screen blank on all outputs.
 
