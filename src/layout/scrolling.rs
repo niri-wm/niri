@@ -4423,12 +4423,31 @@ impl<W: LayoutElement> Column<W> {
         }
 
         if any_fullscreen {
+            if self.has_lingering_expanded_inactive_tabs() {
+                return SizingMode::Normal;
+            }
+
             SizingMode::Fullscreen
         } else if any_maximized {
+            if self.has_lingering_expanded_inactive_tabs() {
+                return SizingMode::Normal;
+            }
+
             SizingMode::Maximized
         } else {
             SizingMode::Normal
         }
+    }
+
+    fn has_lingering_expanded_inactive_tabs(&self) -> bool {
+        self.display_mode == ColumnDisplay::Tabbed
+            && self.pending_sizing_mode().is_normal()
+            && self.tiles[self.active_tile_idx].sizing_mode().is_normal()
+            && self
+                .tiles
+                .iter()
+                .enumerate()
+                .any(|(idx, tile)| idx != self.active_tile_idx && !tile.sizing_mode().is_normal())
     }
 
     pub fn contains(&self, window: &W::Id) -> bool {
@@ -4895,13 +4914,16 @@ impl<W: LayoutElement> Column<W> {
     }
 
     fn width(&self) -> f64 {
-        let mut tiles_width = self
-            .data
-            .iter()
-            .map(|data| NotNan::new(data.size.w).unwrap())
-            .max()
-            .map(NotNan::into_inner)
-            .unwrap();
+        let mut tiles_width = if self.has_lingering_expanded_inactive_tabs() {
+            self.data[self.active_tile_idx].size.w
+        } else {
+            self.data
+                .iter()
+                .map(|data| NotNan::new(data.size.w).unwrap())
+                .max()
+                .map(NotNan::into_inner)
+                .unwrap()
+        };
 
         if self.display_mode == ColumnDisplay::Tabbed && self.sizing_mode().is_normal() {
             let extra_size = self.tab_indicator.extra_size(self.tiles.len(), self.scale);
@@ -5362,10 +5384,11 @@ impl<W: LayoutElement> Column<W> {
 
         match self.sizing_mode() {
             SizingMode::Normal => (),
-            SizingMode::Maximized => {
+            SizingMode::Maximized if !self.pending_sizing_mode().is_normal() => {
                 origin.y += self.parent_area.loc.y;
                 return origin;
             }
+            SizingMode::Maximized => (),
             SizingMode::Fullscreen => return origin,
         }
 
@@ -5394,13 +5417,16 @@ impl<W: LayoutElement> Column<W> {
         let tabbed = self.display_mode == ColumnDisplay::Tabbed;
 
         // Does not include extra size from the tab indicator.
-        let tiles_width = self
-            .data
-            .iter()
-            .map(|data| NotNan::new(data.size.w).unwrap())
-            .max()
-            .map(NotNan::into_inner)
-            .unwrap_or(0.);
+        let tiles_width = if self.has_lingering_expanded_inactive_tabs() {
+            self.data[self.active_tile_idx].size.w
+        } else {
+            self.data
+                .iter()
+                .map(|data| NotNan::new(data.size.w).unwrap())
+                .max()
+                .map(NotNan::into_inner)
+                .unwrap_or(0.)
+        };
 
         let mut origin = self.tiles_origin();
 
