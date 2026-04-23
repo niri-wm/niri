@@ -4703,6 +4703,7 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
             let _ = device.config_tap_set_drag_enabled(default);
         }
 
+        #[cfg(have_libinput_3fg_drag)]
         if let Some(three_finger_drag) = c.three_finger_drag {
             let _ = device.config_3fg_drag_set_enabled(three_finger_drag.into());
         } else {
