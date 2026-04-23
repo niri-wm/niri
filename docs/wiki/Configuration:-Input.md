@@ -33,6 +33,7 @@ input {
         // dwtp
         // drag false
         // drag-lock
+        // three-finger-drag "3fg"
         natural-scroll
         // accel-speed 0.2
         // accel-profile "flat"
@@ -248,6 +249,7 @@ Settings specific to `touchpad`s:
 - `dwtp`: disable-when-trackpointing.
 - `drag`: <sup>Since: 25.05</sup> can be `true` or `false`, controls if tap-and-drag is enabled.
 - `drag-lock`: <sup>Since: 25.02</sup> if set, lifting the finger off for a short time while dragging will not drop the dragged item. See the [libinput documentation](https://wayland.freedesktop.org/libinput/doc/latest/tapping.html#tap-and-drag).
+- `three-finger-drag`: <sup>Since: next release</sup> can be `"disabled"`, `"3fg"` and `"4fg"`, controls the [three-finger-drag option](https://wayland.freedesktop.org/libinput/doc/latest/configuration.html#three-finger-drag).
 - `tap-button-map`: can be `left-right-middle` or `left-middle-right`, controls which button corresponds to a two-finger tap and a three-finger tap.
 - `click-method`: can be `button-areas` or `clickfinger`, changes the [click method](https://wayland.freedesktop.org/libinput/doc/latest/clickpad-softbuttons.html).
 - `disabled-on-external-mouse`: do not send events while external pointer device is plugged in.
