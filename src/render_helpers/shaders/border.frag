@@ -208,35 +208,12 @@ vec4 gradient_color(vec2 coords) {
     return color_mix(color_from, color_to, frac);
 }
 
-float rounding_alpha(vec2 coords, vec2 size, vec4 corner_radius) {
-    vec2 center;
-    float radius;
-
-    if (coords.x < corner_radius.x && coords.y < corner_radius.x) {
-        radius = corner_radius.x;
-        center = vec2(radius, radius);
-    } else if (size.x - corner_radius.y < coords.x && coords.y < corner_radius.y) {
-        radius = corner_radius.y;
-        center = vec2(size.x - radius, radius);
-    } else if (size.x - corner_radius.z < coords.x && size.y - corner_radius.z < coords.y) {
-        radius = corner_radius.z;
-        center = vec2(size.x - radius, size.y - radius);
-    } else if (coords.x < corner_radius.w && size.y - corner_radius.w < coords.y) {
-        radius = corner_radius.w;
-        center = vec2(radius, size.y - radius);
-    } else {
-        return 1.0;
-    }
-
-    float dist = distance(coords, center);
-    float half_px = 0.5 / niri_scale;
-    return 1.0 - smoothstep(radius - half_px, radius + half_px, dist);
-}
+float niri_rounding_alpha(vec2 coords, vec2 size, vec4 corner_radius);
 
 void main() {
     vec3 coords_geo = input_to_geo * vec3(niri_v_coords, 1.0);
     vec4 color = gradient_color(coords_geo.xy);
-    color = color * rounding_alpha(coords_geo.xy, geo_size, outer_radius);
+    color = color * niri_rounding_alpha(coords_geo.xy, geo_size, outer_radius);
 
     if (border_width > 0.0) {
         coords_geo -= vec3(border_width);
@@ -245,7 +222,7 @@ void main() {
                 && 0.0 <= coords_geo.y && coords_geo.y <= inner_geo_size.y)
         {
             vec4 inner_radius = max(outer_radius - vec4(border_width), 0.0);
-            color = color * (1.0 - rounding_alpha(coords_geo.xy, inner_geo_size, inner_radius));
+            color = color * (1.0 - niri_rounding_alpha(coords_geo.xy, inner_geo_size, inner_radius));
         }
     }
 
