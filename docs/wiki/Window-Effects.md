@@ -1,10 +1,12 @@
 ### Overview
 
-<sup>Since: next release</sup>
+<sup>Since: 26.04</sup>
 
 You can apply background effects to windows and layer-shell surfaces.
 These include blur, xray, saturation, and noise.
 They can be enabled in the `background-effect {}` section of [window](./Configuration:-Window-Rules.md#background-effect) or [layer](./Configuration:-Layer-Rules.md#background-effect) rules.
+
+![Screenshot with blur](./img/blur.png)
 
 The window needs to be semitransparent for you to see the background effect (otherwise it's fully covered by the opaque window).
 Focus ring and border can also cover the background effect, see [this FAQ entry](./FAQ.md#why-are-transparent-windows-tinted-why-is-the-borderfocus-ring-showing-up-through-semitransparent-windows) for how to change this.
@@ -17,9 +19,9 @@ In this case, the application will usually offer some "background blur" setting 
 You can also enable blur on the niri side with the `blur true` background effect window rule:
 
 ```kdl
-// Enable blur behind the foot terminal.
+// Enable blur behind the Alacritty terminal.
 window-rule {
-    match app-id="^foot$"
+    match app-id="^Alacritty$"
 
     background-effect {
         blur true
@@ -66,7 +68,7 @@ Keep in mind that non-xray blur and other non-xray effects are more expensive as
 > Non-xray effects are currently experimental because they have some known limitations.
 >
 > - They disappear during window open/close animations and while dragging a tiled window.
-> Fixing this requries a refactor to the niri rendering code to defer offscreen rendering, and possibly other refactors.
+> Fixing this requires a refactor to the niri rendering code to defer offscreen rendering, and possibly other refactors.
 
 ### Implementation notes
 

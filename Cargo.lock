@@ -2235,7 +2235,7 @@ dependencies = [
 
 [[package]]
 name = "niri"
-version = "25.11.0"
+version = "26.4.0"
 dependencies = [
  "accesskit",
  "accesskit_unix",
@@ -2295,7 +2295,7 @@ dependencies = [
 
 [[package]]
 name = "niri-config"
-version = "25.11.0"
+version = "26.4.0"
 dependencies = [
  "bitflags 2.11.1",
  "csscolorparser",
@@ -2313,7 +2313,7 @@ dependencies = [
 
 [[package]]
 name = "niri-ipc"
-version = "25.11.0"
+version = "26.4.0"
 dependencies = [
  "clap",
  "schemars",
@@ -2323,7 +2323,7 @@ dependencies = [
 
 [[package]]
 name = "niri-visual-tests"
-version = "25.11.0"
+version = "26.4.0"
 dependencies = [
  "anyhow",
  "gtk4",
@@ -3498,7 +3498,7 @@ checksum = "b7c388c1b5e93756d0c740965c41e8822f866621d41acbdf6336a6a168f8840c"
 [[package]]
 name = "smithay"
 version = "0.7.0"
-source = "git+https://github.com/Smithay/smithay.git?rev=27af99ef492ab4d7dc5cd2e625374d2beb2772f7#27af99ef492ab4d7dc5cd2e625374d2beb2772f7"
+source = "git+https://github.com/Smithay/smithay.git?rev=ff5fa7df392cecfba049ffed55cdaa4e98a8e7ef#ff5fa7df392cecfba049ffed55cdaa4e98a8e7ef"
 dependencies = [
  "aliasable",
  "appendlist",
@@ -3573,7 +3573,7 @@ dependencies = [
 [[package]]
 name = "smithay-drm-extras"
 version = "0.1.0"
-source = "git+https://github.com/Smithay/smithay.git?rev=27af99ef492ab4d7dc5cd2e625374d2beb2772f7#27af99ef492ab4d7dc5cd2e625374d2beb2772f7"
+source = "git+https://github.com/Smithay/smithay.git?rev=ff5fa7df392cecfba049ffed55cdaa4e98a8e7ef#ff5fa7df392cecfba049ffed55cdaa4e98a8e7ef"
 dependencies = [
  "drm",
  "libdisplay-info",

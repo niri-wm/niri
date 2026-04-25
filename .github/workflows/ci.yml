@@ -230,7 +230,7 @@ jobs:
 
   fedora:
     runs-on: ubuntu-24.04
-    container: fedora:41
+    container: fedora:42
 
     steps:
       - uses: actions/checkout@v6
