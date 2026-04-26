@@ -331,13 +331,14 @@ config-notification {
 
 ### `blur`
 
-<sup>Since: next release</sup>
+<sup>Since: 26.04</sup>
 
 Blur configuration that affects all background blur.
 
 See the [window effects page](./Window-Effects.md) for an overview of background effects.
 
 ```kdl
+// These are the default values:
 blur {
     // off
     passes 3
@@ -362,7 +363,7 @@ blur {
 
 #### `passes` and `offset`
 
-`passes` contols the number of downsample/upsample passes for dual kawase blur.
+`passes` controls the number of downsample/upsample passes for dual kawase blur.
 More passes produce a larger, smoother blur, but cost more GPU resources.
 
 `offset` is the pixel offset multiplier for each pass.

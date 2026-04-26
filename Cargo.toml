@@ -6,7 +6,7 @@ members = [
 ]
 
 [workspace.package]
-version = "25.11.0"
+version = "26.4.0"
 description = "A scrollable-tiling Wayland compositor"
 authors = ["Ivan Molodetskikh <yalterz@gmail.com>"]
 license = "GPL-3.0-or-later"
@@ -28,14 +28,13 @@ tracy-client = { version = "0.18.4", default-features = false }
 [workspace.dependencies.smithay]
 # version = "0.4.1"
 git = "https://github.com/Smithay/smithay.git"
-rev = "dba255cd18c1a808c85a1d1144ad48e0b3f44b8f"
-# path = "../smithay"
+rev = "ff5fa7df392cecfba049ffed55cdaa4e98a8e7ef"
 default-features = false
 
 [workspace.dependencies.smithay-drm-extras]
 # version = "0.1.0"
 git = "https://github.com/Smithay/smithay.git"
-rev = "dba255cd18c1a808c85a1d1144ad48e0b3f44b8f"
+rev = "ff5fa7df392cecfba049ffed55cdaa4e98a8e7ef"
 # path = "../smithay/smithay-drm-extras"
 
 [package]
@@ -79,8 +78,8 @@ keyframe = { version = "1.1.1", default-features = false }
 libc = "0.2.185"
 libdisplay-info = "0.3.0"
 log = { version = "0.4.29", features = ["max_level_trace", "release_max_level_debug"] }
-niri-config = { version = "25.11.0", path = "niri-config" }
-niri-ipc = { version = "25.11.0", path = "niri-ipc", features = ["clap"] }
+niri-config = { version = "26.4.0", path = "niri-config" }
+niri-ipc = { version = "26.4.0", path = "niri-ipc", features = ["clap"] }
 ordered-float = "5.3.0"
 pango = { version = "0.21.5", features = ["v1_44"] }
 pangocairo = "0.21.5"
@@ -96,7 +95,7 @@ tracing.workspace = true
 tracy-client.workspace = true
 wayland-backend = "0.3.15"
 wayland-scanner = "0.31.10"
-wayland-server = { version = "0.31.13", features = ["libwayland_1_23"] }
+wayland-server = "0.31.13"
 xcursor = "0.3.10"
 zbus = { version = "5.13.2", optional = true }
 
@@ -150,6 +149,7 @@ dinit = []
 
 [lints.clippy]
 new_without_default = "allow"
+collapsible_match = "allow"
 
 [profile.release]
 debug = "line-tables-only"
@@ -165,7 +165,7 @@ insta.opt-level = 3
 similar.opt-level = 3
 
 [package.metadata.generate-rpm]
-version = "25.11"
+version = "26.04"
 assets = [
     { source = "target/release/niri", dest = "/usr/bin/", mode = "755" },
     { source = "resources/niri-session", dest = "/usr/bin/", mode = "755" },
