@@ -93,7 +93,7 @@ binds {
     Mod+T { spawn "alacritty"; }
 
     // Trigger on release
-    Mod { release { toggle-overview; } }
+    Mod { release { toggle-overview; }; }
 
     // Trigger on both press and release with different actions
     Mod+Shift+Q {
@@ -124,7 +124,7 @@ Release binds will normally only trigger if no other keys were released and no k
 
 ```kdl
 binds {
-    Mod allow-invalidation=false { release { toggle-overview; } }
+    Mod allow-invalidation=false { release { toggle-overview; }; }
 }
 ```
 
