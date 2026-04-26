@@ -726,15 +726,7 @@ impl State {
                 self.confirm_screenshot(write_to_disk);
             }
             Action::CancelScreenshot => {
-                if !self.niri.screenshot_ui.is_open() {
-                    return;
-                }
-
-                self.niri.screenshot_ui.close();
-                self.niri
-                    .cursor_manager
-                    .set_cursor_image(CursorImageStatus::default_named());
-                self.niri.queue_redraw_all();
+                self.niri.cancel_screenshot();
             }
             Action::ScreenshotTogglePointer => {
                 self.niri.screenshot_ui.toggle_pointer();
