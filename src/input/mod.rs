@@ -540,6 +540,10 @@ impl State {
                     let bindings =
                         make_binds_iter(&config, &mut this.niri.window_mru_ui, modifiers);
 
+                    let config = this.niri.config.borrow();
+                    let disable_power_key_handling = config.input.disable_power_key_handling;
+                    let disable_vt_handling = config.input.disable_vt_handling;
+
                     should_intercept_key(
                         &mut this.niri.suppressed_keys,
                         bindings,
@@ -550,7 +554,8 @@ impl State {
                         pressed,
                         *mods,
                         &this.niri.screenshot_ui,
-                        this.niri.config.borrow().input.disable_power_key_handling,
+                        disable_power_key_handling,
+                        disable_vt_handling,
                         is_inhibiting_shortcuts,
                     )
                 };
@@ -4348,6 +4353,7 @@ fn should_intercept_key<'a>(
     mods: ModifiersState,
     screenshot_ui: &ScreenshotUi,
     disable_power_key_handling: bool,
+    disable_vt_handling: bool,
     is_inhibiting_shortcuts: bool,
 ) -> FilterResult<Option<Bind>> {
     // Actions are only triggered on presses, release of the key
@@ -4364,6 +4370,7 @@ fn should_intercept_key<'a>(
         raw,
         mods,
         disable_power_key_handling,
+        disable_vt_handling,
     );
 
     // Allow only a subset of compositor actions while the screenshot UI is open, since the user
@@ -4428,13 +4435,14 @@ fn find_bind<'a>(
     raw: Option<Keysym>,
     mods: ModifiersState,
     disable_power_key_handling: bool,
+    disable_vt_handling: bool,
 ) -> Option<Bind> {
     use keysyms::*;
 
     // Handle hardcoded binds.
     #[allow(non_upper_case_globals)] // wat
     let hardcoded_action = match modified.raw() {
-        modified @ KEY_XF86Switch_VT_1..=KEY_XF86Switch_VT_12 => {
+        modified @ KEY_XF86Switch_VT_1..=KEY_XF86Switch_VT_12 if !disable_vt_handling => {
             let vt = (modified - KEY_XF86Switch_VT_1 + 1) as i32;
             Some(Action::ChangeVt(vt))
         }
@@ -5123,6 +5131,7 @@ mod tests {
 
         let screenshot_ui = ScreenshotUi::new(Clock::default(), Default::default());
         let disable_power_key_handling = false;
+        let disable_vt_handling = false;
         let is_inhibiting_shortcuts = Cell::new(false);
 
         // The key_code we pick is arbitrary, the only thing
@@ -5141,6 +5150,7 @@ mod tests {
                 mods,
                 &screenshot_ui,
                 disable_power_key_handling,
+                disable_vt_handling,
                 is_inhibiting_shortcuts.get(),
             )
         };
@@ -5158,6 +5168,7 @@ mod tests {
                 mods,
                 &screenshot_ui,
                 disable_power_key_handling,
+                disable_vt_handling,
                 is_inhibiting_shortcuts.get(),
             )
         };
