@@ -741,6 +741,10 @@ impl State {
 
         let mut state = Self { backend, niri };
 
+        // Create any declaratively-configured virtual outputs early, so that options like
+        // `focus-at-startup` can target them.
+        state.create_virtual_outputs_from_config();
+
         // Load the xkb_file config option if set by the user.
         state.load_xkb_file();
         // Initialize some IPC server state.
@@ -749,6 +753,67 @@ impl State {
         state.focus_default_monitor();
 
         Ok(state)
+    }
+
+    fn create_virtual_outputs_from_config(&mut self) {
+        let names = {
+            let config = self.niri.config.borrow();
+            config
+                .outputs
+                .0
+                .iter()
+                .filter(|o| o.create_virtual)
+                .map(|o| o.name.clone())
+                .collect::<Vec<_>>()
+        };
+
+        if names.is_empty() {
+            return;
+        }
+
+        if matches!(&self.backend, Backend::Winit(_)) {
+            warn!(
+                "config requests virtual outputs, but the Winit backend does not support them"
+            );
+            return;
+        }
+
+        for name in names {
+            // Skip if an output with this name already exists.
+            //
+            // We check both the compositor output list (connected outputs) and the IPC output
+            // state, because virtual outputs can exist while being currently disconnected (`off`).
+            let exists = self
+                .niri
+                .global_space
+                .outputs()
+                .any(|o| o.name() == name)
+                || self
+                    .backend
+                    .ipc_outputs()
+                    .lock()
+                    .unwrap()
+                    .values()
+                    .any(|o| o.name == name);
+            if exists {
+                continue;
+            }
+
+            match self.backend.create_virtual_output(
+                &mut self.niri,
+                1920,
+                1080,
+                60,
+                Some(name.clone()),
+            ) {
+                Ok(created) => {
+                    info!("created virtual output from config: {created}");
+                }
+                Err(err) => {
+                    warn!("error creating virtual output '{name}' from config: {err}");
+                }
+            }
+        }
     }
 
     pub fn refresh_and_flush_clients(&mut self) {
@@ -1707,6 +1772,8 @@ impl State {
     }
 
     pub fn reload_output_config(&mut self) {
+        self.create_virtual_outputs_from_config();
+
         let mut resized_outputs = vec![];
         let mut recolored_outputs = vec![];
 

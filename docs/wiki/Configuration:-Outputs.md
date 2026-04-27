@@ -8,6 +8,7 @@ Here's what it looks like with all properties written out:
 ```kdl
 output "eDP-1" {
     // off
+    // create-virtual
     mode "1920x1080@120.030"
     scale 2.0
     transform "90"
@@ -60,6 +61,27 @@ This flag turns off that output entirely.
 // Turn off that monitor.
 output "HDMI-A-1" {
     off
+}
+```
+
+### `create-virtual`
+
+This flag makes niri create a virtual (headless) output with this name if it doesn't already
+exist.
+
+It is useful for always having a stable output name for remote streaming setups (e.g.
+Sunshine/Moonlight).
+
+Notes:
+
+- Only supported on the TTY and Headless backends (not supported on Winit).
+- Niri will create the output at compositor startup and on config reload.
+- Niri will not automatically remove outputs that you delete from the config.
+
+```kdl
+output "sunshine" {
+    create-virtual
+    mode "1920x1080@144.000"
 }
 ```
 

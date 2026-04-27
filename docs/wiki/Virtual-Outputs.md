@@ -67,10 +67,17 @@ niri msg output HEADLESS-1 scale 1.25
 niri msg output HEADLESS-1 transform 90
 ```
 
-You can also configure them in your `config.kdl` file:
+You can also configure them in your `config.kdl` file.
+
+If you want niri to *create* a named virtual output automatically (at compositor startup and on
+config reload), add the `create-virtual` flag to the corresponding `output` block.
+
+Note: this works only on the TTY and Headless backends (virtual outputs are not supported on the
+Winit backend).
 
 ```kdl
 output "sunshine" {
+    create-virtual
     mode "1920x1080@144.000"
     scale 1.25
     transform "90"
