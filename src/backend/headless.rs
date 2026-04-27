@@ -54,7 +54,6 @@ pub struct Headless {
     #[cfg(feature = "xdp-gnome-screencast")]
     gbm: Option<GbmDevice<DrmDeviceFd>>,
     ipc_outputs: Arc<Mutex<IpcOutputMap>>,
-    _libinput: Option<Libinput>,
     /// Seat name used for both libinput udev enumeration (`udev_assign_seat`) and the compositor
     /// `wl_seat` name.
     ///
@@ -69,7 +68,7 @@ pub struct Headless {
 impl Headless {
     pub fn new(event_loop: LoopHandle<'static, State>) -> Self {
         let udev_seat = std::env::var("XDG_SEAT").unwrap_or_else(|_| "seat0".to_owned());
-        let libinput = init_headless_libinput(event_loop, &udev_seat);
+        init_headless_libinput(event_loop, &udev_seat);
 
         Self {
             renderer: None,
@@ -78,7 +77,6 @@ impl Headless {
             #[cfg(feature = "xdp-gnome-screencast")]
             gbm: None,
             ipc_outputs: Default::default(),
-            _libinput: libinput,
             udev_seat,
             output_counter: 0,
             outputs: HashMap::new(),
@@ -516,7 +514,6 @@ impl Default for Headless {
             #[cfg(feature = "xdp-gnome-screencast")]
             gbm: None,
             ipc_outputs: Default::default(),
-            _libinput: None,
             udev_seat: "seat0".to_string(),
             output_counter: 0,
             outputs: HashMap::new(),
@@ -579,17 +576,17 @@ impl input::LibinputInterface for HeadlessLibinputInterface {
     }
 }
 
-fn init_headless_libinput(event_loop: LoopHandle<'static, State>, seat: &str) -> Option<Libinput> {
+fn init_headless_libinput(event_loop: LoopHandle<'static, State>, seat: &str) {
     let mut libinput = Libinput::new_with_udev(HeadlessLibinputInterface::default());
 
     unsafe { super::libinput_plugins::init_libinput_plugin_system(&libinput) };
 
     if libinput.udev_assign_seat(seat).is_err() {
         debug!("headless: failed to assign libinput seat {seat:?}; input will be unavailable");
-        return None;
+        return;
     }
 
-    let input_backend = LibinputInputBackend::new(libinput.clone());
+    let input_backend = LibinputInputBackend::new(libinput);
     if event_loop
         .insert_source(input_backend, |mut event, _, state| {
             state.process_libinput_event(&mut event);
@@ -598,8 +595,6 @@ fn init_headless_libinput(event_loop: LoopHandle<'static, State>, seat: &str) ->
         .is_err()
     {
         debug!("headless: failed to insert libinput backend; input will be unavailable");
-        return None;
+        return;
     }
-
-    Some(libinput)
 }
