@@ -1,4 +1,3 @@
-use std::ffi::OsString;
 use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
@@ -28,7 +27,7 @@ pub struct Cli {
     pub session: bool,
     /// Command to run upon compositor startup.
     #[arg(last = true)]
-    pub command: Vec<OsString>,
+    pub command: Vec<String>,
 
     #[command(subcommand)]
     pub subcommand: Option<Sub>,
