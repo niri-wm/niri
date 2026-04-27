@@ -84,6 +84,7 @@ debug {
 ### `disable-direct-scanout`
 
 Disable direct scanout to both the primary plane and the overlay planes.
+This also disables the scanout tranches in the DMA-BUF feedback sent to clients.
 
 ```kdl
 debug {

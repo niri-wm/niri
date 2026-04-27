@@ -2840,13 +2840,7 @@ fn surface_dmabuf_feedback(
         )
         .build()?;
 
-    // If this is the primary node surface, send scanout formats in both tranches to avoid
-    // duplication.
-    let render = if surface_render_node == Some(primary_render_node) {
-        scanout.clone()
-    } else {
-        builder.build()?
-    };
+    let render = builder.build()?;
 
     Ok(SurfaceDmabufFeedback { render, scanout })
 }
