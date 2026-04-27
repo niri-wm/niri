@@ -100,11 +100,6 @@ fn spawn_sync(
 ) {
     let _span = tracy_client::span!();
 
-    let args: Vec<std::ffi::OsString> = args
-        .into_iter()
-        .map(|a| a.as_ref().to_os_string())
-        .collect();
-
     let mut command = command.as_ref();
 
     // Expand `~` at the start.
@@ -119,12 +114,10 @@ fn spawn_sync(
 
     let mut process = Command::new(command);
     process
-        .args(&args)
+        .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
-
-    debug!("spawning child: {command:?} {args:?}");
 
     // Remove RUST_BACKTRACE and RUST_LIB_BACKTRACE from the environment if needed.
     if REMOVE_ENV_RUST_BACKTRACE.load(Ordering::Relaxed) {
@@ -352,7 +345,7 @@ mod systemd {
             match read_all(pipe, &mut buf) {
                 Ok(()) => {
                     let pid = i32::from_ne_bytes(buf);
-                    debug!("spawned PID: {pid}");
+                    trace!("spawned PID: {pid}");
 
                     // Start a systemd scope for the grandchild.
                     if let Err(err) = start_systemd_scope(command, child.id(), pid as u32) {
