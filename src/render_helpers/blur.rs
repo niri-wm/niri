@@ -209,7 +209,7 @@ impl Blur {
 
             let mut fbos = [0; 2];
             gl.GenFramebuffers(fbos.len() as _, fbos.as_mut_ptr());
-            gl.BindFramebuffer(ffi::DRAW_FRAMEBUFFER, fbos[0]);
+            gl.BindFramebuffer(ffi::FRAMEBUFFER, fbos[0]);
 
             let program = &self.program.0.down;
             gl.UseProgram(program.program);
@@ -244,7 +244,7 @@ impl Blur {
 
                 trace!("drawing down {src} to {dst}");
                 gl.FramebufferTexture2D(
-                    ffi::DRAW_FRAMEBUFFER,
+                    ffi::FRAMEBUFFER,
                     ffi::COLOR_ATTACHMENT0,
                     ffi::TEXTURE_2D,
                     dst,
@@ -307,7 +307,7 @@ impl Blur {
 
                 trace!("drawing up {src} to {dst}");
                 gl.FramebufferTexture2D(
-                    ffi::DRAW_FRAMEBUFFER,
+                    ffi::FRAMEBUFFER,
                     ffi::COLOR_ATTACHMENT0,
                     ffi::TEXTURE_2D,
                     dst,
@@ -333,7 +333,7 @@ impl Blur {
 
             gl.DisableVertexAttribArray(program.attrib_vert as u32);
 
-            gl.BindFramebuffer(ffi::DRAW_FRAMEBUFFER, 0);
+            gl.BindFramebuffer(ffi::FRAMEBUFFER, 0);
             gl.DeleteFramebuffers(fbos.len() as _, fbos.as_ptr());
         })?;
 
