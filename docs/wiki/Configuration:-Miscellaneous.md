@@ -135,6 +135,19 @@ You can also set this option to `null` to disable saving screenshots to disk.
 screenshot-path null
 ```
 
+### `screenshot-notification`
+
+Add action buttons to screenshot notifications. Actions are shown only for screenshots that were saved to disk.
+
+The `{path}` placeholder in command arguments is replaced with the saved screenshot path.
+
+```kdl
+screenshot-notification {
+    action "Open" "xdg-open" "{path}"
+    action "Edit" "swappy" "-f" "{path}"
+}
+```
+
 ### `environment`
 
 Override environment variables for processes spawned by niri.

@@ -76,6 +76,7 @@ pub struct Config {
     pub prefer_no_csd: bool,
     pub cursor: Cursor,
     pub screenshot_path: ScreenshotPath,
+    pub screenshot_notification: ScreenshotNotification,
     pub clipboard: Clipboard,
     pub hotkey_overlay: HotkeyOverlay,
     pub config_notification: ConfigNotification,
@@ -194,6 +195,7 @@ where
                 "input" => m_merge!(input),
                 "cursor" => m_merge!(cursor),
                 "clipboard" => m_merge!(clipboard),
+                "screenshot-notification" => m_merge!(screenshot_notification),
                 "hotkey-overlay" => m_merge!(hotkey_overlay),
                 "config-notification" => m_merge!(config_notification),
                 "animations" => m_merge!(animations),
@@ -832,6 +834,11 @@ mod tests {
             }
 
             screenshot-path "~/Screenshots/screenshot.png"
+
+            screenshot-notification {
+                action "Open" "xdg-open" "{path}"
+                action "Edit" "swappy" "-f" "{path}"
+            }
 
             clipboard {
                 disable-primary
@@ -1486,6 +1493,25 @@ mod tests {
                     "~/Screenshots/screenshot.png",
                 ),
             ),
+            screenshot_notification: ScreenshotNotification {
+                actions: [
+                    ScreenshotNotificationAction {
+                        label: "Open",
+                        command: [
+                            "xdg-open",
+                            "{path}",
+                        ],
+                    },
+                    ScreenshotNotificationAction {
+                        label: "Edit",
+                        command: [
+                            "swappy",
+                            "-f",
+                            "{path}",
+                        ],
+                    },
+                ],
+            },
             clipboard: Clipboard {
                 disable_primary: true,
             },

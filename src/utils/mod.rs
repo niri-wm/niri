@@ -13,7 +13,7 @@ use anyhow::{ensure, Context};
 use bitflags::bitflags;
 use directories::UserDirs;
 use git_version::git_version;
-use niri_config::{Config, OutputName};
+use niri_config::{Config, OutputName, ScreenshotNotificationAction};
 use smithay::backend::renderer::utils::{
     with_renderer_surface_state, RendererSurfaceStateUserData,
 };
@@ -541,9 +541,13 @@ pub fn baba_is_float_offset(now: Duration, view_height: f64) -> f64 {
 }
 
 #[cfg(feature = "dbus")]
-pub fn show_screenshot_notification(image_path: Option<&Path>) -> anyhow::Result<()> {
+pub fn show_screenshot_notification(
+    image_path: Option<&Path>,
+    actions: &[ScreenshotNotificationAction],
+) -> anyhow::Result<()> {
     use std::collections::HashMap;
 
+    use anyhow::Context as _;
     use pango::glib;
     use zbus::zvariant;
 
@@ -567,9 +571,24 @@ pub fn show_screenshot_notification(image_path: Option<&Path>) -> anyhow::Result
         }
     }
 
-    let actions: &[&str] = &[];
+    let actions = if image_path.is_some() {
+        actions
+            .iter()
+            .filter(|action| !action.command.is_empty())
+            .cloned()
+            .collect()
+    } else {
+        Vec::new()
+    };
 
-    conn.call_method(
+    let mut action_strings = Vec::with_capacity(actions.len() * 2);
+    for (idx, action) in actions.iter().enumerate() {
+        action_strings.push(idx.to_string());
+        action_strings.push(action.label.clone());
+    }
+    let action_refs: Vec<_> = action_strings.iter().map(|s| s.as_str()).collect();
+
+    let reply = conn.call_method(
         Some("org.freedesktop.Notifications"),
         "/org/freedesktop/Notifications",
         Some("org.freedesktop.Notifications"),
@@ -580,7 +599,7 @@ pub fn show_screenshot_notification(image_path: Option<&Path>) -> anyhow::Result
             image_url.as_ref().map(|url| url.as_str()).unwrap_or(""),
             "Screenshot captured",
             "You can paste the image from the clipboard.",
-            actions,
+            action_refs,
             HashMap::from([
                 ("transient", zvariant::Value::Bool(true)),
                 ("urgency", zvariant::Value::U8(1)),
@@ -589,7 +608,106 @@ pub fn show_screenshot_notification(image_path: Option<&Path>) -> anyhow::Result
         ),
     )?;
 
+    let notification_id: u32 = reply
+        .body()
+        .deserialize()
+        .context("error parsing notification id")?;
+
+    if !actions.is_empty() {
+        if let Some(image_path) = image_path {
+            let image_path = image_path.to_owned();
+            let conn = conn.inner().clone();
+            let _ = std::thread::Builder::new()
+                .name("Screenshot Notification Actions".to_owned())
+                .spawn(move || {
+                    async_io::block_on(async move {
+                        if let Err(err) = handle_screenshot_notification_actions(
+                            conn,
+                            notification_id,
+                            image_path,
+                            actions,
+                        )
+                        .await
+                        {
+                            warn!("error handling screenshot notification action: {err:?}");
+                        }
+                    });
+                });
+        }
+    }
+
     Ok(())
+}
+
+#[cfg(feature = "dbus")]
+async fn handle_screenshot_notification_actions(
+    conn: zbus::Connection,
+    notification_id: u32,
+    image_path: PathBuf,
+    actions: Vec<ScreenshotNotificationAction>,
+) -> anyhow::Result<()> {
+    use anyhow::Context as _;
+    use futures_util::{select_biased, FutureExt as _, StreamExt as _};
+
+    let proxy = zbus::Proxy::new(
+        &conn,
+        "org.freedesktop.Notifications",
+        "/org/freedesktop/Notifications",
+        "org.freedesktop.Notifications",
+    )
+    .await
+    .context("error creating notifications proxy")?;
+
+    let mut action_invoked = proxy
+        .receive_signal("ActionInvoked")
+        .await
+        .context("error receiving ActionInvoked signal")?;
+    let mut notification_closed = proxy
+        .receive_signal("NotificationClosed")
+        .await
+        .context("error receiving NotificationClosed signal")?;
+
+    loop {
+        select_biased! {
+            message = action_invoked.next().fuse() => {
+                let Some(message) = message else {
+                    return Ok(());
+                };
+                let (id, action_key): (u32, String) = message
+                    .body()
+                    .deserialize()
+                    .context("error parsing ActionInvoked signal")?;
+                if id != notification_id {
+                    continue;
+                }
+
+                if let Ok(idx) = action_key.parse::<usize>() {
+                    if let Some(action) = actions.get(idx) {
+                        let path = image_path.to_string_lossy();
+                        let command = action
+                            .command
+                            .iter()
+                            .map(|arg| arg.replace("{path}", &path))
+                            .collect();
+                        spawning::spawn(command, None);
+                    }
+                }
+                return Ok(());
+            }
+            message = notification_closed.next().fuse() => {
+                let Some(message) = message else {
+                    return Ok(());
+                };
+                let (id, _reason): (u32, u32) = message
+                    .body()
+                    .deserialize()
+                    .context("error parsing NotificationClosed signal")?;
+                if id == notification_id {
+                    return Ok(());
+                }
+            }
+        }
+    }
 }
 
 #[inline(never)]

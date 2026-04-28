@@ -64,6 +64,31 @@ impl Default for ScreenshotPath {
     }
 }
 
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct ScreenshotNotification {
+    pub actions: Vec<ScreenshotNotificationAction>,
+}
+
+#[derive(knuffel::Decode, Debug, Default, Clone, PartialEq, Eq)]
+pub struct ScreenshotNotificationPart {
+    #[knuffel(children(name = "action"))]
+    pub actions: Vec<ScreenshotNotificationAction>,
+}
+
+impl MergeWith<ScreenshotNotificationPart> for ScreenshotNotification {
+    fn merge_with(&mut self, part: &ScreenshotNotificationPart) {
+        self.actions.clone_from(&part.actions);
+    }
+}
+
+#[derive(knuffel::Decode, Debug, Clone, PartialEq, Eq)]
+pub struct ScreenshotNotificationAction {
+    #[knuffel(argument)]
+    pub label: String,
+    #[knuffel(arguments)]
+    pub command: Vec<String>,
+}
+
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct HotkeyOverlay {
     pub skip_at_startup: bool,
