@@ -1,5 +1,5 @@
-use std::cmp::{max, min};
 use std::borrow::Cow;
+use std::cmp::{max, min};
 use std::ffi::{CString, OsStr};
 use std::fmt::Display;
 use std::io::Write;
