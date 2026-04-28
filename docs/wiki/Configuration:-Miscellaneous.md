@@ -137,6 +137,8 @@ screenshot-path null
 
 ### `screenshot-notification`
 
+<sup>Since: 26.04</sup>
+
 Add action buttons to screenshot notifications. Actions are shown only for screenshots that were saved to disk.
 
 The `{path}` placeholder in command arguments is replaced with the saved screenshot path.
