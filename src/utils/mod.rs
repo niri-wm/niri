@@ -1,4 +1,5 @@
 use std::cmp::{max, min};
+use std::borrow::Cow;
 use std::ffi::{CString, OsStr};
 use std::fmt::Display;
 use std::io::Write;
@@ -580,12 +581,11 @@ pub fn show_screenshot_notification(
         Vec::new()
     };
 
-    let mut action_strings = Vec::with_capacity(actions.len() * 2);
-    for (idx, action) in actions.iter().enumerate() {
-        action_strings.push(idx.to_string());
-        action_strings.push(action.label.clone());
-    }
-    let action_refs: Vec<_> = action_strings.iter().map(|s| s.as_str()).collect();
+    let action_strings: Vec<Cow<'_, str>> = actions
+        .iter()
+        .enumerate()
+        .flat_map(|(idx, action)| [idx.to_string().into(), action.label.as_str().into()])
+        .collect();
 
     let reply = conn.call_method(
         Some("org.freedesktop.Notifications"),
@@ -598,7 +598,7 @@ pub fn show_screenshot_notification(
             image_url.as_ref().map(|url| url.as_str()).unwrap_or(""),
             "Screenshot captured",
             "You can paste the image from the clipboard.",
-            action_refs,
+            action_strings,
             HashMap::from([
                 ("transient", zvariant::Value::Bool(true)),
                 ("urgency", zvariant::Value::U8(1)),
