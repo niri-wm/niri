@@ -151,7 +151,7 @@ screenshot {
 }
 ```
 
-<sup>Until: 26.04</sup> For backwards compatibility, the old top-level `screenshot-path` option is still supported. It is used if `screenshot.path` is not set.
+<sup>Until: 26.04</sup> For backwards compatibility, the old top-level `screenshot-path` option is still supported. It is used if `screenshot { path ""; }` is not set.
 
 ```kdl
 // Deprecated
