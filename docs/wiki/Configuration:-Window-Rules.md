@@ -36,6 +36,7 @@ window-rule {
     match is-floating=true
     match is-window-cast-target=true
     match is-urgent=true
+    match is-fullscreen=true
     match at-startup=true
 
     // Properties that apply once upon window opening.
@@ -317,6 +318,19 @@ Matches windows that request the user's attention.
 ```kdl
 window-rule {
     match is-urgent=true
+}
+```
+
+#### `is-fullscreen`
+
+<sup>Since: next release</sup>
+
+Can be `true` or `false`.
+Matches windows that are currently fullscreen.
+
+```kdl
+window-rule {
+    match is-fullscreen=true
 }
 ```
 
