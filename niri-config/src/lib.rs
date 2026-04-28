@@ -1726,6 +1726,7 @@ mod tests {
                             is_floating: None,
                             is_window_cast_target: None,
                             is_urgent: None,
+                            is_xwayland: None,
                             at_startup: None,
                         },
                     ],
@@ -1745,6 +1746,7 @@ mod tests {
                             is_floating: None,
                             is_window_cast_target: None,
                             is_urgent: None,
+                            is_xwayland: None,
                             at_startup: None,
                         },
                         Match {
@@ -1760,6 +1762,7 @@ mod tests {
                             is_floating: None,
                             is_window_cast_target: None,
                             is_urgent: None,
+                            is_xwayland: None,
                             at_startup: None,
                         },
                     ],
