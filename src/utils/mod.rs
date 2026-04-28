@@ -547,7 +547,6 @@ pub fn show_screenshot_notification(
 ) -> anyhow::Result<()> {
     use std::collections::HashMap;
 
-    use anyhow::Context as _;
     use pango::glib;
     use zbus::zvariant;
 
@@ -646,7 +645,6 @@ async fn handle_screenshot_notification_actions(
     image_path: PathBuf,
     actions: Vec<ScreenshotNotificationAction>,
 ) -> anyhow::Result<()> {
-    use anyhow::Context as _;
     use futures_util::{select_biased, FutureExt as _, StreamExt as _};
 
     let proxy = zbus::Proxy::new(
