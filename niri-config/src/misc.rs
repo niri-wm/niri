@@ -53,7 +53,7 @@ impl MergeWith<CursorPart> for Cursor {
     }
 }
 
-#[derive(knuffel::Decode, Debug, Clone, PartialEq)]
+#[derive(knuffel::Decode, Debug, Clone, PartialEq, Eq)]
 pub struct ScreenshotPath(#[knuffel(argument)] pub Option<String>);
 
 impl Default for ScreenshotPath {
@@ -61,6 +61,38 @@ impl Default for ScreenshotPath {
         Self(Some(String::from(
             "~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png",
         )))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Screenshot {
+    pub path: ScreenshotPath,
+    pub notification: ScreenshotNotification,
+}
+
+impl Default for Screenshot {
+    fn default() -> Self {
+        Self {
+            path: ScreenshotPath::default(),
+            notification: ScreenshotNotification::default(),
+        }
+    }
+}
+
+#[derive(knuffel::Decode, Debug, Default, Clone, PartialEq, Eq)]
+pub struct ScreenshotPart {
+    #[knuffel(child)]
+    pub path: Option<ScreenshotPath>,
+    #[knuffel(child)]
+    pub notification: Option<ScreenshotNotificationPart>,
+}
+
+impl MergeWith<ScreenshotPart> for Screenshot {
+    fn merge_with(&mut self, part: &ScreenshotPart) {
+        merge_clone!((self, part), path);
+        if let Some(notification) = &part.notification {
+            self.notification.merge_with(notification);
+        }
     }
 }
 

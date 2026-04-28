@@ -230,7 +230,7 @@ pub enum Action {
         ///
         /// The path must be absolute, otherwise an error is returned.
         ///
-        /// If `None`, the screenshot is saved according to the `screenshot-path` config setting.
+        /// If `None`, the screenshot is saved according to the `screenshot.path` config setting.
         #[cfg_attr(feature = "clap", arg(long, action = clap::ArgAction::Set))]
         path: Option<String>,
     },
@@ -238,7 +238,7 @@ pub enum Action {
     ScreenshotScreen {
         /// Write the screenshot to disk in addition to putting it in your clipboard.
         ///
-        /// The screenshot is saved according to the `screenshot-path` config setting.
+        /// The screenshot is saved according to the `screenshot.path` config setting.
         #[cfg_attr(feature = "clap", arg(short = 'd', long, action = clap::ArgAction::Set, default_value_t = true))]
         write_to_disk: bool,
 
@@ -250,7 +250,7 @@ pub enum Action {
         ///
         /// The path must be absolute, otherwise an error is returned.
         ///
-        /// If `None`, the screenshot is saved according to the `screenshot-path` config setting.
+        /// If `None`, the screenshot is saved according to the `screenshot.path` config setting.
         #[cfg_attr(feature = "clap", arg(long, action = clap::ArgAction::Set))]
         path: Option<String>,
     },
@@ -264,7 +264,7 @@ pub enum Action {
         id: Option<u64>,
         /// Write the screenshot to disk in addition to putting it in your clipboard.
         ///
-        /// The screenshot is saved according to the `screenshot-path` config setting.
+        /// The screenshot is saved according to the `screenshot.path` config setting.
         #[cfg_attr(feature = "clap", arg(short = 'd', long, action = clap::ArgAction::Set, default_value_t = true))]
         write_to_disk: bool,
 
@@ -279,7 +279,7 @@ pub enum Action {
         ///
         /// The path must be absolute, otherwise an error is returned.
         ///
-        /// If `None`, the screenshot is saved according to the `screenshot-path` config setting.
+        /// If `None`, the screenshot is saved according to the `screenshot.path` config setting.
         #[cfg_attr(feature = "clap", arg(long, action = clap::ArgAction::Set))]
         path: Option<String>,
     },

@@ -285,20 +285,23 @@ hotkey-overlay {
 // After enabling or disabling this, you need to restart the apps for this to take effect.
 // prefer-no-csd
 
-// You can change the path where screenshots are saved.
-// A ~ at the front will be expanded to the home directory.
-// The path is formatted with strftime(3) to give you the screenshot date and time.
-screenshot-path "~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png"
+// Screenshot settings.
+screenshot {
+    // You can change the path where screenshots are saved.
+    // A ~ at the front will be expanded to the home directory.
+    // The path is formatted with strftime(3) to give you the screenshot date and time.
+    path "~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png"
 
-// You can also set this to null to disable saving screenshots to disk.
-// screenshot-path null
+    // You can also set this to null to disable saving screenshots to disk.
+    // path null
 
-// Add buttons to screenshot notifications. The buttons only appear for screenshots saved to disk.
-// The {path} placeholder is replaced with the saved screenshot path.
-// screenshot-notification {
-//     action "Open" "xdg-open" "{path}"
-//     action "Edit" "swappy" "-f" "{path}"
-// }
+    // Add buttons to screenshot notifications. The buttons only appear for screenshots saved to disk.
+    // The {path} placeholder is replaced with the saved screenshot path.
+    // notification {
+    //     action "Open" "xdg-open" "{path}"
+    //     action "Edit" "swappy" "-f" "{path}"
+    // }
+}
 
 // Animation settings.
 // The wiki explains how to configure individual animations:

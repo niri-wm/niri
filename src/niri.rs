@@ -5690,7 +5690,7 @@ impl Niri {
             })
             .unwrap();
 
-        let notification_actions = self.config.borrow().screenshot_notification.actions.clone();
+        let notification_actions = self.config.borrow().screenshot.notification.actions.clone();
 
         // Encode and save the image in a thread as it's slow.
         thread::spawn(move || {
