@@ -856,7 +856,7 @@ mod tests {
                 window-open { off; }
 
                 window-close {
-                    curve "cubic-bezier" 0.05 0.7 0.1 1  
+                    curve "cubic-bezier" 0.05 0.7 0.1 1
                 }
 
                 recent-windows-close {
@@ -993,7 +993,7 @@ mod tests {
                     drag: Some(
                         true,
                     ),
-                    drag_lock: false,
+                    drag_lock: None,
                     natural_scroll: false,
                     click_method: Some(
                         Clickfinger,
