@@ -685,7 +685,13 @@ async fn handle_screenshot_notification_actions(
                         let command = action
                             .command
                             .iter()
-                            .map(|arg| arg.replace("{path}", &path))
+                            .map(|arg| {
+                                if arg == "{path}" {
+                                    path.to_string()
+                                } else {
+                                    arg.clone()
+                                }
+                            })
                             .collect();
                         spawning::spawn(command, None);
                     }
