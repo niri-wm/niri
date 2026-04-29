@@ -113,7 +113,7 @@ Here are some other projects which implement a similar workflow:
 - [PaperWM]: scrollable tiling on top of GNOME Shell.
 - [karousel]: scrollable tiling on top of KDE.
 - [scroll](https://github.com/dawsers/scroll) and [papersway]: scrollable tiling on top of sway/i3.
-- Hyprland has a built-in [scrolling layout](https://wiki.hypr.land/Configuring/Scrolling-Layout/).
+- Hyprland has a built-in [scrolling layout](https://wiki.hypr.land/Configuring/Layouts/Scrolling-Layout/).
 - [Paneru] and [PaperWM.spoon]: scrollable tiling on top of macOS.
 
 ## Contact
