@@ -72,6 +72,7 @@ drm-ffi = "0.9.1"
 fastrand = "2.4.1"
 futures-util = { version = "0.3.32", default-features = false, features = ["std", "io"] }
 git-version = "0.3.9"
+gio = "0.21.5"
 glam = "0.32.1"
 input = { version = "0.10.0", features = ["libinput_1_21"] }
 keyframe = { version = "1.1.1", default-features = false }
@@ -86,6 +87,7 @@ pangocairo = "0.21.5"
 pipewire = { version = "0.9.2", optional = true, features = ["v0_3_33"] }
 png = "0.18.1"
 profiling = "1.0.17"
+resvg = { version = "0.45.1", default-features = false }
 sd-notify = "0.5.0"
 serde.workspace = true
 serde_json.workspace = true
