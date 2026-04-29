@@ -7,9 +7,10 @@ use std::os::fd::{AsFd, AsRawFd, BorrowedFd};
 use std::ptr::NonNull;
 use std::rc::Rc;
 use std::time::Duration;
-use std::{mem, slice};
+use std::{mem, ptr, slice};
 
 use anyhow::Context as _;
+use anyhow::ensure;
 use calloop::timer::{TimeoutAction, Timer};
 use calloop::RegistrationToken;
 use pipewire::context::ContextRc;
@@ -46,6 +47,7 @@ use smithay::output::{Output, OutputModeSource};
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::{Interest, LoopHandle, Mode, PostAction};
 use smithay::reexports::gbm::Modifier;
+use smithay::reexports::rustix;
 use smithay::utils::{Logical, Physical, Point, Scale, Size, Transform};
 use zbus::object_server::SignalEmitter;
 
@@ -1346,10 +1348,12 @@ impl Cast {
 
             let mut inner = self.inner.borrow_mut();
             let inner_ = &mut *inner;
-            let CastState::Ready { damage_tracker, .. } = &mut inner_.state else {
+            let CastState::Ready { damage_tracker, extra_negotiation_result, alpha, .. } = &mut inner_.state else {
                 unreachable!()
             };
             let damage_tracker = damage_tracker.as_mut().unwrap();
+            let extra_negotiation_result = extra_negotiation_result.clone();
+            let alpha = *alpha;
 
             unsafe {
                 let spa_buffer = (*buffer).buffer;
@@ -1362,22 +1366,53 @@ impl Cast {
                 // Unfortunately, I think the OBS PipeWire code needs to be updated first to cleanly
                 // allow for that codepath.
                 let fd = (*(*spa_buffer).datas).fd;
-                let dmabuf = inner_.dmabufs[&fd].clone();
 
-                let res = render_to_dmabuf(renderer, damage_tracker, dmabuf, elements, states);
-                drop(inner);
+                match extra_negotiation_result {
+                    Some(_) => {
+                        let dmabuf = inner_.dmabufs[&fd].clone();
+                        let res = render_to_dmabuf(renderer, damage_tracker, dmabuf, elements, states);
+                        drop(inner);
 
-                match res {
-                    Ok(sync_point) => {
-                        mark_buffer_as_good(pw_buffer, &mut self.sequence_counter);
-                        trace!("queueing buffer with seq={}", self.sequence_counter);
-                        self.queue_after_sync(pw_buffer, sync_point);
-                        true
+                        match res {
+                            Ok(sync_point) => {
+                                mark_buffer_as_good(pw_buffer, &mut self.sequence_counter);
+                                trace!("queueing buffer with seq={}", self.sequence_counter);
+                                self.queue_after_sync(pw_buffer, sync_point);
+                                true
+                            }
+                            Err(err) => {
+                                warn!("error rendering to dmabuf: {err:?}");
+                                return_unused_buffer(&self.stream, pw_buffer);
+                                false
+                            }
+                        }
                     }
-                    Err(err) => {
-                        warn!("error rendering to dmabuf: {err:?}");
-                        return_unused_buffer(&self.stream, pw_buffer);
-                        false
+                    None => {
+                        let shmbuf = inner_.shmbufs[&fd].clone();
+                        drop(inner);
+
+                        let fourcc = if alpha { Fourcc::Argb8888 } else { Fourcc::Xrgb8888 };
+
+                        match render_to_shmbuf(
+                            renderer,
+                            &shmbuf,
+                            size,
+                            scale,
+                            Transform::Normal,
+                            fourcc,
+                            elements.iter().rev(),
+                        ) {
+                            Ok(()) => {
+                                mark_buffer_as_good(pw_buffer, &mut self.sequence_counter);
+                                trace!("queueing buffer with seq={}", self.sequence_counter);
+                                true
+                            }
+                            Err(err) => {
+                                warn!("error rendering to shmbuf: {err:?}");
+                                return_unused_buffer(&self.stream, pw_buffer);
+                                false
+                            }
+                        }
                     }
                 }
             }
@@ -1610,6 +1645,37 @@ unsafe fn mark_buffer_as_good(pw_buffer: NonNull<pw_buffer>, sequence: &mut u64)
 unsafe fn find_meta_header(buffer: *mut spa_buffer) -> Option<NonNull<spa_meta_header>> {
     let p = spa_buffer_find_meta_data(buffer, SPA_META_Header, size_of::<spa_meta_header>()).cast();
     NonNull::new(p)
+}
+
+fn render_to_shmbuf(
+    renderer: &mut GlesRenderer,
+    buffer: &Shmbuf,
+    size: Size<i32, Physical>,
+    scale: Scale<f64>,
+    transform: Transform,
+    fourcc: Fourcc,
+    elements: impl Iterator<Item = impl RenderElement<GlesRenderer>>,
+) -> anyhow::Result<()> {
+    let expected_size = size.w as usize * size.h as usize * SHM_BYTES_PER_PIXEL as usize;
+    ensure!(buffer.size == expected_size, "invalid buffer size");
+    let mapping = render_and_download(renderer, size, scale, transform, fourcc, elements)?;
+    let bytes = renderer
+        .map_texture(&mapping)
+        .context("error mapping texture")?;
+
+    unsafe {
+        let buf = rustix::mm::mmap(
+            std::ptr::null_mut(),
+            buffer.size as usize,
+            rustix::mm::ProtFlags::READ | rustix::mm::ProtFlags::WRITE,
+            rustix::mm::MapFlags::SHARED,
+            buffer.fd.clone(),
+            0,
+        )?;
+        ptr::copy_nonoverlapping(bytes.as_ptr(), buf.cast(), buffer.size);
+        let _ = rustix::mm::munmap(buf, buffer.size).unwrap();
+    }
+    Ok(())
 }
 
 unsafe fn add_invisible_cursor(spa_buffer: *mut spa_buffer) {
