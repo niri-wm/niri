@@ -605,6 +605,9 @@ impl State {
         let mut need_workspaces_changed = false;
         for (mon, ws_idx, ws) in layout.workspaces() {
             let id = ws.id().get();
+            let Some(display_idx) = layout.workspace_display_idx(ws.id(), ws_idx) else {
+                continue;
+            };
             seen.insert(id);
 
             let Some(ipc_ws) = state.workspaces.get(&id) else {
@@ -615,7 +618,8 @@ impl State {
 
             // Check for any changes that we can't signal as individual events.
             let output_name = mon.map(|mon| mon.output_name());
-            if ipc_ws.idx != u8::try_from(ws_idx + 1).unwrap_or(u8::MAX)
+            let display_idx = u8::try_from(display_idx).unwrap_or(u8::MAX);
+            if ipc_ws.idx != display_idx
                 || ipc_ws.name.as_ref() != ws.name()
                 || ipc_ws.output.as_ref() != output_name
             {
@@ -661,18 +665,19 @@ impl State {
 
             let workspaces = layout
                 .workspaces()
-                .map(|(mon, ws_idx, ws)| {
+                .filter_map(|(mon, ws_idx, ws)| {
+                    let display_idx = layout.workspace_display_idx(ws.id(), ws_idx)?;
                     let id = ws.id().get();
-                    Workspace {
+                    Some(Workspace {
                         id,
-                        idx: u8::try_from(ws_idx + 1).unwrap_or(u8::MAX),
+                        idx: u8::try_from(display_idx).unwrap_or(u8::MAX),
                         name: ws.name().cloned(),
                         output: mon.map(|mon| mon.output_name().clone()),
                         is_urgent: ws.is_urgent(),
                         is_active: mon.is_some_and(|mon| mon.active_workspace_idx() == ws_idx),
                         is_focused: Some(id) == focused_ws_id,
                         active_window_id: ws.active_window().map(|win| win.id().get()),
-                    }
+                    })
                 })
                 .collect();
 
