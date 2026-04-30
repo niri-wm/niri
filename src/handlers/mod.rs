@@ -71,6 +71,14 @@ use smithay::{
     delegate_single_pixel_buffer, delegate_tablet_manager, delegate_text_input_manager,
     delegate_viewporter, delegate_virtual_keyboard_manager, delegate_xdg_activation,
 };
+use smithay::wayland::image_capture_source::{
+    ImageCaptureSource, ImageCaptureSourceHandler, OutputCaptureSourceHandler,
+    OutputCaptureSourceState,
+};
+use smithay::wayland::image_copy_capture::{
+    BufferConstraints, ImageCopyCaptureHandler, ImageCopyCaptureState, Session, SessionRef, Frame,
+};
+use smithay::output::WeakOutput;
 
 pub use crate::handlers::xdg_shell::KdeDecorationsModeState;
 use crate::layout::workspace::WorkspaceId;
@@ -79,6 +87,9 @@ use crate::niri::{DndIcon, NewClient, State};
 use crate::protocols::ext_workspace::{self, ExtWorkspaceHandler, ExtWorkspaceManagerState};
 use crate::protocols::foreign_toplevel::{
     self, ForeignToplevelHandler, ForeignToplevelManagerState,
+};
+use crate::protocols::toplevel_image_capture_source::{
+    ToplevelImageCaptureHandler, ToplevelImageCaptureManagerState,
 };
 use crate::protocols::gamma_control::{GammaControlHandler, GammaControlManagerState};
 use crate::protocols::mutter_x11_interop::MutterX11InteropHandler;
@@ -93,7 +104,7 @@ use crate::utils::{output_size, send_scale_transform};
 use crate::{
     delegate_ext_workspace, delegate_foreign_toplevel, delegate_gamma_control,
     delegate_mutter_x11_interop, delegate_output_management, delegate_screencopy,
-    delegate_virtual_pointer,
+    delegate_toplevel_image_capture_source, delegate_virtual_pointer,
 };
 
 pub const XDG_ACTIVATION_TOKEN_TIMEOUT: Duration = Duration::from_secs(10);
@@ -596,6 +607,77 @@ impl ForeignToplevelHandler for State {
     }
 }
 delegate_foreign_toplevel!(State);
+
+impl ImageCaptureSourceHandler for State {
+    fn source_destroyed(&mut self, _source: ImageCaptureSource) {
+        // niri doesn't need to track sources
+    }
+}
+
+smithay::delegate_image_capture_source!(State);
+
+impl OutputCaptureSourceHandler for State {
+    fn output_capture_source_state(&mut self) -> &mut OutputCaptureSourceState {
+        &mut self.niri.output_capture_source_state
+    }
+
+    fn output_source_created(&mut self, source: ImageCaptureSource, output: &smithay::output::Output) {
+        source.user_data().insert_if_missing(|| output.downgrade());
+    }
+}
+
+smithay::delegate_output_capture_source!(State);
+
+impl ImageCopyCaptureHandler for State {
+    fn image_copy_capture_state(&mut self) -> &mut ImageCopyCaptureState {
+        &mut self.niri.image_copy_capture_state
+    }
+
+    fn capture_constraints(&mut self, source: &ImageCaptureSource) -> Option<BufferConstraints> {
+        let weak_output = source.user_data().get::<WeakOutput>()?;
+        let output = weak_output.upgrade()?;
+        let mode = output.current_mode()?;
+
+        Some(BufferConstraints {
+            size: mode.size.to_logical(1).to_buffer(1, smithay::utils::Transform::Normal),
+            shm: vec![
+                smithay::reexports::wayland_server::protocol::wl_shm::Format::Argb8888,
+                smithay::reexports::wayland_server::protocol::wl_shm::Format::Xrgb8888,
+            ],
+            dma: None,
+        })
+    }
+
+    fn new_session(&mut self, _session: Session) {
+        // Sessions clean up when dropped
+    }
+
+    fn frame(&mut self, _session: &SessionRef, frame: Frame) {
+        // For now, fail all frames with Unknown reason since we don't have a rendering pipeline
+        // for on-demand capture yet. This will make the protocol available for clients to bind
+        // while the actual rendering can be implemented later.
+        frame.fail(smithay::wayland::image_copy_capture::CaptureFailureReason::Unknown);
+    }
+}
+
+smithay::delegate_image_copy_capture!(State);
+
+impl ToplevelImageCaptureHandler for State {
+    fn toplevel_image_capture_manager_state(&mut self) -> &mut ToplevelImageCaptureManagerState {
+        &mut self.niri.toplevel_image_capture_state
+    }
+
+    fn lookup_toplevel_surface(
+        &mut self,
+        handle: &smithay::reexports::wayland_protocols::ext::foreign_toplevel_list::v1::server::ext_foreign_toplevel_handle_v1::ExtForeignToplevelHandleV1,
+    ) -> Option<smithay::reexports::wayland_server::protocol::wl_surface::WlSurface> {
+        self.niri
+            .foreign_toplevel_state
+            .find_surface_for_handle(handle)
+            .cloned()
+    }
+}
+delegate_toplevel_image_capture_source!(State);
 
 impl ExtWorkspaceHandler for State {
     fn ext_workspace_manager_state(&mut self) -> &mut ExtWorkspaceManagerState {
