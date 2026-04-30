@@ -88,6 +88,7 @@ nav:
     - Window Effects: Window-Effects.md
     - Packaging niri: Packaging-niri.md
     - Integrating niri: Integrating-niri.md
+    - Security Model: Security-Model.md
     - Accessibility: Accessibility.md
     - Name and Logo: Name-and-Logo.md
     - FAQ: FAQ.md
@@ -111,6 +112,7 @@ nav:
     - Design Principles: Development:-Design-Principles.md
     - Developing niri: Development:-Developing-niri.md
     - Documenting niri: Development:-Documenting-niri.md
+    - Releasing niri: Development:-Releasing-niri.md
     - Fractional Layout: Development:-Fractional-Layout.md
     - Redraw Loop: Development:-Redraw-Loop.md
     - Animation Timing: Development:-Animation-Timing.md

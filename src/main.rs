@@ -399,7 +399,6 @@ fn set_default_max_buffer_size(display: &Display<State>, size: usize) {
         if sym.is_null() {
             // Expected on libwayland-server < 1.23.
             trace!("wl_display_set_default_max_buffer_size is missing; skipping");
-            return;
         } else {
             let func: unsafe extern "C" fn(*mut c_void, libc::size_t) = std::mem::transmute(sym);
             let display_ptr = display.handle().backend_handle().display_ptr();

@@ -146,13 +146,10 @@ The general system is: if a hotkey switches somewhere, then adding <kbd>Ctrl</kb
 | <kbd>Mod</kbd><kbd>Ctrl</kbd><kbd>I</kbd> or <kbd>Mod</kbd><kbd>Ctrl</kbd><kbd>PageUp</kbd> | Move the focused column to the workspace above |
 | <kbd>Mod</kbd><kbd>Shift</kbd><kbd>U</kbd> or <kbd>Mod</kbd><kbd>Shift</kbd><kbd>PageDown</kbd> | Move the focused workspace down |
 | <kbd>Mod</kbd><kbd>Shift</kbd><kbd>I</kbd> or <kbd>Mod</kbd><kbd>Shift</kbd><kbd>PageUp</kbd> | Move the focused workspace up |
-| <kbd>Mod</kbd><kbd>,</kbd> | Consume the window to the right into the focused column |
-| <kbd>Mod</kbd><kbd>.</kbd> | Expel the bottom window in the focused column into its own column |
 | <kbd>Mod</kbd><kbd>[</kbd> | Consume or expel the focused window to the left |
 | <kbd>Mod</kbd><kbd>]</kbd> | Consume or expel the focused window to the right |
-| <kbd>Mod</kbd><kbd>R</kbd> | Toggle between preset column widths |
-| <kbd>Mod</kbd><kbd>Shift</kbd><kbd>R</kbd> | Toggle between preset column heights |
-| <kbd>Mod</kbd><kbd>F</kbd> | Maximize column |
+| <kbd>Mod</kbd><kbd>R</kbd> and <kbd>Mod</kbd><kbd>Shift</kbd><kbd>R</kbd> | Toggle between preset column widths forward and back |
+| <kbd>Mod</kbd><kbd>M</kbd> | Maximize window |
 | <kbd>Mod</kbd><kbd>C</kbd> | Center column within view |
 | <kbd>Mod</kbd><kbd>-</kbd> | Decrease column width by 10% |
 | <kbd>Mod</kbd><kbd>=</kbd> | Increase column width by 10% |

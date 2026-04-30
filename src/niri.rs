@@ -1321,7 +1321,6 @@ impl State {
                         get_monotonic_time().as_millis() as u32,
                     );
                     self.niri.popup_grab = None;
-                    self.niri.on_maybe_dnd_ended();
                 }
             }
 
@@ -1377,9 +1376,19 @@ impl State {
 
         let keymap = std::fs::read_to_string(xkb_file).context("failed to read xkb_file")?;
 
-        let xkb = self.niri.seat.get_keyboard().unwrap();
-        xkb.set_keymap_from_string(self, keymap)
+        let keyboard = self.niri.seat.get_keyboard().unwrap();
+        let num_lock = keyboard.modifier_state().num_lock;
+
+        keyboard
+            .set_keymap_from_string(self, keymap)
             .context("failed to set keymap")?;
+
+        // Restore num lock to its previous value.
+        let mut mods_state = keyboard.modifier_state();
+        if mods_state.num_lock != num_lock {
+            mods_state.num_lock = num_lock;
+            keyboard.set_modifier_state(mods_state);
+        }
 
         Ok(())
     }
@@ -1977,7 +1986,6 @@ impl State {
         if let Some(touch) = self.niri.seat.get_touch() {
             touch.unset_grab(self);
         }
-        self.niri.on_maybe_dnd_ended();
 
         self.backend.with_primary_renderer(|renderer| {
             self.niri
