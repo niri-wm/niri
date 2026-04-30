@@ -13,19 +13,22 @@ use std::time::Duration;
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::drm::DrmNode;
 use smithay::backend::input::{InputEvent, TabletToolDescriptor};
+use smithay::backend::renderer::damage::OutputDamageTracker;
+use smithay::backend::renderer::gles::GlesRenderer;
+use smithay::backend::renderer::{BufferType, buffer_type};
 use smithay::desktop::{PopupKind, PopupManager};
 use smithay::input::dnd::{self, DnDGrab, DndGrabHandler, DndTarget};
 use smithay::input::pointer::{CursorIcon, CursorImageStatus, Focus, PointerHandle};
 use smithay::input::{keyboard, Seat, SeatHandler, SeatState};
-use smithay::output::Output;
+use smithay::output::{Output, WeakOutput};
 use smithay::reexports::rustix::fs::{fcntl_setfl, OFlags};
 use smithay::reexports::wayland_protocols_wlr::screencopy::v1::server::zwlr_screencopy_manager_v1::ZwlrScreencopyManagerV1;
 use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::Resource;
-use smithay::utils::{Logical, Point, Rectangle, Serial};
+use smithay::utils::{Logical, Point, Rectangle, Scale, Serial, Transform};
 use smithay::wayland::compositor::{get_parent, with_states};
-use smithay::wayland::dmabuf::{DmabufGlobal, DmabufHandler, DmabufState, ImportNotifier};
+use smithay::wayland::dmabuf::{self as wl_dmabuf, DmabufGlobal, DmabufHandler, DmabufState, ImportNotifier};
 use smithay::wayland::drm_lease::{
     DrmLease, DrmLeaseBuilder, DrmLeaseHandler, DrmLeaseRequest, DrmLeaseState, LeaseRejected,
 };
@@ -78,13 +81,15 @@ use smithay::wayland::image_capture_source::{
 use smithay::wayland::image_copy_capture::{
     BufferConstraints, ImageCopyCaptureHandler, ImageCopyCaptureState, Session, SessionRef, Frame,
 };
-use smithay::output::WeakOutput;
 
 pub use crate::handlers::xdg_shell::KdeDecorationsModeState;
 use crate::layout::workspace::WorkspaceId;
 use crate::layout::ActivateWindow;
-use crate::niri::{DndIcon, NewClient, State};
+use crate::niri::{DndIcon, NewClient, Niri, OutputRenderElements, State};
+use crate::window::mapped::WindowCastRenderElements;
 use crate::protocols::ext_workspace::{self, ExtWorkspaceHandler, ExtWorkspaceManagerState};
+use crate::render_helpers::{render_to_dmabuf, render_to_shm, RenderCtx, RenderTarget};
+use crate::utils::get_monotonic_time;
 use crate::protocols::foreign_toplevel::{
     self, ForeignToplevelHandler, ForeignToplevelManagerState,
 };
@@ -634,33 +639,212 @@ impl ImageCopyCaptureHandler for State {
     }
 
     fn capture_constraints(&mut self, source: &ImageCaptureSource) -> Option<BufferConstraints> {
-        let weak_output = source.user_data().get::<WeakOutput>()?;
-        let output = weak_output.upgrade()?;
-        let mode = output.current_mode()?;
+        // Check for output sources
+        if let Some(weak_output) = source.user_data().get::<WeakOutput>() {
+            let output = weak_output.upgrade()?;
+            let mode = output.current_mode()?;
+            let transform = output.current_transform();
+            let size = transform.transform_size(mode.size);
 
-        Some(BufferConstraints {
-            size: mode.size.to_logical(1).to_buffer(1, smithay::utils::Transform::Normal),
-            shm: vec![
-                smithay::reexports::wayland_server::protocol::wl_shm::Format::Argb8888,
-                smithay::reexports::wayland_server::protocol::wl_shm::Format::Xrgb8888,
-            ],
-            dma: None,
-        })
+            return Some(BufferConstraints {
+                size: size.to_logical(1).to_buffer(1, smithay::utils::Transform::Normal),
+                shm: vec![
+                    smithay::reexports::wayland_server::protocol::wl_shm::Format::Argb8888,
+                    smithay::reexports::wayland_server::protocol::wl_shm::Format::Xrgb8888,
+                ],
+                dma: None,
+            });
+        }
+
+        // Check for toplevel sources
+        if let Some(wl_surface) = source.user_data().get::<WlSurface>() {
+            let root = self.niri.find_root_shell_surface(wl_surface);
+            let (mapped, _) = self.niri.layout.find_window_and_output(&root)?;
+            let window = &mapped.window;
+            let scale = self.niri
+                .layout
+                .find_window_and_output(&root)
+                .and_then(|(_, output)| output)
+                .map(|o| Scale::from(o.current_scale().fractional_scale()))
+                .unwrap_or(Scale::from(1.0));
+            let bbox = window.bbox_with_popups().to_physical_precise_up(scale);
+
+            return Some(BufferConstraints {
+                size: bbox.size.to_logical(1).to_buffer(1, smithay::utils::Transform::Normal),
+                shm: vec![
+                    smithay::reexports::wayland_server::protocol::wl_shm::Format::Argb8888,
+                    smithay::reexports::wayland_server::protocol::wl_shm::Format::Xrgb8888,
+                ],
+                dma: None,
+            });
+        }
+
+        None
     }
 
     fn new_session(&mut self, _session: Session) {
         // Sessions clean up when dropped
     }
 
-    fn frame(&mut self, _session: &SessionRef, frame: Frame) {
-        // For now, fail all frames with Unknown reason since we don't have a rendering pipeline
-        // for on-demand capture yet. This will make the protocol available for clients to bind
-        // while the actual rendering can be implemented later.
-        frame.fail(smithay::wayland::image_copy_capture::CaptureFailureReason::Unknown);
+    fn frame(&mut self, session: &SessionRef, frame: Frame) {
+        let source = session.source();
+        let buffer = frame.buffer();
+
+        let rendered = self.backend.with_primary_renderer(|renderer| -> bool {
+            if let Some(weak_output) = source.user_data().get::<WeakOutput>() {
+                let output = match weak_output.upgrade() {
+                    Some(o) => o,
+                    None => return false,
+                };
+                let niri = &mut self.niri;
+                render_output_capture(niri, renderer, &output, &buffer)
+            } else if let Some(wl_surface) = source.user_data().get::<WlSurface>() {
+                let niri = &mut self.niri;
+                render_toplevel_capture(niri, renderer, wl_surface, &buffer)
+            } else {
+                false
+            }
+        }).unwrap_or(false);
+
+        if rendered {
+            frame.success(Transform::Normal, None, get_monotonic_time());
+        } else {
+            frame.fail(smithay::wayland::image_copy_capture::CaptureFailureReason::Unknown);
+        }
     }
 }
 
 smithay::delegate_image_copy_capture!(State);
+
+/// Render output content into a buffer for the image copy capture protocol.
+fn render_output_capture(
+    niri: &mut Niri,
+    renderer: &mut GlesRenderer,
+    output: &Output,
+    buffer: &smithay::reexports::wayland_server::protocol::wl_buffer::WlBuffer,
+) -> bool {
+    // Update render elements for this output
+    niri.update_render_elements(Some(output));
+
+    // Build render elements
+    let mut elements: Vec<OutputRenderElements<GlesRenderer>> = Vec::new();
+    let ctx = RenderCtx {
+        renderer,
+        target: RenderTarget::ScreenCapture,
+        xray: None,
+    };
+    niri.render(ctx, output, false, &mut |elem| {
+        elements.push(elem);
+    });
+
+    // Create damage tracker and compute states (age=0 = full damage)
+    let mut damage_tracker = OutputDamageTracker::from_output(output);
+    let Ok((_damages, states)) = damage_tracker.damage_output(0, &elements) else {
+        warn!("failed to compute output damage for image capture");
+        return false;
+    };
+
+    // Render based on buffer type
+    let result = match buffer_type(buffer) {
+        Some(BufferType::Shm) => {
+            render_to_shm(renderer, &mut damage_tracker, buffer, &elements, states)
+                .map(|_| ())
+        }
+        Some(BufferType::Dma) => {
+            match wl_dmabuf::get_dmabuf(buffer) {
+                Ok(dmabuf) => render_to_dmabuf(renderer, &mut damage_tracker, dmabuf.clone(), &elements, states)
+                    .map(|_| ()),
+                Err(err) => {
+                    warn!("failed to get dmabuf from buffer: {err:?}");
+                    Err(anyhow::anyhow!("dmabuf error"))
+                }
+            }
+        }
+        _ => {
+            warn!("unsupported buffer type for image capture");
+            return false;
+        }
+    };
+
+    match result {
+        Ok(()) => true,
+        Err(err) => {
+            warn!("error rendering output for image capture: {err:?}");
+            false
+        }
+    }
+}
+
+/// Render toplevel (window) content into a buffer for the image copy capture protocol.
+fn render_toplevel_capture(
+    niri: &mut Niri,
+    renderer: &mut GlesRenderer,
+    wl_surface: &WlSurface,
+    buffer: &smithay::reexports::wayland_server::protocol::wl_buffer::WlBuffer,
+) -> bool {
+    // Find the root surface and mapped window
+    let root = niri.find_root_shell_surface(wl_surface);
+    let Some((mapped, output_opt)) = niri.layout.find_window_and_output(&root) else {
+        warn!("toplevel image capture: window not found");
+        return false;
+    };
+
+    let window = &mapped.window;
+    let output = match output_opt {
+        Some(o) => o,
+        None => {
+            warn!("toplevel image capture: output not found");
+            return false;
+        }
+    };
+
+    let scale = Scale::from(output.current_scale().fractional_scale());
+    let bbox = window.bbox_with_popups().to_physical_precise_up(scale);
+    let size = bbox.size;
+
+    // Build window render elements
+    let mut elements: Vec<WindowCastRenderElements<GlesRenderer>> = Vec::new();
+    mapped.render_for_screen_cast(renderer, scale, &mut |elem| {
+        elements.push(elem);
+    });
+
+    // Create a damage tracker for the window size
+    let mut damage_tracker = OutputDamageTracker::new(size, scale, Transform::Normal);
+    let Ok((_damages, states)) = damage_tracker.damage_output(0, &elements) else {
+        warn!("failed to compute window damage for image capture");
+        return false;
+    };
+
+    // Render based on buffer type
+    let result = match buffer_type(buffer) {
+        Some(BufferType::Shm) => {
+            render_to_shm(renderer, &mut damage_tracker, buffer, &elements, states)
+                .map(|_| ())
+        }
+        Some(BufferType::Dma) => {
+            match wl_dmabuf::get_dmabuf(buffer) {
+                Ok(dmabuf) => render_to_dmabuf(renderer, &mut damage_tracker, dmabuf.clone(), &elements, states)
+                    .map(|_| ()),
+                Err(err) => {
+                    warn!("failed to get dmabuf from buffer: {err:?}");
+                    Err(anyhow::anyhow!("dmabuf error"))
+                }
+            }
+        }
+        _ => {
+            warn!("unsupported buffer type for image capture");
+            return false;
+        }
+    };
+
+    match result {
+        Ok(()) => true,
+        Err(err) => {
+            warn!("error rendering toplevel for image capture: {err:?}");
+            false
+        }
+    }
+}
 
 impl ToplevelImageCaptureHandler for State {
     fn toplevel_image_capture_manager_state(&mut self) -> &mut ToplevelImageCaptureManagerState {
