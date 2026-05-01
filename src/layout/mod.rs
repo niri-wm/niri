@@ -334,7 +334,7 @@ pub trait LayoutElement {
 
 #[derive(Debug)]
 pub struct Layout<W: LayoutElement> {
-    /// Monitors and workspaes in the layout.
+    /// Monitors and workspaces in the layout.
     monitor_set: MonitorSet<W>,
     /// Focused outputs ordered from least to most recently focused.
     output_focus_stack: Vec<Output>,
