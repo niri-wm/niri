@@ -3,7 +3,7 @@ use std::thread;
 
 use accesskit::{
     ActionHandler, ActionRequest, ActivationHandler, DeactivationHandler, Live, Node, NodeId, Role,
-    Tree, TreeUpdate,
+    Tree, TreeId, TreeUpdate,
 };
 use accesskit_unix::Adapter;
 use calloop::LoopHandle;
@@ -221,6 +221,7 @@ impl Niri {
             nodes,
             tree: None,
             focus,
+            tree_id: TreeId::ROOT,
         };
 
         self.a11y.update_tree(update);
@@ -247,6 +248,7 @@ impl Niri {
             nodes: vec![(ID_ANNOUNCEMENT, node)],
             tree: None,
             focus: self.a11y.focus,
+            tree_id: TreeId::ROOT,
         };
 
         self.a11y.update_tree(update);
@@ -339,6 +341,7 @@ impl Niri {
                 (ID_MRU, mru),
             ],
             tree: Some(tree),
+            tree_id: TreeId::ROOT,
             focus,
         }
     }
