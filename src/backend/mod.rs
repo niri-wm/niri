@@ -232,4 +232,39 @@ impl Backend {
             panic!("backend is not Headless")
         }
     }
+
+    /// Create a virtual headless output.
+    ///
+    /// This works with both the headless backend and the TTY backend.
+    /// Returns the name of the created output (e.g., "HEADLESS-1").
+    pub fn create_virtual_output(
+        &mut self,
+        niri: &mut Niri,
+        width: u16,
+        height: u16,
+        refresh_rate: u32,
+    ) -> Result<String, String> {
+        match self {
+            Backend::Headless(headless) => {
+                Ok(headless.create_virtual_output(niri, width, height, refresh_rate))
+            }
+            Backend::Tty(tty) => Ok(tty.create_virtual_output(niri, width, height, refresh_rate)),
+            Backend::Winit(_) => {
+                Err("virtual outputs are not supported with the Winit backend".into())
+            }
+        }
+    }
+
+    /// Remove a virtual headless output by name.
+    ///
+    /// This works with both the headless backend and the TTY backend.
+    pub fn remove_virtual_output(&mut self, niri: &mut Niri, name: &str) -> Result<(), String> {
+        match self {
+            Backend::Headless(headless) => headless.remove_virtual_output(niri, name),
+            Backend::Tty(tty) => tty.remove_virtual_output(niri, name),
+            Backend::Winit(_) => {
+                Err("virtual outputs are not supported with the Winit backend".into())
+            }
+        }
+    }
 }

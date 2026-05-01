@@ -5102,6 +5102,44 @@ impl Niri {
         }
     }
 
+    /// Send frame callbacks for a virtual output.
+    ///
+    /// Unlike `send_frame_callbacks`, this does not check `surface_primary_scanout_output`
+    /// because virtual outputs don't go through the GPU rendering pipeline that sets it.
+    pub fn send_frame_callbacks_for_virtual_output(&mut self, output: &Output) {
+        let _span = tracy_client::span!("Niri::send_frame_callbacks_for_virtual_output");
+
+        let frame_callback_time = get_monotonic_time();
+
+        for mapped in self.layout.windows_for_output_mut(output) {
+            mapped.send_frame(
+                output,
+                frame_callback_time,
+                FRAME_CALLBACK_THROTTLE,
+                |_, _| Some(output.clone()),
+            );
+        }
+
+        for surface in layer_map_for_output(output).layers() {
+            surface.send_frame(
+                output,
+                frame_callback_time,
+                FRAME_CALLBACK_THROTTLE,
+                |_, _| Some(output.clone()),
+            );
+        }
+
+        if let Some(surface) = &self.output_state[output].lock_surface {
+            send_frames_surface_tree(
+                surface.wl_surface(),
+                output,
+                frame_callback_time,
+                FRAME_CALLBACK_THROTTLE,
+                |_, _| Some(output.clone()),
+            );
+        }
+    }
+
     pub fn send_frame_callbacks_on_fallback_timer(&mut self) {
         let _span = tracy_client::span!("Niri::send_frame_callbacks_on_fallback_timer");
 

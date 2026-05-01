@@ -99,6 +99,29 @@ pub enum Msg {
         #[command(subcommand)]
         action: OutputAction,
     },
+    /// Create a virtual headless output.
+    ///
+    /// This only works when niri is running with the headless backend
+    /// (e.g. with `NIRI_BACKEND=headless`).
+    CreateVirtualOutput {
+        /// Width in pixels.
+        #[arg(long, default_value = "1920")]
+        width: u16,
+        /// Height in pixels.
+        #[arg(long, default_value = "1080")]
+        height: u16,
+        /// Refresh rate in Hz.
+        #[arg(long, default_value = "60")]
+        refresh_rate: u32,
+    },
+    /// Remove a virtual headless output.
+    ///
+    /// This only works when niri is running with the headless backend.
+    RemoveVirtualOutput {
+        /// Name of the output to remove (e.g. "HEADLESS-1").
+        #[arg()]
+        name: String,
+    },
     /// Start continuously receiving events from the compositor.
     EventStream,
     /// Print the version of the running niri instance.
