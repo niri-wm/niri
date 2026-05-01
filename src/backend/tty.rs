@@ -95,6 +95,9 @@ pub struct Tty {
     // The dma-buf global corresponds to the output device (the primary GPU). It is only `Some()`
     // if we have a device corresponding to the primary GPU.
     dmabuf_global: Option<DmabufGlobal>,
+    // Is the primary renderer is software rendering? (llvmpipe/softpipe)
+    // Not everything will work on software renderers.
+    primary_renderer_is_software: bool,
     // The output config had changed, but the session is paused, so we need to update it on resume.
     update_output_config_on_resume: bool,
     // Whether the debug tinting is enabled.
@@ -503,6 +506,7 @@ impl Tty {
             ignored_nodes: HashSet::new(),
             devices: HashMap::new(),
             dmabuf_global: None,
+            primary_renderer_is_software: false,
             update_output_config_on_resume: false,
             debug_tint: false,
             ipc_outputs: Arc::new(Mutex::new(HashMap::new())),
@@ -780,13 +784,10 @@ impl Tty {
         let mut try_initialize_gpu = || {
             let display = unsafe { EGLDisplay::new(gbm.clone())? };
             let egl_device = EGLDevice::device_for_display(&display)?;
-
-            // Software EGL devices (e.g., llvmpipe/softpipe) are rejected for now. They have some
-            // problems (segfault on importing dmabufs from other renderers) and need to be
-            // excluded from some places like DRM leasing.
+            let is_software = egl_device.is_software();
             ensure!(
-                !egl_device.is_software(),
-                "software EGL renderers are skipped"
+                !is_software || node == self.primary_node,
+                "software EGL renderers are only allowed on the primary node"
             );
 
             let render_node = egl_device
@@ -799,23 +800,30 @@ impl Tty {
                 .add_node(render_node, gbm.clone())
                 .context("error adding render node to GPU manager")?;
 
-            Ok(render_node)
+            Ok((render_node, is_software))
         };
 
-        let render_node = match try_initialize_gpu() {
-            Ok(render_node) => {
+        let (render_node, uses_software_renderer) = match try_initialize_gpu() {
+            Ok((render_node, false)) => {
                 debug!("got render node: {render_node}");
-                Some(render_node)
+                (Some(render_node), false)
+            }
+            Ok((render_node, true)) => {
+                warn!(
+                    "using software EGL renderer as a fallback for {node}"
+                );
+                (Some(render_node), true)
             }
             Err(err) => {
                 debug!("failed to initialize renderer, falling back to primary gpu: {err:?}");
-                None
+                (None, false)
             }
         };
 
         if render_node == Some(self.primary_render_node) && self.dmabuf_global.is_none() {
             let render_node = self.primary_render_node;
             debug!("initializing the primary renderer");
+            self.primary_renderer_is_software = uses_software_renderer;
 
             let mut renderer = self
                 .gpu_manager
@@ -847,35 +855,44 @@ impl Tty {
 
             niri.update_shaders();
 
-            // Create the dmabuf global.
-            let primary_formats = renderer.dmabuf_formats();
-            let default_feedback =
-                DmabufFeedbackBuilder::new(render_node.dev_id(), primary_formats.clone())
-                    .build()
-                    .context("error building default dmabuf feedback")?;
-            let dmabuf_global = niri
-                .dmabuf_state
-                .create_global_with_default_feedback::<State>(
-                    &niri.display_handle,
-                    &default_feedback,
-                );
-            assert!(self.dmabuf_global.replace(dmabuf_global).is_none());
+            if self.primary_renderer_is_software {
+                info!("software rendering; disabling dma-buf protocol and DRM leasing");
+                for device in self.devices.values_mut() {
+                    for surface in device.surfaces.values_mut() {
+                        surface.dmabuf_feedback = None;
+                    }
+                }
+            } else {
+                // Create the dmabuf global.
+                let primary_formats = renderer.dmabuf_formats();
+                let default_feedback =
+                    DmabufFeedbackBuilder::new(render_node.dev_id(), primary_formats.clone())
+                        .build()
+                        .context("error building default dmabuf feedback")?;
+                let dmabuf_global = niri
+                    .dmabuf_state
+                    .create_global_with_default_feedback::<State>(
+                        &niri.display_handle,
+                        &default_feedback,
+                    );
+                assert!(self.dmabuf_global.replace(dmabuf_global).is_none());
 
-            // Update the dmabuf feedbacks for all surfaces.
-            for (node, device) in self.devices.iter_mut() {
-                for surface in device.surfaces.values_mut() {
-                    match surface_dmabuf_feedback(
-                        &surface.compositor,
-                        primary_formats.clone(),
-                        self.primary_render_node,
-                        device.render_node,
-                        *node,
-                    ) {
-                        Ok(feedback) => {
-                            surface.dmabuf_feedback = Some(feedback);
-                        }
-                        Err(err) => {
-                            warn!("error building dmabuf feedback: {err:?}");
+                // Update the dmabuf feedbacks for all surfaces.
+                for (node, device) in self.devices.iter_mut() {
+                    for surface in device.surfaces.values_mut() {
+                        match surface_dmabuf_feedback(
+                            &surface.compositor,
+                            primary_formats.clone(),
+                            self.primary_render_node,
+                            device.render_node,
+                            *node,
+                        ) {
+                            Ok(feedback) => {
+                                surface.dmabuf_feedback = Some(feedback);
+                            }
+                            Err(err) => {
+                                warn!("error building dmabuf feedback: {err:?}");
+                            }
                         }
                     }
                 }
@@ -906,9 +923,14 @@ impl Tty {
             })
             .unwrap();
 
-        let drm_lease_state = DrmLeaseState::new::<State>(&niri.display_handle, &node)
-            .map_err(|err| warn!("error initializing DRM leasing for {node}: {err:?}"))
-            .ok();
+        let drm_lease_state = if self.primary_renderer_is_software || uses_software_renderer {
+            debug!("skipping DRM leasing for {node} since software rendering is active");
+            None
+        } else {
+            DrmLeaseState::new::<State>(&niri.display_handle, &node)
+                .map_err(|err| warn!("error initializing DRM leasing for {node}: {err:?}"))
+                .ok()
+        };
 
         let device = OutputDevice {
             token,
@@ -1190,15 +1212,17 @@ impl Tty {
                             },
                         )
                         .unwrap();
-
-                    // Clear the dmabuf feedbacks for all surfaces.
-                    for device in self.devices.values_mut() {
-                        for surface in device.surfaces.values_mut() {
-                            surface.dmabuf_feedback = None;
-                        }
-                    }
-                } else {
+                } else if !self.primary_renderer_is_software {
                     error!("dmabuf global was already missing");
+                }
+
+                self.primary_renderer_is_software = false;
+
+                // Clear the dmabuf feedbacks for all surfaces.
+                for device in self.devices.values_mut() {
+                    for surface in device.surfaces.values_mut() {
+                        surface.dmabuf_feedback = None;
+                    }
                 }
             }
 
@@ -1485,21 +1509,25 @@ impl Tty {
         }
 
         let mut dmabuf_feedback = None;
-        if let Ok(primary_renderer) = self.gpu_manager.single_renderer(&self.primary_render_node) {
-            let primary_formats = primary_renderer.dmabuf_formats();
+        if !self.primary_renderer_is_software {
+            if let Ok(primary_renderer) =
+                self.gpu_manager.single_renderer(&self.primary_render_node)
+            {
+                let primary_formats = primary_renderer.dmabuf_formats();
 
-            match surface_dmabuf_feedback(
-                &compositor,
-                primary_formats,
-                self.primary_render_node,
-                device.render_node,
-                node,
-            ) {
-                Ok(feedback) => {
-                    dmabuf_feedback = Some(feedback);
-                }
-                Err(err) => {
-                    warn!("error building dmabuf feedback: {err:?}");
+                match surface_dmabuf_feedback(
+                    &compositor,
+                    primary_formats,
+                    self.primary_render_node,
+                    device.render_node,
+                    node,
+                ) {
+                    Ok(feedback) => {
+                        dmabuf_feedback = Some(feedback);
+                    }
+                    Err(err) => {
+                        warn!("error building dmabuf feedback: {err:?}");
+                    }
                 }
             }
         }
@@ -2031,6 +2059,11 @@ impl Tty {
     }
 
     pub fn import_dmabuf(&mut self, dmabuf: &Dmabuf) -> bool {
+        if self.primary_renderer_is_software {
+            debug!("ignoring dmabuf import because software rendering is active");
+            return false;
+        }
+
         let mut renderer = match self.gpu_manager.single_renderer(&self.primary_render_node) {
             Ok(renderer) => renderer,
             Err(err) => {
@@ -2052,6 +2085,10 @@ impl Tty {
     }
 
     pub fn early_import(&mut self, surface: &WlSurface) {
+        if self.primary_renderer_is_software {
+            return;
+        }
+
         if let Err(err) = self.gpu_manager.early_import(
             // We always render on the primary GPU.
             self.primary_render_node,
