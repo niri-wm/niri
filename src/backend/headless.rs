@@ -48,10 +48,7 @@ impl Headless {
         }
     }
 
-    pub fn init(&mut self, niri: &mut Niri) {
-        // Create a default output on startup
-        self.create_virtual_output(niri, 1920, 1080, 60);
-    }
+    pub fn init(&mut self, _niri: &mut Niri) {}
 
     pub fn add_renderer(&mut self) -> anyhow::Result<()> {
         if self.renderer.is_some() {

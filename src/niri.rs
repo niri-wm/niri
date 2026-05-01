@@ -741,6 +741,12 @@ impl State {
 
         let mut state = Self { backend, niri };
 
+        if headless && create_wayland_socket {
+            if let Backend::Headless(headless) = &mut state.backend {
+                headless.create_virtual_output(&mut state.niri, 1920, 1080, 60);
+            }
+        }
+
         // Load the xkb_file config option if set by the user.
         state.load_xkb_file();
         // Initialize some IPC server state.
@@ -5132,6 +5138,26 @@ impl Niri {
         if let Some(surface) = &self.output_state[output].lock_surface {
             send_frames_surface_tree(
                 surface.wl_surface(),
+                output,
+                frame_callback_time,
+                FRAME_CALLBACK_THROTTLE,
+                |_, _| Some(output.clone()),
+            );
+        }
+
+        if let Some(surface) = self.dnd_icon.as_ref().map(|icon| &icon.surface) {
+            send_frames_surface_tree(
+                surface,
+                output,
+                frame_callback_time,
+                FRAME_CALLBACK_THROTTLE,
+                |_, _| Some(output.clone()),
+            );
+        }
+
+        if let CursorImageStatus::Surface(surface) = self.cursor_manager.cursor_image() {
+            send_frames_surface_tree(
+                surface,
                 output,
                 frame_callback_time,
                 FRAME_CALLBACK_THROTTLE,

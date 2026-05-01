@@ -1606,8 +1606,9 @@ impl Tty {
             .global_space
             .outputs()
             .find(|output| {
-                let tty_state: &TtyOutputState = output.user_data().get().unwrap();
-                tty_state.node == node && tty_state.crtc == crtc
+                output.user_data()
+                    .get::<TtyOutputState>()
+                    .is_some_and(|tty_state| tty_state.node == node && tty_state.crtc == crtc)
             })
             .cloned();
         if let Some(output) = output {
@@ -1686,8 +1687,9 @@ impl Tty {
             .global_space
             .outputs()
             .find(|output| {
-                let tty_state: &TtyOutputState = output.user_data().get().unwrap();
-                tty_state.node == node && tty_state.crtc == crtc
+                output.user_data()
+                    .get::<TtyOutputState>()
+                    .is_some_and(|tty_state| tty_state.node == node && tty_state.crtc == crtc)
             })
             .cloned()
         else {
@@ -2209,8 +2211,9 @@ impl Tty {
                     .global_space
                     .outputs()
                     .find(|output| {
-                        let tty_state: &TtyOutputState = output.user_data().get().unwrap();
-                        tty_state.node == *node && tty_state.crtc == crtc
+                        output.user_data()
+                            .get::<TtyOutputState>()
+                            .is_some_and(|tty_state| tty_state.node == *node && tty_state.crtc == crtc)
                     })
                     .map(logical_output);
 
@@ -2410,6 +2413,11 @@ impl Tty {
     pub fn set_output_on_demand_vrr(&mut self, niri: &mut Niri, output: &Output, enable_vrr: bool) {
         let _span = tracy_client::span!("Tty::set_output_on_demand_vrr");
 
+        let Some(tty_state) = output.user_data().get::<TtyOutputState>() else {
+            // Virtual outputs don't support VRR.
+            return;
+        };
+
         let output_state = niri.output_state.get_mut(output).unwrap();
         output_state.on_demand_vrr_enabled = enable_vrr;
         if output_state.frame_clock.vrr() == enable_vrr {
@@ -2417,7 +2425,6 @@ impl Tty {
         }
         for (&node, device) in self.devices.iter_mut() {
             for (&crtc, surface) in device.surfaces.iter_mut() {
-                let tty_state: &TtyOutputState = output.user_data().get().unwrap();
                 if tty_state.node == node && tty_state.crtc == crtc {
                     let word = if enable_vrr { "enabling" } else { "disabling" };
                     if let Err(err) = surface.compositor.use_vrr(enable_vrr) {
@@ -2590,8 +2597,9 @@ impl Tty {
                     .global_space
                     .outputs()
                     .find(|output| {
-                        let tty_state: &TtyOutputState = output.user_data().get().unwrap();
-                        tty_state.node == node && tty_state.crtc == crtc
+                        output.user_data()
+                            .get::<TtyOutputState>()
+                            .is_some_and(|tty_state| tty_state.node == node && tty_state.crtc == crtc)
                     })
                     .cloned();
                 let Some(output) = output else {

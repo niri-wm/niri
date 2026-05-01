@@ -100,8 +100,7 @@ pub enum Request {
     },
     /// Create a new virtual headless output.
     ///
-    /// This only works when niri is running with the headless backend (e.g. with
-    /// `NIRI_BACKEND=headless`).
+    /// This works with both the headless and the TTY backend.
     CreateVirtualOutput {
         /// Width in pixels. Defaults to 1920 if not specified.
         width: Option<u16>,
@@ -112,7 +111,7 @@ pub enum Request {
     },
     /// Remove a virtual headless output by name.
     ///
-    /// This only works when niri is running with the headless backend.
+    /// This works with both the headless and the TTY backend.
     RemoveVirtualOutput {
         /// Name of the output to remove (e.g. "HEADLESS-1").
         name: String,
