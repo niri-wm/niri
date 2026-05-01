@@ -133,7 +133,7 @@ impl Headless {
         width: u16,
         height: u16,
         refresh_rate: u32,
-    ) -> String {
+    ) -> Result<String, String> {
         self.virtual_outputs
             .create(niri, &self.ipc_outputs, width, height, refresh_rate)
     }

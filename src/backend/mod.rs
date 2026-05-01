@@ -81,7 +81,11 @@ impl VirtualOutputs {
         width: u16,
         height: u16,
         refresh_rate: u32,
-    ) -> String {
+    ) -> Result<String, String> {
+        if refresh_rate == 0 {
+            return Err("refresh rate must be greater than 0".into());
+        }
+
         self.counter += 1;
         let n = self.counter;
 
@@ -118,6 +122,14 @@ impl VirtualOutputs {
         });
 
         let output_id = OutputId::next();
+        self.outputs
+            .insert(connector.clone(), (output.clone(), output_id));
+
+        let refresh_interval = Duration::from_nanos(1_000_000_000 / u64::from(refresh_rate));
+        niri.add_output(output.clone(), Some(refresh_interval), false);
+
+        // Build IPC output after add_output so logical geometry reflects
+        // applied config (scale, transform, position).
         let physical_properties = output.physical_properties();
         ipc_outputs.lock().unwrap().insert(
             output_id,
@@ -141,13 +153,7 @@ impl VirtualOutputs {
             },
         );
 
-        self.outputs
-            .insert(connector.clone(), (output.clone(), output_id));
-
-        let refresh_interval = Duration::from_nanos(1_000_000_000 / u64::from(refresh_rate));
-        niri.add_output(output, Some(refresh_interval), false);
-
-        connector
+        Ok(connector)
     }
 
     /// Remove a virtual headless output by name.
@@ -368,9 +374,9 @@ impl Backend {
     ) -> Result<String, String> {
         match self {
             Backend::Headless(headless) => {
-                Ok(headless.create_virtual_output(niri, width, height, refresh_rate))
+                headless.create_virtual_output(niri, width, height, refresh_rate)
             }
-            Backend::Tty(tty) => Ok(tty.create_virtual_output(niri, width, height, refresh_rate)),
+            Backend::Tty(tty) => tty.create_virtual_output(niri, width, height, refresh_rate),
             Backend::Winit(_) => {
                 Err("virtual outputs are not supported with the Winit backend".into())
             }

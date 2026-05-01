@@ -743,7 +743,9 @@ impl State {
 
         if headless && create_wayland_socket {
             if let Backend::Headless(headless) = &mut state.backend {
-                headless.create_virtual_output(&mut state.niri, 1920, 1080, 60);
+                headless
+                    .create_virtual_output(&mut state.niri, 1920, 1080, 60)
+                    .unwrap();
             }
         }
 
