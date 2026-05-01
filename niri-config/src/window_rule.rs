@@ -6,7 +6,7 @@ use crate::appearance::{
 };
 use crate::layout::DefaultPresetSize;
 use crate::utils::{MergeWith, RegexEq};
-use crate::FloatOrInt;
+use crate::{FloatOrInt, InhibitIdle};
 
 #[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]
 pub struct WindowRule {
@@ -79,6 +79,8 @@ pub struct WindowRule {
     pub background_effect: BackgroundEffectRule,
     #[knuffel(child, default)]
     pub popups: PopupsRule,
+    #[knuffel(child, unwrap(argument))]
+    pub inhibit_idle: Option<Option<InhibitIdle>>,
 }
 
 /// Rules for popup surfaces.
