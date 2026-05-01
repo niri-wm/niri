@@ -368,6 +368,11 @@ pub enum Action {
     SetWindowUrgent(u64),
     #[knuffel(skip)]
     UnsetWindowUrgent(u64),
+    SetZoomLevel(
+        #[knuffel(argument, str)] String,
+        #[knuffel(argument)] Option<String>,
+    ),
+    ToggleZoomLock(#[knuffel(argument)] Option<String>),
     #[knuffel(skip)]
     LoadConfigFile(#[knuffel(argument)] Option<String>),
     #[knuffel(skip)]
@@ -700,6 +705,8 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::ToggleWindowUrgent { id } => Self::ToggleWindowUrgent(id),
             niri_ipc::Action::SetWindowUrgent { id } => Self::SetWindowUrgent(id),
             niri_ipc::Action::UnsetWindowUrgent { id } => Self::UnsetWindowUrgent(id),
+            niri_ipc::Action::SetZoomLevel { level, output } => Self::SetZoomLevel(level, output),
+            niri_ipc::Action::ToggleZoomLock { output } => Self::ToggleZoomLock(output),
             niri_ipc::Action::LoadConfigFile { path } => Self::LoadConfigFile(path),
         }
     }
