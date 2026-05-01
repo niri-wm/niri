@@ -1,12 +1,2 @@
 # LFS configuration for images from the wiki
 *.png filter=lfs diff=lfs merge=lfs -text
-
-# Exclude LFS-tracked files from the tarball
-/docs/wiki/img/ export-ignore
-
-# exclude .gitattributes itself from the tarball
-.gitattributes export-ignore
-
-# tip: can be tested using
-# git archive --format=tar.gz --output=source.tar.gz HEAD && \
-# tar tfvz source.tar.gz | grep -e '.png' -e '.gitattributes'
