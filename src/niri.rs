@@ -934,7 +934,7 @@ impl State {
         let monitor = self.niri.layout.monitor_for_output(output).unwrap();
 
         let mut rv = false;
-        let rect = monitor.active_tile_visual_rectangle();
+        let rect = monitor.active_window_visual_rectangle();
 
         if let Some(rect) = rect {
             let output_geo = self.niri.global_space.output_geometry(output).unwrap();
