@@ -310,6 +310,17 @@ impl CursorScaleTracker {
     /// Advances animations and triggers decay according to configured behavior.
     ///
     /// Returns `true` if the cursor size changed (requires redraw).
+    /// Returns `true` if there are active or pending animations.
+    pub fn has_animations(&self) -> bool {
+        if self.params.off {
+            return false;
+        }
+
+        self.expand_anim.is_some()
+            || self.decay_anim.is_some()
+            || self.pending_decay_at.is_some()
+    }
+
     pub fn advance_animations(&mut self, cursor_manager: &mut CursorManager) -> bool {
         if self.params.off {
             return false;

@@ -4071,11 +4071,18 @@ impl Niri {
         self.screenshot_ui.advance_animations();
         self.window_mru_ui.advance_animations();
 
-        if self
+        let cursor_changed = self
             .cursor_scale_tracker
-            .advance_animations(&mut self.cursor_manager)
-        {
+            .advance_animations(&mut self.cursor_manager);
+
+        if cursor_changed {
             // FIXME: can be more granular.
+            self.queue_redraw_all();
+        }
+
+        // Continue requesting redraws if cursor animations are pending
+        if self.cursor_scale_tracker.has_animations() {
+            // Schedule next frame by queuing a redraw
             self.queue_redraw_all();
         }
 
