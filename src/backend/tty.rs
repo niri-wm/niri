@@ -99,16 +99,7 @@ pub struct Tty {
     // Whether the debug tinting is enabled.
     debug_tint: bool,
     ipc_outputs: Arc<Mutex<IpcOutputMap>>,
-    // Secondary headless backend for virtual outputs.
-    virtual_outputs: VirtualOutputs,
-}
-
-/// Manages virtual headless outputs alongside the TTY backend.
-struct VirtualOutputs {
-    /// Counter for auto-naming outputs (HEADLESS-1, HEADLESS-2, etc.)
-    counter: u32,
-    /// Track outputs by name for removal, storing (Output, OutputId)
-    outputs: HashMap<String, (Output, OutputId)>,
+    virtual_outputs: super::VirtualOutputs,
 }
 
 pub type TtyRenderer<'render> = MultiRenderer<
@@ -515,10 +506,7 @@ impl Tty {
             update_output_config_on_resume: false,
             debug_tint: false,
             ipc_outputs: Arc::new(Mutex::new(HashMap::new())),
-            virtual_outputs: VirtualOutputs {
-                counter: 0,
-                outputs: HashMap::new(),
-            },
+            virtual_outputs: super::VirtualOutputs::new(),
         })
     }
 
@@ -2281,8 +2269,6 @@ impl Tty {
         RenderResult::Submitted
     }
 
-    /// Create a virtual headless output with the given dimensions.
-    /// Returns the name of the created output (e.g., "HEADLESS-1").
     pub fn create_virtual_output(
         &mut self,
         niri: &mut Niri,
@@ -2290,92 +2276,13 @@ impl Tty {
         height: u16,
         refresh_rate: u32,
     ) -> String {
-        self.virtual_outputs.counter += 1;
-        let n = self.virtual_outputs.counter;
-
-        let connector = format!("HEADLESS-{n}");
-        let make = "niri".to_string();
-        let model = "virtual".to_string();
-        let serial = n.to_string();
-
-        let refresh = i32::try_from(refresh_rate * 1000).unwrap_or(60_000);
-
-        let output = Output::new(
-            connector.clone(),
-            PhysicalProperties {
-                size: (0, 0).into(),
-                subpixel: smithay::output::Subpixel::Unknown,
-                make: make.clone(),
-                model: model.clone(),
-                serial_number: serial.clone(),
-            },
-        );
-
-        let mode = Mode {
-            size: smithay::utils::Size::from((i32::from(width), i32::from(height))),
-            refresh,
-        };
-        output.change_current_state(Some(mode), None, None, None);
-        output.set_preferred(mode);
-
-        output.user_data().insert_if_missing(|| OutputName {
-            connector: connector.clone(),
-            make: Some(make),
-            model: Some(model),
-            serial: Some(serial),
-        });
-
-        let output_id = OutputId::next();
-        let physical_properties = output.physical_properties();
-        self.ipc_outputs.lock().unwrap().insert(
-            output_id,
-            niri_ipc::Output {
-                name: output.name(),
-                make: physical_properties.make,
-                model: physical_properties.model,
-                serial: None,
-                physical_size: None,
-                modes: vec![niri_ipc::Mode {
-                    width,
-                    height,
-                    refresh_rate: refresh_rate * 1000,
-                    is_preferred: true,
-                }],
-                current_mode: Some(0),
-                is_custom_mode: true,
-                vrr_supported: false,
-                vrr_enabled: false,
-                logical: Some(logical_output(&output)),
-            },
-        );
-
-        // Track the output for potential removal
         self.virtual_outputs
-            .outputs
-            .insert(connector.clone(), (output.clone(), output_id));
-
-        let refresh_interval = Duration::from_nanos(1_000_000_000 / u64::from(refresh_rate));
-        niri.add_output(output, Some(refresh_interval), false);
-
-        connector
+            .create(niri, &self.ipc_outputs, width, height, refresh_rate)
     }
 
-    /// Remove a virtual headless output by name.
-    /// Returns Ok(()) if successful, Err with message if not found.
     pub fn remove_virtual_output(&mut self, niri: &mut Niri, name: &str) -> Result<(), String> {
-        let (output, output_id) = self
-            .virtual_outputs
-            .outputs
-            .remove(name)
-            .ok_or_else(|| format!("virtual output '{}' not found", name))?;
-
-        // Remove from IPC outputs
-        self.ipc_outputs.lock().unwrap().remove(&output_id);
-
-        // Remove from niri
-        niri.remove_output(&output);
-
-        Ok(())
+        self.virtual_outputs
+            .remove(niri, &self.ipc_outputs, name)
     }
 
     #[cfg(feature = "xdp-gnome-screencast")]

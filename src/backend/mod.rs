@@ -2,14 +2,16 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use niri_config::{Config, ModKey};
+use niri_config::{Config, ModKey, OutputName};
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::renderer::gles::GlesRenderer;
-use smithay::output::Output;
+use smithay::output::{Mode, Output, PhysicalProperties, Subpixel};
+use smithay::utils::Size;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 
 use crate::niri::Niri;
 use crate::utils::id::IdCounter;
+use crate::utils::logical_output;
 
 pub mod tty;
 pub use tty::Tty;
@@ -51,6 +53,126 @@ impl OutputId {
 
     pub fn get(self) -> u64 {
         self.0
+    }
+}
+
+/// Manages virtual headless outputs.
+pub struct VirtualOutputs {
+    /// Counter for auto-naming outputs (HEADLESS-1, HEADLESS-2, etc.)
+    counter: u32,
+    /// Track outputs by name for removal, storing (Output, OutputId)
+    outputs: HashMap<String, (Output, OutputId)>,
+}
+
+impl VirtualOutputs {
+    pub fn new() -> Self {
+        Self {
+            counter: 0,
+            outputs: HashMap::new(),
+        }
+    }
+
+    /// Create a virtual headless output with the given dimensions.
+    /// Returns the name of the created output (e.g., "HEADLESS-1").
+    pub fn create(
+        &mut self,
+        niri: &mut Niri,
+        ipc_outputs: &Arc<Mutex<IpcOutputMap>>,
+        width: u16,
+        height: u16,
+        refresh_rate: u32,
+    ) -> String {
+        self.counter += 1;
+        let n = self.counter;
+
+        let connector = format!("HEADLESS-{n}");
+        let make = "niri".to_string();
+        let model = "virtual".to_string();
+        let serial = n.to_string();
+
+        let refresh = i32::try_from(refresh_rate * 1000).unwrap_or(60_000);
+
+        let output = Output::new(
+            connector.clone(),
+            PhysicalProperties {
+                size: (0, 0).into(),
+                subpixel: Subpixel::Unknown,
+                make: make.clone(),
+                model: model.clone(),
+                serial_number: serial.clone(),
+            },
+        );
+
+        let mode = Mode {
+            size: Size::from((i32::from(width), i32::from(height))),
+            refresh,
+        };
+        output.change_current_state(Some(mode), None, None, None);
+        output.set_preferred(mode);
+
+        output.user_data().insert_if_missing(|| OutputName {
+            connector: connector.clone(),
+            make: Some(make),
+            model: Some(model),
+            serial: Some(serial),
+        });
+
+        let output_id = OutputId::next();
+        let physical_properties = output.physical_properties();
+        ipc_outputs.lock().unwrap().insert(
+            output_id,
+            niri_ipc::Output {
+                name: output.name(),
+                make: physical_properties.make,
+                model: physical_properties.model,
+                serial: None,
+                physical_size: None,
+                modes: vec![niri_ipc::Mode {
+                    width,
+                    height,
+                    refresh_rate: refresh_rate * 1000,
+                    is_preferred: true,
+                }],
+                current_mode: Some(0),
+                is_custom_mode: true,
+                vrr_supported: false,
+                vrr_enabled: false,
+                logical: Some(logical_output(&output)),
+            },
+        );
+
+        self.outputs
+            .insert(connector.clone(), (output.clone(), output_id));
+
+        let refresh_interval = Duration::from_nanos(1_000_000_000 / u64::from(refresh_rate));
+        niri.add_output(output, Some(refresh_interval), false);
+
+        connector
+    }
+
+    /// Remove a virtual headless output by name.
+    /// Returns Ok(()) if successful, Err with message if not found.
+    pub fn remove(
+        &mut self,
+        niri: &mut Niri,
+        ipc_outputs: &Arc<Mutex<IpcOutputMap>>,
+        name: &str,
+    ) -> Result<(), String> {
+        let (output, output_id) = self
+            .outputs
+            .remove(name)
+            .ok_or_else(|| format!("virtual output '{}' not found", name))?;
+
+        ipc_outputs.lock().unwrap().remove(&output_id);
+        niri.remove_output(&output);
+
+        Ok(())
+    }
+}
+
+impl Default for VirtualOutputs {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

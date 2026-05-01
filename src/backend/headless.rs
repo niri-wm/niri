@@ -4,9 +4,8 @@
 //! - Running niri without physical displays (for VNC, screensharing, etc.)
 //! - Testing purposes
 //!
-//! Note: This is missing some parts like dmabufs.
+//! Note: This is missing some parts like direct rendering to dmabufs.
 
-use std::collections::HashMap;
 use std::mem;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -19,6 +18,7 @@ use smithay::backend::egl::native::EGLSurfacelessDisplay;
 use smithay::backend::egl::{EGLContext, EGLDisplay};
 use smithay::backend::renderer::element::RenderElementStates;
 use smithay::backend::renderer::gles::GlesRenderer;
+use smithay::backend::renderer::ImportDma;
 use smithay::output::{Mode, Output, PhysicalProperties, Subpixel};
 use smithay::reexports::wayland_protocols::wp::presentation_time::server::wp_presentation_feedback;
 use smithay::utils::Size;
@@ -32,10 +32,7 @@ use crate::utils::{get_monotonic_time, logical_output};
 pub struct Headless {
     renderer: Option<GlesRenderer>,
     ipc_outputs: Arc<Mutex<IpcOutputMap>>,
-    /// Counter for auto-naming headless outputs (HEADLESS-1, HEADLESS-2, etc.)
-    output_counter: u32,
-    /// Track outputs by name for removal, storing (Output, OutputId)
-    outputs: HashMap<String, (Output, OutputId)>,
+    virtual_outputs: super::VirtualOutputs,
 }
 
 impl Headless {
@@ -43,8 +40,7 @@ impl Headless {
         Self {
             renderer: None,
             ipc_outputs: Default::default(),
-            output_counter: 0,
-            outputs: HashMap::new(),
+            virtual_outputs: super::VirtualOutputs::new(),
         }
     }
 
@@ -138,90 +134,13 @@ impl Headless {
         height: u16,
         refresh_rate: u32,
     ) -> String {
-        self.output_counter += 1;
-        let n = self.output_counter;
-
-        let connector = format!("HEADLESS-{n}");
-        let make = "niri".to_string();
-        let model = "virtual".to_string();
-        let serial = n.to_string();
-
-        let refresh = i32::try_from(refresh_rate * 1000).unwrap_or(60_000);
-
-        let output = Output::new(
-            connector.clone(),
-            PhysicalProperties {
-                size: (0, 0).into(),
-                subpixel: Subpixel::Unknown,
-                make: make.clone(),
-                model: model.clone(),
-                serial_number: serial.clone(),
-            },
-        );
-
-        let mode = Mode {
-            size: Size::from((i32::from(width), i32::from(height))),
-            refresh,
-        };
-        output.change_current_state(Some(mode), None, None, None);
-        output.set_preferred(mode);
-
-        output.user_data().insert_if_missing(|| OutputName {
-            connector: connector.clone(),
-            make: Some(make),
-            model: Some(model),
-            serial: Some(serial),
-        });
-
-        let output_id = OutputId::next();
-        let physical_properties = output.physical_properties();
-        self.ipc_outputs.lock().unwrap().insert(
-            output_id,
-            niri_ipc::Output {
-                name: output.name(),
-                make: physical_properties.make,
-                model: physical_properties.model,
-                serial: None,
-                physical_size: None,
-                modes: vec![niri_ipc::Mode {
-                    width,
-                    height,
-                    refresh_rate: refresh_rate * 1000,
-                    is_preferred: true,
-                }],
-                current_mode: Some(0),
-                is_custom_mode: true,
-                vrr_supported: false,
-                vrr_enabled: false,
-                logical: Some(logical_output(&output)),
-            },
-        );
-
-        // Track the output for potential removal
-        self.outputs
-            .insert(connector.clone(), (output.clone(), output_id));
-
-        let refresh_interval = Duration::from_nanos(1_000_000_000 / u64::from(refresh_rate));
-        niri.add_output(output, Some(refresh_interval), false);
-
-        connector
+        self.virtual_outputs
+            .create(niri, &self.ipc_outputs, width, height, refresh_rate)
     }
 
-    /// Remove a virtual headless output by name.
-    /// Returns Ok(()) if successful, Err with message if not found or failed.
     pub fn remove_virtual_output(&mut self, niri: &mut Niri, name: &str) -> Result<(), String> {
-        let (output, output_id) = self
-            .outputs
-            .remove(name)
-            .ok_or_else(|| format!("output '{}' not found", name))?;
-
-        // Remove from IPC outputs
-        self.ipc_outputs.lock().unwrap().remove(&output_id);
-
-        // Remove from niri
-        niri.remove_output(&output);
-
-        Ok(())
+        self.virtual_outputs
+            .remove(niri, &self.ipc_outputs, name)
     }
 
     pub fn seat_name(&self) -> String {
@@ -299,8 +218,17 @@ impl Headless {
         RenderResult::Submitted
     }
 
-    pub fn import_dmabuf(&mut self, _dmabuf: &Dmabuf) -> bool {
-        unimplemented!()
+    pub fn import_dmabuf(&mut self, dmabuf: &Dmabuf) -> bool {
+        let Some(renderer) = self.renderer.as_mut() else {
+            return false;
+        };
+        match renderer.import_dmabuf(dmabuf, None) {
+            Ok(_texture) => true,
+            Err(err) => {
+                debug!("error importing dmabuf: {err:?}");
+                false
+            }
+        }
     }
 
     pub fn ipc_outputs(&self) -> Arc<Mutex<IpcOutputMap>> {
