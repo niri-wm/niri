@@ -743,6 +743,9 @@ impl State {
 
         if headless && create_wayland_socket {
             if let Backend::Headless(headless) = &mut state.backend {
+                if let Err(err) = headless.add_renderer() {
+                    warn!("failed to initialize headless renderer: {err:?}");
+                }
                 headless
                     .create_virtual_output(&mut state.niri, 1920, 1080, 60)
                     .unwrap();

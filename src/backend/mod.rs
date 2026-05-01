@@ -85,6 +85,9 @@ impl VirtualOutputs {
         if refresh_rate == 0 {
             return Err("refresh rate must be greater than 0".into());
         }
+        if refresh_rate > 1000 {
+            return Err("refresh rate must be 1000 Hz or less".into());
+        }
 
         self.counter += 1;
         let n = self.counter;
@@ -94,7 +97,8 @@ impl VirtualOutputs {
         let model = "virtual".to_string();
         let serial = n.to_string();
 
-        let refresh = i32::try_from(refresh_rate * 1000).unwrap_or(60_000);
+        let refresh =
+            i32::try_from(u64::from(refresh_rate).saturating_mul(1000)).unwrap_or(60_000);
 
         let output = Output::new(
             connector.clone(),
@@ -142,7 +146,10 @@ impl VirtualOutputs {
                 modes: vec![niri_ipc::Mode {
                     width,
                     height,
-                    refresh_rate: refresh_rate * 1000,
+                    refresh_rate: u64::from(refresh_rate)
+                        .saturating_mul(1000)
+                        .try_into()
+                        .unwrap_or(60_000),
                     is_preferred: true,
                 }],
                 current_mode: Some(0),

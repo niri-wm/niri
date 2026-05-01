@@ -2229,6 +2229,33 @@ impl Tty {
             }
         }
 
+        // Re-add virtual outputs so they don't disappear on IPC refresh.
+        for (_, (output, output_id)) in &self.virtual_outputs.outputs {
+            let mode = output.current_mode().unwrap();
+            let physical_properties = output.physical_properties();
+            ipc_outputs.insert(
+                *output_id,
+                niri_ipc::Output {
+                    name: output.name(),
+                    make: physical_properties.make,
+                    model: physical_properties.model,
+                    serial: None,
+                    physical_size: None,
+                    modes: vec![niri_ipc::Mode {
+                        width: mode.size.w as u16,
+                        height: mode.size.h as u16,
+                        refresh_rate: mode.refresh as u32,
+                        is_preferred: true,
+                    }],
+                    current_mode: Some(0),
+                    is_custom_mode: true,
+                    vrr_supported: false,
+                    vrr_enabled: false,
+                    logical: Some(logical_output(output)),
+                },
+            );
+        }
+
         let mut guard = self.ipc_outputs.lock().unwrap();
         *guard = ipc_outputs;
         niri.ipc_outputs_changed = true;
