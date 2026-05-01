@@ -210,27 +210,16 @@ cursor {
 
 <sup>Since: 25.??</sup>
 
-Niri supports a "shake to locate" feature (also called "shake-to-find" or "locate cursor") that temporarily enlarges the cursor when you shake the pointer rapidly in a small area, making it easier to spot. The shake options live inside the `cursor` block under the nested `shake` section:
+Cursor shake detection temporarily enlarges the cursor when you shake the mouse, making it easier to find.
 
-`off` disables the feature shake-to-locate.
+`off` disables cursor shake detection.
 
 ```kdl
 cursor {
-    xcursor-theme "breeze_cursors"
-    xcursor-size 48
-
     shake {
-        off
-        max-multiplier 2.5
+        // off
+        max-multiplier 4.5
         behavior "hold"
-        cooldown-ms 400
-        stopped-threshold-ms 50
-        shake-relax-ms 150
-        post-expand-delay-ms 250
-        expand-duration-ms 200
-        decay-duration-ms 300
-        shake-interval-ms 400
-        min-diagonal 100.0
         sensitivity 2.0
     }
 }
@@ -238,7 +227,7 @@ cursor {
 
 #### `max-multiplier`
 
-Maximum cursor scale multiplier applied when a shake is detected. For example, `2.5` means the cursor grows to 250% of its normal size.
+Maximum cursor size multiplier when shake is detected.
 
 ```kdl
 shake {
@@ -248,9 +237,9 @@ shake {
 
 #### `behavior`
 
-Selects the shake behaviour.
-  - `"hold"` (default): keep the cursor enlarged while the pointer is moving; when the pointer stops the shrink animation is scheduled.
-  - `"intensity"`: keep the cursor enlarged while shake intensity is high; start shrinking when intensity drops below `sensitivity`.
+How the enlarged cursor behaves:
+  - `"hold"` (default): stays enlarged while moving, shrinks when stopped.
+  - `"intensity"`: stays enlarged while shaking continues, shrinks when intensity drops.
 
 ```kdl
 shake {
@@ -260,7 +249,7 @@ shake {
 
 #### `cooldown-ms`
 
-After a shrink (decay) completes, ignore new shake-triggered expansions until this many milliseconds have passed. Prevents immediate re-expansions when the pointer is noisy.
+Time to wait after shrinking before detecting shakes again.
 
 ```kdl
 shake {
@@ -270,7 +259,7 @@ shake {
 
 #### `stopped-threshold-ms`
 
-Only for `behavior "hold"`. The pointer is considered "stopped" if no motion has been observed for this many milliseconds; when stopped the shrink is scheduled after `post-expand-delay-ms`.
+For `behavior "hold"`: time without motion to consider pointer stopped.
 
 ```kdl
 shake {
@@ -280,7 +269,7 @@ shake {
 
 #### `shake-relax-ms`
 
-Only for `behavior "intensity"`. How long the shake factor must remain below `sensitivity` before decay is scheduled. Prevents transient dips from triggering shrink.
+For `behavior "intensity"`: time below sensitivity threshold before shrinking.
 
 ```kdl
 shake {
@@ -290,7 +279,7 @@ shake {
 
 #### `post-expand-delay-ms`
 
-When the cursor is enlarged, this is the additional delay (ms) after the expansion animation finishes before the shrink animation (decay) is started. Once decay begins it will not be interrupted by further pointer movement.
+Delay after expansion completes before starting shrink.
 
 ```kdl
 shake {
@@ -298,29 +287,11 @@ shake {
 }
 ```
 
-#### `expand-duration-ms`
-
-Duration of the expansion animation (how fast the cursor grows when a shake is detected).
-
-```kdl
-shake {
-    expand-duration-ms 200
-}
-```
-
-#### decay-duration-ms
-
-Duration of the decay/shrink animation (how fast the cursor returns to normal size).
-
-```kdl
-shake {
-    decay-duration-ms 300
-}
-```
+> **Note:** Expansion and shrink animations are configured through the global `animations` settings using `cursor-expand` and `cursor-shrink`. See [Animations](./Configuration:-Animations.md) for details.
 
 #### shake-interval-ms
 
-Time window used to gather recent pointer positions for shake detection. Positions older than this window are ignored. Larger windows make detection consider more motion; smaller windows focus on very recent movement.
+Time window for tracking pointer motion history.
 
 ```kdl
 shake {
@@ -330,7 +301,7 @@ shake {
 
 #### min-diagonal
 
-Minimum bounding-box diagonal of the recent movement history to consider for shake detection. This prevents tiny jitter from triggering the effect. Only when the bounding box diagonal of the recorded movement exceeds this value can a shake be detected.
+Minimum movement area (in pixels) required to detect shake.
 
 ```kdl
 shake {
@@ -340,7 +311,7 @@ shake {
 
 #### sensitivity
 
-Threshold on the ratio path-length/diagonal used to detect a shake. The algorithm computes the total path length travelled inside the `shake-interval-ms` window and divides it by the bounding-box diagonal; if that ratio exceeds `sensitivity` a shake is detected. KDE uses `2.0` as a sensible default (path must be at least twice the diagonal).
+Shake detection threshold. Higher values require more vigorous shaking.
 
 ```kdl
 shake {

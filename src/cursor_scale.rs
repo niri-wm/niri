@@ -26,10 +26,11 @@
 
 use std::time::{Duration, Instant};
 
-use niri_config::ShakeConfig;
+use niri_config::{Animations, ShakeConfig};
 use smithay::utils::{Logical, Point};
+use tracing::{debug, trace};
 
-use crate::animation::{Animation, Clock, Curve};
+use crate::animation::{Animation, Clock};
 use crate::cursor::CursorManager;
 
 /// Tolerance in pixels for direction change detection.
@@ -55,8 +56,6 @@ impl Default for ShakeBehavior {
 pub struct CursorScaleParams {
     off: bool,
     max_mult: f64,
-    expand_duration_ms: u64,
-    decay_duration_ms: u64,
     shake_interval_ms: u64,
     shake_sensitivity: f64,
     min_diagonal: f64,
@@ -65,15 +64,15 @@ pub struct CursorScaleParams {
     behavior: ShakeBehavior,
     stopped_threshold_ms: u64,
     shake_relax_ms: u64,
+    expand_anim_config: niri_config::animations::CursorExpandAnim,
+    shrink_anim_config: niri_config::animations::CursorShrinkAnim,
 }
 
-impl From<ShakeConfig> for CursorScaleParams {
-    fn from(config: ShakeConfig) -> Self {
+impl CursorScaleParams {
+    pub fn from_config(config: ShakeConfig, animations: &Animations) -> Self {
         Self {
             off: config.off,
             max_mult: config.max_multiplier,
-            expand_duration_ms: config.expand_duration_ms,
-            decay_duration_ms: config.decay_duration_ms,
             shake_interval_ms: config.shake_interval_ms,
             shake_sensitivity: config.sensitivity,
             min_diagonal: config.min_diagonal,
@@ -85,6 +84,8 @@ impl From<ShakeConfig> for CursorScaleParams {
             },
             stopped_threshold_ms: config.stopped_threshold_ms.unwrap_or(50),
             shake_relax_ms: config.shake_relax_ms.unwrap_or(150),
+            expand_anim_config: animations.cursor_expand,
+            shrink_anim_config: animations.cursor_shrink,
         }
     }
 }
@@ -99,8 +100,6 @@ struct HistoryItem {
 #[derive(Debug)]
 pub struct CursorScaleTracker {
     history: Vec<HistoryItem>,
-    // global position history
-    global_history: Vec<HistoryItem>,
 
     last_motion_instant: Option<Instant>,
     last_shake_factor: f64,
@@ -126,10 +125,9 @@ fn same_sign(a: f64, b: f64) -> bool {
 }
 
 impl CursorScaleTracker {
-    pub fn new(clock: Clock, params: impl Into<CursorScaleParams>) -> Self {
+    pub fn new(clock: Clock, params: CursorScaleParams) -> Self {
         Self {
             history: Vec::new(),
-            global_history: Vec::new(),
             last_motion_instant: None,
             last_shake_factor: 0.0,
             current_mult: 1.0,
@@ -139,93 +137,89 @@ impl CursorScaleTracker {
             pending_decay_at: None,
             cooldown_until: None,
             relax_start: None,
-            params: params.into(),
+            params,
             clock,
         }
     }
 
-    pub fn reload(&mut self, params: impl Into<CursorScaleParams>) {
-        self.params = params.into();
+    pub fn reload(&mut self, params: CursorScaleParams) {
+        self.params = params;
     }
 
     /// Updates the tracker with a new cursor position.
-    /// `is_global` selects whether to use the global history buffer or short buffer.
-    pub fn on_motion(&mut self, is_global: bool, pos: Point<f64, Logical>) {
+    pub fn on_motion(&mut self, pos: Point<f64, Logical>) {
         if self.params.off {
             return;
         }
         let now = Instant::now();
 
-        // If a decay animation (shrink) is already running, do not interrupt it.
-        if self.decay_anim.is_some() {
-            self.last_motion_instant = Some(now);
-            return;
-        }
-
         self.last_motion_instant = Some(now);
 
-        // If an expansion animation is running, let it continue (but still track motion).
-        if self.expand_anim.is_some() {
-            return;
-        }
-
-        let history = if is_global {
-            &mut self.global_history
-        } else {
-            &mut self.history
-        };
+        // Track motion history even during decay animation to prepare for next shake
         let shake_interval = Duration::from_millis(self.params.shake_interval_ms);
+        self.history.retain(|item| now.duration_since(item.timestamp) < shake_interval);
 
-        history.retain(|item| now.duration_since(item.timestamp) < shake_interval);
-
-        if history.len() >= 2 {
-            let last_idx = history.len() - 1;
-            let last = &history[last_idx];
-            let prev = &history[last_idx - 1];
+        // Update history with new position
+        if self.history.len() >= 2 {
+            let last_idx = self.history.len() - 1;
+            let last = &self.history[last_idx];
+            let prev = &self.history[last_idx - 1];
 
             let same_x = same_sign(last.position.x - prev.position.x, pos.x - last.position.x);
             let same_y = same_sign(last.position.y - prev.position.y, pos.y - last.position.y);
 
             if same_x && same_y {
                 // Movement continues in the same direction: update the endpoint.
-                history[last_idx] = HistoryItem {
+                self.history[last_idx] = HistoryItem {
                     position: pos,
                     timestamp: now,
                 };
             } else {
-                history.push(HistoryItem {
+                self.history.push(HistoryItem {
                     position: pos,
                     timestamp: now,
                 });
             }
         } else {
-            history.push(HistoryItem {
+            self.history.push(HistoryItem {
                 position: pos,
                 timestamp: now,
             });
         }
 
+        // If a decay animation (shrink) is already running, do not interrupt it.
+        if self.decay_anim.is_some() {
+            trace!("Motion during decay animation, not interrupting");
+            return;
+        }
+
+        // If an expansion animation is running, let it continue (but still track motion).
+        if self.expand_anim.is_some() {
+            trace!("Motion during expansion animation, continuing");
+            return;
+        }
+
         // Need at least 2 points to calculate shake.
-        if history.len() < 2 {
+        if self.history.len() < 2 {
             return;
         }
 
         // Calculate bounding box and total path distance.
-        let mut left = history[0].position.x;
-        let mut top = history[0].position.y;
-        let mut right = history[0].position.x;
-        let mut bottom = history[0].position.y;
+        let mut left = self.history[0].position.x;
+        let mut top = self.history[0].position.y;
+        let mut right = self.history[0].position.x;
+        let mut bottom = self.history[0].position.y;
         let mut distance = 0.0;
 
-        for i in 1..history.len() {
-            let delta_x = history[i].position.x - history[i - 1].position.x;
-            let delta_y = history[i].position.y - history[i - 1].position.y;
+        for i in 1..self.history.len() {
+            let delta_x = self.history[i].position.x - self.history[i - 1].position.x;
+            let delta_y = self.history[i].position.y - self.history[i - 1].position.y;
             distance += (delta_x * delta_x + delta_y * delta_y).sqrt();
 
-            left = left.min(history[i].position.x);
-            top = top.min(history[i].position.y);
-            right = right.max(history[i].position.x);
-            bottom = bottom.max(history[i].position.y);
+            left = left.min(self.history[i].position.x);
+            top = top.min(self.history[i].position.y);
+            right = right.max(self.history[i].position.x);
+            bottom = bottom.max(self.history[i].position.y);
         }
 
         let bounds_width = right - left;
@@ -235,11 +229,13 @@ impl CursorScaleTracker {
         // If movement area too small, treat as relaxed.
         if diagonal < self.params.min_diagonal {
             self.last_shake_factor = 0.0;
+            trace!("Movement area too small: diagonal={:.2}, min={:.2}", diagonal, self.params.min_diagonal);
 
             // Intensity mode: start (or continue) relax timer.
             if self.params.behavior == ShakeBehavior::IntensityBased && self.current_mult > 1.01 {
                 if self.relax_start.is_none() {
                     self.relax_start = Some(now);
+                    debug!("Started relax timer (IntensityBased mode)");
                 }
                 // schedule decay only after sustained relaxation handled below
             }
@@ -249,10 +245,12 @@ impl CursorScaleTracker {
 
         let shake_factor = distance / diagonal;
         self.last_shake_factor = shake_factor;
+        trace!("Shake factor: {:.2} (distance={:.2}, diagonal={:.2})", shake_factor, distance, diagonal);
 
         // If we're in cooldown, do not start a new expansion.
         if let Some(until) = self.cooldown_until {
             if now < until {
+                trace!("In cooldown, ignoring shake");
                 // Also reset relax state because we're ignoring expansions during cooldown.
                 self.relax_start = None;
                 return;
@@ -261,6 +259,7 @@ impl CursorScaleTracker {
 
         // Expand if shake detected.
         if shake_factor > self.params.shake_sensitivity {
+            debug!("Shake detected! Factor: {:.2} > sensitivity: {:.2}", shake_factor, self.params.shake_sensitivity);
             // If we were relaxing, cancel it because shake resumed strongly.
             self.relax_start = None;
             // cooldown for repeated expansions
@@ -271,30 +270,34 @@ impl CursorScaleTracker {
             };
 
             if cooldown_ok {
-                let anim = Animation::ease(
+                debug!("Starting expansion animation: {:.2} -> {:.2}", self.current_mult, self.params.max_mult);
+                let anim = Animation::new(
                     self.clock.clone(),
                     self.current_mult,
                     self.params.max_mult,
                     0.0,
-                    self.params.expand_duration_ms,
-                    Curve::EaseOutCubic,
+                    self.params.expand_anim_config.0,
                 );
                 self.expand_anim = Some(anim);
                 // clear any previously scheduled pending decay
                 self.pending_decay_at = None;
+            } else {
+                trace!("Expansion blocked by cooldown");
             }
 
-            history.clear();
+            self.history.clear();
         } else {
             // Relaxed (shake_factor <= sensitivity)
             if self.params.behavior == ShakeBehavior::IntensityBased && self.current_mult > 1.01 {
                 // start or continue relax timer
                 if self.relax_start.is_none() {
                     self.relax_start = Some(now);
+                    debug!("Started relax timer (shake factor below sensitivity)");
                 } else {
                     // if relaxed long enough, schedule decay (if not already pending)
                     let since = now.duration_since(self.relax_start.unwrap()).as_millis() as u64;
                     if since >= self.params.shake_relax_ms && self.pending_decay_at.is_none() {
+                        debug!("Scheduling decay after {}ms of relaxation", since);
                         self.pending_decay_at =
                             Some(now + Duration::from_millis(self.params.post_expand_delay_ms));
                     }
@@ -325,6 +328,7 @@ impl CursorScaleTracker {
             // When expansion finishes, record completion and (for HoldWhileMoving)
             // we may start scheduling decay from motion state in the next step.
             if anim.is_done() {
+                debug!("Expansion animation completed");
                 self.expand_anim = None;
                 self.last_expand_completed = Some(now);
                 // cancel any pending decay (we'll schedule based on behavior below)
@@ -344,6 +348,7 @@ impl CursorScaleTracker {
             }
 
             if anim.is_done() {
+                debug!("Decay animation completed, entering cooldown for {}ms", self.params.cooldown_ms);
                 self.decay_anim = None;
                 // mark cooldown so we don't immediately re-expand
                 self.cooldown_until = Some(now + Duration::from_millis(self.params.cooldown_ms));
@@ -364,6 +369,7 @@ impl CursorScaleTracker {
                         let elapsed_ms = now.duration_since(last_motion).as_millis() as u64;
                         if elapsed_ms >= self.params.stopped_threshold_ms {
                             if self.pending_decay_at.is_none() {
+                                debug!("Pointer stopped for {}ms, scheduling decay (HoldWhileMoving)", elapsed_ms);
                                 self.pending_decay_at =
                                     Some(now + Duration::from_millis(self.params.post_expand_delay_ms));
                             }
@@ -406,13 +412,13 @@ impl CursorScaleTracker {
             // If a decay was scheduled and its time arrived, start it.
             if let Some(at) = self.pending_decay_at {
                 if now >= at {
-                    let anim = Animation::ease(
+                    debug!("Starting decay animation: {:.2} -> 1.0", self.current_mult);
+                    let anim = Animation::new(
                         self.clock.clone(),
                         self.current_mult,
                         1.0,
                         0.0,
-                        self.params.decay_duration_ms,
-                        Curve::EaseOutCubic,
+                        self.params.shrink_anim_config.0,
                     );
                     self.decay_anim = Some(anim);
                     // clear pending and apply first frame

@@ -2623,7 +2623,7 @@ impl State {
 
         pointer.frame(self);
 
-        self.niri.cursor_scale_tracker.on_motion(false, pos);
+        self.niri.cursor_scale_tracker.on_motion(pos);
 
         // contents_under() will return no surface when the hot corner should trigger, so
         // pointer.motion() will set the current focus to None.
@@ -2712,7 +2712,7 @@ impl State {
 
         pointer.frame(self);
 
-        self.niri.cursor_scale_tracker.on_motion(true, pos);
+        self.niri.cursor_scale_tracker.on_motion(pos);
 
         // contents_under() will return no surface when the hot corner should trigger, so
         // pointer.motion() will set the current focus to None.
