@@ -1609,11 +1609,11 @@ impl<W: LayoutElement> Workspace<W> {
         floating.chain(scrolling)
     }
 
-    pub fn active_tile_visual_rectangle(&self) -> Option<Rectangle<f64, Logical>> {
+    pub fn active_window_visual_rectangle(&self) -> Option<Rectangle<f64, Logical>> {
         if self.floating_is_active.get() {
-            self.floating.active_tile_visual_rectangle()
+            self.floating.active_window_visual_rectangle()
         } else {
-            self.scrolling.active_tile_visual_rectangle()
+            self.scrolling.active_window_visual_rectangle()
         }
     }
 

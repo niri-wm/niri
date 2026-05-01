@@ -366,6 +366,8 @@ pub struct Tablet {
     #[knuffel(child)]
     pub map_to_focused_output: bool,
     #[knuffel(child)]
+    pub map_to_focused_window: bool,
+    #[knuffel(child)]
     pub left_handed: bool,
 }
 

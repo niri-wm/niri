@@ -1342,15 +1342,15 @@ impl<W: LayoutElement> Monitor<W> {
         self.clean_up_workspaces();
     }
 
-    /// Returns the geometry of the active tile relative to and clamped to the output.
+    /// Returns the geometry of the active window relative to and clamped to the output.
     ///
     /// During animations, assumes the final view position.
-    pub fn active_tile_visual_rectangle(&self) -> Option<Rectangle<f64, Logical>> {
+    pub fn active_window_visual_rectangle(&self) -> Option<Rectangle<f64, Logical>> {
         if self.overview_open {
             return None;
         }
 
-        self.active_workspace_ref().active_tile_visual_rectangle()
+        self.active_workspace_ref().active_window_visual_rectangle()
     }
 
     fn workspace_size(&self, zoom: f64) -> Size<f64, Logical> {

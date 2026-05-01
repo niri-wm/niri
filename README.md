@@ -48,7 +48,10 @@ When a monitor disconnects, its workspaces will move to another monitor, but upo
 
 https://github.com/niri-wm/niri/assets/1794388/bce834b0-f205-434e-a027-b373495f9729
 
-Also check out this video from Brodie Robertson that showcases a lot of the niri functionality: [Niri Is My New Favorite Wayland Compositor](https://youtu.be/DeYx2exm04M)
+Also check out these videos that showcase a lot of the niri functionality:
+
+- [Niri Is My New Favorite Wayland Compositor](https://www.youtube.com/watch?v=DeYx2exm04M) by Brodie Robertson
+- [How Is niri This Good? Live Demo + Config](https://www.youtube.com/watch?v=7XmD5UyyhZQ) by Nick Janetakis
 
 ## Status
 
@@ -110,7 +113,7 @@ Here are some other projects which implement a similar workflow:
 - [PaperWM]: scrollable tiling on top of GNOME Shell.
 - [karousel]: scrollable tiling on top of KDE.
 - [scroll](https://github.com/dawsers/scroll) and [papersway]: scrollable tiling on top of sway/i3.
-- Hyprland has a built-in [scrolling layout](https://wiki.hypr.land/Configuring/Scrolling-Layout/).
+- Hyprland has a built-in [scrolling layout](https://wiki.hypr.land/Configuring/Layouts/Scrolling-Layout/).
 - [Paneru] and [PaperWM.spoon]: scrollable tiling on top of macOS.
 
 ## Contact

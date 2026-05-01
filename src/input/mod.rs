@@ -297,41 +297,68 @@ impl State {
         let device_output = event.device().output(self);
         let device_output = device_output.filter(|output| self.niri.output_exists(output));
         let device_output = device_output.as_ref();
-        let (target_geo, keep_ratio, px, transform) =
-            if let Some(output) = device_output.or_else(|| self.niri.output_for_tablet()) {
-                (
-                    self.niri.global_space.output_geometry(output).unwrap(),
-                    true,
-                    1. / output.current_scale().fractional_scale(),
-                    output.current_transform(),
-                )
-            } else {
-                let geo = self.global_bounding_rectangle()?;
+        let mapped_output = device_output.or_else(|| self.niri.output_for_tablet());
 
-                // FIXME: this 1 px size should ideally somehow be computed for the rightmost output
-                // corresponding to the position on the right when clamping.
-                let output = self.niri.global_space.outputs().next().unwrap();
-                let scale = output.current_scale().fractional_scale();
+        // If the tablet is configured to map to the focused window, use that window's geometry on
+        // the mapped output (or on the focused output if no specific output is mapped).
+        let map_to_focused_window = self.niri.config.borrow().input.tablet.map_to_focused_window;
+        // But only if the keyboard focus is on the layout, so that it doesn't trigger on the lock
+        // screen and such.
+        let window_target = if map_to_focused_window && self.niri.keyboard_focus.is_layout() {
+            let output = mapped_output.or_else(|| self.niri.layout.active_output());
+            output.and_then(|output| {
+                let monitor = self.niri.layout.monitor_for_output(output)?;
+                let mut rect = monitor.active_window_visual_rectangle()?;
+                let output_geo = self.niri.global_space.output_geometry(output)?;
+                rect.loc += output_geo.loc.to_f64();
+                Some((rect, output))
+            })
+        } else {
+            None
+        };
 
-                // Do not keep ratio for the unified mode as this is what OpenTabletDriver expects.
-                (geo, false, 1. / scale, Transform::Normal)
-            };
+        let (target_geo, keep_ratio, px, transform) = if let Some((rect, output)) = window_target {
+            (
+                rect,
+                true,
+                1. / output.current_scale().fractional_scale(),
+                output.current_transform(),
+            )
+        } else if let Some(output) = mapped_output {
+            let geo = self.niri.global_space.output_geometry(output).unwrap();
+            (
+                geo.to_f64(),
+                true,
+                1. / output.current_scale().fractional_scale(),
+                output.current_transform(),
+            )
+        } else {
+            let geo = self.global_bounding_rectangle()?.to_f64();
+
+            // FIXME: this 1 px size should ideally somehow be computed for the rightmost output
+            // corresponding to the position on the right when clamping.
+            let output = self.niri.global_space.outputs().next().unwrap();
+            let scale = output.current_scale().fractional_scale();
+
+            // Do not keep ratio for the unified mode as this is what OpenTabletDriver expects.
+            (geo, false, 1. / scale, Transform::Normal)
+        };
 
         let mut pos = {
             let size = transform.invert().transform_size(target_geo.size);
-            transform.transform_point_in(event.position_transformed(size), &size.to_f64())
+            transform.transform_point_in(event.position_transformed(size.to_i32_round()), &size)
         };
 
         if keep_ratio {
-            pos.x /= target_geo.size.w as f64;
-            pos.y /= target_geo.size.h as f64;
+            pos.x /= target_geo.size.w;
+            pos.y /= target_geo.size.h;
 
             let device = event.device();
             if let Some(device) = (&device as &dyn Any).downcast_ref::<input::Device>() {
                 if let Some(data) = self.niri.tablets.get(device) {
                     // This code does the same thing as mutter with "keep aspect ratio" enabled.
                     let size = transform.invert().transform_size(target_geo.size);
-                    let output_aspect_ratio = size.w as f64 / size.h as f64;
+                    let output_aspect_ratio = size.w / size.h;
                     let ratio = data.aspect_ratio / output_aspect_ratio;
 
                     if ratio > 1. {
@@ -342,13 +369,13 @@ impl State {
                 }
             };
 
-            pos.x *= target_geo.size.w as f64;
-            pos.y *= target_geo.size.h as f64;
+            pos.x *= target_geo.size.w;
+            pos.y *= target_geo.size.h;
         }
 
-        pos.x = pos.x.clamp(0.0, target_geo.size.w as f64 - px);
-        pos.y = pos.y.clamp(0.0, target_geo.size.h as f64 - px);
-        Some(pos + target_geo.loc.to_f64())
+        pos.x = pos.x.clamp(0.0, target_geo.size.w - px);
+        pos.y = pos.y.clamp(0.0, target_geo.size.h - px);
+        Some(pos + target_geo.loc)
     }
 
     fn is_inhibiting_shortcuts(&self) -> bool {
