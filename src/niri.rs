@@ -19,6 +19,7 @@ use niri_config::{
     WorkspaceReference, Xkb,
 };
 use smithay::backend::allocator::Fourcc;
+use smithay::backend::drm::DrmDeviceFd;
 use smithay::backend::input::Keycode;
 use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::element::memory::MemoryRenderBufferRenderElement;
@@ -78,6 +79,7 @@ use smithay::wayland::compositor::{
 };
 use smithay::wayland::cursor_shape::CursorShapeManagerState;
 use smithay::wayland::dmabuf::DmabufState;
+use smithay::wayland::drm_syncobj::{supports_syncobj_eventfd, DrmSyncobjState};
 use smithay::wayland::fractional_scale::FractionalScaleManagerState;
 use smithay::wayland::idle_inhibit::IdleInhibitManagerState;
 use smithay::wayland::idle_notify::IdleNotifierState;
@@ -287,6 +289,7 @@ pub struct Niri {
     pub shm_state: ShmState,
     pub output_manager_state: OutputManagerState,
     pub dmabuf_state: DmabufState,
+    pub drm_syncobj_state: Option<DrmSyncobjState>,
     pub fractional_scale_manager_state: FractionalScaleManagerState,
     pub seat_state: SeatState<State>,
     pub tablet_state: TabletManagerState,
@@ -2536,6 +2539,7 @@ impl Niri {
             shm_state,
             output_manager_state,
             dmabuf_state,
+            drm_syncobj_state: None,
             fractional_scale_manager_state,
             seat_state,
             tablet_state,
@@ -4920,6 +4924,48 @@ impl Niri {
                 |_, _, _| true,
             );
         }
+    }
+
+    pub fn update_drm_syncobj_state(&mut self, import_device: DrmDeviceFd) {
+        if !supports_syncobj_eventfd(&import_device) {
+            debug!("not exposing DRM syncobj: DRM device lacks syncobj eventfd support");
+            self.disable_drm_syncobj_state();
+            return;
+        }
+
+        if let Some(state) = &mut self.drm_syncobj_state {
+            state.update_device(import_device);
+            debug!("updated DRM syncobj import device");
+        } else {
+            self.drm_syncobj_state = Some(DrmSyncobjState::new::<State>(
+                &self.display_handle,
+                import_device,
+            ));
+            debug!("exposing DRM syncobj protocol");
+        }
+    }
+
+    pub fn disable_drm_syncobj_state(&mut self) {
+        let Some(state) = self.drm_syncobj_state.take() else {
+            return;
+        };
+
+        // Keep the disabled global around briefly so clients can observe its removal.
+        let global = state.into_global();
+        self.display_handle.disable_global::<State>(global.clone());
+        self.event_loop
+            .insert_source(
+                Timer::from_duration(Duration::from_secs(10)),
+                move |_, _, state| {
+                    state
+                        .niri
+                        .display_handle
+                        .remove_global::<State>(global.clone());
+                    TimeoutAction::Drop
+                },
+            )
+            .unwrap();
+        debug!("disabled DRM syncobj protocol");
     }
 
     pub fn send_dmabuf_feedbacks(
