@@ -81,6 +81,9 @@ use smithay::wayland::dmabuf::DmabufState;
 use smithay::wayland::fractional_scale::FractionalScaleManagerState;
 use smithay::wayland::idle_inhibit::IdleInhibitManagerState;
 use smithay::wayland::idle_notify::IdleNotifierState;
+use smithay::wayland::image_capture_source::ImageCaptureSourceState;
+use smithay::wayland::image_capture_source::OutputCaptureSourceState;
+use smithay::wayland::image_copy_capture::ImageCopyCaptureState;
 use smithay::wayland::input_method::InputMethodManagerState;
 use smithay::wayland::keyboard_shortcuts_inhibit::{
     KeyboardShortcutsInhibitState, KeyboardShortcutsInhibitor,
@@ -150,6 +153,7 @@ use crate::protocols::gamma_control::GammaControlManagerState;
 use crate::protocols::mutter_x11_interop::MutterX11InteropManagerState;
 use crate::protocols::output_management::OutputManagementManagerState;
 use crate::protocols::screencopy::{Screencopy, ScreencopyBuffer, ScreencopyManagerState};
+use crate::protocols::toplevel_image_capture_source::ToplevelImageCaptureManagerState;
 use crate::protocols::virtual_pointer::VirtualPointerManagerState;
 use crate::render_helpers::blur::BlurOptions;
 use crate::render_helpers::debug::push_opaque_regions;
@@ -278,6 +282,10 @@ pub struct Niri {
     pub layer_shell_state: WlrLayerShellState,
     pub session_lock_state: SessionLockManagerState,
     pub foreign_toplevel_state: ForeignToplevelManagerState,
+    pub image_capture_source_state: ImageCaptureSourceState,
+    pub output_capture_source_state: OutputCaptureSourceState,
+    pub image_copy_capture_state: ImageCopyCaptureState,
+    pub toplevel_image_capture_state: ToplevelImageCaptureManagerState,
     pub ext_workspace_state: ExtWorkspaceManagerState,
     pub screencopy_state: ScreencopyManagerState,
     pub output_management_state: OutputManagementManagerState,
@@ -2334,6 +2342,13 @@ impl Niri {
             VirtualPointerManagerState::new::<State, _>(&display_handle, client_is_unrestricted);
         let foreign_toplevel_state =
             ForeignToplevelManagerState::new::<State, _>(&display_handle, client_is_unrestricted);
+        let image_capture_source_state = ImageCaptureSourceState::new();
+        let output_capture_source_state =
+            OutputCaptureSourceState::new::<State>(&display_handle);
+        let image_copy_capture_state =
+            ImageCopyCaptureState::new::<State>(&display_handle);
+        let toplevel_image_capture_state =
+            ToplevelImageCaptureManagerState::new::<State, _>(&display_handle, client_is_unrestricted);
         let ext_workspace_state =
             ExtWorkspaceManagerState::new::<State, _>(&display_handle, client_is_unrestricted);
         let mut output_management_state =
@@ -2522,6 +2537,10 @@ impl Niri {
             layer_shell_state,
             session_lock_state,
             foreign_toplevel_state,
+            image_capture_source_state,
+            output_capture_source_state,
+            image_copy_capture_state,
+            toplevel_image_capture_state,
             ext_workspace_state,
             output_management_state,
             screencopy_state,
