@@ -3,21 +3,20 @@ use std::collections::hash_map::Entry;
 use niri_ipc::PositionChange;
 use smithay::backend::renderer::utils::on_commit_buffer_handler;
 use smithay::input::pointer::{CursorImageStatus, CursorImageSurfaceData};
-use smithay::reexports::calloop::Interest;
 use smithay::reexports::wayland_server::protocol::wl_buffer;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::{Client, Resource};
 use smithay::wayland::buffer::BufferHandler;
 use smithay::wayland::compositor::{
-    add_blocker, add_pre_commit_hook, get_parent, is_sync_subsurface, remove_pre_commit_hook,
-    with_states, BufferAssignment, CompositorClientState, CompositorHandler, CompositorState,
-    SurfaceAttributes,
+    add_pre_commit_hook, get_parent, is_sync_subsurface, remove_pre_commit_hook, with_states,
+    BufferAssignment, CompositorClientState, CompositorHandler, CompositorState, SurfaceAttributes,
 };
 use smithay::wayland::dmabuf::get_dmabuf;
 use smithay::wayland::shell::xdg::ToplevelCachedState;
 use smithay::wayland::shm::{ShmHandler, ShmState};
 use smithay::{delegate_compositor, delegate_shm};
 
+use super::dmabuf_readiness::add_dmabuf_readiness_blocker;
 use super::xdg_shell::add_mapped_toplevel_pre_commit_hook;
 use crate::handlers::XDG_ACTIVATION_TOKEN_TIMEOUT;
 use crate::layout::{ActivateWindow, AddWindowTarget, LayoutElement as _};
@@ -546,27 +545,7 @@ impl State {
                         _ => None,
                     })
             });
-            if let Some(dmabuf) = maybe_dmabuf {
-                if let Ok((blocker, source)) = dmabuf.generate_blocker(Interest::READ) {
-                    if let Some(client) = surface.client() {
-                        let res =
-                            state
-                                .niri
-                                .event_loop
-                                .insert_source(source, move |_, _, state| {
-                                    let display_handle = state.niri.display_handle.clone();
-                                    state
-                                        .client_compositor_state(&client)
-                                        .blocker_cleared(state, &display_handle);
-                                    Ok(())
-                                });
-                        if res.is_ok() {
-                            add_blocker(surface, blocker);
-                            trace!("added default dmabuf blocker");
-                        }
-                    }
-                }
-            }
+            add_dmabuf_readiness_blocker(&state.niri.event_loop, surface, maybe_dmabuf);
         });
 
         let s = surface.clone();
