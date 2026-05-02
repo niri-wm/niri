@@ -3462,6 +3462,52 @@ impl Niri {
         self.global_space.output_under(pos).next().cloned()
     }
 
+    fn closest_output_in_direction(
+        &self,
+        current: &Output,
+        extended_geo: Rectangle<i32, Logical>,
+        metrics: impl Fn(Rectangle<i32, Logical>, Rectangle<i32, Logical>) -> Option<(i32, i32)>,
+    ) -> Option<Output> {
+        let current_geo = self.global_space.output_geometry(current)?;
+
+        let candidates = self
+            .global_space
+            .outputs()
+            .filter(|&output| output != current)
+            .filter_map(|output| {
+                let geo = self.global_space.output_geometry(output).unwrap();
+                let metrics = metrics(current_geo, geo)?;
+                geo.overlaps(extended_geo).then_some((output, metrics))
+            })
+            .collect::<Vec<_>>();
+
+        Self::pick_closest_output(self.layout.outputs_by_recent_focus(), candidates)
+    }
+
+    fn pick_closest_output<'a>(
+        recent_focus: impl DoubleEndedIterator<Item = &'a Output>,
+        candidates: impl IntoIterator<Item = (&'a Output, (i32, i32))>,
+    ) -> Option<Output> {
+        let candidates = candidates.into_iter().collect::<Vec<_>>();
+        let best_edge = candidates.iter().map(|(_, (edge, _))| *edge).max()?;
+
+        recent_focus
+            .rev()
+            .find(|focused| {
+                candidates
+                    .iter()
+                    .any(|(candidate, (edge, _))| *edge == best_edge && *candidate == *focused)
+            })
+            .cloned()
+            .or_else(|| {
+                candidates
+                    .iter()
+                    .filter(|(_, (edge, _))| *edge == best_edge)
+                    .min_by_key(|(_, (_, orthogonal_distance))| *orthogonal_distance)
+                    .map(|(output, _)| (*output).clone())
+            })
+    }
+
     pub fn output_left_of(&self, current: &Output) -> Option<Output> {
         let current_geo = self.global_space.output_geometry(current)?;
         let extended_geo = Rectangle::new(
@@ -3469,13 +3515,12 @@ impl Niri {
             Size::from((i32::MAX, current_geo.size.h)),
         );
 
-        self.global_space
-            .outputs()
-            .map(|output| (output, self.global_space.output_geometry(output).unwrap()))
-            .filter(|(_, geo)| center(*geo).x < center(current_geo).x && geo.overlaps(extended_geo))
-            .min_by_key(|(_, geo)| center(current_geo).x - center(*geo).x)
-            .map(|(output, _)| output)
-            .cloned()
+        self.closest_output_in_direction(current, extended_geo, |current_geo, geo| {
+            (center(geo).x < center(current_geo).x).then_some((
+                geo.loc.x + geo.size.w,
+                (center(geo).y - center(current_geo).y).abs(),
+            ))
+        })
     }
 
     pub fn output_right_of(&self, current: &Output) -> Option<Output> {
@@ -3485,13 +3530,10 @@ impl Niri {
             Size::from((i32::MAX, current_geo.size.h)),
         );
 
-        self.global_space
-            .outputs()
-            .map(|output| (output, self.global_space.output_geometry(output).unwrap()))
-            .filter(|(_, geo)| center(*geo).x > center(current_geo).x && geo.overlaps(extended_geo))
-            .min_by_key(|(_, geo)| center(*geo).x - center(current_geo).x)
-            .map(|(output, _)| output)
-            .cloned()
+        self.closest_output_in_direction(current, extended_geo, |current_geo, geo| {
+            (center(geo).x > center(current_geo).x)
+                .then_some((-geo.loc.x, (center(geo).y - center(current_geo).y).abs()))
+        })
     }
 
     pub fn output_up_of(&self, current: &Output) -> Option<Output> {
@@ -3501,13 +3543,12 @@ impl Niri {
             Size::from((current_geo.size.w, i32::MAX)),
         );
 
-        self.global_space
-            .outputs()
-            .map(|output| (output, self.global_space.output_geometry(output).unwrap()))
-            .filter(|(_, geo)| center(*geo).y < center(current_geo).y && geo.overlaps(extended_geo))
-            .min_by_key(|(_, geo)| center(current_geo).y - center(*geo).y)
-            .map(|(output, _)| output)
-            .cloned()
+        self.closest_output_in_direction(current, extended_geo, |current_geo, geo| {
+            (center(geo).y < center(current_geo).y).then_some((
+                geo.loc.y + geo.size.h,
+                (center(geo).x - center(current_geo).x).abs(),
+            ))
+        })
     }
 
     pub fn output_down_of(&self, current: &Output) -> Option<Output> {
@@ -3517,13 +3558,10 @@ impl Niri {
             Size::from((current_geo.size.w, i32::MAX)),
         );
 
-        self.global_space
-            .outputs()
-            .map(|output| (output, self.global_space.output_geometry(output).unwrap()))
-            .filter(|(_, geo)| center(*geo).y > center(current_geo).y && geo.overlaps(extended_geo))
-            .min_by_key(|(_, geo)| center(*geo).y - center(current_geo).y)
-            .map(|(output, _)| output)
-            .cloned()
+        self.closest_output_in_direction(current, extended_geo, |current_geo, geo| {
+            (center(geo).y > center(current_geo).y)
+                .then_some((-geo.loc.y, (center(geo).x - center(current_geo).x).abs()))
+        })
     }
 
     pub fn output_previous_of(&self, current: &Output) -> Option<Output> {
