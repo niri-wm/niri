@@ -51,6 +51,8 @@ pub struct Modeline {
 pub struct Output {
     #[knuffel(child)]
     pub off: bool,
+    #[knuffel(child)]
+    pub create_virtual: bool,
     #[knuffel(argument)]
     pub name: String,
     #[knuffel(child, unwrap(argument))]
@@ -96,6 +98,7 @@ impl Default for Output {
     fn default() -> Self {
         Self {
             off: false,
+            create_virtual: false,
             focus_at_startup: false,
             name: String::new(),
             scale: None,

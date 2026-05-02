@@ -717,7 +717,7 @@ impl State {
             || env::var_os("DISPLAY").is_some();
 
         let mut backend = if headless {
-            let headless = Headless::new();
+            let headless = Headless::new(event_loop.clone());
             Backend::Headless(headless)
         } else if has_display {
             let winit = Winit::new(config.clone(), event_loop.clone())?;
@@ -741,6 +741,10 @@ impl State {
 
         let mut state = Self { backend, niri };
 
+        // Create any declaratively-configured virtual outputs early, so that options like
+        // `focus-at-startup` can target them.
+        state.create_virtual_outputs_from_config();
+
         // Load the xkb_file config option if set by the user.
         state.load_xkb_file();
         // Initialize some IPC server state.
@@ -749,6 +753,67 @@ impl State {
         state.focus_default_monitor();
 
         Ok(state)
+    }
+
+    fn create_virtual_outputs_from_config(&mut self) {
+        let names = {
+            let config = self.niri.config.borrow();
+            config
+                .outputs
+                .0
+                .iter()
+                .filter(|o| o.create_virtual)
+                .map(|o| o.name.clone())
+                .collect::<Vec<_>>()
+        };
+
+        if names.is_empty() {
+            return;
+        }
+
+        if matches!(&self.backend, Backend::Winit(_)) {
+            warn!(
+                "config requests virtual outputs, but the Winit backend does not support them"
+            );
+            return;
+        }
+
+        for name in names {
+            // Skip if an output with this name already exists.
+            //
+            // We check both the compositor output list (connected outputs) and the IPC output
+            // state, because virtual outputs can exist while being currently disconnected (`off`).
+            let exists = self
+                .niri
+                .global_space
+                .outputs()
+                .any(|o| o.name() == name)
+                || self
+                    .backend
+                    .ipc_outputs()
+                    .lock()
+                    .unwrap()
+                    .values()
+                    .any(|o| o.name == name);
+            if exists {
+                continue;
+            }
+
+            match self.backend.create_virtual_output(
+                &mut self.niri,
+                1920,
+                1080,
+                60,
+                Some(name.clone()),
+            ) {
+                Ok(created) => {
+                    info!("created virtual output from config: {created}");
+                }
+                Err(err) => {
+                    warn!("error creating virtual output '{name}' from config: {err}");
+                }
+            }
+        }
     }
 
     pub fn refresh_and_flush_clients(&mut self) {
@@ -1716,6 +1781,8 @@ impl State {
     }
 
     pub fn reload_output_config(&mut self) {
+        self.create_virtual_outputs_from_config();
+
         let mut resized_outputs = vec![];
         let mut recolored_outputs = vec![];
 
@@ -4686,7 +4753,13 @@ impl Niri {
         //
         // However, this should probably be restricted to sending frame callbacks to more surfaces,
         // to err on the safe side.
-        self.send_frame_callbacks(output);
+        let is_virtual = crate::backend::VirtualOutputMarker::is_virtual(output);
+        if is_virtual {
+            self.send_frame_callbacks_for_virtual_output(output);
+        } else {
+            self.send_frame_callbacks(output);
+        }
+
         backend.with_primary_renderer(|renderer| {
             #[cfg(feature = "xdp-gnome-screencast")]
             {
@@ -5098,6 +5171,52 @@ impl Niri {
                 frame_callback_time,
                 FRAME_CALLBACK_THROTTLE,
                 should_send,
+            );
+        }
+    }
+
+    /// Send frame callbacks for a virtual output.
+    ///
+    /// Virtual outputs (e.g. HEADLESS-*) don't go through the normal scanout/render pipeline that
+    /// updates `surface_primary_scanout_output`, so the regular `send_frame_callbacks` visibility
+    /// filtering would often suppress callbacks entirely.
+    ///
+    /// This function therefore sends callbacks to surfaces associated with `output`
+    /// unconditionally (still subject to the per-surface throttling done inside `send_frame`).
+    ///
+    /// Note: this deliberately does not send callbacks for global/pointer-related surfaces (cursor
+    /// image, drag-and-drop icon) because those rely on the normal primary-output based
+    /// deduplication.
+    pub fn send_frame_callbacks_for_virtual_output(&mut self, output: &Output) {
+        let _span = tracy_client::span!("Niri::send_frame_callbacks_for_virtual_output");
+
+        let frame_callback_time = get_monotonic_time();
+
+        for mapped in self.layout.windows_for_output_mut(output) {
+            mapped.send_frame(
+                output,
+                frame_callback_time,
+                FRAME_CALLBACK_THROTTLE,
+                |_, _| Some(output.clone()),
+            );
+        }
+
+        for surface in layer_map_for_output(output).layers() {
+            surface.send_frame(
+                output,
+                frame_callback_time,
+                FRAME_CALLBACK_THROTTLE,
+                |_, _| Some(output.clone()),
+            );
+        }
+
+        if let Some(surface) = &self.output_state[output].lock_surface {
+            send_frames_surface_tree(
+                surface.wl_surface(),
+                output,
+                frame_callback_time,
+                FRAME_CALLBACK_THROTTLE,
+                |_, _| Some(output.clone()),
             );
         }
     }
