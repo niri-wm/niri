@@ -452,9 +452,19 @@ impl State {
             time,
             |this, mods, keysym| {
                 let key_code = event.key_code();
-                let modified = keysym.modified_sym();
-                let raw = keysym.raw_latin_sym_or_raw_current_sym();
+                let keysym_binded = this.niri.config.borrow().input.bind_to_keysyms;
+
                 let modifiers = modifiers_from_state(*mods);
+                let modified = keysym.modified_sym();
+
+                let raw = if keysym_binded {
+                    keysym.raw_latin_sym_or_raw_current_sym()
+                } else {
+                    let xkb = keysym.xkb().lock().unwrap();
+                    xkb.raw_syms_for_key_in_layout(key_code, Layout(0))
+                        .first()
+                        .cloned()
+                };
 
                 // After updating XKB state from accessibility-grabbed keys, return right away and
                 // don't handle them.
@@ -4358,7 +4368,7 @@ impl State {
 #[allow(clippy::too_many_arguments)]
 fn should_intercept_key<'a>(
     suppressed_keys: &mut HashSet<Keycode>,
-    bindings: impl IntoIterator<Item = &'a Bind>,
+    bindings: impl IntoIterator<Item = &'a Bind> + Clone,
     mod_key: ModKey,
     key_code: Keycode,
     modified: Keysym,
@@ -4379,6 +4389,7 @@ fn should_intercept_key<'a>(
     let mut final_bind = find_bind(
         bindings,
         mod_key,
+        key_code,
         modified,
         raw,
         mods,
@@ -4441,8 +4452,9 @@ fn should_intercept_key<'a>(
 }
 
 fn find_bind<'a>(
-    bindings: impl IntoIterator<Item = &'a Bind>,
+    bindings: impl IntoIterator<Item = &'a Bind> + Clone,
     mod_key: ModKey,
+    key_code: Keycode,
     modified: Keysym,
     raw: Option<Keysym>,
     mods: ModifiersState,
@@ -4480,6 +4492,15 @@ fn find_bind<'a>(
             allow_inhibiting: false,
             hotkey_overlay_title: None,
         });
+    }
+
+    if let Some(bind) = find_configured_bind(
+        bindings.clone(),
+        mod_key,
+        Trigger::Keycode(key_code),
+        mods,
+    ) {
+        return Some(bind);
     }
 
     let trigger = Trigger::Keysym(raw?);
@@ -5492,6 +5513,103 @@ mod tests {
                 },
             ),
             None,
+        );
+    }
+
+    #[test]
+    fn keycode_handling() {
+        let bindings = Binds(vec![
+            Bind {
+                key: Key {
+                    trigger: Trigger::Keysym(Keysym::q),
+                    modifiers: Modifiers::SUPER,
+                },
+                action: Action::CloseWindow,
+                repeat: false,
+                cooldown: None,
+                allow_when_locked: false,
+                allow_inhibiting: false,
+                hotkey_overlay_title: None,
+            },
+            Bind {
+                key: Key {
+                    trigger: Trigger::Keycode(Keycode::new(32)),
+                    modifiers: Modifiers::SUPER,
+                },
+                action: Action::FocusColumnLeft,
+                repeat: true,
+                cooldown: None,
+                allow_when_locked: false,
+                allow_inhibiting: true,
+                hotkey_overlay_title: None,
+            },
+        ]);
+
+        assert_eq!(
+            find_bind(
+                &bindings.0,
+                ModKey::Super,
+                Keycode::new(32),
+                Keysym::h,
+                Some(Keysym::h),
+                ModifiersState {
+                    logo: true,
+                    ..Default::default()
+                },
+                false,
+            )
+            .as_ref(),
+            Some(&bindings.0[1])
+        );
+
+        assert_eq!(
+            find_bind(
+                &bindings.0,
+                ModKey::Super,
+                Keycode::new(31),
+                Keysym::h,
+                Some(Keysym::h),
+                ModifiersState {
+                    logo: true,
+                    ..Default::default()
+                },
+                false,
+            ),
+            None,
+        );
+
+        assert_eq!(
+            find_bind(
+                &bindings.0,
+                ModKey::Super,
+                Keycode::new(31),
+                Keysym::q,
+                Some(Keysym::q),
+                ModifiersState {
+                    logo: true,
+                    ..Default::default()
+                },
+                false,
+            )
+            .as_ref(),
+            Some(&bindings.0[0]),
+        );
+
+        assert_eq!(
+            find_bind(
+                &bindings.0,
+                ModKey::Super,
+                Keycode::new(32),
+                Keysym::q,
+                Some(Keysym::q),
+                ModifiersState {
+                    logo: true,
+                    ..Default::default()
+                },
+                false,
+            )
+            .as_ref(),
+            Some(&bindings.0[1]),
         );
     }
 }
