@@ -741,6 +741,17 @@ impl State {
 
         let mut state = Self { backend, niri };
 
+        if headless && create_wayland_socket {
+            if let Backend::Headless(headless) = &mut state.backend {
+                if let Err(err) = headless.add_renderer() {
+                    warn!("failed to initialize headless renderer: {err:?}");
+                }
+                headless
+                    .create_virtual_output(&mut state.niri, 1920, 1080, 60)
+                    .unwrap();
+            }
+        }
+
         // Load the xkb_file config option if set by the user.
         state.load_xkb_file();
         // Initialize some IPC server state.
@@ -5098,6 +5109,64 @@ impl Niri {
                 frame_callback_time,
                 FRAME_CALLBACK_THROTTLE,
                 should_send,
+            );
+        }
+    }
+
+    /// Send frame callbacks for a virtual output.
+    ///
+    /// Unlike `send_frame_callbacks`, this does not check `surface_primary_scanout_output`
+    /// because virtual outputs don't go through the GPU rendering pipeline that sets it.
+    pub fn send_frame_callbacks_for_virtual_output(&mut self, output: &Output) {
+        let _span = tracy_client::span!("Niri::send_frame_callbacks_for_virtual_output");
+
+        let frame_callback_time = get_monotonic_time();
+
+        for mapped in self.layout.windows_for_output_mut(output) {
+            mapped.send_frame(
+                output,
+                frame_callback_time,
+                FRAME_CALLBACK_THROTTLE,
+                |_, _| Some(output.clone()),
+            );
+        }
+
+        for surface in layer_map_for_output(output).layers() {
+            surface.send_frame(
+                output,
+                frame_callback_time,
+                FRAME_CALLBACK_THROTTLE,
+                |_, _| Some(output.clone()),
+            );
+        }
+
+        if let Some(surface) = &self.output_state[output].lock_surface {
+            send_frames_surface_tree(
+                surface.wl_surface(),
+                output,
+                frame_callback_time,
+                FRAME_CALLBACK_THROTTLE,
+                |_, _| Some(output.clone()),
+            );
+        }
+
+        if let Some(surface) = self.dnd_icon.as_ref().map(|icon| &icon.surface) {
+            send_frames_surface_tree(
+                surface,
+                output,
+                frame_callback_time,
+                FRAME_CALLBACK_THROTTLE,
+                |_, _| Some(output.clone()),
+            );
+        }
+
+        if let CursorImageStatus::Surface(surface) = self.cursor_manager.cursor_image() {
+            send_frames_surface_tree(
+                surface,
+                output,
+                frame_callback_time,
+                FRAME_CALLBACK_THROTTLE,
+                |_, _| Some(output.clone()),
             );
         }
     }
