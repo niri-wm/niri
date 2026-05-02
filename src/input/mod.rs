@@ -6,7 +6,8 @@ use std::time::Duration;
 use calloop::timer::{TimeoutAction, Timer};
 use input::event::gesture::GestureEventCoordinates as _;
 use niri_config::{
-    Action, Bind, Binds, Config, Key, ModKey, Modifiers, MruDirection, SwitchBinds, Trigger,
+    Action, Bind, Binds, Config, Key, ModKey, Modifiers, MruDirection, OverviewWheelAction,
+    SwitchBinds, Trigger,
 };
 use niri_ipc::LayoutSwitchTarget;
 use smithay::backend::input::{
@@ -3197,12 +3198,24 @@ impl State {
                 if ticks != 0 {
                     let (bind_up, bind_down) = if should_handle_in_overview && modifiers.is_empty()
                     {
+                        let config = self.niri.config.borrow();
+                        let (up_action, down_action) = match config.overview.wheel_y {
+                            OverviewWheelAction::Workspaces => (
+                                Action::FocusWorkspaceUpUnderMouse,
+                                Action::FocusWorkspaceDownUnderMouse,
+                            ),
+                            OverviewWheelAction::Columns => (
+                                Action::FocusColumnLeftUnderMouse,
+                                Action::FocusColumnRightUnderMouse,
+                            ),
+                        };
+                        drop(config);
                         let bind_up = Some(Bind {
                             key: Key {
                                 trigger: Trigger::WheelScrollUp,
                                 modifiers: Modifiers::empty(),
                             },
-                            action: Action::FocusWorkspaceUpUnderMouse,
+                            action: up_action,
                             repeat: true,
                             cooldown: Some(Duration::from_millis(50)),
                             allow_when_locked: false,
@@ -3214,7 +3227,7 @@ impl State {
                                 trigger: Trigger::WheelScrollDown,
                                 modifiers: Modifiers::empty(),
                             },
-                            action: Action::FocusWorkspaceDownUnderMouse,
+                            action: down_action,
                             repeat: true,
                             cooldown: Some(Duration::from_millis(50)),
                             allow_when_locked: false,
@@ -3223,12 +3236,24 @@ impl State {
                         });
                         (bind_up, bind_down)
                     } else if should_handle_in_overview && modifiers == Modifiers::SHIFT {
+                        let config = self.niri.config.borrow();
+                        let (up_action, down_action) = match config.overview.wheel_shift_y {
+                            OverviewWheelAction::Workspaces => (
+                                Action::FocusWorkspaceUpUnderMouse,
+                                Action::FocusWorkspaceDownUnderMouse,
+                            ),
+                            OverviewWheelAction::Columns => (
+                                Action::FocusColumnLeftUnderMouse,
+                                Action::FocusColumnRightUnderMouse,
+                            ),
+                        };
+                        drop(config);
                         let bind_up = Some(Bind {
                             key: Key {
                                 trigger: Trigger::WheelScrollUp,
                                 modifiers: Modifiers::empty(),
                             },
-                            action: Action::FocusColumnLeftUnderMouse,
+                            action: up_action,
                             repeat: true,
                             cooldown: Some(Duration::from_millis(50)),
                             allow_when_locked: false,
@@ -3240,7 +3265,7 @@ impl State {
                                 trigger: Trigger::WheelScrollDown,
                                 modifiers: Modifiers::empty(),
                             },
-                            action: Action::FocusColumnRightUnderMouse,
+                            action: down_action,
                             repeat: true,
                             cooldown: Some(Duration::from_millis(50)),
                             allow_when_locked: false,
