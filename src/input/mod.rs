@@ -506,6 +506,43 @@ impl State {
                     return FilterResult::Intercept(None);
                 }
 
+                // Handle spawn overlay input.
+                if this.niri.spawn_overlay.is_open() && pressed {
+                    use crate::ui::spawn_overlay::{SpawnCommand, SpawnDirection};
+
+                    let direction = match raw {
+                        Some(Keysym::Left) => Some(SpawnDirection::Left),
+                        Some(Keysym::Right) => Some(SpawnDirection::Right),
+                        Some(Keysym::Up) => Some(SpawnDirection::Up),
+                        Some(Keysym::Down) => Some(SpawnDirection::Down),
+                        Some(Keysym::h) => Some(SpawnDirection::Left),
+                        Some(Keysym::l) => Some(SpawnDirection::Right),
+                        Some(Keysym::k) => Some(SpawnDirection::Up),
+                        Some(Keysym::j) => Some(SpawnDirection::Down),
+                        _ => None,
+                    };
+
+                    if let Some(dir) = direction {
+                        this.niri.pending_spawn_position = Some(dir);
+                        if let Some(cmd) = this.niri.spawn_overlay.take_command() {
+                            let (token, _) =
+                                this.niri.activation_state.create_external_token(None);
+                            match cmd {
+                                SpawnCommand::Args(args) => spawn(args, Some(token.clone())),
+                                SpawnCommand::Shell(sh) => spawn_sh(sh, Some(token.clone())),
+                            }
+                        }
+                    } else if raw == Some(Keysym::Escape) {
+                        this.niri.spawn_overlay.close();
+                    } else {
+                        // Ignore other keys but don't forward them.
+                    }
+
+                    this.niri.queue_redraw_all();
+                    this.niri.suppressed_keys.insert(key_code);
+                    return FilterResult::Intercept(None);
+                }
+
                 // Check if all modifiers were released while the MRU UI was open. If so, close the
                 // UI (which will also transfer the focus to the current MRU UI selection).
                 if this.niri.window_mru_ui.is_open() && !pressed && modifiers.is_empty() {
@@ -727,6 +764,31 @@ impl State {
             Action::SpawnSh(command) => {
                 let (token, _) = self.niri.activation_state.create_external_token(None);
                 spawn_sh(command, Some(token.clone()));
+            }
+            Action::SpawnAtPosition(command) => {
+                if self.niri.config.borrow().spawn_overlay.enable {
+                    use crate::ui::spawn_overlay::SpawnCommand;
+                    self.niri
+                        .spawn_overlay
+                        .open(SpawnCommand::Args(command.clone()));
+                    self.niri.queue_redraw_all();
+                } else {
+                    // If overlay is not enabled, just spawn normally.
+                    let (token, _) = self.niri.activation_state.create_external_token(None);
+                    spawn(command, Some(token.clone()));
+                }
+            }
+            Action::SpawnShAtPosition(command) => {
+                if self.niri.config.borrow().spawn_overlay.enable {
+                    use crate::ui::spawn_overlay::SpawnCommand;
+                    self.niri
+                        .spawn_overlay
+                        .open(SpawnCommand::Shell(command.clone()));
+                    self.niri.queue_redraw_all();
+                } else {
+                    let (token, _) = self.niri.activation_state.create_external_token(None);
+                    spawn_sh(command, Some(token.clone()));
+                }
             }
             Action::DoScreenTransition(delay_ms) => {
                 self.backend.with_primary_renderer(|renderer| {
