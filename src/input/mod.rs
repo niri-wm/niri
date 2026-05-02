@@ -641,15 +641,17 @@ impl State {
     }
 
     pub fn handle_bind(&mut self, bind: Bind) {
-        let Some(cooldown) = bind.cooldown else {
-            self.do_action(bind.action, bind.allow_when_locked);
-            return;
-        };
-
-        // Check this first so that it doesn't trigger the cooldown.
-        if self.niri.is_locked() && !(bind.allow_when_locked || allowed_when_locked(&bind.action)) {
+        // Reject mixed binds atomically while locked.
+        if self.niri.is_locked() && !bind_allowed_when_locked(&bind) {
             return;
         }
+
+        let Some(cooldown) = bind.cooldown else {
+            for action in bind.actions().iter().cloned() {
+                self.do_action(action, bind.allow_when_locked);
+            }
+            return;
+        };
 
         match self.niri.bind_cooldown_timers.entry(bind.key) {
             // The bind is on cooldown.
@@ -668,7 +670,9 @@ impl State {
                     .unwrap();
                 entry.insert(token);
 
-                self.do_action(bind.action, bind.allow_when_locked);
+                for action in bind.actions().iter().cloned() {
+                    self.do_action(action, bind.allow_when_locked);
+                }
             }
         }
     }
@@ -3133,7 +3137,7 @@ impl State {
                                     trigger: Trigger::WheelScrollLeft,
                                     modifiers: Modifiers::empty(),
                                 },
-                                action: Action::FocusColumnLeftUnderMouse,
+                                actions: vec![Action::FocusColumnLeftUnderMouse].into(),
                                 repeat: true,
                                 cooldown: None,
                                 allow_when_locked: false,
@@ -3145,7 +3149,7 @@ impl State {
                                     trigger: Trigger::WheelScrollRight,
                                     modifiers: Modifiers::empty(),
                                 },
-                                action: Action::FocusColumnRightUnderMouse,
+                                actions: vec![Action::FocusColumnRightUnderMouse].into(),
                                 repeat: true,
                                 cooldown: None,
                                 allow_when_locked: false,
@@ -3202,7 +3206,7 @@ impl State {
                                 trigger: Trigger::WheelScrollUp,
                                 modifiers: Modifiers::empty(),
                             },
-                            action: Action::FocusWorkspaceUpUnderMouse,
+                            actions: vec![Action::FocusWorkspaceUpUnderMouse].into(),
                             repeat: true,
                             cooldown: Some(Duration::from_millis(50)),
                             allow_when_locked: false,
@@ -3214,7 +3218,7 @@ impl State {
                                 trigger: Trigger::WheelScrollDown,
                                 modifiers: Modifiers::empty(),
                             },
-                            action: Action::FocusWorkspaceDownUnderMouse,
+                            actions: vec![Action::FocusWorkspaceDownUnderMouse].into(),
                             repeat: true,
                             cooldown: Some(Duration::from_millis(50)),
                             allow_when_locked: false,
@@ -3228,7 +3232,7 @@ impl State {
                                 trigger: Trigger::WheelScrollUp,
                                 modifiers: Modifiers::empty(),
                             },
-                            action: Action::FocusColumnLeftUnderMouse,
+                            actions: vec![Action::FocusColumnLeftUnderMouse].into(),
                             repeat: true,
                             cooldown: Some(Duration::from_millis(50)),
                             allow_when_locked: false,
@@ -3240,7 +3244,7 @@ impl State {
                                 trigger: Trigger::WheelScrollDown,
                                 modifiers: Modifiers::empty(),
                             },
-                            action: Action::FocusColumnRightUnderMouse,
+                            actions: vec![Action::FocusColumnRightUnderMouse].into(),
                             repeat: true,
                             cooldown: Some(Duration::from_millis(50)),
                             allow_when_locked: false,
@@ -4391,7 +4395,7 @@ fn should_intercept_key<'a>(
         let mut use_screenshot_ui_action = true;
 
         if let Some(bind) = &final_bind {
-            if allowed_during_screenshot(&bind.action) {
+            if bind.all_actions(allowed_during_screenshot) {
                 use_screenshot_ui_action = false;
             }
         }
@@ -4404,7 +4408,7 @@ fn should_intercept_key<'a>(
                         // Not entirely correct but it doesn't matter in how we currently use it.
                         modifiers: Modifiers::empty(),
                     },
-                    action,
+                    actions: vec![action].into(),
                     repeat: true,
                     cooldown: None,
                     allow_when_locked: false,
@@ -4468,7 +4472,7 @@ fn find_bind<'a>(
                 trigger: Trigger::Keysym(modified),
                 modifiers: Modifiers::empty(),
             },
-            action,
+            actions: vec![action].into(),
             repeat: true,
             cooldown: None,
             allow_when_locked: false,
@@ -4645,6 +4649,10 @@ fn allowed_when_locked(action: &Action) -> bool {
     )
 }
 
+fn bind_allowed_when_locked(bind: &Bind) -> bool {
+    bind.allow_when_locked || bind.all_actions(allowed_when_locked)
+}
+
 fn allowed_during_screenshot(action: &Action) -> bool {
     matches!(
         action,
@@ -4711,7 +4719,7 @@ fn hardcoded_overview_bind(raw: Keysym, mods: ModifiersState) -> Option<Bind> {
             trigger: Trigger::Keysym(raw),
             modifiers: Modifiers::empty(),
         },
-        action,
+        actions: vec![action].into(),
         repeat,
         cooldown: None,
         allow_when_locked: false,
@@ -5132,7 +5140,7 @@ mod tests {
                 trigger: Trigger::Keysym(close_keysym),
                 modifiers: Modifiers::COMPOSITOR | Modifiers::CTRL,
             },
-            action: Action::CloseWindow,
+            actions: vec![Action::CloseWindow].into(),
             repeat: true,
             cooldown: None,
             allow_when_locked: false,
@@ -5196,9 +5204,9 @@ mod tests {
         assert!(matches!(
             filter,
             FilterResult::Intercept(Some(Bind {
-                action: Action::CloseWindow,
+                actions,
                 ..
-            }))
+            })) if matches!(&*actions, [Action::CloseWindow])
         ));
         assert!(suppressed_keys.contains(&close_key_code));
 
@@ -5230,9 +5238,9 @@ mod tests {
         assert!(matches!(
             filter,
             FilterResult::Intercept(Some(Bind {
-                action: Action::CloseWindow,
+                actions,
                 ..
-            }))
+            })) if matches!(&*actions, [Action::CloseWindow])
         ));
 
         let filter = none_key_event(&mut suppressed_keys, mods, true);
@@ -5250,9 +5258,9 @@ mod tests {
         assert!(matches!(
             filter,
             FilterResult::Intercept(Some(Bind {
-                action: Action::CloseWindow,
+                actions,
                 ..
-            }))
+            })) if matches!(&*actions, [Action::CloseWindow])
         ));
 
         mods = Default::default();
@@ -5297,9 +5305,9 @@ mod tests {
         assert!(matches!(
             filter,
             FilterResult::Intercept(Some(Bind {
-                action: Action::CloseWindow,
+                actions,
                 ..
-            }))
+            })) if matches!(&*actions, [Action::CloseWindow])
         ));
         assert!(suppressed_keys.contains(&close_key_code));
 
@@ -5318,7 +5326,7 @@ mod tests {
                     trigger: Trigger::Keysym(Keysym::q),
                     modifiers: Modifiers::COMPOSITOR,
                 },
-                action: Action::CloseWindow,
+                actions: vec![Action::CloseWindow].into(),
                 repeat: true,
                 cooldown: None,
                 allow_when_locked: false,
@@ -5330,7 +5338,7 @@ mod tests {
                     trigger: Trigger::Keysym(Keysym::h),
                     modifiers: Modifiers::SUPER,
                 },
-                action: Action::FocusColumnLeft,
+                actions: vec![Action::FocusColumnLeft].into(),
                 repeat: true,
                 cooldown: None,
                 allow_when_locked: false,
@@ -5342,7 +5350,7 @@ mod tests {
                     trigger: Trigger::Keysym(Keysym::j),
                     modifiers: Modifiers::empty(),
                 },
-                action: Action::FocusWindowDown,
+                actions: vec![Action::FocusWindowDown].into(),
                 repeat: true,
                 cooldown: None,
                 allow_when_locked: false,
@@ -5354,7 +5362,7 @@ mod tests {
                     trigger: Trigger::Keysym(Keysym::k),
                     modifiers: Modifiers::COMPOSITOR | Modifiers::SUPER,
                 },
-                action: Action::FocusWindowUp,
+                actions: vec![Action::FocusWindowUp].into(),
                 repeat: true,
                 cooldown: None,
                 allow_when_locked: false,
@@ -5366,7 +5374,7 @@ mod tests {
                     trigger: Trigger::Keysym(Keysym::l),
                     modifiers: Modifiers::SUPER | Modifiers::ALT,
                 },
-                action: Action::FocusColumnRight,
+                actions: vec![Action::FocusColumnRight].into(),
                 repeat: true,
                 cooldown: None,
                 allow_when_locked: false,
@@ -5493,5 +5501,41 @@ mod tests {
             ),
             None,
         );
+    }
+
+    #[test]
+    fn bind_allowed_when_locked_rejects_mixed_multiaction_bind() {
+        let bind = Bind {
+            key: Key {
+                trigger: Trigger::Keysym(Keysym::q),
+                modifiers: Modifiers::COMPOSITOR,
+            },
+            actions: vec![Action::Quit(true), Action::CloseWindow].into(),
+            repeat: true,
+            cooldown: None,
+            allow_when_locked: false,
+            allow_inhibiting: true,
+            hotkey_overlay_title: None,
+        };
+
+        assert!(!bind_allowed_when_locked(&bind));
+    }
+
+    #[test]
+    fn bind_allowed_when_locked_accepts_all_allowed_actions() {
+        let bind = Bind {
+            key: Key {
+                trigger: Trigger::Keysym(Keysym::q),
+                modifiers: Modifiers::COMPOSITOR,
+            },
+            actions: vec![Action::Quit(true), Action::Suspend].into(),
+            repeat: true,
+            cooldown: None,
+            allow_when_locked: false,
+            allow_inhibiting: true,
+            hotkey_overlay_title: None,
+        };
+
+        assert!(bind_allowed_when_locked(&bind));
     }
 }

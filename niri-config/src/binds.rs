@@ -1,6 +1,7 @@
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::sync::Arc;
 use std::time::Duration;
 
 use bitflags::bitflags;
@@ -22,12 +23,33 @@ pub struct Binds(pub Vec<Bind>);
 #[derive(Debug, Clone, PartialEq)]
 pub struct Bind {
     pub key: Key,
-    pub action: Action,
+    pub actions: Arc<[Action]>,
     pub repeat: bool,
     pub cooldown: Option<Duration>,
     pub allow_when_locked: bool,
     pub allow_inhibiting: bool,
     pub hotkey_overlay_title: Option<Option<String>>,
+}
+
+impl Bind {
+    pub fn actions(&self) -> &[Action] {
+        &self.actions
+    }
+
+    pub fn single_action(&self) -> Option<&Action> {
+        match &*self.actions {
+            [action] => Some(action),
+            _ => None,
+        }
+    }
+
+    pub fn has_single_action(&self, action: &Action) -> bool {
+        self.single_action() == Some(action)
+    }
+
+    pub fn all_actions(&self, predicate: impl FnMut(&Action) -> bool) -> bool {
+        self.actions.iter().all(predicate)
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
@@ -881,7 +903,7 @@ where
         // even if their contents are not valid.
         let dummy = Self {
             key,
-            action: Action::Spawn(vec![]),
+            actions: vec![Action::Spawn(vec![])].into(),
             repeat: true,
             cooldown: None,
             allow_when_locked: false,
@@ -889,54 +911,56 @@ where
             hotkey_overlay_title: None,
         };
 
-        if let Some(child) = children.next() {
-            for unwanted_child in children {
-                ctx.emit_error(DecodeError::unexpected(
-                    unwanted_child,
-                    "node",
-                    "only one action is allowed per keybind",
-                ));
-            }
+        let mut actions = Vec::new();
+        for child in children.by_ref() {
             match Action::decode_node(child, ctx) {
-                Ok(action) => {
-                    if !matches!(action, Action::Spawn(_) | Action::SpawnSh(_)) {
-                        if let Some(node) = allow_when_locked_node {
-                            ctx.emit_error(DecodeError::unexpected(
-                                node,
-                                "property",
-                                "allow-when-locked can only be set on spawn binds",
-                            ));
-                        }
-                    }
-
-                    // The toggle-inhibit action must always be uninhibitable.
-                    // Otherwise, it would be impossible to trigger it.
-                    if matches!(action, Action::ToggleKeyboardShortcutsInhibit) {
-                        allow_inhibiting = false;
-                    }
-
-                    Ok(Self {
-                        key,
-                        action,
-                        repeat,
-                        cooldown,
-                        allow_when_locked,
-                        allow_inhibiting,
-                        hotkey_overlay_title,
-                    })
-                }
+                Ok(action) => actions.push(action),
                 Err(e) => {
                     ctx.emit_error(e);
-                    Ok(dummy)
+                    return Ok(dummy);
                 }
             }
-        } else {
+        }
+
+        if actions.is_empty() {
             ctx.emit_error(DecodeError::missing(
                 node,
                 "expected an action for this keybind",
             ));
-            Ok(dummy)
+            return Ok(dummy);
         }
+
+        if !actions
+            .iter()
+            .all(|action| matches!(action, Action::Spawn(_) | Action::SpawnSh(_)))
+        {
+            if let Some(node) = allow_when_locked_node {
+                ctx.emit_error(DecodeError::unexpected(
+                    node,
+                    "property",
+                    "allow-when-locked can only be set on spawn binds",
+                ));
+            }
+        }
+
+        // The toggle-inhibit action must always be uninhibitable.
+        // Otherwise, it would be impossible to trigger it.
+        if actions
+            .iter()
+            .any(|action| matches!(action, Action::ToggleKeyboardShortcutsInhibit))
+        {
+            allow_inhibiting = false;
+        }
+
+        Ok(Self {
+            key,
+            actions: actions.into(),
+            repeat,
+            cooldown,
+            allow_when_locked,
+            allow_inhibiting,
+            hotkey_overlay_title,
+        })
     }
 }
 
@@ -1042,6 +1066,7 @@ impl FromStr for Key {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Config;
 
     #[test]
     fn parse_xf86_screensaver() {
@@ -1098,6 +1123,35 @@ mod tests {
                 trigger: Trigger::Keysym(Keysym::a),
                 modifiers: Modifiers::ISO_LEVEL5_SHIFT
             },
+        );
+    }
+
+    #[test]
+    fn parse_multiple_actions_per_bind() {
+        let config = Config::parse_mem(
+            r#"
+            binds {
+                Mod+X {
+                    focus-column-right
+                    consume-or-expel-window-left
+                }
+                Mod+Y {
+                    move-window-to-tiling
+                    center-column
+                }
+            }
+            "#,
+        )
+        .unwrap();
+
+        assert_eq!(config.binds.0.len(), 2);
+        assert_eq!(
+            config.binds.0[0].actions(),
+            &[Action::FocusColumnRight, Action::ConsumeOrExpelWindowLeft,]
+        );
+        assert_eq!(
+            config.binds.0[1].actions(),
+            &[Action::MoveWindowToTiling, Action::CenterColumn]
         );
     }
 }
