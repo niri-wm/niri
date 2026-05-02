@@ -229,11 +229,16 @@ impl State {
                     self.niri.touch.insert(device.clone());
                 }
 
+                if is_trackpoint_device(device) {
+                    self.niri.trackpoints.insert(device.clone());
+                }
+
                 apply_libinput_settings(&self.niri.config.borrow().input, device);
             }
             InputEvent::DeviceRemoved { device } => {
                 self.niri.touch.remove(device);
                 self.niri.tablets.remove(device);
+                self.niri.trackpoints.remove(device);
                 self.niri.devices.remove(device);
             }
             _ => (),
@@ -641,6 +646,10 @@ impl State {
     }
 
     pub fn handle_bind(&mut self, bind: Bind) {
+        debug!(
+            "handle_bind: trigger={:?}, cooldown={:?}, action={:?}",
+            bind.key.trigger, bind.cooldown, bind.action
+        );
         let Some(cooldown) = bind.cooldown else {
             self.do_action(bind.action, bind.allow_when_locked);
             return;
@@ -653,8 +662,11 @@ impl State {
 
         match self.niri.bind_cooldown_timers.entry(bind.key) {
             // The bind is on cooldown.
-            Entry::Occupied(_) => (),
+            Entry::Occupied(_) => {
+                debug!("handle_bind: ON COOLDOWN, skipping");
+            }
             Entry::Vacant(entry) => {
+                debug!("handle_bind: executing, starting cooldown {:?}", cooldown);
                 let timer = Timer::from_duration(cooldown);
                 let token = self
                     .niri
@@ -3071,7 +3083,7 @@ impl State {
         pointer.frame(self);
     }
 
-    fn on_pointer_axis<I: InputBackend>(&mut self, event: I::PointerAxisEvent) {
+    fn on_pointer_axis<I: InputBackend + 'static>(&mut self, event: I::PointerAxisEvent) {
         let pointer = &self.niri.seat.get_pointer().unwrap();
 
         let source = event.source();
@@ -3112,6 +3124,158 @@ impl State {
         };
 
         let is_mru_open = self.niri.window_mru_ui.is_open();
+
+        // Check if this event comes from a known trackpoint device.
+        let is_from_trackpoint = {
+            let device = event.device();
+            (&device as &dyn Any)
+                .downcast_ref::<input::Device>()
+                .is_some_and(|d| self.niri.trackpoints.contains(d))
+        };
+
+        // Handle trackpoint scroll with Super modifier before anything else,
+        // since trackpoint devices may produce Wheel or Continuous events
+        // depending on the device/firmware.
+        {
+            let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
+            let modifiers = modifiers_from_state(mods);
+
+            let is_trackpoint_scroll = modifiers.contains(Modifiers::SUPER)
+                && (is_from_trackpoint
+                    || source == smithay::backend::input::AxisSource::Continuous);
+
+            if is_trackpoint_scroll {
+                // For Wheel events use amount_v120 (converted to scroll units),
+                // for Continuous events use amount().
+                let (horizontal, vertical) = if source == AxisSource::Wheel {
+                    (
+                        horizontal_amount_v120.unwrap_or(0.) / 120.,
+                        vertical_amount_v120.unwrap_or(0.) / 120.,
+                    )
+                } else {
+                    let h = event.amount(Axis::Horizontal).unwrap_or(0.);
+                    let v = event.amount(Axis::Vertical).unwrap_or(0.);
+                    (h, v)
+                };
+
+                let v_ticks = self
+                    .niri
+                    .vertical_finger_scroll_tracker
+                    .accumulate(vertical);
+
+                let config = self.niri.config.borrow();
+                let bindings = make_binds_iter(&config, &mut self.niri.window_mru_ui, modifiers);
+                let bind_up = find_configured_bind(
+                    bindings.clone(),
+                    mod_key,
+                    Trigger::TrackpointScrollUp,
+                    mods,
+                );
+                let bind_down = find_configured_bind(
+                    bindings.clone(),
+                    mod_key,
+                    Trigger::TrackpointScrollDown,
+                    mods,
+                );
+                let bind_left = find_configured_bind(
+                    bindings.clone(),
+                    mod_key,
+                    Trigger::TrackpointScrollLeft,
+                    mods,
+                );
+                let bind_right = find_configured_bind(
+                    bindings,
+                    mod_key,
+                    Trigger::TrackpointScrollRight,
+                    mods,
+                );
+                drop(config);
+
+                // Ensure a minimum cooldown for all trackpoint scroll binds,
+                // even if the user-configured bind doesn't specify one.
+                const TRACKPOINT_SCROLL_COOLDOWN: Duration = Duration::from_millis(50);
+                let ensure_cooldown = |mut bind: Bind| -> Bind {
+                    if bind.cooldown.is_none() {
+                        bind.cooldown = Some(TRACKPOINT_SCROLL_COOLDOWN);
+                    }
+                    bind
+                };
+
+                if v_ticks < 0 {
+                    for _ in 0..(-v_ticks) {
+                        let bind = ensure_cooldown(bind_up.clone().unwrap_or_else(|| Bind {
+                            key: Key {
+                                trigger: Trigger::TrackpointScrollUp,
+                                modifiers: Modifiers::SUPER,
+                            },
+                            action: Action::FocusWorkspaceUp,
+                            repeat: true,
+                            cooldown: Some(TRACKPOINT_SCROLL_COOLDOWN),
+                            allow_when_locked: false,
+                            allow_inhibiting: false,
+                            hotkey_overlay_title: None,
+                        }));
+                        self.handle_bind(bind);
+                    }
+                } else if v_ticks > 0 {
+                    for _ in 0..v_ticks {
+                        let bind = ensure_cooldown(bind_down.clone().unwrap_or_else(|| Bind {
+                            key: Key {
+                                trigger: Trigger::TrackpointScrollDown,
+                                modifiers: Modifiers::SUPER,
+                            },
+                            action: Action::FocusWorkspaceDown,
+                            repeat: true,
+                            cooldown: Some(TRACKPOINT_SCROLL_COOLDOWN),
+                            allow_when_locked: false,
+                            allow_inhibiting: false,
+                            hotkey_overlay_title: None,
+                        }));
+                        self.handle_bind(bind);
+                    }
+                }
+
+                let h_ticks = self
+                    .niri
+                    .horizontal_finger_scroll_tracker
+                    .accumulate(horizontal);
+
+                if h_ticks > 0 {
+                    for _ in 0..h_ticks {
+                        let bind = ensure_cooldown(bind_right.clone().unwrap_or_else(|| Bind {
+                            key: Key {
+                                trigger: Trigger::TrackpointScrollRight,
+                                modifiers: Modifiers::SUPER,
+                            },
+                            action: Action::FocusColumnRight,
+                            repeat: true,
+                            cooldown: Some(TRACKPOINT_SCROLL_COOLDOWN),
+                            allow_when_locked: false,
+                            allow_inhibiting: false,
+                            hotkey_overlay_title: None,
+                        }));
+                        self.handle_bind(bind);
+                    }
+                } else if h_ticks < 0 {
+                    for _ in 0..(-h_ticks) {
+                        let bind = ensure_cooldown(bind_left.clone().unwrap_or_else(|| Bind {
+                            key: Key {
+                                trigger: Trigger::TrackpointScrollLeft,
+                                modifiers: Modifiers::SUPER,
+                            },
+                            action: Action::FocusColumnLeft,
+                            repeat: true,
+                            cooldown: Some(TRACKPOINT_SCROLL_COOLDOWN),
+                            allow_when_locked: false,
+                            allow_inhibiting: false,
+                            hotkey_overlay_title: None,
+                        }));
+                        self.handle_bind(bind);
+                    }
+                }
+                return;
+            }
+        }
 
         // Handle wheel scroll bindings.
         if source == AxisSource::Wheel {
@@ -3180,14 +3344,17 @@ impl State {
                             (bind_left, bind_right)
                         };
 
-                    if let Some(right) = bind_right {
-                        for _ in 0..ticks {
-                            self.handle_bind(right.clone());
+                    if ticks > 0 {
+                        if let Some(right) = bind_right {
+                            for _ in 0..ticks {
+                                self.handle_bind(right.clone());
+                            }
                         }
-                    }
-                    if let Some(left) = bind_left {
-                        for _ in ticks..0 {
-                            self.handle_bind(left.clone());
+                    } else if ticks < 0 {
+                        if let Some(left) = bind_left {
+                            for _ in 0..(-ticks) {
+                                self.handle_bind(left.clone());
+                            }
                         }
                     }
                 }
@@ -3271,14 +3438,17 @@ impl State {
                         (bind_up, bind_down)
                     };
 
-                    if let Some(down) = bind_down {
-                        for _ in 0..ticks {
-                            self.handle_bind(down.clone());
+                    if ticks > 0 {
+                        if let Some(down) = bind_down {
+                            for _ in 0..ticks {
+                                self.handle_bind(down.clone());
+                            }
                         }
-                    }
-                    if let Some(up) = bind_up {
-                        for _ in ticks..0 {
-                            self.handle_bind(up.clone());
+                    } else if ticks < 0 {
+                        if let Some(up) = bind_up {
+                            for _ in 0..(-ticks) {
+                                self.handle_bind(up.clone());
+                            }
                         }
                     }
                 }
@@ -3423,14 +3593,17 @@ impl State {
                             });
                     drop(config);
 
-                    if let Some(right) = bind_right {
-                        for _ in 0..ticks {
-                            self.handle_bind(right.clone());
+                    if ticks > 0 {
+                        if let Some(right) = bind_right {
+                            for _ in 0..ticks {
+                                self.handle_bind(right.clone());
+                            }
                         }
-                    }
-                    if let Some(left) = bind_left {
-                        for _ in ticks..0 {
-                            self.handle_bind(left.clone());
+                    } else if ticks < 0 {
+                        if let Some(left) = bind_left {
+                            for _ in 0..(-ticks) {
+                                self.handle_bind(left.clone());
+                            }
                         }
                     }
                 }
@@ -3461,14 +3634,17 @@ impl State {
                             });
                     drop(config);
 
-                    if let Some(down) = bind_down {
-                        for _ in 0..ticks {
-                            self.handle_bind(down.clone());
+                    if ticks > 0 {
+                        if let Some(down) = bind_down {
+                            for _ in 0..ticks {
+                                self.handle_bind(down.clone());
+                            }
                         }
-                    }
-                    if let Some(up) = bind_up {
-                        for _ in ticks..0 {
-                            self.handle_bind(up.clone());
+                    } else if ticks < 0 {
+                        if let Some(up) = bind_up {
+                            for _ in 0..(-ticks) {
+                                self.handle_bind(up.clone());
+                            }
                         }
                     }
                 }
@@ -4720,6 +4896,31 @@ fn hardcoded_overview_bind(raw: Keysym, mods: ModifiersState) -> Option<Bind> {
     })
 }
 
+/// Check if a libinput device is a trackpoint (pointing stick).
+///
+/// Uses the `ID_INPUT_POINTINGSTICK` udev property first, then falls back to
+/// checking the device name for "trackpoint" (e.g. Lenovo TrackPoint Keyboard II
+/// over USB may lack the udev property).
+pub fn is_trackpoint_device(device: &input::Device) -> bool {
+    if let Some(udev_device) = unsafe { device.udev_device() } {
+        if udev_device
+            .property_value("ID_INPUT_POINTINGSTICK")
+            .is_some()
+        {
+            return true;
+        }
+    }
+
+    if device.has_capability(input::DeviceCapability::Pointer) {
+        let name = device.name().to_lowercase();
+        if name.contains("trackpoint") {
+            return true;
+        }
+    }
+
+    false
+}
+
 pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::Device) {
     // According to Mutter code, this setting is specific to touchpads.
     let is_touchpad = device.config_tap_finger_count() > 0;
@@ -4801,18 +5002,12 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
 
     // This is how Mutter tells apart mice.
     let mut is_trackball = false;
-    let mut is_trackpoint = false;
     if let Some(udev_device) = unsafe { device.udev_device() } {
         if udev_device.property_value("ID_INPUT_TRACKBALL").is_some() {
             is_trackball = true;
         }
-        if udev_device
-            .property_value("ID_INPUT_POINTINGSTICK")
-            .is_some()
-        {
-            is_trackpoint = true;
-        }
     }
+    let is_trackpoint = is_trackpoint_device(device);
 
     let is_mouse = device.has_capability(input::DeviceCapability::Pointer)
         && !is_touchpad
