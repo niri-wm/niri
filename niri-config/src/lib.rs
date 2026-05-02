@@ -75,7 +75,7 @@ pub struct Config {
     pub layout: Layout,
     pub prefer_no_csd: bool,
     pub cursor: Cursor,
-    pub screenshot_path: ScreenshotPath,
+    pub screenshot: Screenshot,
     pub clipboard: Clipboard,
     pub hotkey_overlay: HotkeyOverlay,
     pub config_notification: ConfigNotification,
@@ -193,6 +193,7 @@ where
             match name {
                 "input" => m_merge!(input),
                 "cursor" => m_merge!(cursor),
+                "screenshot" => m_merge!(screenshot),
                 "clipboard" => m_merge!(clipboard),
                 "hotkey-overlay" => m_merge!(hotkey_overlay),
                 "config-notification" => m_merge!(config_notification),
@@ -240,7 +241,7 @@ where
 
                 "screenshot-path" => {
                     let part = knuffel::Decode::decode_node(node, ctx)?;
-                    config.borrow_mut().screenshot_path = part;
+                    config.borrow_mut().screenshot.path = part;
                 }
 
                 "layout" => {
@@ -648,6 +649,12 @@ mod tests {
         assert_eq!(config.input.keyboard.repeat_rate, 25);
     }
 
+    #[test]
+    fn legacy_screenshot_path() {
+        let config = Config::parse_mem(r#"screenshot-path "~/foo.png""#).unwrap();
+        assert_eq!(config.screenshot.path.0.as_deref(), Some("~/foo.png"));
+    }
+
     #[track_caller]
     fn do_parse(text: &str) -> Config {
         Config::parse_mem(text)
@@ -832,7 +839,14 @@ mod tests {
                 hide-after-inactive-ms 3000
             }
 
-            screenshot-path "~/Screenshots/screenshot.png"
+            screenshot {
+                path "~/Screenshots/screenshot.png"
+
+                notification {
+                    action "Open" "xdg-open" "{path}"
+                    action "Edit" "swappy" "-f" "{path}"
+                }
+            }
 
             clipboard {
                 disable-primary
@@ -1483,11 +1497,32 @@ mod tests {
                     3000,
                 ),
             },
-            screenshot_path: ScreenshotPath(
-                Some(
-                    "~/Screenshots/screenshot.png",
+            screenshot: Screenshot {
+                path: ScreenshotPath(
+                    Some(
+                        "~/Screenshots/screenshot.png",
+                    ),
                 ),
-            ),
+                notification: ScreenshotNotification {
+                    actions: [
+                        ScreenshotNotificationAction {
+                            label: "Open",
+                            command: [
+                                "xdg-open",
+                                "{path}",
+                            ],
+                        },
+                        ScreenshotNotificationAction {
+                            label: "Edit",
+                            command: [
+                                "swappy",
+                                "-f",
+                                "{path}",
+                            ],
+                        },
+                    ],
+                },
+            },
             clipboard: Clipboard {
                 disable_primary: true,
             },
