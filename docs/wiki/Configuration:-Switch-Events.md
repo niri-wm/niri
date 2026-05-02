@@ -10,13 +10,13 @@ Here are all the events that you can bind at a glance:
 switch-events {
     lid-close { spawn "notify-send" "The laptop lid is closed!"; }
     lid-open { spawn "notify-send" "The laptop lid is open!"; }
-    tablet-mode-on { spawn "bash" "-c" "gsettings set org.gnome.desktop.a11y.applications screen-keyboard-enabled true"; }
-    tablet-mode-off { spawn "bash" "-c" "gsettings set org.gnome.desktop.a11y.applications screen-keyboard-enabled false"; }
+    tablet-mode-on { spawn-sh "gsettings set org.gnome.desktop.a11y.applications screen-keyboard-enabled true"; }
+    tablet-mode-off { spawn-sh "gsettings set org.gnome.desktop.a11y.applications screen-keyboard-enabled false"; }
 }
 ```
 
 The syntax is similar to key bindings.
-Currently, only the [`spawn` action](./Configuration:-Key-Bindings.md#spawn) are supported.
+The [`spawn`](./Configuration:-Key-Bindings.md#spawn) and [`spawn-sh`](./Configuration:-Key-Bindings.md#spawn-sh) actions are supported.
 
 > [!NOTE]
 > In contrast to key bindings, switch event bindings are *always* executed, even when the session is locked.
@@ -44,7 +44,7 @@ In tablet mode, the keyboard and mouse are usually inaccessible, so you can use 
 
 ```kdl
 switch-events {
-    tablet-mode-on { spawn "bash" "-c" "gsettings set org.gnome.desktop.a11y.applications screen-keyboard-enabled true"; }
-    tablet-mode-off { spawn "bash" "-c" "gsettings set org.gnome.desktop.a11y.applications screen-keyboard-enabled false"; }
+    tablet-mode-on { spawn-sh "gsettings set org.gnome.desktop.a11y.applications screen-keyboard-enabled true"; }
+    tablet-mode-off { spawn-sh "gsettings set org.gnome.desktop.a11y.applications screen-keyboard-enabled false"; }
 }
 ```
