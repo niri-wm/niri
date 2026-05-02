@@ -40,6 +40,20 @@ The upstream issue that this solution was pulled from is [here](https://github.c
 
 The fix shipped in the driver at the time of writing uses a value of 0, while the initial config posted by an Nvidia engineer approximately a year prior used a value of 1. 
 
+### VR headsets not available for DRM leasing
+
+The NVIDIA driver does not always set the `non-desktop` DRM connector property on VR headsets and similar non-desktop displays. Without this property, niri treats the connector as a regular output instead of making it available for DRM leasing.
+
+As a workaround, you can force a specific output to be offered for DRM lease in the niri config:
+
+```kdl
+output "Your VR Headset Name" {
+    drm-lease
+}
+```
+
+This makes niri treat the output the same way it would treat a connector with the `non-desktop` property set.
+
 ### Screencast flickering fix
 
 <sup>Until: 25.08</sup>
