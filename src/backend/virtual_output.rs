@@ -34,6 +34,26 @@ pub(super) fn refresh_interval_from_millihz(refresh_millihz: u64) -> Duration {
     }
 }
 
+fn set_virtual_output_mode_single(output: &Output, mode: Mode) {
+    // Virtual outputs represent a single synthetic mode.
+    //
+    // Smithay's `Output` stores a monotonically-growing list of modes. That'd be correct for real
+    // monitors, but for virtual outputs it confuses some clients (e.g. Sunshine/Moonlight) after
+    // multiple custom-mode cycles. Prune the mode list back down to only the active mode so new
+    // wl_output bindings don't see stale historical modes.
+    //
+    // Also, set the preferred mode before changing the current mode so the emitted wl_output
+    // `mode` event includes both CURRENT and PREFERRED flags.
+    output.set_preferred(mode);
+    output.change_current_state(Some(mode), None, None, None);
+
+    for other in output.modes() {
+        if other != mode {
+            output.delete_mode(other);
+        }
+    }
+}
+
 pub(super) fn build_headless_virtual_output(
     counter: &mut u32,
     width: u16,
@@ -73,8 +93,7 @@ pub(super) fn build_headless_virtual_output(
         size: Size::from((i32::from(width), i32::from(height))),
         refresh: refresh_millihz,
     };
-    output.change_current_state(Some(mode), None, None, None);
-    output.set_preferred(mode);
+    set_virtual_output_mode_single(&output, mode);
 
     output.user_data().insert_if_missing(|| OutputName {
         connector: connector.clone(),
@@ -172,8 +191,7 @@ pub(super) fn apply_config_to_managed_virtual_outputs(
         let mut mode_changed = false;
         if let Some(new_mode) = new_mode {
             if output.current_mode() != Some(new_mode) {
-                output.change_current_state(Some(new_mode), None, None, None);
-                output.set_preferred(new_mode);
+                set_virtual_output_mode_single(output, new_mode);
                 mode_changed = true;
 
                 if let Some(ipc_outputs) = ipc_outputs {
