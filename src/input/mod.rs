@@ -2411,7 +2411,10 @@ impl State {
         }
     }
 
-    fn on_pointer_motion<I: InputBackend>(&mut self, event: I::PointerMotionEvent) {
+    fn on_pointer_motion<I: InputBackend + 'static>(&mut self, event: I::PointerMotionEvent)
+    where
+        I::Device: 'static,
+    {
         let was_inside_hot_corner = self.niri.pointer_inside_hot_corner;
         // Any of the early returns here mean that the pointer is not inside the hot corner.
         self.niri.pointer_inside_hot_corner = false;
@@ -2427,8 +2430,13 @@ impl State {
 
         let pos = pointer.current_location();
 
+        let delta = event.delta();
+        let sensitivity =
+            pointer_sensitivity_factor(&self.niri.config.borrow().input, &event.device());
+        let delta = Point::from((delta.x * sensitivity, delta.y * sensitivity));
+
         // We have an output, so we can compute the new location and focus.
-        let mut new_pos = pos + event.delta();
+        let mut new_pos = pos + delta;
 
         // We received an event for the regular pointer, so show it now.
         self.niri.pointer_visibility = PointerVisibility::Visible;
@@ -2474,7 +2482,7 @@ impl State {
                     self,
                     Some(under.clone()),
                     &RelativeMotionEvent {
-                        delta: event.delta(),
+                        delta,
                         delta_unaccel: event.delta_unaccel(),
                         utime: event.time(),
                     },
@@ -2585,7 +2593,7 @@ impl State {
                     self,
                     Some(focus_surface),
                     &RelativeMotionEvent {
-                        delta: event.delta(),
+                        delta,
                         delta_unaccel: event.delta_unaccel(),
                         utime: event.time(),
                     },
@@ -2615,7 +2623,7 @@ impl State {
             self,
             under.surface,
             &RelativeMotionEvent {
-                delta: event.delta(),
+                delta,
                 delta_unaccel: event.delta_unaccel(),
                 utime: event.time(),
             },
@@ -5007,6 +5015,41 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
                 .or(device.config_calibration_default_matrix())
                 .unwrap_or(IDENTITY_MATRIX),
         );
+    }
+}
+
+fn pointer_sensitivity_factor<D: Device + Any>(config: &niri_config::Input, device: &D) -> f64 {
+    let Some(device) = (device as &dyn Any).downcast_ref::<input::Device>() else {
+        return 1.;
+    };
+
+    let is_touchpad = device.config_tap_finger_count() > 0;
+    if is_touchpad {
+        return config.touchpad.sensitivity.map(|x| x.0).unwrap_or(1.);
+    }
+
+    let mut is_trackball = false;
+    let mut is_trackpoint = false;
+    if let Some(udev_device) = unsafe { device.udev_device() } {
+        if udev_device.property_value("ID_INPUT_TRACKBALL").is_some() {
+            is_trackball = true;
+        }
+        if udev_device
+            .property_value("ID_INPUT_POINTINGSTICK")
+            .is_some()
+        {
+            is_trackpoint = true;
+        }
+    }
+
+    if is_trackball {
+        config.trackball.sensitivity.map(|x| x.0).unwrap_or(1.)
+    } else if is_trackpoint {
+        config.trackpoint.sensitivity.map(|x| x.0).unwrap_or(1.)
+    } else if device.has_capability(input::DeviceCapability::Pointer) {
+        config.mouse.sensitivity.map(|x| x.0).unwrap_or(1.)
+    } else {
+        1.
     }
 }
 

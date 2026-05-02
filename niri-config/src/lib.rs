@@ -1005,6 +1005,7 @@ mod tests {
                     accel_profile: Some(
                         Flat,
                     ),
+                    sensitivity: None,
                     scroll_method: Some(
                         TwoFinger,
                     ),
@@ -1039,6 +1040,7 @@ mod tests {
                     accel_profile: Some(
                         Flat,
                     ),
+                    sensitivity: None,
                     scroll_method: Some(
                         NoScroll,
                     ),
@@ -1069,6 +1071,7 @@ mod tests {
                     accel_profile: Some(
                         Flat,
                     ),
+                    sensitivity: None,
                     scroll_method: Some(
                         OnButtonDown,
                     ),
@@ -1088,6 +1091,7 @@ mod tests {
                     accel_profile: Some(
                         Flat,
                     ),
+                    sensitivity: None,
                     scroll_method: Some(
                         Edge,
                     ),
