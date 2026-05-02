@@ -455,6 +455,16 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
             let casts = state.casts.casts.values().cloned().collect();
             Response::Casts(casts)
         }
+        Request::WindowLabels { id } => {
+            let state = ctx.event_stream_state.borrow();
+            Response::WindowLabels(
+                state
+                    .windows
+                    .windows
+                    .get(&id)
+                    .and_then(|w| w.labels.clone()),
+            )
+        }
     };
 
     Ok(response)
@@ -528,6 +538,7 @@ fn make_ipc_window(
         is_urgent: mapped.is_urgent(),
         layout,
         focus_timestamp: mapped.get_focus_timestamp().map(Timestamp::from),
+        labels: mapped.labels().cloned(),
     })
 }
 
