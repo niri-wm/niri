@@ -3778,11 +3778,49 @@ impl State {
     }
 
     fn on_tablet_tool_button<I: InputBackend>(&mut self, event: I::TabletToolButtonEvent) {
+        const BTN_STYLUS3: u32 = 0x149;
+        const BTN_STYLUS: u32 = 0x14b;
+        const BTN_STYLUS2: u32 = 0x14c;
+
         let tool = self.niri.seat.tablet_seat().get_tool(&event.tool());
 
         if let Some(tool) = tool {
+            let button = event.button();
+
+            if self.niri.suppressed_buttons.remove(&button) {
+                return;
+            }
+
+            let trigger = match button {
+                BTN_STYLUS => Some(Trigger::TabletStylusButton1),
+                BTN_STYLUS2 => Some(Trigger::TabletStylusButton2),
+                BTN_STYLUS3 => Some(Trigger::TabletStylusButton3),
+                _ => None,
+            };
+
+            if let Some(trigger) = trigger {
+                if event.button_state() == ButtonState::Pressed {
+                    let mod_key = self.backend.mod_key(&self.niri.config.borrow());
+                    let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
+                    let modifiers = modifiers_from_state(mods);
+
+                    if self.niri.mods_with_tablet_stylus_binds.contains(&modifiers) {
+                        let bind = {
+                            let config = self.niri.config.borrow();
+                            let bindings = config.binds.0.iter();
+                            find_configured_bind(bindings, mod_key, trigger, mods)
+                        };
+                        if let Some(bind) = bind {
+                            self.niri.suppressed_buttons.insert(button);
+                            self.handle_bind(bind.clone());
+                            return;
+                        }
+                    }
+                }
+            }
+
             tool.button(
-                event.button(),
+                button,
                 event.button_state(),
                 SERIAL_COUNTER.next_serial(),
                 event.time_msec(),
@@ -5065,6 +5103,18 @@ pub fn mods_with_finger_scroll_binds(mod_key: ModKey, binds: &Binds) -> HashSet<
             Trigger::TouchpadScrollDown,
             Trigger::TouchpadScrollLeft,
             Trigger::TouchpadScrollRight,
+        ],
+    )
+}
+
+pub fn mods_with_tablet_stylus_binds(mod_key: ModKey, binds: &Binds) -> HashSet<Modifiers> {
+    mods_with_binds(
+        mod_key,
+        binds,
+        &[
+            Trigger::TabletStylusButton1,
+            Trigger::TabletStylusButton2,
+            Trigger::TabletStylusButton3,
         ],
     )
 }
