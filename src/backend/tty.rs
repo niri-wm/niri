@@ -889,7 +889,13 @@ impl Tty {
         } else {
             bail!("no allocator available for device");
         };
-        let gbm_flags = GbmBufferFlags::RENDERING | GbmBufferFlags::SCANOUT;
+        let mut gbm_flags = GbmBufferFlags::RENDERING | GbmBufferFlags::SCANOUT;
+        // Display-only devices (e.g. DisplayLink) require linear buffers. Without
+        // this flag, Modifier::Invalid lets the GPU driver pick a tiled layout
+        // (e.g. micro/macro-tiled on AMD Polaris) that the adapter cannot scan out.
+        if render_node.is_none() {
+            gbm_flags |= GbmBufferFlags::LINEAR;
+        }
         let allocator = GbmAllocator::new(allocator_gbm, gbm_flags);
 
         let token = niri
@@ -1399,7 +1405,9 @@ impl Tty {
         // Filter out the CCS modifiers as they have increased bandwidth, causing some monitor
         // configurations to stop working.
         //
-        // For display only devices, restrict to linear buffers for best compatibility.
+        // For display only devices, restrict to linear/invalid buffers for best compatibility.
+        // Some GPUs (e.g. AMD Polaris) only report Modifier::Invalid (implicit) rather than
+        // Modifier::Linear, so we must accept both for display-only devices.
         //
         // The invalid modifier attempt below should make this unnecessary in some cases, but it
         // would still be a bad idea to remove this until Smithay has some kind of full-device
@@ -1410,7 +1418,8 @@ impl Tty {
             .copied()
             .filter(|format| {
                 if device.render_node.is_none() {
-                    return format.modifier == Modifier::Linear;
+                    return format.modifier == Modifier::Linear
+                        || format.modifier == Modifier::Invalid;
                 }
 
                 let is_ccs = matches!(
@@ -1433,6 +1442,16 @@ impl Tty {
                 !is_ccs
             })
             .collect::<FormatSet>();
+
+        if device.render_node.is_none() {
+            debug!(
+                "display-only device format modifiers: {:?}",
+                render_formats
+                    .iter()
+                    .map(|f| f.modifier)
+                    .collect::<Vec<_>>()
+            );
+        }
 
         // Create the compositor.
         let res = DrmCompositor::new(
@@ -2811,8 +2830,10 @@ fn surface_dmabuf_feedback(
     // Also limit scan-out formats to Linear if we have a device without a render node (i.e.
     // we're rendering on a different device).
     if surface_render_node != Some(primary_render_node) {
-        primary_scanout_formats.retain(|f| f.modifier == Modifier::Linear);
-        primary_or_overlay_scanout_formats.retain(|f| f.modifier == Modifier::Linear);
+        primary_scanout_formats
+            .retain(|f| f.modifier == Modifier::Linear || f.modifier == Modifier::Invalid);
+        primary_or_overlay_scanout_formats
+            .retain(|f| f.modifier == Modifier::Linear || f.modifier == Modifier::Invalid);
     }
 
     let builder = DmabufFeedbackBuilder::new(primary_render_node.dev_id(), primary_formats);
