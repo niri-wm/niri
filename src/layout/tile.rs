@@ -1,5 +1,6 @@
 use core::f64;
 use std::rc::Rc;
+use std::time::Duration;
 
 use niri_config::utils::MergeWith as _;
 use niri_config::{Color, CornerRadius, GradientInterpolation};
@@ -95,6 +96,15 @@ pub struct Tile<W: LayoutElement> {
 
     /// The animation of the tile's opacity.
     pub(super) alpha_animation: Option<AlphaAnimation>,
+
+    /// Animation for border/focus-ring color crossfade on active state change.
+    border_fade_animation: Option<Animation>,
+
+    /// Previous is_active state, to detect transitions.
+    is_active_previous: bool,
+
+    /// Start time for border angle rotation animation.
+    border_angle_start: Duration,
 
     /// Offset during the initial interactive move rubberband.
     pub(super) interactive_move_offset: Point<f64, Logical>,
@@ -205,6 +215,9 @@ impl<W: LayoutElement> Tile<W> {
             move_x_animation: None,
             move_y_animation: None,
             alpha_animation: None,
+            border_fade_animation: None,
+            is_active_previous: false,
+            border_angle_start: clock.now(),
             interactive_move_offset: Point::from((0., 0.)),
             unmap_snapshot: None,
             rounded_corner_damage: Default::default(),
@@ -439,6 +452,12 @@ impl<W: LayoutElement> Tile<W> {
                 self.alpha_animation = None;
             }
         }
+
+        if let Some(fade) = &mut self.border_fade_animation {
+            if fade.is_done() {
+                self.border_fade_animation = None;
+            }
+        }
     }
 
     pub fn are_animations_ongoing(&self) -> bool {
@@ -454,12 +473,28 @@ impl<W: LayoutElement> Tile<W> {
                 .alpha_animation
                 .as_ref()
                 .is_some_and(|alpha| !alpha.anim.is_done())
+            || self
+                .border_fade_animation
+                .as_ref()
+                .is_some_and(|fade| !fade.is_done())
+            || !self.options.animations.border_angle.0.off
     }
 
     pub fn update_render_elements(&mut self, is_active: bool, view_rect: Rectangle<f64, Logical>) {
         let rules = self.window.rules();
         let animated_tile_size = self.animated_tile_size();
         let expanded_progress = self.expanded_progress();
+
+        if is_active != self.is_active_previous {
+            self.is_active_previous = is_active;
+            self.border_fade_animation = Some(Animation::new(
+                self.clock.clone(),
+                0.,
+                1.,
+                0.,
+                self.options.animations.border_fade.0,
+            ));
+        }
 
         let draw_border_with_background = rules
             .draw_border_with_background
@@ -490,6 +525,25 @@ impl<W: LayoutElement> Tile<W> {
             .geometry_corner_radius()
             .expanded_by(border_width as f32)
             .scaled_by(1. - expanded_progress as f32);
+
+        let border_angle_offset = if self.options.animations.border_angle.0.off {
+            0.
+        } else {
+            let duration_ms = match &self.options.animations.border_angle.0.kind {
+                niri_config::animations::Kind::Easing(e) => e.duration_ms as f64,
+                niri_config::animations::Kind::Spring(s) => {
+                    1. / (s.stiffness as f64).sqrt() * 1000.
+                }
+            };
+            let elapsed_ns =
+                self.clock
+                    .now()
+                    .as_nanos()
+                    .saturating_sub(self.border_angle_start.as_nanos()) as f64;
+            (elapsed_ns / 1_000_000.0 / duration_ms * 360.0) % 360.0
+        };
+
+        let alpha = 1. - expanded_progress as f32;
         self.border.update_render_elements(
             border_window_size,
             is_active,
@@ -501,7 +555,9 @@ impl<W: LayoutElement> Tile<W> {
             ),
             radius,
             self.scale,
-            1. - expanded_progress as f32,
+            alpha,
+            self.border_fade_animation.as_ref(),
+            border_angle_offset as f32,
         );
 
         let radius = if self.visual_border_width().is_some() {
@@ -516,7 +572,7 @@ impl<W: LayoutElement> Tile<W> {
             is_active,
             radius,
             self.scale,
-            1. - expanded_progress as f32,
+            alpha,
         );
 
         let draw_focus_ring_with_background = if self.border.is_off() {
@@ -533,7 +589,9 @@ impl<W: LayoutElement> Tile<W> {
             view_rect,
             radius,
             self.scale,
-            1. - expanded_progress as f32,
+            alpha,
+            self.border_fade_animation.as_ref(),
+            border_angle_offset as f32,
         );
 
         self.fullscreen_backdrop.resize(animated_tile_size);

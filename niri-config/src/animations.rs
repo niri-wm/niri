@@ -19,6 +19,8 @@ pub struct Animations {
     pub screenshot_ui_open: ScreenshotUiOpenAnim,
     pub overview_open_close: OverviewOpenCloseAnim,
     pub recent_windows_close: RecentWindowsCloseAnim,
+    pub border_fade: BorderFadeAnim,
+    pub border_angle: BorderAngleAnim,
 }
 
 impl Default for Animations {
@@ -37,6 +39,8 @@ impl Default for Animations {
             screenshot_ui_open: Default::default(),
             overview_open_close: Default::default(),
             recent_windows_close: Default::default(),
+            border_fade: Default::default(),
+            border_angle: Default::default(),
         }
     }
 }
@@ -71,6 +75,10 @@ pub struct AnimationsPart {
     pub overview_open_close: Option<OverviewOpenCloseAnim>,
     #[knuffel(child)]
     pub recent_windows_close: Option<RecentWindowsCloseAnim>,
+    #[knuffel(child)]
+    pub border_fade: Option<BorderFadeAnim>,
+    #[knuffel(child)]
+    pub border_angle: Option<BorderAngleAnim>,
 }
 
 impl MergeWith<AnimationsPart> for Animations {
@@ -97,6 +105,8 @@ impl MergeWith<AnimationsPart> for Animations {
             screenshot_ui_open,
             overview_open_close,
             recent_windows_close,
+            border_fade,
+            border_angle,
         );
     }
 }
@@ -510,6 +520,66 @@ where
 }
 
 impl<S> knuffel::Decode<S> for RecentWindowsCloseAnim
+where
+    S: knuffel::traits::ErrorSpan,
+{
+    fn decode_node(
+        node: &knuffel::ast::SpannedNode<S>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) -> Result<Self, DecodeError<S>> {
+        let default = Self::default().0;
+        Ok(Self(Animation::decode_node(node, ctx, default, |_, _| {
+            Ok(false)
+        })?))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct BorderFadeAnim(pub Animation);
+
+impl Default for BorderFadeAnim {
+    fn default() -> Self {
+        Self(Animation {
+            off: true,
+            kind: Kind::Easing(EasingParams {
+                duration_ms: 200,
+                curve: Curve::EaseOutCubic,
+            }),
+        })
+    }
+}
+
+impl<S> knuffel::Decode<S> for BorderFadeAnim
+where
+    S: knuffel::traits::ErrorSpan,
+{
+    fn decode_node(
+        node: &knuffel::ast::SpannedNode<S>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) -> Result<Self, DecodeError<S>> {
+        let default = Self::default().0;
+        Ok(Self(Animation::decode_node(node, ctx, default, |_, _| {
+            Ok(false)
+        })?))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct BorderAngleAnim(pub Animation);
+
+impl Default for BorderAngleAnim {
+    fn default() -> Self {
+        Self(Animation {
+            off: true,
+            kind: Kind::Easing(EasingParams {
+                duration_ms: 2000,
+                curve: Curve::Linear,
+            }),
+        })
+    }
+}
+
+impl<S> knuffel::Decode<S> for BorderAngleAnim
 where
     S: knuffel::traits::ErrorSpan,
 {
