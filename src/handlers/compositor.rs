@@ -397,6 +397,34 @@ impl CompositorHandler for State {
             return;
         }
 
+        for popup in self
+            .niri
+            .input_method_v1_popups
+            .iter()
+            .filter(|p| p.alive())
+        {
+            let mut popup_root = popup.wl_surface().clone();
+            while let Some(parent) = get_parent(&popup_root) {
+                popup_root = parent;
+            }
+
+            if popup_root != root_surface {
+                continue;
+            }
+
+            if let Some(parent) = popup.get_parent().map(|parent| parent.surface.clone()) {
+                let mut parent_root = parent;
+                while let Some(next) = get_parent(&parent_root) {
+                    parent_root = next;
+                }
+
+                if let Some(output) = self.niri.output_for_root(&parent_root) {
+                    self.niri.queue_redraw(&output.clone());
+                    return;
+                }
+            }
+        }
+
         // This might be a layer-shell surface.
         if self.layer_shell_handle_commit(surface) {
             return;
