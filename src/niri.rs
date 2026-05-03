@@ -391,6 +391,7 @@ pub struct Niri {
 
     pub window_mru_ui: WindowMruUi,
     pub pending_mru_commit: Option<PendingMruCommit>,
+    pub pending_focus_follow_mouse: Option<PendingFocusFollowsMouseCommit>,
 
     pub pick_window: Option<async_channel::Sender<Option<MappedId>>>,
     pub pick_color: Option<async_channel::Sender<Option<niri_ipc::PickedColor>>>,
@@ -628,6 +629,13 @@ pub struct PendingMruCommit {
     id: MappedId,
     token: RegistrationToken,
     stamp: Duration,
+}
+
+/// Pending focus-follows-mouse window activation.
+#[derive(Debug)]
+pub struct PendingFocusFollowsMouseCommit {
+    window: Window,
+    token: RegistrationToken,
 }
 
 impl RedrawState {
@@ -2602,6 +2610,7 @@ impl Niri {
 
             window_mru_ui,
             pending_mru_commit: None,
+            pending_focus_follow_mouse: None,
 
             pick_window: None,
             pick_color: None,
@@ -6219,8 +6228,21 @@ impl Niri {
                     }
                 }
 
-                self.layout.activate_window_without_raising(window);
-                self.layer_shell_on_demand_focus = None;
+                match ffm.delay_ms {
+                    None | Some(0) => {
+                        self.layout.activate_window_without_raising(window);
+                        self.layer_shell_on_demand_focus = None;
+                    }
+                    Some(delay_ms) => {
+                        self.activate_window_without_raising_delayed(window, delay_ms);
+                    }
+                }
+            }
+        } else {
+            if let Some(PendingFocusFollowsMouseCommit { token, .. }) =
+                self.pending_focus_follow_mouse.take()
+            {
+                self.event_loop.remove(token);
             }
         }
 
@@ -6228,6 +6250,38 @@ impl Niri {
             if current_focus.layer.as_ref() != Some(layer) {
                 self.layer_shell_on_demand_focus = Some(layer.clone());
             }
+        }
+    }
+
+    fn activate_window_without_raising_delayed(&mut self, window: &Window, delay_ms: u16) {
+        let focused_window = window.clone();
+        let focus_token = self
+            .event_loop
+            .insert_source(
+                Timer::from_duration(Duration::from_millis(u64::from(delay_ms))),
+                move |_, _, state| {
+                    if let Some(pending) = state.niri.pending_focus_follow_mouse.take() {
+                        if pending.window == focused_window {
+                            state
+                                .niri
+                                .layout
+                                .activate_window_without_raising(&pending.window);
+                            state.niri.layer_shell_on_demand_focus = None;
+                        }
+                    }
+                    TimeoutAction::Drop
+                },
+            )
+            .unwrap();
+
+        if let Some(PendingFocusFollowsMouseCommit { token, .. }) = self
+            .pending_focus_follow_mouse
+            .replace(PendingFocusFollowsMouseCommit {
+                window: window.clone(),
+                token: focus_token,
+            })
+        {
+            self.event_loop.remove(token);
         }
     }
 
