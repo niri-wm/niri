@@ -141,8 +141,9 @@ use crate::input::pick_color_grab::PickColorGrab;
 use crate::input::scroll_swipe_gesture::ScrollSwipeGesture;
 use crate::input::scroll_tracker::ScrollTracker;
 use crate::input::{
-    apply_libinput_settings, mods_with_finger_scroll_binds, mods_with_mouse_binds,
-    mods_with_tablet_stylus_binds, mods_with_wheel_binds, TabletData,
+    apply_libinput_settings, mods_with_finger_scroll_binds, mods_with_horizontal_wheel_binds,
+    mods_with_mouse_binds, mods_with_tablet_stylus_binds, mods_with_vertical_wheel_binds,
+    TabletData,
 };
 use crate::ipc::server::IpcServer;
 use crate::layer::mapped::LayerSurfaceRenderElement;
@@ -394,7 +395,8 @@ pub struct Niri {
     pub vertical_wheel_tracker: ScrollTracker,
     pub horizontal_wheel_tracker: ScrollTracker,
     pub mods_with_mouse_binds: HashSet<Modifiers>,
-    pub mods_with_wheel_binds: HashSet<Modifiers>,
+    pub mods_with_horizontal_wheel_binds: HashSet<Modifiers>,
+    pub mods_with_vertical_wheel_binds: HashSet<Modifiers>,
     pub mods_with_tablet_stylus_binds: HashSet<Modifiers>,
     pub vertical_finger_scroll_tracker: ScrollTracker,
     pub horizontal_finger_scroll_tracker: ScrollTracker,
@@ -1660,7 +1662,10 @@ impl State {
                 .hotkey_overlay
                 .on_hotkey_config_updated(new_mod_key);
             self.niri.mods_with_mouse_binds = mods_with_mouse_binds(new_mod_key, &config.binds);
-            self.niri.mods_with_wheel_binds = mods_with_wheel_binds(new_mod_key, &config.binds);
+            self.niri.mods_with_horizontal_wheel_binds =
+                mods_with_horizontal_wheel_binds(new_mod_key, &config.binds);
+            self.niri.mods_with_vertical_wheel_binds =
+                mods_with_vertical_wheel_binds(new_mod_key, &config.binds);
             self.niri.mods_with_tablet_stylus_binds =
                 mods_with_tablet_stylus_binds(new_mod_key, &config.binds);
             self.niri.mods_with_finger_scroll_binds =
@@ -2549,7 +2554,10 @@ impl Niri {
 
         let mod_key = backend.mod_key(&config.borrow());
         let mods_with_mouse_binds = mods_with_mouse_binds(mod_key, &config_.binds);
-        let mods_with_wheel_binds = mods_with_wheel_binds(mod_key, &config_.binds);
+        let mods_with_horizontal_wheel_binds =
+            mods_with_horizontal_wheel_binds(mod_key, &config_.binds);
+        let mods_with_vertical_wheel_binds =
+            mods_with_vertical_wheel_binds(mod_key, &config_.binds);
         let mods_with_finger_scroll_binds = mods_with_finger_scroll_binds(mod_key, &config_.binds);
         let mods_with_tablet_stylus_binds = mods_with_tablet_stylus_binds(mod_key, &config_.binds);
 
@@ -2738,7 +2746,8 @@ impl Niri {
             vertical_wheel_tracker: ScrollTracker::new(120),
             horizontal_wheel_tracker: ScrollTracker::new(120),
             mods_with_mouse_binds,
-            mods_with_wheel_binds,
+            mods_with_horizontal_wheel_binds,
+            mods_with_vertical_wheel_binds,
             mods_with_tablet_stylus_binds,
 
             // 10 is copied from Clutter: DISCRETE_SCROLL_STEP.
