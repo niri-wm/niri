@@ -3086,8 +3086,20 @@ impl State {
 
         let timestamp = Duration::from_micros(event.time());
 
+        let horizontal_amount = event.amount(Axis::Horizontal);
+        let vertical_amount = event.amount(Axis::Vertical);
+
         let horizontal_amount_v120 = event.amount_v120(Axis::Horizontal);
         let vertical_amount_v120 = event.amount_v120(Axis::Vertical);
+
+        let mut horizontal_amount = horizontal_amount.unwrap_or_else(|| {
+            // Winit backend, discrete scrolling.
+            horizontal_amount_v120.unwrap_or(0.0) / 120. * 15.
+        });
+        let mut vertical_amount = vertical_amount.unwrap_or_else(|| {
+            // Winit backend, discrete scrolling.
+            vertical_amount_v120.unwrap_or(0.0) / 120. * 15.
+        });
 
         let is_overview_open = self.niri.layout.is_overview_open();
 
@@ -3119,10 +3131,14 @@ impl State {
             // Wayland. If there's no bind, reset the accumulator.
             let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
             let modifiers = modifiers_from_state(mods);
-            let should_handle = should_handle_in_overview
-                || is_mru_open
-                || self.niri.mods_with_wheel_binds.contains(&modifiers);
-            if should_handle {
+            let use_builtin_bindings = should_handle_in_overview || is_mru_open;
+
+            if use_builtin_bindings
+                || self
+                    .niri
+                    .mods_with_horizontal_wheel_binds
+                    .contains(&modifiers)
+            {
                 let horizontal = horizontal_amount_v120.unwrap_or(0.);
                 let ticks = self.niri.horizontal_wheel_tracker.accumulate(horizontal);
                 if ticks != 0 {
@@ -3192,6 +3208,17 @@ impl State {
                     }
                 }
 
+                horizontal_amount = 0.0;
+            } else {
+                self.niri.horizontal_wheel_tracker.reset();
+            }
+
+            if use_builtin_bindings
+                || self
+                    .niri
+                    .mods_with_vertical_wheel_binds
+                    .contains(&modifiers)
+            {
                 let vertical = vertical_amount_v120.unwrap_or(0.);
                 let ticks = self.niri.vertical_wheel_tracker.accumulate(vertical);
                 if ticks != 0 {
@@ -3283,23 +3310,20 @@ impl State {
                     }
                 }
 
-                return;
+                vertical_amount = 0.0;
             } else {
-                self.niri.horizontal_wheel_tracker.reset();
                 self.niri.vertical_wheel_tracker.reset();
             }
-        }
 
-        let horizontal_amount = event.amount(Axis::Horizontal);
-        let vertical_amount = event.amount(Axis::Vertical);
+            if horizontal_amount == 0.0 && vertical_amount == 0.0 {
+                return;
+            }
+        }
 
         // Handle touchpad and continuous scroll bindings.
         if source == AxisSource::Finger || source == AxisSource::Continuous {
             let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
             let modifiers = modifiers_from_state(mods);
-
-            let horizontal = horizontal_amount.unwrap_or(0.);
-            let vertical = vertical_amount.unwrap_or(0.);
 
             if should_handle_in_overview && modifiers.is_empty() {
                 let mut redraw = false;
@@ -3307,7 +3331,7 @@ impl State {
                 let action = self
                     .niri
                     .overview_scroll_swipe_gesture
-                    .update(horizontal, vertical);
+                    .update(horizontal_amount, vertical_amount);
                 let is_vertical = self.niri.overview_scroll_swipe_gesture.is_vertical();
 
                 if action.end() {
@@ -3336,10 +3360,11 @@ impl State {
                             }
                         }
 
-                        let res = self
-                            .niri
-                            .layout
-                            .workspace_switch_gesture_update(vertical, timestamp, true);
+                        let res = self.niri.layout.workspace_switch_gesture_update(
+                            vertical_amount,
+                            timestamp,
+                            true,
+                        );
                         if let Some(Some(_)) = res {
                             redraw = true;
                         }
@@ -3359,10 +3384,11 @@ impl State {
                             }
                         }
 
-                        let res = self
-                            .niri
-                            .layout
-                            .view_offset_gesture_update(horizontal, timestamp, true);
+                        let res = self.niri.layout.view_offset_gesture_update(
+                            horizontal_amount,
+                            timestamp,
+                            true,
+                        );
                         if let Some(Some(_)) = res {
                             redraw = true;
                         }
@@ -3400,7 +3426,7 @@ impl State {
                 let ticks = self
                     .niri
                     .horizontal_finger_scroll_tracker
-                    .accumulate(horizontal);
+                    .accumulate(horizontal_amount);
                 if ticks != 0 {
                     let config = self.niri.config.borrow();
                     let bindings =
@@ -3438,7 +3464,7 @@ impl State {
                 let ticks = self
                     .niri
                     .vertical_finger_scroll_tracker
-                    .accumulate(vertical);
+                    .accumulate(vertical_amount);
                 if ticks != 0 {
                     let config = self.niri.config.borrow();
                     let bindings =
@@ -3508,15 +3534,8 @@ impl State {
             vertical_factor * window_scroll_factor,
         );
 
-        let horizontal_amount = horizontal_amount.unwrap_or_else(|| {
-            // Winit backend, discrete scrolling.
-            horizontal_amount_v120.unwrap_or(0.0) / 120. * 15.
-        }) * horizontal_factor;
-
-        let vertical_amount = vertical_amount.unwrap_or_else(|| {
-            // Winit backend, discrete scrolling.
-            vertical_amount_v120.unwrap_or(0.0) / 120. * 15.
-        }) * vertical_factor;
+        let horizontal_amount = horizontal_amount * horizontal_factor;
+        let vertical_amount = vertical_amount * vertical_factor;
 
         let horizontal_amount_v120 = horizontal_amount_v120.map(|x| x * horizontal_factor);
         let vertical_amount_v120 = vertical_amount_v120.map(|x| x * vertical_factor);
@@ -5043,16 +5062,19 @@ pub fn mods_with_mouse_binds(mod_key: ModKey, binds: &Binds) -> HashSet<Modifier
     )
 }
 
-pub fn mods_with_wheel_binds(mod_key: ModKey, binds: &Binds) -> HashSet<Modifiers> {
+pub fn mods_with_horizontal_wheel_binds(mod_key: ModKey, binds: &Binds) -> HashSet<Modifiers> {
     mods_with_binds(
         mod_key,
         binds,
-        &[
-            Trigger::WheelScrollUp,
-            Trigger::WheelScrollDown,
-            Trigger::WheelScrollLeft,
-            Trigger::WheelScrollRight,
-        ],
+        &[Trigger::WheelScrollLeft, Trigger::WheelScrollRight],
+    )
+}
+
+pub fn mods_with_vertical_wheel_binds(mod_key: ModKey, binds: &Binds) -> HashSet<Modifiers> {
+    mods_with_binds(
+        mod_key,
+        binds,
+        &[Trigger::WheelScrollUp, Trigger::WheelScrollDown],
     )
 }
 
