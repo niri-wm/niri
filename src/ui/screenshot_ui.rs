@@ -25,7 +25,7 @@ use smithay::utils::{Buffer, Logical, Physical, Point, Rectangle, Scale, Size, T
 
 use crate::animation::{Animation, Clock};
 use crate::layout::floating::DIRECTIONAL_MOVE_PX;
-use crate::niri::OutputRenderElements;
+use crate::niri::{zoom_wrap, OutputRenderElements, ZoomWrapper, ZoomedRenderElements};
 use crate::niri_render_elements;
 use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use crate::render_helpers::renderer::NiriRenderer;
@@ -33,7 +33,7 @@ use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderEleme
 use crate::render_helpers::texture::{TextureBuffer, TextureRenderElement};
 use crate::render_helpers::{render_to_texture, RenderTarget};
 use crate::utils::to_physical_precise_round;
-use crate::zoom::{zoom_transform_physical_point, zoom_wrap, ZoomWrapper, ZoomedRenderElements};
+use crate::utils::zoom::zoom_transform_physical_point;
 
 const SELECTION_BORDER: i32 = 2;
 
