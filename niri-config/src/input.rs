@@ -197,6 +197,8 @@ pub struct Touchpad {
     pub drag: Option<bool>,
     #[knuffel(child)]
     pub drag_lock: bool,
+    #[knuffel(child, unwrap(argument, str))]
+    pub three_finger_drag: Option<ThreeFingerDrag>,
     #[knuffel(child)]
     pub natural_scroll: bool,
     #[knuffel(child, unwrap(argument, str))]
@@ -289,6 +291,23 @@ pub struct Trackball {
     pub left_handed: bool,
     #[knuffel(child)]
     pub middle_emulation: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ThreeFingerDrag {
+    Disabled,
+    EnabledThreeFinger,
+    EnabledFourFinger,
+}
+
+impl From<ThreeFingerDrag> for input::ThreeFingerDragState {
+    fn from(value: ThreeFingerDrag) -> Self {
+        match value {
+            ThreeFingerDrag::Disabled => Self::Disabled,
+            ThreeFingerDrag::EnabledThreeFinger => Self::EnabledThreeFinger,
+            ThreeFingerDrag::EnabledFourFinger => Self::EnabledFourFinger,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -448,6 +467,21 @@ impl FromStr for ModKey {
             "iso_level3_shift" | "mod5" => Ok(Self::IsoLevel3Shift),
             "iso_level5_shift" | "mod3" => Ok(Self::IsoLevel5Shift),
             _ => Err(miette!("invalid Mod key: {s}")),
+        }
+    }
+}
+
+impl FromStr for ThreeFingerDrag {
+    type Err = miette::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "disabled" => Ok(Self::Disabled),
+            "3fg" => Ok(Self::EnabledThreeFinger),
+            "4fg" => Ok(Self::EnabledFourFinger),
+            _ => Err(miette!(
+                r#"invalid three finger drag value, can be  "disabled", "3fg" or "4fg""#
+            )),
         }
     }
 }
