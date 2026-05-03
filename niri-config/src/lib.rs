@@ -1473,6 +1473,7 @@ mod tests {
                     b: 0.25,
                     a: 1.0,
                 },
+                auto_tile: None,
             },
             prefer_no_csd: true,
             cursor: Cursor {
