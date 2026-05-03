@@ -372,41 +372,6 @@ pub(crate) fn compute_on_edge_cursor_anchor(
     Point::from((anchor_x, anchor_y))
 }
 
-pub(crate) fn should_use_dynamic_tracking(
-    movement_mode: Option<&ZoomMovementMode>,
-    locked: bool,
-    target_level: f64,
-    level_changed: bool,
-    cursor_available: bool,
-    output_size_available: bool,
-) -> bool {
-    level_changed
-        && !locked
-        && target_level > 1.0
-        && cursor_available
-        && output_size_available
-        && matches!(movement_mode, Some(ZoomMovementMode::OnEdge))
-}
-
-pub(crate) fn compute_tracking_anchor(
-    movement_mode: Option<&ZoomMovementMode>,
-    cursor_local: Point<f64, Logical>,
-    output_size: Size<f64, Logical>,
-    current_level: f64,
-    current_focal: Point<f64, Logical>,
-) -> Option<Point<f64, Logical>> {
-    if matches!(movement_mode, Some(ZoomMovementMode::OnEdge)) {
-        Some(compute_on_edge_cursor_anchor(
-            cursor_local,
-            current_level,
-            current_focal,
-            output_size,
-        ))
-    } else {
-        None
-    }
-}
-
 pub fn compute_focal_for_zoom_level(
     cursor_pos: Option<Point<f64, Logical>>,
     output_size: Option<Size<f64, Logical>>,
