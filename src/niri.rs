@@ -177,6 +177,9 @@ use crate::utils::spawning::{CHILD_DISPLAY, CHILD_ENV};
 use crate::utils::vblank_throttle::VBlankThrottle;
 use crate::utils::watcher::Watcher;
 use crate::utils::xwayland::satellite::Satellite;
+use crate::utils::zoom::{
+    canonical_display_cursor_global_pos, zoom_subpixel_correction, ZoomTransformInputs,
+};
 use crate::utils::{
     center, center_f64, expand_home, get_monotonic_time, ipc_transform_to_smithay, is_mapped,
     logical_output, make_screenshot_path, output_matches_name, output_size, panel_orientation,
@@ -184,10 +187,6 @@ use crate::utils::{
 };
 use crate::window::mapped::MappedId;
 use crate::window::{InitialConfigureState, Mapped, ResolvedWindowRules, Unmapped, WindowRef};
-use crate::zoom::{
-    canonical_display_cursor_global_pos, zoom_wrap, ZoomTransformInputs, ZoomWrapper,
-    ZoomedRenderElements,
-};
 
 const CLEAR_COLOR_LOCKED: [f32; 4] = [0.3, 0.1, 0.1, 1.];
 
@@ -2086,10 +2085,13 @@ impl State {
             .screenshot_ui
             .selection_output()
             .map(|output| {
+                let Some(zoom_state) = self.niri.layout.zoom_state_for_output(output) else {
+                    return (false, 1.0, Point::default());
+                };
                 (
-                    self.niri.layout.zoom_is_active_for_output(output),
-                    self.niri.layout.zoom_level_for_output(output),
-                    self.niri.layout.zoom_focal_for_output(output),
+                    zoom_state.is_active(),
+                    zoom_state.current_level(),
+                    zoom_state.current_focal(),
                 )
             })
             .unwrap_or((false, 1.0, Point::default()));
@@ -3956,16 +3958,30 @@ impl Niri {
         // If zoom is active but pointer is not in visible zoomed viewport, fall back to
         // regular (non-zoomed) rendering instead of skipping entirely
         if cursor_logical_pos.is_none() {
-            if zoom_level > 1.0 {
-                // Pointer outside zoomed viewport - render without zoom
+            // Check if cursor is on a different output (not this one)
+            let cursor_on_this_output = self
+                .global_space
+                .output_geometry(output)
+                .map(|geom| {
+                    let geom_f64 = geom.to_f64();
+                    geom_f64.contains(pointer_pos)
+                })
+                .unwrap_or(false);
+
+            if zoom_level > 1.0 && !cursor_on_this_output {
+                // Pointer on different output - render without zoom
                 let raw_ctx = RenderCtx {
                     apply_zoom: false,
                     ..ctx
                 };
                 return self.render_pointer(raw_ctx, output, &mut |elem| push(elem.into()));
             }
-            // No zoom active - use regular rendering
-            return self.render_pointer(ctx, output, &mut |elem| push(elem.into()));
+            // Cursor on this output but outside viewport, or no zoom active
+            if cursor_on_this_output {
+                // Still on this output - continue with zoom rendering
+            } else {
+                return self.render_pointer(ctx, output, &mut |elem| push(elem.into()));
+            }
         }
 
         let raw_ctx = RenderCtx {
@@ -3978,19 +3994,21 @@ impl Niri {
         self.render_pointer(raw_ctx, output, &mut |elem| {
             let pointer_pos = elem.geometry(output_scale).loc;
 
-            let cursor_pos_f64: Point<f64, Physical> = cursor_logical_pos
-                .map(|p| p.to_physical(output_scale))
-                .unwrap_or_else(|| Point::from((pointer_pos.x as f64, pointer_pos.y as f64)));
+            // Use raw (unclamped) pointer_local for the zoom transform formula.
+            // cursor_logical_pos is clamped by zoom_display_cursor_logical, but
+            // the formula target = cursor * zoom_level - focal * (zoom_level - 1.0)
+            // expects the raw cursor position to correctly compute the rendered position.
+            let cursor_pos_f64: Point<f64, Physical> = pointer_local
+                .to_physical(output_scale);
 
             // Use f64 for focal to preserve fractional precision at high zoom levels.
-            // Using i32 (as zoom_transform_physical_point does) loses precision that gets
-            // magnified when multiplied by zoom_level, causing visible jitter.
             let focal_f64: Point<f64, Physical> = zoom_focal.to_physical(output_scale);
             let target: Point<f64, Physical> = Point::from((
                 cursor_pos_f64.x * zoom_level - focal_f64.x * (zoom_level - 1.0),
                 cursor_pos_f64.y * zoom_level - focal_f64.y * (zoom_level - 1.0),
             ));
-            let target_rounded_: Point<i32, Physical> = target.to_i32_round::<i32>();
+            let target_rounded_: Point<i32, Physical> =
+                Point::from((target.x.round() as i32, target.y.round() as i32));
 
             target_rounded = Some(target_rounded_);
 
@@ -6928,6 +6946,24 @@ fn scale_relocate_crop<E: Element>(
     CropRenderElement::from_element(elem, output_scale, ws_geo)
 }
 
+/// Wrap an element with the standard zoom transform: Rescale around the focal point, then Relocate
+/// by the subpixel correction. This is the canonical way to apply, except for pointer and
+/// screenshot_ui which are subject to additional constraints and require custom handling.
+pub fn zoom_wrap<E: Element>(
+    elem: E,
+    zoom_factor: f64,
+    output_scale: Scale<f64>,
+    zoom_focal: Point<f64, Logical>,
+) -> ZoomWrapper<E> {
+    let focal_physical: Point<i32, Physical> = zoom_focal.to_physical_precise_round(output_scale);
+    let correction = zoom_subpixel_correction(zoom_focal, zoom_factor, output_scale);
+    RelocateRenderElement::from_element(
+        RescaleRenderElement::from_element(elem, focal_physical, zoom_factor),
+        correction,
+        Relocate::Relative,
+    )
+}
+
 #[allow(clippy::too_many_arguments)]
 fn apply_zoom_to_render_element<R: NiriRenderer>(
     element: OutputRenderElements<R>,
@@ -6994,5 +7030,28 @@ niri_render_elements! {
         RelocatedMemoryBuffer = RelocateRenderElement<MemoryRenderBufferRenderElement<R>>,
         // All zoomed elements wrapped in a single variant
         Zoomed = ZoomedRenderElements<R>,
+    }
+}
+
+// Define a type alias for the common zoom wrapper: Relocate(Rescale(T))
+pub type ZoomWrapper<T> = RelocateRenderElement<RescaleRenderElement<T>>;
+
+// Unique enum for all zoomed elements - avoids type conflicts with OutputRenderElements since
+// zoomed types are wrapped in a separate enum
+niri_render_elements! {
+    ZoomedRenderElements<R> => {
+        Monitor = ZoomWrapper<MonitorRenderElement<R>>,
+        RescaledTile = ZoomWrapper<RescaleRenderElement<TileRenderElement<R>>>,
+        LayerSurface = ZoomWrapper<LayerSurfaceRenderElement<R>>,
+        RelocatedLayerSurface = ZoomWrapper<CropRenderElement<ZoomWrapper<LayerSurfaceRenderElement<R>>>>,
+        RelocatedColor = ZoomWrapper<CropRenderElement<ZoomWrapper<SolidColorRenderElement>>>,
+        Pointer = ZoomWrapper<PointerRenderElements<R>>,
+        Wayland = ZoomWrapper<WaylandSurfaceRenderElement<R>>,
+        SolidColor = ZoomWrapper<SolidColorRenderElement>,
+        Texture = ZoomWrapper<PrimaryGpuTextureRenderElement>,
+        // We don't apply zoom to WindowMruUi and ExitConfirmDialog elements, so they are intentionally
+        // excluded from this enum to avoid confusion and potential misuse.
+        // ScreenshotUi are handled separately in screenshot_ui module due to their unique
+        // constraints and requirements, so they are also intentionally excluded here.
     }
 }
