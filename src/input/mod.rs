@@ -363,15 +363,15 @@ impl State {
         };
 
         if keep_ratio {
-            pos.x /= target_geo.size.w as f64;
-            pos.y /= target_geo.size.h as f64;
+            pos.x /= target_geo.size.w;
+            pos.y /= target_geo.size.h;
 
             let device = event.device();
             if let Some(device) = (&device as &dyn Any).downcast_ref::<input::Device>() {
                 if let Some(data) = self.niri.tablets.get(device) {
                     // This code does the same thing as mutter with "keep aspect ratio" enabled.
                     let size = transform.invert().transform_size(target_geo.size);
-                    let output_aspect_ratio = size.w as f64 / size.h as f64;
+                    let output_aspect_ratio = size.w / size.h;
                     let ratio = data.aspect_ratio / output_aspect_ratio;
 
                     if ratio > 1. {
@@ -382,12 +382,12 @@ impl State {
                 }
             };
 
-            pos.x *= target_geo.size.w as f64;
-            pos.y *= target_geo.size.h as f64;
+            pos.x *= target_geo.size.w;
+            pos.y *= target_geo.size.h;
         }
 
-        pos.x = pos.x.clamp(0.0, target_geo.size.w as f64 - px);
-        pos.y = pos.y.clamp(0.0, target_geo.size.h as f64 - px);
+        pos.x = pos.x.clamp(0.0, target_geo.size.w - px);
+        pos.y = pos.y.clamp(0.0, target_geo.size.h - px);
         Some(pos + target_geo.loc.to_f64())
     }
 
