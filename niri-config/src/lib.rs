@@ -1637,6 +1637,18 @@ mod tests {
                         ),
                     },
                 ),
+                screen_transition: ScreenTransitionAnim {
+                    anim: Animation {
+                        off: false,
+                        kind: Easing(
+                            EasingParams {
+                                duration_ms: 300,
+                                curve: EaseOutExpo,
+                            },
+                        ),
+                    },
+                    custom_shader: None,
+                },
             },
             blur: Blur {
                 off: false,
