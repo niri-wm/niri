@@ -303,20 +303,30 @@ pub enum Action {
     ResetWindowHeight,
     #[knuffel(skip)]
     ResetWindowHeightById(u64),
-    SwitchPresetColumnWidth,
-    SwitchPresetColumnWidthBack,
-    SwitchPresetWindowWidth,
-    SwitchPresetWindowWidthBack,
+    SwitchPresetColumnWidth(
+        #[knuffel(property(name = "forwards"), default = true)] bool,
+        #[knuffel(property(name = "wrap"), default = true)] bool,
+    ),
+    SwitchPresetWindowWidth(
+        #[knuffel(property(name = "forwards"), default = true)] bool,
+        #[knuffel(property(name = "wrap"), default = true)] bool,
+    ),
     #[knuffel(skip)]
-    SwitchPresetWindowWidthById(u64),
+    SwitchPresetWindowWidthById {
+        id: u64,
+        forwards: bool,
+        wrap: bool,
+    },
+    SwitchPresetWindowHeight(
+        #[knuffel(property(name = "forwards"), default = true)] bool,
+        #[knuffel(property(name = "wrap"), default = true)] bool,
+    ),
     #[knuffel(skip)]
-    SwitchPresetWindowWidthBackById(u64),
-    SwitchPresetWindowHeight,
-    SwitchPresetWindowHeightBack,
-    #[knuffel(skip)]
-    SwitchPresetWindowHeightById(u64),
-    #[knuffel(skip)]
-    SwitchPresetWindowHeightBackById(u64),
+    SwitchPresetWindowHeightById {
+        id: u64,
+        forwards: bool,
+        wrap: bool,
+    },
     MaximizeColumn,
     MaximizeWindowToEdges,
     #[knuffel(skip)]
@@ -595,30 +605,29 @@ impl From<niri_ipc::Action> for Action {
             } => Self::SetWindowHeightById { id, change },
             niri_ipc::Action::ResetWindowHeight { id: None } => Self::ResetWindowHeight,
             niri_ipc::Action::ResetWindowHeight { id: Some(id) } => Self::ResetWindowHeightById(id),
-            niri_ipc::Action::SwitchPresetColumnWidth {} => Self::SwitchPresetColumnWidth,
-            niri_ipc::Action::SwitchPresetColumnWidthBack {} => Self::SwitchPresetColumnWidthBack,
-            niri_ipc::Action::SwitchPresetWindowWidth { id: None } => Self::SwitchPresetWindowWidth,
-            niri_ipc::Action::SwitchPresetWindowWidthBack { id: None } => {
-                Self::SwitchPresetWindowWidthBack
+            niri_ipc::Action::SwitchPresetColumnWidth { forwards, wrap } => {
+                Self::SwitchPresetColumnWidth(forwards, wrap)
             }
-            niri_ipc::Action::SwitchPresetWindowWidth { id: Some(id) } => {
-                Self::SwitchPresetWindowWidthById(id)
-            }
-            niri_ipc::Action::SwitchPresetWindowWidthBack { id: Some(id) } => {
-                Self::SwitchPresetWindowWidthBackById(id)
-            }
-            niri_ipc::Action::SwitchPresetWindowHeight { id: None } => {
-                Self::SwitchPresetWindowHeight
-            }
-            niri_ipc::Action::SwitchPresetWindowHeightBack { id: None } => {
-                Self::SwitchPresetWindowHeightBack
-            }
-            niri_ipc::Action::SwitchPresetWindowHeight { id: Some(id) } => {
-                Self::SwitchPresetWindowHeightById(id)
-            }
-            niri_ipc::Action::SwitchPresetWindowHeightBack { id: Some(id) } => {
-                Self::SwitchPresetWindowHeightBackById(id)
-            }
+            niri_ipc::Action::SwitchPresetWindowWidth {
+                id: None,
+                forwards,
+                wrap,
+            } => Self::SwitchPresetWindowWidth(forwards, wrap),
+            niri_ipc::Action::SwitchPresetWindowWidth {
+                id: Some(id),
+                forwards,
+                wrap,
+            } => Self::SwitchPresetWindowWidthById { id, forwards, wrap },
+            niri_ipc::Action::SwitchPresetWindowHeight {
+                id: None,
+                forwards,
+                wrap,
+            } => Self::SwitchPresetWindowHeight(forwards, wrap),
+            niri_ipc::Action::SwitchPresetWindowHeight {
+                id: Some(id),
+                forwards,
+                wrap,
+            } => Self::SwitchPresetWindowHeightById { id, forwards, wrap },
             niri_ipc::Action::MaximizeColumn {} => Self::MaximizeColumn,
             niri_ipc::Action::MaximizeWindowToEdges { id: None } => Self::MaximizeWindowToEdges,
             niri_ipc::Action::MaximizeWindowToEdges { id: Some(id) } => {

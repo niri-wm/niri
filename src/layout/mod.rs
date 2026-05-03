@@ -2986,14 +2986,14 @@ impl<W: LayoutElement> Layout<W> {
         self.options = options;
     }
 
-    pub fn toggle_width(&mut self, forwards: bool) {
+    pub fn toggle_width(&mut self, forwards: bool, wrap: bool) {
         let Some(workspace) = self.active_workspace_mut() else {
             return;
         };
-        workspace.toggle_width(forwards);
+        workspace.toggle_width(forwards, wrap);
     }
 
-    pub fn toggle_window_width(&mut self, window: Option<&W::Id>, forwards: bool) {
+    pub fn toggle_window_width(&mut self, window: Option<&W::Id>, forwards: bool, wrap: bool) {
         if let Some(InteractiveMoveState::Moving(move_)) = &mut self.interactive_move {
             if window.is_none() || window == Some(move_.tile.window().id()) {
                 return;
@@ -3013,10 +3013,10 @@ impl<W: LayoutElement> Layout<W> {
         let Some(workspace) = workspace else {
             return;
         };
-        workspace.toggle_window_width(window, forwards);
+        workspace.toggle_window_width(window, forwards, wrap);
     }
 
-    pub fn toggle_window_height(&mut self, window: Option<&W::Id>, forwards: bool) {
+    pub fn toggle_window_height(&mut self, window: Option<&W::Id>, forwards: bool, wrap: bool) {
         if let Some(InteractiveMoveState::Moving(move_)) = &mut self.interactive_move {
             if window.is_none() || window == Some(move_.tile.window().id()) {
                 return;
@@ -3036,7 +3036,7 @@ impl<W: LayoutElement> Layout<W> {
         let Some(workspace) = workspace else {
             return;
         };
-        workspace.toggle_window_height(window, forwards);
+        workspace.toggle_window_height(window, forwards, wrap);
     }
 
     pub fn toggle_full_width(&mut self) {
@@ -5019,5 +5019,14 @@ fn compute_overview_zoom(options: &Options, overview_progress: Option<f64>) -> f
         (1. - p * (1. - zoom)).max(0.0001)
     } else {
         1.
+    }
+}
+
+fn next_preset_idx(idx: usize, len: usize, forwards: bool, wrap: bool) -> usize {
+    match (forwards, wrap) {
+        (true, true) => (idx + 1) % len,
+        (false, true) => (idx + len - 1) % len,
+        (true, false) => usize::min(idx + 1, len - 1),
+        (false, false) => usize::max(1, idx) - 1,
     }
 }
