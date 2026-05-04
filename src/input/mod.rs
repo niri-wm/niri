@@ -32,13 +32,17 @@ use smithay::input::touch::{
 };
 use smithay::input::SeatHandler;
 use smithay::output::Output;
+use smithay::reexports::wayland_protocols_misc::zwp_virtual_keyboard_v1::server::zwp_virtual_keyboard_v1::ZwpVirtualKeyboardV1;
+use smithay::reexports::wayland_protocols_wlr::virtual_pointer::v1::server::zwlr_virtual_pointer_v1::ZwlrVirtualPointerV1;
 use smithay::reexports::wayland_server::protocol::wl_data_source::WlDataSource;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
+use smithay::reexports::wayland_server::Resource;
 use smithay::utils::{Logical, Point, Rectangle, Transform, SERIAL_COUNTER};
 use smithay::wayland::keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitor;
 use smithay::wayland::pointer_constraints::{with_pointer_constraint, PointerConstraint};
 use smithay::wayland::tablet_manager::{TabletDescriptor, TabletSeatTrait};
 use touch_overview_grab::TouchOverviewGrab;
+use wayland_backend::protocol::same_interface;
 
 use self::move_grab::MoveGrab;
 use self::pick_color_grab::PickColorGrab;
@@ -2751,6 +2755,8 @@ impl State {
             return;
         }
 
+        let mut has_updated_pointer_contents = false;
+
         if ButtonState::Pressed == button_state {
             let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
             let modifiers = modifiers_from_state(mods);
@@ -3000,14 +3006,38 @@ impl State {
                 // FIXME: granular.
                 self.niri.queue_redraw_all();
             } else if let Some(output) = self.niri.output_under_cursor() {
-                self.niri.layout.focus_output(&output);
 
-                // FIXME: granular.
-                self.niri.queue_redraw_all();
+                self.update_pointer_contents();
+                has_updated_pointer_contents = true;
+
+                let mut is_virtual_input_source = false;
+
+                if let Some(layer) = self.niri.pointer_contents.layer.clone() {
+                    if let Some(client) = layer.wl_surface().client() {
+                        let _ = self.niri.display_handle.backend_handle().with_all_objects_for(client.id(), |obj_id| {
+                            if is_virtual_input_source {
+                                // No need to keep checking, but can't break the loop
+                                return;
+                            }
+                            if same_interface(obj_id.interface(), ZwpVirtualKeyboardV1::interface())
+                            || same_interface(obj_id.interface(), ZwlrVirtualPointerV1::interface()) {
+                                is_virtual_input_source = true;
+                            }
+                        });
+                    }
+                }
+
+                if !is_virtual_input_source {
+                    self.niri.layout.focus_output(&output);
+                    // FIXME: granular.
+                    self.niri.queue_redraw_all();
+                }
             }
         };
 
-        self.update_pointer_contents();
+        if !has_updated_pointer_contents {
+            self.update_pointer_contents();
+        }
 
         if ButtonState::Pressed == button_state {
             let layer_under = self.niri.pointer_contents.layer.clone();
@@ -4165,10 +4195,29 @@ impl State {
                 // FIXME: granular.
                 self.niri.queue_redraw_all();
             } else if let Some(output) = under.output {
-                self.niri.layout.focus_output(&output);
+                let mut is_virtual_input_source = false;
 
-                // FIXME: granular.
-                self.niri.queue_redraw_all();
+                if let Some(layer) = under.layer.clone() {
+                    if let Some(client) = layer.wl_surface().client() {
+                        let _ = self.niri.display_handle.backend_handle().with_all_objects_for(client.id(), |obj_id| {
+                            if is_virtual_input_source {
+                                // No need to keep checking, but can't break the loop
+                                return;
+                            }
+                            if same_interface(obj_id.interface(), ZwpVirtualKeyboardV1::interface())
+                            || same_interface(obj_id.interface(), ZwlrVirtualPointerV1::interface()) {
+                                is_virtual_input_source = true;
+                            }
+                        });
+                    }
+                }
+
+                if !is_virtual_input_source {
+                    self.niri.layout.focus_output(&output);
+
+                    // FIXME: granular.
+                    self.niri.queue_redraw_all();
+                }
             }
             self.niri.focus_layer_surface_if_on_demand(under.layer);
         };
