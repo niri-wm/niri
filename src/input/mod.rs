@@ -2525,26 +2525,20 @@ impl State {
         let pointer = self.niri.seat.get_pointer().unwrap();
 
         let pos = pointer.current_location();
+        let delta = event.delta();
+        let delta_unaccel = event.delta_unaccel();
 
-        // Get the output under the current pointer position for zoom-aware acceleration.
-        let zoom_multiplier = if let Some((output, _)) = self.niri.output_under(pos) {
-            if let Some(_base_geom) = self.niri.global_space.output_geometry(output) {
-                let level = self.niri.layout.zoom_level_for_output(output);
-                if level > 0.0 {
-                    1.0 / level
-                } else {
-                    1.0
-                }
-            } else {
-                1.0
-            }
+        // Apply per-output zoom-aware delta scaling: at higher zoom levels, reduce pointer deltas
+        // proportionally to maintain consistent visual cursor velocity.
+        let (delta, delta_unaccel) = if let Some((output, _)) = self.niri.output_under(pos) {
+            let level = self.niri.layout.zoom_level_for_output(output);
+            (
+                delta.downscale(Scale::from(level.max(1.0))),
+                delta_unaccel.downscale(Scale::from(level.max(1.0))),
+            )
         } else {
-            1.0
+            (delta, delta_unaccel)
         };
-
-        // Apply zoom-aware delta scaling: at higher zoom levels, reduce pointer
-        // deltas proportionally to maintain consistent visual cursor velocity.
-        let delta = event.delta().upscale(Scale::from(zoom_multiplier));
 
         // We have an output, so we can compute the new location and focus.
         let mut new_pos = pos + delta;
@@ -2593,8 +2587,8 @@ impl State {
                     self,
                     Some(under.clone()),
                     &RelativeMotionEvent {
-                        delta: event.delta(),
-                        delta_unaccel: event.delta_unaccel(),
+                        delta,
+                        delta_unaccel,
                         utime: event.time(),
                     },
                 );
@@ -2744,8 +2738,8 @@ impl State {
                     self,
                     Some(focus_surface),
                     &RelativeMotionEvent {
-                        delta: event.delta(),
-                        delta_unaccel: event.delta_unaccel(),
+                        delta,
+                        delta_unaccel,
                         utime: event.time(),
                     },
                 );
@@ -2774,8 +2768,8 @@ impl State {
             self,
             under.surface,
             &RelativeMotionEvent {
-                delta: event.delta(),
-                delta_unaccel: event.delta_unaccel(),
+                delta,
+                delta_unaccel,
                 utime: event.time(),
             },
         );
