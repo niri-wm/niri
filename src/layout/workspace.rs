@@ -1768,6 +1768,10 @@ impl<W: LayoutElement> Workspace<W> {
         self.scrolling.window_under(pos)
     }
 
+    pub fn tab_under_offset(&self, pos: Point<f64, Logical>, offset: i32) -> Option<W::Id> {
+        self.scrolling.tab_under_offset(pos, offset)
+    }
+
     pub fn resize_edges_under(&self, pos: Point<f64, Logical>) -> Option<ResizeEdge> {
         self.tiles_with_render_positions()
             .find_map(|(tile, tile_pos, visible)| {

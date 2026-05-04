@@ -1511,10 +1511,10 @@ impl<W: LayoutElement> Layout<W> {
         ws_idx == mon.active_workspace_idx
     }
 
-    pub fn activate_window(&mut self, window: &W::Id) {
+    pub fn activate_window(&mut self, window: &W::Id) -> bool {
         if let Some(InteractiveMoveState::Moving(move_)) = &self.interactive_move {
             if move_.tile.window().id() == window {
-                return;
+                return true;
             }
         }
 
@@ -1524,7 +1524,7 @@ impl<W: LayoutElement> Layout<W> {
             ..
         } = &mut self.monitor_set
         else {
-            return;
+            return false;
         };
 
         for (monitor_idx, mon) in monitors.iter_mut().enumerate() {
@@ -1541,10 +1541,12 @@ impl<W: LayoutElement> Layout<W> {
                         _ => mon.switch_workspace(workspace_idx),
                     }
 
-                    return;
+                    return true;
                 }
             }
         }
+
+        false
     }
 
     pub fn activate_window_without_raising(&mut self, window: &W::Id) {
@@ -2330,6 +2332,24 @@ impl<W: LayoutElement> Layout<W> {
     ) -> Option<(&W, HitType)> {
         let mon = self.monitor_for_output(output)?;
         mon.window_under(pos_within_output)
+    }
+
+    /// If pos_within_output is over a tabbed column's tab indicator, activates the window
+    /// that is offset tabs away from that column's currently active tile (clamped, no wrap).
+    /// Returns true if the active tab changed.
+    pub fn activate_tab_under(
+        &mut self,
+        output: &Output,
+        pos_within_output: Point<f64, Logical>,
+        offset: i32,
+    ) -> bool {
+        let Some(mon) = self.monitor_for_output(output) else {
+            return false;
+        };
+        let Some(window_id) = mon.tab_under_offset(pos_within_output, offset) else {
+            return false;
+        };
+        self.activate_window(&window_id)
     }
 
     pub fn resize_edges_under(

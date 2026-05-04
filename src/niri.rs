@@ -373,6 +373,7 @@ pub struct Niri {
     pub overview_scroll_swipe_gesture: ScrollSwipeGesture,
     pub vertical_wheel_tracker: ScrollTracker,
     pub horizontal_wheel_tracker: ScrollTracker,
+    pub tab_indicator_wheel_tracker: ScrollTracker,
     pub mods_with_mouse_binds: HashSet<Modifiers>,
     pub mods_with_wheel_binds: HashSet<Modifiers>,
     pub vertical_finger_scroll_tracker: ScrollTracker,
@@ -2584,6 +2585,7 @@ impl Niri {
             overview_scroll_swipe_gesture: ScrollSwipeGesture::new(),
             vertical_wheel_tracker: ScrollTracker::new(120),
             horizontal_wheel_tracker: ScrollTracker::new(120),
+            tab_indicator_wheel_tracker: ScrollTracker::new(120),
             mods_with_mouse_binds,
             mods_with_wheel_binds,
 

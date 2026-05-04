@@ -2964,6 +2964,47 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         }
     }
 
+    /// If pos is over a tabbed column's tab indicator, returns the id of the tab at the
+    /// column's current active tile index shifted by offset (clamped to range, no wrap).
+    /// Returns None if the point is not over a tab indicator, or if the shift is clamped
+    /// to the same active tile (no change).
+    pub fn tab_under_offset(&self, pos: Point<f64, Logical>, offset: i32) -> Option<W::Id> {
+        // This matches the traversal in window_under.
+        let scale = self.scale;
+        let view_off = Point::from((-self.view_pos(), 0.));
+        for (col, col_x) in self.columns_in_render_order() {
+            if col.display_mode != ColumnDisplay::Tabbed || !col.sizing_mode().is_normal() {
+                continue;
+            }
+
+            let col_off = Point::from((col_x, 0.));
+            let col_render_off = col.render_offset();
+            let col_pos = view_off + col_off + col_render_off;
+            let col_pos = col_pos.to_physical_precise_round(scale).to_logical(scale);
+
+            if col
+                .tab_indicator
+                .hit(
+                    col.tab_indicator_area(),
+                    col.tiles.len(),
+                    scale,
+                    pos - col_pos,
+                )
+                .is_none()
+            {
+                continue;
+            }
+
+            let new_idx = (col.active_tile_idx as i64 + i64::from(offset))
+                .clamp(0, col.tiles.len() as i64 - 1) as usize;
+            if new_idx == col.active_tile_idx {
+                return None;
+            }
+            return Some(col.tiles[new_idx].window().id().clone());
+        }
+        None
+    }
+
     pub fn window_under(&self, pos: Point<f64, Logical>) -> Option<(&W, HitType)> {
         // This matches self.tiles_with_render_positions().
         let scale = self.scale;

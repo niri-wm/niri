@@ -1575,6 +1575,19 @@ impl<W: LayoutElement> Monitor<W> {
         }
     }
 
+    pub fn tab_under_offset(
+        &self,
+        pos_within_output: Point<f64, Logical>,
+        offset: i32,
+    ) -> Option<W::Id> {
+        // Not supported in overview
+        if self.overview_progress.is_some() {
+            return None;
+        }
+        let (ws, geo) = self.workspace_under(pos_within_output)?;
+        ws.tab_under_offset(pos_within_output - geo.loc, offset)
+    }
+
     pub fn resize_edges_under(&self, pos_within_output: Point<f64, Logical>) -> Option<ResizeEdge> {
         if self.overview_progress.is_some() {
             return None;

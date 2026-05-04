@@ -142,6 +142,12 @@ layout {
     // If you leave the brackets empty, the windows themselves will decide their initial width.
     // default-column-width {}
 
+    // You can configure the widths, colors, and behavior of the tab indicator.
+    tab-indicator {
+        // Uncomment this line to make the mouse wheel switch tabs when hovering over the tab indicator.
+        // scroll-to-switch-tabs
+    }
+
     // By default focus ring and border are rendered as a solid background rectangle
     // behind windows. That is, they will show up through semitransparent windows.
     // This is because windows using client-side decorations can have an arbitrary shape.
