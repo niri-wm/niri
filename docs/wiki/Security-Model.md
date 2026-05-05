@@ -29,6 +29,8 @@ Anything with access to niri's D-Bus interfaces can, among other things:
 - Record the user's screen via the screencast interface.
 - Fully listen to and emulate input from the user's keyboard via the accessibility interface.
 
+Also, while niri doesn't directly integrate Xwayland, it's worth reminding that anything with access to the X11 `$DISPLAY` (which comes both as a socket file on disk **and** as an abstract socket in the network namespace) can intercept and emulate all input and record the contents of any X11 windows on the same `$DISPLAY` (but not Wayland windows).
+
 ## Running untrusted clients
 
 Considering all of the above, for running untrusted clients, you need a proper sandbox that:
@@ -43,3 +45,17 @@ All unsafe protocols are made inaccessible through this filtered Wayland socket.
 One sandbox that satisfies all of these criteria is the [Flatpak](https://flatpak.org/) sandbox.
 
 Importantly, filtering just the Wayland socket (and leaving, for example, unrestricted D-Bus access) is **not enough** to prevent untrusted clients from doing bad things.
+
+## Lock screen
+
+When the session is locked via [ext-session-lock](https://wayland.app/protocols/ext-session-lock-v1), most actions (keybindings) are automatically disabled.
+Only a very small set of safe actions is allowed.
+In particular, spawning will not work, with the exception of binds explicitly configured with `allow-when-locked=true`.
+
+Importantly, the **quit** action is allowed—you can always quit niri, even when on a lock screen.
+Therefore, you must ensure that quitting niri does not drop you into an unprotected TTY commandline.
+Usually, a display manager, like GDM, will do this for you: when niri exits (via the quit bind or if it crashes), it'll put you back into a safe password prompt.
+
+Other than quitting, the only way to exit a lock screen is for the lock screen client to tell niri to unlock the session.
+If the lock screen client crashes, the session remains locked with a solid red background.
+In this case, another lock screen client can take over (so you can start a fresh lock screen if it crashes, and still unlock your session).

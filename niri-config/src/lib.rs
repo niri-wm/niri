@@ -720,6 +720,7 @@ mod tests {
                 tablet {
                     map-to-output "eDP-1"
                     map-to-focused-output
+                    map-to-focused-window
                     calibration-matrix 1.0 2.0 3.0 \
                                        4.0 5.0 6.0
                 }
@@ -1115,6 +1116,7 @@ mod tests {
                         "eDP-1",
                     ),
                     map_to_focused_output: true,
+                    map_to_focused_window: true,
                     left_handed: false,
                 },
                 touch: Touch {
