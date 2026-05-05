@@ -947,14 +947,7 @@ where
         };
 
         if let Some(child) = children.next() {
-            for unwanted_child in children {
-                ctx.emit_error(DecodeError::unexpected(
-                    unwanted_child,
-                    "node",
-                    "only one action is allowed per keybind",
-                ));
-            }
-            match Action::decode_node(child, ctx) {
+            let action = match Action::decode_node(child, ctx) {
                 Ok(action) => {
                     if !matches!(action, Action::Spawn(_) | Action::SpawnSh(_)) {
                         if let Some(node) = allow_when_locked_node {
@@ -986,7 +979,15 @@ where
                     ctx.emit_error(e);
                     Ok(dummy)
                 }
+            };
+            for unwanted_child in children {
+                ctx.emit_error(DecodeError::unexpected(
+                    unwanted_child,
+                    "node",
+                    "only one action is allowed per keybind",
+                ));
             }
+            action
         } else {
             ctx.emit_error(DecodeError::missing(
                 node,
