@@ -2498,4 +2498,60 @@ mod tests {
         )
         .is_err());
     }
+
+    #[test]
+    fn switch_events_spawn_sh_no_args_is_error() {
+        assert!(Config::parse_mem(
+            r#"
+            switch-events {
+                lid-close {
+                    spawn-sh
+                }
+            }
+            "#,
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn switch_events_spawn_sh_multiple_args_is_error() {
+        assert!(Config::parse_mem(
+            r#"
+            switch-events {
+                lid-close {
+                    spawn-sh "foo" "bar"
+                }
+            }
+            "#,
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn switch_events_unknown_action_is_error() {
+        assert!(Config::parse_mem(
+            r#"
+            switch-events {
+                lid-close {
+                    spawn-shh "notify-send 'Lid closed'"
+                }
+            }
+            "#,
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn switch_events_disallowed_action_is_error() {
+        assert!(Config::parse_mem(
+            r#"
+            switch-events {
+                lid-close {
+                    close-window
+                }
+            }
+            "#,
+        )
+        .is_err());
+    }
 }

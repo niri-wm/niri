@@ -102,36 +102,41 @@ impl<S: knuffel::traits::ErrorSpan> knuffel::Decode<S> for SwitchAction {
     ) -> Result<Self, DecodeError<S>> {
         expect_only_children(node, ctx);
 
-        let mut action: Option<Action> = None;
+        let dummy = SwitchAction {
+            action: Action::Spawn(vec![]),
+        };
 
-        for child in node.children() {
-            if action.is_some() {
+        let mut children = node.children();
+
+        if let Some(child) = children.next() {
+            let action = match &**child.node_name {
+                "spawn" | "spawn-sh" => match Action::decode_node(child, ctx) {
+                    Ok(a) => Ok(SwitchAction { action: a }),
+                    Err(e) => {
+                        ctx.emit_error(e);
+                        Ok(dummy)
+                    }
+                },
+                _ => {
+                    ctx.emit_error(DecodeError::unexpected(
+                        child,
+                        "node",
+                        "expected `spawn` or `spawn-sh`",
+                    ));
+                    Ok(dummy)
+                }
+            };
+            for unwanted_child in children {
                 ctx.emit_error(DecodeError::unexpected(
-                    child,
+                    unwanted_child,
                     "node",
                     "only one action is allowed per switch event",
                 ));
-                continue;
             }
-            match Action::decode_node(child, ctx) {
-                Ok(a) => {
-                    if matches!(a, Action::Spawn(_) | Action::SpawnSh(_)) {
-                        action = Some(a);
-                    } else {
-                        ctx.emit_error(DecodeError::unexpected(
-                            child,
-                            "node",
-                            "only `spawn` or `spawn-sh` are supported for switch events",
-                        ));
-                    }
-                }
-                Err(e) => ctx.emit_error(e),
-            }
-        }
-
-        match action {
-            Some(action) => Ok(SwitchAction { action }),
-            None => Err(DecodeError::missing(node, "expected `spawn` or `spawn-sh`")),
+            action
+        } else {
+            ctx.emit_error(DecodeError::missing(node, "expected `spawn` or `spawn-sh`"));
+            Ok(dummy)
         }
     }
 }
