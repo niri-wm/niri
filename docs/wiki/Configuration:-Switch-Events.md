@@ -16,7 +16,7 @@ switch-events {
 ```
 
 The syntax is similar to key bindings.
-The [`spawn`](./Configuration:-Key-Bindings.md#spawn) and [`spawn-sh`](./Configuration:-Key-Bindings.md#spawn-sh) actions are supported.
+The [`spawn`](./Configuration:-Key-Bindings.md#spawn) and [`spawn-sh`](./Configuration:-Key-Bindings.md#spawn-sh) <sup>Since: next release</sup> actions are supported.
 
 > [!NOTE]
 > In contrast to key bindings, switch event bindings are *always* executed, even when the session is locked.
