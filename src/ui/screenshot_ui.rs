@@ -25,7 +25,7 @@ use smithay::utils::{Buffer, Logical, Physical, Point, Rectangle, Scale, Size, T
 
 use crate::animation::{Animation, Clock};
 use crate::layout::floating::DIRECTIONAL_MOVE_PX;
-use crate::niri::{zoom_wrap, OutputRenderElements, ZoomWrapper, ZoomedRenderElements};
+use crate::niri::{zoom_wrap, OutputRenderElements, ZoomedRenderElements};
 use crate::niri_render_elements;
 use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use crate::render_helpers::renderer::NiriRenderer;
@@ -33,7 +33,7 @@ use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderEleme
 use crate::render_helpers::texture::{TextureBuffer, TextureRenderElement};
 use crate::render_helpers::{render_to_texture, RenderTarget};
 use crate::utils::to_physical_precise_round;
-use crate::utils::zoom::zoom_transform_physical_point;
+use crate::utils::zoom::{zoom_transform_physical_point_f64, zoom_transform_physical_rect};
 
 const SELECTION_BORDER: i32 = 2;
 
@@ -106,12 +106,14 @@ pub struct OutputScreenshot {
     texture: GlesTexture,
     buffer: PrimaryGpuTextureRenderElement,
     pointer: Option<PrimaryGpuTextureRenderElement>,
+    pointer_hotspot: Option<Point<i32, Physical>>,
 }
 
 niri_render_elements! {
     ScreenshotUiRenderElement => {
         Screenshot = PrimaryGpuTextureRenderElement,
         SolidColor = SolidColorRenderElement,
+        RelocatedPointer = RelocateRenderElement<RescaleRenderElement<PrimaryGpuTextureRenderElement>>,
     }
 }
 
@@ -120,7 +122,7 @@ niri_render_elements! {
 niri_render_elements! {
     CaptureRenderElement => {
         Texture = PrimaryGpuTextureRenderElement,
-        Zoomed = ZoomWrapper<PrimaryGpuTextureRenderElement>,
+        Zoomed = RelocateRenderElement<RescaleRenderElement<PrimaryGpuTextureRenderElement>>,
     }
 }
 
@@ -287,6 +289,15 @@ impl ScreenshotUi {
     pub fn toggle_pointer(&mut self) {
         if let Self::Open { show_pointer, .. } = self {
             *show_pointer = !*show_pointer;
+        }
+    }
+
+    /// Take the path for saving a screenshot. Returns None if the UI is closed.
+    pub fn take_path(&mut self) -> Option<String> {
+        if let Self::Open { path, .. } = self {
+            path.take()
+        } else {
+            None
         }
     }
 
@@ -647,6 +658,7 @@ impl ScreenshotUi {
         let _span = tracy_client::span!("ScreenshotUi::render_output");
 
         let Self::Open {
+            selection: _,
             output_data,
             show_pointer,
             button,
@@ -712,30 +724,8 @@ impl ScreenshotUi {
                 // directly instead to avoid solid-color artifacts under zoom.
                 let phys = elem.geometry(output_scale);
 
-                let base = zoom_transform_physical_point(
-                    Point::from((0, 0)),
-                    zoom_factor,
-                    zoom_focal,
-                    output_scale,
-                );
-
-                let top_left = base
-                    + phys
-                        .loc
-                        .to_f64()
-                        .upscale(Scale::from(zoom_factor))
-                        .to_i32_round::<i32>();
-                let bottom_right = base
-                    + (phys.loc + phys.size)
-                        .to_f64()
-                        .upscale(Scale::from(zoom_factor))
-                        .to_i32_round::<i32>();
-
-                let zoomed_size = bottom_right - top_left;
-                let zoomed_rect = Rectangle::new(
-                    top_left,
-                    Size::from((zoomed_size.x.max(0), zoomed_size.y.max(0))),
-                );
+                let zoomed_rect =
+                    zoom_transform_physical_rect(phys, zoom_factor, zoom_focal, output_scale);
 
                 let elem = elem.with_geometry_physical(zoomed_rect, output_scale);
                 let zoomed_elem = zoom_wrap(elem, 1.0, output_scale, zoom_focal);
@@ -759,35 +749,40 @@ impl ScreenshotUi {
         // overlay when outside the selection.
         if *show_pointer {
             if let Some(pointer) = screenshot.pointer.clone() {
-                let elem = if zoom_active {
-                    let elem = if scale_with_zoom {
-                        zoom_wrap(pointer, zoom_factor, output_scale, zoom_focal)
-                    } else {
-                        let pos = pointer.geometry(output_scale).loc;
-                        let new_pos = zoom_transform_physical_point(
-                            pos,
-                            zoom_factor,
-                            zoom_focal,
-                            output_scale,
-                        );
+                if zoom_active {
+                    let elem_loc = pointer.0.geometry(output_scale).loc;
+                    let hotspot = screenshot.pointer_hotspot.unwrap_or_default();
+                    let pointer_physical: Point<f64, Physical> =
+                        elem_loc.to_f64() + hotspot.to_f64();
+                    let target = zoom_transform_physical_point_f64(
+                        pointer_physical,
+                        zoom_factor,
+                        zoom_focal,
+                        output_scale,
+                    );
 
-                        RelocateRenderElement::from_element(
-                            RescaleRenderElement::from_element(pointer, Point::from((0, 0)), 1.0),
-                            new_pos,
-                            Relocate::Absolute,
-                        )
+                    let (cursor_zoom, final_pos) = if scale_with_zoom {
+                        let hotspot_scaled = hotspot.to_f64().upscale(zoom_factor).to_i32_round();
+                        let pos = target.to_i32_round::<i32>() - hotspot_scaled;
+                        (zoom_factor, pos)
+                    } else {
+                        let pos = target.to_i32_round::<i32>() - hotspot;
+                        (1.0, pos)
                     };
 
-                    ZoomedRenderElements::Texture(elem).into()
+                    let elem = RelocateRenderElement::from_element(
+                        RescaleRenderElement::from_element(pointer, hotspot, cursor_zoom),
+                        final_pos,
+                        Relocate::Absolute,
+                    );
+                    push(ZoomedRenderElements::CapturedPointer(elem).into());
                 } else {
-                    pointer.into()
-                };
-
-                push(elem);
+                    push(pointer.into());
+                }
             }
         }
 
-        // Apply zoom to the screenshot if applicable
+        // Apply zoom to screenshot if applicable.
         let elem = if zoom_active {
             let elem = zoom_wrap(
                 screenshot.buffer.clone(),
@@ -806,9 +801,9 @@ impl ScreenshotUi {
     pub fn capture(
         &self,
         renderer: &mut GlesRenderer,
-        zoom_active: bool,
-        zoom_level: f64,
+        zoom_factor: f64,
         zoom_focal: Point<f64, Logical>,
+        scale_with_zoom: bool,
     ) -> anyhow::Result<(Size<i32, Physical>, Vec<u8>)> {
         let _span = tracy_client::span!("ScreenshotUi::capture");
 
@@ -829,28 +824,59 @@ impl ScreenshotUi {
 
         let screenshot = &data.screenshot[0];
         let mut tex_rect = None;
+        let zoom_active = zoom_factor > 1.0;
 
-        if zoom_active || (*show_pointer && screenshot.pointer.is_some()) {
-            let output_scale = Scale::from(output.current_scale().fractional_scale());
-
+        if *show_pointer && screenshot.pointer.is_some() {
             let mut elements = ArrayVec::<CaptureRenderElement, 3>::new();
             if *show_pointer {
                 if let Some(pointer) = screenshot.pointer.clone() {
-                    // elements.push(CaptureRenderElement::Texture(pointer));
-                    elements.push(pointer.into());
+                    if zoom_active {
+                        let elem_loc = pointer.0.geometry(scale).loc;
+                        let hotspot = screenshot.pointer_hotspot.unwrap_or_default();
+                        let pointer_physical: Point<f64, Physical> =
+                            elem_loc.to_f64() + hotspot.to_f64();
+                        let target = zoom_transform_physical_point_f64(
+                            pointer_physical,
+                            zoom_factor,
+                            zoom_focal,
+                            scale,
+                        );
+
+                        let (cursor_zoom, pos) = if scale_with_zoom {
+                            let hotspot_scaled =
+                                hotspot.to_f64().upscale(zoom_factor).to_i32_round();
+                            let pos = target.to_i32_round::<i32>() - hotspot_scaled;
+                            (zoom_factor, pos)
+                        } else {
+                            let pos = target.to_i32_round::<i32>() - hotspot;
+                            (1.0, pos)
+                        };
+
+                        let elem = RelocateRenderElement::from_element(
+                            RescaleRenderElement::from_element(pointer, hotspot, cursor_zoom),
+                            pos,
+                            Relocate::Absolute,
+                        );
+                        elements.push(elem.into());
+                    } else {
+                        elements.push(pointer.into());
+                    }
                 }
             }
-            elements.push(screenshot.buffer.clone().into());
-
-            if zoom_active {
-                let zoomed = zoom_wrap(
-                    screenshot.buffer.clone(),
-                    zoom_level,
-                    output_scale,
-                    zoom_focal,
+            let screenshot_elem = if zoom_active {
+                let buffer = screenshot.buffer.clone();
+                let rescaled =
+                    RescaleRenderElement::from_element(buffer, Point::from((0, 0)), zoom_factor);
+                let wrapped = RelocateRenderElement::from_element(
+                    rescaled,
+                    Point::from((0, 0)),
+                    Relocate::Absolute,
                 );
-                elements.push(zoomed.into());
-            }
+                CaptureRenderElement::Zoomed(wrapped)
+            } else {
+                screenshot.buffer.clone().into()
+            };
+            elements.push(screenshot_elem);
 
             let elements = elements.iter().rev().map(|elem| {
                 RelocateRenderElement::from_element(elem, Point::from((0, 0)), Relocate::Relative)
@@ -870,6 +896,40 @@ impl ScreenshotUi {
                 }
                 Err(err) => {
                     warn!("error compositing screenshot capture: {err:?}");
+                }
+            }
+        }
+
+        if tex_rect.is_none() && zoom_active {
+            let mut elements = ArrayVec::<CaptureRenderElement, 1>::new();
+            let buffer = screenshot.buffer.clone();
+            let rescaled =
+                RescaleRenderElement::from_element(buffer, Point::from((0, 0)), zoom_factor);
+            let wrapped = RelocateRenderElement::from_element(
+                rescaled,
+                Point::from((0, 0)),
+                Relocate::Absolute,
+            );
+            elements.push(CaptureRenderElement::Zoomed(wrapped));
+
+            let elements = elements.iter().rev().map(|elem| {
+                RelocateRenderElement::from_element(elem, Point::from((0, 0)), Relocate::Relative)
+            });
+
+            let res = render_to_texture(
+                renderer,
+                data.size,
+                scale,
+                Transform::Normal,
+                Fourcc::Abgr8888,
+                elements,
+            );
+            match res {
+                Ok((texture, _)) => {
+                    tex_rect = Some((texture, rect));
+                }
+                Err(err) => {
+                    warn!("error rendering screenshot: {err:?}");
                 }
             }
         }
@@ -1156,7 +1216,7 @@ impl OutputScreenshot {
         renderer: &mut GlesRenderer,
         scale: Scale<f64>,
         texture: GlesTexture,
-        pointer: Option<(GlesTexture, Rectangle<i32, Physical>)>,
+        pointer: Option<(GlesTexture, Rectangle<i32, Physical>, Point<i32, Physical>)>,
     ) -> Self {
         let buffer = PrimaryGpuTextureRenderElement(TextureRenderElement::from_texture_buffer(
             TextureBuffer::from_texture(
@@ -1173,27 +1233,33 @@ impl OutputScreenshot {
             Kind::Unspecified,
         ));
 
-        let pointer = pointer.map(|(texture, geo)| {
-            PrimaryGpuTextureRenderElement(TextureRenderElement::from_texture_buffer(
-                TextureBuffer::from_texture(
-                    renderer,
-                    texture,
-                    scale,
-                    Transform::Normal,
-                    Vec::new(),
-                ),
-                geo.to_f64().to_logical(scale).loc,
-                1.,
-                None,
-                None,
-                Kind::Unspecified,
-            ))
-        });
+        let (pointer, pointer_hotspot) = pointer
+            .map(|(texture, geo, hotspot)| {
+                (
+                    PrimaryGpuTextureRenderElement(TextureRenderElement::from_texture_buffer(
+                        TextureBuffer::from_texture(
+                            renderer,
+                            texture,
+                            scale,
+                            Transform::Normal,
+                            Vec::new(),
+                        ),
+                        geo.to_f64().to_logical(scale).loc,
+                        1.,
+                        None,
+                        None,
+                        Kind::Unspecified,
+                    )),
+                    hotspot,
+                )
+            })
+            .unzip();
 
         Self {
             texture,
             buffer,
             pointer,
+            pointer_hotspot,
         }
     }
 }

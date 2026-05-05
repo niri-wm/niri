@@ -388,7 +388,7 @@ impl State {
 
         pos.x = pos.x.clamp(0.0, target_geo.size.w - px);
         pos.y = pos.y.clamp(0.0, target_geo.size.h - px);
-        Some(pos + target_geo.loc.to_f64())
+        Some(pos + target_geo.loc)
     }
 
     fn is_inhibiting_shortcuts(&self) -> bool {
@@ -2620,11 +2620,13 @@ impl State {
         if let Some((output, horizontal)) = spatial_grab.flatten() {
             if let Some(geo) = self.niri.global_space.output_geometry(&output) {
                 let geo = geo.to_f64();
+                let geo_extent = geo.loc + geo.size; // Point at bottom-right corner
+
                 if horizontal {
                     new_pos.x = (new_pos.x - geo.loc.x).rem_euclid(geo.size.w) + geo.loc.x;
-                    new_pos.y = new_pos.y.clamp(geo.loc.y, geo.loc.y + geo.size.h - 1.);
+                    new_pos.y = new_pos.y.clamp(geo.loc.y, geo_extent.y - 1.);
                 } else {
-                    new_pos.x = new_pos.x.clamp(geo.loc.x, geo.loc.x + geo.size.w - 1.);
+                    new_pos.x = new_pos.x.clamp(geo.loc.x, geo_extent.x - 1.);
                     new_pos.y = (new_pos.y - geo.loc.y).rem_euclid(geo.size.h) + geo.loc.y;
                 }
             }
@@ -2655,21 +2657,16 @@ impl State {
                 if self.niri.layout.zoom_locked_for_output(output)
                     && self.niri.layout.zoom_is_active_for_output(output)
                 {
-                    // Use the global geometry instead of reconstructing ad-hoc geometry
-                    let output_geom = self
+                    let output_geometry = self
                         .niri
                         .global_space
                         .output_geometry(output)
                         .unwrap()
                         .to_f64();
-                    let zoomed_geom = self
-                        .niri
-                        .layout
-                        .zoomed_geometry_for_output(output, output_geom);
                     if let Some(clamped) = self.niri.layout.zoom_clamp_to_viewport_for_output(
                         output,
                         new_pos,
-                        zoomed_geom,
+                        output_geometry,
                     ) {
                         new_pos = clamped;
                     }
@@ -2685,22 +2682,19 @@ impl State {
                 .output_geometry(output)
                 .unwrap()
                 .to_f64();
-            let zoomed_geom = self
-                .niri
-                .layout
-                .zoomed_geometry_for_output(output, base_geom);
-            let zoom_level = self.niri.layout.zoom_level_for_output(output);
-            let zoom_focal = self.niri.layout.zoom_focal_for_output(output);
+            let zoom_snapshot = self.niri.layout.zoom_snapshot_for_output(output);
+            let zoom_level = zoom_snapshot.level;
+            let zoom_focal = zoom_snapshot.focal;
             let pointer_rel = pos - base_geom.loc;
             let display_rel = if self.niri.layout.zoom_is_active_for_output(output) {
-                zoom_display_cursor_logical(pointer_rel, zoomed_geom.size, zoom_level, zoom_focal)
+                zoom_display_cursor_logical(pointer_rel, base_geom.size, zoom_level, zoom_focal)
             } else {
                 pointer_rel
             };
             let display_point = display_rel + base_geom.loc;
             // Convert to physical coordinates for the screenshot UI path
             let scale = Scale::from(output.current_scale().fractional_scale());
-            let pointer_pos_physical = display_point.to_physical_precise_floor(scale);
+            let pointer_pos_physical = display_point.to_physical_precise_round(scale);
             self.niri
                 .screenshot_ui
                 .pointer_motion(pointer_pos_physical, None);
@@ -4284,6 +4278,7 @@ impl State {
                     output_size,
                     movement_mode,
                 );
+                self.niri.zoom_pinch_gesture_output = Some(output);
                 return;
             }
         }
@@ -4304,19 +4299,35 @@ impl State {
             pointer.frame(self);
         }
 
-        if let Some(output) = self.niri.output_under_cursor() {
+        if let Some(output) = self
+            .niri
+            .zoom_pinch_gesture_output
+            .clone()
+            .or_else(|| self.niri.output_under_cursor())
+        {
             let sensitivity = self.niri.config.borrow().zoom.pinch_sensitivity
                 * output.current_scale().fractional_scale();
 
             let timestamp = Duration::from_millis(event.time_msec() as u64);
             let scale = event.scale();
+            let cursor_global = self.niri.seat.get_pointer().unwrap().current_location();
+            let output_geo = self
+                .niri
+                .global_space
+                .output_geometry(&output)
+                .map(|g| g.to_f64());
+            let cursor_local = output_geo.map(|g| cursor_global - g.loc);
+            let output_size = output_geo.map(|g| g.size);
 
             // Returns Some if a zoom gesture was active (avoids check-then-act race).
-            if let Some(_changed) =
-                self.niri
-                    .layout
-                    .zoom_gesture_update(&output, scale, sensitivity, timestamp)
-            {
+            if let Some(_changed) = self.niri.layout.zoom_gesture_update(
+                &output,
+                scale,
+                sensitivity,
+                timestamp,
+                cursor_local,
+                output_size,
+            ) {
                 self.niri.queue_redraw(&output);
                 return;
             }
@@ -4341,7 +4352,12 @@ impl State {
             pointer.frame(self);
         }
 
-        if let Some(output) = self.niri.output_under_cursor() {
+        if let Some(output) = self
+            .niri
+            .zoom_pinch_gesture_output
+            .clone()
+            .or_else(|| self.niri.output_under_cursor())
+        {
             let cancelled = event.cancelled();
             if self
                 .niri
@@ -4349,10 +4365,13 @@ impl State {
                 .zoom_gesture_end(&output, cancelled)
                 .unwrap_or(false)
             {
+                self.niri.zoom_pinch_gesture_output = None;
                 self.niri.queue_redraw(&output);
                 return;
             }
         }
+
+        self.niri.zoom_pinch_gesture_output = None;
 
         pointer.gesture_pinch_end(
             self,
@@ -4435,21 +4454,16 @@ impl State {
             if self.niri.layout.zoom_locked_for_output(output)
                 && self.niri.layout.zoom_is_active_for_output(output)
             {
-                // Fetch base geometry once for the output
                 let base_geom = self
                     .niri
                     .global_space
                     .output_geometry(output)
                     .unwrap()
                     .to_f64();
-                let zoomed_geom = self
+                if let Some(clamped) = self
                     .niri
                     .layout
-                    .zoomed_geometry_for_output(output, base_geom);
-                if let Some(clamped) =
-                    self.niri
-                        .layout
-                        .zoom_clamp_to_viewport_for_output(output, pos, zoomed_geom)
+                    .zoom_clamp_to_viewport_for_output(output, pos, base_geom)
                 {
                     return clamped;
                 }
@@ -4464,16 +4478,15 @@ impl State {
         pos: Point<f64, Logical>,
     ) -> Point<i32, Physical> {
         let geom = self.niri.global_space.output_geometry(output).unwrap();
-        let mut point = (pos - geom.loc.to_f64())
+        let point = (pos - geom.loc.to_f64())
             .to_physical(output.current_scale().fractional_scale())
             .to_i32_round::<i32>();
 
         let size = output.current_mode().unwrap().size;
         let transform = output.current_transform();
         let size = transform.transform_size(size);
-        point.x = point.x.clamp(0, size.w - 1);
-        point.y = point.y.clamp(0, size.h - 1);
-        point
+
+        point.constrain(Rectangle::from_size(size))
     }
 
     fn on_touch_down<I: InputBackend>(&mut self, evt: I::TouchDownEvent) {
