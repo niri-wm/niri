@@ -252,6 +252,7 @@ Settings specific to `touchpad`s:
 - `tap-button-map`: can be `left-right-middle` or `left-middle-right`, controls which button corresponds to a two-finger tap and a three-finger tap.
 - `click-method`: can be `button-areas` or `clickfinger`, changes the [click method](https://wayland.freedesktop.org/libinput/doc/latest/clickpad-softbuttons.html).
 - `disabled-on-external-mouse`: do not send events while external pointer device is plugged in.
+- `disable-pointer-movement`: <sup>Since: next release</sup> when enabled, the touchpad will not move the pointer. Scrolling and gestures still work.
 
 Settings specific to `touchpad` and `mouse`:
 

@@ -21,12 +21,18 @@ pub trait NiriInputDevice: input::Device {
     // but it's not clear that this matters in practice?
     // it might be more obvious once we implement it for libinput
     fn output(&self, state: &State) -> Option<Output>;
+    fn is_touchpad(&self) -> bool {
+        false
+    }
 }
 
 impl NiriInputDevice for libinput::Device {
     fn output(&self, _state: &State) -> Option<Output> {
         // FIXME: Allow specifying the output per-device?
         None
+    }
+    fn is_touchpad(&self) -> bool {
+        self.config_tap_finger_count() > 0
     }
 }
 

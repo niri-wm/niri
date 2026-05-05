@@ -2434,6 +2434,13 @@ impl State {
         self.niri.pointer_visibility = PointerVisibility::Visible;
         self.niri.tablet_cursor_location = None;
 
+        if event.device().is_touchpad()
+            && self.niri.config.borrow().input.touchpad.disable_pointer_movement
+        {
+            pointer.frame(self);
+            return;
+        }
+
         // Check if we have an active pointer constraint.
         //
         // FIXME: ideally this should use the pointer focus with up-to-date global location.

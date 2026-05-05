@@ -221,6 +221,8 @@ pub struct Touchpad {
     pub middle_emulation: bool,
     #[knuffel(child)]
     pub scroll_factor: Option<ScrollFactor>,
+    #[knuffel(child)]
+    pub disable_pointer_movement: bool,
 }
 
 #[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]
