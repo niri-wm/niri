@@ -238,6 +238,14 @@ impl Animation {
         self.clock.now() >= self.start_time + self.duration
     }
 
+    pub fn is_done_at(&self, at: Duration) -> bool {
+        if self.clock.should_complete_instantly() {
+            return true;
+        }
+
+        at >= self.start_time + self.duration
+    }
+
     pub fn is_clamped_done(&self) -> bool {
         if self.clock.should_complete_instantly() {
             return true;
@@ -295,6 +303,10 @@ impl Animation {
 
     pub fn value(&self) -> f64 {
         self.value_at(self.clock.now())
+    }
+
+    pub fn clock_now(&self) -> Duration {
+        self.clock.now()
     }
 
     /// Returns a value that stops at the target value after first reaching it.

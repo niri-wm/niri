@@ -12,16 +12,35 @@ pub fn apply_zoom_viewport(
     output_rect
 }
 
-/// Canonical per-output display cursor position helper.
-///
 /// Given a global cursor position, the per-output origin and size, and the
-/// current zoom state (level and focal point), return the global cursor position
-/// where the cursor would be displayed on that output when zoom is active.
+/// current zoom state (level and focal point), return the output-local logical
+/// cursor position where the cursor would be displayed on that output.
 ///
-/// Semantics follow ZoomTransformInputs::display_position(): if the cursor is
-/// outside the output, return None. Otherwise return the clamped position in
-/// global coordinates, preserving the existing viewport clamping rules and
-/// out-of-output semantics.
+/// If the cursor is outside the output, return None. Otherwise return the
+/// clamped position in output-local logical coordinates, preserving the
+/// existing viewport clamping rules and out-of-output semantics.
+pub fn display_cursor_local_for_output(
+    global_pointer: Point<f64, Logical>,
+    output_pos: Point<f64, Logical>,
+    output_size: Size<f64, Logical>,
+    zoom_level: f64,
+    zoom_focal: Point<f64, Logical>,
+) -> Option<Point<f64, Logical>> {
+    let pointer_local = global_pointer - output_pos;
+    let output_rect: Rectangle<f64, Logical> = Rectangle::from_size(output_size);
+    if !output_rect.contains(pointer_local) {
+        return None;
+    }
+
+    Some(zoom_display_cursor_logical(
+        pointer_local,
+        output_size,
+        zoom_level,
+        zoom_focal,
+    ))
+}
+
+/// Canonical per-output display cursor position helper in global coordinates.
 pub fn canonical_display_cursor_global_pos(
     global_pointer: Point<f64, Logical>,
     output_pos: Point<f64, Logical>,
@@ -29,15 +48,14 @@ pub fn canonical_display_cursor_global_pos(
     zoom_level: f64,
     zoom_focal: Point<f64, Logical>,
 ) -> Option<Point<f64, Logical>> {
-    // Reuse the existing transformation pathway to ensure consistent semantics.
-    let inputs = ZoomTransformInputs::new(
-        output_pos,
+    display_cursor_local_for_output(
         global_pointer,
+        output_pos,
         output_size,
         zoom_level,
         zoom_focal,
-    );
-    inputs.display_position().map(|p| p + output_pos)
+    )
+    .map(|p| p + output_pos)
 }
 
 pub fn compute_focal_for_cursor(
@@ -57,11 +75,11 @@ pub fn compute_focal_for_cursor(
             let viewport_loc = cursor_local - viewport_size.downscale(2.0).to_point();
             let scale_factor = zoom_level / (zoom_level - 1.0).max(0.001);
 
-            let mut focal = viewport_loc.upscale(scale_factor);
-            focal.x = focal.x.clamp(0.0, output_size.w - f64::EPSILON);
-            focal.y = focal.y.clamp(0.0, output_size.h - f64::EPSILON);
-
-            focal
+            viewport_loc
+                .upscale(scale_factor)
+                .constrain(Rectangle::from_size(
+                    output_size - Size::from((f64::EPSILON, f64::EPSILON)),
+                ))
         }
     }
 }
@@ -129,41 +147,40 @@ fn compute_on_edge_zoom_update(
         return recentered();
     }
 
-    if zoomed_geometry_global.contains(cursor_position + output_geometry.loc) {
-        return None;
-    }
-
     let scale = zoom_factor / (zoom_factor - 1.0);
     let viewport_size = output_geometry.size.downscale(zoom_factor);
     let output_rect = Rectangle::from_size(output_geometry.size);
     let zoomed_geometry_local = apply_zoom_viewport(output_rect, focal_point, zoom_factor);
 
     let mut new_focal = focal_point;
-    let vp_left = zoomed_geometry_local.loc.x;
-    let vp_right = vp_left + zoomed_geometry_local.size.w;
-    let vp_top = zoomed_geometry_local.loc.y;
-    let vp_bottom = vp_top + zoomed_geometry_local.size.h;
+    let vp_top_left = zoomed_geometry_local.loc;
+    let vp_bottom_right = vp_top_left + zoomed_geometry_local.size;
 
-    if cursor_position.x < vp_left {
-        new_focal.x = cursor_position.x * scale;
-    } else if cursor_position.x > vp_right {
-        new_focal.x = (cursor_position.x - viewport_size.w) * scale;
-    }
+    let mut needs_update = false;
 
-    if cursor_position.y < vp_top {
+    if cursor_position.y < vp_top_left.y {
         new_focal.y = cursor_position.y * scale;
-    } else if cursor_position.y > vp_bottom {
+        needs_update = true;
+    } else if cursor_position.y > vp_bottom_right.y {
         new_focal.y = (cursor_position.y - viewport_size.h) * scale;
+        needs_update = true;
     }
 
-    new_focal.x = new_focal
-        .x
-        .clamp(0.0, output_geometry.size.w - f64::EPSILON);
-    new_focal.y = new_focal
-        .y
-        .clamp(0.0, output_geometry.size.h - f64::EPSILON);
+    if cursor_position.x < vp_top_left.x {
+        new_focal.x = cursor_position.x * scale;
+        needs_update = true;
+    } else if cursor_position.x > vp_bottom_right.x {
+        new_focal.x = (cursor_position.x - viewport_size.w) * scale;
+        needs_update = true;
+    }
 
-    Some(new_focal)
+    if !needs_update {
+        return None;
+    }
+
+    Some(new_focal.constrain(Rectangle::from_size(
+        output_geometry.size - Size::from((f64::EPSILON, f64::EPSILON)),
+    )))
 }
 
 pub fn zoom_display_cursor_logical(
@@ -178,57 +195,10 @@ pub fn zoom_display_cursor_logical(
 
     let output_rect = Rectangle::from_size(output_size);
     let viewport = apply_zoom_viewport(output_rect, zoom_focal, zoom_level);
-    Point::from((
-        pointer_local.x.clamp(
-            viewport.loc.x,
-            viewport.loc.x + viewport.size.w - f64::EPSILON,
-        ),
-        pointer_local.y.clamp(
-            viewport.loc.y,
-            viewport.loc.y + viewport.size.h - f64::EPSILON,
-        ),
+    pointer_local.constrain(Rectangle::new(
+        viewport.loc,
+        viewport.size - Size::from((f64::EPSILON, f64::EPSILON)),
     ))
-}
-
-pub struct ZoomTransformInputs {
-    pub output_pos: Point<f64, Logical>,
-    pub pointer_local: Point<f64, Logical>,
-    pub output_sz: Size<f64, Logical>,
-    pub zoom_level: f64,
-    pub zoom_focal: Point<f64, Logical>,
-}
-
-impl ZoomTransformInputs {
-    pub fn new(
-        output_pos: Point<f64, Logical>,
-        pointer_pos: Point<f64, Logical>,
-        output_sz: Size<f64, Logical>,
-        zoom_level: f64,
-        zoom_focal: Point<f64, Logical>,
-    ) -> Self {
-        let pointer_local = pointer_pos - output_pos;
-        Self {
-            output_pos,
-            pointer_local,
-            output_sz,
-            zoom_level,
-            zoom_focal,
-        }
-    }
-
-    pub fn display_position(&self) -> Option<Point<f64, Logical>> {
-        let output_rect: Rectangle<f64, Logical> = Rectangle::from_size(self.output_sz);
-        if !output_rect.contains(self.pointer_local) {
-            return None;
-        }
-
-        Some(zoom_display_cursor_logical(
-            self.pointer_local,
-            self.output_sz,
-            self.zoom_level,
-            self.zoom_focal,
-        ))
-    }
 }
 
 pub(crate) fn compute_on_edge_cursor_anchor(
@@ -239,19 +209,23 @@ pub(crate) fn compute_on_edge_cursor_anchor(
 ) -> Point<f64, Logical> {
     let output_rect: Rectangle<f64, Logical> = Rectangle::from_size(output_size);
     let viewport = apply_zoom_viewport(output_rect, focal, zoom_level);
-
+    // Clamp cursor to viewport first — ensures normalized coords are already in [0,1]
+    let constrained = cursor_local.constrain(Rectangle::new(
+        viewport.loc,
+        viewport.size - Size::from((f64::EPSILON, f64::EPSILON)),
+    ));
+    let delta = constrained - viewport.loc;
     let anchor_x = if viewport.size.w.abs() < f64::EPSILON {
         0.5
     } else {
-        ((cursor_local.x - viewport.loc.x) / viewport.size.w).clamp(0.0, 1.0)
+        delta.x / viewport.size.w
     };
     let anchor_y = if viewport.size.h.abs() < f64::EPSILON {
         0.5
     } else {
-        ((cursor_local.y - viewport.loc.y) / viewport.size.h).clamp(0.0, 1.0)
+        delta.y / viewport.size.h
     };
-
-    Point::from((anchor_x, anchor_y))
+    (anchor_x, anchor_y).into()
 }
 
 pub fn compute_focal_for_zoom_level(
@@ -293,22 +267,13 @@ pub(crate) fn compute_focal_for_on_edge_anchor(
     let viewport_loc: Point<f64, Logical> = cursor_local - anchor_offset;
     let scale_factor = zoom_level / (zoom_level - 1.0).max(0.001);
 
-    let mut focal = viewport_loc.upscale(scale_factor);
-    focal.x = focal.x.clamp(0.0, output_size.w - f64::EPSILON);
-    focal.y = focal.y.clamp(0.0, output_size.h - f64::EPSILON);
-    focal
-}
-
-pub fn zoom_subpixel_correction(
-    zoom_focal: Point<f64, Logical>,
-    zoom_level: f64,
-    output_scale: Scale<f64>,
-) -> Point<i32, Physical> {
-    let focal_i32: Point<i32, Physical> = zoom_focal.to_physical_precise_round(output_scale);
-    let focal_f64 = zoom_focal.to_physical(output_scale);
-    (focal_i32.to_f64() - focal_f64)
-        .upscale(Scale::from(zoom_level - 1.0))
-        .to_i32_round::<i32>()
+    // The scaled and clamped viewport loc is the new focal point that will keep the cursor anchored
+    // at the same relative position within the viewport.
+    viewport_loc
+        .upscale(scale_factor)
+        .constrain(Rectangle::from_size(
+            output_size - Size::from((f64::EPSILON, f64::EPSILON)),
+        ))
 }
 
 pub fn zoom_transform_physical_point(
@@ -317,12 +282,36 @@ pub fn zoom_transform_physical_point(
     zoom_focal: Point<f64, Logical>,
     output_scale: Scale<f64>,
 ) -> Point<i32, Physical> {
-    let correction = zoom_subpixel_correction(zoom_focal, zoom_level, output_scale);
-    let focal_physical: Point<i32, Physical> = zoom_focal.to_physical_precise_round(output_scale);
-    let p = point.to_f64();
-    let rounded = p.upscale(Scale::from(zoom_level))
-        - focal_physical
-            .to_f64()
-            .upscale(Scale::from(zoom_level - 1.0));
-    rounded.to_i32_round::<i32>() + correction
+    zoom_transform_physical_point_f64(point.to_f64(), zoom_level, zoom_focal, output_scale)
+        .to_i32_round::<i32>()
+}
+
+pub fn zoom_transform_physical_point_f64(
+    point: Point<f64, Physical>,
+    zoom_level: f64,
+    zoom_focal: Point<f64, Logical>,
+    output_scale: Scale<f64>,
+) -> Point<f64, Physical> {
+    let focal_physical: Point<f64, Physical> = zoom_focal.to_physical(output_scale);
+    point.upscale(Scale::from(zoom_level)) - focal_physical.upscale(Scale::from(zoom_level - 1.0))
+}
+
+pub fn zoom_transform_physical_rect(
+    rect: Rectangle<i32, Physical>,
+    zoom_level: f64,
+    zoom_focal: Point<f64, Logical>,
+    output_scale: Scale<f64>,
+) -> Rectangle<i32, Physical> {
+    let loc =
+        zoom_transform_physical_point_f64(rect.loc.to_f64(), zoom_level, zoom_focal, output_scale);
+    let bottom_right = zoom_transform_physical_point_f64(
+        (rect.loc + rect.size).to_f64(),
+        zoom_level,
+        zoom_focal,
+        output_scale,
+    );
+
+    let loc = loc.to_i32_round::<i32>();
+    let bottom_right = bottom_right.to_i32_round::<i32>();
+    Rectangle::new(loc, (bottom_right - loc).to_size())
 }

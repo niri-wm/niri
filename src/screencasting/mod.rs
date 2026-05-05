@@ -619,9 +619,8 @@ impl Niri {
                     None
                 };
 
-                // If pointer is to be drawn, render with zoom through the canonical seam
-                // by delegating to render_pointer_with_zoom with apply_zoom = true.
-                // We keep the same API surface to preserve existing behavior.
+                // If pointer is to be drawn, render through render_pointer.
+                // render_pointer applies output zoom when ctx.apply_zoom is true.
                 let pointer_pos = match pointer_pos {
                     Some(_p) => {
                         let ctx = RenderCtx {
@@ -630,7 +629,7 @@ impl Niri {
                             xray: None,
                             apply_zoom: true,
                         };
-                        Some(self.render_pointer_with_zoom(ctx, output, &mut |elem| {
+                        Some(self.render_pointer_for_output(ctx, output, &mut |elem| {
                             elements.push(elem.into())
                         }))
                     }
