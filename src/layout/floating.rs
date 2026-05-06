@@ -358,6 +358,22 @@ impl<W: LayoutElement> FloatingSpace<W> {
         self.working_area.intersection(window_rect)
     }
 
+    /// Returns the geometry of the window matching id relative to and clamped to the working area.
+    ///
+    /// During animations, assumes the final tile position.
+    pub fn window_visual_rectangle(&self, id: &W::Id) -> Option<Rectangle<f64, Logical>> {
+        for (tile, pos) in self.tiles_with_offsets() {
+            if tile.window().id() == id {
+                let window_pos = pos + tile.window_loc();
+                let window_size = tile.window_size();
+                let window_rect = Rectangle::new(window_pos, window_size);
+                return self.working_area.intersection(window_rect);
+            }
+        }
+
+        None
+    }
+
     pub fn popup_target_rect(&self, id: &W::Id) -> Option<Rectangle<f64, Logical>> {
         for (tile, pos) in self.tiles_with_offsets() {
             if tile.window().id() == id {

@@ -25,7 +25,9 @@ use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::{Client, DisplayHandle, Resource as _};
 use smithay::utils::{Coordinate, Logical, Point, Rectangle, Size, Transform};
-use smithay::wayland::compositor::{send_surface_state, with_states, SurfaceData};
+use smithay::wayland::compositor::{
+    get_parent, send_surface_state, with_states, SubsurfaceCachedState, SurfaceData,
+};
 use smithay::wayland::fractional_scale::with_fractional_scale;
 use smithay::wayland::shell::xdg::{
     ToplevelCachedState, ToplevelConfigure, ToplevelState, ToplevelSurface, XdgToplevelSurfaceData,
@@ -590,6 +592,37 @@ pub fn show_screenshot_notification(image_path: Option<&Path>) -> anyhow::Result
     )?;
 
     Ok(())
+}
+
+/// Computes this surface's location relative to its toplevel wl_surface's geometry.
+///
+/// This function will go up the parent stack and add up the relative locations. Useful for
+/// transitive subsurfaces.
+pub fn get_surface_toplevel_coords(surface: &WlSurface) -> Point<i32, Logical> {
+    let mut offset = (0, 0).into();
+    let mut current = surface.clone();
+    while let Some(parent) = get_parent(&current) {
+        offset += with_states(&current, |states| {
+            states
+                .cached_state
+                .get::<SubsurfaceCachedState>()
+                .current()
+                .location
+        });
+        current = parent;
+    }
+
+    offset
+}
+
+pub fn get_surface_size(surface: &WlSurface) -> Size<i32, Logical> {
+    with_states(&surface, |states| {
+        states
+            .data_map
+            .get::<RendererSurfaceStateUserData>()
+            .and_then(|d| d.lock().unwrap().surface_size())
+            .unwrap_or_default()
+    })
 }
 
 #[inline(never)]
