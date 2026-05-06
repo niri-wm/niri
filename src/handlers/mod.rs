@@ -21,6 +21,7 @@ use smithay::output::Output;
 use smithay::reexports::rustix::fs::{fcntl_setfl, OFlags};
 use smithay::reexports::wayland_protocols_wlr::screencopy::v1::server::zwlr_screencopy_manager_v1::ZwlrScreencopyManagerV1;
 use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
+use smithay::reexports::wayland_server::protocol::wl_pointer::WlPointer;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::Resource;
 use smithay::utils::{Logical, Point, Rectangle, Serial};
@@ -37,7 +38,10 @@ use smithay::wayland::keyboard_shortcuts_inhibit::{
     KeyboardShortcutsInhibitHandler, KeyboardShortcutsInhibitState, KeyboardShortcutsInhibitor,
 };
 use smithay::wayland::output::OutputHandler;
-use smithay::wayland::pointer_constraints::{with_pointer_constraint, PointerConstraintsHandler};
+use smithay::wayland::pointer_constraints::{
+    with_pointer_constraint, PointerConstraint, PointerConstraintsHandler,
+};
+use smithay::wayland::pointer_warp::PointerWarpHandler;
 use smithay::wayland::security_context::{
     SecurityContext, SecurityContextHandler, SecurityContextListenerSource,
 };
@@ -89,7 +93,9 @@ use crate::protocols::virtual_pointer::{
     VirtualPointerInputBackend, VirtualPointerManagerState, VirtualPointerMotionAbsoluteEvent,
     VirtualPointerMotionEvent,
 };
-use crate::utils::{output_size, send_scale_transform};
+use crate::utils::{
+    get_surface_size, get_surface_toplevel_coords, output_size, send_scale_transform,
+};
 use crate::{
     delegate_ext_workspace, delegate_foreign_toplevel, delegate_gamma_control,
     delegate_mutter_x11_interop, delegate_output_management, delegate_screencopy,
@@ -218,6 +224,101 @@ impl PointerConstraintsHandler for State {
     }
 }
 delegate_pointer_constraints!(State);
+
+impl PointerWarpHandler for State {
+    fn warp_pointer(
+        &mut self,
+        surface: WlSurface,
+        _pointer: WlPointer,
+        pos: Point<f64, Logical>,
+        serial: Serial,
+    ) {
+        let Some(seat_pointer) = &self.niri.seat.get_pointer() else {
+            return;
+        };
+
+        let Some(last_serial) = seat_pointer.last_enter() else {
+            return;
+        };
+
+        if serial != last_serial {
+            return;
+        }
+
+        let surface_size = get_surface_size(&surface).to_f64();
+        if pos.x < 0. || pos.y < 0. || pos.x > surface_size.w || pos.y > surface_size.h {
+            return;
+        }
+
+        // Check the warp against an active pointer constraint. Constraints live on the
+        // pointer's focus surface, which may legitimately differ from the warp target
+        // (the enter serial is valid for any surface of the client).
+        let mut allow = true;
+        if let Some((focus_surface, origin)) = self.niri.pointer_contents.surface.clone() {
+            let pos_within_focus = seat_pointer.current_location() - origin;
+            with_pointer_constraint(&focus_surface, seat_pointer, |constraint| {
+                let Some(constraint) = constraint else { return };
+                if !constraint.is_active() {
+                    return;
+                }
+
+                // Constraint does not apply if the pointer is not within region.
+                if let Some(region) = constraint.region() {
+                    if !region.contains(pos_within_focus.to_i32_round()) {
+                        return;
+                    }
+                }
+
+                match &*constraint {
+                    // Deliberately honor warps while locked. The spec leaves this
+                    // implementation-defined, and the client holding the lock is the one
+                    // requesting the warp.
+                    PointerConstraint::Locked(_) => (),
+                    // A confined pointer must stay within the confine region.
+                    PointerConstraint::Confined(confine) => {
+                        if focus_surface != surface {
+                            allow = false;
+                        } else if let Some(region) = confine.region() {
+                            allow = region.contains(pos.to_i32_round());
+                        }
+                    }
+                }
+            });
+        }
+        if !allow {
+            return;
+        }
+
+        let Some((mapped, output)) = self.niri.layout.find_window_and_output(&surface) else {
+            return;
+        };
+
+        let Some(output) = output else {
+            return;
+        };
+
+        let Some(output_geo) = self.niri.global_space.output_geometry(output) else {
+            return;
+        };
+
+        let Some(monitor) = self.niri.layout.monitor_for_output(output) else {
+            return;
+        };
+
+        let Some(rect) = monitor.window_visual_rectangle(&mapped.window) else {
+            return;
+        };
+
+        let mut coords = pos;
+        coords += rect.loc;
+        coords += get_surface_toplevel_coords(&surface).to_f64();
+        coords += output_geo.loc.to_f64();
+
+        self.move_cursor(coords);
+    }
+}
+
+smithay::delegate_pointer_warp!(State);
 
 impl InputMethodHandler for State {
     fn new_popup(&mut self, surface: PopupSurface) {

@@ -2559,6 +2559,29 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         view.intersection(window_rect)
     }
 
+    /// Returns the geometry of the window matching id relative to and clamped to the view.
+    ///
+    /// During animations, assumes the final view position.
+    pub fn window_visual_rectangle(&self, id: &W::Id) -> Option<Rectangle<f64, Logical>> {
+        let final_view_offset = self.view_offset.target();
+        let view_off = Point::from((-final_view_offset, 0.));
+
+        for col in &self.columns {
+            for (tile, pos) in col.tiles() {
+                if tile.window().id() == id {
+                    let window_pos = view_off + pos + tile.window_loc();
+                    let window_size = tile.window_size();
+                    let window_rect = Rectangle::new(window_pos, window_size);
+
+                    let view = Rectangle::from_size(self.view_size);
+                    return view.intersection(window_rect);
+                }
+            }
+        }
+
+        None
+    }
+
     pub fn popup_target_rect(&self, id: &W::Id) -> Option<Rectangle<f64, Logical>> {
         for col in &self.columns {
             for (tile, pos) in col.tiles() {

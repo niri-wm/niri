@@ -89,6 +89,7 @@ use smithay::wayland::keyboard_shortcuts_inhibit::{
 use smithay::wayland::output::OutputManagerState;
 use smithay::wayland::pointer_constraints::{with_pointer_constraint, PointerConstraintsState};
 use smithay::wayland::pointer_gestures::PointerGesturesState;
+use smithay::wayland::pointer_warp::PointerWarpManager;
 use smithay::wayland::presentation::PresentationState;
 use smithay::wayland::relative_pointer::RelativePointerManagerState;
 use smithay::wayland::security_context::SecurityContextState;
@@ -299,6 +300,7 @@ pub struct Niri {
     pub pointer_gestures_state: PointerGesturesState,
     pub relative_pointer_state: RelativePointerManagerState,
     pub pointer_constraints_state: PointerConstraintsState,
+    pub pointer_warp_manager: PointerWarpManager,
     pub idle_notifier_state: IdleNotifierState<State>,
     pub idle_inhibit_manager_state: IdleInhibitManagerState,
     pub data_device_state: DataDeviceState,
@@ -2309,6 +2311,7 @@ impl Niri {
         let pointer_gestures_state = PointerGesturesState::new::<State>(&display_handle);
         let relative_pointer_state = RelativePointerManagerState::new::<State>(&display_handle);
         let pointer_constraints_state = PointerConstraintsState::new::<State>(&display_handle);
+        let pointer_warp_manager = PointerWarpManager::new::<State>(&display_handle);
         let idle_notifier_state = IdleNotifierState::new(&display_handle, event_loop.clone());
         let idle_inhibit_manager_state = IdleInhibitManagerState::new::<State>(&display_handle);
         let data_device_state = DataDeviceState::new::<State>(&display_handle);
@@ -2554,6 +2557,7 @@ impl Niri {
             pointer_gestures_state,
             relative_pointer_state,
             pointer_constraints_state,
+            pointer_warp_manager,
             idle_notifier_state,
             idle_inhibit_manager_state,
             data_device_state,
