@@ -1,2 +1,8 @@
+* text=auto eol=lf
+
+*.rs text diff=rust
+Cargo.lock text linguist-generated
+flake.lock text linguist-generated
+
 # LFS configuration for images from the wiki
 *.png filter=lfs diff=lfs merge=lfs -text
