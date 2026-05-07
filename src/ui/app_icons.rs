@@ -252,13 +252,34 @@ static APP_ICON_NAMES_CACHE: LazyLock<Mutex<HashMap<String, Vec<String>>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 static ICON_PATH_CACHE: LazyLock<Mutex<HashMap<(String, i32), Option<PathBuf>>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
-static INSTALLED_APP_ICONS: LazyLock<Vec<(String, Vec<String>)>> = LazyLock::new(|| {
+#[derive(Debug)]
+struct InstalledAppIcon {
+    desktop_id: String,
+    startup_wm_class: Option<String>,
+    icon_names: Vec<String>,
+}
+
+static INSTALLED_APP_ICONS: LazyLock<Vec<InstalledAppIcon>> = LazyLock::new(|| {
     gio::AppInfo::all()
         .into_iter()
         .filter_map(|app_info| {
             let app_id = app_info.id()?.to_string();
-            let icon_names = icon_names_from_app_info(&app_info);
-            Some((app_id, icon_names))
+            let desktop_info = DesktopAppInfo::new(&app_id);
+            let startup_wm_class = desktop_info
+                .as_ref()
+                .and_then(|info| info.startup_wm_class())
+                .map(|wm_class| wm_class.to_string());
+            let icon_names = desktop_info
+                .as_ref()
+                .map(icon_names_from_desktop_app_info)
+                .filter(|names| !names.is_empty())
+                .unwrap_or_else(|| icon_names_from_app_info(&app_info));
+
+            Some(InstalledAppIcon {
+                desktop_id: app_id,
+                startup_wm_class,
+                icon_names,
+            })
         })
         .collect()
 });
@@ -289,10 +310,14 @@ fn app_icon_names_for_app_id(app_id: &str) -> Vec<String> {
 }
 
 fn app_icon_names_for_app_id_uncached(app_id: &str) -> Vec<String> {
+    if let Some(icon_names) = installed_app_icon_names_for_desktop_id_or_wm_class(app_id) {
+        return icon_names;
+    }
+
     // Mirror niri-switch's lookup approach: try exact desktop IDs from the AppInfo cache first.
     let direct_ids = [format!("{app_id}.desktop"), app_id.to_owned()];
     for requested in direct_ids {
-        if let Some(icon_names) = installed_app_icon_names_for_desktop_id(&requested) {
+        if let Some(icon_names) = installed_app_icon_names_for_desktop_id_or_wm_class(&requested) {
             return icon_names;
         }
     }
@@ -351,8 +376,21 @@ fn fallback_icon_names_from_app_id(app_id: &str) -> Vec<String> {
 fn installed_app_icon_names_for_desktop_id(desktop_id: &str) -> Option<Vec<String>> {
     INSTALLED_APP_ICONS
         .iter()
-        .find(|(app_id, _)| app_id == desktop_id)
-        .map(|(_, names)| names.clone())
+        .find(|info| info.desktop_id == desktop_id)
+        .map(|info| info.icon_names.clone())
+}
+
+fn installed_app_icon_names_for_desktop_id_or_wm_class(app_id: &str) -> Option<Vec<String>> {
+    INSTALLED_APP_ICONS
+        .iter()
+        .find(|info| {
+            info.desktop_id == app_id
+                || info
+                    .startup_wm_class
+                    .as_deref()
+                    .is_some_and(|wm_class| wm_class == app_id)
+        })
+        .map(|info| info.icon_names.clone())
 }
 
 fn icon_names_from_desktop_app_info(app_info: &DesktopAppInfo) -> Vec<String> {
