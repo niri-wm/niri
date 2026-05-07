@@ -3711,9 +3711,10 @@ impl Niri {
 
         // Get the render cursor to draw.
         let cursor_scale = output_scale.integer_scale();
-        let render_cursor = self.cursor_manager.get_render_cursor(cursor_scale);
+        let fractional_scale = output_scale.fractional_scale();
+        let render_cursor = self.cursor_manager.get_render_cursor(cursor_scale, fractional_scale);
 
-        let output_scale = Scale::from(output.current_scale().fractional_scale());
+        let output_scale = Scale::from(fractional_scale);
 
         match render_cursor {
             RenderCursor::Hidden => (),
@@ -3946,15 +3947,15 @@ impl Niri {
 
                     // The default cursor is rendered at the right scale for each output, which
                     // means that it may have a different hotspot for each output.
-                    let output_scale = output.current_scale().integer_scale();
+                    let output_scale = output.current_scale();
                     let cursor = self
                         .cursor_manager
-                        .get_cursor_with_name(icon, output_scale)
-                        .unwrap_or_else(|| self.cursor_manager.get_default_cursor(output_scale));
+                        .get_cursor_with_name(icon, output_scale.integer_scale(), output_scale.fractional_scale())
+                        .unwrap_or_else(|| self.cursor_manager.get_default_cursor(output_scale.integer_scale(), output_scale.fractional_scale()));
 
                     // For simplicity, we always use frame 0 for this computation. Let's hope the
                     // hotspot doesn't change between frames.
-                    let hotspot = XCursor::hotspot(&cursor.frames()[0]).to_logical(output_scale);
+                    let hotspot = XCursor::hotspot(&cursor.frames()[0]).to_logical(output_scale.integer_scale());
 
                     let surface_pos = pointer_pos.to_i32_round() - hotspot;
                     let bbox = bbox_from_surface_tree(surface, surface_pos);
