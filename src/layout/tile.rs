@@ -1341,31 +1341,36 @@ impl<W: LayoutElement> Tile<W> {
                     .expanded_by(border_width as f32)
                     .scaled_by(1. - expanded_progress as f32);
 
-                let size = self.fullscreen_backdrop.size();
+                // Same clip as the steady-state branch below, but per-strip
+                // CornerRadius preserves the animated tile-outer-corner shrink:
+                // strips at tile corners get the radius, strips that butt
+                // against the window's edge stay sharp.
                 let color = self.fullscreen_backdrop.color();
-                let elem = BorderRenderElement::new(
-                    size,
-                    Rectangle::from_size(size),
-                    GradientInterpolation::default(),
-                    Color::from_color32f(color),
-                    Color::from_color32f(color),
-                    0.,
-                    Rectangle::from_size(size),
-                    0.,
-                    radius,
-                    scale.x as f32,
-                    alpha,
-                )
-                .with_location(location);
-                push(elem.into());
+                let tile_rect = Rectangle::new(location, self.fullscreen_backdrop.size());
+                for (geo, per_rect_radius) in backdrop_clip_rects(tile_rect, area, radius) {
+                    let elem = BorderRenderElement::new(
+                        geo.size,
+                        Rectangle::from_size(geo.size),
+                        GradientInterpolation::default(),
+                        Color::from_color32f(color),
+                        Color::from_color32f(color),
+                        0.,
+                        Rectangle::from_size(geo.size),
+                        0.,
+                        per_rect_radius,
+                        scale.x as f32,
+                        alpha,
+                    )
+                    .with_location(geo.loc);
+                    push(elem.into());
+                }
             } else {
                 // Clip the backdrop to tile-minus-window so translucent windows
                 // (e.g., kitty with background_opacity<1.0) compose against the
                 // wallpaper, not against opaque black. Aspect-ratio padding bars
                 // are preserved by the strips outside the window's geometry.
                 let tile_rect = Rectangle::new(location, self.fullscreen_backdrop.size());
-                for (geo, _radius) in
-                    backdrop_clip_rects(tile_rect, area, CornerRadius::default())
+                for (geo, _radius) in backdrop_clip_rects(tile_rect, area, CornerRadius::default())
                 {
                     let elem = SolidColorRenderElement::from_buffer_at(
                         &self.fullscreen_backdrop,
@@ -1658,9 +1663,10 @@ impl<W: LayoutElement> Tile<W> {
 
 #[cfg(test)]
 mod tests {
-    use super::backdrop_clip_rects;
     use niri_config::CornerRadius;
     use smithay::utils::{Logical, Point, Rectangle, Size};
+
+    use super::backdrop_clip_rects;
 
     fn rect(x: f64, y: f64, w: f64, h: f64) -> Rectangle<f64, Logical> {
         Rectangle::new(Point::from((x, y)), Size::from((w, h)))
@@ -1756,7 +1762,8 @@ mod tests {
 
         assert_eq!(result.len(), 4);
 
-        // Left bar owns the tile's top-left and bottom-left corners; right edge butts against the window.
+        // Left bar owns the tile's top-left and bottom-left corners; right edge butts against the
+        // window.
         assert_eq!(
             result[0].1,
             CornerRadius {
