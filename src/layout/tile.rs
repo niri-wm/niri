@@ -1556,3 +1556,143 @@ impl<W: LayoutElement> Tile<W> {
         assert_abs_diff_eq!(size.h, rounded.h, epsilon = 1e-5);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::backdrop_clip_rects;
+    use niri_config::CornerRadius;
+    use smithay::utils::{Logical, Point, Rectangle, Size};
+
+    fn rect(x: f64, y: f64, w: f64, h: f64) -> Rectangle<f64, Logical> {
+        Rectangle::new(Point::from((x, y)), Size::from((w, h)))
+    }
+
+    fn zero_radius() -> CornerRadius {
+        CornerRadius::default()
+    }
+
+    fn uniform_radius(r: f32) -> CornerRadius {
+        CornerRadius::from(r)
+    }
+
+    #[test]
+    fn backdrop_clip_rects_window_equals_tile_returns_empty() {
+        let tile = rect(0., 0., 1920., 1080.);
+        let window = tile;
+        let result = backdrop_clip_rects(tile, window, zero_radius());
+        assert!(result.is_empty(), "expected no rects, got {:?}", result);
+    }
+
+    #[test]
+    fn backdrop_clip_rects_window_centered_returns_4_strips() {
+        let tile = rect(0., 0., 1920., 1080.);
+        let window = rect(480., 270., 960., 540.);
+        let result = backdrop_clip_rects(tile, window, zero_radius());
+
+        assert_eq!(result.len(), 4, "expected 4 strips, got {:?}", result);
+
+        // Documented decomposition: left bar, right bar, top middle, bottom middle.
+        assert_eq!(result[0].0, rect(0., 0., 480., 1080.), "left bar");
+        assert_eq!(result[1].0, rect(1440., 0., 480., 1080.), "right bar");
+        assert_eq!(result[2].0, rect(480., 0., 960., 270.), "top middle");
+        assert_eq!(result[3].0, rect(480., 810., 960., 270.), "bottom middle");
+
+        // None of the strips intersects the window.
+        for (r, _) in &result {
+            assert!(
+                r.intersection(window).is_none(),
+                "strip {:?} intersects window {:?}",
+                r,
+                window
+            );
+        }
+
+        // With zero input radius, every strip's CornerRadius is all-zero.
+        for (_, cr) in &result {
+            assert_eq!(*cr, zero_radius());
+        }
+    }
+
+    #[test]
+    fn backdrop_clip_rects_aspect_ratio_left_right_only() {
+        // Window is full-height, narrower-width: aspect-ratio padding bars on left and right only.
+        let tile = rect(0., 0., 1920., 1080.);
+        let window = rect(240., 0., 1440., 1080.);
+        let result = backdrop_clip_rects(tile, window, zero_radius());
+
+        assert_eq!(result.len(), 2, "expected 2 strips, got {:?}", result);
+        assert_eq!(result[0].0, rect(0., 0., 240., 1080.), "left bar");
+        assert_eq!(result[1].0, rect(1680., 0., 240., 1080.), "right bar");
+    }
+
+    #[test]
+    fn backdrop_clip_rects_window_flush_left_no_left_bar() {
+        // Window is full-width, partial-height: only top middle and bottom middle present.
+        // (Despite the test name, this is the symmetric "flush vertically" case — no L/R bars.)
+        let tile = rect(0., 0., 1920., 1080.);
+        let window = rect(0., 100., 1920., 880.);
+        let result = backdrop_clip_rects(tile, window, zero_radius());
+
+        assert_eq!(result.len(), 2, "expected 2 strips, got {:?}", result);
+        assert_eq!(result[0].0, rect(0., 0., 1920., 100.), "top middle");
+        assert_eq!(result[1].0, rect(0., 980., 1920., 100.), "bottom middle");
+    }
+
+    #[test]
+    fn backdrop_clip_rects_zero_radius_yields_zero_radii() {
+        let tile = rect(0., 0., 1920., 1080.);
+        let window = rect(480., 270., 960., 540.);
+        let result = backdrop_clip_rects(tile, window, zero_radius());
+
+        for (_, cr) in &result {
+            assert_eq!(*cr, zero_radius());
+        }
+    }
+
+    #[test]
+    fn backdrop_clip_rects_nonzero_radius_only_outer_corners_rounded() {
+        let tile = rect(0., 0., 1920., 1080.);
+        let window = rect(480., 270., 960., 540.);
+        let result = backdrop_clip_rects(tile, window, uniform_radius(16.0));
+
+        assert_eq!(result.len(), 4);
+
+        // Left bar owns the tile's top-left and bottom-left corners; right edge butts against the window.
+        assert_eq!(
+            result[0].1,
+            CornerRadius {
+                top_left: 16.0,
+                top_right: 0.0,
+                bottom_right: 0.0,
+                bottom_left: 16.0,
+            },
+            "left bar should round only its outer (left) corners"
+        );
+
+        // Right bar owns top-right and bottom-right tile corners.
+        assert_eq!(
+            result[1].1,
+            CornerRadius {
+                top_left: 0.0,
+                top_right: 16.0,
+                bottom_right: 16.0,
+                bottom_left: 0.0,
+            },
+            "right bar should round only its outer (right) corners"
+        );
+
+        // Top middle is sandwiched between the two bars and the window — no tile-outer corners.
+        assert_eq!(
+            result[2].1,
+            zero_radius(),
+            "top middle should have no rounded corners"
+        );
+
+        // Bottom middle: same reasoning.
+        assert_eq!(
+            result[3].1,
+            zero_radius(),
+            "bottom middle should have no rounded corners"
+        );
+    }
+}
