@@ -930,7 +930,7 @@ https://github.com/user-attachments/assets/3f4cb1a4-40b2-4766-98b7-eec014c19509
 
 #### `background-effect`
 
-<sup>Since: next release</sup>
+<sup>Since: 26.04</sup>
 
 Override the background effect options for this window.
 
@@ -958,7 +958,7 @@ window-rule {
 
 #### `popups`
 
-<sup>Since: next release</sup>
+<sup>Since: 26.04</sup>
 
 Override properties for this window's pop-ups (menus and tooltips).
 

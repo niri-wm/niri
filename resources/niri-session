@@ -15,7 +15,7 @@ if [ -n "$SHELL" ] &&
    ! (echo "$SHELL" | grep -q "false") &&
    ! (echo "$SHELL" | grep -q "nologin"); then
   if [ "$1" != '-l' ]; then
-    exec bash -c "exec -l '$SHELL' -c '$0 -l $*'"
+    exec bash -c "exec -l '$SHELL' -c 'exec $0 -l $*'"
   else
     shift
   fi

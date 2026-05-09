@@ -80,7 +80,7 @@ I wouldn't be too surprised if, down the road, xwayland-satellite becomes the st
 
 ### Can I enable blur behind semitransparent windows?
 
-Yes, since the next release.
+<sup>Since: 26.04</sup> Yes.
 See the [window effects](./Window-Effects.md) wiki page.
 
 ### Can I make a window sticky / pinned / always on top / appear on all workspaces?

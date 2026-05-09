@@ -20,7 +20,7 @@ You can include by filename or path.
 
 * Relative to the current file: `other.kdl` or `./other.kdl`
 * By absolute path: `/path/to/file.kdl`
-* <sup>Since: next release</sup> Home dir paths: `~/file.kdl` expands to `/home/user/file.kdl`
+* <sup>Since: 26.04</sup> Home dir paths: `~/file.kdl` expands to `/home/user/file.kdl`
 
 Includes work only at the top level of the config:
 
@@ -122,7 +122,7 @@ window-rule {
 
 ### Optional includes
 
-<sup>Since: next release</sup>
+<sup>Since: 26.04</sup>
 
 By default, including a nonexistent file will cause an error.
 You can allow nonexistent includes by setting `optional=true`:

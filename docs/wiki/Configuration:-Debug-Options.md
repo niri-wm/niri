@@ -107,7 +107,7 @@ debug {
 
 ### `force-disable-connectors-on-resume`
 
-<sup>Since: next release</sup>
+<sup>Since: 26.04</sup>
 
 Force-disables all outputs upon resuming niri (TTY switch or waking up from suspend).
 This causes a modeset/screen blank on all outputs.

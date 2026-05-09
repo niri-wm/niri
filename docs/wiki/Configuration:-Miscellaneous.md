@@ -331,7 +331,7 @@ config-notification {
 
 ### `blur`
 
-<sup>Since: next release</sup>
+<sup>Since: 26.04</sup>
 
 Blur configuration that affects all background blur.
 
