@@ -35,6 +35,96 @@ use crate::utils::{
     baba_is_float_offset, round_logical_in_physical, round_logical_in_physical_max1,
 };
 
+/// Decomposes `tile - window` into up to 4 axis-aligned rectangles for the
+/// fullscreen backdrop. Each returned rect carries a `CornerRadius` whose
+/// non-zero corners coincide with the tile's outer corners; corners that
+/// butt against the window's edge are zero.
+///
+/// Order: left bar, right bar, top middle, bottom middle. Strips that would
+/// have zero width or height are omitted. If `window` doesn't overlap `tile`,
+/// the whole `tile` is returned with its full corner radius.
+fn backdrop_clip_rects(
+    tile: Rectangle<f64, Logical>,
+    window: Rectangle<f64, Logical>,
+    tile_corner_radius: CornerRadius,
+) -> Vec<(Rectangle<f64, Logical>, CornerRadius)> {
+    let tile_left = tile.loc.x;
+    let tile_top = tile.loc.y;
+    let tile_right = tile_left + tile.size.w;
+    let tile_bottom = tile_top + tile.size.h;
+
+    // Clamp the window into the tile so we never produce negative-dimension strips.
+    let window_left = window.loc.x.clamp(tile_left, tile_right);
+    let window_top = window.loc.y.clamp(tile_top, tile_bottom);
+    let window_right = (window.loc.x + window.size.w).clamp(tile_left, tile_right);
+    let window_bottom = (window.loc.y + window.size.h).clamp(tile_top, tile_bottom);
+
+    // Window doesn't overlap the tile: backdrop is the whole tile.
+    if window_right <= window_left || window_bottom <= window_top {
+        return vec![(tile, tile_corner_radius)];
+    }
+
+    let mut out = Vec::new();
+
+    // Left bar: covers the strip left of the window, full tile height.
+    // Owns the tile's top-left and bottom-left outer corners.
+    if window_left > tile_left {
+        out.push((
+            Rectangle::new(
+                Point::from((tile_left, tile_top)),
+                Size::from((window_left - tile_left, tile_bottom - tile_top)),
+            ),
+            CornerRadius {
+                top_left: tile_corner_radius.top_left,
+                top_right: 0.0,
+                bottom_right: 0.0,
+                bottom_left: tile_corner_radius.bottom_left,
+            },
+        ));
+    }
+
+    // Right bar: strip right of the window, full tile height.
+    // Owns the tile's top-right and bottom-right outer corners.
+    if window_right < tile_right {
+        out.push((
+            Rectangle::new(
+                Point::from((window_right, tile_top)),
+                Size::from((tile_right - window_right, tile_bottom - tile_top)),
+            ),
+            CornerRadius {
+                top_left: 0.0,
+                top_right: tile_corner_radius.top_right,
+                bottom_right: tile_corner_radius.bottom_right,
+                bottom_left: 0.0,
+            },
+        ));
+    }
+
+    // Top middle: above the window, between the bars. Sandwiched, no tile-outer corners.
+    if window_top > tile_top {
+        out.push((
+            Rectangle::new(
+                Point::from((window_left, tile_top)),
+                Size::from((window_right - window_left, window_top - tile_top)),
+            ),
+            CornerRadius::default(),
+        ));
+    }
+
+    // Bottom middle: below the window, between the bars.
+    if window_bottom < tile_bottom {
+        out.push((
+            Rectangle::new(
+                Point::from((window_left, window_bottom)),
+                Size::from((window_right - window_left, tile_bottom - window_bottom)),
+            ),
+            CornerRadius::default(),
+        ));
+    }
+
+    out
+}
+
 /// Toplevel window with decorations.
 #[derive(Debug)]
 pub struct Tile<W: LayoutElement> {
