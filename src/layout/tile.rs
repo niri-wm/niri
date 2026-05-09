@@ -1359,13 +1359,22 @@ impl<W: LayoutElement> Tile<W> {
                 .with_location(location);
                 push(elem.into());
             } else {
-                let elem = SolidColorRenderElement::from_buffer(
-                    &self.fullscreen_backdrop,
-                    location,
-                    alpha,
-                    Kind::Unspecified,
-                );
-                push(elem.into());
+                // Clip the backdrop to tile-minus-window so translucent windows
+                // (e.g., kitty with background_opacity<1.0) compose against the
+                // wallpaper, not against opaque black. Aspect-ratio padding bars
+                // are preserved by the strips outside the window's geometry.
+                let tile_rect = Rectangle::new(location, self.fullscreen_backdrop.size());
+                for (geo, _radius) in
+                    backdrop_clip_rects(tile_rect, area, CornerRadius::default())
+                {
+                    let elem = SolidColorRenderElement::from_buffer_at(
+                        &self.fullscreen_backdrop,
+                        geo,
+                        alpha,
+                        Kind::Unspecified,
+                    );
+                    push(elem.into());
+                }
             }
         }
 

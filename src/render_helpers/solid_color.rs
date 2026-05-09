@@ -91,6 +91,19 @@ impl SolidColorRenderElement {
         Self::new(buffer.id.clone(), geo, buffer.commit, color, kind)
     }
 
+    /// Like `from_buffer` but accepts an explicit geometry, decoupling the
+    /// rendered rect from the buffer's natural size. Useful for clipping a
+    /// single backing buffer into multiple sub-rects.
+    pub fn from_buffer_at(
+        buffer: &SolidColorBuffer,
+        geometry: Rectangle<f64, Logical>,
+        alpha: f32,
+        kind: Kind,
+    ) -> Self {
+        let color = buffer.color * alpha;
+        Self::new(buffer.id.clone(), geometry, buffer.commit, color, kind)
+    }
+
     pub fn new(
         id: Id,
         geometry: Rectangle<f64, Logical>,
