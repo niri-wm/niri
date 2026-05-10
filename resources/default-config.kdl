@@ -346,6 +346,15 @@ window-rule {
     clip-to-geometry true
 }
 
+// Hot corners can trigger actions when you move the mouse into a monitor corner.
+// Bare corner names toggle the overview. Corner blocks can run any bind action.
+// gestures {
+//     hot-corners {
+//         top-left
+//         // top-right { power-off-monitors; }
+//     }
+// }
+
 binds {
     // Keys consist of modifiers separated by + signs, followed by an XKB key name
     // in the end. To find an XKB name for a particular key, you may use a program
@@ -394,7 +403,7 @@ binds {
     XF86MonBrightnessDown allow-when-locked=true { spawn "brightnessctl" "--class=backlight" "set" "10%-"; }
 
     // Open/close the Overview: a zoomed-out view of workspaces and windows.
-    // You can also move the mouse into the top-left hot corner,
+    // You can also move the mouse into the default top-left hot corner,
     // or do a four-finger swipe up on a touchpad.
     Mod+O repeat=false { toggle-overview; }
 

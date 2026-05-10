@@ -651,7 +651,7 @@ impl Options {
         Self {
             layout: config.layout.clone(),
             animations: config.animations.clone(),
-            gestures: config.gestures,
+            gestures: config.gestures.clone(),
             overview: config.overview,
             blur: config.blur,
             disable_resize_throttling: config.debug.disable_resize_throttling,

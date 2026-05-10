@@ -22,6 +22,11 @@ output "eDP-1" {
         // top-right
         // bottom-left
         // bottom-right
+
+        // You can also run a custom action instead of toggling the overview.
+        // top-right {
+        //     power-off-monitors
+        // }
     }
 
     layout {
@@ -286,7 +291,9 @@ output "HDMI-A-1" {
 Customize the hot corners for this output.
 By default, hot corners [in the gestures settings](./Configuration:-Gestures.md#hot-corners) are used for all outputs.
 
-Hot corners toggle the overview when you put your mouse at the very corner of a monitor.
+Hot corners run an action when you put your mouse at the very corner of a monitor.
+Bare corner names toggle the overview for compatibility with previous versions.
+A corner block with exactly one action runs that action instead.
 
 `off` will disable the hot corners on this output, and writing specific corners will enable only those hot corners on this output.
 
@@ -303,6 +310,15 @@ output "HDMI-A-1" {
 output "DP-2" {
     hot-corners {
         off
+    }
+}
+
+// Power off monitors from the top-right hot corner on eDP-1.
+output "eDP-1" {
+    hot-corners {
+        top-right {
+            power-off-monitors
+        }
     }
 }
 ```

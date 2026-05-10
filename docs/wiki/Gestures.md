@@ -91,9 +91,10 @@ This will bring a floating window to the top for example.
 
 In the overview, you can also hold the mouse over a workspace to switch to it.
 
-#### Hot Corner to Toggle the Overview
+#### Hot Corners
 
 <sup>Since: 25.05</sup>
 
-Put your mouse at the very top-left corner of a monitor to toggle the overview.
+Put your mouse at a hot corner of a monitor to run its configured action.
+By default, the top-left hot corner toggles the overview.
 Also works during drag-and-dropping something.
