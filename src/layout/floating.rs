@@ -2,6 +2,7 @@ use std::cmp::max;
 use std::iter::zip;
 use std::rc::Rc;
 
+use niri_config::utils::MergeWith as _;
 use niri_config::{PresetSize, RelativeTo};
 use niri_ipc::{PositionChange, SizeChange, WindowLayout};
 use smithay::backend::renderer::gles::GlesRenderer;
@@ -17,7 +18,8 @@ use super::{
 use crate::animation::{Animation, Clock};
 use crate::niri_render_elements;
 use crate::render_helpers::renderer::NiriRenderer;
-use crate::render_helpers::RenderTarget;
+use crate::render_helpers::xray::XrayPos;
+use crate::render_helpers::RenderCtx;
 use crate::utils::transaction::TransactionBlocker;
 use crate::utils::{
     center_preferring_top_left_in_area, clamp_preferring_top_left_in_area, ensure_min_max_size,
@@ -339,20 +341,21 @@ impl<W: LayoutElement> FloatingSpace<W> {
     }
 
     pub fn new_window_toplevel_bounds(&self, rules: &ResolvedWindowRules) -> Size<i32, Logical> {
-        let border_config = rules.border.resolve_against(self.options.border);
+        let border_config = self.options.layout.border.merged_with(&rules.border);
         compute_toplevel_bounds(border_config, self.working_area.size)
     }
 
-    /// Returns the geometry of the active tile relative to and clamped to the working area.
+    /// Returns the geometry of the active window relative to and clamped to the working area.
     ///
     /// During animations, assumes the final tile position.
-    pub fn active_tile_visual_rectangle(&self) -> Option<Rectangle<f64, Logical>> {
+    pub fn active_window_visual_rectangle(&self) -> Option<Rectangle<f64, Logical>> {
         let (tile, offset) = self.tiles_with_offsets().next()?;
 
-        let tile_size = tile.tile_size();
-        let tile_rect = Rectangle::new(offset, tile_size);
+        let window_pos = offset + tile.window_loc();
+        let window_size = tile.window_size();
+        let window_rect = Rectangle::new(window_pos, window_size);
 
-        self.working_area.intersection(tile_rect)
+        self.working_area.intersection(window_rect)
     }
 
     pub fn popup_target_rect(&self, id: &W::Id) -> Option<Rectangle<f64, Logical>> {
@@ -412,8 +415,8 @@ impl<W: LayoutElement> FloatingSpace<W> {
         // unfullscreen it.
         let floating_size = tile.floating_window_size;
         let win = tile.window_mut();
-        let mut size = if win.is_pending_fullscreen() {
-            // If the window was fullscreen without a floating size, ask for (0, 0).
+        let mut size = if !win.pending_sizing_mode().is_normal() {
+            // If the window was fullscreen or maximized without a floating size, ask for (0, 0).
             floating_size.unwrap_or_default()
         } else {
             // If the window wasn't fullscreen without a floating size (e.g. it was tiled before),
@@ -488,6 +491,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
         // Now, descendants is in back-to-front order, and repositioning them in the front-to-back
         // order will preserve the subsequent indices and work out right.
         let mut idx = idx;
+        #[allow(clippy::explicit_counter_loop)]
         for descendant_idx in descendants.into_iter().rev() {
             self.raise_window(descendant_idx, idx);
             idx += 1;
@@ -632,7 +636,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
 
         let available_size = self.working_area.size.w;
 
-        let len = self.options.preset_column_widths.len();
+        let len = self.options.layout.preset_column_widths.len();
         let tile = &mut self.tiles[idx];
         let preset_idx = if let Some(idx) = tile.floating_preset_width_idx {
             (idx + if forwards { 1 } else { len - 1 }) % len
@@ -642,6 +646,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
 
             let mut it = self
                 .options
+                .layout
                 .preset_column_widths
                 .iter()
                 .map(|preset| resolve_preset_size(*preset, available_size));
@@ -667,7 +672,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
             }
         };
 
-        let preset = self.options.preset_column_widths[preset_idx];
+        let preset = self.options.layout.preset_column_widths[preset_idx];
         self.set_window_width(Some(&id), SizeChange::from(preset), true);
 
         self.tiles[idx].floating_preset_width_idx = Some(preset_idx);
@@ -692,7 +697,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
 
         let available_size = self.working_area.size.h;
 
-        let len = self.options.preset_window_heights.len();
+        let len = self.options.layout.preset_window_heights.len();
         let tile = &mut self.tiles[idx];
         let preset_idx = if let Some(idx) = tile.floating_preset_height_idx {
             (idx + if forwards { 1 } else { len - 1 }) % len
@@ -702,6 +707,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
 
             let mut it = self
                 .options
+                .layout
                 .preset_window_heights
                 .iter()
                 .map(|preset| resolve_preset_size(*preset, available_size));
@@ -727,7 +733,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
             }
         };
 
-        let preset = self.options.preset_window_heights[preset_idx];
+        let preset = self.options.layout.preset_window_heights[preset_idx];
         self.set_window_height(Some(&id), SizeChange::from(preset), true);
 
         let tile = &mut self.tiles[idx];
@@ -958,17 +964,42 @@ impl<W: LayoutElement> FloatingSpace<W> {
         };
         let idx = self.idx_of(id).unwrap();
 
-        let mut new_pos = self.data[idx].logical_pos;
+        let mut pos = self.data[idx].logical_pos;
+
+        let available_width = self.working_area.size.w;
+        let available_height = self.working_area.size.h;
+        let working_area_loc = self.working_area.loc;
+
+        const MAX_F: f64 = 10000.;
+
         match x {
-            PositionChange::SetFixed(x) => new_pos.x = x + self.working_area.loc.x,
-            PositionChange::AdjustFixed(x) => new_pos.x += x,
+            PositionChange::SetFixed(x) => pos.x = x + working_area_loc.x,
+            PositionChange::SetProportion(prop) => {
+                let prop = (prop / 100.).clamp(0., MAX_F);
+                pos.x = available_width * prop + working_area_loc.x;
+            }
+            PositionChange::AdjustFixed(x) => pos.x += x,
+            PositionChange::AdjustProportion(prop) => {
+                let current_prop = (pos.x - working_area_loc.x) / available_width.max(1.);
+                let prop = (current_prop + prop / 100.).clamp(0., MAX_F);
+                pos.x = available_width * prop + working_area_loc.x;
+            }
         }
         match y {
-            PositionChange::SetFixed(y) => new_pos.y = y + self.working_area.loc.y,
-            PositionChange::AdjustFixed(y) => new_pos.y += y,
+            PositionChange::SetFixed(y) => pos.y = y + working_area_loc.y,
+            PositionChange::SetProportion(prop) => {
+                let prop = (prop / 100.).clamp(0., MAX_F);
+                pos.y = available_height * prop + working_area_loc.y;
+            }
+            PositionChange::AdjustFixed(y) => pos.y += y,
+            PositionChange::AdjustProportion(prop) => {
+                let current_prop = (pos.y - working_area_loc.y) / available_height.max(1.);
+                let prop = (current_prop + prop / 100.).clamp(0., MAX_F);
+                pos.y = available_height * prop + working_area_loc.y;
+            }
         }
 
-        self.move_to(idx, new_pos, animate);
+        self.move_to(idx, pos, animate);
     }
 
     pub fn center_window(&mut self, id: Option<&W::Id>) {
@@ -1025,23 +1056,22 @@ impl<W: LayoutElement> FloatingSpace<W> {
         true
     }
 
-    pub fn render_elements<R: NiriRenderer>(
+    pub fn render<R: NiriRenderer>(
         &self,
-        renderer: &mut R,
+        mut ctx: RenderCtx<R>,
+        xray_pos: XrayPos,
         view_rect: Rectangle<f64, Logical>,
-        target: RenderTarget,
         focus_ring: bool,
-    ) -> Vec<FloatingSpaceRenderElement<R>> {
-        let mut rv = Vec::new();
-
+        push: &mut dyn FnMut(FloatingSpaceRenderElement<R>),
+    ) {
         let scale = Scale::from(self.scale);
 
         // Draw the closing windows on top of the other windows.
         //
         // FIXME: I guess this should rather preserve the stacking order when the window is closed.
         for closing in self.closing_windows.iter().rev() {
-            let elem = closing.render(renderer.as_gles_renderer(), view_rect, scale, target);
-            rv.push(elem.into());
+            let elem = closing.render(ctx.as_gles(), view_rect, scale);
+            push(elem.into());
         }
 
         let active = self.active_window_id.clone();
@@ -1049,13 +1079,11 @@ impl<W: LayoutElement> FloatingSpace<W> {
             // For the active tile, draw the focus ring.
             let focus_ring = focus_ring && Some(tile.window().id()) == active.as_ref();
 
-            rv.extend(
-                tile.render(renderer, tile_pos, focus_ring, target)
-                    .map(Into::into),
-            );
+            let xray_pos = xray_pos.offset(tile_pos);
+            tile.render(ctx.r(), tile_pos, xray_pos, focus_ring, &mut |elem| {
+                push(elem.into())
+            });
         }
-
-        rv
     }
 
     pub fn interactive_resize_begin(&mut self, window: W::Id, edges: ResizeEdge) -> bool {
@@ -1155,7 +1183,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
                 .map(|resize| resize.data);
             win.set_interactive_resize(resize_data);
 
-            let border_config = win.rules().border.resolve_against(self.options.border);
+            let border_config = self.options.layout.border.merged_with(&win.rules().border);
             let bounds = compute_toplevel_bounds(border_config, self.working_area.size);
             win.set_bounds(bounds);
 
@@ -1219,14 +1247,14 @@ impl<W: LayoutElement> FloatingSpace<W> {
         height: Option<PresetSize>,
         rules: &ResolvedWindowRules,
     ) -> Size<i32, Logical> {
-        let border = rules.border.resolve_against(self.options.border);
+        let border = self.options.layout.border.merged_with(&rules.border);
 
         let resolve = |size: Option<PresetSize>, working_area_size: f64| {
             if let Some(size) = size {
                 let size = match resolve_preset_size(size, working_area_size) {
                     ResolvedSize::Tile(mut size) => {
                         if !border.off {
-                            size -= border.width.0 * 2.;
+                            size -= border.width * 2.;
                         }
                         size
                     }
@@ -1309,6 +1337,8 @@ impl<W: LayoutElement> FloatingSpace<W> {
         assert_eq!(self.tiles.len(), self.data.len());
 
         for (i, (tile, data)) in zip(&self.tiles, &self.data).enumerate() {
+            use crate::layout::SizingMode;
+
             assert!(Rc::ptr_eq(&self.options, &tile.options));
             assert_eq!(self.view_size, tile.view_size());
             assert_eq!(self.clock, tile.clock);
@@ -1316,15 +1346,16 @@ impl<W: LayoutElement> FloatingSpace<W> {
             tile.verify_invariants();
 
             if let Some(idx) = tile.floating_preset_width_idx {
-                assert!(idx < self.options.preset_column_widths.len());
+                assert!(idx < self.options.layout.preset_column_widths.len());
             }
             if let Some(idx) = tile.floating_preset_height_idx {
-                assert!(idx < self.options.preset_window_heights.len());
+                assert!(idx < self.options.layout.preset_window_heights.len());
             }
 
-            assert!(
-                !tile.window().is_pending_fullscreen(),
-                "floating windows cannot be fullscreen"
+            assert_eq!(
+                tile.window().pending_sizing_mode(),
+                SizingMode::Normal,
+                "floating windows cannot be maximized or fullscreen"
             );
 
             data.verify_invariants();
@@ -1364,7 +1395,7 @@ fn compute_toplevel_bounds(
 ) -> Size<i32, Logical> {
     let mut border = 0.;
     if !border_config.off {
-        border = border_config.width.0 * 2.;
+        border = border_config.width * 2.;
     }
 
     Size::from((

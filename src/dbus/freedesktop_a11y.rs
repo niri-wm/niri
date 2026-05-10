@@ -44,6 +44,17 @@ pub struct KeyboardMonitor {
     iface: Arc<OnceLock<InterfaceRef<Self>>>,
 }
 
+/// Keyboard monitor key block reason.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KbMonBlock {
+    /// Not blocked.
+    Pass,
+    /// Blocked, and this is the first press/release of the a11y modifier.
+    ModifierFirstPress,
+    /// Blocked, and this is not the a11y modifier.
+    Block,
+}
+
 /// Interface for monitoring of keyboard input by assistive technologies.
 ///
 /// This interface is used by assistive technologies to monitor keyboard input of the compositor.
@@ -211,7 +222,7 @@ impl KeyboardMonitor {
         mods: u32,
         keysym: Keysym,
         unichar: u32,
-    ) -> bool {
+    ) -> KbMonBlock {
         let _span = tracy_client::span!("KeyboardMonitor::process_key");
 
         let mut ctxt = self.iface.get().unwrap().signal_emitter().clone();
@@ -250,7 +261,7 @@ impl KeyboardMonitor {
                 // second press that got handled normally.
                 if !data.suppressed_keys.contains(&keysym) {
                     trace!("handling release for second press of grabbed modifier: {keysym:?}");
-                    return false;
+                    return KbMonBlock::Pass;
                 }
             } else {
                 let last_press_entry = data
@@ -263,7 +274,7 @@ impl KeyboardMonitor {
                 // Modifier pressed twice; handle it as normal.
                 if time <= last_press.saturating_add(repeat_delay) {
                     trace!("handling second press of grabbed modifier: {keysym:?}");
-                    return false;
+                    return KbMonBlock::Pass;
                 }
             }
         }
@@ -293,7 +304,13 @@ impl KeyboardMonitor {
             }
         }
 
-        block
+        if !block {
+            KbMonBlock::Pass
+        } else if data.grabbed_mods.contains(&keysym) {
+            KbMonBlock::ModifierFirstPress
+        } else {
+            KbMonBlock::Block
+        }
     }
 }
 
@@ -430,9 +447,14 @@ impl Start for KeyboardMonitor {
 }
 
 impl State {
-    pub fn a11y_process_key(&mut self, time: Duration, keycode: Keycode, state: KeyState) -> bool {
+    pub fn a11y_process_key(
+        &mut self,
+        time: Duration,
+        keycode: Keycode,
+        state: KeyState,
+    ) -> KbMonBlock {
         if self.niri.a11y_keyboard_monitor.is_none() {
-            return false;
+            return KbMonBlock::Pass;
         }
 
         let keyboard = self.niri.seat.get_keyboard().unwrap();
@@ -454,7 +476,7 @@ impl State {
         let released = state == KeyState::Released;
 
         let Some(monitor) = &self.niri.a11y_keyboard_monitor else {
-            return false;
+            return KbMonBlock::Pass;
         };
         monitor.process_key(repeat_delay, time, keycode, released, mods, keysym, unichar)
     }

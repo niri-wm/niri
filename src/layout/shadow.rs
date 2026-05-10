@@ -48,7 +48,7 @@ impl Shadow {
         // * We do not divide anything, only add, subtract and multiply by integers.
         // * At rendering time, tile positions are rounded to physical pixels.
 
-        let width = self.config.softness.0;
+        let width = self.config.softness;
         // Like in CSS box-shadow.
         let sigma = width / 2.;
         // Adjust width to draw all necessary pixels.
@@ -57,7 +57,7 @@ impl Shadow {
         let offset = self.config.offset;
         let offset = Point::from((ceil(offset.x.0), ceil(offset.y.0)));
 
-        let spread = self.config.spread.0;
+        let spread = self.config.spread;
         let spread = ceil(spread.abs()).copysign(spread);
         let offset = offset - Point::from((spread, spread));
 
@@ -166,19 +166,19 @@ impl Shadow {
         &self,
         renderer: &mut impl NiriRenderer,
         location: Point<f64, Logical>,
-    ) -> impl Iterator<Item = ShadowRenderElement> + '_ {
+        push: &mut dyn FnMut(ShadowRenderElement),
+    ) {
         if !self.config.on {
-            return None.into_iter().flatten();
+            return;
         }
 
         let has_shadow_shader = ShadowRenderElement::has_shader(renderer);
         if !has_shadow_shader {
-            return None.into_iter().flatten();
+            return;
         }
 
-        let rv = zip(&self.shaders, &self.shader_rects)
-            .map(move |(shader, rect)| shader.clone().with_location(location + rect.loc));
-
-        Some(rv).into_iter().flatten()
+        for (shader, rect) in zip(&self.shaders, &self.shader_rects) {
+            push(shader.clone().with_location(location + rect.loc));
+        }
     }
 }

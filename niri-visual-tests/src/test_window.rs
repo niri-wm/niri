@@ -4,12 +4,12 @@ use std::rc::Rc;
 
 use niri::layout::{
     ConfigureIntent, InteractiveResizeData, LayoutElement, LayoutElementRenderElement,
-    LayoutElementRenderSnapshot,
+    LayoutElementRenderSnapshot, SizingMode,
 };
 use niri::render_helpers::offscreen::OffscreenData;
 use niri::render_helpers::renderer::NiriRenderer;
 use niri::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
-use niri::render_helpers::{RenderTarget, SplitElements};
+use niri::render_helpers::RenderCtx;
 use niri::utils::transaction::Transaction;
 use niri::window::ResolvedWindowRules;
 use smithay::backend::renderer::element::Kind;
@@ -24,7 +24,7 @@ struct TestWindowInner {
     min_size: Size<i32, Logical>,
     max_size: Size<i32, Logical>,
     buffer: SolidColorBuffer,
-    pending_fullscreen: bool,
+    pending_sizing_mode: SizingMode,
     csd_shadow_width: i32,
     csd_shadow_buffer: SolidColorBuffer,
 }
@@ -33,6 +33,7 @@ struct TestWindowInner {
 pub struct TestWindow {
     id: usize,
     inner: Rc<RefCell<TestWindowInner>>,
+    rules: ResolvedWindowRules,
 }
 
 impl TestWindow {
@@ -50,10 +51,11 @@ impl TestWindow {
                 min_size,
                 max_size,
                 buffer,
-                pending_fullscreen: false,
+                pending_sizing_mode: SizingMode::Normal,
                 csd_shadow_width: 0,
                 csd_shadow_buffer: SolidColorBuffer::new((0., 0.), [0., 0., 0., 0.3]),
             })),
+            rules: ResolvedWindowRules::default(),
         }
     }
 
@@ -147,47 +149,40 @@ impl LayoutElement for TestWindow {
         false
     }
 
-    fn render<R: NiriRenderer>(
+    fn render_normal<R: NiriRenderer>(
         &self,
-        _renderer: &mut R,
+        _ctx: RenderCtx<R>,
         location: Point<f64, Logical>,
         _scale: Scale<f64>,
         alpha: f32,
-        _target: RenderTarget,
-    ) -> SplitElements<LayoutElementRenderElement<R>> {
+        push: &mut dyn FnMut(LayoutElementRenderElement<R>),
+    ) {
         let inner = self.inner.borrow();
 
-        SplitElements {
-            normal: vec![
-                SolidColorRenderElement::from_buffer(
-                    &inner.buffer,
-                    location,
-                    alpha,
-                    Kind::Unspecified,
-                )
+        push(
+            SolidColorRenderElement::from_buffer(&inner.buffer, location, alpha, Kind::Unspecified)
                 .into(),
-                SolidColorRenderElement::from_buffer(
-                    &inner.csd_shadow_buffer,
-                    location
-                        - Point::from((inner.csd_shadow_width, inner.csd_shadow_width)).to_f64(),
-                    alpha,
-                    Kind::Unspecified,
-                )
-                .into(),
-            ],
-            popups: vec![],
-        }
+        );
+        push(
+            SolidColorRenderElement::from_buffer(
+                &inner.csd_shadow_buffer,
+                location - Point::from((inner.csd_shadow_width, inner.csd_shadow_width)).to_f64(),
+                alpha,
+                Kind::Unspecified,
+            )
+            .into(),
+        );
     }
 
     fn request_size(
         &mut self,
         size: Size<i32, Logical>,
-        is_fullscreen: bool,
+        mode: SizingMode,
         _animate: bool,
         _transaction: Option<Transaction>,
     ) {
         self.inner.borrow_mut().requested_size = Some(size);
-        self.inner.borrow_mut().pending_fullscreen = is_fullscreen;
+        self.inner.borrow_mut().pending_sizing_mode = mode;
     }
 
     fn min_size(&self) -> Size<i32, Logical> {
@@ -232,12 +227,12 @@ impl LayoutElement for TestWindow {
 
     fn send_pending_configure(&mut self) {}
 
-    fn is_fullscreen(&self) -> bool {
-        false
+    fn pending_sizing_mode(&self) -> SizingMode {
+        self.inner.borrow().pending_sizing_mode
     }
 
-    fn is_pending_fullscreen(&self) -> bool {
-        self.inner.borrow().pending_fullscreen
+    fn sizing_mode(&self) -> SizingMode {
+        SizingMode::Normal
     }
 
     fn requested_size(&self) -> Option<Size<i32, Logical>> {
@@ -251,8 +246,7 @@ impl LayoutElement for TestWindow {
     fn refresh(&self) {}
 
     fn rules(&self) -> &ResolvedWindowRules {
-        static EMPTY: ResolvedWindowRules = ResolvedWindowRules::empty();
-        &EMPTY
+        &self.rules
     }
 
     fn take_animation_snapshot(&mut self) -> Option<LayoutElementRenderSnapshot> {

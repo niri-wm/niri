@@ -45,3 +45,53 @@ Before, it could only use the connector name.
 <sup>Since: 25.02</sup> Named workspaces no longer update/forget their original output when opening a new window on them (unnamed workspaces will keep doing that).
 This means that named workspaces "stick" to their original output in more cases, reflecting their more permanent nature.
 Explicitly moving a named workspace to a different monitor will still update its original output.
+
+### Layout config overrides
+
+<sup>Since: 25.11</sup>
+
+You can customize layout settings for named workspaces with a `layout {}` block:
+
+```kdl
+workspace "aesthetic" {
+    // Layout config overrides just for this named workspace.
+    layout {
+        gaps 32
+
+        struts {
+            left 64
+            right 64
+            bottom 64
+            top 64
+        }
+
+        border {
+            on
+            width 4
+        }
+
+        // ...any other setting.
+    }
+}
+```
+
+It accepts all the same options as [the top-level `layout {}` block](./Configuration:-Layout.md), except:
+
+- `empty-workspace-above-first`: this is an output-level setting, doesn't make sense on a workspace.
+- `insert-hint`: currently we always draw these at the output level, so it's not customizable per-workspace.
+
+In order to unset a flag, write it with `false`, e.g.:
+
+```kdl
+layout {
+    // Enabled globally.
+    always-center-single-column
+}
+
+workspace "uncentered" {
+    layout {
+        // Unset on this workspace.
+        always-center-single-column false
+    }
+}
+```

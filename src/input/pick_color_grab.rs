@@ -2,6 +2,7 @@ use niri_ipc::PickedColor;
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::input::ButtonState;
 use smithay::backend::renderer::element::utils::{Relocate, RelocateRenderElement};
+use smithay::backend::renderer::ExportMem as _;
 use smithay::input::pointer::{
     AxisFrame, ButtonEvent, CursorImageStatus, GestureHoldBeginEvent, GestureHoldEndEvent,
     GesturePinchBeginEvent, GesturePinchEndEvent, GesturePinchUpdateEvent, GestureSwipeBeginEvent,
@@ -12,7 +13,7 @@ use smithay::input::SeatHandler;
 use smithay::utils::{Logical, Physical, Point, Scale, Size, Transform};
 
 use crate::niri::State;
-use crate::render_helpers::{render_to_vec, RenderTarget};
+use crate::render_helpers::{render_and_download, RenderCtx, RenderTarget};
 
 pub struct PickColorGrab {
     start_data: PointerGrabStartData<State>,
@@ -48,15 +49,15 @@ impl PickColorGrab {
                 let pos = pos_within_output.to_physical_precise_floor(scale);
                 let size = Size::<i32, Physical>::from((1, 1));
 
-                let elements = data.niri.render(
+                let ctx = RenderCtx {
                     renderer,
-                    &output,
-                    false,
                     // This is an interactive operation so we can render without blocking out.
-                    RenderTarget::Output,
-                );
+                    target: RenderTarget::Output,
+                    xray: None,
+                };
+                let elements = data.niri.render_to_vec(ctx, &output, false);
 
-                let pixels = match render_to_vec(
+                let mapping = match render_and_download(
                     renderer,
                     size,
                     scale,
@@ -67,6 +68,10 @@ impl PickColorGrab {
                         RelocateRenderElement::from_element(elem, offset, Relocate::Relative)
                     }),
                 ) {
+                    Ok(mapping) => mapping,
+                    Err(_) => return None,
+                };
+                let pixels = match renderer.map_texture(&mapping) {
                     Ok(pixels) => pixels,
                     Err(_) => return None,
                 };

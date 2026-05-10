@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use niri::layout::focus_ring::FocusRing;
 use niri::render_helpers::border::BorderRenderElement;
-use niri_config::{Color, CornerRadius, FloatOrInt, GradientInterpolation};
+use niri_config::{Color, CornerRadius, GradientInterpolation};
 use smithay::backend::renderer::element::RenderElement;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::utils::{Physical, Point, Rectangle, Size};
@@ -20,7 +20,7 @@ impl GradientArea {
     pub fn new(_args: Args) -> Self {
         let border = FocusRing::new(niri_config::FocusRing {
             off: false,
-            width: FloatOrInt(1.),
+            width: 1.,
             active_color: Color::from_rgba8_unpremul(255, 255, 255, 128),
             inactive_color: Color::default(),
             urgent_color: Color::default(),
@@ -89,11 +89,8 @@ impl TestCase for GradientArea {
             1.,
             1.,
         );
-        rv.extend(
-            self.border
-                .render(renderer, g_loc)
-                .map(|elem| Box::new(elem) as _),
-        );
+        self.border
+            .render(renderer, g_loc, &mut |elem| rv.push(Box::new(elem) as _));
 
         rv.extend(
             [BorderRenderElement::new(

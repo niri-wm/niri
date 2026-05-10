@@ -1,6 +1,5 @@
 use std::iter::zip;
 
-use arrayvec::ArrayVec;
 use niri_config::{CornerRadius, Gradient, GradientRelativeTo};
 use smithay::backend::renderer::element::{Element as _, Kind};
 use smithay::utils::{Logical, Point, Rectangle, Size};
@@ -20,6 +19,7 @@ pub struct FocusRing {
     is_border: bool,
     use_border_shader: bool,
     config: niri_config::FocusRing,
+    thicken_corners: bool,
 }
 
 niri_render_elements! {
@@ -40,6 +40,7 @@ impl FocusRing {
             is_border: false,
             use_border_shader: false,
             config,
+            thicken_corners: true,
         }
     }
 
@@ -65,8 +66,9 @@ impl FocusRing {
         scale: f64,
         alpha: f32,
     ) {
-        let width = self.config.width.0;
+        let width = self.config.width;
         self.full_size = win_size + Size::from((width, width)).upscale(2.);
+        self.is_border = is_border;
 
         let color = if is_urgent {
             self.config.urgent_color
@@ -77,7 +79,7 @@ impl FocusRing {
         };
 
         for buf in &mut self.buffers {
-            buf.set_color(color.to_array_premul());
+            buf.set_color(color);
         }
 
         let radius = radius.fit_to(self.full_size.w as f32, self.full_size.h as f32);
@@ -101,10 +103,11 @@ impl FocusRing {
             GradientRelativeTo::WorkspaceView => view_rect,
         };
 
-        let rounded_corner_border_width = if self.is_border {
+        let rounded_corner_border_width = if is_border {
             // HACK: increase the border width used for the inner rounded corners a tiny bit to
             // reduce background bleed.
-            width as f32 + 0.5
+            let extra = if self.thicken_corners { 0.5 } else { 0. };
+            width as f32 + extra
         } else {
             0.
         };
@@ -210,26 +213,23 @@ impl FocusRing {
                 alpha,
             );
         }
-
-        self.is_border = is_border;
     }
 
     pub fn render(
         &self,
         renderer: &mut impl NiriRenderer,
         location: Point<f64, Logical>,
-    ) -> impl Iterator<Item = FocusRingRenderElement> {
-        let mut rv = ArrayVec::<_, 8>::new();
-
+        push: &mut dyn FnMut(FocusRingRenderElement),
+    ) {
         if self.config.off {
-            return rv.into_iter();
+            return;
         }
 
         let border_width = -self.locations[0].y;
 
         // If drawing as a border with width = 0, then there's nothing to draw.
         if self.is_border && border_width == 0. {
-            return rv.into_iter();
+            return;
         }
 
         let has_border_shader = BorderRenderElement::has_shader(renderer);
@@ -242,7 +242,7 @@ impl FocusRing {
                 SolidColorRenderElement::from_buffer(buffer, location, alpha, Kind::Unspecified)
                     .into()
             };
-            rv.push(elem);
+            push(elem);
         };
 
         if self.is_border {
@@ -256,16 +256,18 @@ impl FocusRing {
                 location + self.locations[0],
             );
         }
-
-        rv.into_iter()
     }
 
     pub fn width(&self) -> f64 {
-        self.config.width.0
+        self.config.width
     }
 
     pub fn is_off(&self) -> bool {
         self.config.off
+    }
+
+    pub fn set_thicken_corners(&mut self, value: bool) {
+        self.thicken_corners = value;
     }
 
     pub fn config(&self) -> &niri_config::FocusRing {

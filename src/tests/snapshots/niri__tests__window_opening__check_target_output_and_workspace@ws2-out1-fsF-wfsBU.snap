@@ -1,12 +1,12 @@
 ---
 source: src/tests/window_opening.rs
-description: "want fullscreen: BU\nconfig:\nworkspace \"ws-1\" {\n    open-on-output \"headless-1\"\n}\n\nworkspace \"ws-2\" {\n    open-on-output \"headless-2\"\n}\n\nwindow-rule {\n    exclude title=\"parent\"\n\n    open-on-workspace \"ws-2\"\n    open-on-output \"headless-1\"\n    open-fullscreen false\n}"
+description: "want fullscreen: BU\nconfig:\noutput \"headless-2\" {\n    layout {\n        border {\n            on\n        }\n    }\n}\n\nworkspace \"ws-1\" {\n    open-on-output \"headless-1\"\n}\n\nworkspace \"ws-2\" {\n    open-on-output \"headless-2\"\n\n    layout {\n        border {\n            width 10\n        }\n\n        default-column-width {\n            fixed 500\n        }\n    }\n}\n\nwindow-rule {\n    exclude title=\"parent\"\n\n    open-on-workspace \"ws-2\"\n    open-on-output \"headless-1\"\n    open-fullscreen false\n}"
 expression: snapshot
 ---
 final monitor: headless-2
 final workspace: 0 (ws-2)
 
 initial configure:
-size: 936 × 1048, bounds: 1888 × 1048, states: []
+size: 500 × 1028, bounds: 1868 × 1028, states: []
 
 post-map configures:

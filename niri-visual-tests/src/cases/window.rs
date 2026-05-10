@@ -1,5 +1,5 @@
-use niri::layout::LayoutElement;
-use niri::render_helpers::RenderTarget;
+use niri::layout::{LayoutElement, SizingMode};
+use niri::render_helpers::{RenderCtx, RenderTarget};
 use smithay::backend::renderer::element::RenderElement;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::utils::{Physical, Point, Scale, Size};
@@ -14,14 +14,14 @@ pub struct Window {
 impl Window {
     pub fn freeform(args: Args) -> Self {
         let mut window = TestWindow::freeform(0);
-        window.request_size(args.size, false, false, None);
+        window.request_size(args.size, SizingMode::Normal, false, None);
         window.communicate();
         Self { window }
     }
 
     pub fn fixed_size(args: Args) -> Self {
         let mut window = TestWindow::fixed_size(0);
-        window.request_size(args.size, false, false, None);
+        window.request_size(args.size, SizingMode::Normal, false, None);
         window.communicate();
         Self { window }
     }
@@ -29,7 +29,7 @@ impl Window {
     pub fn fixed_size_with_csd_shadow(args: Args) -> Self {
         let mut window = TestWindow::fixed_size(0);
         window.set_csd_shadow_width(64);
-        window.request_size(args.size, false, false, None);
+        window.request_size(args.size, SizingMode::Normal, false, None);
         window.communicate();
         Self { window }
     }
@@ -38,7 +38,7 @@ impl Window {
 impl TestCase for Window {
     fn resize(&mut self, width: i32, height: i32) {
         self.window
-            .request_size(Size::from((width, height)), false, false, None);
+            .request_size(Size::from((width, height)), SizingMode::Normal, false, None);
         self.window.communicate();
     }
 
@@ -52,16 +52,16 @@ impl TestCase for Window {
             .to_f64()
             .downscale(2.);
 
+        let mut rv = Vec::new();
+        let ctx = RenderCtx {
+            renderer,
+            target: RenderTarget::Output,
+            xray: None,
+        };
         self.window
-            .render(
-                renderer,
-                location,
-                Scale::from(1.),
-                1.,
-                RenderTarget::Output,
-            )
-            .into_iter()
-            .map(|elem| Box::new(elem) as _)
-            .collect()
+            .render_normal(ctx, location, Scale::from(1.), 1., &mut |elem| {
+                rv.push(Box::new(elem) as _)
+            });
+        rv
     }
 }

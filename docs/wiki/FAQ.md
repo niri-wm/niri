@@ -40,12 +40,26 @@ hotkey-overlay {
 }
 ```
 
+### How to fix lag on external monitors connected to a hybrid GPU laptop?
+
+Hybrid GPU laptops (which have both an integrated and a discrete GPU) generally connect the external monitor port to the discrete GPU.
+Meanwhile, the built-in monitor is connected to the integrated GPU, and the integrated GPU is used for rendering by default.
+
+This is good and expected because the integrated GPU uses significantly less battery compared to the discrete GPU.
+However, this means that niri has to render the external monitor contents on the integrated GPU, then copy them over to the discrete GPU for display.
+On some laptops this can cause lag and stuttering (it gets worse with monitor resolution and refresh rate).
+
+If your laptop has a MUX switch—usually a GPU toggle in the UEFI settings—then you can switch it to use the discrete GPU, then niri will render on the discrete GPU, and the external monitor won't lag.
+Otherwise, you can try configuring niri to render on the discrete GPU via the [`render-drm-device`](./Configuration:-Debug-Options.md#render-drm-device) debug option.
+
+Keep in mind that using the discrete GPU for rendering will make the laptop's battery deplete much faster.
+
 ### How to run X11 apps like Steam or Discord?
 
 To run X11 apps, you can use [xwayland-satellite](https://github.com/Supreeeme/xwayland-satellite).
 Check [the Xwayland wiki page](./Xwayland.md) for instructions.
 
-Keep in mind that you can run many Electron apps such as VSCode natively on Wayland by passing the right flags, e.g. `code --ozone-platform-hint=auto`
+Keep in mind that you can run many Electron apps such as VSCode or Discord natively on Wayland by passing the right flags, as described [here](./Application-Issues.md#electron-applications).
 
 ### Why doesn't niri integrate Xwayland like other compositors?
 
@@ -66,14 +80,12 @@ I wouldn't be too surprised if, down the road, xwayland-satellite becomes the st
 
 ### Can I enable blur behind semitransparent windows?
 
-Not yet, follow/upvote [this issue](https://github.com/YaLTeR/niri/issues/54).
-
-There's also [a PR](https://github.com/YaLTeR/niri/pull/1634) adding blur to niri which you can build and run manually.
-Keep in mind that it's an experimental implementation that may have problems and performance concerns.
+<sup>Since: 26.04</sup> Yes.
+See the [window effects](./Window-Effects.md) wiki page.
 
 ### Can I make a window sticky / pinned / always on top / appear on all workspaces?
 
-Not yet, follow/upvote [this issue](https://github.com/YaLTeR/niri/issues/932).
+Not yet, follow/upvote [this issue](https://github.com/niri-wm/niri/issues/932).
 
 You can emulate this with a script that uses the niri IPC.
 For example, [nirius](https://git.sr.ht/~tsdh/nirius) seems to have this feature (`toggle-follow-mode`).
@@ -82,7 +94,7 @@ For example, [nirius](https://git.sr.ht/~tsdh/nirius) seems to have this feature
 
 Firefox seems to first open the Bitwarden window with a generic Firefox title, and only later change the window title to Bitwarden, so you can't effectively target it with an `open-floating` window rule.
 
-You'll need to use a script, for example [this one](https://github.com/YaLTeR/niri/discussions/1599) or other ones (search niri issues and discussions for Bitwarden).
+You'll need to use a script, for example [this one](https://github.com/niri-wm/niri/discussions/1599) or other ones (search niri issues and discussions for Bitwarden).
 
 ### Can I open a window directly in the current column / in the same column as another window?
 
@@ -92,7 +104,7 @@ Listen to the event stream for a new window opening, then call an action like `c
 Adding this directly to niri is challenging:
 
 - The act of "opening a window directly in some column" by itself is quite involved. Niri will have to compute the exact initial window size provided how other windows in a column would resize in response. This logic exists, but it isn't directly pluggable to the code computing a size for a new window. Then, it'll need to handle all sorts of edge cases like the column disappearing, or new windows getting added to the column, before the target window had a chance to appear.
-- How do you indicate if a new window should spawn in an existing column (and in which one), as opposed to a new column? Different people seem to have different needs here (including very complex rules based on parent PID, etc.), and it's very unclear design-wise what kind of (simple) setting is actually needed and would be useful. See also https://github.com/YaLTeR/niri/discussions/1125.
+- How do you indicate if a new window should spawn in an existing column (and in which one), as opposed to a new column? Different people seem to have different needs here (including very complex rules based on parent PID, etc.), and it's very unclear design-wise what kind of (simple) setting is actually needed and would be useful. See also https://github.com/niri-wm/niri/discussions/1125.
 
 ### Why does moving the mouse against a monitor edge focus the next window, but only sometimes?
 
@@ -124,3 +136,26 @@ binds {
     Super+Alt+L allow-when-locked=true { spawn "swaylock"; }
 }
 ```
+
+### How do I change output configuration based on connected monitors?
+
+If you require different output configurations depending on what outputs are connected then you can use [Kanshi](https://gitlab.freedesktop.org/emersion/kanshi).
+
+Kanshi has its own simple configuration and communicates with niri via IPC. You may want to launch kanshi from the niri config.kdl e.g. `spawn-at-startup "/usr/bin/kanshi"`
+
+For example, if you wish to scale your laptop display differently when an external monitor is connected, you might use a Kanshi config like this:
+```
+profile {
+	output eDP-1 enable scale 1.0
+}
+
+profile { 
+	output HDMI-A-1 enable scale 1.0 position 0,0
+	output eDP-1 enable scale 1.25 position 1920,0
+}
+```
+
+### Why does Firefox or Thunderbird have 1 px smaller border?
+
+They draw their own 1 px dark border around the window, which obscures one pixel of niri's border.
+If you don't like this, set the [`clip-to-geometry true` window rule](./Configuration:-Window-Rules.md#clip-to-geometry).

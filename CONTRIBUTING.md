@@ -31,7 +31,7 @@ I would really appreciate help with testing and reviewing them.
 ### Testing
 
 Pick a pull request you like, then build it and give it a go.
-The [Developing niri wiki page](https://yalter.github.io/niri/Development:-Developing-niri) has guidance on running niri test builds.
+The [Developing niri wiki page](https://niri-wm.github.io/niri/Development:-Developing-niri) has guidance on running niri test builds.
 
 Be really thorough with your testing.
 We're striving for polished features in niri, so point out any issues and bugs, even small ones like animation jank.
@@ -84,11 +84,29 @@ When creating pull requests, please keep the following in mind.
     - When working on bigger features, I usually start with a big messy commit, then gradually split out smaller self-contained changes from it as the code gets into shape.
     - [git-rebase.io](https://git-rebase.io/) is a helpful guide for splitting commits and cleaning up history in git.
 - When you address a review comment, mark it as resolved.
-- Remember to [run tests](https://yalter.github.io/niri/Development:-Developing-niri#tests) and format the code with `cargo +nightly fmt --all`.
+- Remember to [run tests](https://niri-wm.github.io/niri/Development:-Developing-niri#tests) and format the code with `cargo +nightly fmt --all`.
 - For new layout actions, remember to add them to the randomized tests. For weird Wayland handling, adding client-server tests in `src/tests/` could be very useful.
 - Test your changes by hand thoroughly, including for edge cases and weird interactions. See the Testing section above for some tips.
 - Remember to document new config options on the wiki.
 - When opening a pull request, ensure "Allow edits from maintainers" is enabled, so I can make final tweaks before merging.
+
+### How to get your pull request reviewed more quickly
+
+- Make it small and self-contained. Avoid mixing several unrelated changes in one PR.
+- Split the PR into small and self-contained commits. This makes it much easier to review.
+- Discuss new features, options, or behavior changes beforehand; make sure there's consensus about the design.
+- When creating the pull request, clearly write what it does, what problem it solves, how to test it.
+- Follow the rest of the advice from this document.
+
+## AI contributions
+
+If you use LLMs for your contribution (issue, comment, pull request), then it is *your job* to check and clean up its output, just like with any other tool.
+*You* have to spend the time doing this.
+Particularly:
+
+- If I can tell that a pull request is mostly LLM-generated, then very likely this pull request will take *significantly more time and effort* than usual to review and finish. This is based on my prior review experience. Therefore, I'm not interested in such pull requests—there's always plenty of human-written ones which take priority.
+- When using an LLM to prepare an issue, the text usually has a lot of unnecessary wording and irrelevant details. Anyone looking at such an issue will quickly lose interest in reading through it (myself certainly). Clean up the text and keep only those details that actually matter.
+- When using an LLM to comment on an issue, *you* have to verify that the comment makes sense, contributes something useful, and doesn't have unnecessary repetition.
 
 
 [cosmic-comp]: https://github.com/pop-os/cosmic-comp

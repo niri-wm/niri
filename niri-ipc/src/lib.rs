@@ -41,7 +41,7 @@
 //!
 //! ```toml
 //! [dependencies]
-//! niri-ipc = "=25.8.0"
+//! niri-ipc = "=26.4.0"
 //! ```
 //!
 //! ## Features
@@ -54,6 +54,7 @@
 
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
@@ -116,6 +117,8 @@ pub enum Request {
     ReturnError,
     /// Request information about the overview.
     OverviewState,
+    /// Request information about screencasts.
+    Casts,
 }
 
 /// Reply from niri to client.
@@ -160,6 +163,8 @@ pub enum Response {
     OutputConfigChanged(OutputConfigChanged),
     /// Information about the overview.
     OverviewState(Overview),
+    /// Information about screencasts.
+    Casts(Vec<Cast>),
 }
 
 /// Overview information.
@@ -220,6 +225,14 @@ pub enum Action {
         ///  Whether to show the mouse pointer by default in the screenshot UI.
         #[cfg_attr(feature = "clap", arg(short = 'p', long, action = clap::ArgAction::Set, default_value_t = true))]
         show_pointer: bool,
+
+        /// Path to save the screenshot to.
+        ///
+        /// The path must be absolute, otherwise an error is returned.
+        ///
+        /// If `None`, the screenshot is saved according to the `screenshot-path` config setting.
+        #[cfg_attr(feature = "clap", arg(long, action = clap::ArgAction::Set))]
+        path: Option<String>,
     },
     /// Screenshot the focused screen.
     ScreenshotScreen {
@@ -232,6 +245,14 @@ pub enum Action {
         /// Whether to include the mouse pointer in the screenshot.
         #[cfg_attr(feature = "clap", arg(short = 'p', long, action = clap::ArgAction::Set, default_value_t = true))]
         show_pointer: bool,
+
+        /// Path to save the screenshot to.
+        ///
+        /// The path must be absolute, otherwise an error is returned.
+        ///
+        /// If `None`, the screenshot is saved according to the `screenshot-path` config setting.
+        #[cfg_attr(feature = "clap", arg(long, action = clap::ArgAction::Set))]
+        path: Option<String>,
     },
     /// Screenshot a window.
     #[cfg_attr(feature = "clap", clap(about = "Screenshot the focused window"))]
@@ -246,6 +267,21 @@ pub enum Action {
         /// The screenshot is saved according to the `screenshot-path` config setting.
         #[cfg_attr(feature = "clap", arg(short = 'd', long, action = clap::ArgAction::Set, default_value_t = true))]
         write_to_disk: bool,
+
+        /// Whether to include the mouse pointer in the screenshot.
+        ///
+        /// The pointer will be included only if the window is currently receiving pointer input
+        /// (usually this means the pointer is on top of the window).
+        #[cfg_attr(feature = "clap", arg(short = 'p', long, action = clap::ArgAction::Set, default_value_t = false))]
+        show_pointer: bool,
+
+        /// Path to save the screenshot to.
+        ///
+        /// The path must be absolute, otherwise an error is returned.
+        ///
+        /// If `None`, the screenshot is saved according to the `screenshot-path` config setting.
+        #[cfg_attr(feature = "clap", arg(long, action = clap::ArgAction::Set))]
+        path: Option<String>,
     },
     /// Enable or disable the keyboard shortcuts inhibitor (if any) for the focused surface.
     ToggleKeyboardShortcutsInhibit {},
@@ -404,7 +440,7 @@ pub enum Action {
     },
     /// Consume the window to the right into the focused column.
     ConsumeWindowIntoColumn {},
-    /// Expel the focused window from the column.
+    /// Expel the bottom window from the focused column.
     ExpelWindowFromColumn {},
     /// Swap focused window with one to the right.
     SwapWindowRight {},
@@ -713,6 +749,14 @@ pub enum Action {
     },
     /// Toggle the maximized state of the focused column.
     MaximizeColumn {},
+    /// Toggle the maximized-to-edges state of the focused window.
+    MaximizeWindowToEdges {
+        /// Id of the window to maximize.
+        ///
+        /// If `None`, uses the focused window.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: Option<u64>,
+    },
     /// Change the width of the focused column.
     SetColumnWidth {
         /// How to change the width.
@@ -805,14 +849,14 @@ pub enum Action {
         /// How to change the X position.
         #[cfg_attr(
             feature = "clap",
-            arg(short, long, default_value = "+0", allow_negative_numbers = true)
+            arg(short, long, default_value = "+0", allow_hyphen_values = true)
         )]
         x: PositionChange,
 
         /// How to change the Y position.
         #[cfg_attr(
             feature = "clap",
-            arg(short, long, default_value = "+0", allow_negative_numbers = true)
+            arg(short, long, default_value = "+0", allow_hyphen_values = true)
         )]
         y: PositionChange,
     },
@@ -854,6 +898,16 @@ pub enum Action {
     },
     /// Clear the dynamic cast target, making it show nothing.
     ClearDynamicCastTarget {},
+    /// Stop a PipeWire screencast.
+    ///
+    /// wlr-screencopy screencasts cannot currently be stopped via IPC.
+    StopCast {
+        /// Session ID of the screencast to stop.
+        ///
+        /// If the session has multiple screencast streams, this will stop all of them.
+        #[cfg_attr(feature = "clap", arg(long))]
+        session_id: u64,
+    },
     /// Toggle (open/close) the Overview.
     ToggleOverview {},
     /// Open the Overview.
@@ -882,7 +936,13 @@ pub enum Action {
     ///
     /// Can be useful for scripts changing the config file, to avoid waiting the small duration for
     /// niri's config file watcher to notice the changes.
-    LoadConfigFile {},
+    LoadConfigFile {
+        /// Path of a new config file to load.
+        ///
+        /// If unset, reloads the current config file.
+        #[cfg_attr(feature = "clap", arg(long))]
+        path: Option<String>,
+    },
 }
 
 /// Change in window or column size.
@@ -905,8 +965,12 @@ pub enum SizeChange {
 pub enum PositionChange {
     /// Set the position in logical pixels.
     SetFixed(f64),
+    /// Set the position as a proportion of the working area.
+    SetProportion(f64),
     /// Add or subtract to the current position in logical pixels.
     AdjustFixed(f64),
+    /// Add or subtract to the current position as a proportion of the working area.
+    AdjustProportion(f64),
 }
 
 /// Workspace reference (id, index or name) to operate on.
@@ -964,6 +1028,51 @@ pub enum OutputAction {
         #[cfg_attr(feature = "clap", arg())]
         mode: ModeToSet,
     },
+    /// Set a custom output mode.
+    CustomMode {
+        /// Custom mode to set.
+        #[cfg_attr(feature = "clap", arg())]
+        mode: ConfiguredMode,
+    },
+    /// Set a custom VESA CVT modeline.
+    #[cfg_attr(feature = "clap", arg())]
+    Modeline {
+        /// The rate at which pixels are drawn in MHz.
+        #[cfg_attr(feature = "clap", arg())]
+        clock: f64,
+        /// Horizontal active pixels.
+        #[cfg_attr(feature = "clap", arg())]
+        hdisplay: u16,
+        /// Horizontal sync pulse start position in pixels.
+        #[cfg_attr(feature = "clap", arg())]
+        hsync_start: u16,
+        /// Horizontal sync pulse end position in pixels.
+        #[cfg_attr(feature = "clap", arg())]
+        hsync_end: u16,
+        /// Total horizontal number of pixels before resetting the horizontal drawing position to
+        /// zero.
+        #[cfg_attr(feature = "clap", arg())]
+        htotal: u16,
+
+        /// Vertical active pixels.
+        #[cfg_attr(feature = "clap", arg())]
+        vdisplay: u16,
+        /// Vertical sync pulse start position in pixels.
+        #[cfg_attr(feature = "clap", arg())]
+        vsync_start: u16,
+        /// Vertical sync pulse end position in pixels.
+        #[cfg_attr(feature = "clap", arg())]
+        vsync_end: u16,
+        /// Total vertical number of pixels before resetting the vertical drawing position to zero.
+        #[cfg_attr(feature = "clap", arg())]
+        vtotal: u16,
+        /// Horizontal sync polarity: "+hsync" or "-hsync".
+        #[cfg_attr(feature = "clap", arg(allow_hyphen_values = true))]
+        hsync_polarity: HSyncPolarity,
+        /// Vertical sync polarity: "+vsync" or "-vsync".
+        #[cfg_attr(feature = "clap", arg(allow_hyphen_values = true))]
+        vsync_polarity: VSyncPolarity,
+    },
     /// Set the output scale.
     Scale {
         /// Scale factor to set, or "auto" for automatic selection.
@@ -1010,6 +1119,26 @@ pub struct ConfiguredMode {
     pub height: u16,
     /// Refresh rate.
     pub refresh: Option<f64>,
+}
+
+/// Modeline horizontal syncing polarity.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum HSyncPolarity {
+    /// Positive polarity.
+    PHSync,
+    /// Negative polarity.
+    NHSync,
+}
+
+/// Modeline vertical syncing polarity.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum VSyncPolarity {
+    /// Positive polarity.
+    PVSync,
+    /// Negative polarity.
+    NVSync,
 }
 
 /// Output scale to set.
@@ -1089,6 +1218,8 @@ pub struct Output {
     ///
     /// `None` if the output is disabled.
     pub current_mode: Option<usize>,
+    /// Whether the current_mode is a custom mode.
+    pub is_custom_mode: bool,
     /// Whether the output supports variable refresh rate.
     pub vrr_supported: bool,
     /// Whether variable refresh rate is enabled on the output.
@@ -1195,6 +1326,24 @@ pub struct Window {
     pub is_urgent: bool,
     /// Position- and size-related properties of the window.
     pub layout: WindowLayout,
+    /// Timestamp when the window was most recently focused.
+    ///
+    /// This timestamp is intended for most-recently-used window switchers, i.e. Alt-Tab. It only
+    /// updates after some debounce time so that quick window switching doesn't mark intermediate
+    /// windows as recently focused.
+    ///
+    /// The timestamp comes from the monotonic clock.
+    pub focus_timestamp: Option<Timestamp>,
+}
+
+/// A moment in time.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct Timestamp {
+    /// Number of whole seconds.
+    pub secs: u64,
+    /// Fractional part of the timestamp in nanoseconds (10<sup>-9</sup> seconds).
+    pub nanos: u32,
 }
 
 /// Position- and size-related properties of a [`Window`].
@@ -1344,6 +1493,78 @@ pub struct LayerSurface {
     pub keyboard_interactivity: LayerSurfaceKeyboardInteractivity,
 }
 
+/// A screencast.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct Cast {
+    /// Stream ID of the screencast that uniquely identifies it.
+    pub stream_id: u64,
+    /// Session ID of the screencast.
+    ///
+    /// A session can have multiple screencast streams. Then multiple `Cast`s will have the same
+    /// `session_id`. Though, usually there's only one stream per session.
+    ///
+    /// Do not confuse `session_id` with [`stream_id`](Self::stream_id).
+    pub session_id: u64,
+    /// Kind of this screencast.
+    pub kind: CastKind,
+    /// Target being captured.
+    pub target: CastTarget,
+    /// Whether this is a Dynamic Cast Target screencast.
+    ///
+    /// Meaning that actions like `SetDynamicCastWindow` will act on this screencast.
+    ///
+    /// Keep in mind that the target can change even if this is `false`.
+    pub is_dynamic_target: bool,
+    /// Whether the cast is currently streaming frames.
+    ///
+    /// This can be `false` for example when switching away to a different scene in OBS, which
+    /// pauses the stream.
+    pub is_active: bool,
+    /// Process ID of the screencast consumer, if known.
+    ///
+    /// Currently, only wlr-screencopy screencasts can have a pid.
+    pub pid: Option<i32>,
+    /// PipeWire node ID of the screencast stream.
+    ///
+    /// This is `None` for wlr-screencopy casts, and also for PipeWire casts before the node is
+    /// created (when the cast is just starting up).
+    pub pw_node_id: Option<u32>,
+}
+
+/// Kind of screencast.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum CastKind {
+    /// PipeWire screencast, typically via xdg-desktop-portal-gnome.
+    PipeWire,
+    /// wlr-screencopy protocol screencast.
+    ///
+    /// Tools like wf-recorder, and the xdg-desktop-portal-wlr portal.
+    ///
+    /// Only wlr-screencopy with damage tracking is reported here. Screencopy without damage is
+    /// treated as a regular screenshot and not reported as a screencast.
+    WlrScreencopy,
+}
+
+/// Target of a screencast.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum CastTarget {
+    /// The target is not yet set, or was cleared.
+    Nothing {},
+    /// Casting an output.
+    Output {
+        /// Name of the screencasted output.
+        name: String,
+    },
+    /// Casting a window.
+    Window {
+        /// ID of the screencasted window.
+        id: u64,
+    },
+}
+
 /// A compositor event.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
@@ -1410,6 +1631,17 @@ pub enum Event {
         /// Id of the newly focused window, or `None` if no window is now focused.
         id: Option<u64>,
     },
+    /// Window focus timestamp changed.
+    ///
+    /// This event is separate from [`Event::WindowFocusChanged`] because the focus timestamp only
+    /// updates after some debounce time so that quick window switching doesn't mark intermediate
+    /// windows as recently focused.
+    WindowFocusTimestampChanged {
+        /// Id of the window.
+        id: u64,
+        /// The new focus timestamp.
+        focus_timestamp: Option<Timestamp>,
+    },
     /// Window urgency changed.
     WindowUrgencyChanged {
         /// Id of the window.
@@ -1447,6 +1679,47 @@ pub enum Event {
         /// For example, the config file couldn't be parsed.
         failed: bool,
     },
+    /// A screenshot was captured.
+    ScreenshotCaptured {
+        /// The file path where the screenshot was saved, if it was written to disk.
+        ///
+        /// If `None`, the screenshot was either only copied to the clipboard, or the path couldn't
+        /// be converted to a `String` (e.g. contained invalid UTF-8 bytes).
+        path: Option<String>,
+    },
+    /// The screencasts have changed.
+    CastsChanged {
+        /// The new screencast information.
+        ///
+        /// This configuration completely replaces the previous configuration. I.e. if any casts
+        /// are missing from here, then they were stopped.
+        casts: Vec<Cast>,
+    },
+    /// A screencast started, or an existing cast changed.
+    CastStartedOrChanged {
+        /// The cast that started or changed.
+        cast: Cast,
+    },
+    /// A screencast stopped.
+    CastStopped {
+        /// Stream ID of the stopped screencast.
+        stream_id: u64,
+    },
+}
+
+impl From<Duration> for Timestamp {
+    fn from(value: Duration) -> Self {
+        Timestamp {
+            secs: value.as_secs(),
+            nanos: value.subsec_nanos(),
+        }
+    }
+}
+
+impl From<Timestamp> for Duration {
+    fn from(value: Timestamp) -> Self {
+        Duration::new(value.secs, value.nanos)
+    }
 }
 
 impl FromStr for WorkspaceReferenceArg {
@@ -1511,17 +1784,38 @@ impl FromStr for PositionChange {
     type Err = &'static str;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let value = s;
-        match value.bytes().next() {
-            Some(b'-' | b'+') => {
-                let value = value.parse().map_err(|_| "error parsing value")?;
-                Ok(Self::AdjustFixed(value))
+        match s.split_once('%') {
+            Some((value, empty)) => {
+                if !empty.is_empty() {
+                    return Err("trailing characters after '%' are not allowed");
+                }
+
+                match value.bytes().next() {
+                    Some(b'-' | b'+') => {
+                        let value = value.parse().map_err(|_| "error parsing value")?;
+                        Ok(Self::AdjustProportion(value))
+                    }
+                    Some(_) => {
+                        let value = value.parse().map_err(|_| "error parsing value")?;
+                        Ok(Self::SetProportion(value))
+                    }
+                    None => Err("value is missing"),
+                }
             }
-            Some(_) => {
-                let value = value.parse().map_err(|_| "error parsing value")?;
-                Ok(Self::SetFixed(value))
+            None => {
+                let value = s;
+                match value.bytes().next() {
+                    Some(b'-' | b'+') => {
+                        let value = value.parse().map_err(|_| "error parsing value")?;
+                        Ok(Self::AdjustFixed(value))
+                    }
+                    Some(_) => {
+                        let value = value.parse().map_err(|_| "error parsing value")?;
+                        Ok(Self::SetFixed(value))
+                    }
+                    None => Err("value is missing"),
+                }
             }
-            None => Err("value is missing"),
         }
     }
 }
@@ -1574,6 +1868,20 @@ impl FromStr for Transform {
     }
 }
 
+impl FromStr for Layer {
+    type Err = &'static str;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "background" => Ok(Self::Background),
+            "bottom" => Ok(Self::Bottom),
+            "top" => Ok(Self::Top),
+            "overlay" => Ok(Self::Overlay),
+            _ => Err("invalid layer, can be \"background\", \"bottom\", \"top\" or \"overlay\""),
+        }
+    }
+}
+
 impl FromStr for ModeToSet {
     type Err = &'static str;
 
@@ -1615,6 +1923,30 @@ impl FromStr for ConfiguredMode {
     }
 }
 
+impl FromStr for HSyncPolarity {
+    type Err = &'static str;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "+hsync" => Ok(Self::PHSync),
+            "-hsync" => Ok(Self::NHSync),
+            _ => Err(r#"invalid horizontal sync polarity, can be "+hsync" or "-hsync"#),
+        }
+    }
+}
+
+impl FromStr for VSyncPolarity {
+    type Err = &'static str;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "+vsync" => Ok(Self::PVSync),
+            "-vsync" => Ok(Self::NVSync),
+            _ => Err(r#"invalid vertical sync polarity, can be "+vsync" or "-vsync"#),
+        }
+    }
+}
+
 impl FromStr for ScaleToSet {
     type Err = &'static str;
 
@@ -1625,6 +1957,87 @@ impl FromStr for ScaleToSet {
 
         let scale = s.parse().map_err(|_| "error parsing scale")?;
         Ok(Self::Specific(scale))
+    }
+}
+
+macro_rules! ensure {
+    ($cond:expr, $fmt:literal $($arg:tt)* ) => {
+        if !$cond {
+            return Err(format!($fmt $($arg)*));
+        }
+    };
+}
+
+impl OutputAction {
+    /// Validates some required constraints on the modeline and custom mode.
+    pub fn validate(&self) -> Result<(), String> {
+        match self {
+            OutputAction::Modeline {
+                hdisplay,
+                hsync_start,
+                hsync_end,
+                htotal,
+                vdisplay,
+                vsync_start,
+                vsync_end,
+                vtotal,
+                ..
+            } => {
+                ensure!(
+                    hdisplay < hsync_start,
+                    "hdisplay {} must be < hsync_start {}",
+                    hdisplay,
+                    hsync_start
+                );
+                ensure!(
+                    hsync_start < hsync_end,
+                    "hsync_start {} must be < hsync_end {}",
+                    hsync_start,
+                    hsync_end
+                );
+                ensure!(
+                    hsync_end < htotal,
+                    "hsync_end {} must be < htotal {}",
+                    hsync_end,
+                    htotal
+                );
+                ensure!(0 < *htotal, "htotal {} must be > 0", htotal);
+                ensure!(
+                    vdisplay < vsync_start,
+                    "vdisplay {} must be < vsync_start {}",
+                    vdisplay,
+                    vsync_start
+                );
+                ensure!(
+                    vsync_start < vsync_end,
+                    "vsync_start {} must be < vsync_end {}",
+                    vsync_start,
+                    vsync_end
+                );
+                ensure!(
+                    vsync_end < vtotal,
+                    "vsync_end {} must be < vtotal {}",
+                    vsync_end,
+                    vtotal
+                );
+                ensure!(0 < *vtotal, "vtotal {} must be > 0", vtotal);
+                Ok(())
+            }
+            OutputAction::CustomMode {
+                mode: ConfiguredMode { refresh, .. },
+            } => {
+                if refresh.is_none() {
+                    return Err("refresh rate is required for custom modes".to_string());
+                }
+                if let Some(refresh) = refresh {
+                    if *refresh <= 0. {
+                        return Err(format!("custom mode refresh rate {refresh} must be > 0"));
+                    }
+                }
+                Ok(())
+            }
+            _ => Ok(()),
+        }
     }
 }
 
@@ -1678,9 +2091,18 @@ mod tests {
             PositionChange::AdjustFixed(-10.),
         );
 
-        assert!("10%".parse::<PositionChange>().is_err());
-        assert!("+10%".parse::<PositionChange>().is_err());
-        assert!("-10%".parse::<PositionChange>().is_err());
+        assert_eq!(
+            "10%".parse::<PositionChange>().unwrap(),
+            PositionChange::SetProportion(10.)
+        );
+        assert_eq!(
+            "+10%".parse::<PositionChange>().unwrap(),
+            PositionChange::AdjustProportion(10.)
+        );
+        assert_eq!(
+            "-10%".parse::<PositionChange>().unwrap(),
+            PositionChange::AdjustProportion(-10.)
+        );
         assert!("-".parse::<PositionChange>().is_err());
         assert!("10% ".parse::<PositionChange>().is_err());
     }

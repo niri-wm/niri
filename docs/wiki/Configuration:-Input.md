@@ -2,7 +2,7 @@
 
 In this section you can configure input devices like keyboard and mouse, and some input-related options.
 
-There's a section for each device type: `keyboard`, `touchpad`, `mouse`, `trackpoint`, `tablet`, `touch`.
+There's a section for each device type: `keyboard`, `touchpad`, `mouse`, `trackpoint`, `trackball`, `tablet`, `touch`.
 Settings in those sections will apply to every device of that type.
 Currently, there's no way to configure specific devices individually (but that is planned).
 
@@ -89,6 +89,8 @@ input {
     tablet {
         // off
         map-to-output "eDP-1"
+        // map-to-focused-output
+        // map-to-focused-window
         // left-handed
         // calibration-matrix 1.0 0.0 0.0 0.0 1.0 0.0
     }
@@ -96,6 +98,7 @@ input {
     touch {
         // off
         map-to-output "eDP-1"
+        // calibration-matrix 1.0 0.0 0.0 0.0 1.0 0.0
     }
 
     // disable-power-key-handling
@@ -256,9 +259,11 @@ Settings specific to `touchpad` and `mouse`:
 
     <sup>Since: 25.08</sup> You can also override horizontal and vertical scroll factor separately like so: `scroll-factor horizontal=2.0 vertical=-1.0`
 
-Settings specific to `tablet`s:
+Settings specific to `tablet` and `touch`:
 
-- `calibration-matrix`: <sup>Since: 25.02</sup> set to six floating point numbers to change the calibration matrix. See the [`LIBINPUT_CALIBRATION_MATRIX` documentation](https://wayland.freedesktop.org/libinput/doc/latest/device-configuration-via-udev.html) for examples.
+- `calibration-matrix`: set to six floating point numbers to change the calibration matrix. See the [`LIBINPUT_CALIBRATION_MATRIX` documentation](https://wayland.freedesktop.org/libinput/doc/latest/device-configuration-via-udev.html) for examples.
+    - <sup>Since: 25.02</sup> for `tablet`
+    - <sup>Since: 25.11</sup> for `touch`
 
 Tablets and touchscreens are absolute pointing devices that can be mapped to a specific output like so:
 
@@ -277,6 +282,16 @@ input {
 Valid output names are the same as the ones used for output configuration.
 
 <sup>Since: 0.1.7</sup> When a tablet is not mapped to any output, it will map to the union of all connected outputs, without aspect ratio correction.
+
+Settings specific to `tablet`:
+
+- `map-to-focused-output`: <sup>Since: 26.04</sup> will map the tablet to the focused output, takes precedence over `map-to-output`.
+
+- `map-to-focused-window`: <sup>Since: next release</sup> will map the tablet to the focused window's geometry, takes precedence over `map-to-focused-output` and `map-to-output`.
+Falls back to those when no window is focused (for example, in the overview).
+
+    When the tablet is also mapped to a specific output via `map-to-output`, the `map-to-focused-window` flag will map the tablet to the active window on that output.
+    If the tablet isn't mapped to any specific output, it will map the tablet to the current focused window regardless of where it is.
 
 ### General Settings
 

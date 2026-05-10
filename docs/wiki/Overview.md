@@ -88,7 +88,7 @@ layer-rule {
 
 This will only work for *background* layer surfaces that ignore exclusive zones (typical for wallpaper tools).
 
-You can run two different wallpaper tools (like swaybg and swww), one for the backdrop and one for the normal workspace background.
+You can run two different wallpaper tools (like swaybg and awww), one for the backdrop and one for the normal workspace background.
 This way you could set the backdrop one to a blurred version of the wallpaper for a nice effect.
 
 You can also combine this with a transparent background color if you don't like the wallpaper moving together with workspaces:

@@ -12,7 +12,7 @@ fn fullscreen() {
         Op::FullscreenWindow(1),
     ];
 
-    check_ops(&ops);
+    check_ops(ops);
 }
 
 #[test]
@@ -32,7 +32,7 @@ fn unfullscreen_window_in_column() {
         },
     ];
 
-    check_ops(&ops);
+    check_ops(ops);
 }
 
 #[test]
@@ -49,7 +49,7 @@ fn unfullscreen_view_offset_not_reset_on_removal() {
         Op::ConsumeOrExpelWindowRight { id: None },
     ];
 
-    check_ops(&ops);
+    check_ops(ops);
 }
 
 #[test]
@@ -66,7 +66,7 @@ fn unfullscreen_view_offset_not_reset_on_consume() {
         Op::ConsumeWindowIntoColumn,
     ];
 
-    check_ops(&ops);
+    check_ops(ops);
 }
 
 #[test]
@@ -80,7 +80,7 @@ fn unfullscreen_view_offset_not_reset_on_quick_double_toggle() {
         Op::FullscreenWindow(0),
     ];
 
-    check_ops(&ops);
+    check_ops(ops);
 }
 
 #[test]
@@ -97,7 +97,7 @@ fn unfullscreen_view_offset_set_on_fullscreening_inactive_tile_in_column() {
         Op::FullscreenWindow(0),
     ];
 
-    check_ops(&ops);
+    check_ops(ops);
 }
 
 #[test]
@@ -121,7 +121,7 @@ fn unfullscreen_view_offset_not_reset_on_gesture() {
         },
     ];
 
-    check_ops(&ops);
+    check_ops(ops);
 }
 
 #[test]
@@ -154,7 +154,7 @@ fn one_window_in_column_becomes_weight_1_after_fullscreen() {
         Op::FullscreenWindow(1),
     ];
 
-    check_ops(&ops);
+    check_ops(ops);
 }
 
 #[test]
@@ -173,7 +173,7 @@ fn disable_tabbed_mode_in_fullscreen() {
         Op::ToggleColumnTabbedDisplay,
     ];
 
-    check_ops(&ops);
+    check_ops(ops);
 }
 
 #[test]
@@ -188,14 +188,17 @@ fn unfullscreen_with_large_border() {
     ];
 
     let options = Options {
-        border: niri_config::Border {
-            off: false,
-            width: niri_config::FloatOrInt(10000.),
+        layout: niri_config::Layout {
+            border: niri_config::Border {
+                off: false,
+                width: 10000.,
+                ..Default::default()
+            },
             ..Default::default()
         },
         ..Default::default()
     };
-    check_ops_with_options(options, &ops);
+    check_ops_with_options(options, ops);
 }
 
 #[test]
@@ -210,7 +213,7 @@ fn fullscreen_to_windowed_fullscreen() {
         Op::ToggleWindowedFullscreen(0),
     ];
 
-    check_ops(&ops);
+    check_ops(ops);
 }
 
 #[test]
@@ -226,7 +229,7 @@ fn windowed_fullscreen_to_fullscreen() {
         Op::FullscreenWindow(0),         // Switch is_fullscreen() back to true.
     ];
 
-    check_ops(&ops);
+    check_ops(ops);
 }
 
 #[test]
@@ -247,7 +250,7 @@ fn move_pending_unfullscreen_window_out_of_active_column() {
         Op::MoveWindowToWorkspaceDown(true),
     ];
 
-    check_ops(&ops);
+    check_ops(ops);
 }
 
 #[test]
@@ -272,7 +275,7 @@ fn move_unfocused_pending_unfullscreen_window_out_of_active_column() {
         },
     ];
 
-    check_ops(&ops);
+    check_ops(ops);
 }
 
 #[test]
@@ -294,7 +297,7 @@ fn interactive_resize_on_pending_unfullscreen_column() {
         Op::Communicate(2),
     ];
 
-    check_ops(&ops);
+    check_ops(ops);
 }
 
 #[test]
@@ -332,7 +335,66 @@ fn interactive_move_unfullscreen_to_floating_stops_dnd_scroll() {
         Op::InteractiveMoveEnd { window: 4 },
     ];
 
-    check_ops(&ops);
+    check_ops(ops);
+}
+
+#[test]
+fn interactive_move_restore_to_floating_animates_view_offset() {
+    let ops = [
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+        // Toggle window 1 to floating.
+        Op::FocusWindow(1),
+        Op::ToggleWindowFloating { id: None },
+        // Fullscreen window 1 - it moves to scrolling with restore_to_floating = true.
+        Op::FullscreenWindow(1),
+        Op::Communicate(1),
+        Op::CompleteAnimations,
+    ];
+
+    let mut layout = check_ops(ops);
+
+    // Verify window 1 is in scrolling and has restore_to_floating = true.
+    let scrolling = layout.active_workspace().unwrap().scrolling();
+    let tile1 = scrolling.tiles().find(|t| *t.window().id() == 1).unwrap();
+    assert!(
+        tile1.restore_to_floating,
+        "window 1 should have restore_to_floating = true"
+    );
+
+    let ops = [
+        // Start interactive move on window 1.
+        Op::InteractiveMoveBegin {
+            window: 1,
+            output_idx: 1,
+            px: 100.,
+            py: 100.,
+        },
+        // Update with a large delta to trigger the unmaximize.
+        Op::InteractiveMoveUpdate {
+            window: 1,
+            dx: 1000.,
+            dy: 1000.,
+            output_idx: 1,
+            px: 0.,
+            py: 0.,
+        },
+    ];
+    check_ops_on_layout(&mut layout, ops);
+
+    // Window 1 should now be removed from the workspace (in the interactive move state).
+    // Window 2 should be the only window in the scrolling space.
+    let scrolling = layout.active_workspace().unwrap().scrolling();
+    assert_eq!(scrolling.tiles().count(), 1);
+    assert!(scrolling.tiles().next().unwrap().window().id() == &2);
+
+    // The view offset should be animating to show window 2.
+    assert!(scrolling.view_offset().is_animation_ongoing());
 }
 
 #[test]
@@ -353,7 +415,7 @@ fn unfullscreen_view_offset_not_reset_during_dnd_gesture() {
         Op::Communicate(3),
     ];
 
-    check_ops(&ops);
+    check_ops(ops);
 }
 
 #[test]
@@ -374,7 +436,7 @@ fn unfullscreen_view_offset_not_reset_during_gesture() {
         Op::Communicate(3),
     ];
 
-    check_ops(&ops);
+    check_ops(ops);
 }
 
 #[test]
@@ -395,7 +457,7 @@ fn unfullscreen_view_offset_not_reset_during_ongoing_gesture() {
         Op::Communicate(3),
     ];
 
-    check_ops(&ops);
+    check_ops(ops);
 }
 
 #[test]
@@ -410,7 +472,7 @@ fn unfullscreen_preserves_view_pos() {
         },
     ];
 
-    let mut layout = check_ops(&ops);
+    let mut layout = check_ops(ops);
 
     // View pos is looking at the first window.
     assert_snapshot!(layout.active_workspace().unwrap().scrolling().view_pos(), @"-16");
@@ -420,7 +482,7 @@ fn unfullscreen_preserves_view_pos() {
         Op::Communicate(2),
         Op::CompleteAnimations,
     ];
-    check_ops_on_layout(&mut layout, &ops);
+    check_ops_on_layout(&mut layout, ops);
 
     // View pos = width of first window + gap.
     assert_snapshot!(layout.active_workspace().unwrap().scrolling().view_pos(), @"116");
@@ -430,7 +492,7 @@ fn unfullscreen_preserves_view_pos() {
         Op::Communicate(2),
         Op::CompleteAnimations,
     ];
-    check_ops_on_layout(&mut layout, &ops);
+    check_ops_on_layout(&mut layout, ops);
 
     // View pos is back to showing the first window.
     assert_snapshot!(layout.active_workspace().unwrap().scrolling().view_pos(), @"-16");
@@ -456,7 +518,7 @@ fn unfullscreen_of_tabbed_preserves_view_pos() {
         Op::FocusColumnRight,
     ];
 
-    let mut layout = check_ops(&ops);
+    let mut layout = check_ops(ops);
 
     // View pos is looking at the first window.
     assert_snapshot!(layout.active_workspace().unwrap().scrolling().view_pos(), @"-16");
@@ -467,7 +529,7 @@ fn unfullscreen_of_tabbed_preserves_view_pos() {
         Op::Communicate(3),
         Op::CompleteAnimations,
     ];
-    check_ops_on_layout(&mut layout, &ops);
+    check_ops_on_layout(&mut layout, ops);
 
     // View pos = width of first window + gap.
     assert_snapshot!(layout.active_workspace().unwrap().scrolling().view_pos(), @"116");
@@ -477,13 +539,13 @@ fn unfullscreen_of_tabbed_preserves_view_pos() {
         Op::Communicate(3),
         Op::CompleteAnimations,
     ];
-    check_ops_on_layout(&mut layout, &ops);
+    check_ops_on_layout(&mut layout, ops);
 
     // View pos is still on the second column because the second tile hasn't unfullscreened yet.
     assert_snapshot!(layout.active_workspace().unwrap().scrolling().view_pos(), @"116");
 
     let ops = [Op::Communicate(2), Op::CompleteAnimations];
-    check_ops_on_layout(&mut layout, &ops);
+    check_ops_on_layout(&mut layout, ops);
 
     // View pos is back to showing the first window.
     assert_snapshot!(layout.active_workspace().unwrap().scrolling().view_pos(), @"-16");
@@ -509,7 +571,7 @@ fn unfullscreen_of_tabbed_via_change_to_normal_preserves_view_pos() {
         Op::FocusColumnRight,
     ];
 
-    let mut layout = check_ops(&ops);
+    let mut layout = check_ops(ops);
 
     // View pos is looking at the first window.
     assert_snapshot!(layout.active_workspace().unwrap().scrolling().view_pos(), @"-16");
@@ -520,7 +582,7 @@ fn unfullscreen_of_tabbed_via_change_to_normal_preserves_view_pos() {
         Op::Communicate(3),
         Op::CompleteAnimations,
     ];
-    check_ops_on_layout(&mut layout, &ops);
+    check_ops_on_layout(&mut layout, ops);
 
     // View pos = width of first window + gap.
     assert_snapshot!(layout.active_workspace().unwrap().scrolling().view_pos(), @"116");
@@ -530,13 +592,13 @@ fn unfullscreen_of_tabbed_via_change_to_normal_preserves_view_pos() {
         Op::Communicate(3),
         Op::CompleteAnimations,
     ];
-    check_ops_on_layout(&mut layout, &ops);
+    check_ops_on_layout(&mut layout, ops);
 
     // View pos is still on the second column because the second tile hasn't unfullscreened yet.
     assert_snapshot!(layout.active_workspace().unwrap().scrolling().view_pos(), @"116");
 
     let ops = [Op::Communicate(2), Op::CompleteAnimations];
-    check_ops_on_layout(&mut layout, &ops);
+    check_ops_on_layout(&mut layout, ops);
 
     // View pos is back to showing the first window.
     assert_snapshot!(layout.active_workspace().unwrap().scrolling().view_pos(), @"-16");
@@ -557,7 +619,7 @@ fn removing_only_fullscreen_tile_updates_view_offset() {
         Op::CompleteAnimations,
     ];
 
-    let mut layout = check_ops(&ops);
+    let mut layout = check_ops(ops);
 
     // View pos with gap.
     assert_snapshot!(layout.active_workspace().unwrap().scrolling().view_pos(), @"-16");
@@ -568,7 +630,7 @@ fn removing_only_fullscreen_tile_updates_view_offset() {
         Op::Communicate(2),
         Op::CompleteAnimations,
     ];
-    check_ops_on_layout(&mut layout, &ops);
+    check_ops_on_layout(&mut layout, ops);
 
     // View pos without gap because we went fullscreen.
     assert_snapshot!(layout.active_workspace().unwrap().scrolling().view_pos(), @"0");
@@ -579,7 +641,7 @@ fn removing_only_fullscreen_tile_updates_view_offset() {
         Op::Communicate(2),
         Op::CompleteAnimations,
     ];
-    check_ops_on_layout(&mut layout, &ops);
+    check_ops_on_layout(&mut layout, ops);
 
     // View pos without gap because other tile is still fullscreen.
     assert_snapshot!(layout.active_workspace().unwrap().scrolling().view_pos(), @"0");
@@ -589,7 +651,7 @@ fn removing_only_fullscreen_tile_updates_view_offset() {
         Op::ConsumeOrExpelWindowRight { id: Some(1) },
         Op::CompleteAnimations,
     ];
-    check_ops_on_layout(&mut layout, &ops);
+    check_ops_on_layout(&mut layout, ops);
 
     // View pos should include gap now that the column is no longer fullscreen.
     // FIXME: currently, removing a tile doesn't cause the view offset to update.

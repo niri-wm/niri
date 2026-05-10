@@ -1,0 +1,6 @@
+type           = internal
+restart        = false
+depends-on:    niri
+waits-for.d:   $XDG_CONFIG_HOME/dinit.d/niri.d/
+waits-for.d:   $HOME/.config/dinit.d/niri.d/
+waits-for.d:   /etc/dinit.d/user/niri.d/

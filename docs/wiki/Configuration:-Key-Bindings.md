@@ -354,7 +354,7 @@ binds {
 Actions for taking screenshots.
 
 - `screenshot`: opens the built-in interactive screenshot UI.
-- `screenshot-screen`, `screenshow-window`: takes a screenshot of the focused screen or window respectively.
+- `screenshot-screen`, `screenshot-window`: takes a screenshot of the focused screen or window respectively.
 
 The screenshot is both stored to the clipboard and saved to disk, according to the [`screenshot-path` option](./Configuration:-Miscellaneous.md#screenshot-path).
 
@@ -379,6 +379,17 @@ binds {
 
     // The pointer will be hidden on the screenshot.
     Ctrl+Print { screenshot-screen show-pointer=false; }
+}
+```
+
+<sup>Since: 26.04</sup> You can show the mouse pointer on window screenshots with the `show-pointer=true` property.
+The pointer will be included only if the window is currently receiving pointer input (usually this means the pointer is on top of the window).
+
+```kdl
+binds {
+    // The pointer will be visible on the screenshot
+    // if it's on top of the window.
+    Alt+Print { screenshot-window show-pointer=true; }
 }
 ```
 

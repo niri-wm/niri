@@ -1,12 +1,12 @@
 use std::cell::{Cell, Ref, RefCell};
 use std::time::Duration;
 
-use niri_config::{Color, CornerRadius, GradientInterpolation, WindowRule};
-use smithay::backend::renderer::element::surface::render_elements_from_surface_tree;
+use niri_config::{Color, Config, CornerRadius, GradientInterpolation, WindowRule};
+use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::element::Kind;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::desktop::space::SpaceElement as _;
-use smithay::desktop::{PopupManager, Window};
+use smithay::desktop::{PopupKind, PopupManager, Window};
 use smithay::output::{self, Output};
 use smithay::reexports::wayland_protocols::xdg::decoration::zv1::server::zxdg_toplevel_decoration_v1;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
@@ -25,21 +25,26 @@ use super::{ResolvedWindowRules, WindowRef};
 use crate::handlers::KdeDecorationsModeState;
 use crate::layout::{
     ConfigureIntent, InteractiveResizeData, LayoutElement, LayoutElementRenderElement,
-    LayoutElementRenderSnapshot,
+    LayoutElementRenderSnapshot, SizingMode,
 };
 use crate::niri_render_elements;
+use crate::render_helpers::background_effect::BackgroundEffectElement;
 use crate::render_helpers::border::BorderRenderElement;
 use crate::render_helpers::offscreen::OffscreenData;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::snapshot::RenderSnapshot;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
-use crate::render_helpers::surface::render_snapshot_from_surface_tree;
-use crate::render_helpers::{BakedBuffer, RenderTarget, SplitElements};
+use crate::render_helpers::surface::{
+    push_elements_from_surface_tree, render_snapshot_from_surface_tree,
+};
+use crate::render_helpers::xray::XrayPos;
+use crate::render_helpers::{background_effect, BakedBuffer, RenderCtx, RenderTarget};
 use crate::utils::id::IdCounter;
 use crate::utils::transaction::Transaction;
 use crate::utils::{
-    get_credentials_for_surface, send_scale_transform, update_tiled_state, with_toplevel_role,
-    with_toplevel_role_and_current, ResizeEdge,
+    get_credentials_for_surface, send_scale_transform, update_tiled_state,
+    with_toplevel_last_uncommitted_configure, with_toplevel_role, with_toplevel_role_and_current,
+    ResizeEdge,
 };
 
 #[derive(Debug)]
@@ -100,6 +105,9 @@ pub struct Mapped {
 
     /// Buffer to draw instead of the window when it should be blocked out.
     block_out_buffer: RefCell<SolidColorBuffer>,
+
+    /// The blur config, passed for background effect rendering.
+    blur_config: niri_config::Blur,
 
     /// Whether the next configure should be animated, if the configured state changed.
     animate_next_configure: bool,
@@ -163,6 +171,28 @@ pub struct Mapped {
     /// These have been "sent" to the window in form of configures, but the window hadn't committed
     /// in response yet.
     uncommitted_windowed_fullscreen: Vec<(Serial, bool)>,
+
+    /// Whether this window is maximized.
+    ///
+    /// We have to track this ourselves in addition to the Maximized toplevel state in order to
+    /// support windowed fullscreen, since in windowed fullscreen the toplevel state is always
+    /// Fullscreen. So we need this variable to be able to report accurate sizing mode and pending
+    /// sizing mode.
+    is_maximized: bool,
+
+    /// Whether this window is pending to be maximized.
+    ///
+    /// We have to track this ourselves due to windowed fullscreen.
+    is_pending_maximized: bool,
+
+    /// Pending maximized updates.
+    ///
+    /// These have been "sent" to the window in form of configures, but the window hadn't committed
+    /// in response yet.
+    uncommitted_maximized: Vec<(Serial, bool)>,
+
+    /// Most recent monotonic time when the window had the focus.
+    focus_timestamp: Option<Duration>,
 }
 
 niri_render_elements! {
@@ -185,6 +215,24 @@ impl MappedId {
 
     pub fn get(self) -> u64 {
         self.0
+    }
+
+    /// Converts the ID to a string that can be used as an identifier in
+    /// ext_foreign_toplevel_handle_v1::identifier
+    ///
+    /// > An identifier is a string that contains up to 32 printable ASCII bytes.
+    /// > An identifier must not be an empty string.
+    ///
+    /// Since the ID is exposed to IPC, it's useful for this conversion to be stable and reversible.
+    /// That way, clients can associate a foreign toplevel handle with an IPC window ID.
+    ///
+    /// We use the decimal representation of the ID, which is up to 20 characters long for u64::MAX.
+    /// This is within the 32-character limit, and is nice because it matches up with how `niri msg`
+    /// prints the IDs to the console.
+    ///
+    /// This namespace can be extended in the future, with any non-numeric prefix to disambiguate.
+    pub fn to_protocol_identifier(self) -> String {
+        format!("{}", self.0)
     }
 }
 
@@ -224,11 +272,10 @@ enum RequestSizeOnce {
 }
 
 impl Mapped {
-    pub fn new(window: Window, rules: ResolvedWindowRules, hook: HookId) -> Self {
+    pub fn new(window: Window, rules: ResolvedWindowRules, hook: HookId, config: &Config) -> Self {
         let surface = window.wl_surface().expect("no X11 support");
         let credentials = get_credentials_for_surface(&surface);
-
-        Self {
+        let mut rv = Self {
             window,
             id: MappedId::next(),
             credentials,
@@ -245,6 +292,7 @@ impl Mapped {
             is_window_cast_target: false,
             ignore_opacity_window_rule: false,
             block_out_buffer: RefCell::new(SolidColorBuffer::new((0., 0.), [0., 0., 0., 1.])),
+            blur_config: config.blur,
             animate_next_configure: false,
             animate_serials: Vec::new(),
             animation_snapshot: None,
@@ -256,7 +304,16 @@ impl Mapped {
             is_windowed_fullscreen: false,
             is_pending_windowed_fullscreen: false,
             uncommitted_windowed_fullscreen: Vec::new(),
-        }
+            is_maximized: false,
+            is_pending_maximized: false,
+            uncommitted_maximized: Vec::new(),
+            focus_timestamp: None,
+        };
+
+        rv.is_maximized = rv.sizing_mode().is_maximized();
+        rv.is_pending_maximized = rv.pending_sizing_mode().is_maximized();
+
+        rv
     }
 
     pub fn toplevel(&self) -> &ToplevelSurface {
@@ -373,10 +430,12 @@ impl Mapped {
 
         RenderSnapshot {
             contents,
+            contents_with_blocked_out_bg: None,
             blocked_out_contents,
             block_out_from: self.rules().block_out_from,
             size,
             texture: Default::default(),
+            texture_with_blocked_out_bg: Default::default(),
             blocked_out_texture: Default::default(),
         }
     }
@@ -440,23 +499,21 @@ impl Mapped {
         &self,
         renderer: &mut R,
         scale: Scale<f64>,
-    ) -> impl DoubleEndedIterator<Item = WindowCastRenderElements<R>> {
+        push: &mut dyn FnMut(WindowCastRenderElements<R>),
+    ) {
         let bbox = self.window.bbox_with_popups().to_physical_precise_up(scale);
 
         let has_border_shader = BorderRenderElement::has_shader(renderer);
-        let rules = self.rules();
-        let radius = rules.geometry_corner_radius.unwrap_or_default();
+        let radius = self.geometry_corner_radius();
         let window_size = self
             .size()
             .to_f64()
             .to_physical_precise_round(scale)
             .to_logical(scale);
         let radius = radius.fit_to(window_size.w as f32, window_size.h as f32);
-
         let location = self.window.geometry().loc.to_f64() - bbox.loc.to_logical(scale);
-        let elements = self.render(renderer, location, scale, 1., RenderTarget::Screencast);
 
-        elements.into_iter().map(move |elem| {
+        let use_border = |elem| {
             if let LayoutElementRenderElement::SolidColor(elem) = &elem {
                 // In this branch we're rendering a blocked-out window with a solid color. We need
                 // to render it with a rounded corner shader even if clip_to_geometry is false,
@@ -484,7 +541,28 @@ impl Mapped {
             }
 
             WindowCastRenderElements::from(elem)
-        })
+        };
+
+        self.render(
+            RenderCtx {
+                renderer,
+                target: RenderTarget::Screencast,
+                xray: None,
+            },
+            location,
+            scale,
+            1.,
+            XrayPos::default(),
+            &mut |elem| push(use_border(elem)),
+        );
+    }
+
+    pub fn get_focus_timestamp(&self) -> Option<Duration> {
+        self.focus_timestamp
+    }
+
+    pub fn set_focus_timestamp(&mut self, timestamp: Duration) {
+        self.focus_timestamp.replace(timestamp);
     }
 
     pub fn send_frame<T, F>(
@@ -537,7 +615,7 @@ impl Mapped {
 
 impl Drop for Mapped {
     fn drop(&mut self) {
-        remove_pre_commit_hook(self.toplevel().wl_surface(), self.pre_commit_hook.clone());
+        remove_pre_commit_hook(self.toplevel().wl_surface(), &self.pre_commit_hook);
     }
 }
 
@@ -546,6 +624,10 @@ impl LayoutElement for Mapped {
 
     fn id(&self) -> &Self::Id {
         &self.window
+    }
+
+    fn update_config(&mut self, blur_config: niri_config::Blur) {
+        self.blur_config = blur_config;
     }
 
     fn size(&self) -> Size<i32, Logical> {
@@ -561,121 +643,139 @@ impl LayoutElement for Mapped {
         self.window.is_in_input_region(&surface_local)
     }
 
-    fn render<R: NiriRenderer>(
-        &self,
-        renderer: &mut R,
-        location: Point<f64, Logical>,
-        scale: Scale<f64>,
-        alpha: f32,
-        target: RenderTarget,
-    ) -> SplitElements<LayoutElementRenderElement<R>> {
-        let mut rv = SplitElements::default();
-
-        if target.should_block_out(self.rules.block_out_from) {
-            let mut buffer = self.block_out_buffer.borrow_mut();
-            buffer.resize(self.window.geometry().size.to_f64());
-            let elem =
-                SolidColorRenderElement::from_buffer(&buffer, location, alpha, Kind::Unspecified);
-            rv.normal.push(elem.into());
-        } else {
-            let buf_pos = location - self.window.geometry().loc.to_f64();
-
-            let surface = self.toplevel().wl_surface();
-            for (popup, popup_offset) in PopupManager::popups_for_surface(surface) {
-                let offset = self.window.geometry().loc + popup_offset - popup.geometry().loc;
-
-                rv.popups.extend(render_elements_from_surface_tree(
-                    renderer,
-                    popup.wl_surface(),
-                    (buf_pos + offset.to_f64()).to_physical_precise_round(scale),
-                    scale,
-                    alpha,
-                    Kind::ScanoutCandidate,
-                ));
-            }
-
-            rv.normal = render_elements_from_surface_tree(
-                renderer,
-                surface,
-                buf_pos.to_physical_precise_round(scale),
-                scale,
-                alpha,
-                Kind::ScanoutCandidate,
-            );
-        }
-
-        rv
-    }
-
     fn render_normal<R: NiriRenderer>(
         &self,
-        renderer: &mut R,
+        ctx: RenderCtx<R>,
         location: Point<f64, Logical>,
         scale: Scale<f64>,
         alpha: f32,
-        target: RenderTarget,
-    ) -> Vec<LayoutElementRenderElement<R>> {
-        if target.should_block_out(self.rules.block_out_from) {
+        push: &mut dyn FnMut(LayoutElementRenderElement<R>),
+    ) {
+        if ctx.target.should_block_out(self.rules.block_out_from) {
             let mut buffer = self.block_out_buffer.borrow_mut();
             buffer.resize(self.window.geometry().size.to_f64());
             let elem =
                 SolidColorRenderElement::from_buffer(&buffer, location, alpha, Kind::Unspecified);
-            vec![elem.into()]
+            push(elem.into());
         } else {
             let buf_pos = location - self.window.geometry().loc.to_f64();
             let surface = self.toplevel().wl_surface();
-            render_elements_from_surface_tree(
-                renderer,
+            let mut push = |elem: WaylandSurfaceRenderElement<R>| push(elem.into());
+            push_elements_from_surface_tree(
+                ctx.renderer,
                 surface,
                 buf_pos.to_physical_precise_round(scale),
                 scale,
                 alpha,
                 Kind::ScanoutCandidate,
+                &mut push,
             )
         }
     }
 
     fn render_popups<R: NiriRenderer>(
         &self,
-        renderer: &mut R,
+        mut ctx: RenderCtx<R>,
         location: Point<f64, Logical>,
         scale: Scale<f64>,
         alpha: f32,
-        target: RenderTarget,
-    ) -> Vec<LayoutElementRenderElement<R>> {
-        if target.should_block_out(self.rules.block_out_from) {
-            vec![]
-        } else {
-            let mut rv = vec![];
-
-            let buf_pos = location - self.window.geometry().loc.to_f64();
-            let surface = self.toplevel().wl_surface();
-            for (popup, popup_offset) in PopupManager::popups_for_surface(surface) {
-                let offset = self.window.geometry().loc + popup_offset - popup.geometry().loc;
-
-                rv.extend(render_elements_from_surface_tree(
-                    renderer,
-                    popup.wl_surface(),
-                    (buf_pos + offset.to_f64()).to_physical_precise_round(scale),
-                    scale,
-                    alpha,
-                    Kind::ScanoutCandidate,
-                ));
-            }
-
-            rv
+        xray_pos: XrayPos,
+        push: &mut dyn FnMut(LayoutElementRenderElement<R>),
+    ) {
+        if ctx.target.should_block_out(self.rules.block_out_from) {
+            return;
         }
+
+        let surface = self.toplevel().wl_surface();
+        for (popup, offset) in PopupManager::popups_for_surface(surface) {
+            let popup_rules = match popup {
+                PopupKind::Xdg(_) => self.rules.popups,
+                // IME popups aren't affected by rules for regular popups.
+                PopupKind::InputMethod(_) => niri_config::ResolvedPopupsRules::default(),
+            };
+            let alpha = alpha * popup_rules.opacity.unwrap_or(1.).clamp(0., 1.);
+
+            let surface = popup.wl_surface();
+            let popup_geo = popup.geometry();
+            let surface_loc = location + (offset - popup.geometry().loc).to_f64();
+
+            push_elements_from_surface_tree(
+                ctx.renderer,
+                surface,
+                surface_loc.to_physical_precise_round(scale),
+                scale,
+                alpha,
+                Kind::ScanoutCandidate,
+                &mut |elem| push(elem.into()),
+            );
+
+            let geometry = Rectangle::new(location + offset.to_f64(), popup_geo.size.to_f64());
+            let surface_off = popup_geo.loc.upscale(-1).to_f64();
+            let surface_anim_scale = Scale::from(1.);
+            let mut effect = popup_rules.background_effect;
+            // Default xray to false for pop-ups since they're always on top of something.
+            if effect.xray.is_none() {
+                effect.xray = Some(false);
+            }
+            let xray_pos = xray_pos.offset(offset.to_f64());
+            background_effect::render_for_tile(
+                ctx.as_gles(),
+                None,
+                geometry,
+                scale.x,
+                false,
+                surface,
+                surface_off,
+                surface_anim_scale,
+                self.blur_config,
+                popup_rules.geometry_corner_radius.unwrap_or_default(),
+                effect,
+                false,
+                xray_pos,
+                &mut |elem| push(elem.into()),
+            );
+        }
+    }
+
+    fn render_background_effect(
+        &self,
+        ctx: RenderCtx<GlesRenderer>,
+        geometry: Rectangle<f64, Logical>,
+        scale: f64,
+        clip_to_geometry: bool,
+        surface_anim_scale: Scale<f64>,
+        radius: CornerRadius,
+        xray_pos: XrayPos,
+        push: &mut dyn FnMut(BackgroundEffectElement),
+    ) {
+        let should_block_out = ctx.target.should_block_out(self.rules.block_out_from);
+        background_effect::render_for_tile(
+            ctx,
+            None,
+            geometry,
+            scale,
+            clip_to_geometry,
+            self.toplevel().wl_surface(),
+            self.buf_loc().to_f64(),
+            surface_anim_scale,
+            self.blur_config,
+            radius,
+            self.rules.background_effect,
+            should_block_out,
+            xray_pos,
+            push,
+        );
     }
 
     fn request_size(
         &mut self,
         size: Size<i32, Logical>,
-        is_fullscreen: bool,
+        mode: SizingMode,
         animate: bool,
         transaction: Option<Transaction>,
     ) {
         // Going into real fullscreen resets windowed fullscreen.
-        if is_fullscreen {
+        if mode == SizingMode::Fullscreen {
             self.is_pending_windowed_fullscreen = false;
 
             if self.is_windowed_fullscreen {
@@ -685,14 +785,27 @@ impl LayoutElement for Mapped {
             }
         }
 
+        self.is_pending_maximized = mode == SizingMode::Maximized;
+        if self.is_maximized != self.is_pending_maximized {
+            // Make sure we receive a commit to update self.is_maximized later on.
+            self.needs_configure = true;
+        }
+
         let changed = self.toplevel().with_pending_state(|state| {
             let changed = state.size != Some(size);
             state.size = Some(size);
-            if is_fullscreen || self.is_pending_windowed_fullscreen {
+
+            if mode.is_fullscreen() || self.is_pending_windowed_fullscreen {
                 state.states.set(xdg_toplevel::State::Fullscreen);
+                state.states.unset(xdg_toplevel::State::Maximized);
+            } else if mode.is_maximized() {
+                state.states.unset(xdg_toplevel::State::Fullscreen);
+                state.states.set(xdg_toplevel::State::Maximized);
             } else {
                 state.states.unset(xdg_toplevel::State::Fullscreen);
+                state.states.unset(xdg_toplevel::State::Maximized);
             }
+
             changed
         });
 
@@ -717,28 +830,26 @@ impl LayoutElement for Mapped {
         // longer participate in any transactions with other windows.
         self.transaction_for_next_configure = None;
 
+        self.is_pending_maximized = false;
+        if self.is_maximized != self.is_pending_maximized {
+            // Make sure we receive a commit to update self.is_maximized later on.
+            self.needs_configure = true;
+        }
+
         // If our last requested size already matches the size we want to request-once, clear the
         // size request right away. However, we must also check if we're unfullscreening, because
         // in that case the window itself will restore its previous size upon receiving a (0, 0)
         // configure, whereas what we potentially want is to unfullscreen the window into its
         // fullscreen size.
-        let already_sent = with_toplevel_role(self.toplevel(), |role| {
-            let last_sent = if let Some(configure) = role.pending_configures().last() {
-                // FIXME: it would be more optimal to find the *oldest* pending configure that
-                // has the same size and fullscreen state to the last pending configure.
-                configure
-            } else {
-                role.last_acked.as_ref().unwrap()
-            };
-            let ToplevelConfigure {
-                serial: last_serial,
-                state: last_sent,
-            } = last_sent;
+        let already_sent = with_toplevel_last_uncommitted_configure(self.toplevel(), |configure| {
+            let ToplevelConfigure { state, serial } = configure?;
 
-            let same_size = last_sent.size.unwrap_or_default() == size;
-            let has_fullscreen = last_sent.states.contains(xdg_toplevel::State::Fullscreen);
+            let same_size = state.size.unwrap_or_default() == size;
+            let has_fullscreen = state.states.contains(xdg_toplevel::State::Fullscreen);
             let same_fullscreen = has_fullscreen == self.is_pending_windowed_fullscreen;
-            (same_size && same_fullscreen).then_some(*last_serial)
+            let has_maximized = state.states.contains(xdg_toplevel::State::Maximized);
+            let same_maximized = !has_maximized;
+            (same_size && same_fullscreen && same_maximized).then_some(*serial)
         });
 
         if let Some(serial) = already_sent {
@@ -775,6 +886,7 @@ impl LayoutElement for Mapped {
             if !self.is_pending_windowed_fullscreen {
                 state.states.unset(xdg_toplevel::State::Fullscreen);
             }
+            state.states.unset(xdg_toplevel::State::Maximized);
             changed
         });
 
@@ -1030,6 +1142,18 @@ impl LayoutElement for Mapped {
                 self.uncommitted_windowed_fullscreen
                     .push((serial, self.is_pending_windowed_fullscreen));
             }
+
+            // If is_pending_maximized changed compared to the last value that we "sent" to the
+            // window, store the configure serial.
+            let last_sent_maximized = self
+                .uncommitted_maximized
+                .last()
+                .map(|(_, value)| *value)
+                .unwrap_or(self.is_maximized);
+            if last_sent_maximized != self.is_pending_maximized {
+                self.uncommitted_maximized
+                    .push((serial, self.is_pending_maximized));
+            }
         } else {
             self.interactive_resize = match self.interactive_resize.take() {
                 // We probably started and stopped resizing in the same loop cycle without anything
@@ -1043,23 +1167,51 @@ impl LayoutElement for Mapped {
         self.transaction_for_next_configure = None;
     }
 
-    fn is_fullscreen(&self) -> bool {
+    fn sizing_mode(&self) -> SizingMode {
         if self.is_windowed_fullscreen {
-            return false;
+            return if self.is_maximized {
+                SizingMode::Maximized
+            } else {
+                SizingMode::Normal
+            };
         }
 
-        self.toplevel().with_committed_state(|current| {
-            current.is_some_and(|s| s.states.contains(xdg_toplevel::State::Fullscreen))
+        self.toplevel().with_committed_state(|state| {
+            // This must always be Some() for mapped windows. However, this function is called on
+            // the code path when removing a just-unmapped window in the commit handler, at which
+            // point state is already None.
+            let Some(state) = state else {
+                return SizingMode::Normal;
+            };
+
+            if state.states.contains(xdg_toplevel::State::Fullscreen) {
+                SizingMode::Fullscreen
+            } else if state.states.contains(xdg_toplevel::State::Maximized) {
+                SizingMode::Maximized
+            } else {
+                SizingMode::Normal
+            }
         })
     }
 
-    fn is_pending_fullscreen(&self) -> bool {
+    fn pending_sizing_mode(&self) -> SizingMode {
         if self.is_pending_windowed_fullscreen {
-            return false;
+            return if self.is_pending_maximized {
+                SizingMode::Maximized
+            } else {
+                SizingMode::Normal
+            };
         }
 
-        self.toplevel()
-            .with_pending_state(|state| state.states.contains(xdg_toplevel::State::Fullscreen))
+        self.toplevel().with_pending_state(|state| {
+            if state.states.contains(xdg_toplevel::State::Fullscreen) {
+                SizingMode::Fullscreen
+            } else if state.states.contains(xdg_toplevel::State::Maximized) {
+                SizingMode::Maximized
+            } else {
+                SizingMode::Normal
+            }
+        })
     }
 
     fn is_ignoring_opacity_window_rule(&self) -> bool {
@@ -1071,8 +1223,8 @@ impl LayoutElement for Mapped {
     }
 
     fn expected_size(&self) -> Option<Size<i32, Logical>> {
-        // We can only use current size if it's not fullscreen.
-        let current_size = (!self.is_fullscreen()).then(|| self.window.geometry().size);
+        // We can only use current size if it's not maximized or fullscreen.
+        let current_size = (self.sizing_mode().is_normal()).then(|| self.window.geometry().size);
 
         // Check if we should be using the current window size.
         //
@@ -1100,44 +1252,45 @@ impl LayoutElement for Mapped {
                 .unwrap();
 
             // If we have a server-pending size change that we haven't sent yet, use that size.
-            if let Some(server_pending) = &role.server_pending {
-                let current_server = role.current_server_state();
-                if server_pending.size != current_server.size {
-                    return Some((
-                        server_pending.size.unwrap_or_default(),
-                        server_pending
-                            .states
-                            .contains(xdg_toplevel::State::Fullscreen),
-                    ));
-                }
-            }
+            let server_pending = role.server_pending.as_ref()?;
 
-            // If we have a sent-but-not-committed-to size, use that.
-            let last_sent = role
-                .pending_configures()
-                .last()
-                .unwrap_or_else(|| role.last_acked.as_ref().unwrap());
-            let ToplevelConfigure {
-                state: last_sent,
-                serial: last_serial,
-            } = last_sent;
-
-            let mut guard = states.cached_state.get::<ToplevelCachedState>();
-            if let Some(current) = guard.current().last_acked.as_ref() {
-                if !current.serial.is_no_older_than(last_serial) {
-                    return Some((
-                        last_sent.size.unwrap_or_default(),
-                        last_sent.states.contains(xdg_toplevel::State::Fullscreen),
-                    ));
-                }
+            let current_server = role.current_server_state();
+            if server_pending.size != current_server.size {
+                return Some((
+                    server_pending.size.unwrap_or_default(),
+                    server_pending
+                        .states
+                        .contains(xdg_toplevel::State::Fullscreen),
+                    server_pending
+                        .states
+                        .contains(xdg_toplevel::State::Maximized),
+                ));
             }
 
             None
+        })
+        .or_else(|| {
+            with_toplevel_last_uncommitted_configure(self.toplevel(), |configure| {
+                // If we have a sent-but-not-committed-to size, use that.
+                let ToplevelConfigure { state, .. } = configure?;
+
+                Some((
+                    state.size.unwrap_or_default(),
+                    state.states.contains(xdg_toplevel::State::Fullscreen),
+                    state.states.contains(xdg_toplevel::State::Maximized),
+                ))
+            })
         });
 
-        if let Some((mut size, fullscreen)) = pending {
-            // If the pending change is fullscreen, we can't use that size.
-            if fullscreen && !self.is_pending_windowed_fullscreen {
+        if let Some((mut size, fullscreen, maximized)) = pending {
+            // If the pending change is maximized or fullscreen, we can't use that size.
+            //
+            // Pending windowed fullscreen is good (means not real fullscreen), unless it's also
+            // pending maximized (means maximized windowed fullscreen, so maximized size, bad).
+            if maximized
+                || (fullscreen
+                    && (!self.is_pending_windowed_fullscreen || self.is_pending_maximized))
+            {
                 return None;
             }
 
@@ -1155,6 +1308,10 @@ impl LayoutElement for Mapped {
             // No pending size, return the current size if it's non-fullscreen.
             current_size
         }
+    }
+
+    fn is_windowed_fullscreen(&self) -> bool {
+        self.is_windowed_fullscreen
     }
 
     fn is_pending_windowed_fullscreen(&self) -> bool {
@@ -1175,8 +1332,13 @@ impl LayoutElement for Mapped {
         self.toplevel().with_pending_state(|state| {
             if value {
                 state.states.set(xdg_toplevel::State::Fullscreen);
+                state.states.unset(xdg_toplevel::State::Maximized);
             } else {
                 state.states.unset(xdg_toplevel::State::Fullscreen);
+
+                if self.is_pending_maximized {
+                    state.states.set(xdg_toplevel::State::Maximized);
+                }
             }
         });
 
@@ -1255,5 +1417,15 @@ impl LayoutElement for Mapped {
                     true
                 }
             });
+
+        // "Commit" our "acked" pending maximized state.
+        self.uncommitted_maximized.retain_mut(|(serial, value)| {
+            if commit_serial.is_no_older_than(serial) {
+                self.is_maximized = *value;
+                false
+            } else {
+                true
+            }
+        });
     }
 }

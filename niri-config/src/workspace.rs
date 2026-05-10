@@ -1,15 +1,49 @@
 use knuffel::errors::DecodeError;
 
-#[derive(knuffel::Decode, Debug, Clone, PartialEq, Eq)]
+use crate::LayoutPart;
+
+#[derive(knuffel::Decode, Debug, Clone, PartialEq)]
 pub struct Workspace {
     #[knuffel(argument)]
     pub name: WorkspaceName,
     #[knuffel(child, unwrap(argument))]
     pub open_on_output: Option<String>,
+    #[knuffel(child)]
+    pub layout: Option<WorkspaceLayoutPart>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorkspaceName(pub String);
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct WorkspaceLayoutPart(pub LayoutPart);
+
+impl<S: knuffel::traits::ErrorSpan> knuffel::Decode<S> for WorkspaceLayoutPart {
+    fn decode_node(
+        node: &knuffel::ast::SpannedNode<S>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) -> Result<Self, DecodeError<S>> {
+        for child in node.children() {
+            let name = &**child.node_name;
+
+            // Check for disallowed properties.
+            //
+            // - empty-workspace-above-first is a monitor-level concept.
+            // - insert-hint customization could make sense for workspaces, however currently it is
+            //   also handled at the monitor level (since insert hints in-between workspaces are a
+            //   monitor-level concept), so for now this config option would do nothing.
+            if matches!(name, "empty-workspace-above-first" | "insert-hint") {
+                ctx.emit_error(DecodeError::unexpected(
+                    child,
+                    "node",
+                    format!("node `{name}` is not allowed inside `workspace.layout`"),
+                ));
+            }
+        }
+
+        LayoutPart::decode_node(node, ctx).map(Self)
+    }
+}
 
 impl<S: knuffel::traits::ErrorSpan> knuffel::DecodeScalar<S> for WorkspaceName {
     fn type_check(

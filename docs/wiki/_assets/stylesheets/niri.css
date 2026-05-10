@@ -59,3 +59,8 @@
     padding: .5em 1.25em;
     vertical-align: middle;
 }
+
+/* Improve keyboard shortcuts for screen readers: this way they won't break on them. */
+.md-typeset kbd {
+    display: inline;
+}

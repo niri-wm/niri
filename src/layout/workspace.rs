@@ -2,10 +2,12 @@ use std::cmp::max;
 use std::rc::Rc;
 use std::time::Duration;
 
+use niri_config::utils::MergeWith as _;
 use niri_config::{
     CenterFocusedColumn, CornerRadius, OutputName, PresetSize, Workspace as WorkspaceConfig,
 };
 use niri_ipc::{ColumnDisplay, PositionChange, SizeChange, WindowLayout};
+use smithay::backend::renderer::element::Kind;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::desktop::{layer_map_for_output, Window};
 use smithay::output::Output;
@@ -29,7 +31,9 @@ use crate::animation::Clock;
 use crate::niri_render_elements;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::shadow::ShadowRenderElement;
-use crate::render_helpers::RenderTarget;
+use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
+use crate::render_helpers::xray::{Xray, XrayPos};
+use crate::render_helpers::RenderCtx;
 use crate::utils::id::IdCounter;
 use crate::utils::transaction::{Transaction, TransactionBlocker};
 use crate::utils::{
@@ -87,6 +91,9 @@ pub struct Workspace<W: LayoutElement> {
     /// This workspace's shadow in the overview.
     shadow: Shadow,
 
+    /// This workspace's background.
+    background_buffer: SolidColorBuffer,
+
     /// Clock for driving animations.
     pub(super) clock: Clock,
 
@@ -98,6 +105,9 @@ pub struct Workspace<W: LayoutElement> {
 
     /// Optional name of this workspace.
     pub(super) name: Option<String>,
+
+    /// Layout config overrides for this workspace.
+    layout_config: Option<niri_config::LayoutPart>,
 
     /// Unique ID of this workspace.
     id: WorkspaceId,
@@ -202,7 +212,7 @@ impl<W: LayoutElement> Workspace<W> {
 
     pub fn new_with_config(
         output: Output,
-        config: Option<WorkspaceConfig>,
+        mut config: Option<WorkspaceConfig>,
         clock: Clock,
         base_options: Rc<Options>,
     ) -> Self {
@@ -212,9 +222,14 @@ impl<W: LayoutElement> Workspace<W> {
             .map(OutputId)
             .unwrap_or(OutputId::new(&output));
 
+        let layout_config = config.as_mut().and_then(|c| c.layout.take().map(|x| x.0));
+
         let scale = output.current_scale();
-        let options =
-            Rc::new(Options::clone(&base_options).adjusted_for_scale(scale.fractional_scale()));
+        let options = Rc::new(
+            Options::clone(&base_options)
+                .with_merged_layout(layout_config.as_ref())
+                .adjusted_for_scale(scale.fractional_scale()),
+        );
 
         let view_size = output_size(&output);
         let working_area = compute_working_area(&output);
@@ -248,17 +263,19 @@ impl<W: LayoutElement> Workspace<W> {
             view_size,
             working_area,
             shadow: Shadow::new(shadow_config),
+            background_buffer: SolidColorBuffer::new(view_size, options.layout.background_color),
             output: Some(output),
             clock,
             base_options,
             options,
             name: config.map(|c| c.name.0),
+            layout_config,
             id: WorkspaceId::next(),
         }
     }
 
     pub fn new_with_config_no_outputs(
-        config: Option<WorkspaceConfig>,
+        mut config: Option<WorkspaceConfig>,
         clock: Clock,
         base_options: Rc<Options>,
     ) -> Self {
@@ -269,9 +286,14 @@ impl<W: LayoutElement> Workspace<W> {
                 .unwrap_or_default(),
         );
 
+        let layout_config = config.as_mut().and_then(|c| c.layout.take().map(|x| x.0));
+
         let scale = smithay::output::Scale::Integer(1);
-        let options =
-            Rc::new(Options::clone(&base_options).adjusted_for_scale(scale.fractional_scale()));
+        let options = Rc::new(
+            Options::clone(&base_options)
+                .with_merged_layout(layout_config.as_ref())
+                .adjusted_for_scale(scale.fractional_scale()),
+        );
 
         let view_size = Size::from((1280., 720.));
         let working_area = Rectangle::from_size(Size::from((1280., 720.)));
@@ -306,10 +328,12 @@ impl<W: LayoutElement> Workspace<W> {
             view_size,
             working_area,
             shadow: Shadow::new(shadow_config),
+            background_buffer: SolidColorBuffer::new(view_size, options.layout.background_color),
             clock,
             base_options,
             options,
             name: config.map(|c| c.name.0),
+            layout_config,
             id: WorkspaceId::next(),
         }
     }
@@ -370,7 +394,11 @@ impl<W: LayoutElement> Workspace<W> {
 
     pub fn update_config(&mut self, base_options: Rc<Options>) {
         let scale = self.scale.fractional_scale();
-        let options = Rc::new(Options::clone(&base_options).adjusted_for_scale(scale));
+        let options = Rc::new(
+            Options::clone(&base_options)
+                .with_merged_layout(self.layout_config.as_ref())
+                .adjusted_for_scale(scale),
+        );
 
         self.scrolling.update_config(
             self.view_size,
@@ -390,8 +418,20 @@ impl<W: LayoutElement> Workspace<W> {
             compute_workspace_shadow_config(options.overview.workspace_shadow, self.view_size);
         self.shadow.update_config(shadow_config);
 
+        self.background_buffer
+            .set_color(options.layout.background_color);
+
         self.base_options = base_options;
         self.options = options;
+    }
+
+    pub fn update_layout_config(&mut self, layout_config: Option<niri_config::LayoutPart>) {
+        if self.layout_config == layout_config {
+            return;
+        }
+
+        self.layout_config = layout_config;
+        self.update_config(self.base_options.clone());
     }
 
     pub fn update_shaders(&mut self) {
@@ -535,6 +575,8 @@ impl<W: LayoutElement> Workspace<W> {
             self.shadow.update_config(shadow_config);
         }
 
+        self.background_buffer.resize(size);
+
         if scale_transform_changed {
             for window in self.windows() {
                 window.set_preferred_scale_transform(self.scale, self.transform);
@@ -566,16 +608,16 @@ impl<W: LayoutElement> Workspace<W> {
         is_floating: bool,
     ) {
         self.enter_output_for_window(tile.window());
-        tile.unfullscreen_to_floating = is_floating;
+        tile.restore_to_floating = is_floating;
 
         match target {
             WorkspaceAddWindowTarget::Auto => {
                 // Don't steal focus from an active fullscreen window.
                 let activate = activate.map_smart(|| !self.is_active_pending_fullscreen());
 
-                // If the tile is pending fullscreen, open it in the scrolling layout where it can
-                // go fullscreen.
-                if is_floating && !tile.window().is_pending_fullscreen() {
+                // If the tile is pending maximized or fullscreen, open it in the scrolling layout
+                // where it can do that.
+                if is_floating && tile.window().pending_sizing_mode().is_normal() {
                     self.floating.add_tile(tile, activate);
 
                     if activate || self.scrolling.is_empty() {
@@ -604,7 +646,7 @@ impl<W: LayoutElement> Workspace<W> {
 
                 let floating_has_window = self.floating.has_window(next_to);
 
-                if is_floating && !tile.window().is_pending_fullscreen() {
+                if is_floating && tile.window().pending_sizing_mode().is_normal() {
                     if floating_has_window {
                         self.floating.add_tile_above(next_to, tile, activate);
                     } else {
@@ -754,7 +796,7 @@ impl<W: LayoutElement> Workspace<W> {
             Some(Some(width)) => Some(width),
             Some(None) => None,
             None if is_floating => None,
-            None => self.options.default_column_width,
+            None => self.options.layout.default_column_width,
         }
     }
 
@@ -824,6 +866,8 @@ impl<W: LayoutElement> Workspace<W> {
         toplevel.with_pending_state(|state| {
             if state.states.contains(xdg_toplevel::State::Fullscreen) {
                 state.size = Some(self.view_size.to_i32_round());
+            } else if state.states.contains(xdg_toplevel::State::Maximized) {
+                state.size = Some(self.working_area.size.to_i32_round());
             } else {
                 let size =
                     self.new_window_size(width, height, is_floating, rules, (min_size, max_size));
@@ -836,6 +880,29 @@ impl<W: LayoutElement> Workspace<W> {
                 state.bounds = Some(self.scrolling.new_window_toplevel_bounds(rules));
             }
         });
+    }
+
+    pub(super) fn resolve_scrolling_width(
+        &self,
+        window: &W,
+        width: Option<PresetSize>,
+    ) -> ColumnWidth {
+        let width = width.unwrap_or_else(|| PresetSize::Fixed(window.size().w));
+        match width {
+            PresetSize::Fixed(fixed) => {
+                let mut fixed = f64::from(fixed);
+
+                // Add border width since ColumnWidth includes borders.
+                let rules = window.rules();
+                let border = self.options.layout.border.merged_with(&rules.border);
+                if !border.off {
+                    fixed += border.width * 2.;
+                }
+
+                ColumnWidth::Fixed(fixed)
+            }
+            PresetSize::Proportion(prop) => ColumnWidth::Proportion(prop),
+        }
     }
 
     pub fn focus_left(&mut self) -> bool {
@@ -1189,10 +1256,10 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     pub fn set_fullscreen(&mut self, window: &W::Id, is_fullscreen: bool) {
-        let mut unfullscreen_to_floating = false;
+        let mut restore_to_floating = false;
         if self.floating.has_window(window) {
             if is_fullscreen {
-                unfullscreen_to_floating = true;
+                restore_to_floating = true;
                 self.toggle_window_floating(Some(window));
             } else {
                 // Floating windows are never fullscreen, so this is an unfullscreen request for an
@@ -1203,30 +1270,44 @@ impl<W: LayoutElement> Workspace<W> {
             // The window is in the scrolling layout and we're requesting an unfullscreen. If it is
             // indeed fullscreen (i.e. this isn't a duplicate unfullscreen request), then we may
             // need to unfullscreen into floating.
-            let tile = self
+            let col = self
                 .scrolling
-                .tiles()
-                .find(|tile| tile.window().id() == window)
+                .columns()
+                .find(|col| col.contains(window))
                 .unwrap();
-            if tile.window().is_pending_fullscreen() && tile.unfullscreen_to_floating {
-                // Unfullscreen and float in one call so it has a chance to notice and request a
-                // (0, 0) size, rather than the scrolling column size.
-                self.toggle_window_floating(Some(window));
-                return;
+
+            // When going from fullscreen to maximized, don't consider restore_to_floating yet.
+            if col.is_pending_fullscreen() && !col.is_pending_maximized() {
+                let (tile, _) = col
+                    .tiles()
+                    .find(|(tile, _)| tile.window().id() == window)
+                    .unwrap();
+                if tile.restore_to_floating {
+                    // Unfullscreen and float in one call so it has a chance to notice and request a
+                    // (0, 0) size, rather than the scrolling column size.
+                    self.toggle_window_floating(Some(window));
+                    return;
+                }
             }
         }
 
-        let changed = self.scrolling.set_fullscreen(window, is_fullscreen);
+        let tile = self
+            .scrolling
+            .tiles()
+            .find(|tile| tile.window().id() == window)
+            .unwrap();
+        let was_normal = tile.window().pending_sizing_mode().is_normal();
 
-        // When going to fullscreen, remember if we should unfullscreen to floating.
-        if changed && is_fullscreen {
-            let tile = self
-                .scrolling
-                .tiles_mut()
-                .find(|tile| tile.window().id() == window)
-                .unwrap();
+        self.scrolling.set_fullscreen(window, is_fullscreen);
 
-            tile.unfullscreen_to_floating = unfullscreen_to_floating;
+        // When going from normal to fullscreen, remember if we should unfullscreen to floating.
+        let tile = self
+            .scrolling
+            .tiles_mut()
+            .find(|tile| tile.window().id() == window)
+            .unwrap();
+        if was_normal && !tile.window().pending_sizing_mode().is_normal() {
+            tile.restore_to_floating = restore_to_floating;
         }
     }
 
@@ -1235,13 +1316,78 @@ impl<W: LayoutElement> Workspace<W> {
             .tiles()
             .find(|tile| tile.window().id() == window)
             .unwrap();
-        let current = tile.window().is_pending_fullscreen();
+        let current = tile.window().pending_sizing_mode().is_fullscreen();
         self.set_fullscreen(window, !current);
+    }
+
+    pub fn set_maximized(&mut self, window: &W::Id, maximize: bool) {
+        let mut restore_to_floating = false;
+        if self.floating.has_window(window) {
+            if maximize {
+                restore_to_floating = true;
+                self.toggle_window_floating(Some(window));
+            } else {
+                // Floating windows are never maximized, so this is an unmaximize request for an
+                // already unmaximized window.
+                return;
+            }
+        } else if !maximize {
+            // The window is in the scrolling layout and we're requesting to unmaximize. If it is
+            // indeed maximized (i.e. this isn't a duplicate unmaximize request), then we may
+            // need to unmaximize into floating.
+            let tile = self
+                .scrolling
+                .tiles()
+                .find(|tile| tile.window().id() == window)
+                .unwrap();
+            // The tile cannot unmaximize into fullscreen (pending_sizing_mode() will be fullscreen
+            // in that case and not maximized), so this check works.
+            if tile.window().pending_sizing_mode().is_maximized() && tile.restore_to_floating {
+                // Unmaximize and float in one call so it has a chance to notice and request a
+                // (0, 0) size, rather than the scrolling column size.
+                self.toggle_window_floating(Some(window));
+                return;
+            }
+        }
+
+        let tile = self
+            .scrolling
+            .tiles()
+            .find(|tile| tile.window().id() == window)
+            .unwrap();
+        let was_normal = tile.window().pending_sizing_mode().is_normal();
+
+        self.scrolling.set_maximized(window, maximize);
+
+        // When going from normal to maximized, remember if we should unmaximize to floating.
+        let tile = self
+            .scrolling
+            .tiles_mut()
+            .find(|tile| tile.window().id() == window)
+            .unwrap();
+        if was_normal && !tile.window().pending_sizing_mode().is_normal() {
+            tile.restore_to_floating = restore_to_floating;
+        }
+    }
+
+    pub fn toggle_maximized(&mut self, window: &W::Id) {
+        let mut current = false;
+
+        // We have to check the column property in case the window is in the scrolling layout and
+        // both maximized and fullscreen. In this case, only the column knows whether it's
+        // maximized.
+        //
+        // In the floating layout, windows cannot be maximized.
+        if let Some(col) = self.scrolling.columns().find(|col| col.contains(window)) {
+            current = col.is_pending_maximized();
+        }
+
+        self.set_maximized(window, !current);
     }
 
     pub fn toggle_window_floating(&mut self, id: Option<&W::Id>) {
         let active_id = self.active_window().map(|win| win.id().clone());
-        let target_is_active = id.map_or(true, |id| Some(id) == active_id.as_ref());
+        let target_is_active = id.is_none_or(|id| Some(id) == active_id.as_ref());
         let Some(id) = id.cloned().or(active_id) else {
             return;
         };
@@ -1272,11 +1418,12 @@ impl<W: LayoutElement> Workspace<W> {
             // Come up with a default floating position close to the tile position.
             let stored_or_default = self.floating.stored_or_default_tile_pos(&removed.tile);
             if stored_or_default.is_none() {
-                let offset = if self.options.center_focused_column == CenterFocusedColumn::Always {
-                    Point::from((0., 0.))
-                } else {
-                    Point::from((50., 50.))
-                };
+                let offset =
+                    if self.options.layout.center_focused_column == CenterFocusedColumn::Always {
+                        Point::from((0., 0.))
+                    } else {
+                        Point::from((50., 50.))
+                    };
                 let pos = render_pos + offset;
                 let size = removed.tile.tile_size();
                 let pos = self.floating.clamp_within_working_area(pos, size);
@@ -1361,14 +1508,18 @@ impl<W: LayoutElement> Workspace<W> {
                 return;
             };
 
-            let working_area_loc = self.floating.working_area().loc;
             let pos = self.floating.stored_or_default_tile_pos(tile);
 
             // If there's no stored floating position, we can only set both components at once, not
             // adjust.
             let pos = pos.or_else(|| {
-                (matches!(x, PositionChange::SetFixed(_))
-                    && matches!(y, PositionChange::SetFixed(_)))
+                (matches!(
+                    x,
+                    PositionChange::SetFixed(_) | PositionChange::SetProportion(_)
+                ) && matches!(
+                    y,
+                    PositionChange::SetFixed(_) | PositionChange::SetProportion(_)
+                ))
                 .then_some(Point::default())
             });
 
@@ -1376,13 +1527,38 @@ impl<W: LayoutElement> Workspace<W> {
                 return;
             };
 
+            let working_area = self.floating.working_area();
+            let available_width = working_area.size.w;
+            let available_height = working_area.size.h;
+            let working_area_loc = working_area.loc;
+
+            const MAX_F: f64 = 10000.;
+
             match x {
                 PositionChange::SetFixed(x) => pos.x = x + working_area_loc.x,
+                PositionChange::SetProportion(prop) => {
+                    let prop = (prop / 100.).clamp(0., MAX_F);
+                    pos.x = available_width * prop + working_area_loc.x;
+                }
                 PositionChange::AdjustFixed(x) => pos.x += x,
+                PositionChange::AdjustProportion(prop) => {
+                    let current_prop = (pos.x - working_area_loc.x) / available_width.max(1.);
+                    let prop = (current_prop + prop / 100.).clamp(0., MAX_F);
+                    pos.x = available_width * prop + working_area_loc.x;
+                }
             }
             match y {
                 PositionChange::SetFixed(y) => pos.y = y + working_area_loc.y,
+                PositionChange::SetProportion(prop) => {
+                    let prop = (prop / 100.).clamp(0., MAX_F);
+                    pos.y = available_height * prop + working_area_loc.y;
+                }
                 PositionChange::AdjustFixed(y) => pos.y += y,
+                PositionChange::AdjustProportion(prop) => {
+                    let current_prop = (pos.y - working_area_loc.y) / available_height.max(1.);
+                    let prop = (current_prop + prop / 100.).clamp(0., MAX_F);
+                    pos.y = available_height * prop + working_area_loc.y;
+                }
             }
 
             let pos = self.floating.logical_to_size_frac(pos);
@@ -1433,11 +1609,11 @@ impl<W: LayoutElement> Workspace<W> {
         floating.chain(scrolling)
     }
 
-    pub fn active_tile_visual_rectangle(&self) -> Option<Rectangle<f64, Logical>> {
+    pub fn active_window_visual_rectangle(&self) -> Option<Rectangle<f64, Logical>> {
         if self.floating_is_active.get() {
-            self.floating.active_tile_visual_rectangle()
+            self.floating.active_window_visual_rectangle()
         } else {
-            self.scrolling.active_tile_visual_rectangle()
+            self.scrolling.active_window_visual_rectangle()
         }
     }
 
@@ -1449,39 +1625,54 @@ impl<W: LayoutElement> Workspace<W> {
         }
     }
 
-    pub fn render_elements<R: NiriRenderer>(
+    pub fn render_scrolling<R: NiriRenderer>(
         &self,
-        renderer: &mut R,
-        target: RenderTarget,
+        ctx: RenderCtx<R>,
+        xray_pos: XrayPos,
         focus_ring: bool,
-    ) -> (
-        impl Iterator<Item = WorkspaceRenderElement<R>>,
-        impl Iterator<Item = WorkspaceRenderElement<R>>,
+        push: &mut dyn FnMut(WorkspaceRenderElement<R>),
     ) {
         let scrolling_focus_ring = focus_ring && !self.floating_is_active();
-        let scrolling = self
-            .scrolling
-            .render_elements(renderer, target, scrolling_focus_ring);
-        let scrolling = scrolling.into_iter().map(WorkspaceRenderElement::from);
+        self.scrolling
+            .render(ctx, xray_pos, scrolling_focus_ring, &mut |elem| {
+                push(elem.into())
+            });
+    }
 
+    pub fn render_floating<R: NiriRenderer>(
+        &self,
+        ctx: RenderCtx<R>,
+        xray_pos: XrayPos,
+        focus_ring: bool,
+        push: &mut dyn FnMut(WorkspaceRenderElement<R>),
+    ) {
+        if !self.is_floating_visible() {
+            return;
+        }
+
+        let view_rect = Rectangle::from_size(self.view_size);
         let floating_focus_ring = focus_ring && self.floating_is_active();
-        let floating = self.is_floating_visible().then(|| {
-            let view_rect = Rectangle::from_size(self.view_size);
-            let floating =
-                self.floating
-                    .render_elements(renderer, view_rect, target, floating_focus_ring);
-            floating.into_iter().map(WorkspaceRenderElement::from)
-        });
-        let floating = floating.into_iter().flatten();
-
-        (floating, scrolling)
+        self.floating
+            .render(ctx, xray_pos, view_rect, floating_focus_ring, &mut |elem| {
+                push(elem.into())
+            });
     }
 
     pub fn render_shadow<R: NiriRenderer>(
         &self,
         renderer: &mut R,
-    ) -> impl Iterator<Item = ShadowRenderElement> + '_ {
-        self.shadow.render(renderer, Point::from((0., 0.)))
+        push: &mut dyn FnMut(ShadowRenderElement),
+    ) {
+        self.shadow.render(renderer, Point::from((0., 0.)), push);
+    }
+
+    pub fn render_background(&self) -> SolidColorRenderElement {
+        SolidColorRenderElement::from_buffer(
+            &self.background_buffer,
+            Point::new(0., 0.),
+            1.,
+            Kind::Unspecified,
+        )
     }
 
     pub fn render_above_top_layer(&self) -> bool {
@@ -1496,14 +1687,27 @@ impl<W: LayoutElement> Workspace<W> {
         ) || !self.render_above_top_layer()
     }
 
-    pub fn store_unmap_snapshot_if_empty(&mut self, renderer: &mut GlesRenderer, window: &W::Id) {
+    pub fn store_unmap_snapshot_if_empty(
+        &mut self,
+        renderer: &mut GlesRenderer,
+        xray: Option<&mut Xray>,
+        xray_has_blocked_out_layers: bool,
+        xray_pos: XrayPos,
+        window: &W::Id,
+    ) {
         let view_size = self.view_size();
         for (tile, tile_pos) in self.tiles_with_render_positions_mut(false) {
             if tile.window().id() == window {
                 let view_pos = Point::from((-tile_pos.x, -tile_pos.y));
                 let view_rect = Rectangle::new(view_pos, view_size);
                 tile.update_render_elements(false, view_rect);
-                tile.store_unmap_snapshot_if_empty(renderer);
+                let xray_pos = xray_pos.offset(tile_pos);
+                tile.store_unmap_snapshot_if_empty(
+                    renderer,
+                    xray,
+                    xray_has_blocked_out_layers,
+                    xray_pos,
+                );
                 return;
             }
         }
@@ -1688,7 +1892,7 @@ impl<W: LayoutElement> Workspace<W> {
 
     pub fn dnd_scroll_gesture_scroll(&mut self, pos: Point<f64, Logical>, speed: f64) -> bool {
         let config = &self.options.gestures.dnd_edge_view_scroll;
-        let trigger_width = config.trigger_width.0;
+        let trigger_width = config.trigger_width;
 
         // This working area intentionally does not include extra struts from Options.
         let x = pos.x - self.working_area.loc.x;
@@ -1769,6 +1973,10 @@ impl<W: LayoutElement> Workspace<W> {
         self.working_area
     }
 
+    pub fn layout_config(&self) -> Option<&niri_config::LayoutPart> {
+        self.layout_config.as_ref()
+    }
+
     #[cfg(test)]
     pub fn scrolling(&self) -> &ScrollingSpace<W> {
         &self.scrolling
@@ -1787,7 +1995,9 @@ impl<W: LayoutElement> Workspace<W> {
         assert!(scale > 0.);
         assert!(scale.is_finite());
 
-        let options = Options::clone(&self.base_options).adjusted_for_scale(scale);
+        let options = Options::clone(&self.base_options)
+            .with_merged_layout(self.layout_config.as_ref())
+            .adjusted_for_scale(scale);
         assert_eq!(
             &*self.options, &options,
             "options must be base options adjusted for scale"
@@ -1795,6 +2005,12 @@ impl<W: LayoutElement> Workspace<W> {
 
         assert!(self.view_size.w > 0.);
         assert!(self.view_size.h > 0.);
+
+        assert_eq!(self.background_buffer.size(), self.view_size);
+        assert_eq!(
+            self.background_buffer.color().components(),
+            options.layout.background_color.to_array_unpremul(),
+        );
 
         assert_eq!(self.view_size, self.scrolling.view_size());
         assert_eq!(self.working_area, self.scrolling.parent_area());
@@ -1859,8 +2075,8 @@ fn compute_workspace_shadow_config(
     let norm = view_size.h / 1080.;
 
     let mut config = niri_config::Shadow::from(config);
-    config.softness.0 *= norm;
-    config.spread.0 *= norm;
+    config.softness *= norm;
+    config.spread *= norm;
     config.offset.x.0 *= norm;
     config.offset.y.0 *= norm;
 

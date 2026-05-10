@@ -1,42 +1,31 @@
 use knuffel::errors::DecodeError;
 use knuffel::Decode as _;
 
-use crate::utils::{expect_only_children, parse_arg_node};
+use crate::utils::{expect_only_children, parse_arg_node, MergeWith};
 use crate::FloatOrInt;
 
-#[derive(knuffel::Decode, Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Animations {
-    #[knuffel(child)]
     pub off: bool,
-    #[knuffel(child, unwrap(argument), default = FloatOrInt(1.))]
-    pub slowdown: FloatOrInt<0, { i32::MAX }>,
-    #[knuffel(child, default)]
+    pub slowdown: f64,
     pub workspace_switch: WorkspaceSwitchAnim,
-    #[knuffel(child, default)]
     pub window_open: WindowOpenAnim,
-    #[knuffel(child, default)]
     pub window_close: WindowCloseAnim,
-    #[knuffel(child, default)]
     pub horizontal_view_movement: HorizontalViewMovementAnim,
-    #[knuffel(child, default)]
     pub window_movement: WindowMovementAnim,
-    #[knuffel(child, default)]
     pub window_resize: WindowResizeAnim,
-    #[knuffel(child, default)]
     pub config_notification_open_close: ConfigNotificationOpenCloseAnim,
-    #[knuffel(child, default)]
     pub exit_confirmation_open_close: ExitConfirmationOpenCloseAnim,
-    #[knuffel(child, default)]
     pub screenshot_ui_open: ScreenshotUiOpenAnim,
-    #[knuffel(child, default)]
     pub overview_open_close: OverviewOpenCloseAnim,
+    pub recent_windows_close: RecentWindowsCloseAnim,
 }
 
 impl Default for Animations {
     fn default() -> Self {
         Self {
             off: false,
-            slowdown: FloatOrInt(1.),
+            slowdown: 1.,
             workspace_switch: Default::default(),
             horizontal_view_movement: Default::default(),
             window_movement: Default::default(),
@@ -47,7 +36,68 @@ impl Default for Animations {
             exit_confirmation_open_close: Default::default(),
             screenshot_ui_open: Default::default(),
             overview_open_close: Default::default(),
+            recent_windows_close: Default::default(),
         }
+    }
+}
+
+#[derive(knuffel::Decode, Debug, Clone, PartialEq)]
+pub struct AnimationsPart {
+    #[knuffel(child)]
+    pub off: bool,
+    #[knuffel(child)]
+    pub on: bool,
+    #[knuffel(child, unwrap(argument))]
+    pub slowdown: Option<FloatOrInt<0, { i32::MAX }>>,
+    #[knuffel(child)]
+    pub workspace_switch: Option<WorkspaceSwitchAnim>,
+    #[knuffel(child)]
+    pub window_open: Option<WindowOpenAnim>,
+    #[knuffel(child)]
+    pub window_close: Option<WindowCloseAnim>,
+    #[knuffel(child)]
+    pub horizontal_view_movement: Option<HorizontalViewMovementAnim>,
+    #[knuffel(child)]
+    pub window_movement: Option<WindowMovementAnim>,
+    #[knuffel(child)]
+    pub window_resize: Option<WindowResizeAnim>,
+    #[knuffel(child)]
+    pub config_notification_open_close: Option<ConfigNotificationOpenCloseAnim>,
+    #[knuffel(child)]
+    pub exit_confirmation_open_close: Option<ExitConfirmationOpenCloseAnim>,
+    #[knuffel(child)]
+    pub screenshot_ui_open: Option<ScreenshotUiOpenAnim>,
+    #[knuffel(child)]
+    pub overview_open_close: Option<OverviewOpenCloseAnim>,
+    #[knuffel(child)]
+    pub recent_windows_close: Option<RecentWindowsCloseAnim>,
+}
+
+impl MergeWith<AnimationsPart> for Animations {
+    fn merge_with(&mut self, part: &AnimationsPart) {
+        self.off |= part.off;
+        if part.on {
+            self.off = false;
+        }
+
+        merge!((self, part), slowdown);
+
+        // Animation properties are fairly tied together, except maybe `off`. So let's just save
+        // ourselves the work and not merge within individual animations.
+        merge_clone!(
+            (self, part),
+            workspace_switch,
+            window_open,
+            window_close,
+            horizontal_view_movement,
+            window_movement,
+            window_resize,
+            config_notification_open_close,
+            exit_confirmation_open_close,
+            screenshot_ui_open,
+            overview_open_close,
+            recent_windows_close,
+        );
     }
 }
 
@@ -260,6 +310,22 @@ impl Default for OverviewOpenCloseAnim {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RecentWindowsCloseAnim(pub Animation);
+
+impl Default for RecentWindowsCloseAnim {
+    fn default() -> Self {
+        Self(Animation {
+            off: false,
+            kind: Kind::Spring(SpringParams {
+                damping_ratio: 1.,
+                stiffness: 800,
+                epsilon: 0.001,
+            }),
+        })
+    }
+}
+
 impl<S> knuffel::Decode<S> for WorkspaceSwitchAnim
 where
     S: knuffel::traits::ErrorSpan,
@@ -429,6 +495,21 @@ where
 }
 
 impl<S> knuffel::Decode<S> for OverviewOpenCloseAnim
+where
+    S: knuffel::traits::ErrorSpan,
+{
+    fn decode_node(
+        node: &knuffel::ast::SpannedNode<S>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) -> Result<Self, DecodeError<S>> {
+        let default = Self::default().0;
+        Ok(Self(Animation::decode_node(node, ctx, default, |_, _| {
+            Ok(false)
+        })?))
+    }
+}
+
+impl<S> knuffel::Decode<S> for RecentWindowsCloseAnim
 where
     S: knuffel::traits::ErrorSpan,
 {

@@ -4,63 +4,128 @@ use niri_ipc::{ColumnDisplay, SizeChange};
 use crate::appearance::{
     Border, FocusRing, InsertHint, Shadow, TabIndicator, DEFAULT_BACKGROUND_COLOR,
 };
-use crate::utils::expect_only_children;
-use crate::{Color, FloatOrInt};
+use crate::utils::{expect_only_children, Flag, MergeWith};
+use crate::{BorderRule, Color, FloatOrInt, InsertHintPart, ShadowRule, TabIndicatorPart};
 
-#[derive(knuffel::Decode, Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Layout {
-    #[knuffel(child, default)]
     pub focus_ring: FocusRing,
-    #[knuffel(child, default)]
     pub border: Border,
-    #[knuffel(child, default)]
     pub shadow: Shadow,
-    #[knuffel(child, default)]
     pub tab_indicator: TabIndicator,
-    #[knuffel(child, default)]
     pub insert_hint: InsertHint,
-    #[knuffel(child, unwrap(children), default)]
     pub preset_column_widths: Vec<PresetSize>,
-    #[knuffel(child)]
-    pub default_column_width: Option<DefaultPresetSize>,
-    #[knuffel(child, unwrap(children), default)]
+    pub default_column_width: Option<PresetSize>,
     pub preset_window_heights: Vec<PresetSize>,
-    #[knuffel(child, unwrap(argument), default)]
     pub center_focused_column: CenterFocusedColumn,
-    #[knuffel(child)]
     pub always_center_single_column: bool,
-    #[knuffel(child)]
     pub empty_workspace_above_first: bool,
-    #[knuffel(child, unwrap(argument, str), default = Self::default().default_column_display)]
     pub default_column_display: ColumnDisplay,
-    #[knuffel(child, unwrap(argument), default = Self::default().gaps)]
-    pub gaps: FloatOrInt<0, 65535>,
-    #[knuffel(child, default)]
+    pub gaps: f64,
     pub struts: Struts,
-    #[knuffel(child, default = DEFAULT_BACKGROUND_COLOR)]
     pub background_color: Color,
 }
 
 impl Default for Layout {
     fn default() -> Self {
         Self {
-            focus_ring: Default::default(),
-            border: Default::default(),
-            shadow: Default::default(),
-            tab_indicator: Default::default(),
-            insert_hint: Default::default(),
-            preset_column_widths: Default::default(),
-            default_column_width: Default::default(),
-            center_focused_column: Default::default(),
+            focus_ring: FocusRing::default(),
+            border: Border::default(),
+            shadow: Shadow::default(),
+            tab_indicator: TabIndicator::default(),
+            insert_hint: InsertHint::default(),
+            preset_column_widths: vec![
+                PresetSize::Proportion(1. / 3.),
+                PresetSize::Proportion(0.5),
+                PresetSize::Proportion(2. / 3.),
+            ],
+            default_column_width: Some(PresetSize::Proportion(0.5)),
+            center_focused_column: CenterFocusedColumn::Never,
             always_center_single_column: false,
             empty_workspace_above_first: false,
             default_column_display: ColumnDisplay::Normal,
-            gaps: FloatOrInt(16.),
-            struts: Default::default(),
-            preset_window_heights: Default::default(),
+            gaps: 16.,
+            struts: Struts::default(),
+            preset_window_heights: vec![
+                PresetSize::Proportion(1. / 3.),
+                PresetSize::Proportion(0.5),
+                PresetSize::Proportion(2. / 3.),
+            ],
             background_color: DEFAULT_BACKGROUND_COLOR,
         }
     }
+}
+
+impl MergeWith<LayoutPart> for Layout {
+    fn merge_with(&mut self, part: &LayoutPart) {
+        merge!(
+            (self, part),
+            focus_ring,
+            border,
+            shadow,
+            tab_indicator,
+            insert_hint,
+            always_center_single_column,
+            empty_workspace_above_first,
+            gaps,
+        );
+
+        merge_clone!(
+            (self, part),
+            preset_column_widths,
+            preset_window_heights,
+            center_focused_column,
+            default_column_display,
+            struts,
+            background_color,
+        );
+
+        if let Some(x) = part.default_column_width {
+            self.default_column_width = x.0;
+        }
+
+        if self.preset_column_widths.is_empty() {
+            self.preset_column_widths = Layout::default().preset_column_widths;
+        }
+
+        if self.preset_window_heights.is_empty() {
+            self.preset_window_heights = Layout::default().preset_window_heights;
+        }
+    }
+}
+
+#[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]
+pub struct LayoutPart {
+    #[knuffel(child)]
+    pub focus_ring: Option<BorderRule>,
+    #[knuffel(child)]
+    pub border: Option<BorderRule>,
+    #[knuffel(child)]
+    pub shadow: Option<ShadowRule>,
+    #[knuffel(child)]
+    pub tab_indicator: Option<TabIndicatorPart>,
+    #[knuffel(child)]
+    pub insert_hint: Option<InsertHintPart>,
+    #[knuffel(child, unwrap(children))]
+    pub preset_column_widths: Option<Vec<PresetSize>>,
+    #[knuffel(child)]
+    pub default_column_width: Option<DefaultPresetSize>,
+    #[knuffel(child, unwrap(children))]
+    pub preset_window_heights: Option<Vec<PresetSize>>,
+    #[knuffel(child, unwrap(argument))]
+    pub center_focused_column: Option<CenterFocusedColumn>,
+    #[knuffel(child)]
+    pub always_center_single_column: Option<Flag>,
+    #[knuffel(child)]
+    pub empty_workspace_above_first: Option<Flag>,
+    #[knuffel(child, unwrap(argument, str))]
+    pub default_column_display: Option<ColumnDisplay>,
+    #[knuffel(child, unwrap(argument))]
+    pub gaps: Option<FloatOrInt<0, 65535>>,
+    #[knuffel(child)]
+    pub struts: Option<Struts>,
+    #[knuffel(child)]
+    pub background_color: Option<Color>,
 }
 
 #[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]

@@ -29,6 +29,7 @@ layout {
 
     focus-ring {
         // off
+        on
         width 4
         active-color "#7fc8ff"
         inactive-color "#505050"
@@ -40,6 +41,7 @@ layout {
 
     border {
         off
+        // on
         width 4
         active-color "#ffc87f"
         inactive-color "#505050"
@@ -50,6 +52,7 @@ layout {
     }
 
     shadow {
+        off
         // on
         softness 30
         spread 5
@@ -61,6 +64,7 @@ layout {
 
     tab-indicator {
         // off
+        on
         hide-when-single-tab
         place-within-column
         gap 5
@@ -79,6 +83,7 @@ layout {
 
     insert-hint {
         // off
+        on
         color "#ffc87f80"
         // gradient from="#ffbb6680" to="#ffc88080" angle=45 relative-to="workspace-view"
     }
@@ -91,6 +96,8 @@ layout {
     }
 }
 ```
+
+<sup>Since: 25.11</sup> You can override these settings for specific [outputs](./Configuration:-Outputs.md#layout-config-overrides) and [named workspaces](./Configuration:-Named-Workspaces.md#layout-config-overrides).
 
 ### `gaps`
 
@@ -170,6 +177,7 @@ layout {
 ### `preset-column-widths`
 
 Set the widths that the `switch-preset-column-width` action (Mod+R) toggles between.
+<sup>Since: 25.08</sup> You can use the `switch-preset-column-width-back` action (Mod+Shift+R) to toggle in reverse.
 
 `proportion` sets the width as a fraction of the output width, taking gaps into account.
 For example, you can perfectly fit four windows sized `proportion 0.25` on an output, regardless of the gaps setting.
@@ -221,7 +229,8 @@ layout {
 
 <sup>Since: 0.1.9</sup>
 
-Set the heights that the `switch-preset-window-height` action (Mod+Shift+R) toggles between.
+Set the heights that the `switch-preset-window-height` action (Mod+Ctrl+Shift+R) toggles between.
+<sup>Since: 25.08</sup> You can use the `switch-preset-window-height-back` action (not bound by default) to toggle in reverse.
 
 `proportion` sets the height as a fraction of the output height, taking gaps into account.
 The default preset heights are <sup>1</sup>&frasl;<sub>3</sub>, <sup>1</sup>&frasl;<sub>2</sub> and <sup>2</sup>&frasl;<sub>3</sub> of the output.
@@ -454,6 +463,7 @@ When `gaps-between-tabs` is zero, only the first and the last tabs have rounded 
 They have the same semantics as the border and focus ring colors and gradients.
 
 Tab colors are picked in this order:
+
 1. Colors from the `tab-indicator` window rule, if set.
 1. Colors from the `tab-indicator` layout options, if set (you're here).
 1. If neither are set, niri picks the color matching the window border or focus ring, whichever one is active.
@@ -550,4 +560,4 @@ layout {
 }
 ```
 
-You can also set the color per-output [in the output config](./Configuration:-Outputs.md#background-color).
+You can also set the color per-output [in the output config](./Configuration:-Outputs.md#layout-config-overrides).

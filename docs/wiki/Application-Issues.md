@@ -2,14 +2,19 @@
 
 Electron-based applications can run directly on Wayland, but it's not the default.
 
-For Electron > 28, you can set an environment variable:
+For Electron ≥ 39, you can use the command-line flag if the app does not default to Wayland:
+```
+--ozone-platform=wayland
+```
+
+For Electron < 39, you can set an environment variable:
 ```kdl
 environment {
     ELECTRON_OZONE_PLATFORM_HINT "auto"
 }
 ```
 
-For previous versions, you need to pass command-line flags to the target application:
+For Electron ≤ 28, you need to pass command-line flags to the target application:
 ```
 --enable-features=UseOzonePlatform --ozone-platform-hint=auto
 ```
@@ -21,6 +26,12 @@ If the application has a [desktop entry](https://specifications.freedesktop.org/
 If you're having issues with some VSCode hotkeys, try starting `Xwayland` and setting the `DISPLAY=:0` environment variable for VSCode.
 That is, still running VSCode with the Wayland backend, but with `DISPLAY` set to a running Xwayland instance.
 Apparently, VSCode currently unconditionally queries the X server for a keymap.
+
+### JetBrains IDEs
+
+JetBrains IDEs can run directly on Wayland, but it's not the default.
+
+For JetBrainsRuntime > 17, you can set the flag `-Dawt.toolkit.name=WLToolkit` inside of `help -> edit custom vm options -> add`.
 
 ### WezTerm
 
@@ -51,6 +62,20 @@ To fix this, run them with the `_JAVA_AWT_WM_NONREPARENTING=1` environment varia
 
 For some reason, DMABUF screencasts are disabled in the Zen Browser, so screencasting doesn't work out of the box on niri.
 To fix it, open `about:config` and set `widget.dmabuf.force-enabled` to `true`.
+
+### GTK 4 dead keys / Compose
+
+GTK 4.20 [stopped](https://gitlab.gnome.org/GNOME/gtk/-/merge_requests/8556) handling dead keys and Compose on its own on Wayland.
+To make them work, either run an IME like IBus or Fcitx5, or set the `GTK_IM_MODULE=simple` environment variable.
+
+```kdl
+environment {
+    GTK_IM_MODULE "simple"
+}
+```
+
+Note that the niri environment config does not propagate to apps and shells started by systemd, for example to DankMaterialShell and its application launcher.
+You can set the variable in your login shell config (i.e. `~/.bash_profile`) instead, though keep in mind that then it will be set for all compositors, not just niri.
 
 ### Fullscreen games
 

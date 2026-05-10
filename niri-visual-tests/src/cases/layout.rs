@@ -2,9 +2,9 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use niri::animation::Clock;
-use niri::layout::{ActivateWindow, AddWindowTarget, LayoutElement as _, Options};
-use niri::render_helpers::RenderTarget;
-use niri_config::{Color, FloatOrInt, OutputName, PresetSize};
+use niri::layout::{ActivateWindow, AddWindowTarget, LayoutElement as _, Options, SizingMode};
+use niri::render_helpers::{RenderCtx, RenderTarget};
+use niri_config::{Color, OutputName, PresetSize};
 use smithay::backend::renderer::element::RenderElement;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::desktop::layer_map_for_output;
@@ -52,24 +52,27 @@ impl Layout {
         });
 
         let options = Options {
-            focus_ring: niri_config::FocusRing {
-                off: true,
+            layout: niri_config::Layout {
+                focus_ring: niri_config::FocusRing {
+                    off: true,
+                    ..Default::default()
+                },
+                border: niri_config::Border {
+                    off: false,
+                    width: 4.,
+                    active_color: Color::from_rgba8_unpremul(255, 163, 72, 255),
+                    inactive_color: Color::from_rgba8_unpremul(50, 50, 50, 255),
+                    urgent_color: Color::from_rgba8_unpremul(155, 0, 0, 255),
+                    active_gradient: None,
+                    inactive_gradient: None,
+                    urgent_gradient: None,
+                },
                 ..Default::default()
-            },
-            border: niri_config::Border {
-                off: false,
-                width: FloatOrInt(4.),
-                active_color: Color::from_rgba8_unpremul(255, 163, 72, 255),
-                inactive_color: Color::from_rgba8_unpremul(50, 50, 50, 255),
-                urgent_color: Color::from_rgba8_unpremul(155, 0, 0, 255),
-                active_gradient: None,
-                inactive_gradient: None,
-                urgent_gradient: None,
             },
             ..Default::default()
         };
         let mut layout = niri::layout::Layout::with_options(clock.clone(), options);
-        layout.add_output(output.clone());
+        layout.add_output(output.clone(), None);
 
         let start_time = clock.now_unadjusted();
 
@@ -165,7 +168,7 @@ impl Layout {
         let max_size = window.max_size();
         window.request_size(
             ws.new_window_size(width, None, false, window.rules(), (min_size, max_size)),
-            false,
+            SizingMode::Normal,
             false,
             None,
         );
@@ -194,7 +197,7 @@ impl Layout {
         let max_size = window.max_size();
         window.request_size(
             ws.new_window_size(width, None, false, window.rules(), (min_size, max_size)),
-            false,
+            SizingMode::Normal,
             false,
             None,
         );
@@ -265,12 +268,17 @@ impl TestCase for Layout {
         _size: Size<i32, Physical>,
     ) -> Vec<Box<dyn RenderElement<GlesRenderer>>> {
         self.layout.update_render_elements(Some(&self.output));
+
+        let mut rv = Vec::new();
+        let ctx = RenderCtx {
+            renderer,
+            target: RenderTarget::Output,
+            xray: None,
+        };
         self.layout
             .monitor_for_output(&self.output)
             .unwrap()
-            .render_elements(renderer, RenderTarget::Output, true)
-            .flat_map(|(_, iter)| iter)
-            .map(|elem| Box::new(elem) as _)
-            .collect()
+            .render_workspaces(ctx, true, &mut |elem| rv.push(Box::new(elem) as _));
+        rv
     }
 }

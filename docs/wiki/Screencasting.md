@@ -137,4 +137,17 @@ Here's an example showing a windowed-fullscreen Google Slides [presentation](htt
 
 ![Windowed Google Slides presentation, another window showing the presenter view, and another window showing Zoom UI casting the presentation.](https://github.com/user-attachments/assets/b2b49eea-f5a0-4c0a-b537-51fd1949a59d)
 
+### Screen mirroring
+
+For presentations it can be useful to mirror an output to another.
+Currently, niri doesn't have built-in output mirroring, but you can use a third-party tool [`wl-mirror`](https://github.com/Ferdi265/wl-mirror) that mirrors an output to a window.
+Note that the command below requires [`jq`](https://jqlang.org/download/) to be installed.
+```kdl
+binds {
+    Mod+P repeat=false { spawn-sh "wl-mirror $(niri msg --json focused-output | jq -r .name)"; }
+}
+```
+Focus the output you want to mirror, press <kbd>Mod</kbd><kbd>P</kbd> and move the `wl-mirror` window to the target output.
+Finally, fullscreen the `wl-mirror` window (by default, <kbd>Mod</kbd><kbd>Shift</kbd><kbd>F</kbd>).
+
 [OBS]: https://obsproject.com/

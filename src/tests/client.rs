@@ -357,6 +357,14 @@ impl Window {
         self.xdg_toplevel.unset_fullscreen();
     }
 
+    pub fn set_maximized(&self) {
+        self.xdg_toplevel.set_maximized();
+    }
+
+    pub fn unset_maximized(&self) {
+        self.xdg_toplevel.unset_maximized();
+    }
+
     pub fn set_parent(&self, parent: Option<&XdgToplevel>) {
         self.xdg_toplevel.set_parent(parent);
     }

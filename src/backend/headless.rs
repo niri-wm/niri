@@ -105,6 +105,7 @@ impl Headless {
                     is_preferred: true,
                 }],
                 current_mode: Some(0),
+                is_custom_mode: true,
                 vrr_supported: false,
                 vrr_enabled: false,
                 logical: Some(logical_output(&output)),

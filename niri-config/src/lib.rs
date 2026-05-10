@@ -1,23 +1,45 @@
+//! niri config parsing.
+//!
+//! The config can be constructed from multiple files (includes). To support this, many types are
+//! split into two. For example, `Layout` and `LayoutPart` where `Layout` is the final config and
+//! `LayoutPart` is one part parsed from one config file.
+//!
+//! The convention for `Default` impls is to set the initial values before the parsing occurs.
+//! Then, parsing will update the values with those parsed from the config.
+//!
+//! The `Default` values match those from `default-config.kdl` in almost all cases, with a notable
+//! exception of `binds {}` and some window rules.
+
 #[macro_use]
 extern crate tracing;
 
+use std::cell::{Cell, RefCell};
+use std::collections::HashSet;
 use std::ffi::OsStr;
 use std::fs::{self, File};
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
-use miette::{Context as _, IntoDiagnostic as _};
+use knuffel::errors::DecodeError;
+use knuffel::Decode as _;
+use miette::{miette, Context as _, IntoDiagnostic as _};
+
+#[macro_use]
+pub mod macros;
 
 pub mod animations;
 pub mod appearance;
 pub mod binds;
 pub mod debug;
+pub mod error;
 pub mod gestures;
 pub mod input;
 pub mod layer_rule;
 pub mod layout;
 pub mod misc;
 pub mod output;
+pub mod recent_windows;
 pub mod utils;
 pub mod window_rule;
 pub mod workspace;
@@ -26,68 +48,50 @@ pub use crate::animations::{Animation, Animations};
 pub use crate::appearance::*;
 pub use crate::binds::*;
 pub use crate::debug::Debug;
+pub use crate::error::{ConfigIncludeError, ConfigParseResult};
 pub use crate::gestures::Gestures;
 pub use crate::input::{Input, ModKey, ScrollMethod, TrackLayout, WarpMouseToFocusMode, Xkb};
 pub use crate::layer_rule::LayerRule;
 pub use crate::layout::*;
 pub use crate::misc::*;
 pub use crate::output::{Output, OutputName, Outputs, Position, Vrr};
+use crate::recent_windows::RecentWindowsPart;
+pub use crate::recent_windows::{MruDirection, MruFilter, MruPreviews, MruScope, RecentWindows};
 pub use crate::utils::FloatOrInt;
-pub use crate::window_rule::{FloatingPosition, RelativeTo, WindowRule};
-pub use crate::workspace::Workspace;
+use crate::utils::{Flag, MergeWith as _};
+pub use crate::window_rule::{
+    FloatingPosition, PopupsRule, RelativeTo, ResolvedPopupsRules, WindowRule,
+};
+pub use crate::workspace::{Workspace, WorkspaceLayoutPart};
 
-#[derive(knuffel::Decode, Debug, PartialEq)]
+const RECURSION_LIMIT: u8 = 10;
+
+#[derive(Debug, Default, PartialEq)]
 pub struct Config {
-    #[knuffel(child, default)]
     pub input: Input,
-    #[knuffel(children(name = "output"))]
     pub outputs: Outputs,
-    #[knuffel(children(name = "spawn-at-startup"))]
     pub spawn_at_startup: Vec<SpawnAtStartup>,
-    #[knuffel(children(name = "spawn-sh-at-startup"))]
     pub spawn_sh_at_startup: Vec<SpawnShAtStartup>,
-    #[knuffel(child, default)]
     pub layout: Layout,
-    #[knuffel(child, default)]
     pub prefer_no_csd: bool,
-    #[knuffel(child, default)]
     pub cursor: Cursor,
-    #[knuffel(
-        child,
-        unwrap(argument),
-        default = Some(String::from(
-            "~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png"
-        )))
-    ]
-    pub screenshot_path: Option<String>,
-    #[knuffel(child, default)]
+    pub screenshot_path: ScreenshotPath,
     pub clipboard: Clipboard,
-    #[knuffel(child, default)]
     pub hotkey_overlay: HotkeyOverlay,
-    #[knuffel(child, default)]
     pub config_notification: ConfigNotification,
-    #[knuffel(child, default)]
     pub animations: Animations,
-    #[knuffel(child, default)]
+    pub blur: Blur,
     pub gestures: Gestures,
-    #[knuffel(child, default)]
     pub overview: Overview,
-    #[knuffel(child, default)]
     pub environment: Environment,
-    #[knuffel(child, default)]
     pub xwayland_satellite: XwaylandSatellite,
-    #[knuffel(children(name = "window-rule"))]
     pub window_rules: Vec<WindowRule>,
-    #[knuffel(children(name = "layer-rule"))]
     pub layer_rules: Vec<LayerRule>,
-    #[knuffel(child, default)]
     pub binds: Binds,
-    #[knuffel(child, default)]
     pub switch_events: SwitchBinds,
-    #[knuffel(child, default)]
     pub debug: Debug,
-    #[knuffel(children(name = "workspace"))]
     pub workspaces: Vec<Workspace>,
+    pub recent_windows: RecentWindows,
 }
 
 #[derive(Debug, Clone)]
@@ -109,50 +113,440 @@ pub enum ConfigPath {
     },
 }
 
-impl Config {
-    pub fn load(path: &Path) -> miette::Result<Self> {
-        let contents = fs::read_to_string(path)
-            .into_diagnostic()
-            .with_context(|| format!("error reading {path:?}"))?;
+// Newtypes for putting information into the knuffel context.
+struct BasePath(PathBuf);
+struct RootBase(PathBuf);
+struct Recursion(u8);
+#[derive(Default)]
+struct Includes(Vec<PathBuf>);
+#[derive(Default)]
+struct IncludeErrors(Vec<knuffel::Error>);
+// Used for recursive include detection.
+//
+// We don't *need* it because we have a recursion limit, but it makes for nicer error messages.
+struct IncludeStack(HashSet<PathBuf>);
+struct SawMruBinds(Rc<Cell<bool>>);
 
-        let config = Self::parse(
-            path.file_name()
-                .and_then(OsStr::to_str)
-                .unwrap_or("config.kdl"),
-            &contents,
-        )
-        .context("error parsing")?;
-        debug!("loaded config from {path:?}");
-        Ok(config)
-    }
+// Rather than listing all fields and deriving knuffel::Decode, we implement
+// knuffel::DecodeChildren by hand, since we need custom logic for every field anyway: we want to
+// merge the values into the config from the context as we go to support the positionality of
+// includes. The reason we need this type at all is because knuffel's only entry point that allows
+// setting default values on a context is `parse_with_context()` that needs a type to parse.
+pub struct ConfigPart;
 
-    pub fn parse(filename: &str, text: &str) -> Result<Self, knuffel::Error> {
-        let _span = tracy_client::span!("Config::parse");
-        knuffel::parse(filename, text)
+impl<S> knuffel::DecodeChildren<S> for ConfigPart
+where
+    S: knuffel::traits::ErrorSpan,
+{
+    fn decode_children(
+        nodes: &[knuffel::ast::SpannedNode<S>],
+        ctx: &mut knuffel::decode::Context<S>,
+    ) -> Result<Self, DecodeError<S>> {
+        let _span = tracy_client::span!("decode config file");
+
+        let config = ctx.get::<Rc<RefCell<Config>>>().unwrap().clone();
+        let includes = ctx.get::<Rc<RefCell<Includes>>>().unwrap().clone();
+        let include_errors = ctx.get::<Rc<RefCell<IncludeErrors>>>().unwrap().clone();
+        let recursion = ctx.get::<Recursion>().unwrap().0;
+        let saw_mru_binds = ctx.get::<SawMruBinds>().unwrap().0.clone();
+
+        let mut seen = HashSet::new();
+
+        for node in nodes {
+            let name = &**node.node_name;
+
+            // Within one config file, splitting sections into multiple parts is not allowed to
+            // reduce confusion. The exceptions here aren't multipart; they all add new values.
+            if !matches!(
+                name,
+                "output"
+                    | "spawn-at-startup"
+                    | "spawn-sh-at-startup"
+                    | "window-rule"
+                    | "layer-rule"
+                    | "workspace"
+                    | "include"
+            ) && !seen.insert(name)
+            {
+                ctx.emit_error(DecodeError::unexpected(
+                    &node.node_name,
+                    "node",
+                    format!("duplicate node `{name}`, single node expected"),
+                ));
+                continue;
+            }
+
+            macro_rules! m_merge {
+                ($field:ident) => {{
+                    let part = knuffel::Decode::decode_node(node, ctx)?;
+                    config.borrow_mut().$field.merge_with(&part);
+                }};
+            }
+
+            macro_rules! m_push {
+                ($field:ident) => {{
+                    let part = knuffel::Decode::decode_node(node, ctx)?;
+                    config.borrow_mut().$field.push(part);
+                }};
+            }
+
+            match name {
+                "input" => m_merge!(input),
+                "cursor" => m_merge!(cursor),
+                "clipboard" => m_merge!(clipboard),
+                "hotkey-overlay" => m_merge!(hotkey_overlay),
+                "config-notification" => m_merge!(config_notification),
+                "animations" => m_merge!(animations),
+                "blur" => m_merge!(blur),
+                "gestures" => m_merge!(gestures),
+                "overview" => m_merge!(overview),
+                "xwayland-satellite" => m_merge!(xwayland_satellite),
+                "switch-events" => m_merge!(switch_events),
+                "debug" => m_merge!(debug),
+
+                // Multipart sections.
+                "output" => {
+                    let part = Output::decode_node(node, ctx)?;
+                    config.borrow_mut().outputs.0.push(part);
+                }
+                "spawn-at-startup" => m_push!(spawn_at_startup),
+                "spawn-sh-at-startup" => m_push!(spawn_sh_at_startup),
+                "window-rule" => m_push!(window_rules),
+                "layer-rule" => m_push!(layer_rules),
+                "workspace" => m_push!(workspaces),
+
+                // Single-part sections.
+                "binds" => {
+                    let part = Binds::decode_node(node, ctx)?;
+
+                    // We replace conflicting binds, rather than error, to support the use-case
+                    // where you import some preconfigured-dots.kdl, then override some binds with
+                    // your own.
+                    let mut config = config.borrow_mut();
+                    let binds = &mut config.binds.0;
+                    // Remove existing binds matching any new bind.
+                    binds.retain(|bind| !part.0.iter().any(|new| new.key == bind.key));
+                    // Add all new binds.
+                    binds.extend(part.0);
+                }
+                "environment" => {
+                    let part = Environment::decode_node(node, ctx)?;
+                    config.borrow_mut().environment.0.extend(part.0);
+                }
+
+                "prefer-no-csd" => {
+                    config.borrow_mut().prefer_no_csd = Flag::decode_node(node, ctx)?.0
+                }
+
+                "screenshot-path" => {
+                    let part = knuffel::Decode::decode_node(node, ctx)?;
+                    config.borrow_mut().screenshot_path = part;
+                }
+
+                "layout" => {
+                    let mut part = LayoutPart::decode_node(node, ctx)?;
+
+                    // Preserve the behavior we'd always had for the border section:
+                    // - `layout {}` gives border = off
+                    // - `layout { border {} }` gives border = on
+                    // - `layout { border { off } }` gives border = off
+                    //
+                    // This behavior is inconsistent with the rest of the config where adding an
+                    // empty section generally doesn't change the outcome. Particularly, shadows
+                    // are also disabled by default (like borders), and they always had an `on`
+                    // instead of an `off` for this reason, so that writing `layout { shadow {} }`
+                    // still results in shadow = off, as it should.
+                    //
+                    // Unfortunately, the default config has always had wording that heavily
+                    // implies that `layout { border {} }` enables the borders. This wording is
+                    // sure to be present in a lot of users' configs by now, which we can't change.
+                    //
+                    // Another way to make things consistent would be to default borders to on.
+                    // However, that is annoying because it would mean changing many tests that
+                    // rely on borders being off by default. This would also contradict the
+                    // intended default borders value (off).
+                    //
+                    // So, let's just work around the problem here, preserving the original
+                    // behavior.
+                    if recursion == 0 {
+                        if let Some(border) = part.border.as_mut() {
+                            if !border.on && !border.off {
+                                border.on = true;
+                            }
+                        }
+                    }
+
+                    config.borrow_mut().layout.merge_with(&part);
+                }
+
+                "recent-windows" => {
+                    let part = RecentWindowsPart::decode_node(node, ctx)?;
+
+                    let mut config = config.borrow_mut();
+
+                    // When an MRU binds section is encountered for the first time, clear out the
+                    // default MRU binds.
+                    if !saw_mru_binds.get() && part.binds.is_some() {
+                        saw_mru_binds.set(true);
+                        config.recent_windows.binds.clear();
+                    }
+
+                    config.recent_windows.merge_with(&part);
+                }
+
+                "include" => {
+                    // Parse the path argument
+                    let mut iter_args = node.arguments.iter();
+                    let path_val = iter_args.next().ok_or_else(|| {
+                        DecodeError::missing(
+                            node,
+                            "additional argument for include path is required",
+                        )
+                    })?;
+                    let path: PathBuf = knuffel::traits::DecodeScalar::decode(path_val, ctx)?;
+
+                    // Check for extra arguments
+                    if let Some(val) = iter_args.next() {
+                        ctx.emit_error(DecodeError::unexpected(
+                            &val.literal,
+                            "argument",
+                            "unexpected argument",
+                        ));
+                    }
+
+                    // Parse the optional property
+                    let mut optional = false;
+                    for (name, val) in &node.properties {
+                        match &***name {
+                            "optional" => {
+                                optional = knuffel::traits::DecodeScalar::decode(val, ctx)?;
+                            }
+                            name_str => {
+                                ctx.emit_error(DecodeError::unexpected(
+                                    name,
+                                    "property",
+                                    format!("unexpected property `{}`", name_str.escape_default()),
+                                ));
+                            }
+                        }
+                    }
+
+                    // Check for unexpected children
+                    for child in node.children() {
+                        ctx.emit_error(DecodeError::unexpected(
+                            child,
+                            "node",
+                            format!("unexpected node `{}`", child.node_name.escape_default()),
+                        ));
+                    }
+
+                    // We use DecodeError::Missing throughout this block because it results in the
+                    // least confusing error messages while still allowing to provide a span.
+
+                    // Expand ~ into the home dir
+                    let path = if let Ok(rest) = path.strip_prefix("~") {
+                        let Some(home) = std::env::home_dir() else {
+                            ctx.emit_error(DecodeError::missing(
+                                node,
+                                format!("error retrieving home directory to expand {path:?}"),
+                            ));
+                            continue;
+                        };
+
+                        home.join(rest)
+                    } else {
+                        // Otherwise, use the current include base dir
+                        let base = ctx.get::<BasePath>().unwrap();
+                        base.0.join(path)
+                    };
+
+                    let recursion = ctx.get::<Recursion>().unwrap().0 + 1;
+                    if recursion == RECURSION_LIMIT {
+                        ctx.emit_error(DecodeError::missing(
+                            node,
+                            format!(
+                                "reached the recursion limit; \
+                                 includes cannot be {RECURSION_LIMIT} levels deep"
+                            ),
+                        ));
+                        continue;
+                    }
+
+                    let Some(filename) = path.file_name().and_then(OsStr::to_str) else {
+                        ctx.emit_error(DecodeError::missing(
+                            node,
+                            "include path doesn't have a valid file name",
+                        ));
+                        continue;
+                    };
+                    let base = path.parent().map(Path::to_path_buf).unwrap_or_default();
+
+                    // Check for recursive include for a nicer error message.
+                    let mut include_stack = ctx.get::<IncludeStack>().unwrap().0.clone();
+                    if !include_stack.insert(path.to_path_buf()) {
+                        ctx.emit_error(DecodeError::missing(
+                            node,
+                            "recursive include (file includes itself)",
+                        ));
+                        continue;
+                    }
+
+                    // Store even if the include fails to read or parse, so it gets watched.
+                    includes.borrow_mut().0.push(path.to_path_buf());
+
+                    match fs::read_to_string(&path) {
+                        Ok(text) => {
+                            // Try to get filename relative to the root base config folder for
+                            // clearer error messages.
+                            let root_base = &ctx.get::<RootBase>().unwrap().0;
+                            // Failing to strip prefix usually means absolute path; show it in full.
+                            let relative_path = path.strip_prefix(root_base).ok().unwrap_or(&path);
+                            let filename = relative_path.to_str().unwrap_or(filename);
+
+                            let part = knuffel::parse_with_context::<
+                                ConfigPart,
+                                knuffel::span::Span,
+                                _,
+                            >(filename, &text, |ctx| {
+                                ctx.set(BasePath(base));
+                                ctx.set(RootBase(root_base.clone()));
+                                ctx.set(Recursion(recursion));
+                                ctx.set(includes.clone());
+                                ctx.set(include_errors.clone());
+                                ctx.set(IncludeStack(include_stack));
+                                ctx.set(SawMruBinds(saw_mru_binds.clone()));
+                                ctx.set(config.clone());
+                            });
+
+                            match part {
+                                Ok(_) => {}
+                                Err(err) => {
+                                    include_errors.borrow_mut().0.push(err);
+
+                                    ctx.emit_error(DecodeError::missing(
+                                        node,
+                                        "failed to parse included config",
+                                    ));
+                                }
+                            }
+                        }
+                        Err(err) => {
+                            if optional && err.kind() == std::io::ErrorKind::NotFound {
+                                // Warn about missing optional includes
+                                warn!("optional include not found: {path:?}");
+                            } else {
+                                // Report all other errors normally
+                                ctx.emit_error(DecodeError::missing(
+                                    node,
+                                    format!("failed to read included config from {path:?}: {err}"),
+                                ));
+                            }
+                        }
+                    }
+                }
+
+                name => {
+                    ctx.emit_error(DecodeError::unexpected(
+                        node,
+                        "node",
+                        format!("unexpected node `{}`", name.escape_default()),
+                    ));
+                }
+            }
+        }
+
+        Ok(Self)
     }
 }
 
-impl Default for Config {
-    fn default() -> Self {
-        Config::parse(
-            "default-config.kdl",
+impl Config {
+    pub fn load_default() -> Self {
+        let res = Config::parse(
+            Path::new("default-config.kdl"),
             include_str!("../../resources/default-config.kdl"),
-        )
-        .unwrap()
+        );
+
+        // Includes in the default config can break its parsing at runtime.
+        assert!(
+            res.includes.is_empty(),
+            "default config must not have includes",
+        );
+
+        res.config.unwrap()
+    }
+
+    pub fn load(path: &Path) -> ConfigParseResult<Self, miette::Report> {
+        let contents = match fs::read_to_string(path) {
+            Ok(x) => x,
+            Err(err) => {
+                return ConfigParseResult::from_err(
+                    miette!(err).context(format!("error reading {path:?}")),
+                );
+            }
+        };
+
+        Self::parse(path, &contents).map_config_res(|res| {
+            let config = res.context("error parsing")?;
+            debug!("loaded config from {path:?}");
+            Ok(config)
+        })
+    }
+
+    pub fn parse(path: &Path, text: &str) -> ConfigParseResult<Self, ConfigIncludeError> {
+        let base = path.parent().map(Path::to_path_buf).unwrap_or_default();
+        let filename = path
+            .file_name()
+            .and_then(OsStr::to_str)
+            .unwrap_or("config.kdl");
+
+        let config = Rc::new(RefCell::new(Config::default()));
+        let includes = Rc::new(RefCell::new(Includes(Vec::new())));
+        let include_errors = Rc::new(RefCell::new(IncludeErrors(Vec::new())));
+        let include_stack = HashSet::from([path.to_path_buf()]);
+
+        let part = knuffel::parse_with_context::<ConfigPart, knuffel::span::Span, _>(
+            filename,
+            text,
+            |ctx| {
+                ctx.set(BasePath(base.clone()));
+                ctx.set(RootBase(base));
+                ctx.set(Recursion(0));
+                ctx.set(includes.clone());
+                ctx.set(include_errors.clone());
+                ctx.set(IncludeStack(include_stack));
+                ctx.set(SawMruBinds(Rc::new(Cell::new(false))));
+                ctx.set(config.clone());
+            },
+        );
+
+        let includes = includes.take().0;
+        let include_errors = include_errors.take().0;
+        let config = part
+            .map(|_| config.take())
+            .map_err(move |err| ConfigIncludeError {
+                main: err,
+                includes: include_errors,
+            });
+
+        ConfigParseResult { config, includes }
+    }
+
+    pub fn parse_mem(text: &str) -> Result<Self, ConfigIncludeError> {
+        Self::parse(Path::new("config.kdl"), text).config
     }
 }
 
 impl ConfigPath {
     /// Loads the config, returns an error if it doesn't exist.
-    pub fn load(&self) -> miette::Result<Config> {
+    pub fn load(&self) -> ConfigParseResult<Config, miette::Report> {
         let _span = tracy_client::span!("ConfigPath::load");
 
         self.load_inner(|user_path, system_path| {
-            Err(miette::miette!(
+            Err(miette!(
                 "no config file found; create one at {user_path:?} or {system_path:?}",
             ))
         })
-        .context("error loading config")
+        .map_config_res(|res| res.context("error loading config"))
     }
 
     /// Loads the config, or creates it if it doesn't exist.
@@ -161,7 +555,7 @@ impl ConfigPath {
     ///
     /// If the config was created, but for some reason could not be read afterwards,
     /// this may return `(Some(_), Err(_))`.
-    pub fn load_or_create(&self) -> (Option<&Path>, miette::Result<Config>) {
+    pub fn load_or_create(&self) -> (Option<&Path>, ConfigParseResult<Config, miette::Report>) {
         let _span = tracy_client::span!("ConfigPath::load_or_create");
 
         let mut created_at = None;
@@ -172,7 +566,7 @@ impl ConfigPath {
                     .map(|()| user_path)
                     .with_context(|| format!("error creating config at {user_path:?}"))
             })
-            .context("error loading config");
+            .map_config_res(|res| res.context("error loading config"));
 
         (created_at, result)
     }
@@ -180,7 +574,7 @@ impl ConfigPath {
     fn load_inner<'a>(
         &'a self,
         maybe_create: impl FnOnce(&'a Path, &'a Path) -> miette::Result<&'a Path>,
-    ) -> miette::Result<Config> {
+    ) -> ConfigParseResult<Config, miette::Report> {
         let path = match self {
             ConfigPath::Explicit(path) => path.as_path(),
             ConfigPath::Regular {
@@ -192,7 +586,10 @@ impl ConfigPath {
                 } else if system_path.exists() {
                     system_path.as_path()
                 } else {
-                    maybe_create(user_path.as_path(), system_path.as_path())?
+                    match maybe_create(user_path.as_path(), system_path.as_path()) {
+                        Ok(x) => x,
+                        Err(err) => return ConfigParseResult::from_err(miette!(err)),
+                    }
                 }
             }
         };
@@ -241,19 +638,19 @@ mod tests {
 
     #[test]
     fn can_create_default_config() {
-        let _ = Config::default();
+        let _ = Config::load_default();
     }
 
     #[test]
     fn default_repeat_params() {
-        let config = Config::parse("config.kdl", "").unwrap();
+        let config = Config::parse_mem("").unwrap();
         assert_eq!(config.input.keyboard.repeat_delay, 600);
         assert_eq!(config.input.keyboard.repeat_rate, 25);
     }
 
     #[track_caller]
     fn do_parse(text: &str) -> Config {
-        Config::parse("test.kdl", text)
+        Config::parse_mem(text)
             .map_err(miette::Report::new)
             .unwrap()
     }
@@ -322,6 +719,8 @@ mod tests {
 
                 tablet {
                     map-to-output "eDP-1"
+                    map-to-focused-output
+                    map-to-focused-window
                     calibration-matrix 1.0 2.0 3.0 \
                                        4.0 5.0 6.0
                 }
@@ -355,6 +754,14 @@ mod tests {
                     bottom-left
                     bottom-right
                 }
+            }
+
+            output "eDP-2" {
+                mode custom=true "1920x1080@144"
+            }
+
+            output "eDP-3" {
+                modeline 173.00  1920 2048 2248 2576  1080 1083 1088 1120 "-hsync" "+vsync"
             }
 
             layout {
@@ -452,6 +859,10 @@ mod tests {
                 window-close {
                     curve "cubic-bezier" 0.05 0.7 0.1 1  
                 }
+
+                recent-windows-close {
+                    off
+                }
             }
 
             gestures {
@@ -525,6 +936,8 @@ mod tests {
 
             debug {
                 render-drm-device "/dev/dri/renderD129"
+                ignore-drm-device "/dev/dri/renderD128"
+                ignore-drm-device "/dev/dri/renderD130"
             }
 
             workspace "workspace-1" {
@@ -532,6 +945,25 @@ mod tests {
             }
             workspace "workspace-2"
             workspace "workspace-3"
+
+            recent-windows {
+                off
+
+                highlight {
+                    padding 15
+                    active-color "#00ff00"
+                }
+
+                previews {
+                    max-height 960
+                }
+
+                binds {
+                    Alt+Tab { next-window; }
+                    Alt+grave { next-window filter="app-id"; }
+                    Super+Tab { next-window scope="output"; }
+                }
+            }
             "##,
         );
 
@@ -681,10 +1113,13 @@ mod tests {
                     map_to_output: Some(
                         "eDP-1",
                     ),
+                    map_to_focused_output: true,
+                    map_to_focused_window: true,
                     left_handed: false,
                 },
                 touch: Touch {
                     off: false,
+                    calibration_matrix: None,
                     map_to_output: Some(
                         "eDP-1",
                     ),
@@ -726,14 +1161,18 @@ mod tests {
                             },
                         ),
                         mode: Some(
-                            ConfiguredMode {
-                                width: 1920,
-                                height: 1080,
-                                refresh: Some(
-                                    144.0,
-                                ),
+                            Mode {
+                                custom: false,
+                                mode: ConfiguredMode {
+                                    width: 1920,
+                                    height: 1080,
+                                    refresh: Some(
+                                        144.0,
+                                    ),
+                                },
                             },
                         ),
+                        modeline: None,
                         variable_refresh_rate: Some(
                             Vrr {
                                 on_demand: true,
@@ -758,6 +1197,62 @@ mod tests {
                                 bottom_right: true,
                             },
                         ),
+                        layout: None,
+                    },
+                    Output {
+                        off: false,
+                        name: "eDP-2",
+                        scale: None,
+                        transform: Normal,
+                        position: None,
+                        mode: Some(
+                            Mode {
+                                custom: true,
+                                mode: ConfiguredMode {
+                                    width: 1920,
+                                    height: 1080,
+                                    refresh: Some(
+                                        144.0,
+                                    ),
+                                },
+                            },
+                        ),
+                        modeline: None,
+                        variable_refresh_rate: None,
+                        focus_at_startup: false,
+                        background_color: None,
+                        backdrop_color: None,
+                        hot_corners: None,
+                        layout: None,
+                    },
+                    Output {
+                        off: false,
+                        name: "eDP-3",
+                        scale: None,
+                        transform: Normal,
+                        position: None,
+                        mode: None,
+                        modeline: Some(
+                            Modeline {
+                                clock: 173.0,
+                                hdisplay: 1920,
+                                hsync_start: 2048,
+                                hsync_end: 2248,
+                                htotal: 2576,
+                                vdisplay: 1080,
+                                vsync_start: 1083,
+                                vsync_end: 1088,
+                                vtotal: 1120,
+                                hsync_polarity: NHSync,
+                                vsync_polarity: PVSync,
+                            },
+                        ),
+                        variable_refresh_rate: None,
+                        focus_at_startup: false,
+                        background_color: None,
+                        backdrop_color: None,
+                        hot_corners: None,
+                        layout: None,
                     },
                 ],
             ),
@@ -778,9 +1273,7 @@ mod tests {
             layout: Layout {
                 focus_ring: FocusRing {
                     off: false,
-                    width: FloatOrInt(
-                        5.0,
-                    ),
+                    width: 5.0,
                     active_color: Color {
                         r: 0.0,
                         g: 0.39215687,
@@ -826,9 +1319,7 @@ mod tests {
                 },
                 border: Border {
                     off: false,
-                    width: FloatOrInt(
-                        3.0,
-                    ),
+                    width: 3.0,
                     active_color: Color {
                         r: 1.0,
                         g: 0.78431374,
@@ -861,12 +1352,8 @@ mod tests {
                             -20.0,
                         ),
                     },
-                    softness: FloatOrInt(
-                        30.0,
-                    ),
-                    spread: FloatOrInt(
-                        5.0,
-                    ),
+                    softness: 30.0,
+                    spread: 5.0,
                     draw_behind_window: false,
                     color: Color {
                         r: 0.0,
@@ -880,24 +1367,16 @@ mod tests {
                     off: false,
                     hide_when_single_tab: false,
                     place_within_column: false,
-                    gap: FloatOrInt(
-                        5.0,
-                    ),
-                    width: FloatOrInt(
-                        10.0,
-                    ),
+                    gap: 5.0,
+                    width: 10.0,
                     length: TabIndicatorLength {
                         total_proportion: Some(
                             0.5,
                         ),
                     },
                     position: Top,
-                    gaps_between_tabs: FloatOrInt(
-                        0.0,
-                    ),
-                    corner_radius: FloatOrInt(
-                        0.0,
-                    ),
+                    gaps_between_tabs: 0.0,
+                    corner_radius: 0.0,
                     active_color: None,
                     inactive_color: None,
                     urgent_color: None,
@@ -951,12 +1430,8 @@ mod tests {
                     ),
                 ],
                 default_column_width: Some(
-                    DefaultPresetSize(
-                        Some(
-                            Proportion(
-                                0.25,
-                            ),
-                        ),
+                    Proportion(
+                        0.25,
                     ),
                 ),
                 preset_window_heights: [
@@ -977,9 +1452,7 @@ mod tests {
                 always_center_single_column: false,
                 empty_workspace_above_first: false,
                 default_column_display: Tabbed,
-                gaps: FloatOrInt(
-                    8.0,
-                ),
+                gaps: 8.0,
                 struts: Struts {
                     left: FloatOrInt(
                         1.0,
@@ -1010,8 +1483,10 @@ mod tests {
                     3000,
                 ),
             },
-            screenshot_path: Some(
-                "~/Screenshots/screenshot.png",
+            screenshot_path: ScreenshotPath(
+                Some(
+                    "~/Screenshots/screenshot.png",
+                ),
             ),
             clipboard: Clipboard {
                 disable_primary: true,
@@ -1025,9 +1500,7 @@ mod tests {
             },
             animations: Animations {
                 off: false,
-                slowdown: FloatOrInt(
-                    2.0,
-                ),
+                slowdown: 2.0,
                 workspace_switch: WorkspaceSwitchAnim(
                     Animation {
                         off: false,
@@ -1152,25 +1625,36 @@ mod tests {
                         ),
                     },
                 ),
+                recent_windows_close: RecentWindowsCloseAnim(
+                    Animation {
+                        off: true,
+                        kind: Spring(
+                            SpringParams {
+                                damping_ratio: 1.0,
+                                stiffness: 800,
+                                epsilon: 0.001,
+                            },
+                        ),
+                    },
+                ),
+            },
+            blur: Blur {
+                off: false,
+                passes: 3,
+                offset: 3.0,
+                noise: 0.02,
+                saturation: 1.5,
             },
             gestures: Gestures {
                 dnd_edge_view_scroll: DndEdgeViewScroll {
-                    trigger_width: FloatOrInt(
-                        10.0,
-                    ),
+                    trigger_width: 10.0,
                     delay_ms: 100,
-                    max_speed: FloatOrInt(
-                        50.0,
-                    ),
+                    max_speed: 50.0,
                 },
                 dnd_edge_workspace_switch: DndEdgeWorkspaceSwitch {
-                    trigger_height: FloatOrInt(
-                        50.0,
-                    ),
+                    trigger_height: 50.0,
                     delay_ms: 100,
-                    max_speed: FloatOrInt(
-                        1500.0,
-                    ),
+                    max_speed: 1500.0,
                 },
                 hot_corners: HotCorners {
                     off: false,
@@ -1181,9 +1665,7 @@ mod tests {
                 },
             },
             overview: Overview {
-                zoom: FloatOrInt(
-                    0.5,
-                ),
+                zoom: 0.5,
                 backdrop_color: Color {
                     r: 0.15,
                     g: 0.15,
@@ -1200,12 +1682,8 @@ mod tests {
                             10.0,
                         ),
                     },
-                    softness: FloatOrInt(
-                        40.0,
-                    ),
-                    spread: FloatOrInt(
-                        10.0,
-                    ),
+                    softness: 40.0,
+                    spread: 10.0,
                     color: Color {
                         r: 0.0,
                         g: 0.0,
@@ -1304,6 +1782,7 @@ mod tests {
                     open_maximized: Some(
                         true,
                     ),
+                    open_maximized_to_edges: None,
                     open_fullscreen: Some(
                         false,
                     ),
@@ -1395,6 +1874,22 @@ mod tests {
                     ),
                     scroll_factor: None,
                     tiled_state: None,
+                    background_effect: BackgroundEffectRule {
+                        xray: None,
+                        blur: None,
+                        noise: None,
+                        saturation: None,
+                    },
+                    popups: PopupsRule {
+                        opacity: None,
+                        geometry_corner_radius: None,
+                        background_effect: BackgroundEffectRule {
+                            xray: None,
+                            blur: None,
+                            noise: None,
+                            saturation: None,
+                        },
+                    },
                 },
             ],
             layer_rules: [
@@ -1409,6 +1904,7 @@ mod tests {
                                 ),
                             ),
                             at_startup: None,
+                            layer: None,
                         },
                     ],
                     excludes: [],
@@ -1429,6 +1925,22 @@ mod tests {
                     geometry_corner_radius: None,
                     place_within_backdrop: None,
                     baba_is_float: None,
+                    background_effect: BackgroundEffectRule {
+                        xray: None,
+                        blur: None,
+                        noise: None,
+                        saturation: None,
+                    },
+                    popups: PopupsRule {
+                        opacity: None,
+                        geometry_corner_radius: None,
+                        background_effect: BackgroundEffectRule {
+                            xray: None,
+                            blur: None,
+                            noise: None,
+                            saturation: None,
+                        },
+                    },
                 },
             ],
             binds: Binds(
@@ -1734,9 +2246,14 @@ mod tests {
                 disable_direct_scanout: false,
                 keep_max_bpc_unchanged: false,
                 restrict_primary_scanout_to_matching_format: false,
+                force_disable_connectors_on_resume: false,
                 render_drm_device: Some(
                     "/dev/dri/renderD129",
                 ),
+                ignored_drm_devices: [
+                    "/dev/dri/renderD128",
+                    "/dev/dri/renderD130",
+                ],
                 force_pipewire_invalid_modifier: false,
                 emulate_zero_presentation_time: false,
                 disable_resize_throttling: false,
@@ -1756,20 +2273,118 @@ mod tests {
                     open_on_output: Some(
                         "eDP-1",
                     ),
+                    layout: None,
                 },
                 Workspace {
                     name: WorkspaceName(
                         "workspace-2",
                     ),
                     open_on_output: None,
+                    layout: None,
                 },
                 Workspace {
                     name: WorkspaceName(
                         "workspace-3",
                     ),
                     open_on_output: None,
+                    layout: None,
                 },
             ],
+            recent_windows: RecentWindows {
+                on: false,
+                debounce_ms: 750,
+                open_delay_ms: 150,
+                highlight: MruHighlight {
+                    active_color: Color {
+                        r: 0.0,
+                        g: 1.0,
+                        b: 0.0,
+                        a: 1.0,
+                    },
+                    urgent_color: Color {
+                        r: 1.0,
+                        g: 0.6,
+                        b: 0.6,
+                        a: 1.0,
+                    },
+                    padding: 15.0,
+                    corner_radius: 0.0,
+                },
+                previews: MruPreviews {
+                    max_height: 960.0,
+                    max_scale: 0.5,
+                },
+                binds: [
+                    Bind {
+                        key: Key {
+                            trigger: Keysym(
+                                XK_Tab,
+                            ),
+                            modifiers: Modifiers(
+                                ALT,
+                            ),
+                        },
+                        action: MruAdvance {
+                            direction: Forward,
+                            scope: None,
+                            filter: Some(
+                                All,
+                            ),
+                        },
+                        repeat: true,
+                        cooldown: None,
+                        allow_when_locked: false,
+                        allow_inhibiting: true,
+                        hotkey_overlay_title: None,
+                    },
+                    Bind {
+                        key: Key {
+                            trigger: Keysym(
+                                XK_grave,
+                            ),
+                            modifiers: Modifiers(
+                                ALT,
+                            ),
+                        },
+                        action: MruAdvance {
+                            direction: Forward,
+                            scope: None,
+                            filter: Some(
+                                AppId,
+                            ),
+                        },
+                        repeat: true,
+                        cooldown: None,
+                        allow_when_locked: false,
+                        allow_inhibiting: true,
+                        hotkey_overlay_title: None,
+                    },
+                    Bind {
+                        key: Key {
+                            trigger: Keysym(
+                                XK_Tab,
+                            ),
+                            modifiers: Modifiers(
+                                SUPER,
+                            ),
+                        },
+                        action: MruAdvance {
+                            direction: Forward,
+                            scope: Some(
+                                Output,
+                            ),
+                            filter: Some(
+                                All,
+                            ),
+                        },
+                        repeat: true,
+                        cooldown: None,
+                        allow_when_locked: false,
+                        allow_inhibiting: true,
+                        hotkey_overlay_title: None,
+                    },
+                ],
+            },
         }
         "#);
     }
@@ -1812,8 +2427,8 @@ mod tests {
         // We try to write the config defaults in such a way that empty sections (and an empty
         // config) give the same outcome as the default config bundled with niri. This test
         // verifies the actual differences between the two.
-        let mut default_config = Config::default();
-        let empty_config = Config::parse("empty.kdl", "").unwrap();
+        let mut default_config = Config::load_default();
+        let empty_config = Config::parse_mem("").unwrap();
 
         // Some notable omissions: the default config has some window rules, and an empty config
         // will not have any binds. Clear them out so they don't spam the diff.
@@ -1844,29 +2459,12 @@ mod tests {
         +        },
         +    ],
 
-        -        preset_column_widths: [],
-        -        default_column_width: None,
-        +        preset_column_widths: [
-        +            Proportion(
+        -                0.3333333333333333,
         +                0.33333,
-        +            ),
-        +            Proportion(
-        +                0.5,
-        +            ),
-        +            Proportion(
+
+        -                0.6666666666666666,
         +                0.66667,
-        +            ),
-        +        ],
-        +        default_column_width: Some(
-        +            DefaultPresetSize(
-        +                Some(
-        +                    Proportion(
-        +                        0.5,
-        +                    ),
-        +                ),
-        +            ),
-        +        ),
-        "#
+        "#,
         );
     }
 }

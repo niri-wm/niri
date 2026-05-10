@@ -56,6 +56,7 @@ impl OutputId {
 
 impl Backend {
     pub fn init(&mut self, niri: &mut Niri) {
+        let _span = tracy_client::span!("Backend::init");
         match self {
             Backend::Tty(tty) => tty.init(niri),
             Backend::Winit(winit) => winit.init(niri),
@@ -179,6 +180,14 @@ impl Backend {
     pub fn set_output_on_demand_vrr(&mut self, niri: &mut Niri, output: &Output, enable_vrr: bool) {
         match self {
             Backend::Tty(tty) => tty.set_output_on_demand_vrr(niri, output, enable_vrr),
+            Backend::Winit(_) => (),
+            Backend::Headless(_) => (),
+        }
+    }
+
+    pub fn update_ignored_nodes_config(&mut self, niri: &mut Niri) {
+        match self {
+            Backend::Tty(tty) => tty.update_ignored_nodes_config(niri),
             Backend::Winit(_) => (),
             Backend::Headless(_) => (),
         }

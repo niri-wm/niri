@@ -58,6 +58,10 @@ animations {
     overview-open-close {
         spring damping-ratio=1.0 stiffness=800 epsilon=0.0001
     }
+
+    recent-windows-close {
+        spring damping-ratio=1.0 stiffness=800 epsilon=0.001
+    }
 }
 ```
 
@@ -418,6 +422,20 @@ The open/close zoom animation of the [Overview](./Overview.md).
 animations {
     overview-open-close {
         spring damping-ratio=1.0 stiffness=800 epsilon=0.0001
+    }
+}
+```
+
+#### `recent-windows-close`
+
+<sup>Since: 25.11</sup>
+
+The close fade-out animation of the recent windows switcher.
+
+```kdl
+animations {
+    recent-windows-close {
+        spring damping-ratio=1.0 stiffness=800 epsilon=0.001
     }
 }
 ```

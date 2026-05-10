@@ -9,7 +9,11 @@ use super::*;
 
 // Sets up a fixture with two outputs and 100×100 window.
 fn set_up() -> (Fixture, ClientId, WlSurface) {
-    let mut f = Fixture::new();
+    set_up_with_config(Config::default())
+}
+
+fn set_up_with_config(config: Config) -> (Fixture, ClientId, WlSurface) {
+    let mut f = Fixture::with_config(config);
     f.add_output(1, (1920, 1080));
     f.add_output(2, (1280, 720));
 
@@ -455,6 +459,55 @@ fn interactive_move_unfullscreen_to_floating_restores_size() {
 }
 
 #[test]
+fn interactive_move_unmaximize_to_floating_restores_size() {
+    let (mut f, id, surface) = set_up();
+
+    f.niri().layout.toggle_window_floating(None);
+    f.double_roundtrip(id);
+
+    // Change size while we're floating and commit.
+    let window = f.client(id).window(&surface);
+    window.set_size(200, 200);
+    window.ack_last_and_commit();
+    f.double_roundtrip(id);
+
+    let _ = f.client(id).window(&surface).recent_configures();
+
+    let niri = f.niri();
+    let mapped = niri.layout.windows().next().unwrap().1;
+    let window = mapped.window.clone();
+    niri.layout.set_maximized(&window, true);
+    f.double_roundtrip(id);
+
+    // This should request a maximized size.
+    assert_snapshot!(
+        f.client(id).window(&surface).format_recent_configures(),
+        @"size: 1920 × 1080, bounds: 1888 × 1048, states: [Activated, Maximized]"
+    );
+
+    // Start an interactive move which causes an unmaximize into floating.
+    let output = f.niri_output(1);
+    let niri = f.niri();
+    let mapped = niri.layout.windows().next().unwrap().1;
+    let window = mapped.window.clone();
+    niri.layout
+        .interactive_move_begin(window.clone(), &output, Point::default());
+    niri.layout.interactive_move_update(
+        &window,
+        Point::from((1000., 0.)),
+        output,
+        Point::default(),
+    );
+    f.double_roundtrip(id);
+
+    // This should request the stored floating size (200 × 200).
+    assert_snapshot!(
+        f.client(id).window(&surface).format_recent_configures(),
+        @"size: 200 × 200, bounds: 1920 × 1080, states: [Activated]"
+    );
+}
+
+#[test]
 fn resize_during_interactive_move_propagates_to_floating() {
     let (mut f, id, surface) = set_up();
 
@@ -788,6 +841,66 @@ fn floating_doesnt_store_fullscreen_size() {
 }
 
 #[test]
+fn floating_doesnt_store_maximized_size() {
+    let mut f = Fixture::new();
+    f.add_output(1, (1920, 1080));
+    f.add_output(2, (1280, 720));
+
+    // Open a window maximized.
+    let id = f.add_client();
+    let window = f.client(id).create_window();
+    let surface = window.surface.clone();
+    window.set_maximized();
+    window.commit();
+    f.roundtrip(id);
+
+    let window = f.client(id).window(&surface);
+    window.attach_new_buffer();
+    window.set_size(1920, 1080);
+    window.ack_last_and_commit();
+    f.double_roundtrip(id);
+
+    let _ = f.client(id).window(&surface).recent_configures();
+
+    // Make it floating.
+    f.niri().layout.toggle_window_floating(None);
+    f.double_roundtrip(id);
+
+    // This should request 0 × 0 to unmaximize.
+    assert_snapshot!(
+        f.client(id).window(&surface).format_recent_configures(),
+        @"size: 0 × 0, bounds: 1920 × 1080, states: [Activated]"
+    );
+
+    // Without committing, make it tiling again. We never committed while floating, so there's no
+    // floating size to remember.
+    f.niri().layout.toggle_window_floating(None);
+    f.double_roundtrip(id);
+
+    // This should request the tiled size.
+    assert_snapshot!(
+        f.client(id).window(&surface).format_recent_configures(),
+        @"size: 1920 × 1048, bounds: 1888 × 1048, states: [Activated]"
+    );
+
+    // Commit in response.
+    let window = f.client(id).window(&surface);
+    window.set_size(100, 100);
+    window.ack_last_and_commit();
+    f.roundtrip(id);
+
+    // Make the window floating again.
+    f.niri().layout.toggle_window_floating(None);
+    f.double_roundtrip(id);
+
+    // This shouldn't request any size change, particularly not the maximized size.
+    assert_snapshot!(
+        f.client(id).window(&surface).format_recent_configures(),
+        @"size: 100 × 100, bounds: 1920 × 1080, states: [Activated]"
+    );
+}
+
+#[test]
 fn floating_respects_non_fixed_min_max_rule() {
     let config = r##"
 window-rule {
@@ -795,23 +908,8 @@ window-rule {
     max-width 300
 }
 "##;
-    let config = Config::parse("test.kdl", config).unwrap();
-    let mut f = Fixture::with_config(config);
-    f.add_output(1, (1920, 1080));
-    f.add_output(2, (1280, 720));
-
-    let id = f.add_client();
-    let window = f.client(id).create_window();
-    let surface = window.surface.clone();
-    window.commit();
-    f.roundtrip(id);
-
-    // Open with smaller width than min.
-    let window = f.client(id).window(&surface);
-    window.attach_new_buffer();
-    window.set_size(100, 100);
-    window.ack_last_and_commit();
-    f.double_roundtrip(id);
+    let config = Config::parse_mem(config).unwrap();
+    let (mut f, id, surface) = set_up_with_config(config);
 
     // Commit to the Activated state configure.
     f.client(id).window(&surface).ack_last_and_commit();
@@ -896,5 +994,373 @@ fn unfullscreen_to_floating_doesnt_send_extra_configure() {
     assert_snapshot!(
         f.client(id).window(&surface).format_recent_configures(),
         @"size: 936 × 1048, bounds: 1920 × 1080, states: [Activated]"
+    );
+}
+
+#[test]
+fn unmaximize_to_floating_doesnt_send_extra_configure() {
+    let (mut f, id, surface) = set_up();
+
+    // Make it floating.
+    f.niri().layout.toggle_window_floating(None);
+    f.roundtrip(id);
+
+    // Maximize.
+    let window = f.client(id).window(&surface);
+    window.set_maximized();
+    f.double_roundtrip(id);
+
+    let _ = f.client(id).window(&surface).recent_configures();
+
+    // Unmaximzie via the window request which requires a configure response.
+    let window = f.client(id).window(&surface);
+    window.unset_maximized();
+    f.double_roundtrip(id);
+
+    // This should configure only once and not twice.
+    assert_snapshot!(
+        f.client(id).window(&surface).format_recent_configures(),
+        @"size: 936 × 1048, bounds: 1920 × 1080, states: [Activated]"
+    );
+}
+
+#[test]
+fn unfullscreen_to_same_size_floating() {
+    let (mut f, id, surface) = set_up();
+
+    // Make it floating.
+    f.niri().layout.toggle_window_floating(None);
+    f.double_roundtrip(id);
+
+    // Change size to the same as fullscreen, make niri remember it.
+    let window = f.client(id).window(&surface);
+    window.set_size(1920, 1080);
+    window.ack_last_and_commit();
+    f.double_roundtrip(id);
+
+    let _ = f.client(id).window(&surface).recent_configures();
+
+    // Fullscreen.
+    let window = f.client(id).window(&surface);
+    window.set_fullscreen(None);
+    f.double_roundtrip(id);
+
+    // The fullscreen configure.
+    assert_snapshot!(
+        f.client(id).window(&surface).format_recent_configures(),
+        @"size: 1920 × 1080, bounds: 1888 × 1048, states: [Activated, Fullscreen]"
+    );
+
+    // Unfullscreen into floating.
+    f.niri().layout.toggle_window_floating(None);
+    f.double_roundtrip(id);
+
+    // We should see a configure with the same size and no Fullscreen state.
+    assert_snapshot!(
+        f.client(id).window(&surface).format_recent_configures(),
+        @"size: 1920 × 1080, bounds: 1920 × 1080, states: [Activated]"
+    );
+}
+
+#[test]
+fn unmaximize_to_same_size_floating() {
+    let (mut f, id, surface) = set_up();
+
+    // Make it floating.
+    f.niri().layout.toggle_window_floating(None);
+    f.double_roundtrip(id);
+
+    // Change size to the same as maximized, make niri remember it.
+    let window = f.client(id).window(&surface);
+    window.set_size(1920, 1080);
+    window.ack_last_and_commit();
+    f.double_roundtrip(id);
+
+    let _ = f.client(id).window(&surface).recent_configures();
+
+    // Maximize.
+    let window = f.client(id).window(&surface);
+    window.set_maximized();
+    f.double_roundtrip(id);
+
+    // The maximize configure.
+    assert_snapshot!(
+        f.client(id).window(&surface).format_recent_configures(),
+        @"size: 1920 × 1080, bounds: 1888 × 1048, states: [Activated, Maximized]"
+    );
+
+    // Unmaximize into floating.
+    f.niri().layout.toggle_window_floating(None);
+    f.double_roundtrip(id);
+
+    // We should see a configure with the same size and no maximized state.
+    assert_snapshot!(
+        f.client(id).window(&surface).format_recent_configures(),
+        @"size: 1920 × 1080, bounds: 1920 × 1080, states: [Activated]"
+    );
+}
+
+#[test]
+fn unfullscreen_to_same_size_windowed_fullscreen_floating() {
+    let (mut f, id, surface) = set_up();
+
+    let mapped = f.niri().layout.windows().next().unwrap().1;
+    let window_id = mapped.window.clone();
+
+    // Make it floating.
+    f.niri().layout.toggle_window_floating(None);
+    f.double_roundtrip(id);
+
+    // Change size to the same as fullscreen, make niri remember it.
+    let window = f.client(id).window(&surface);
+    window.set_size(1920, 1080);
+    window.ack_last_and_commit();
+    f.double_roundtrip(id);
+
+    let _ = f.client(id).window(&surface).recent_configures();
+
+    // Fullscreen.
+    let window = f.client(id).window(&surface);
+    window.set_fullscreen(None);
+    f.double_roundtrip(id);
+
+    // The fullscreen configure.
+    assert_snapshot!(
+        f.client(id).window(&surface).format_recent_configures(),
+        @"size: 1920 × 1080, bounds: 1888 × 1048, states: [Activated, Fullscreen]"
+    );
+
+    // Unfullscreen into windowed-fullscreen floating.
+    f.niri().layout.toggle_windowed_fullscreen(&window_id);
+    f.double_roundtrip(id);
+
+    // Should send configure because the bounds have changed.
+    assert_snapshot!(
+        f.client(id).window(&surface).format_recent_configures(),
+        @"size: 1920 × 1080, bounds: 1920 × 1080, states: [Activated, Fullscreen]"
+    );
+}
+
+#[test]
+fn unmaximize_to_same_size_windowed_fullscreen_floating() {
+    let (mut f, id, surface) = set_up();
+
+    let mapped = f.niri().layout.windows().next().unwrap().1;
+    let window_id = mapped.window.clone();
+
+    // Make it floating.
+    f.niri().layout.toggle_window_floating(None);
+    f.double_roundtrip(id);
+
+    // Change size to the same as maximized, make niri remember it.
+    let window = f.client(id).window(&surface);
+    window.set_size(1920, 1080);
+    window.ack_last_and_commit();
+    f.double_roundtrip(id);
+
+    let _ = f.client(id).window(&surface).recent_configures();
+
+    // Maximize.
+    let window = f.client(id).window(&surface);
+    window.set_maximized();
+    f.double_roundtrip(id);
+
+    // The maximize configure.
+    assert_snapshot!(
+        f.client(id).window(&surface).format_recent_configures(),
+        @"size: 1920 × 1080, bounds: 1888 × 1048, states: [Activated, Maximized]"
+    );
+
+    // Enable windowed-fullscreen.
+    f.niri().layout.toggle_windowed_fullscreen(&window_id);
+    f.double_roundtrip(id);
+
+    // The windowed-fullscreen configure.
+    assert_snapshot!(
+        f.client(id).window(&surface).format_recent_configures(),
+        @"size: 1920 × 1080, bounds: 1888 × 1048, states: [Activated, Fullscreen]"
+    );
+
+    // Go back to windowed-fullscreen floating.
+    f.niri().layout.toggle_window_floating(None);
+    f.double_roundtrip(id);
+
+    // Should send configure because the bounds have changed.
+    assert_snapshot!(
+        f.client(id).window(&surface).format_recent_configures(),
+        @"size: 1920 × 1080, bounds: 1920 × 1080, states: [Activated, Fullscreen]"
+    );
+
+    // Disable windowed-fullscreen.
+    f.niri().layout.toggle_windowed_fullscreen(&window_id);
+    f.double_roundtrip(id);
+
+    // Should send configure dropping the Fullscreen state.
+    assert_snapshot!(
+        f.client(id).window(&surface).format_recent_configures(),
+        @"size: 1920 × 1080, bounds: 1920 × 1080, states: [Activated]"
+    );
+}
+
+#[test]
+fn unfullscreen_to_same_size_same_bounds_floating() {
+    let config = r##"
+layout {
+    gaps 0
+}
+"##;
+    let config = Config::parse_mem(config).unwrap();
+    let (mut f, id, surface) = set_up_with_config(config);
+
+    // Make it floating.
+    f.niri().layout.toggle_window_floating(None);
+    f.double_roundtrip(id);
+
+    // Change size to the same as fullscreen, make niri remember it.
+    let window = f.client(id).window(&surface);
+    window.set_size(1920, 1080);
+    window.ack_last_and_commit();
+    f.double_roundtrip(id);
+
+    let _ = f.client(id).window(&surface).recent_configures();
+
+    // Fullscreen.
+    let window = f.client(id).window(&surface);
+    window.set_fullscreen(None);
+    f.double_roundtrip(id);
+
+    // The fullscreen configure.
+    assert_snapshot!(
+        f.client(id).window(&surface).format_recent_configures(),
+        @"size: 1920 × 1080, bounds: 1920 × 1080, states: [Activated, Fullscreen]"
+    );
+
+    // Unfullscreen into floating.
+    f.niri().layout.toggle_window_floating(None);
+    f.double_roundtrip(id);
+
+    // We should see a configure with the same size and no Fullscreen state.
+    assert_snapshot!(
+        f.client(id).window(&surface).format_recent_configures(),
+        @"size: 1920 × 1080, bounds: 1920 × 1080, states: [Activated]"
+    );
+}
+
+#[test]
+fn unmaximize_to_same_size_same_bounds_floating() {
+    let config = r##"
+layout {
+    gaps 0
+}
+"##;
+    let config = Config::parse_mem(config).unwrap();
+    let (mut f, id, surface) = set_up_with_config(config);
+
+    // Make it floating.
+    f.niri().layout.toggle_window_floating(None);
+    f.double_roundtrip(id);
+
+    // Change size to the same as fullscreen, make niri remember it.
+    let window = f.client(id).window(&surface);
+    window.set_size(1920, 1080);
+    window.ack_last_and_commit();
+    f.double_roundtrip(id);
+
+    let _ = f.client(id).window(&surface).recent_configures();
+
+    // Maximize.
+    let window = f.client(id).window(&surface);
+    window.set_maximized();
+    f.double_roundtrip(id);
+
+    // The maximize configure.
+    assert_snapshot!(
+        f.client(id).window(&surface).format_recent_configures(),
+        @"size: 1920 × 1080, bounds: 1920 × 1080, states: [Activated, Maximized]"
+    );
+
+    // Unmaximize into floating.
+    f.niri().layout.toggle_window_floating(None);
+    f.double_roundtrip(id);
+
+    // We should see a configure with the same size and no Maximized state.
+    assert_snapshot!(
+        f.client(id).window(&surface).format_recent_configures(),
+        @"size: 1920 × 1080, bounds: 1920 × 1080, states: [Activated]"
+    );
+}
+
+#[test]
+fn repeated_size_request() {
+    let (mut f, id, surface) = set_up();
+    let _ = f.client(id).window(&surface).recent_configures();
+
+    // Make it floating.
+    f.niri().layout.toggle_window_floating(None);
+    f.double_roundtrip(id);
+
+    // The floating configure.
+    assert_snapshot!(
+        f.client(id).window(&surface).format_recent_configures(),
+        @"size: 936 × 1048, bounds: 1920 × 1080, states: [Activated]"
+    );
+
+    // Request a different width (200x100).
+    f.niri()
+        .layout
+        .set_window_width(None, SizeChange::SetFixed(200));
+    f.niri()
+        .layout
+        .set_window_height(None, SizeChange::SetFixed(100));
+    f.double_roundtrip(id);
+
+    // The 200x100 request.
+    assert_snapshot!(
+        f.client(id).window(&surface).format_recent_configures(),
+        @"size: 200 × 100, bounds: 1920 × 1080, states: [Activated]"
+    );
+
+    // Request a size change to the same size as we have just requested.
+    f.niri().layout.set_column_width(SizeChange::SetFixed(200));
+    f.double_roundtrip(id);
+
+    // Should request nothing as this is a repeated same-size request in floating and the surface
+    // hasn't committed to it yet.
+    assert_snapshot!(
+        f.client(id).window(&surface).format_recent_configures(),
+        @""
+    );
+
+    // Ack but don't commit yet.
+    let window = f.client(id).window(&surface);
+    window.ack_last();
+    f.double_roundtrip(id);
+
+    // Request a size change to the same size as we have just requested.
+    f.niri().layout.set_column_width(SizeChange::SetFixed(200));
+    f.double_roundtrip(id);
+
+    // Should request nothing as this is a repeated same-size request in floating and the surface
+    // hasn't committed to it yet.
+    assert_snapshot!(
+        f.client(id).window(&surface).format_recent_configures(),
+        @""
+    );
+
+    // Commit.
+    let window = f.client(id).window(&surface);
+    window.commit();
+    f.double_roundtrip(id);
+
+    // Request the size change again.
+    f.niri().layout.set_column_width(SizeChange::SetFixed(200));
+    f.double_roundtrip(id);
+
+    // This should send a new configure since the window had committed.
+    //
+    // FIXME: doesn't request that currently.
+    assert_snapshot!(
+        f.client(id).window(&surface).format_recent_configures(),
+        @""
     );
 }

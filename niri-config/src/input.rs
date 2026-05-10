@@ -5,51 +5,91 @@ use smithay::input::keyboard::XkbConfig;
 use smithay::reexports::input;
 
 use crate::binds::Modifiers;
-use crate::utils::Percent;
+use crate::utils::{Flag, MergeWith, Percent};
 use crate::FloatOrInt;
 
-#[derive(knuffel::Decode, Debug, Default, PartialEq)]
+#[derive(Debug, Default, PartialEq)]
 pub struct Input {
-    #[knuffel(child, default)]
     pub keyboard: Keyboard,
-    #[knuffel(child, default)]
     pub touchpad: Touchpad,
-    #[knuffel(child, default)]
     pub mouse: Mouse,
-    #[knuffel(child, default)]
     pub trackpoint: Trackpoint,
-    #[knuffel(child, default)]
     pub trackball: Trackball,
-    #[knuffel(child, default)]
     pub tablet: Tablet,
-    #[knuffel(child, default)]
     pub touch: Touch,
-    #[knuffel(child)]
     pub disable_power_key_handling: bool,
+    pub warp_mouse_to_focus: Option<WarpMouseToFocus>,
+    pub focus_follows_mouse: Option<FocusFollowsMouse>,
+    pub workspace_auto_back_and_forth: bool,
+    pub mod_key: Option<ModKey>,
+    pub mod_key_nested: Option<ModKey>,
+}
+
+#[derive(knuffel::Decode, Debug, Default, PartialEq)]
+pub struct InputPart {
+    #[knuffel(child)]
+    pub keyboard: Option<KeyboardPart>,
+    #[knuffel(child)]
+    pub touchpad: Option<Touchpad>,
+    #[knuffel(child)]
+    pub mouse: Option<Mouse>,
+    #[knuffel(child)]
+    pub trackpoint: Option<Trackpoint>,
+    #[knuffel(child)]
+    pub trackball: Option<Trackball>,
+    #[knuffel(child)]
+    pub tablet: Option<Tablet>,
+    #[knuffel(child)]
+    pub touch: Option<Touch>,
+    #[knuffel(child)]
+    pub disable_power_key_handling: Option<Flag>,
     #[knuffel(child)]
     pub warp_mouse_to_focus: Option<WarpMouseToFocus>,
     #[knuffel(child)]
     pub focus_follows_mouse: Option<FocusFollowsMouse>,
     #[knuffel(child)]
-    pub workspace_auto_back_and_forth: bool,
+    pub workspace_auto_back_and_forth: Option<Flag>,
     #[knuffel(child, unwrap(argument, str))]
     pub mod_key: Option<ModKey>,
     #[knuffel(child, unwrap(argument, str))]
     pub mod_key_nested: Option<ModKey>,
 }
 
-#[derive(knuffel::Decode, Debug, PartialEq, Eq)]
+impl MergeWith<InputPart> for Input {
+    fn merge_with(&mut self, part: &InputPart) {
+        merge!(
+            (self, part),
+            keyboard,
+            disable_power_key_handling,
+            workspace_auto_back_and_forth,
+        );
+
+        merge_clone!(
+            (self, part),
+            touchpad,
+            mouse,
+            trackpoint,
+            trackball,
+            tablet,
+            touch,
+        );
+
+        merge_clone_opt!(
+            (self, part),
+            warp_mouse_to_focus,
+            focus_follows_mouse,
+            mod_key,
+            mod_key_nested,
+        );
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
 pub struct Keyboard {
-    #[knuffel(child, default)]
     pub xkb: Xkb,
-    // The defaults were chosen to match wlroots and sway.
-    #[knuffel(child, unwrap(argument), default = Self::default().repeat_delay)]
     pub repeat_delay: u16,
-    #[knuffel(child, unwrap(argument), default = Self::default().repeat_rate)]
     pub repeat_rate: u8,
-    #[knuffel(child, unwrap(argument), default)]
     pub track_layout: TrackLayout,
-    #[knuffel(child)]
     pub numlock: bool,
 }
 
@@ -57,11 +97,33 @@ impl Default for Keyboard {
     fn default() -> Self {
         Self {
             xkb: Default::default(),
+            // The defaults were chosen to match wlroots and sway.
             repeat_delay: 600,
             repeat_rate: 25,
             track_layout: Default::default(),
             numlock: Default::default(),
         }
+    }
+}
+
+#[derive(knuffel::Decode, Debug, PartialEq, Eq)]
+pub struct KeyboardPart {
+    #[knuffel(child)]
+    pub xkb: Option<Xkb>,
+    #[knuffel(child, unwrap(argument))]
+    pub repeat_delay: Option<u16>,
+    #[knuffel(child, unwrap(argument))]
+    pub repeat_rate: Option<u8>,
+    #[knuffel(child, unwrap(argument))]
+    pub track_layout: Option<TrackLayout>,
+    #[knuffel(child)]
+    pub numlock: Option<Flag>,
+}
+
+impl MergeWith<KeyboardPart> for Keyboard {
+    fn merge_with(&mut self, part: &KeyboardPart) {
+        merge_clone!((self, part), xkb, repeat_delay, repeat_rate, track_layout);
+        merge!((self, part), numlock);
     }
 }
 
@@ -93,7 +155,7 @@ impl Xkb {
     }
 }
 
-#[derive(knuffel::DecodeScalar, Debug, Default, PartialEq, Eq)]
+#[derive(knuffel::DecodeScalar, Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum TrackLayout {
     /// The layout change is global.
     #[default]
@@ -121,7 +183,7 @@ impl ScrollFactor {
     }
 }
 
-#[derive(knuffel::Decode, Debug, Default, PartialEq)]
+#[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]
 pub struct Touchpad {
     #[knuffel(child)]
     pub off: bool,
@@ -161,7 +223,7 @@ pub struct Touchpad {
     pub scroll_factor: Option<ScrollFactor>,
 }
 
-#[derive(knuffel::Decode, Debug, Default, PartialEq)]
+#[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]
 pub struct Mouse {
     #[knuffel(child)]
     pub off: bool,
@@ -185,7 +247,7 @@ pub struct Mouse {
     pub scroll_factor: Option<ScrollFactor>,
 }
 
-#[derive(knuffel::Decode, Debug, Default, PartialEq)]
+#[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]
 pub struct Trackpoint {
     #[knuffel(child)]
     pub off: bool,
@@ -207,7 +269,7 @@ pub struct Trackpoint {
     pub middle_emulation: bool,
 }
 
-#[derive(knuffel::Decode, Debug, Default, PartialEq)]
+#[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]
 pub struct Trackball {
     #[knuffel(child)]
     pub off: bool,
@@ -293,7 +355,7 @@ impl From<TapButtonMap> for input::TapButtonMap {
     }
 }
 
-#[derive(knuffel::Decode, Debug, Default, PartialEq)]
+#[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]
 pub struct Tablet {
     #[knuffel(child)]
     pub off: bool,
@@ -302,13 +364,19 @@ pub struct Tablet {
     #[knuffel(child, unwrap(argument))]
     pub map_to_output: Option<String>,
     #[knuffel(child)]
+    pub map_to_focused_output: bool,
+    #[knuffel(child)]
+    pub map_to_focused_window: bool,
+    #[knuffel(child)]
     pub left_handed: bool,
 }
 
-#[derive(knuffel::Decode, Debug, Default, PartialEq)]
+#[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]
 pub struct Touch {
     #[knuffel(child)]
     pub off: bool,
+    #[knuffel(child, unwrap(arguments))]
+    pub calibration_matrix: Option<Vec<f32>>,
     #[knuffel(child, unwrap(argument))]
     pub map_to_output: Option<String>,
 }
@@ -450,9 +518,10 @@ mod tests {
 
     #[track_caller]
     fn do_parse(text: &str) -> Input {
-        knuffel::parse("test.kdl", text)
+        let part = knuffel::parse("test.kdl", text)
             .map_err(miette::Report::new)
-            .unwrap()
+            .unwrap();
+        Input::from_part(&part)
     }
 
     #[test]

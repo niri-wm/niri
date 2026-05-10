@@ -217,9 +217,14 @@ impl DisplayConfig {
                             x: requested_config.x,
                             y: requested_config.y,
                         }),
-                        mode: Some(niri_ipc::ConfiguredMode::from_str(&mode).map_err(|e| {
-                            zbus::fdo::Error::Failed(format!("Could not parse mode '{mode}': {e}"))
-                        })?),
+                        mode: Some(niri_config::output::Mode {
+                            custom: false,
+                            mode: niri_ipc::ConfiguredMode::from_str(&mode).map_err(|e| {
+                                zbus::fdo::Error::Failed(format!(
+                                    "Could not parse mode '{mode}': {e}"
+                                ))
+                            })?,
+                        }),
                         // FIXME: VRR
                         ..Default::default()
                     }),

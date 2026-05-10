@@ -1,20 +1,34 @@
 use std::io::ErrorKind;
 use std::iter::Peekable;
-use std::slice;
+use std::path::Path;
+use std::{env, slice};
 
 use anyhow::{anyhow, bail, Context};
 use niri_config::OutputName;
 use niri_ipc::socket::Socket;
 use niri_ipc::{
-    Event, KeyboardLayouts, LogicalOutput, Mode, Output, OutputConfigChanged, Overview, Request,
-    Response, Transform, Window, WindowLayout,
+    Action, Cast, CastKind, CastTarget, Event, KeyboardLayouts, LogicalOutput, Mode, Output,
+    OutputConfigChanged, Overview, Request, Response, Transform, Window, WindowLayout,
 };
 use serde_json::json;
 
 use crate::cli::Msg;
 use crate::utils::version;
 
-pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
+pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
+    // For actions taking paths, prepend the niri CLI's working directory.
+    if let Msg::Action {
+        action:
+            Action::Screenshot { path, .. }
+            | Action::ScreenshotScreen { path, .. }
+            | Action::ScreenshotWindow { path, .. },
+    } = &mut msg
+    {
+        if let Some(path) = path {
+            ensure_absolute_path(path).context("error making the path absolute")?;
+        }
+    }
+
     let request = match &msg {
         Msg::Version => Request::Version,
         Msg::Outputs => Request::Outputs,
@@ -34,6 +48,7 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
         Msg::EventStream => Request::EventStream,
         Msg::RequestError => Request::ReturnError,
         Msg::OverviewState => Request::OverviewState,
+        Msg::Casts => Request::Casts,
     };
 
     let mut socket = Socket::connect().context("error connecting to the niri socket")?;
@@ -178,7 +193,7 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
                 return Ok(());
             }
 
-            windows.sort_unstable_by(|a, b| a.id.cmp(&b.id));
+            windows.sort_unstable_by_key(|a| a.id);
 
             for window in windows {
                 print_window(&window);
@@ -444,6 +459,12 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
                     Event::WindowFocusChanged { id } => {
                         println!("Window focus changed: {id:?}");
                     }
+                    Event::WindowFocusTimestampChanged {
+                        id,
+                        focus_timestamp,
+                    } => {
+                        println!("Window {id}: focus timestamp changed to {focus_timestamp:?}");
+                    }
                     Event::WindowUrgencyChanged { id, urgent } => {
                         println!("Window {id}: urgency changed to {urgent}");
                     }
@@ -467,6 +488,24 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
                         };
                         println!("Config loaded {status}");
                     }
+                    Event::ScreenshotCaptured { path } => {
+                        let mut parts = vec![];
+                        parts.push("copied to clipboard".to_string());
+                        if let Some(path) = &path {
+                            parts.push(format!("saved to {path}"));
+                        }
+                        let description = parts.join(" and ");
+                        println!("Screenshot captured: {description}");
+                    }
+                    Event::CastsChanged { casts } => {
+                        println!("Casts changed: {casts:?}");
+                    }
+                    Event::CastStartedOrChanged { cast } => {
+                        println!("Cast started or changed: {cast:?}");
+                    }
+                    Event::CastStopped { stream_id } => {
+                        println!("Cast stopped: stream id {stream_id}");
+                    }
                 }
             }
         }
@@ -489,6 +528,28 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
                 println!("Overview is closed.");
             }
         }
+        Msg::Casts => {
+            let Response::Casts(mut casts) = response else {
+                bail!("unexpected response: expected Casts, got {response:?}");
+            };
+
+            if json {
+                let casts = serde_json::to_string(&casts).context("error formatting response")?;
+                println!("{casts}");
+                return Ok(());
+            }
+
+            if casts.is_empty() {
+                println!("No screencasts.");
+                return Ok(());
+            }
+
+            casts.sort_by_key(|c| (c.session_id, c.stream_id));
+            for cast in casts {
+                print_cast(&cast);
+                println!();
+            }
+        }
     }
 
     Ok(())
@@ -503,6 +564,7 @@ fn print_output(output: Output) -> anyhow::Result<()> {
         physical_size,
         modes,
         current_mode,
+        is_custom_mode,
         vrr_supported,
         vrr_enabled,
         logical,
@@ -510,6 +572,26 @@ fn print_output(output: Output) -> anyhow::Result<()> {
 
     let serial = serial.as_deref().unwrap_or("Unknown");
     println!(r#"Output "{make} {model} {serial}" ({name})"#);
+
+    let print_qualifier = |is_preferred: bool, is_current: bool, is_custom_mode: bool| {
+        let mut qualifier = Vec::new();
+        if is_current {
+            qualifier.push("current");
+            if is_custom_mode {
+                qualifier.push("custom");
+            };
+        };
+
+        if is_preferred {
+            qualifier.push("preferred");
+        };
+
+        if qualifier.is_empty() {
+            String::new()
+        } else {
+            format!(" ({})", qualifier.join(", "))
+        }
+    };
 
     if let Some(current) = current_mode {
         let mode = *modes
@@ -522,8 +604,10 @@ fn print_output(output: Output) -> anyhow::Result<()> {
             is_preferred,
         } = mode;
         let refresh = refresh_rate as f64 / 1000.;
-        let preferred = if is_preferred { " (preferred)" } else { "" };
-        println!("  Current mode: {width}x{height} @ {refresh:.3} Hz{preferred}");
+
+        // This is technically the current mode, but the println below already specifies that.
+        let qualifier = print_qualifier(is_preferred, false, is_custom_mode);
+        println!("  Current mode: {width}x{height} @ {refresh:.3} Hz{qualifier}");
     } else {
         println!("  Disabled");
     }
@@ -578,12 +662,7 @@ fn print_output(output: Output) -> anyhow::Result<()> {
         let refresh = refresh_rate as f64 / 1000.;
 
         let is_current = Some(idx) == current_mode;
-        let qualifier = match (is_current, is_preferred) {
-            (true, true) => " (current, preferred)",
-            (true, false) => " (current)",
-            (false, true) => " (preferred)",
-            (false, false) => "",
-        };
+        let qualifier = print_qualifier(is_preferred, is_current, is_custom_mode);
 
         println!("    {width}x{height}@{refresh:.3}{qualifier}");
     }
@@ -659,6 +738,42 @@ fn print_window(window: &Window) {
     );
 }
 
+fn print_cast(cast: &Cast) {
+    let active = if cast.is_active { "" } else { " (inactive)" };
+    println!("Cast stream ID {}:{active}", cast.stream_id);
+    println!("  Session ID: {}", cast.session_id);
+
+    let kind = match cast.kind {
+        CastKind::PipeWire => "PipeWire",
+        CastKind::WlrScreencopy => "wlr-screencopy",
+    };
+    println!("  Kind: {kind}");
+
+    match &cast.target {
+        CastTarget::Nothing {} => {
+            println!("  Target: nothing (cleared)");
+        }
+        CastTarget::Output { name } => {
+            println!("  Target: output \"{name}\"");
+        }
+        CastTarget::Window { id } => {
+            println!("  Target: window {id}");
+        }
+    }
+
+    if cast.is_dynamic_target {
+        println!("  Dynamic cast target");
+    }
+
+    if let Some(pid) = cast.pid {
+        println!("  PID: {pid}");
+    }
+
+    if let Some(node_id) = cast.pw_node_id {
+        println!("  PipeWire node ID: {node_id}");
+    }
+}
+
 fn fmt_rounded(x: f64) -> String {
     let r = x.round();
     if (r - x).abs() <= 0.005 {
@@ -666,6 +781,19 @@ fn fmt_rounded(x: f64) -> String {
     } else {
         format!("{x:.2}")
     }
+}
+
+fn ensure_absolute_path(path: &mut String) -> anyhow::Result<()> {
+    let p = Path::new(path);
+    if p.is_relative() {
+        let mut cwd = env::current_dir().context("error getting current working directory")?;
+        cwd.push(p);
+        match cwd.into_os_string().into_string() {
+            Ok(absolute) => *path = absolute,
+            Err(cwd) => bail!("couldn't convert absolute path to string: {cwd:?}"),
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]

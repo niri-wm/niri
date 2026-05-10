@@ -5,6 +5,7 @@ use crate::niri::State;
 
 pub mod freedesktop_a11y;
 pub mod freedesktop_locale1;
+pub mod freedesktop_login1;
 pub mod freedesktop_screensaver;
 pub mod gnome_shell_introspect;
 pub mod gnome_shell_screenshot;
@@ -35,6 +36,7 @@ pub struct DBusServers {
     pub conn_introspect: Option<Connection>,
     #[cfg(feature = "xdp-gnome-screencast")]
     pub conn_screen_cast: Option<Connection>,
+    pub conn_login1: Option<Connection>,
     pub conn_locale1: Option<Connection>,
     pub conn_keyboard_monitor: Option<Connection>,
 }
@@ -133,6 +135,22 @@ impl DBusServers {
             if let Some(x) = try_start(keyboard_monitor.clone()) {
                 dbus.conn_keyboard_monitor = Some(x);
                 niri.a11y_keyboard_monitor = Some(keyboard_monitor);
+            }
+        }
+
+        let (to_niri, from_login1) = calloop::channel::channel();
+        niri.event_loop
+            .insert_source(from_login1, move |event, _, state| match event {
+                calloop::channel::Event::Msg(msg) => state.on_login1_msg(msg),
+                calloop::channel::Event::Closed => (),
+            })
+            .unwrap();
+        match freedesktop_login1::start(to_niri) {
+            Ok(conn) => {
+                dbus.conn_login1 = Some(conn);
+            }
+            Err(err) => {
+                warn!("error starting login1 watcher: {err:?}");
             }
         }
 

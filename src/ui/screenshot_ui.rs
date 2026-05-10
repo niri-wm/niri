@@ -63,6 +63,7 @@ pub enum ScreenshotUi {
         open_anim: Animation,
         clock: Clock,
         config: Rc<RefCell<Config>>,
+        path: Option<String>,
     },
 }
 
@@ -141,6 +142,7 @@ impl ScreenshotUi {
         screenshots: HashMap<Output, [OutputScreenshot; 3]>,
         default_output: Output,
         show_pointer: bool,
+        path: Option<String>,
     ) -> bool {
         if screenshots.is_empty() {
             return false;
@@ -235,6 +237,7 @@ impl ScreenshotUi {
             open_anim,
             clock: clock.clone(),
             config: config.clone(),
+            path,
         };
 
         self.update_buffers();
@@ -620,7 +623,8 @@ impl ScreenshotUi {
         &self,
         output: &Output,
         target: RenderTarget,
-    ) -> ArrayVec<ScreenshotUiRenderElement, 11> {
+        push: &mut dyn FnMut(ScreenshotUiRenderElement),
+    ) {
         let _span = tracy_client::span!("ScreenshotUi::render_output");
 
         let Self::Open {
@@ -634,10 +638,8 @@ impl ScreenshotUi {
             panic!("screenshot UI must be open to render it");
         };
 
-        let mut elements = ArrayVec::new();
-
         let Some(output_data) = output_data.get(output) else {
-            return elements;
+            return;
         };
 
         let scale = output_data.scale;
@@ -663,19 +665,18 @@ impl ScreenshotUi {
                 None,
                 Kind::Unspecified,
             ));
-            elements.push(elem.into());
+            push(elem.into());
         }
 
-        let buf_loc = zip(&output_data.buffers, &output_data.locations);
-        elements.extend(buf_loc.map(|(buffer, loc)| {
-            SolidColorRenderElement::from_buffer(
+        for (buffer, loc) in zip(&output_data.buffers, &output_data.locations) {
+            let elem = SolidColorRenderElement::from_buffer(
                 buffer,
                 loc.to_f64().to_logical(scale),
                 progress,
                 Kind::Unspecified,
-            )
-            .into()
-        }));
+            );
+            push(elem.into());
+        }
 
         // The screenshot itself goes last.
         let index = match target {
@@ -687,12 +688,10 @@ impl ScreenshotUi {
 
         if *show_pointer {
             if let Some(pointer) = screenshot.pointer.clone() {
-                elements.push(pointer.into());
+                push(pointer.into());
             }
         }
-        elements.push(screenshot.buffer.clone().into());
-
-        elements
+        push(screenshot.buffer.clone().into());
     }
 
     pub fn capture(
@@ -800,6 +799,8 @@ impl ScreenshotUi {
     }
 
     /// The pointer has moved to `point` relative to the current selection output.
+    ///
+    /// The point may be outside output bounds.
     pub fn pointer_motion(&mut self, point: Point<i32, Physical>, slot: Option<TouchSlot>) {
         let Self::Open {
             selection,
@@ -839,7 +840,8 @@ impl ScreenshotUi {
             selection.1 += delta;
             selection.2 += delta;
         } else {
-            selection.2 = point;
+            let size = output_data[&selection.0].size;
+            selection.2 = Point::new(point.x.clamp(0, size.w - 1), point.y.clamp(0, size.h - 1));
         }
 
         self.update_buffers();
@@ -850,6 +852,7 @@ impl ScreenshotUi {
         output: Output,
         point: Point<i32, Physical>,
         slot: Option<TouchSlot>,
+        move_existing: bool,
     ) -> bool {
         let Self::Open {
             selection,
@@ -884,6 +887,23 @@ impl ScreenshotUi {
             return false;
         }
 
+        if move_existing {
+            if output != selection.0 {
+                return false;
+            }
+
+            *button = Button::Down {
+                touch_slot: slot,
+                on_capture_button: false,
+                last_pos: (output, point),
+                move_state: Some(MoveState {
+                    pointer_offset: point - selection.1,
+                    touch_slot: slot,
+                }),
+            };
+            return true;
+        }
+
         let Some(output_data) = output_data.get(&output) else {
             return false;
         };
@@ -910,6 +930,11 @@ impl ScreenshotUi {
             last_pos: (output.clone(), point),
             move_state: None,
         };
+
+        let point = Point::new(
+            point.x.clamp(0, output_data.size.w - 1),
+            point.y.clamp(0, output_data.size.h - 1),
+        );
         *selection = (output, point, point);
 
         self.update_buffers();
@@ -940,15 +965,14 @@ impl ScreenshotUi {
             return None;
         };
 
-        // Check if this is a move touch and if so, stop the move.
-        if let Some(state) = move_state {
-            if state.touch_slot.is_some_and(|m_slot| Some(m_slot) == slot) {
-                *move_state = None;
-                return None;
-            }
-        };
-
         if touch_slot != slot {
+            // This is not our main touch, but it might be the move touch. If so, stop the move.
+            if let Some(state) = move_state {
+                if state.touch_slot.is_some_and(|m_slot| Some(m_slot) == slot) {
+                    *move_state = None;
+                }
+            };
+
             return None;
         }
 

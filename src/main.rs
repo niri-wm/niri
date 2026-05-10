@@ -7,6 +7,7 @@ use std::io::{self, Write};
 use std::os::fd::FromRawFd;
 use std::path::PathBuf;
 use std::process::Command;
+use std::sync::atomic::Ordering;
 use std::{env, mem};
 
 use calloop::EventLoop;
@@ -24,9 +25,8 @@ use niri::utils::spawning::{
     REMOVE_ENV_RUST_BACKTRACE, REMOVE_ENV_RUST_LIB_BACKTRACE,
 };
 use niri::utils::{cause_panic, version, watcher, xwayland, IS_SYSTEMD_SERVICE};
-use niri_config::ConfigPath;
+use niri_config::{Config, ConfigPath};
 use niri_ipc::socket::SOCKET_PATH_ENV;
-use portable_atomic::Ordering;
 use sd_notify::NotifyState;
 use smithay::reexports::wayland_server::Display;
 use tracing_subscriber::EnvFilter;
@@ -55,6 +55,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .compact()
         .with_writer(io::stderr)
         .with_env_filter(env_filter)
+        .with_ansi_sanitization(false)
         .init();
 
     if env::var_os("NOTIFY_SOCKET").is_some() {
@@ -101,7 +102,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Sub::Validate { config } => {
                 tracy_client::Client::start();
 
-                config_path(config).load()?;
+                config_path(config).load().config?;
                 info!("config is valid");
                 return Ok(());
             }
@@ -148,10 +149,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config_path = config_path(cli.config);
     env::remove_var("NIRI_CONFIG");
     let (config_created_at, config_load_result) = config_path.load_or_create();
-    let config_errored = config_load_result.is_err();
-    let mut config = config_load_result
-        .map_err(|err| warn!("{err:?}"))
-        .unwrap_or_default();
+    let config_errored = config_load_result.config.is_err();
+    let mut config = config_load_result.config.unwrap_or_else(|err| {
+        warn!("{err:?}");
+        Config::load_default()
+    });
+    let config_includes = config_load_result.includes;
 
     let spawn_at_startup = mem::take(&mut config.spawn_at_startup);
     let spawn_sh_at_startup = mem::take(&mut config.spawn_sh_at_startup);
@@ -167,6 +170,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Create the compositor.
     let display = Display::new().unwrap();
+
+    // Increase the buffer size so that it's harder to crash a frozen client with a 1000 Hz mouse.
+    set_default_max_buffer_size(&display, 1024 * 1024);
+
     let mut state = State::new(
         config,
         event_loop.handle(),
@@ -226,9 +233,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         state.niri.a11y.start();
     }
 
-    if env::var_os("NIRI_DISABLE_SYSTEM_MANAGER_NOTIFY").map_or(true, |x| x != "1") {
+    if env::var_os("NIRI_DISABLE_SYSTEM_MANAGER_NOTIFY").is_none_or(|x| x != "1") {
         // Notify systemd we're ready.
-        if let Err(err) = sd_notify::notify(true, &[NotifyState::Ready]) {
+        if let Err(err) = sd_notify::notify(&[NotifyState::Ready]) {
             warn!("error notifying systemd: {err:?}");
         };
 
@@ -238,7 +245,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    watcher::setup(&mut state, &config_path);
+    watcher::setup(&mut state, &config_path, config_includes);
 
     // Spawn commands from cli and auto-start.
     spawn(cli.command, None);
@@ -366,4 +373,38 @@ fn notify_fd() -> anyhow::Result<()> {
     let mut notif = unsafe { File::from_raw_fd(fd) };
     notif.write_all(b"READY=1\n")?;
     Ok(())
+}
+
+// The wayland-server crate has set_default_max_buffer_size() under a libwayland_1_23 feature, but
+// this hard-requires libwayland-server >= 1.23 which is not present on e.g. Ubuntu 24.04. Since
+// calling this is an optional enhancement, do it optionally at runtime.
+fn set_default_max_buffer_size(display: &Display<State>, size: usize) {
+    use std::ffi::c_void;
+
+    unsafe {
+        // RTLD_NOLOAD ensures we only get a handle to the libwayland-server that wayland-rs has
+        // already loaded into this process, rather than potentially pulling in a different copy.
+        let lib = libc::dlopen(
+            c"libwayland-server.so.0".as_ptr(),
+            libc::RTLD_LAZY | libc::RTLD_NOLOAD,
+        );
+        if lib.is_null() {
+            // It's not really expected that this can happen, maybe if some distro changes the
+            // library name?
+            warn!("cannot set default max buffer size: libwayland-server.so.0 is not loaded");
+            return;
+        }
+
+        let sym = libc::dlsym(lib, c"wl_display_set_default_max_buffer_size".as_ptr());
+        if sym.is_null() {
+            // Expected on libwayland-server < 1.23.
+            trace!("wl_display_set_default_max_buffer_size is missing; skipping");
+        } else {
+            let func: unsafe extern "C" fn(*mut c_void, libc::size_t) = std::mem::transmute(sym);
+            let display_ptr = display.handle().backend_handle().display_ptr();
+            func(display_ptr.cast(), size);
+        }
+
+        libc::dlclose(lib);
+    }
 }
