@@ -1855,6 +1855,7 @@ mod tests {
                     opacity: None,
                     geometry_corner_radius: None,
                     clip_to_geometry: None,
+                    clip_fullscreen_backdrop_to_window: None,
                     baba_is_float: None,
                     block_out_from: None,
                     variable_refresh_rate: None,

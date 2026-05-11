@@ -62,6 +62,8 @@ pub struct WindowRule {
     #[knuffel(child, unwrap(argument))]
     pub clip_to_geometry: Option<bool>,
     #[knuffel(child, unwrap(argument))]
+    pub clip_fullscreen_backdrop_to_window: Option<bool>,
+    #[knuffel(child, unwrap(argument))]
     pub baba_is_float: Option<bool>,
     #[knuffel(child, unwrap(argument))]
     pub block_out_from: Option<BlockOutFrom>,

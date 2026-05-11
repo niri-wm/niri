@@ -105,6 +105,12 @@ pub struct ResolvedWindowRules {
     /// Whether to clip this window to its geometry, including the corner radius.
     pub clip_to_geometry: Option<bool>,
 
+    /// Whether to clip the fullscreen backdrop to tile-minus-window so a translucent fullscreen
+    /// window composes against the wallpaper instead of the opaque black backdrop. Off by default
+    /// to match the xdg-shell spec, which requires the compositor to hide other screen content
+    /// behind a non-opaque fullscreen surface.
+    pub clip_fullscreen_backdrop_to_window: Option<bool>,
+
     /// Whether to bob this window up and down.
     pub baba_is_float: Option<bool>,
 
@@ -286,6 +292,9 @@ impl ResolvedWindowRules {
                 }
                 if let Some(x) = rule.clip_to_geometry {
                     resolved.clip_to_geometry = Some(x);
+                }
+                if let Some(x) = rule.clip_fullscreen_backdrop_to_window {
+                    resolved.clip_fullscreen_backdrop_to_window = Some(x);
                 }
                 if let Some(x) = rule.baba_is_float {
                     resolved.baba_is_float = Some(x);

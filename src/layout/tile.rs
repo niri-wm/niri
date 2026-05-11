@@ -1361,6 +1361,13 @@ impl<W: LayoutElement> Tile<W> {
         if fullscreen_progress > 0. {
             let alpha = fullscreen_progress as f32;
 
+            // Opt-in: when set, clip the backdrop to tile-minus-window so translucent fullscreen
+            // windows (e.g. kitty with background_opacity<1.0) compose against the wallpaper
+            // instead of the opaque backdrop. Off by default to match xdg-shell's requirement
+            // that the compositor hide other screen content behind a non-opaque fullscreen
+            // surface.
+            let clip_backdrop = rules.clip_fullscreen_backdrop_to_window == Some(true);
+
             // During the un/fullscreen animation, render a border element in order to use the
             // animated corner radius.
             if fullscreen_progress < 1. && has_border_shader {
@@ -1371,34 +1378,49 @@ impl<W: LayoutElement> Tile<W> {
                     .expanded_by(border_width as f32)
                     .scaled_by(1. - expanded_progress as f32);
 
-                // Same clip as the steady-state branch below, but per-strip
-                // CornerRadius preserves the animated tile-outer-corner shrink:
-                // strips at tile corners get the radius, strips that butt
-                // against the window's edge stay sharp.
                 let color = self.fullscreen_backdrop.color();
-                let tile_rect = Rectangle::new(location, self.fullscreen_backdrop.size());
-                for (geo, per_rect_radius) in backdrop_clip_rects(tile_rect, area, radius) {
+
+                if clip_backdrop {
+                    // Per-strip CornerRadius preserves the animated tile-outer-corner shrink:
+                    // strips at tile corners get the radius, strips that butt against the
+                    // window's edge stay sharp.
+                    let tile_rect = Rectangle::new(location, self.fullscreen_backdrop.size());
+                    for (geo, per_rect_radius) in backdrop_clip_rects(tile_rect, area, radius) {
+                        let elem = BorderRenderElement::new(
+                            geo.size,
+                            Rectangle::from_size(geo.size),
+                            GradientInterpolation::default(),
+                            Color::from_color32f(color),
+                            Color::from_color32f(color),
+                            0.,
+                            Rectangle::from_size(geo.size),
+                            0.,
+                            per_rect_radius,
+                            scale.x as f32,
+                            alpha,
+                        )
+                        .with_location(geo.loc);
+                        push(elem.into());
+                    }
+                } else {
+                    let size = self.fullscreen_backdrop.size();
                     let elem = BorderRenderElement::new(
-                        geo.size,
-                        Rectangle::from_size(geo.size),
+                        size,
+                        Rectangle::from_size(size),
                         GradientInterpolation::default(),
                         Color::from_color32f(color),
                         Color::from_color32f(color),
                         0.,
-                        Rectangle::from_size(geo.size),
+                        Rectangle::from_size(size),
                         0.,
-                        per_rect_radius,
+                        radius,
                         scale.x as f32,
                         alpha,
                     )
-                    .with_location(geo.loc);
+                    .with_location(location);
                     push(elem.into());
                 }
-            } else {
-                // Clip the backdrop to tile-minus-window so translucent windows
-                // (e.g., kitty with background_opacity<1.0) compose against the
-                // wallpaper, not against opaque black. Aspect-ratio padding bars
-                // are preserved by the strips outside the window's geometry.
+            } else if clip_backdrop {
                 let tile_rect = Rectangle::new(location, self.fullscreen_backdrop.size());
                 for (geo, _) in backdrop_clip_rects(tile_rect, area, CornerRadius::default()) {
                     let elem = SolidColorRenderElement::from_buffer_at(
@@ -1409,6 +1431,14 @@ impl<W: LayoutElement> Tile<W> {
                     );
                     push(elem.into());
                 }
+            } else {
+                let elem = SolidColorRenderElement::from_buffer(
+                    &self.fullscreen_backdrop,
+                    location,
+                    alpha,
+                    Kind::Unspecified,
+                );
+                push(elem.into());
             }
         }
 
