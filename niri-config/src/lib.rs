@@ -890,6 +890,7 @@ mod tests {
                 default-window-height { fixed 500; }
                 default-column-display "tabbed"
                 default-floating-position x=100 y=-200 relative-to="bottom-left"
+                clip-fullscreen-backdrop-to-window true
 
                 focus-ring {
                     off
@@ -1855,7 +1856,9 @@ mod tests {
                     opacity: None,
                     geometry_corner_radius: None,
                     clip_to_geometry: None,
-                    clip_fullscreen_backdrop_to_window: None,
+                    clip_fullscreen_backdrop_to_window: Some(
+                        true,
+                    ),
                     baba_is_float: None,
                     block_out_from: None,
                     variable_refresh_rate: None,
