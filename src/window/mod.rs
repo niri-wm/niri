@@ -112,12 +112,6 @@ pub struct ResolvedWindowRules {
     pub block_out_from: Option<BlockOutFrom>,
 
     /// Whether to block pointer-constraints (locked + confined) for this window.
-    ///
-    /// When `Some(true)`, niri suppresses activation of any pointer-constraint
-    /// (`zwp_pointer_constraints_v1`) request originating from this window. Useful
-    /// for apps that request a pointer-lock as part of an annotation/overlay UI
-    /// that the user doesn't want to engage every time the cursor crosses the
-    /// surface. Both `Locked` and `Confined` variants are suppressed.
     pub block_pointer_constraints: Option<bool>,
 
     /// Whether to enable VRR on this window's primary output if it is on-demand.

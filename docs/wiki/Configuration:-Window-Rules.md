@@ -596,7 +596,7 @@ window-rule {
 
 #### `block-pointer-constraints`
 
-<sup>Since: next</sup>
+<sup>Since: next release</sup>
 
 Suppress activation of [`zwp_pointer_constraints_v1`](https://wayland.app/protocols/pointer-constraints-unstable-v1) requests originating from this window.
 Affects both `locked` and `confined` constraint variants.
@@ -607,9 +607,11 @@ Well-behaved clients gate relative-motion mode and similar features on the const
 
 Useful for opting out of apps that request a pointer-lock as part of a tooltip, annotation, or overlay UI that the user doesn't want to engage when the cursor merely crosses the surface.
 
+For example, Zoom's `annotate_toolbar` overlay window requests a pointer-lock the user typically doesn't want to engage:
+
 ```kdl
 window-rule {
-    match app-id="some-app"
+    match app-id="^Zoom$" title="^annotate_toolbar$"
     block-pointer-constraints true
 }
 ```
