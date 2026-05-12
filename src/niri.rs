@@ -73,7 +73,7 @@ use smithay::utils::{
 };
 use smithay::wayland::background_effect::BackgroundEffectState;
 use smithay::wayland::compositor::{
-    with_states, with_surface_tree_downward, CompositorClientState, CompositorHandler,
+    get_parent, with_states, with_surface_tree_downward, CompositorClientState, CompositorHandler,
     CompositorState, HookId, SurfaceData, TraversalAction,
 };
 use smithay::wayland::cursor_shape::CursorShapeManagerState;
@@ -6071,6 +6071,23 @@ impl Niri {
         let pointer = self.seat.get_pointer().unwrap();
         if Some(surface) != pointer.current_focus().as_ref() {
             return;
+        }
+
+        // Window-rule opt-out: a window matched by a rule with
+        // `block-pointer-constraints true` short-circuits activation here.
+        // The constraint can still be requested by the client and bound to
+        // the surface — we just never activate it, so the protocol behaves
+        // like a silent no-op for the lifetime of the request. Walk to the
+        // root surface first because pointer-constraints can be requested
+        // on subsurfaces too, and rules resolve on the toplevel.
+        let mut root = surface.clone();
+        while let Some(parent) = get_parent(&root) {
+            root = parent;
+        }
+        if let Some((mapped, _)) = self.layout.find_window_and_output(&root) {
+            if mapped.rules().block_pointer_constraints == Some(true) {
+                return;
+            }
         }
 
         with_pointer_constraint(surface, &pointer, |constraint| {
