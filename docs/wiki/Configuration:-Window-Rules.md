@@ -594,6 +594,30 @@ window-rule {
 > This is because window title (and app ID) are not double-buffered in the Wayland protocol, so they are not tied to specific window contents.
 > There's no robust way for Firefox to synchronize visibly showing a different tab and changing the window title.
 
+#### `block-pointer-constraints`
+
+<sup>Since: next</sup>
+
+Suppress activation of [`zwp_pointer_constraints_v1`](https://wayland.app/protocols/pointer-constraints-unstable-v1) requests originating from this window.
+Affects both `locked` and `confined` constraint variants.
+
+The constraint can still be requested and bound to the window's surfaces by the client.
+niri simply never activates it, so the client observes a constraint that remains inactive for its entire lifetime.
+Well-behaved clients gate relative-motion mode and similar features on the constraint being active, so they degrade gracefully to normal absolute-motion input.
+
+Useful for opting out of apps that request a pointer-lock as part of a tooltip, annotation, or overlay UI that the user doesn't want to engage when the cursor merely crosses the surface.
+
+```kdl
+window-rule {
+    match app-id="some-app"
+    block-pointer-constraints true
+}
+```
+
+> [!NOTE]
+> This is unrelated to keyboard focus or pointer focus.
+> Cursor entry into the window's surface still updates pointer focus normally (and triggers [`focus-follows-mouse`](./Configuration:-Input.md#focus-follows-mouse) if configured) — only the pointer-lock/confine activation is gated.
+
 #### `opacity`
 
 Set the opacity of the window.
