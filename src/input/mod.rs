@@ -7,7 +7,7 @@ use calloop::timer::{TimeoutAction, Timer};
 use input::event::gesture::GestureEventCoordinates as _;
 use niri_config::{
     Action, Bind, Binds, Config, Key, ModKey, Modifiers, MruDirection, SwitchBinds, Trigger,
-    ZoomIncrementType,
+    ZoomIncrementType, ZoomMovementMode,
 };
 use niri_ipc::LayoutSwitchTarget;
 use smithay::backend::input::{
@@ -2499,9 +2499,16 @@ impl State {
                             .to_f64();
                         let cursor_local = cursor_pos - output_geo.loc;
                         let movement_mode = self.niri.config.borrow().zoom.movement_mode;
-                        self.niri
-                            .layout
-                            .animate_zoom_unlock(&output, cursor_local, &movement_mode);
+                        match movement_mode {
+                            ZoomMovementMode::OnEdge => (),
+                            _ => {
+                                self.niri.layout.animate_zoom_unlock(
+                                    &output,
+                                    cursor_local,
+                                    &movement_mode,
+                                );
+                            }
+                        }
 
                         self.niri.queue_redraw(&output);
                     }
