@@ -66,6 +66,8 @@ pub struct WindowRule {
     #[knuffel(child, unwrap(argument))]
     pub block_out_from: Option<BlockOutFrom>,
     #[knuffel(child, unwrap(argument))]
+    pub block_pointer_constraints: Option<bool>,
+    #[knuffel(child, unwrap(argument))]
     pub variable_refresh_rate: Option<bool>,
     #[knuffel(child, unwrap(argument, str))]
     pub default_column_display: Option<ColumnDisplay>,
