@@ -40,7 +40,6 @@ use monitor::{InsertHint, InsertPosition, InsertWorkspace, MonitorAddWindowTarge
 use niri_config::utils::MergeWith as _;
 use niri_config::{
     Config, CornerRadius, LayoutPart, PresetSize, Workspace as WorkspaceConfig, WorkspaceReference,
-    window_rule::ConsumeIntoColumn,
 };
 use niri_ipc::{ColumnDisplay, PositionChange, SizeChange, WindowLayout};
 use scrolling::{Column, ColumnWidth};
@@ -74,6 +73,7 @@ use crate::utils::{
     ensure_min_max_size_maybe_zero, output_matches_name, output_size,
     round_logical_in_physical_max1, ResizeEdge,
 };
+use crate::window::OpenConsumeIntoColumn;
 use crate::window::ResolvedWindowRules;
 
 pub mod closing_window;
@@ -1110,10 +1110,10 @@ impl<W: LayoutElement> Layout<W> {
         }
     }
 
-    pub fn auto_consume_window(&mut self, window_id: &W::Id, strategy: ConsumeIntoColumn) {
+    pub fn auto_consume_window(&mut self, window_id: &W::Id, consume_rule: OpenConsumeIntoColumn) {
         for ws in self.workspaces_mut() {
             if ws.has_window(window_id) {
-                ws.auto_consume_window(window_id, strategy);
+                ws.auto_consume_window(window_id, consume_rule);
                 return;
             }
         }
