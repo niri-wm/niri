@@ -30,12 +30,11 @@ use smithay::backend::renderer::element::utils::{
 };
 use smithay::backend::renderer::element::{
     default_primary_scanout_output_compare, Element, Id, Kind, PrimaryScanoutOutput, RenderElement,
-    RenderElementStates, UnderlyingStorage,
+    RenderElementStates,
 };
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::renderer::sync::SyncPoint;
-use smithay::backend::renderer::utils::DamageSet;
-use smithay::backend::renderer::{Color32F, Renderer};
+use smithay::backend::renderer::Color32F;
 use smithay::desktop::utils::{
     bbox_from_surface_tree, output_update, send_dmabuf_feedback_surface_tree,
     send_frames_surface_tree, surface_presentation_feedback_flags_from_states,
@@ -69,9 +68,8 @@ use smithay::reexports::wayland_server::backend::{
 use smithay::reexports::wayland_server::protocol::wl_shm;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::{Client, Display, DisplayHandle, Resource};
-use smithay::utils::user_data::UserDataMap;
 use smithay::utils::{
-    Buffer, ClockSource, IsAlive as _, Logical, Monotonic, Physical, Point, Rectangle, Scale, Size,
+    ClockSource, IsAlive as _, Logical, Monotonic, Physical, Point, Rectangle, Scale, Size,
     Transform, SERIAL_COUNTER,
 };
 use smithay::wayland::background_effect::BackgroundEffectState;
@@ -2079,33 +2077,13 @@ impl State {
     }
 
     pub fn confirm_screenshot(&mut self, write_to_disk: bool) {
-        let ScreenshotUi::Open { .. } = &mut self.niri.screenshot_ui else {
+        let ScreenshotUi::Open { path, .. } = &mut self.niri.screenshot_ui else {
             return;
         };
-
-        // Get zoom parameters for the current output
-        let (zoom_factor, zoom_focal, scale_with_zoom) = {
-            if let Some(output) = self.niri.screenshot_ui.selection_output() {
-                let zoom_snapshot = self.niri.layout.zoom_snapshot_for_output(output);
-                (
-                    zoom_snapshot.level,
-                    zoom_snapshot.focal,
-                    self.niri.config.borrow().cursor.scale_with_zoom,
-                )
-            } else {
-                (1.0, Point::from((0.0, 0.0)), false)
-            }
-        };
-
-        let path = self.niri.screenshot_ui.take_path();
+        let path = path.take();
 
         self.backend.with_primary_renderer(|renderer| {
-            match self.niri.screenshot_ui.capture(
-                renderer,
-                zoom_factor,
-                zoom_focal,
-                scale_with_zoom,
-            ) {
+            match self.niri.screenshot_ui.capture(renderer) {
                 Ok((size, pixels)) => {
                     if let Err(err) = self.niri.save_screenshot(size, pixels, write_to_disk, path) {
                         warn!("error saving screenshot: {err:?}");
@@ -3812,17 +3790,6 @@ impl Niri {
         output: &Output,
         push: &mut dyn FnMut(PointerRenderElements<R>),
     ) -> Point<f64, Logical> {
-        let skip_zoom = !ctx.apply_zoom;
-        self.render_pointer_internal(ctx, output, push, skip_zoom)
-    }
-
-    fn render_pointer_internal<R: NiriRenderer>(
-        &self,
-        ctx: RenderCtx<R>,
-        output: &Output,
-        push: &mut dyn FnMut(PointerRenderElements<R>),
-        skip_zoom: bool,
-    ) -> Point<f64, Logical> {
         let _span = tracy_client::span!("Niri::render_pointer");
         let output_scale = output.current_scale();
         let output_pos = self.global_space.output_geometry(output).unwrap().loc;
@@ -3833,40 +3800,18 @@ impl Niri {
             .unwrap_or_else(|| self.seat.get_pointer().unwrap().current_location());
         let pointer_pos_logical = pointer_pos_logical - output_pos.to_f64();
 
-        let zoom_snapshot = self.layout.zoom_snapshot_for_output(output);
-        let zoom_active = !skip_zoom && zoom_snapshot.level > 1.0;
-
         // Get the render cursor to draw.
         let cursor_scale = output_scale.integer_scale();
         let render_cursor = self.cursor_manager.get_render_cursor(cursor_scale);
 
         let output_scale = Scale::from(output.current_scale().fractional_scale());
-        let scale_with_zoom = self.config.borrow().cursor.scale_with_zoom;
-
-        let pointer_pos = if zoom_active {
-            let pointer_phys = pointer_pos_logical.to_physical(output_scale);
-            let target = zoom_transform_physical_point_f64(
-                pointer_phys,
-                zoom_snapshot.level,
-                zoom_snapshot.focal,
-                output_scale,
-            );
-            target.to_i32_round()
-        } else {
-            pointer_pos_logical.to_physical_precise_round(output_scale)
-        };
+        let pointer_pos = pointer_pos_logical.to_physical_precise_round(output_scale);
 
         match render_cursor {
             RenderCursor::Hidden => (),
             RenderCursor::Surface { surface, hotspot } => {
                 let hotspot = hotspot.to_physical_precise_round(output_scale);
-                let final_pos = if zoom_active && scale_with_zoom {
-                    let hotspot_scaled =
-                        hotspot.to_f64().upscale(zoom_snapshot.level).to_i32_round();
-                    pointer_pos - hotspot_scaled
-                } else {
-                    pointer_pos - hotspot
-                };
+                let final_pos = pointer_pos - hotspot;
 
                 push_elements_from_surface_tree(
                     ctx.renderer,
@@ -3887,13 +3832,7 @@ impl Niri {
                 let hotspot = XCursor::hotspot(frame).to_logical(scale);
 
                 let hotspot = hotspot.to_physical_precise_round(output_scale);
-                let final_pos = if zoom_active && scale_with_zoom {
-                    let hotspot_scaled =
-                        hotspot.to_f64().upscale(zoom_snapshot.level).to_i32_round();
-                    pointer_pos - hotspot_scaled
-                } else {
-                    pointer_pos - hotspot
-                };
+                let final_pos = pointer_pos - hotspot;
 
                 let texture = self.cursor_texture_cache.get(icon, scale, &cursor, idx);
                 match MemoryRenderBufferRenderElement::from_buffer(
@@ -3914,18 +3853,6 @@ impl Niri {
         }
 
         if let Some(dnd_icon) = self.dnd_icon.as_ref() {
-            let pointer_pos = if zoom_active {
-                let pointer_phys = pointer_pos_logical.to_physical(output_scale);
-                let target = zoom_transform_physical_point_f64(
-                    pointer_phys,
-                    zoom_snapshot.level,
-                    zoom_snapshot.focal,
-                    output_scale,
-                );
-                target.to_i32_round()
-            } else {
-                pointer_pos_logical.to_physical_precise_round(output_scale)
-            };
             let dnd_pos = pointer_pos + dnd_icon.offset.to_physical_precise_round(output_scale);
             push_elements_from_surface_tree(
                 ctx.renderer,
@@ -3938,18 +3865,7 @@ impl Niri {
             );
         }
 
-        if zoom_active {
-            display_cursor_local_for_output(
-                pointer_pos_logical + output_pos.to_f64(),
-                output_pos.to_f64(),
-                output_size(output).to_f64(),
-                zoom_snapshot.level,
-                zoom_snapshot.focal,
-            )
-            .unwrap_or(pointer_pos_logical)
-        } else {
-            pointer_pos_logical
-        }
+        pointer_pos_logical
     }
 
     pub(crate) fn render_pointer_for_output<R: NiriRenderer>(
@@ -3967,6 +3883,7 @@ impl Niri {
         let output_pos = self.global_space.output_geometry(output).unwrap().loc;
         let scale_with_zoom = self.config.borrow().cursor.scale_with_zoom;
 
+        // Check whether we need to draw the tablet cursor or the regular cursor.
         let pointer_pos = self
             .tablet_cursor_location
             .unwrap_or_else(|| self.seat.get_pointer().unwrap().current_location());
@@ -4002,49 +3919,58 @@ impl Niri {
             ..ctx
         };
 
-        let mut target_rounded: Option<Point<i32, Physical>> = None;
+        // Pattern A: pre-compute target_rounded (does not depend on element geometry).
+        let display_cursor = cursor_logical_pos.unwrap_or(pointer_local);
+        let cursor_pos_f64: Point<f64, Physical> = display_cursor.to_physical(output_scale);
+        let target = zoom_transform_physical_point_f64(
+            cursor_pos_f64,
+            zoom_snapshot.level,
+            zoom_snapshot.focal,
+            output_scale,
+        );
+        let target_rounded = target.to_i32_round();
+
+        // Pre-extract cursor hotspot for Pattern A (Kind::Cursor elements),
+        // so we don't need to read elem.geometry().loc to determine it.
+        let cursor_scale = output.current_scale().integer_scale();
+        let render_cursor = self.cursor_manager.get_render_cursor(cursor_scale);
+        let cursor_hotspot: Option<Point<i32, Physical>> = match &render_cursor {
+            RenderCursor::Hidden => None,
+            RenderCursor::Surface { hotspot, .. } => {
+                Some(hotspot.to_physical_precise_round(output_scale))
+            }
+            RenderCursor::Named { scale, cursor, .. } => {
+                let (_, frame) = cursor.frame(self.start_time.elapsed().as_millis() as u32);
+                let hotspot = XCursor::hotspot(frame).to_logical(*scale);
+                Some(hotspot.to_physical_precise_round(output_scale))
+            }
+        };
+        let pointer_local_phys: Point<f64, Physical> = pointer_local.to_physical(output_scale);
 
         self.render_pointer(raw_ctx, output, &mut |elem| {
-            let elem_loc = elem.geometry(output_scale).loc;
-
-            let display_cursor = cursor_logical_pos.unwrap_or(pointer_local);
-            let cursor_pos_f64: Point<f64, Physical> = display_cursor.to_physical(output_scale);
-
-            let target = zoom_transform_physical_point_f64(
-                cursor_pos_f64,
-                zoom_snapshot.level,
-                zoom_snapshot.focal,
-                output_scale,
-            );
-            let target_rounded_ = target.to_i32_round();
-
-            target_rounded = Some(target_rounded_);
-
-            let pointer_local_phys: Point<f64, Physical> = pointer_local.to_physical(output_scale);
-            let hotspot: Point<i32, Physical> =
-                (pointer_local_phys - elem_loc.to_f64()).to_i32_round();
-
-            let (cursor_zoom, final_pos) = if scale_with_zoom {
-                let hotspot_scaled = hotspot.to_f64().upscale(zoom_snapshot.level).to_i32_round();
-                let pos = target_rounded_ - hotspot_scaled;
-                (zoom_snapshot.level, pos)
-            } else {
-                let pos = target_rounded_ - hotspot;
-                (1.0, pos)
+            // Pattern A: determine hotspot based on element kind,
+            // avoiding elem.geometry().loc for cursor elements.
+            let hotspot = match (elem.kind(), cursor_hotspot) {
+                (Kind::Cursor, Some(hotspot)) => hotspot,
+                _ => {
+                    let elem_loc = elem.geometry(output_scale).loc;
+                    (pointer_local_phys - elem_loc.to_f64()).to_i32_round()
+                }
             };
 
-            let elem = RelocateRenderElement::from_element(
-                RescaleRenderElement::from_element(elem, hotspot, cursor_zoom),
-                final_pos,
-                Relocate::Absolute,
+            push(
+                ZoomedRenderElement::Pointer(wrap_cursor_for_zoom(
+                    elem,
+                    hotspot,
+                    target_rounded,
+                    zoom_snapshot.level,
+                    scale_with_zoom,
+                ))
+                .into(),
             );
-
-            push(ZoomedRenderElements::Pointer(elem).into());
         });
 
-        target_rounded
-            .map(|p| p.to_f64().to_logical(output_scale))
-            .unwrap_or(cursor_logical_pos.unwrap_or(pointer_local))
+        target_rounded.to_f64().to_logical(output_scale)
     }
 
     /// Checks if the pointer should be included on a window cast or screenshot.
@@ -4444,11 +4370,13 @@ impl Niri {
         }
 
         let output_scale = Scale::from(output.current_scale().fractional_scale());
+        let output_geo = self.global_space.output_geometry(output).unwrap();
 
         let zoom_snapshot = self.layout.zoom_snapshot_for_output(output);
-        let (zoom_level, zoom_focal) = (zoom_snapshot.level, zoom_snapshot.focal);
+        let zoom_level = zoom_snapshot.level.max(1.0);
+        let (zoom_level, zoom_focal) = (zoom_level, zoom_snapshot.focal);
 
-        apply_zoom_to_render_element(element, zoom_level, output_scale, zoom_focal)
+        apply_zoom_to_render_element(element, zoom_level, output_scale, zoom_focal, output_geo)
     }
 
     pub fn render_to_vec<R: NiriRenderer>(
@@ -4586,15 +4514,13 @@ impl Niri {
         // If the screenshot UI is open, draw it.
         if self.screenshot_ui.is_open() {
             let zoom_snapshot = self.layout.zoom_snapshot_for_output(output);
-            let zoom_factor = zoom_snapshot.level;
-            let zoom_focal = zoom_snapshot.focal;
+            let zoom_factor = zoom_snapshot.level.max(1.0);
             let scale_with_zoom = self.config.borrow().cursor.scale_with_zoom;
             self.screenshot_ui.render_output(
                 output,
                 ctx.target,
-                ctx.apply_zoom,
                 zoom_factor,
-                zoom_focal,
+                zoom_snapshot.focal,
                 scale_with_zoom,
                 push,
             );
@@ -5852,6 +5778,7 @@ impl Niri {
                     if let Err(err) = &res {
                         warn!("error rendering pointer for {}: {err:?}", output.name());
                     }
+
                     res.ok().map(|(texture, sync_point, geo)| {
                         let pointer_pos = pointer_pos.to_physical_precise_round(scale);
                         let hotspot = pointer_pos - geo.loc;
@@ -5859,12 +5786,15 @@ impl Niri {
                     })
                 };
 
+                let capture_zoom_level = self.layout.zoom_level_for_output(&output);
+
                 res_output.map(|(texture, _)| {
                     OutputScreenshot::from_textures(
                         renderer,
                         scale,
                         texture,
                         res_pointer.map(|(texture, _, geo, hotspot)| (texture, geo, hotspot)),
+                        capture_zoom_level,
                     )
                 })
             });
@@ -5899,7 +5829,7 @@ impl Niri {
             renderer,
             target: RenderTarget::ScreenCapture,
             xray: None,
-            apply_zoom: false,
+            apply_zoom: true,
         };
         let elements = self.render_to_vec(ctx, output, include_pointer);
         let elements = elements.iter().rev();
@@ -6837,6 +6767,32 @@ impl ClientData for ClientState {
     fn disconnected(&self, _client_id: ClientId, _reason: DisconnectReason) {}
 }
 
+/// Wrap a cursor render element for zoom display.
+///
+/// Unlike content elements (which are rescaled around the zoom focal point),
+/// cursor elements must be rescaled around their hotspot so the cursor
+/// graphic remains correctly aligned with the zoomed cursor position.
+fn wrap_cursor_for_zoom<E: Element>(
+    elem: E,
+    hotspot: Point<i32, Physical>,
+    target_rounded: Point<i32, Physical>,
+    zoom: f64,
+    scale_with_zoom: bool,
+) -> RelocateRenderElement<RescaleRenderElement<E>> {
+    let (cursor_zoom, scale_anchor, final_pos) = if scale_with_zoom {
+        let hotspot_scaled = hotspot.to_f64().upscale(zoom).to_i32_round();
+        (zoom, hotspot, target_rounded - hotspot_scaled)
+    } else {
+        (1.0, Point::default(), target_rounded - hotspot)
+    };
+
+    RelocateRenderElement::from_element(
+        RescaleRenderElement::from_element(elem, scale_anchor, cursor_zoom),
+        final_pos,
+        Relocate::Absolute,
+    )
+}
+
 fn scale_relocate_crop<E: Element>(
     elem: E,
     output_scale: Scale<f64>,
@@ -6849,142 +6805,20 @@ fn scale_relocate_crop<E: Element>(
     CropRenderElement::from_element(elem, output_scale, ws_geo)
 }
 
-#[derive(Debug)]
-pub struct ZoomRenderElement<E> {
-    pub element: E,
-    zoom_factor: f64,
-    output_scale: Scale<f64>,
-    zoom_focal: Point<f64, Logical>,
-}
-
-impl<E: Element> ZoomRenderElement<E> {
-    pub fn from_element(
-        element: E,
-        zoom_factor: f64,
-        output_scale: Scale<f64>,
-        zoom_focal: Point<f64, Logical>,
-    ) -> Self {
-        Self {
-            element,
-            zoom_factor,
-            output_scale,
-            zoom_focal,
-        }
-    }
-
-    fn zoom_rect(&self, rect: Rectangle<i32, Physical>) -> Rectangle<i32, Physical> {
-        zoom_transform_physical_rect(rect, self.zoom_factor, self.zoom_focal, self.output_scale)
-    }
-}
-
-// From implementation to convert a plain element to ZoomRenderElement with identity zoom
-impl<E: Element> From<E> for ZoomRenderElement<E> {
-    fn from(element: E) -> Self {
-        Self {
-            element,
-            zoom_factor: 1.0,
-            output_scale: Scale::from(1.0),
-            zoom_focal: Point::from((0.0, 0.0)),
-        }
-    }
-}
-
-// From implementation to convert scaled+relocated element wrapper to ZoomRenderElement.
-// ScaledRelocatedRenderElement<E> = RelocateRenderElement<RescaleRenderElement<E>>
-
-impl<E: Element> Element for ZoomRenderElement<E> {
-    fn id(&self) -> &Id {
-        self.element.id()
-    }
-
-    fn current_commit(&self) -> smithay::backend::renderer::utils::CommitCounter {
-        self.element.current_commit()
-    }
-
-    fn src(&self) -> Rectangle<f64, Buffer> {
-        self.element.src()
-    }
-
-    fn geometry(&self, scale: Scale<f64>) -> Rectangle<i32, Physical> {
-        self.zoom_rect(self.element.geometry(scale))
-    }
-
-    fn transform(&self) -> Transform {
-        self.element.transform()
-    }
-
-    fn damage_since(
-        &self,
-        scale: Scale<f64>,
-        commit: Option<smithay::backend::renderer::utils::CommitCounter>,
-    ) -> DamageSet<i32, Physical> {
-        // Delegate to inner element and transform the damage by zoom, following Smithay's
-        // RescaleRenderElement pattern.
-        self.element
-            .damage_since(scale, commit)
-            .into_iter()
-            .map(|rect| {
-                zoom_transform_physical_rect(
-                    rect,
-                    self.zoom_factor,
-                    self.zoom_focal,
-                    self.output_scale,
-                )
-            })
-            .collect()
-    }
-
-    fn alpha(&self) -> f32 {
-        self.element.alpha()
-    }
-
-    fn kind(&self) -> Kind {
-        self.element.kind()
-    }
-
-    fn is_framebuffer_effect(&self) -> bool {
-        self.element.is_framebuffer_effect()
-    }
-}
-
-impl<R: Renderer, E: RenderElement<R>> RenderElement<R> for ZoomRenderElement<E> {
-    fn draw(
-        &self,
-        frame: &mut R::Frame<'_, '_>,
-        src: Rectangle<f64, Buffer>,
-        dst: Rectangle<i32, Physical>,
-        damage: &[Rectangle<i32, Physical>],
-        opaque_regions: &[Rectangle<i32, Physical>],
-        cache: Option<&UserDataMap>,
-    ) -> Result<(), R::Error> {
-        self.element
-            .draw(frame, src, dst, damage, opaque_regions, cache)
-    }
-
-    #[inline]
-    fn underlying_storage(&self, renderer: &mut R) -> Option<UnderlyingStorage<'_>> {
-        self.element.underlying_storage(renderer)
-    }
-
-    fn capture_framebuffer(
-        &self,
-        frame: &mut R::Frame<'_, '_>,
-        src: Rectangle<f64, Buffer>,
-        dst: Rectangle<i32, Physical>,
-        cache: &UserDataMap,
-    ) -> Result<(), R::Error> {
-        self.element.capture_framebuffer(frame, src, dst, cache)
-    }
-}
-
 /// Wrap an element with the standard zoom transform.
 pub fn zoom_wrap<E: Element>(
     elem: E,
     zoom_factor: f64,
     output_scale: Scale<f64>,
     zoom_focal: Point<f64, Logical>,
-) -> ZoomRenderElement<E> {
-    ZoomRenderElement::from_element(elem, zoom_factor, output_scale, zoom_focal)
+    output_geo: Rectangle<i32, Logical>,
+) -> RelocateRenderElement<RescaleRenderElement<E>> {
+    let focal_physical: Point<i32, Physical> = zoom_focal.to_physical_precise_round(output_scale);
+    RelocateRenderElement::from_element(
+        RescaleRenderElement::from_element(elem, focal_physical, zoom_factor),
+        output_geo.loc.to_physical(Scale::from(zoom_factor as i32)),
+        Relocate::Relative,
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -6992,16 +6826,47 @@ fn apply_zoom_to_render_element<R: NiriRenderer>(
     element: OutputRenderElements<R>,
     zoom_factor: f64,
     output_scale: Scale<f64>,
-    zoom_focal_point: Point<f64, Logical>,
+    zoom_focal: Point<f64, Logical>,
+    output_geo: Rectangle<i32, Logical>,
 ) -> OutputRenderElements<R> {
     // Generate match arms for each OutputRenderElement variant.
     macro_rules! apply_zoom {
         ($($variant:ident),*) => {
             match element {
+                OutputRenderElements::ScreenshotUi(elem) => {
+                    match elem {
+                        ScreenshotUiRenderElement::Screenshot(tex) => {
+                            let e = zoom_wrap(
+                                tex,
+                                zoom_factor,
+                                output_scale,
+                                zoom_focal,
+                                output_geo,
+                            );
+                            ZoomedRenderElement::Texture(e).into()
+                        }
+                        ScreenshotUiRenderElement::SolidColor(elem) => {
+                            // Pre-compute exact zoomed geometry from corner
+                            // points to avoid 1-pixel gaps between adjacent
+                            // solid-color tiles that RescaleRenderElement's
+                            // per-element rounding causes.
+                            let geo = elem.geometry(output_scale);
+                            let orig_rect = Rectangle::new(geo.loc, geo.size);
+                            let zoomed_rect = zoom_transform_physical_rect(
+                                orig_rect,
+                                zoom_factor,
+                                zoom_focal,
+                                output_scale,
+                            );
+                            let zoomed = elem.with_geometry_physical(zoomed_rect, output_scale);
+                            ZoomedRenderElement::ScreenshotSolidColor(zoomed).into()
+                        }
+                    }
+                }
                 $(
                     OutputRenderElements::$variant(elem) => {
-                        let e = zoom_wrap(elem, zoom_factor, output_scale, zoom_focal_point);
-                        OutputRenderElements::Zoomed(ZoomedRenderElements::$variant(e)).into()
+                        let e = zoom_wrap(elem, zoom_factor, output_scale, zoom_focal, output_geo);
+                        ZoomedRenderElement::$variant(e).into()
                     }
                 )*
                 _ => element,
@@ -7009,19 +6874,16 @@ fn apply_zoom_to_render_element<R: NiriRenderer>(
         }
     }
 
-    /* ScreenshotUi, WindowMruUi, ExitConfirmDialog, Zoomed, Pointer
+    /* WindowMruUi, ExitConfirmDialog, Zoomed, Pointer
      * are NOT in this list.
      * They will be caught by the _ => element fallback and returned
-     * unchanged. ScreenshotUi should
-     * not have zoom transforms applied - it's rendered at captured
-     * geometry. Pointer is handled by render_pointer directly. */
+     * unchanged. Pointer is handled by render_pointer directly. */
     apply_zoom!(
         Monitor,
         RescaledTile,
         LayerSurface,
         Wayland,
         SolidColor,
-        Texture,
         RelocatedColor,
         RelocatedLayerSurface
     )
@@ -7044,21 +6906,19 @@ niri_render_elements! {
 // Unique enum for all zoomed elements - avoids type conflicts with OutputRenderElements since
 // zoomed types are wrapped in a separate enum
 niri_render_elements! {
-    ZoomedRenderElements<R> => {
-        Monitor = ZoomRenderElement<MonitorRenderElement<R>>,
-        RescaledTile = ZoomRenderElement<RescaleRenderElement<TileRenderElement<R>>>,
-        LayerSurface = ZoomRenderElement<LayerSurfaceRenderElement<R>>,
-        RelocatedLayerSurface = ZoomRenderElement<CropRenderElement<RelocateRenderElement<RescaleRenderElement<LayerSurfaceRenderElement<R>>>>>,
-        RelocatedColor = ZoomRenderElement<CropRenderElement<RelocateRenderElement<RescaleRenderElement<SolidColorRenderElement>>>>,
+    ZoomedRenderElement<R> => {
+        Monitor = RelocateRenderElement<RescaleRenderElement<MonitorRenderElement<R>>>,
+        RescaledTile = RelocateRenderElement<RescaleRenderElement<RescaleRenderElement<TileRenderElement<R>>>>,
+        LayerSurface = RelocateRenderElement<RescaleRenderElement<LayerSurfaceRenderElement<R>>>,
+        RelocatedLayerSurface = RelocateRenderElement<RescaleRenderElement<CropRenderElement<RelocateRenderElement<RescaleRenderElement<LayerSurfaceRenderElement<R>>>>>>,
+        RelocatedColor = RelocateRenderElement<RescaleRenderElement<CropRenderElement<RelocateRenderElement<RescaleRenderElement<SolidColorRenderElement>>>>>,
         Pointer = RelocateRenderElement<RescaleRenderElement<PointerRenderElements<R>>>,
-        Wayland = ZoomRenderElement<WaylandSurfaceRenderElement<R>>,
-        SolidColor = ZoomRenderElement<SolidColorRenderElement>,
-        Texture = ZoomRenderElement<PrimaryGpuTextureRenderElement>,
-        CapturedPointer = RelocateRenderElement<RescaleRenderElement<PrimaryGpuTextureRenderElement>>,
-        // We don't apply zoom to WindowMruUi and ExitConfirmDialog elements, so they are intentionally
-        // excluded from this enum to avoid confusion and potential misuse.
-        // ScreenshotUi are handled separately in screenshot_ui module due to their unique
-        // constraints and requirements, so they are also intentionally excluded here.
+        Wayland = RelocateRenderElement<RescaleRenderElement<WaylandSurfaceRenderElement<R>>>,
+        SolidColor = RelocateRenderElement<RescaleRenderElement<SolidColorRenderElement>>,
+        Texture = RelocateRenderElement<RescaleRenderElement<PrimaryGpuTextureRenderElement>>,
+
+        // Special case for ScreenshotUiRenderElement::SolidColor
+        ScreenshotSolidColor= SolidColorRenderElement,
     }
 }
 
@@ -7079,6 +6939,6 @@ niri_render_elements! {
         // Used for the CPU-rendered panels.
         RelocatedMemoryBuffer = RelocateRenderElement<MemoryRenderBufferRenderElement<R>>,
         // All zoomed elements wrapped in a single variant
-        Zoomed = ZoomedRenderElements<R>,
+        Zoomed = ZoomedRenderElement<R>,
     }
 }
