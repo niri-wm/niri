@@ -33,7 +33,7 @@ if hash systemctl >/dev/null 2>&1; then
     systemctl --user reset-failed
 
     # Import the login manager environment.
-    systemctl --user import-environment
+    systemctl --user show-environment | grep -v '^_=' | cut -d= -f1 | xargs systemctl --user import-environment
 
     # DBus activation environment is independent from systemd. While most of
     # dbus-activated services are already using `SystemdService` directive, some
