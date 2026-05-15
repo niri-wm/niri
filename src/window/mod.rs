@@ -108,6 +108,9 @@ pub struct ResolvedWindowRules {
     /// Whether to bob this window up and down.
     pub baba_is_float: Option<bool>,
 
+    /// Whether this floating window should render above fullscreen windows.
+    pub float_above_fullscreen: Option<bool>,
+
     /// Whether to block out this window from certain render targets.
     pub block_out_from: Option<BlockOutFrom>,
 
@@ -289,6 +292,9 @@ impl ResolvedWindowRules {
                 }
                 if let Some(x) = rule.baba_is_float {
                     resolved.baba_is_float = Some(x);
+                }
+                if let Some(x) = rule.float_above_fullscreen {
+                    resolved.float_above_fullscreen = Some(x);
                 }
                 if let Some(x) = rule.block_out_from {
                     resolved.block_out_from = Some(x);
