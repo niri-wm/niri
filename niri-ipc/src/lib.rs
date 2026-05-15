@@ -41,7 +41,7 @@
 //!
 //! ```toml
 //! [dependencies]
-//! niri-ipc = "=25.11.0"
+//! niri-ipc = "=26.4.0"
 //! ```
 //!
 //! ## Features
@@ -1864,6 +1864,20 @@ impl FromStr for Transform {
                 r#"invalid transform, can be "90", "180", "270", "#,
                 r#""flipped", "flipped-90", "flipped-180" or "flipped-270""#
             )),
+        }
+    }
+}
+
+impl FromStr for Layer {
+    type Err = &'static str;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "background" => Ok(Self::Background),
+            "bottom" => Ok(Self::Bottom),
+            "top" => Ok(Self::Top),
+            "overlay" => Ok(Self::Overlay),
+            _ => Err("invalid layer, can be \"background\", \"bottom\", \"top\" or \"overlay\""),
         }
     }
 }

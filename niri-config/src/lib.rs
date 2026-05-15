@@ -59,7 +59,9 @@ use crate::recent_windows::RecentWindowsPart;
 pub use crate::recent_windows::{MruDirection, MruFilter, MruPreviews, MruScope, RecentWindows};
 pub use crate::utils::FloatOrInt;
 use crate::utils::{Flag, MergeWith as _};
-pub use crate::window_rule::{FloatingPosition, RelativeTo, WindowRule};
+pub use crate::window_rule::{
+    FloatingPosition, PopupsRule, RelativeTo, ResolvedPopupsRules, WindowRule,
+};
 pub use crate::workspace::{Workspace, WorkspaceLayoutPart};
 
 const RECURSION_LIMIT: u8 = 10;
@@ -78,6 +80,7 @@ pub struct Config {
     pub hotkey_overlay: HotkeyOverlay,
     pub config_notification: ConfigNotification,
     pub animations: Animations,
+    pub blur: Blur,
     pub gestures: Gestures,
     pub overview: Overview,
     pub environment: Environment,
@@ -194,6 +197,7 @@ where
                 "hotkey-overlay" => m_merge!(hotkey_overlay),
                 "config-notification" => m_merge!(config_notification),
                 "animations" => m_merge!(animations),
+                "blur" => m_merge!(blur),
                 "gestures" => m_merge!(gestures),
                 "overview" => m_merge!(overview),
                 "xwayland-satellite" => m_merge!(xwayland_satellite),
@@ -336,11 +340,25 @@ where
                         ));
                     }
 
-                    let base = ctx.get::<BasePath>().unwrap();
-                    let path = base.0.join(path);
-
                     // We use DecodeError::Missing throughout this block because it results in the
                     // least confusing error messages while still allowing to provide a span.
+
+                    // Expand ~ into the home dir
+                    let path = if let Ok(rest) = path.strip_prefix("~") {
+                        let Some(home) = std::env::home_dir() else {
+                            ctx.emit_error(DecodeError::missing(
+                                node,
+                                format!("error retrieving home directory to expand {path:?}"),
+                            ));
+                            continue;
+                        };
+
+                        home.join(rest)
+                    } else {
+                        // Otherwise, use the current include base dir
+                        let base = ctx.get::<BasePath>().unwrap();
+                        base.0.join(path)
+                    };
 
                     let recursion = ctx.get::<Recursion>().unwrap().0 + 1;
                     if recursion == RECURSION_LIMIT {
@@ -701,6 +719,8 @@ mod tests {
 
                 tablet {
                     map-to-output "eDP-1"
+                    map-to-focused-output
+                    map-to-focused-window
                     calibration-matrix 1.0 2.0 3.0 \
                                        4.0 5.0 6.0
                 }
@@ -1093,6 +1113,8 @@ mod tests {
                     map_to_output: Some(
                         "eDP-1",
                     ),
+                    map_to_focused_output: true,
+                    map_to_focused_window: true,
                     left_handed: false,
                 },
                 touch: Touch {
@@ -1616,6 +1638,13 @@ mod tests {
                     },
                 ),
             },
+            blur: Blur {
+                off: false,
+                passes: 3,
+                offset: 3.0,
+                noise: 0.02,
+                saturation: 1.5,
+            },
             gestures: Gestures {
                 dnd_edge_view_scroll: DndEdgeViewScroll {
                     trigger_width: 10.0,
@@ -1845,6 +1874,22 @@ mod tests {
                     ),
                     scroll_factor: None,
                     tiled_state: None,
+                    background_effect: BackgroundEffectRule {
+                        xray: None,
+                        blur: None,
+                        noise: None,
+                        saturation: None,
+                    },
+                    popups: PopupsRule {
+                        opacity: None,
+                        geometry_corner_radius: None,
+                        background_effect: BackgroundEffectRule {
+                            xray: None,
+                            blur: None,
+                            noise: None,
+                            saturation: None,
+                        },
+                    },
                 },
             ],
             layer_rules: [
@@ -1859,6 +1904,7 @@ mod tests {
                                 ),
                             ),
                             at_startup: None,
+                            layer: None,
                         },
                     ],
                     excludes: [],
@@ -1879,6 +1925,22 @@ mod tests {
                     geometry_corner_radius: None,
                     place_within_backdrop: None,
                     baba_is_float: None,
+                    background_effect: BackgroundEffectRule {
+                        xray: None,
+                        blur: None,
+                        noise: None,
+                        saturation: None,
+                    },
+                    popups: PopupsRule {
+                        opacity: None,
+                        geometry_corner_radius: None,
+                        background_effect: BackgroundEffectRule {
+                            xray: None,
+                            blur: None,
+                            noise: None,
+                            saturation: None,
+                        },
+                    },
                 },
             ],
             binds: Binds(

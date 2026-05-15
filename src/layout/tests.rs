@@ -116,10 +116,12 @@ impl TestWindow {
                 if self.0.animate_next_configure.get() {
                     self.0.animation_snapshot.replace(Some(RenderSnapshot {
                         contents: Vec::new(),
+                        contents_with_blocked_out_bg: None,
                         blocked_out_contents: Vec::new(),
                         block_out_from: None,
                         size: self.0.bbox.get().size.to_f64(),
                         texture: OnceCell::new(),
+                        texture_with_blocked_out_bg: Default::default(),
                         blocked_out_texture: OnceCell::new(),
                     }));
                 }
@@ -239,6 +241,10 @@ impl LayoutElement for TestWindow {
 
     fn requested_size(&self) -> Option<Size<i32, Logical>> {
         self.0.requested_size.get()
+    }
+
+    fn is_windowed_fullscreen(&self) -> bool {
+        self.0.is_windowed_fullscreen.get()
     }
 
     fn is_pending_windowed_fullscreen(&self) -> bool {
