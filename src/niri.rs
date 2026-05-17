@@ -357,6 +357,14 @@ pub struct Niri {
     pub pointer_contents: PointContents,
     pub pointer_visibility: PointerVisibility,
     pub pointer_inactivity_timer: Option<RegistrationToken>,
+    /// True-screen-edge overscroll accumulator (px): grows while the pointer is
+    /// pushing past a hard screen edge with no adjacent output, resets to 0
+    /// once the pointer is back inside. Crossing the configured threshold
+    /// pans focus to the adjacent column/workspace.
+    pub edge_overscroll_accum: f64,
+    /// Latched after an edge overscroll fired; blocks repeat fires until the pointer
+    /// leaves the edge (accumulator resets).
+    pub edge_overscroll_latched: bool,
     /// Whether the pointer inactivity timer got reset this event loop iteration.
     ///
     /// Used for limiting the reset to once per iteration, so that it's not spammed with high
@@ -1435,6 +1443,11 @@ impl State {
         };
 
         self.niri.config_error_notification.hide();
+
+        // Reset any in-progress edge overscroll so it can't fire with stale intent
+        // across a config reload.
+        self.niri.edge_overscroll_accum = 0.0;
+        self.niri.edge_overscroll_latched = false;
 
         // Find & orphan removed named workspaces.
         let mut removed_workspaces: Vec<String> = vec![];
@@ -2576,6 +2589,8 @@ impl Niri {
             pointer_contents: PointContents::default(),
             pointer_visibility: PointerVisibility::Visible,
             pointer_inactivity_timer: None,
+            edge_overscroll_accum: 0.0,
+            edge_overscroll_latched: false,
             pointer_inactivity_timer_got_reset: false,
             notified_activity_this_iteration: false,
             pointer_inside_hot_corner: false,
@@ -6213,12 +6228,20 @@ impl Niri {
                     return;
                 }
 
+                let scroll_amount = self.layout.scroll_amount_to_activate(window);
+
                 if let Some(threshold) = ffm.max_scroll_amount {
-                    if self.layout.scroll_amount_to_activate(window) > threshold.0 {
+                    if scroll_amount > threshold.0 {
                         return;
                     }
                 }
 
+                // Stock behavior: activate immediately. With left/right struts
+                // removed there is no off-screen sliver under the pointer, so
+                // this only ever fires for windows already on screen — no
+                // accidental edge focus changes. Deliberate panning to an
+                // off-screen column is handled by true-screen-edge overscroll
+                // (see `edge_overscroll_*` in on_pointer_motion).
                 self.layout.activate_window_without_raising(window);
                 self.layer_shell_on_demand_focus = None;
             }

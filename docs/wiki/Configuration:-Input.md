@@ -363,6 +363,8 @@ input {
 }
 ```
 
+> To navigate to an off-screen column/workspace by pushing the pointer past a screen edge, see the [`edge-overscroll`](./Configuration:-Gestures#edge-overscroll) gesture.
+
 #### `workspace-auto-back-and-forth`
 
 Normally, switching to the same workspace by index twice will do nothing (since you're already on that workspace).
