@@ -16,7 +16,7 @@ use smithay::backend::input::{
     InputEvent, KeyState, KeyboardKeyEvent, Keycode, MouseButton, PointerAxisEvent,
     PointerButtonEvent, PointerMotionEvent, ProximityState, Switch, SwitchState, SwitchToggleEvent,
     TabletToolButtonEvent, TabletToolEvent, TabletToolProximityEvent, TabletToolTipEvent,
-    TabletToolTipState, TouchEvent,
+    TabletToolTipState, TouchEvent, TouchSlot,
 };
 use smithay::backend::libinput::LibinputInputBackend;
 use smithay::input::dnd::DnDGrab;
@@ -2681,31 +2681,7 @@ impl State {
             }
         }
 
-        if let Some(output) = self.niri.screenshot_ui.selection_output() {
-            // Route screenshot input mapping through canonical seam when zoom is active
-            let base_geom = self
-                .niri
-                .global_space
-                .output_geometry(output)
-                .unwrap()
-                .to_f64();
-            let zoom_snapshot = self.niri.layout.zoom_snapshot_for_output(output);
-            let zoom_level = zoom_snapshot.level;
-            let zoom_focal = zoom_snapshot.focal;
-            let pointer_rel = pos - base_geom.loc;
-            let display_rel = if self.niri.layout.zoom_is_active_for_output(output) {
-                zoom_display_cursor_logical(pointer_rel, base_geom.size, zoom_level, zoom_focal)
-            } else {
-                pointer_rel
-            };
-            let display_point = display_rel + base_geom.loc;
-            // Convert to physical coordinates for the screenshot UI path
-            let scale = Scale::from(output.current_scale().fractional_scale());
-            let pointer_pos_physical = display_point.to_physical_precise_round(scale);
-            self.niri
-                .screenshot_ui
-                .pointer_motion(pointer_pos_physical, None);
-        }
+        self.update_screenshot_ui_pointer(pos);
 
         if let Some(mru_output) = self.niri.window_mru_ui.output() {
             if let Some((output, pos_within_output)) = self.niri.output_under(new_pos) {
@@ -2824,10 +2800,7 @@ impl State {
             );
         }
 
-        if let Some(output) = self.niri.screenshot_ui.selection_output() {
-            let point = self.screenshot_ui_point_on_output(output, new_pos);
-            self.niri.screenshot_ui.pointer_motion(point, None);
-        }
+        self.update_screenshot_ui_pointer(new_pos);
 
         // Redraw to update the cursor position.
         // FIXME: redraw only outputs overlapping the cursor.
@@ -2855,10 +2828,7 @@ impl State {
 
         let pointer = self.niri.seat.get_pointer().unwrap();
 
-        if let Some(output) = self.niri.screenshot_ui.selection_output() {
-            let point = self.screenshot_ui_point_on_output(output, pos);
-            self.niri.screenshot_ui.pointer_motion(point, None);
-        }
+        self.update_screenshot_ui_pointer(pos);
 
         if let Some(mru_output) = self.niri.window_mru_ui.output() {
             if let Some((output, pos_within_output)) = self.niri.output_under(pos) {
@@ -2936,10 +2906,7 @@ impl State {
             );
         }
 
-        if let Some(output) = self.niri.screenshot_ui.selection_output() {
-            let point = self.screenshot_ui_point_on_output(output, pos);
-            self.niri.screenshot_ui.pointer_motion(point, None);
-        }
+        self.update_screenshot_ui_pointer(pos);
 
         // Redraw to update the cursor position.
         // FIXME: redraw only outputs overlapping the cursor.
@@ -3241,7 +3208,7 @@ impl State {
 
                 if let Some(output) = output.cloned() {
                     let output = output.clone();
-                    let point = self.screenshot_ui_point_on_output(&output, pos);
+                    let point = self.screenshot_ui_point_on_output(&output, pos, false);
 
                     if self
                         .niri
@@ -3763,10 +3730,7 @@ impl State {
         };
         let pos = self.clamp_position_to_zoom(pos);
 
-        if let Some(output) = self.niri.screenshot_ui.selection_output() {
-            let point = self.screenshot_ui_point_on_output(output, pos);
-            self.niri.screenshot_ui.pointer_motion(point, None);
-        }
+        self.update_screenshot_ui_pointer(pos);
 
         if let Some(mru_output) = self.niri.window_mru_ui.output() {
             if let Some((output, pos_within_output)) = self.niri.output_under(pos) {
@@ -3832,10 +3796,7 @@ impl State {
             );
         }
 
-        if let Some(output) = self.niri.screenshot_ui.selection_output() {
-            let point = self.screenshot_ui_point_on_output(output, pos);
-            self.niri.screenshot_ui.pointer_motion(point, None);
-        }
+        self.update_screenshot_ui_pointer(pos);
 
         // Redraw to update the cursor position.
         // FIXME: redraw only outputs overlapping the cursor.
@@ -3874,7 +3835,7 @@ impl State {
                         };
 
                         if let Some(output) = output.cloned() {
-                            let point = self.screenshot_ui_point_on_output(&output, pos);
+                            let point = self.screenshot_ui_point_on_output(&output, pos, false);
 
                             if self
                                 .niri
@@ -4479,21 +4440,62 @@ impl State {
         pos
     }
 
+    /// Converts a global logical position to screenshot UI physical coords
+    /// for the given output.
     fn screenshot_ui_point_on_output(
         &self,
         output: &Output,
         pos: Point<f64, Logical>,
+        touch: bool,
     ) -> Point<i32, Physical> {
         let geom = self.niri.global_space.output_geometry(output).unwrap();
-        let point = (pos - geom.loc.to_f64())
-            .to_physical(output.current_scale().fractional_scale())
-            .to_i32_round::<i32>();
+        let geom_f64 = geom.to_f64();
+        let mut point_rel = pos - geom_f64.loc;
+
+        if self.niri.layout.zoom_is_active_for_output(output) {
+            let zoom_snapshot = self.niri.layout.zoom_snapshot_for_output(output);
+            point_rel = if touch {
+                Point::from((
+                    zoom_snapshot.focal.x
+                        + (point_rel.x - zoom_snapshot.focal.x) / zoom_snapshot.level,
+                    zoom_snapshot.focal.y
+                        + (point_rel.y - zoom_snapshot.focal.y) / zoom_snapshot.level,
+                ))
+            } else {
+                zoom_display_cursor_logical(
+                    point_rel,
+                    geom_f64.size,
+                    zoom_snapshot.level,
+                    zoom_snapshot.focal,
+                )
+            };
+        }
+
+        let scale = Scale::from(output.current_scale().fractional_scale());
+        let point = point_rel.to_physical_precise_round(scale);
 
         let size = output.current_mode().unwrap().size;
         let transform = output.current_transform();
         let size = transform.transform_size(size);
 
         point.constrain(Rectangle::from_size(size))
+    }
+
+    /// Routes pointer motion to the screenshot UI if it's open.
+    fn update_screenshot_ui_pointer(&mut self, pos: Point<f64, Logical>) {
+        self.update_screenshot_ui_motion(pos, None);
+    }
+
+    /// Routes touch motion to the screenshot UI if it's open.
+    fn update_screenshot_ui_touch(&mut self, pos: Point<f64, Logical>, slot: TouchSlot) {
+        self.update_screenshot_ui_motion(pos, Some(slot));
+    }
+
+    fn update_screenshot_ui_motion(&mut self, pos: Point<f64, Logical>, slot: Option<TouchSlot>) {
+        if let Some(output) = self.niri.screenshot_ui.selection_output() {
+            let point = self.screenshot_ui_point_on_output(output, pos, slot.is_some());
+            self.niri.screenshot_ui.pointer_motion(point, slot);
+        }
     }
 
     fn on_touch_down<I: InputBackend>(&mut self, evt: I::TouchDownEvent) {
@@ -4524,7 +4526,7 @@ impl State {
             };
 
             if let Some(output) = output.cloned() {
-                let point = self.screenshot_ui_point_on_output(&output, pos);
+                let point = self.screenshot_ui_point_on_output(&output, pos, true);
 
                 if self
                     .niri
@@ -4664,9 +4666,7 @@ impl State {
         let slot = evt.slot();
 
         if let Some(output) = self.niri.screenshot_ui.selection_output().cloned() {
-            let point = self.screenshot_ui_point_on_output(&output, pos);
-
-            self.niri.screenshot_ui.pointer_motion(point, Some(slot));
+            self.update_screenshot_ui_touch(pos, slot);
             self.niri.queue_redraw(&output);
         }
 
