@@ -53,12 +53,6 @@ impl OutputZoomState {
             .is_some_and(ZoomTransition::transitioning)
     }
 
-    pub fn current_level(&self) -> f64 {
-        self.transition.as_ref().map_or(self.level, |transition| {
-            transition.current_level(self.level)
-        })
-    }
-
     pub fn snapshot_at(&self, now: Duration) -> ZoomSnapshot {
         let level = self.transition.as_ref().map_or(self.level, |transition| {
             transition.current_level_at(self.level, now)
@@ -73,12 +67,6 @@ impl OutputZoomState {
             focal,
             locked: self.locked,
         }
-    }
-
-    pub fn current_focal(&self) -> Point<f64, Logical> {
-        self.transition.as_ref().map_or(self.focal, |transition| {
-            transition.current_focal(self.current_level(), self.focal)
-        })
     }
 
     pub fn apply_pending_transition(&mut self) {
@@ -102,7 +90,7 @@ impl OutputZoomState {
     }
 
     pub fn is_active(&self) -> bool {
-        self.current_level() > 1.0
+        self.level > 1.0
     }
 
     pub fn viewport_global(
@@ -147,57 +135,28 @@ impl ZoomSnapshot {
     }
 }
 
-/// Animation for zoom level changes.
-#[derive(Debug, Clone)]
-pub struct ZoomLevelAnimation {
-    anim: Animation,
-    target: f64,
+/// Shared cursor-tracking context for focal point computation.
+///
+/// Used by both `ZoomLevelAnimation` and `ZoomLevelGesture` to avoid
+/// duplicating the focal tracking logic.
+#[derive(Debug, Clone, Default)]
+pub struct FocalTrackingContext {
     cursor_pos: Option<Point<f64, Logical>>,
     output_size: Option<Size<f64, Logical>>,
     movement_mode: Option<ZoomMovementMode>,
     on_edge_cursor_anchor: Option<Point<f64, Logical>>,
 }
 
-impl ZoomLevelAnimation {
-    pub fn new(clock: Clock, from: f64, to: f64) -> Self {
-        let config = niri_config::Animation {
-            off: false,
-            kind: Kind::Easing(EasingParams {
-                duration_ms: 250,
-                curve: Curve::EaseOutExpo,
-            }),
-        };
-
-        Self {
-            anim: Animation::new(clock, from, to, 0.0, config),
-            target: to,
-            cursor_pos: None,
-            output_size: None,
-            movement_mode: None,
-            on_edge_cursor_anchor: None,
-        }
-    }
-
-    pub fn with_tracking_context(
-        mut self,
-        cursor_pos: Option<Point<f64, Logical>>,
-        output_size: Option<Size<f64, Logical>>,
-        movement_mode: Option<ZoomMovementMode>,
-        current_level: f64,
-        current_focal: Point<f64, Logical>,
-    ) -> Self {
-        self.cursor_pos = cursor_pos;
-        self.output_size = output_size;
-        self.movement_mode = movement_mode;
-        self.on_edge_cursor_anchor =
-            self.compute_on_edge_tracking_anchor(current_level, current_focal);
-        self
-    }
-
-    pub fn should_use_dynamic_focal_tracking(&self, locked: bool, level_changed: bool) -> bool {
+impl FocalTrackingContext {
+    pub fn should_use_dynamic_focal_tracking(
+        &self,
+        target_level: f64,
+        locked: bool,
+        level_changed: bool,
+    ) -> bool {
         level_changed
             && !locked
-            && self.target > 1.0
+            && target_level > 1.0
             && self.cursor_pos.is_some()
             && self.output_size.is_some()
             && matches!(
@@ -206,7 +165,18 @@ impl ZoomLevelAnimation {
             )
     }
 
-    pub fn compute_on_edge_tracking_anchor(
+    pub fn compute_focal(&self, level: f64, fallback: Point<f64, Logical>) -> Point<f64, Logical> {
+        compute_focal_for_zoom_level(
+            self.cursor_pos,
+            self.output_size,
+            self.movement_mode.as_ref(),
+            self.on_edge_cursor_anchor,
+            level,
+            fallback,
+        )
+    }
+
+    pub fn compute_on_edge_anchor(
         &self,
         current_level: f64,
         current_focal: Point<f64, Logical>,
@@ -227,31 +197,65 @@ impl ZoomLevelAnimation {
         }
     }
 
-    fn compute_focal_with_cursor_policy(
-        &self,
-        level: f64,
-        fallback: Point<f64, Logical>,
-    ) -> Point<f64, Logical> {
-        compute_focal_for_zoom_level(
-            self.cursor_pos,
-            self.output_size,
-            self.movement_mode.as_ref(),
-            self.on_edge_cursor_anchor,
-            level,
-            fallback,
-        )
+    pub fn set_cursor_pos(&mut self, pos: Point<f64, Logical>) {
+        self.cursor_pos = Some(pos);
+    }
+}
+
+/// Animation for zoom level changes.
+#[derive(Debug, Clone)]
+pub struct ZoomLevelAnimation {
+    anim: Animation,
+    target: f64,
+    tracking: FocalTrackingContext,
+}
+
+impl ZoomLevelAnimation {
+    pub fn new(clock: Clock, from: f64, to: f64) -> Self {
+        let config = niri_config::Animation {
+            off: false,
+            kind: Kind::Easing(EasingParams {
+                duration_ms: 250,
+                curve: Curve::EaseOutExpo,
+            }),
+        };
+
+        Self {
+            anim: Animation::new(clock, from, to, 0.0, config),
+            target: to,
+            tracking: FocalTrackingContext::default(),
+        }
     }
 
-    pub fn set_cursor_pos(&mut self, cursor_pos: Point<f64, Logical>) {
-        self.cursor_pos = Some(cursor_pos);
+    pub fn with_tracking_context(
+        mut self,
+        cursor_pos: Option<Point<f64, Logical>>,
+        output_size: Option<Size<f64, Logical>>,
+        movement_mode: Option<ZoomMovementMode>,
+        current_level: f64,
+        current_focal: Point<f64, Logical>,
+    ) -> Self {
+        self.tracking.cursor_pos = cursor_pos;
+        self.tracking.output_size = output_size;
+        self.tracking.movement_mode = movement_mode;
+        self.tracking.on_edge_cursor_anchor = self
+            .tracking
+            .compute_on_edge_anchor(current_level, current_focal);
+        self
     }
 
-    pub fn compute_focal_or(
+    pub fn set_cursor_pos(&mut self, pos: Point<f64, Logical>) {
+        self.tracking.set_cursor_pos(pos);
+    }
+
+    pub fn should_use_dynamic_focal_tracking(
         &self,
-        level: f64,
-        fallback: Point<f64, Logical>,
-    ) -> Point<f64, Logical> {
-        self.compute_focal_with_cursor_policy(level, fallback)
+        target_level: f64,
+        locked: bool,
+        level_changed: bool,
+    ) -> bool {
+        self.tracking
+            .should_use_dynamic_focal_tracking(target_level, locked, level_changed)
     }
 
     pub fn value(&self) -> f64 {
@@ -294,10 +298,7 @@ pub struct ZoomLevelGesture {
     /// Wayland provides absolute scale since gesture begin; we convert to log-space deltas.
     /// `None` means the first update hasn't been received yet.
     pub last_log_scale: Option<f64>,
-    pub cursor_pos: Option<Point<f64, Logical>>,
-    pub output_size: Option<Size<f64, Logical>>,
-    pub movement_mode: Option<ZoomMovementMode>,
-    pub on_edge_cursor_anchor: Option<Point<f64, Logical>>,
+    tracking: FocalTrackingContext,
 }
 
 impl ZoomLevelGesture {
@@ -330,41 +331,13 @@ impl ZoomLevelGesture {
             current_level: start_level,
             current_focal,
             last_log_scale: None,
-            cursor_pos,
-            output_size,
-            movement_mode,
-            on_edge_cursor_anchor,
+            tracking: FocalTrackingContext {
+                cursor_pos,
+                output_size,
+                movement_mode,
+                on_edge_cursor_anchor,
+            },
         }
-    }
-
-    pub fn should_use_dynamic_focal_tracking(
-        &self,
-        target_level: f64,
-        level_changed: bool,
-    ) -> bool {
-        level_changed
-            && target_level > 1.0
-            && self.cursor_pos.is_some()
-            && self.output_size.is_some()
-            && matches!(
-                self.movement_mode.as_ref(),
-                Some(ZoomMovementMode::OnEdge | ZoomMovementMode::CursorFollow)
-            )
-    }
-
-    fn compute_focal_with_cursor_policy(
-        &self,
-        level: f64,
-        fallback: Point<f64, Logical>,
-    ) -> Point<f64, Logical> {
-        compute_focal_for_zoom_level(
-            self.cursor_pos,
-            self.output_size,
-            self.movement_mode.as_ref(),
-            self.on_edge_cursor_anchor,
-            level,
-            fallback,
-        )
     }
 
     pub fn compute_focal_or(
@@ -372,90 +345,37 @@ impl ZoomLevelGesture {
         level: f64,
         fallback: Point<f64, Logical>,
     ) -> Point<f64, Logical> {
-        self.compute_focal_with_cursor_policy(level, fallback)
-    }
-}
-
-/// Progress of zoom level changes - either animating or in a gesture.
-#[derive(Debug, Clone)]
-pub enum ZoomLevelProgress {
-    Animation(ZoomLevelAnimation),
-    Gesture(ZoomLevelGesture),
-}
-
-impl ZoomLevelProgress {
-    pub fn level(&self) -> f64 {
-        match self {
-            ZoomLevelProgress::Animation(anim) => anim.value(),
-            ZoomLevelProgress::Gesture(gesture) => gesture.current_level,
-        }
+        self.tracking.compute_focal(level, fallback)
     }
 
-    pub fn level_at(&self, now: Duration) -> f64 {
-        match self {
-            ZoomLevelProgress::Animation(anim) => anim.value_at(now),
-            ZoomLevelProgress::Gesture(gesture) => gesture.current_level,
-        }
+    pub fn cursor_pos(&self) -> Option<Point<f64, Logical>> {
+        self.tracking.cursor_pos
     }
 
-    pub fn focal_point(
+    pub fn output_size(&self) -> Option<Size<f64, Logical>> {
+        self.tracking.output_size
+    }
+
+    pub fn movement_mode(&self) -> Option<&ZoomMovementMode> {
+        self.tracking.movement_mode.as_ref()
+    }
+
+    pub fn set_cursor_pos(&mut self, pos: Point<f64, Logical>) {
+        self.tracking.set_cursor_pos(pos);
+    }
+
+    pub fn set_output_size(&mut self, size: Size<f64, Logical>) {
+        self.tracking.output_size = Some(size);
+    }
+
+    pub fn should_use_dynamic_focal_tracking(
         &self,
-        current_level: f64,
-        current_focal: Point<f64, Logical>,
-    ) -> Point<f64, Logical> {
-        match self {
-            ZoomLevelProgress::Animation(anim) => {
-                anim.compute_focal_or(current_level, current_focal)
-            }
-            ZoomLevelProgress::Gesture(gesture) => {
-                gesture.compute_focal_or(current_level, gesture.current_focal)
-            }
-        }
-    }
-
-    pub fn focal_point_at(
-        &self,
-        current_level: f64,
-        current_focal: Point<f64, Logical>,
-        _now: Duration,
-    ) -> Point<f64, Logical> {
-        match self {
-            ZoomLevelProgress::Animation(anim) => {
-                anim.compute_focal_or(current_level, current_focal)
-            }
-            ZoomLevelProgress::Gesture(gesture) => {
-                gesture.compute_focal_or(current_level, gesture.current_focal)
-            }
-        }
-    }
-
-    pub fn is_animation(&self) -> bool {
-        matches!(self, ZoomLevelProgress::Animation(_))
-    }
-
-    pub fn is_gesture(&self) -> bool {
-        matches!(self, ZoomLevelProgress::Gesture(_))
-    }
-
-    pub fn is_done(&self) -> bool {
-        match self {
-            ZoomLevelProgress::Animation(anim) => anim.is_done(),
-            ZoomLevelProgress::Gesture(_) => false,
-        }
-    }
-
-    pub fn is_done_at(&self, now: Duration) -> bool {
-        match self {
-            ZoomLevelProgress::Animation(anim) => anim.is_done_at(now),
-            ZoomLevelProgress::Gesture(_) => false,
-        }
-    }
-
-    pub fn sample_time(&self) -> Option<Duration> {
-        match self {
-            ZoomLevelProgress::Animation(anim) => Some(anim.sample_time()),
-            ZoomLevelProgress::Gesture(_) => None,
-        }
+        target_level: f64,
+        locked: bool,
+        level_changed: bool,
+    ) -> bool {
+        self.tracking
+            .should_use_dynamic_focal_tracking(target_level, locked, level_changed)
     }
 }
 
@@ -517,21 +437,29 @@ impl ZoomFocalAnimation {
     }
 }
 
+/// In-progress zoom transition.
+///
+/// Holds either a level animation, a level gesture, or neither (focal-only animation).
 #[derive(Debug, Clone, Default)]
 pub struct ZoomTransition {
-    level_progress: Option<ZoomLevelProgress>,
+    level_anim: Option<ZoomLevelAnimation>,
+    level_gesture: Option<ZoomLevelGesture>,
     focal_anim: Option<ZoomFocalAnimation>,
 }
 
 impl ZoomTransition {
     pub fn current_level(&self, fallback: f64) -> f64 {
-        self.level_progress.as_ref().map_or(fallback, |p| p.level())
+        self.level_anim.as_ref().map_or(fallback, |a| a.value())
     }
 
     pub fn current_level_at(&self, fallback: f64, now: Duration) -> f64 {
-        self.level_progress
-            .as_ref()
-            .map_or(fallback, |p| p.level_at(now))
+        if let Some(anim) = &self.level_anim {
+            return anim.value_at(now);
+        }
+        if let Some(g) = &self.level_gesture {
+            return g.current_level;
+        }
+        fallback
     }
 
     pub fn current_focal(
@@ -539,10 +467,12 @@ impl ZoomTransition {
         current_level: f64,
         fallback: Point<f64, Logical>,
     ) -> Point<f64, Logical> {
-        if let Some(anim) = self.focal_anim.as_ref() {
+        if let Some(anim) = &self.focal_anim {
             anim.value()
-        } else if let Some(progress) = self.level_progress.as_ref() {
-            progress.focal_point(current_level, fallback)
+        } else if let Some(anim) = &self.level_anim {
+            anim.tracking.compute_focal(current_level, fallback)
+        } else if let Some(gesture) = &self.level_gesture {
+            gesture.compute_focal_or(current_level, gesture.current_focal)
         } else {
             fallback
         }
@@ -554,116 +484,79 @@ impl ZoomTransition {
         fallback: Point<f64, Logical>,
         now: Duration,
     ) -> Point<f64, Logical> {
-        if let Some(anim) = self.focal_anim.as_ref() {
+        if let Some(anim) = &self.focal_anim {
             anim.value_at(now)
-        } else if let Some(progress) = self.level_progress.as_ref() {
-            progress.focal_point_at(current_level, fallback, now)
+        } else if let Some(anim) = &self.level_anim {
+            anim.tracking.compute_focal(current_level, fallback)
+        } else if let Some(gesture) = &self.level_gesture {
+            gesture.compute_focal_or(current_level, gesture.current_focal)
         } else {
             fallback
         }
     }
 
     pub fn level_is_animation(&self) -> bool {
-        self.level_progress
-            .as_ref()
-            .is_some_and(|progress| progress.is_animation())
+        self.level_anim.is_some()
     }
 
     pub fn is_animation_ongoing(&self) -> bool {
-        self.level_is_animation() || self.focal_anim.is_some()
-    }
-
-    pub fn set_level_animation(&mut self, anim: ZoomLevelAnimation) {
-        self.level_progress = Some(ZoomLevelProgress::Animation(anim));
-    }
-
-    pub fn set_level_gesture(&mut self, gesture: ZoomLevelGesture) {
-        self.level_progress = Some(ZoomLevelProgress::Gesture(gesture));
-        self.focal_anim = None;
-    }
-
-    pub fn take_level_gesture(&mut self) -> Option<ZoomLevelGesture> {
-        match self.level_progress.take() {
-            Some(ZoomLevelProgress::Gesture(gesture)) => Some(gesture),
-            Some(other) => {
-                self.level_progress = Some(other);
-                None
-            }
-            None => None,
-        }
+        self.level_anim.is_some() || self.focal_anim.is_some()
     }
 
     pub fn level_gesture_mut(&mut self) -> Option<&mut ZoomLevelGesture> {
-        match self.level_progress.as_mut() {
-            Some(ZoomLevelProgress::Gesture(gesture)) => Some(gesture),
-            _ => None,
-        }
+        self.level_gesture.as_mut()
     }
 
-    pub fn set_focal_animation(&mut self, focal_anim: Option<ZoomFocalAnimation>) {
-        self.focal_anim = focal_anim;
+    pub fn take_level_gesture(&mut self) -> Option<ZoomLevelGesture> {
+        self.level_gesture.take()
     }
 
-    pub fn clear_focal_animation(&mut self) {
+    /// Start a new level animation from current state.
+    pub fn start_level_animation(&mut self, anim: ZoomLevelAnimation) {
+        self.level_anim = Some(anim);
+        self.level_gesture = None;
+    }
+
+    /// Start a new gesture from current state.
+    pub fn start_gesture(&mut self, gesture: ZoomLevelGesture) {
+        self.level_gesture = Some(gesture);
+        self.level_anim = None;
         self.focal_anim = None;
     }
 
-    pub fn set_cursor_pos(&mut self, pos: Point<f64, Logical>) {
-        if let Some(progress) = &mut self.level_progress {
-            match progress {
-                ZoomLevelProgress::Gesture(gesture) => {
-                    gesture.cursor_pos = Some(pos);
-                    // Note: on_edge_cursor_anchor is set once at gesture start and
-                    // kept fixed. Recomputing it here with the old focal causes
-                    // teleporting when pushing top/left edges.
-                    gesture.current_focal =
-                        gesture.compute_focal_or(gesture.current_level, gesture.current_focal);
-                }
-                ZoomLevelProgress::Animation(anim) => anim.set_cursor_pos(pos),
-            }
+    /// Start a focal-only animation (for unlock).
+    pub fn start_focal_animation(&mut self, focal_anim: ZoomFocalAnimation) {
+        self.focal_anim = Some(focal_anim);
+    }
+
+    /// End gesture, converting to deceleration animation.
+    pub fn cancel_gesture(&mut self, level_anim: ZoomLevelAnimation, clear_focal: bool) {
+        self.level_anim = Some(level_anim);
+        self.level_gesture = None;
+        if clear_focal {
+            self.focal_anim = None;
         }
     }
 
-    pub fn mark_transitioning(&self, zoom_state: &mut OutputZoomState) {
-        zoom_state.transition = self.transitioning().then_some(self.clone());
-    }
-
-    pub fn begin_transition_from_state(
-        &self,
-        zoom_state: &mut OutputZoomState,
-        level: f64,
-        focal: Point<f64, Logical>,
-    ) {
-        zoom_state.level = level;
-        zoom_state.focal = focal;
-        self.mark_transitioning(zoom_state);
-    }
-
-    pub fn cancel_gesture_to_animation(
-        &mut self,
-        level_anim: ZoomLevelAnimation,
-        clear_focal_animation: bool,
-    ) {
-        self.set_level_animation(level_anim);
-        if clear_focal_animation {
-            self.clear_focal_animation();
-        }
-    }
-
-    pub fn finalize_gesture_to_animation(
+    /// End gesture, optionally starting level and/or focal animations.
+    pub fn finalize_gesture(
         &mut self,
         level_anim: Option<ZoomLevelAnimation>,
         focal_anim: Option<ZoomFocalAnimation>,
-        clear_focal_animation: bool,
     ) {
-        if let Some(level_anim) = level_anim {
-            self.set_level_animation(level_anim);
-        }
-
+        self.level_anim = level_anim;
+        self.level_gesture = None;
         if let Some(focal_anim) = focal_anim {
-            self.set_focal_animation(Some(focal_anim));
-        } else if clear_focal_animation {
-            self.clear_focal_animation();
+            self.focal_anim = Some(focal_anim);
+        }
+    }
+
+    pub fn set_cursor_pos(&mut self, pos: Point<f64, Logical>) {
+        if let Some(anim) = &mut self.level_anim {
+            anim.set_cursor_pos(pos);
+        }
+        if let Some(gesture) = &mut self.level_gesture {
+            gesture.set_cursor_pos(pos);
         }
     }
 
@@ -673,15 +566,13 @@ impl ZoomTransition {
     }
 
     pub fn apply_to_state_at(&self, zoom_state: &mut OutputZoomState, now: Duration) {
-        if let Some(progress) = self.level_progress.as_ref() {
-            let current_level = progress.level_at(now);
-            zoom_state.level = current_level;
-            if self.focal_anim.is_none() {
-                zoom_state.focal = progress.focal_point_at(current_level, zoom_state.focal, now);
-            }
+        let current_level = self.current_level_at(zoom_state.level, now);
+        zoom_state.level = current_level;
+        if self.focal_anim.is_none() {
+            zoom_state.focal = self.current_focal_at(current_level, zoom_state.focal, now);
         }
 
-        if let Some(anim) = self.focal_anim.as_ref() {
+        if let Some(anim) = &self.focal_anim {
             zoom_state.focal = anim.value_at(now);
         }
     }
@@ -696,22 +587,16 @@ impl ZoomTransition {
     }
 
     pub fn is_done_at(&self, now: Duration) -> bool {
-        let level_done = self
-            .level_progress
-            .as_ref()
-            .is_none_or(|progress| progress.is_done_at(now));
-        let focal_done = self
-            .focal_anim
-            .as_ref()
-            .is_none_or(|anim| anim.is_done_at(now));
-
+        let level_done = self.level_anim.as_ref().is_none_or(|a| a.is_done_at(now))
+            && self.level_gesture.is_none();
+        let focal_done = self.focal_anim.as_ref().is_none_or(|a| a.is_done_at(now));
         level_done && focal_done
     }
 
     pub fn sample_time(&self) -> Option<Duration> {
-        self.level_progress
+        self.level_anim
             .as_ref()
-            .and_then(ZoomLevelProgress::sample_time)
+            .map(ZoomLevelAnimation::sample_time)
             .or_else(|| {
                 self.focal_anim
                     .as_ref()
@@ -721,7 +606,8 @@ impl ZoomTransition {
 
     pub fn clear_if_done(&mut self) {
         if self.is_done() {
-            self.level_progress = None;
+            self.level_anim = None;
+            self.level_gesture = None;
             self.focal_anim = None;
         }
     }
