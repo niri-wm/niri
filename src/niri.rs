@@ -34,7 +34,7 @@ use smithay::backend::renderer::element::{
 };
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::renderer::sync::SyncPoint;
-use smithay::backend::renderer::Color32F;
+use smithay::backend::renderer::{Color32F, Renderer, TextureFilter};
 use smithay::desktop::utils::{
     bbox_from_surface_tree, output_update, send_dmabuf_feedback_surface_tree,
     send_frames_surface_tree, surface_presentation_feedback_flags_from_states,
@@ -3868,6 +3868,13 @@ impl Niri {
         pointer_pos_logical
     }
 
+    /// Renders the pointer cursor for an output. Returns the logical cursor
+    /// position.
+    ///
+    /// When zoom is active, applies a custom cursor transform via
+    /// `wrap_cursor_for_zoom` that rescales around the cursor hotspot rather
+    /// than the zoom focal point (see `zoomed_element` for why this separation
+    /// is necessary).
     pub(crate) fn render_pointer_for_output<R: NiriRenderer>(
         &self,
         ctx: RenderCtx<R>,
@@ -3959,7 +3966,7 @@ impl Niri {
             };
 
             push(
-                ZoomedRenderElement::Pointer(wrap_cursor_for_zoom(
+                ZoomedRenderElement::Pointer(zoom_wrap_pointer(
                     elem,
                     hotspot,
                     target_rounded,
@@ -4355,6 +4362,12 @@ impl Niri {
         }
     }
 
+    /// Applies the zoom transform to a render element.
+    ///
+    /// Pointer elements are handled separately in `render_pointer_for_output`
+    /// because cursors must rescale around their hotspot (not the focal point)
+    /// to stay aligned with the pointer position, and may span outputs or use
+    /// a hardware cursor plane.
     fn zoomed_element<R: NiriRenderer>(
         &self,
         element: OutputRenderElements<R>,
@@ -4420,6 +4433,20 @@ impl Niri {
         ctx.xray = Some(&state.xray);
 
         let apply_zoom = ctx.apply_zoom;
+
+        // Set texture filter based on zoom level when zoom is active. The filter persists on the
+        // renderer, but each subsequent render() call will set the correct filter for its output.
+        if apply_zoom {
+            let zoom_factor = self.layout.zoom_level_for_output(output);
+            let filter = match zoom_factor {
+                z if z < 2.0 => TextureFilter::Linear,
+                _ => TextureFilter::Nearest,
+            };
+            let gles = ctx.renderer.as_gles_renderer();
+            let _ = gles.upscale_filter(filter);
+            let _ = gles.downscale_filter(filter);
+        }
+
         let push = if apply_zoom {
             &mut |elem| {
                 let elem = self.zoomed_element(elem, output);
@@ -5710,6 +5737,7 @@ impl Niri {
         self.queue_redraw_all();
     }
 
+    /// Captures screenshots for *all* outputs.
     pub fn capture_screenshots<'a>(
         &'a self,
         renderer: &'a mut GlesRenderer,
@@ -6767,12 +6795,42 @@ impl ClientData for ClientState {
     fn disconnected(&self, _client_id: ClientId, _reason: DisconnectReason) {}
 }
 
-/// Wrap a cursor render element for zoom display.
+fn scale_relocate_crop<E: Element>(
+    elem: E,
+    output_scale: Scale<f64>,
+    zoom: f64,
+    ws_geo: Rectangle<f64, Logical>,
+) -> Option<CropRenderElement<RelocateRenderElement<RescaleRenderElement<E>>>> {
+    let ws_geo = ws_geo.to_physical_precise_round(output_scale);
+    let elem = RescaleRenderElement::from_element(elem, Point::from((0, 0)), zoom);
+    let elem = RelocateRenderElement::from_element(elem, ws_geo.loc, Relocate::Relative);
+    CropRenderElement::from_element(elem, output_scale, ws_geo)
+}
+
+/// Wrap an element with the standard zoom transform.
 ///
-/// Unlike content elements (which are rescaled around the zoom focal point),
+/// Rescales around the zoom focal point. Used for most elements (windows, backgrounds, etc.).
+pub fn zoom_wrap<E: Element>(
+    elem: E,
+    zoom_factor: f64,
+    output_scale: Scale<f64>,
+    zoom_focal: Point<f64, Logical>,
+    output_geo: Rectangle<i32, Logical>,
+) -> RelocateRenderElement<RescaleRenderElement<E>> {
+    let focal_physical: Point<i32, Physical> = zoom_focal.to_physical_precise_round(output_scale);
+    RelocateRenderElement::from_element(
+        RescaleRenderElement::from_element(elem, focal_physical, zoom_factor),
+        output_geo.loc.to_physical(Scale::from(zoom_factor as i32)),
+        Relocate::Relative,
+    )
+}
+
+/// Wrap a cursor render element with zoom transform for zoomed display.
+///
+/// Unlike content elements, which are rescaled around the zoom focal point,
 /// cursor elements must be rescaled around their hotspot so the cursor
 /// graphic remains correctly aligned with the zoomed cursor position.
-fn wrap_cursor_for_zoom<E: Element>(
+fn zoom_wrap_pointer<E: Element>(
     elem: E,
     hotspot: Point<i32, Physical>,
     target_rounded: Point<i32, Physical>,
@@ -6790,34 +6848,6 @@ fn wrap_cursor_for_zoom<E: Element>(
         RescaleRenderElement::from_element(elem, scale_anchor, cursor_zoom),
         final_pos,
         Relocate::Absolute,
-    )
-}
-
-fn scale_relocate_crop<E: Element>(
-    elem: E,
-    output_scale: Scale<f64>,
-    zoom: f64,
-    ws_geo: Rectangle<f64, Logical>,
-) -> Option<CropRenderElement<RelocateRenderElement<RescaleRenderElement<E>>>> {
-    let ws_geo = ws_geo.to_physical_precise_round(output_scale);
-    let elem = RescaleRenderElement::from_element(elem, Point::from((0, 0)), zoom);
-    let elem = RelocateRenderElement::from_element(elem, ws_geo.loc, Relocate::Relative);
-    CropRenderElement::from_element(elem, output_scale, ws_geo)
-}
-
-/// Wrap an element with the standard zoom transform.
-pub fn zoom_wrap<E: Element>(
-    elem: E,
-    zoom_factor: f64,
-    output_scale: Scale<f64>,
-    zoom_focal: Point<f64, Logical>,
-    output_geo: Rectangle<i32, Logical>,
-) -> RelocateRenderElement<RescaleRenderElement<E>> {
-    let focal_physical: Point<i32, Physical> = zoom_focal.to_physical_precise_round(output_scale);
-    RelocateRenderElement::from_element(
-        RescaleRenderElement::from_element(elem, focal_physical, zoom_factor),
-        output_geo.loc.to_physical(Scale::from(zoom_factor as i32)),
-        Relocate::Relative,
     )
 }
 

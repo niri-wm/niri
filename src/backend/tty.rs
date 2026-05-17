@@ -32,9 +32,7 @@ use smithay::backend::libinput::{LibinputInputBackend, LibinputSessionInterface}
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::renderer::multigpu::gbm::GbmGlesBackend;
 use smithay::backend::renderer::multigpu::{GpuManager, MultiFrame, MultiRenderer};
-use smithay::backend::renderer::{
-    DebugFlags, ImportDma, ImportEgl, Renderer, RendererSuper, TextureFilter,
-};
+use smithay::backend::renderer::{DebugFlags, ImportDma, ImportEgl, RendererSuper};
 use smithay::backend::session::libseat::LibSeatSession;
 use smithay::backend::session::{Event as SessionEvent, Session};
 use smithay::backend::udev::{self, UdevBackend, UdevEvent};
@@ -1889,18 +1887,6 @@ impl Tty {
                 return rv;
             }
         };
-
-        let zoom_factor = niri.layout.zoom_level_for_output(output);
-
-        // Apply filter temporarily before rendering
-        // Set filter based on this output's zoom level
-        let filter = match zoom_factor {
-            z if z < 2.0 => TextureFilter::Linear,
-            _ => TextureFilter::Nearest,
-        };
-
-        let _ = renderer.upscale_filter(filter);
-        let _ = renderer.downscale_filter(filter);
 
         // Render the elements.
         let ctx = RenderCtx {
