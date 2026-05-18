@@ -2,6 +2,7 @@ use niri_config::ZoomMovementMode;
 use smithay::utils::{Point, Rectangle, Scale, Size};
 
 use super::*;
+use crate::utils::zoom::compute_focal_for_cursor;
 
 #[test]
 fn zoom_state_action_query_reports_level_and_lock() {
@@ -159,6 +160,87 @@ fn completed_zoom_transition_is_cleared_from_state() {
     f.niri_complete_animations();
     let zoom_state = f.niri().layout.zoom_state_for_output(&output).unwrap();
     assert!(zoom_state.transition.is_none());
+}
+
+#[test]
+fn centered_zoom_level_change_snaps_when_target_is_edge_constrained() {
+    let mut f = Fixture::new();
+    f.add_output(1, (1920, 1080));
+    let output = f.niri_output(1);
+    let cursor_local = Point::from((10.0, 10.0));
+    let output_size = Size::from((1920.0, 1080.0));
+
+    f.niri().layout.set_zoom_level(
+        &output,
+        2.0,
+        cursor_local,
+        &ZoomMovementMode::Centered,
+        false,
+    );
+
+    let zoom_state = f.niri().layout.zoom_state_for_output(&output).unwrap();
+    let expected_focal =
+        compute_focal_for_cursor(cursor_local, 2.0, output_size, &ZoomMovementMode::Centered);
+
+    assert!(zoom_state.transition.is_none());
+    assert!((zoom_state.level - 2.0).abs() < 1e-6);
+    assert!((zoom_state.focal.x - expected_focal.x).abs() < 1e-6);
+    assert!((zoom_state.focal.y - expected_focal.y).abs() < 1e-6);
+}
+
+#[test]
+fn centered_zoom_level_change_still_animates_when_focal_is_unchanged() {
+    let mut f = Fixture::new();
+    f.add_output(1, (1920, 1080));
+    let output = f.niri_output(1);
+
+    f.niri().layout.set_zoom_level(
+        &output,
+        2.0,
+        Point::from((960.0, 540.0)),
+        &ZoomMovementMode::Centered,
+        false,
+    );
+
+    assert!(f
+        .niri()
+        .layout
+        .zoom_state_for_output(&output)
+        .unwrap()
+        .transition
+        .is_some());
+}
+
+#[test]
+fn centered_zoom_level_change_snaps_when_focal_must_move() {
+    let mut f = Fixture::new();
+    f.add_output(1, (1920, 1080));
+    let output = f.niri_output(1);
+    let output_size = Size::from((1920.0, 1080.0));
+    let cursor_local = Point::from((700.0, 400.0));
+
+    f.niri().layout.set_zoom_level(
+        &output,
+        2.0,
+        cursor_local,
+        &ZoomMovementMode::Centered,
+        false,
+    );
+
+    let snapshot = f.niri().layout.zoom_snapshot_for_output(&output);
+    let expected_focal =
+        compute_focal_for_cursor(cursor_local, 2.0, output_size, &ZoomMovementMode::Centered);
+
+    assert!(f
+        .niri()
+        .layout
+        .zoom_state_for_output(&output)
+        .unwrap()
+        .transition
+        .is_none());
+    assert!((snapshot.level - 2.0).abs() < 1e-6);
+    assert!((snapshot.focal.x - expected_focal.x).abs() < 1e-6);
+    assert!((snapshot.focal.y - expected_focal.y).abs() < 1e-6);
 }
 
 /// Test that zoom_snapshot_for_output reports consistent level/focal/locked

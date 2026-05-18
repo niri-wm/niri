@@ -160,6 +160,7 @@ use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderEleme
 use crate::render_helpers::surface::push_elements_from_surface_tree;
 use crate::render_helpers::texture::TextureBuffer;
 use crate::render_helpers::xray::{Xray, XrayPos};
+use crate::render_helpers::zoom::ZoomElement;
 use crate::render_helpers::{
     encompassing_geo, render_to_dmabuf, render_to_encompassing_texture, render_to_shm,
     render_to_texture, render_to_vec, shaders, RenderCtx, RenderTarget,
@@ -6816,11 +6817,16 @@ pub fn zoom_wrap<E: Element>(
     output_scale: Scale<f64>,
     zoom_focal: Point<f64, Logical>,
     output_geo: Rectangle<i32, Logical>,
-) -> RelocateRenderElement<RescaleRenderElement<E>> {
-    let focal_physical: Point<i32, Physical> = zoom_focal.to_physical_precise_round(output_scale);
-    RelocateRenderElement::from_element(
-        RescaleRenderElement::from_element(elem, focal_physical, zoom_factor),
-        output_geo.loc.to_physical(Scale::from(zoom_factor as i32)),
+) -> ZoomElement<E> {
+    let focal_physical: Point<f64, Physical> = zoom_focal.to_physical(output_scale);
+    ZoomElement::from_element(
+        elem,
+        focal_physical,
+        zoom_factor,
+        output_geo
+            .loc
+            .to_f64()
+            .to_physical(Scale::from(zoom_factor)),
         Relocate::Relative,
     )
 }
@@ -6937,15 +6943,15 @@ niri_render_elements! {
 // zoomed types are wrapped in a separate enum
 niri_render_elements! {
     ZoomedRenderElement<R> => {
-        Monitor = RelocateRenderElement<RescaleRenderElement<MonitorRenderElement<R>>>,
-        RescaledTile = RelocateRenderElement<RescaleRenderElement<RescaleRenderElement<TileRenderElement<R>>>>,
-        LayerSurface = RelocateRenderElement<RescaleRenderElement<LayerSurfaceRenderElement<R>>>,
-        RelocatedLayerSurface = RelocateRenderElement<RescaleRenderElement<CropRenderElement<RelocateRenderElement<RescaleRenderElement<LayerSurfaceRenderElement<R>>>>>>,
-        RelocatedColor = RelocateRenderElement<RescaleRenderElement<CropRenderElement<RelocateRenderElement<RescaleRenderElement<SolidColorRenderElement>>>>>,
+        Monitor = ZoomElement<MonitorRenderElement<R>>,
+        RescaledTile = ZoomElement<RescaleRenderElement<TileRenderElement<R>>>,
+        LayerSurface = ZoomElement<LayerSurfaceRenderElement<R>>,
+        RelocatedLayerSurface = ZoomElement<CropRenderElement<RelocateRenderElement<RescaleRenderElement<LayerSurfaceRenderElement<R>>>>>,
+        RelocatedColor = ZoomElement<CropRenderElement<RelocateRenderElement<RescaleRenderElement<SolidColorRenderElement>>>>,
         Pointer = RelocateRenderElement<RescaleRenderElement<PointerRenderElements<R>>>,
-        Wayland = RelocateRenderElement<RescaleRenderElement<WaylandSurfaceRenderElement<R>>>,
-        SolidColor = RelocateRenderElement<RescaleRenderElement<SolidColorRenderElement>>,
-        Texture = RelocateRenderElement<RescaleRenderElement<PrimaryGpuTextureRenderElement>>,
+        Wayland = ZoomElement<WaylandSurfaceRenderElement<R>>,
+        SolidColor = ZoomElement<SolidColorRenderElement>,
+        Texture = ZoomElement<PrimaryGpuTextureRenderElement>,
 
         // Special case for ScreenshotUiRenderElement::SolidColor
         ScreenshotSolidColor= SolidColorRenderElement,

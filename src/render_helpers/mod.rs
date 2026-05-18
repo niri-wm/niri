@@ -50,6 +50,7 @@ pub mod solid_color;
 pub mod surface;
 pub mod texture;
 pub mod xray;
+pub mod zoom;
 
 /// A rendering context.
 ///
