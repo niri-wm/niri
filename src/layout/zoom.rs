@@ -161,7 +161,11 @@ impl FocalTrackingContext {
             && self.output_size.is_some()
             && matches!(
                 self.movement_mode.as_ref(),
-                Some(ZoomMovementMode::OnEdge | ZoomMovementMode::CursorFollow)
+                Some(
+                    ZoomMovementMode::OnEdge
+                        | ZoomMovementMode::CursorFollow
+                        | ZoomMovementMode::Centered
+                )
             )
     }
 

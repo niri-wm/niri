@@ -13,9 +13,7 @@ use pango::{Alignment, FontDescription};
 use pangocairo::cairo::{self, ImageSurface};
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::input::TouchSlot;
-use smithay::backend::renderer::element::utils::{
-    Relocate, RelocateRenderElement, RescaleRenderElement,
-};
+use smithay::backend::renderer::element::utils::{Relocate, RelocateRenderElement};
 use smithay::backend::renderer::element::{Element, Kind};
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
 use smithay::backend::renderer::{ExportMem, Texture as _};
@@ -31,6 +29,7 @@ use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
 use crate::render_helpers::texture::{TextureBuffer, TextureRenderElement};
+use crate::render_helpers::zoom::ZoomElement;
 use crate::render_helpers::{render_to_texture, RenderTarget};
 use crate::utils::to_physical_precise_round;
 use crate::utils::zoom::zoom_transform_physical_point_f64;
@@ -716,11 +715,16 @@ impl ScreenshotUi {
                         output_scale,
                     );
                     let pointer_scale = zoom_factor / screenshot.capture_zoom_level;
-                    let scaled_hotspot = hotspot.to_f64().upscale(pointer_scale).to_i32_round();
+                    let scaled_hotspot = hotspot
+                        .to_f64()
+                        .upscale(pointer_scale)
+                        .to_i32_round::<i32>();
                     let final_pos = target.to_i32_round() - scaled_hotspot;
-                    let elem = RelocateRenderElement::from_element(
-                        RescaleRenderElement::from_element(pointer, hotspot, pointer_scale),
-                        final_pos,
+                    let elem = ZoomElement::from_element(
+                        pointer,
+                        hotspot.to_f64(),
+                        pointer_scale,
+                        final_pos.to_f64(),
                         Relocate::Absolute,
                     );
                     push(OutputRenderElements::Zoomed(ZoomedRenderElement::Texture(
