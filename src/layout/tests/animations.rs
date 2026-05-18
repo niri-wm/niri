@@ -114,6 +114,40 @@ fn height_resize_animates_next_y() {
 }
 
 #[test]
+fn expel_active_bottom_tab_starts_remaining_tab_switch_animation() {
+    let ops = [
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+        Op::FocusColumnLeft,
+        Op::ConsumeWindowIntoColumn,
+        Op::ToggleColumnTabbedDisplay,
+        Op::AddWindow {
+            params: TestWindowParams::new(3),
+        },
+        Op::FocusColumnLeft,
+        Op::ConsumeWindowIntoColumn,
+        Op::FocusWindowBottom,
+    ];
+    let mut layout = check_ops_with_options(make_options(), ops);
+
+    check_ops_on_layout(&mut layout, [Op::ExpelWindowFromColumn]);
+
+    assert_eq!(layout.focus().unwrap().id(), &2);
+    assert_eq!(
+        layout
+            .active_workspace()
+            .unwrap()
+            .active_column_tab_switch_animation(),
+        Some((2, 1))
+    );
+}
+
+#[test]
 fn clientside_height_change_doesnt_animate() {
     let mut layout = set_up_two_in_column();
 

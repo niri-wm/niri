@@ -1555,6 +1555,14 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             .any(|col| col.start_open_animation(id))
     }
 
+    #[cfg(test)]
+    pub fn active_column_tab_switch_animation(&self) -> Option<(usize, usize)> {
+        self.columns
+            .get(self.active_column_idx)
+            .and_then(|col| col.column_tab_switch_animation.as_ref())
+            .map(|anim| (anim.from_idx, anim.to_idx))
+    }
+
     pub fn focus_left(&mut self) -> bool {
         if self.active_column_idx == 0 {
             return false;
@@ -2013,12 +2021,23 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         }
 
         let source_tile_idx = source_column.tiles.len() - 1;
+        let expelled_active_tab =
+            source_column.display_mode == ColumnDisplay::Tabbed
+                && source_column.active_tile_idx == source_tile_idx;
 
         let mut offset = Point::from((source_column.render_offset().x, 0.));
         let prev_off = source_column.tile_offset(source_tile_idx);
 
         let removed =
             self.remove_tile_by_idx(source_col_idx, source_tile_idx, Transaction::new(), None);
+
+        if expelled_active_tab {
+            let source_column = &mut self.columns[source_col_idx];
+            source_column.start_column_tab_switch_animation(
+                source_tile_idx,
+                source_column.active_tile_idx,
+            );
+        }
 
         self.add_tile(
             Some(target_col_idx),
@@ -4204,6 +4223,31 @@ impl<W: LayoutElement> Column<W> {
             && !self.options.animations.column_tab_switch.anim.off
     }
 
+    fn start_column_tab_switch_animation(&mut self, from_idx: usize, to_idx: usize) {
+        if self.display_mode != ColumnDisplay::Tabbed
+            || self.tiles.len() <= 1
+            || self.options.animations.column_tab_switch.anim.off
+            || to_idx >= self.tiles.len()
+            || from_idx > self.tiles.len()
+            || from_idx == to_idx
+        {
+            self.column_tab_switch_animation = None;
+            return;
+        }
+
+        self.column_tab_switch_animation = Some(ColumnTabSwitchAnimation {
+            anim: Animation::new(
+                self.clock.clone(),
+                0.,
+                1.,
+                0.,
+                self.options.animations.column_tab_switch.anim,
+            ),
+            from_idx,
+            to_idx,
+        });
+    }
+
     fn animate_tile_on_column_tab_switch(
         &self,
         animation: &ColumnTabSwitchAnimation,
@@ -4470,21 +4514,7 @@ impl<W: LayoutElement> Column<W> {
             return false;
         }
 
-        self.column_tab_switch_animation = if self.should_animate_column_tab_switch() {
-            Some(ColumnTabSwitchAnimation {
-                anim: Animation::new(
-                    self.clock.clone(),
-                    0.,
-                    1.,
-                    0.,
-                    self.options.animations.column_tab_switch.anim,
-                ),
-                from_idx: old_idx,
-                to_idx: idx,
-            })
-        } else {
-            None
-        };
+        self.start_column_tab_switch_animation(old_idx, idx);
         self.active_tile_idx = idx;
         self.tiles[idx].ensure_alpha_animates_to_1();
 
