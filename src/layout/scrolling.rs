@@ -4219,13 +4219,12 @@ impl<W: LayoutElement> Column<W> {
 
     fn should_animate_column_tab_switch(&self) -> bool {
         self.display_mode == ColumnDisplay::Tabbed
-            && self.tiles.len() > 1
+            && (self.tiles.len() > 1 || self.column_tab_switch_animation.is_some())
             && !self.options.animations.column_tab_switch.anim.off
     }
 
     fn start_column_tab_switch_animation(&mut self, from_idx: usize, to_idx: usize) {
         if self.display_mode != ColumnDisplay::Tabbed
-            || self.tiles.len() <= 1
             || self.options.animations.column_tab_switch.anim.off
             || to_idx >= self.tiles.len()
             || from_idx > self.tiles.len()

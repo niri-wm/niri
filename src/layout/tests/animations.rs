@@ -126,24 +126,19 @@ fn expel_active_bottom_tab_starts_remaining_tab_switch_animation() {
         Op::FocusColumnLeft,
         Op::ConsumeWindowIntoColumn,
         Op::ToggleColumnTabbedDisplay,
-        Op::AddWindow {
-            params: TestWindowParams::new(3),
-        },
-        Op::FocusColumnLeft,
-        Op::ConsumeWindowIntoColumn,
         Op::FocusWindowBottom,
     ];
     let mut layout = check_ops_with_options(make_options(), ops);
 
     check_ops_on_layout(&mut layout, [Op::ExpelWindowFromColumn]);
 
-    assert_eq!(layout.focus().unwrap().id(), &2);
+    assert_eq!(layout.focus().unwrap().id(), &1);
     assert_eq!(
         layout
             .active_workspace()
             .unwrap()
             .active_column_tab_switch_animation(),
-        Some((2, 1))
+        Some((1, 0))
     );
 }
 
