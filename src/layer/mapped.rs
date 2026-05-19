@@ -328,6 +328,6 @@ impl MappedLayer {
 
 impl Drop for MappedLayer {
     fn drop(&mut self) {
-        remove_pre_commit_hook(self.surface.wl_surface(), self.pre_commit_hook.clone());
+        remove_pre_commit_hook(self.surface.wl_surface(), &self.pre_commit_hook);
     }
 }

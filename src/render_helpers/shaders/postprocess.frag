@@ -2,10 +2,12 @@ uniform float noise;
 uniform float saturation;
 uniform vec4 bg_color;
 
-// Interleaved Gradient Noise
-float gradient_noise(vec2 uv) {
-    const vec3 magic = vec3(0.06711056, 0.00583715, 52.9829189);
-    return fract(magic.z * fract(dot(uv, magic.xy)));
+// Sin-less white noise by David Hoskins (MIT License).
+// https://www.shadertoy.com/view/4djSRW
+float hash12(vec2 p) {
+    vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.x + p3.y) * p3.z);
 }
 
 vec3 saturate(vec3 color, float sat) {
@@ -20,7 +22,7 @@ vec4 postprocess(vec4 color) {
 
     if (noise > 0.0) {
         vec2 uv = gl_FragCoord.xy;
-        color.rgb += (gradient_noise(uv) - 0.5) * noise;
+        color.rgb += (hash12(uv) - 0.5) * noise;
     }
 
     // Mix bg_color behind the texture (both premultiplied alpha).

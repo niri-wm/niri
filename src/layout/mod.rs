@@ -290,11 +290,30 @@ pub trait LayoutElement {
         Some(requested)
     }
 
+    fn is_windowed_fullscreen(&self) -> bool {
+        false
+    }
     fn is_pending_windowed_fullscreen(&self) -> bool {
         false
     }
     fn request_windowed_fullscreen(&mut self, value: bool) {
         let _ = value;
+    }
+
+    /// The effective geometry corner radius for this element.
+    ///
+    /// Returns zero when the element is in windowed fullscreen, since fullscreen windows have
+    /// square corners.
+    ///
+    /// This method only handles windowed fullscreen and not maximized/real fullscreen. This is
+    /// because windowed fullscreen is handled by the element itself, whereas other sizing modes
+    /// are handled externally by the Tile, so the corner radius changes for those modes is also
+    /// handled externally.
+    fn geometry_corner_radius(&self) -> CornerRadius {
+        if self.is_windowed_fullscreen() {
+            return CornerRadius::default();
+        }
+        self.rules().geometry_corner_radius.unwrap_or_default()
     }
 
     fn is_child_of(&self, parent: &Self) -> bool;
@@ -2854,13 +2873,12 @@ impl<W: LayoutElement> Layout<W> {
                         ws.scrolling_insert_position(pos_within_workspace)
                     };
 
-                    let rules = move_.tile.window().rules();
                     let border_width = move_.tile.effective_border_width().unwrap_or(0.);
-                    let corner_radius = rules
-                        .geometry_corner_radius
-                        .map_or(CornerRadius::default(), |radius| {
-                            radius.expanded_by(border_width as f32)
-                        });
+                    let corner_radius = move_
+                        .tile
+                        .window()
+                        .geometry_corner_radius()
+                        .expanded_by(border_width as f32);
                     mon.insert_hint = Some(InsertHint {
                         workspace: insert_ws,
                         position,

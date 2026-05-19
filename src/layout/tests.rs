@@ -243,6 +243,10 @@ impl LayoutElement for TestWindow {
         self.0.requested_size.get()
     }
 
+    fn is_windowed_fullscreen(&self) -> bool {
+        self.0.is_windowed_fullscreen.get()
+    }
+
     fn is_pending_windowed_fullscreen(&self) -> bool {
         self.0.is_pending_windowed_fullscreen.get()
     }

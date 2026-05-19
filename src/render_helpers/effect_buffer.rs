@@ -192,7 +192,7 @@ impl EffectBuffer {
         let offscreen = if let Some(offscreen) = &mut self.offscreen {
             offscreen
         } else {
-            debug!("creating new offscreen texture: {reason}");
+            trace!("creating new offscreen texture: {reason}");
             let span = tracy_client::span!("creating effect offscreen texture");
             span.emit_text(reason);
 

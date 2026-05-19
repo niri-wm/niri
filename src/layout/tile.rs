@@ -403,9 +403,9 @@ impl<W: LayoutElement> Tile<W> {
         self.shadow.update_config(shadow_config);
 
         let window_size = self.window_size();
-        let radius = rules
-            .geometry_corner_radius
-            .unwrap_or_default()
+        let radius = self
+            .window
+            .geometry_corner_radius()
             .fit_to(window_size.w as f32, window_size.h as f32);
         self.rounded_corner_damage.set_corner_radius(radius);
     }
@@ -473,11 +473,22 @@ impl<W: LayoutElement> Tile<W> {
         border_window_size.w -= border_width * 2.;
         border_window_size.h -= border_width * 2.;
 
-        let radius = rules
-            .geometry_corner_radius
-            .map_or(CornerRadius::default(), |radius| {
-                radius.expanded_by(border_width as f32)
-            })
+        // FIXME: this takes into account the animation from normal sizing mode to
+        // maximized/fullscreen, but it doesn't take into account the corner radius animation from
+        // the window itself.
+        //
+        // Currently, an easy way to see the problem is to start from a window with a nonzero
+        // radius, then go from windowed fullscreen (that forces 0 radius) to regular fullscreen.
+        // At the start of the animation, windowed fullscreen becomes false, but the window hasn't
+        // animated to the normal fullscreen yet, so the radius here jumps to its nonzero value,
+        // even though it should remain zero throughout.
+        //
+        // Later, when windows get the surface shape protocol with radii, this issue will happen
+        // when that changes between animated commits.
+        let radius = self
+            .window
+            .geometry_corner_radius()
+            .expanded_by(border_width as f32)
             .scaled_by(1. - expanded_progress as f32);
         self.border.update_render_elements(
             border_window_size,
@@ -496,9 +507,8 @@ impl<W: LayoutElement> Tile<W> {
         let radius = if self.visual_border_width().is_some() {
             radius
         } else {
-            rules
-                .geometry_corner_radius
-                .unwrap_or_default()
+            self.window
+                .geometry_corner_radius()
                 .scaled_by(1. - expanded_progress as f32)
         };
         self.shadow.update_render_elements(
@@ -1059,9 +1069,9 @@ impl<W: LayoutElement> Tile<W> {
         // Clip to geometry including during the fullscreen animation to help with buggy clients
         // that submit a full-sized buffer before acking the fullscreen state (Firefox).
         let clip_to_geometry = fullscreen_progress < 1. && rules.clip_to_geometry == Some(true);
-        let radius = rules
-            .geometry_corner_radius
-            .unwrap_or_default()
+        let radius = self
+            .window
+            .geometry_corner_radius()
             .scaled_by(1. - expanded_progress as f32);
 
         // Popups go on top, whether it's resize or not.
@@ -1235,11 +1245,10 @@ impl<W: LayoutElement> Tile<W> {
             // animated corner radius.
             if fullscreen_progress < 1. && has_border_shader {
                 let border_width = self.visual_border_width().unwrap_or(0.);
-                let radius = rules
-                    .geometry_corner_radius
-                    .map_or(CornerRadius::default(), |radius| {
-                        radius.expanded_by(border_width as f32)
-                    })
+                let radius = self
+                    .window
+                    .geometry_corner_radius()
+                    .expanded_by(border_width as f32)
                     .scaled_by(1. - expanded_progress as f32);
 
                 let size = self.fullscreen_backdrop.size();

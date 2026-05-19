@@ -370,11 +370,10 @@ impl Thumbnail {
 
         // Clip thumbnails to their geometry.
         let radius = if mapped.sizing_mode().is_normal() {
-            mapped.rules().geometry_corner_radius
+            mapped.geometry_corner_radius()
         } else {
-            None
-        }
-        .unwrap_or_default();
+            CornerRadius::default()
+        };
 
         let has_border_shader = BorderRenderElement::has_shader(ctx.renderer);
         let clip_shader = ClippedSurfaceRenderElement::shader(ctx.renderer).cloned();

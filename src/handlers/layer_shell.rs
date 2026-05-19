@@ -1,6 +1,5 @@
 use smithay::delegate_layer_shell;
 use smithay::desktop::{layer_map_for_output, LayerSurface, PopupKind, WindowSurfaceType};
-use smithay::output::Output;
 use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::wayland::compositor::{add_pre_commit_hook, get_parent, with_states, HookId};
@@ -27,7 +26,7 @@ impl WlrLayerShellHandler for State {
         namespace: String,
     ) {
         let output = if let Some(wl_output) = &wl_output {
-            Output::from_resource(wl_output)
+            self.niri.output_from_resource(wl_output)
         } else {
             self.niri.layout.active_output().cloned()
         };
