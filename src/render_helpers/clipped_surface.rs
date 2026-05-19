@@ -1,11 +1,13 @@
 use glam::{Mat3, Vec2};
 use niri_config::CornerRadius;
+use smithay::backend::renderer::buffer_y_inverted;
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::element::{Element, Id, Kind, RenderElement, UnderlyingStorage};
 use smithay::backend::renderer::gles::{
     GlesError, GlesFrame, GlesRenderer, GlesTexProgram, Uniform,
 };
 use smithay::backend::renderer::utils::{CommitCounter, DamageSet, OpaqueRegions};
+use smithay::utils::user_data::UserDataMap;
 use smithay::utils::{Buffer, Logical, Physical, Point, Rectangle, Scale, Size, Transform};
 
 use super::damage::ExtraDamage;
@@ -74,12 +76,18 @@ impl<R: NiriRenderer> ClippedSurfaceRenderElement<R> {
             * Mat3::from_cols_array(transform.matrix().as_ref())
             * Mat3::from_translation(-Vec2::new(0.5, 0.5));
 
-        // FIXME: y_inverted
+        let y_invert = if buffer_y_inverted(self.inner.buffer()).unwrap_or(false) {
+            Mat3::from_scale(Vec2::new(1., -1.))
+        } else {
+            Mat3::IDENTITY
+        };
+
         let input_to_geo = transform_matrix * Mat3::from_scale(elem_geo_size / geo_size)
             * Mat3::from_translation((elem_geo_loc - geo_loc) / elem_geo_size)
             // Apply viewporter src.
             * Mat3::from_scale(buf_size / src_size)
-            * Mat3::from_translation(-src_loc / buf_size);
+            * Mat3::from_translation(-src_loc / buf_size)
+            * y_invert;
 
         let geo_size = (self.geometry.size.w as f32, self.geometry.size.h as f32);
 
@@ -228,9 +236,18 @@ impl RenderElement<GlesRenderer> for ClippedSurfaceRenderElement<GlesRenderer> {
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
         opaque_regions: &[Rectangle<i32, Physical>],
+        cache: Option<&UserDataMap>,
     ) -> Result<(), GlesError> {
         frame.override_default_tex_program(self.program.clone(), self.compute_uniforms());
-        RenderElement::<GlesRenderer>::draw(&self.inner, frame, src, dst, damage, opaque_regions)?;
+        RenderElement::<GlesRenderer>::draw(
+            &self.inner,
+            frame,
+            src,
+            dst,
+            damage,
+            opaque_regions,
+            cache,
+        )?;
         frame.clear_tex_program_override();
         Ok(())
     }
@@ -252,11 +269,12 @@ impl<'render> RenderElement<TtyRenderer<'render>>
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
         opaque_regions: &[Rectangle<i32, Physical>],
+        cache: Option<&UserDataMap>,
     ) -> Result<(), TtyRendererError<'render>> {
         frame
             .as_gles_frame()
             .override_default_tex_program(self.program.clone(), self.compute_uniforms());
-        RenderElement::draw(&self.inner, frame, src, dst, damage, opaque_regions)?;
+        RenderElement::draw(&self.inner, frame, src, dst, damage, opaque_regions, cache)?;
         frame.as_gles_frame().clear_tex_program_override();
         Ok(())
     }
@@ -272,10 +290,6 @@ impl<'render> RenderElement<TtyRenderer<'render>>
 }
 
 impl RoundedCornerDamage {
-    pub fn set_size(&mut self, size: Size<f64, Logical>) {
-        self.damage.set_size(size);
-    }
-
     pub fn set_corner_radius(&mut self, corner_radius: CornerRadius) {
         if self.corner_radius == corner_radius {
             return;
@@ -286,7 +300,7 @@ impl RoundedCornerDamage {
         self.damage.damage_all();
     }
 
-    pub fn element(&self) -> ExtraDamage {
-        self.damage.clone()
+    pub fn render(&self, geometry: Rectangle<f64, Logical>) -> ExtraDamage {
+        self.damage.render(geometry)
     }
 }

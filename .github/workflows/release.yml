@@ -22,15 +22,18 @@ jobs:
       contents: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           show-progress: false
 
       - name: Check for unreplaced "Since:" in the wiki
         run: |
-          if grep --recursive 'Since: next release' wiki; then
-            exit 1
-          fi
+          # Fail if a match is found (exit code 0)
+          grep --recursive 'Since: next release' docs/wiki && exit 1
+
+          # Fail if grep failed (exit code 2)
+          status=$?
+          if [ $status -ne 1 ]; then exit $status; fi
 
       - name: Install dependencies
         run: |
