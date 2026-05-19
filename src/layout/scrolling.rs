@@ -22,7 +22,7 @@ use crate::layout::SizingMode;
 use crate::niri_render_elements;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::xray::XrayPos;
-use crate::render_helpers::{RenderCtx, RenderTarget};
+use crate::render_helpers::RenderCtx;
 use crate::utils::transaction::{Transaction, TransactionBlocker};
 use crate::utils::ResizeEdge;
 use crate::window::ResolvedWindowRules;
@@ -2021,9 +2021,8 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         }
 
         let source_tile_idx = source_column.tiles.len() - 1;
-        let expelled_active_tab =
-            source_column.display_mode == ColumnDisplay::Tabbed
-                && source_column.active_tile_idx == source_tile_idx;
+        let expelled_active_tab = source_column.display_mode == ColumnDisplay::Tabbed
+            && source_column.active_tile_idx == source_tile_idx;
 
         let mut offset = Point::from((source_column.render_offset().x, 0.));
         let prev_off = source_column.tile_offset(source_tile_idx);
@@ -2033,10 +2032,8 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
         if expelled_active_tab {
             let source_column = &mut self.columns[source_col_idx];
-            source_column.start_column_tab_switch_animation(
-                source_tile_idx,
-                source_column.active_tile_idx,
-            );
+            source_column
+                .start_column_tab_switch_animation(source_tile_idx, source_column.active_tile_idx);
         }
 
         self.add_tile(
@@ -2961,10 +2958,10 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             }
 
             if col.render_column_tab_switch(
-                ctx.renderer,
+                ctx.r(),
                 view_off + col_off + col_render_off,
+                xray_pos,
                 focus_ring && first,
-                ctx.target,
                 &mut |elem| push(elem.into()),
             ) {
                 first = false;
@@ -4282,10 +4279,10 @@ impl<W: LayoutElement> Column<W> {
 
     fn render_column_tab_switch<R: NiriRenderer>(
         &self,
-        renderer: &mut R,
+        mut ctx: RenderCtx<R>,
         column_loc: Point<f64, Logical>,
+        xray_pos: XrayPos,
         focus_ring: bool,
-        target: RenderTarget,
         push: &mut dyn FnMut(TileRenderElement<R>),
     ) -> bool {
         let Some(animation) = self.column_tab_switch_animation.as_ref() else {
@@ -4355,18 +4352,25 @@ impl<W: LayoutElement> Column<W> {
             };
 
             tile.render_tab_switch_contents(
-                renderer,
+                ctx.renderer,
                 location,
                 clip_geo,
                 crop_geo,
                 clip_radius,
-                target,
+                ctx.target,
+                push,
+            );
+            tile.render_tab_switch_background_effect(
+                ctx.r(),
+                location,
+                crop_geo,
+                xray_pos.offset(location),
                 push,
             );
         }
 
         active_tile.render_frame(
-            renderer,
+            ctx.renderer,
             frame_loc + active_tile.bob_offset(),
             focus_ring,
             push,

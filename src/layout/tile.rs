@@ -135,6 +135,7 @@ niri_render_elements! {
         Border = BorderRenderElement,
         Shadow = ShadowRenderElement,
         CroppedMaskedOffscreen = CropRenderElement<MaskedOffscreenRenderElement>,
+        CroppedBackgroundEffect = CropRenderElement<BackgroundEffectElement>,
         ClippedSurface = ClippedSurfaceRenderElement<R>,
         Offscreen = OffscreenRenderElement,
         ExtraDamage = ExtraDamage,
@@ -1461,6 +1462,48 @@ impl<W: LayoutElement> Tile<W> {
                 );
             }
         }
+    }
+
+    pub fn render_tab_switch_background_effect<R: NiriRenderer>(
+        &self,
+        mut ctx: RenderCtx<R>,
+        location: Point<f64, Logical>,
+        crop_geo: Rectangle<f64, Logical>,
+        xray_pos: XrayPos,
+        push: &mut dyn FnMut(TileRenderElement<R>),
+    ) {
+        let window_loc = self.window_loc();
+        let window_size = self.window_size();
+        let animated_window_size = self.animated_window_size();
+        let area = Rectangle::new(
+            location + self.column_tab_switch_content_origin(),
+            animated_window_size,
+        );
+        let rules = self.window.rules();
+        let clip_to_geometry =
+            self.fullscreen_progress() < 1. && rules.clip_to_geometry == Some(true);
+        let radius = self
+            .window
+            .geometry_corner_radius()
+            .scaled_by(1. - self.expanded_progress() as f32);
+        let surface_anim_scale = animated_window_size / window_size;
+        let scale = Scale::from(self.scale);
+        let crop = crop_geo.to_physical_precise_round(scale);
+
+        self.window.render_background_effect(
+            ctx.as_gles(),
+            area,
+            self.scale,
+            clip_to_geometry,
+            surface_anim_scale,
+            radius,
+            xray_pos.offset(window_loc),
+            &mut |elem| {
+                if let Some(elem) = CropRenderElement::from_element(elem, scale, crop) {
+                    push(elem.into());
+                }
+            },
+        );
     }
 
     pub fn render<R: NiriRenderer>(
