@@ -34,7 +34,7 @@ use smithay::backend::renderer::element::{
 };
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::renderer::sync::SyncPoint;
-use smithay::backend::renderer::{Color32F, Renderer, TextureFilter};
+use smithay::backend::renderer::Color32F;
 use smithay::desktop::utils::{
     bbox_from_surface_tree, output_update, send_dmabuf_feedback_surface_tree,
     send_frames_surface_tree, surface_presentation_feedback_flags_from_states,
@@ -160,7 +160,7 @@ use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderEleme
 use crate::render_helpers::surface::push_elements_from_surface_tree;
 use crate::render_helpers::texture::TextureBuffer;
 use crate::render_helpers::xray::{Xray, XrayPos};
-use crate::render_helpers::zoom::ZoomElement;
+use crate::render_helpers::zoom::{zoom_filter, ZoomElement};
 use crate::render_helpers::{
     encompassing_geo, render_to_dmabuf, render_to_encompassing_texture, render_to_shm,
     render_to_texture, render_to_vec, shaders, RenderCtx, RenderTarget,
@@ -4435,18 +4435,8 @@ impl Niri {
 
         let apply_zoom = ctx.apply_zoom;
 
-        // Set texture filter based on zoom level when zoom is active. The filter persists on the
-        // renderer, but each subsequent render() call will set the correct filter for its output.
-        if apply_zoom {
-            let zoom_factor = self.layout.zoom_level_for_output(output);
-            let filter = match zoom_factor {
-                z if z < 2.0 => TextureFilter::Linear,
-                _ => TextureFilter::Nearest,
-            };
-            let gles = ctx.renderer.as_gles_renderer();
-            let _ = gles.upscale_filter(filter);
-            let _ = gles.downscale_filter(filter);
-        }
+        // Texture filter is now applied per-element inside ZoomElement::draw,
+        // so no global filter override is needed here.
 
         let push = if apply_zoom {
             &mut |elem| {
@@ -6829,6 +6819,7 @@ pub fn zoom_wrap<E: Element>(
             .to_physical(Scale::from(zoom_factor)),
         Relocate::Relative,
     )
+    .with_filter_opt(zoom_filter(zoom_factor))
 }
 
 /// Wrap a cursor render element with zoom transform for zoomed display.
