@@ -1,6 +1,5 @@
 use std::time::Duration;
 
-use niri_config::animations::{Curve, EasingParams, Kind};
 use niri_config::ZoomMovementMode;
 use smithay::output::Output;
 use smithay::utils::{Logical, Point, Rectangle, Size};
@@ -215,15 +214,7 @@ pub struct ZoomLevelAnimation {
 }
 
 impl ZoomLevelAnimation {
-    pub fn new(clock: Clock, from: f64, to: f64) -> Self {
-        let config = niri_config::Animation {
-            off: false,
-            kind: Kind::Easing(EasingParams {
-                duration_ms: 250,
-                curve: Curve::EaseOutExpo,
-            }),
-        };
-
+    pub fn new(clock: Clock, from: f64, to: f64, config: niri_config::Animation) -> Self {
         Self {
             anim: Animation::new(clock, from, to, 0.0, config),
             target: to,
@@ -394,14 +385,12 @@ pub struct ZoomFocalAnimation {
 }
 
 impl ZoomFocalAnimation {
-    pub fn new(clock: Clock, from: Point<f64, Logical>, to: Point<f64, Logical>) -> Self {
-        let config = niri_config::Animation {
-            off: false,
-            kind: Kind::Easing(EasingParams {
-                duration_ms: 250,
-                curve: Curve::CubicBezier(0.05, 0.7, 0.1, 1.0),
-            }),
-        };
+    pub fn new(
+        clock: Clock,
+        from: Point<f64, Logical>,
+        to: Point<f64, Logical>,
+        config: niri_config::Animation,
+    ) -> Self {
         Self {
             x_anim: Animation::new(clock.clone(), from.x, to.x, 0.0, config),
             y_anim: Animation::new(clock, from.y, to.y, 0.0, config),
