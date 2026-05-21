@@ -28,7 +28,7 @@ fn zoom_state_action_query_reports_level_and_lock() {
 }
 
 #[test]
-fn locked_zoom_clamps_pointer_and_touch_to_viewport() {
+fn locked_zoom_level_change_preserves_focal() {
     let mut f = Fixture::new();
     f.add_output(1, (1920, 1080));
     let output = f.niri_output(1);
@@ -42,6 +42,8 @@ fn locked_zoom_clamps_pointer_and_touch_to_viewport() {
     f.niri_complete_animations();
     f.niri().layout.toggle_zoom_lock(&output);
     f.niri_complete_animations();
+    let focal_before = f.niri().layout.zoom_focal_for_output(&output);
+
     f.niri().layout.set_zoom_level(
         &output,
         5.0,
@@ -51,10 +53,12 @@ fn locked_zoom_clamps_pointer_and_touch_to_viewport() {
     );
     f.niri_complete_animations();
 
-    // Level should remain at the previous value and remain locked
-    let level_before = f.niri().layout.zoom_level_for_output(&output);
     let level_after = f.niri().layout.zoom_level_for_output(&output);
-    assert!((level_after - level_before).abs() < 1e-6);
+    let focal_after = f.niri().layout.zoom_focal_for_output(&output);
+
+    assert!((level_after - 5.0).abs() < 1e-6);
+    assert!((focal_after.x - focal_before.x).abs() < 1e-6);
+    assert!((focal_after.y - focal_before.y).abs() < 1e-6);
     assert!(f.niri().layout.zoom_locked_for_output(&output));
 }
 
@@ -438,4 +442,117 @@ fn zoom_gesture_update_works_without_cursor_local() {
     );
 
     assert!(result.is_some());
+}
+
+#[test]
+fn zoom_gesture_end_maintains_level_with_no_animation() {
+    let mut f = Fixture::new();
+    f.add_output(1, (1920, 1080));
+    let output = f.niri_output(1);
+    let output_size = Size::from((1920.0, 1080.0));
+    let cursor_local = Point::from((500.0, 400.0));
+
+    f.niri().layout.zoom_gesture_begin(
+        &output,
+        Some(cursor_local),
+        Some(output_size),
+        Some(ZoomMovementMode::CursorFollow),
+    );
+
+    assert!(f
+        .niri()
+        .layout
+        .zoom_gesture_update(
+            &output,
+            1.0,
+            1.0,
+            std::time::Duration::from_millis(16),
+            Some(cursor_local),
+            Some(output_size),
+        )
+        .is_some());
+    assert!(f
+        .niri()
+        .layout
+        .zoom_gesture_update(
+            &output,
+            2.0,
+            1.0,
+            std::time::Duration::from_millis(32),
+            Some(cursor_local),
+            Some(output_size),
+        )
+        .is_some());
+
+    // Non-cancelled gesture end — target equals current level when no
+    // rubber-banding or clamping divergence, so no level animation.
+    assert_eq!(f.niri().layout.zoom_gesture_end(&output, false), Some(true));
+    assert!(f
+        .niri()
+        .layout
+        .zoom_state_for_output(&output)
+        .unwrap()
+        .transition
+        .is_none());
+    assert!((f.niri().layout.zoom_level_for_output(&output) - 2.0).abs() < 1e-6);
+}
+
+#[test]
+fn zoom_gesture_cancel_animates_back_to_start_level() {
+    let mut f = Fixture::new();
+    f.add_output(1, (1920, 1080));
+    let output = f.niri_output(1);
+    let output_size = Size::from((1920.0, 1080.0));
+    let cursor_local = Point::from((500.0, 400.0));
+
+    f.niri().layout.zoom_gesture_begin(
+        &output,
+        Some(cursor_local),
+        Some(output_size),
+        Some(ZoomMovementMode::CursorFollow),
+    );
+
+    assert!(f
+        .niri()
+        .layout
+        .zoom_gesture_update(
+            &output,
+            1.0,
+            1.0,
+            std::time::Duration::from_millis(16),
+            Some(cursor_local),
+            Some(output_size),
+        )
+        .is_some());
+    assert!(f
+        .niri()
+        .layout
+        .zoom_gesture_update(
+            &output,
+            2.0,
+            1.0,
+            std::time::Duration::from_millis(32),
+            Some(cursor_local),
+            Some(output_size),
+        )
+        .is_some());
+
+    assert_eq!(f.niri().layout.zoom_gesture_end(&output, true), Some(true));
+    assert!(f
+        .niri()
+        .layout
+        .zoom_state_for_output(&output)
+        .unwrap()
+        .transition
+        .is_some());
+
+    f.niri_complete_animations();
+    assert!((f.niri().layout.zoom_level_for_output(&output) - 1.0).abs() < 1e-6);
+    assert!(f
+        .niri()
+        .layout
+        .zoom_state_for_output(&output)
+        .unwrap()
+        .transition
+        .is_none());
 }

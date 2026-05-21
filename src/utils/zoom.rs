@@ -70,6 +70,9 @@ pub fn compute_focal_for_cursor(
 
     match movement_mode {
         ZoomMovementMode::CursorFollow => cursor_local,
+        // Centered and OnEdge share the same static focal computation.
+        // OnEdge only differs in how it updates/preserves the focal while
+        // the cursor moves relative to the current viewport.
         ZoomMovementMode::Centered | ZoomMovementMode::OnEdge => {
             let viewport_size = output_size.downscale(zoom_level);
             let viewport_loc = cursor_local - viewport_size.downscale(2.0).to_point();

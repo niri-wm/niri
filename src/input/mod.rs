@@ -9,7 +9,7 @@ use niri_config::{
     Action, Bind, Binds, Config, Key, ModKey, Modifiers, MruDirection, SwitchBinds, Trigger,
     ZoomIncrementType, ZoomMovementMode,
 };
-use niri_ipc::LayoutSwitchTarget;
+use niri_ipc::{LayoutSwitchTarget, ZoomLevelChange};
 use smithay::backend::input::{
     AbsolutePositionEvent, Axis, AxisSource, ButtonState, Device, DeviceCapability, Event,
     GestureBeginEvent, GestureEndEvent, GesturePinchUpdateEvent as _, GestureSwipeUpdateEvent as _,
@@ -2431,25 +2431,16 @@ impl State {
                     let current_level = self.niri.layout.zoom_level_for_output(&output);
                     let max_zoom = self.niri.layout.zoom_max_for_output(&output);
                     let increment_type = self.niri.config.borrow().zoom.increment_type;
-                    let target_level = {
-                        let factor_str = level.trim();
-                        let is_relative =
-                            factor_str.starts_with('+') || factor_str.starts_with('-');
-                        match factor_str.parse::<f64>() {
-                            Ok(f) if !is_relative => f.clamp(1., max_zoom),
-                            Ok(delta) => {
-                                let new_level = match increment_type {
-                                    ZoomIncrementType::Linear => current_level + delta,
-                                    ZoomIncrementType::Exponential => {
-                                        (current_level.ln() + delta).exp()
-                                    }
-                                };
-                                new_level.clamp(1.0, max_zoom)
-                            }
-                            Err(_) => {
-                                warn!("Failed to parse zoom level: {}", level);
-                                return;
-                            }
+                    let target_level = match level {
+                        ZoomLevelChange::Set(level) => level.clamp(1.0, max_zoom),
+                        ZoomLevelChange::Adjust(delta) => {
+                            let new_level = match increment_type {
+                                ZoomIncrementType::Linear => current_level + delta,
+                                ZoomIncrementType::Exponential => {
+                                    (current_level.ln() + delta).exp()
+                                }
+                            };
+                            new_level.clamp(1.0, max_zoom)
                         }
                     };
 

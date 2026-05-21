@@ -70,6 +70,9 @@ impl<E: Element> Element for ZoomElement<E> {
         scale: Scale<f64>,
         commit: Option<CommitCounter>,
     ) -> DamageSet<i32, Physical> {
+        // Damage is relative to the element, so only the zoom scale applies
+        // here; focal-origin anchoring and relocation are reflected by the
+        // element geometry, not by its relative damage rectangles.
         self.element
             .damage_since(scale, commit)
             .into_iter()
@@ -78,6 +81,8 @@ impl<E: Element> Element for ZoomElement<E> {
     }
 
     fn opaque_regions(&self, scale: Scale<f64>) -> OpaqueRegions<i32, Physical> {
+        // Opaque regions are also element-relative and therefore only need the
+        // zoom scale propagated.
         self.element
             .opaque_regions(scale)
             .into_iter()

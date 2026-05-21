@@ -8,6 +8,7 @@ use knuffel::errors::DecodeError;
 use miette::miette;
 use niri_ipc::{
     ColumnDisplay, LayoutSwitchTarget, PositionChange, SizeChange, WorkspaceReferenceArg,
+    ZoomLevelChange,
 };
 use smithay::input::keyboard::keysyms::KEY_NoSymbol;
 use smithay::input::keyboard::xkb::{keysym_from_name, KEYSYM_CASE_INSENSITIVE, KEYSYM_NO_FLAGS};
@@ -372,7 +373,7 @@ pub enum Action {
     #[knuffel(skip)]
     UnsetWindowUrgent(u64),
     SetZoomLevel(
-        #[knuffel(argument, str)] String,
+        #[knuffel(argument, str)] ZoomLevelChange,
         #[knuffel(argument)] Option<String>,
     ),
     ToggleZoomLock(#[knuffel(argument)] Option<String>),

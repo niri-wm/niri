@@ -391,6 +391,8 @@ pub(super) struct OutputZoomContext {
     clock: Clock,
     view_size: Size<f64, Logical>,
     max_zoom: f64,
+    level_anim: niri_config::Animation,
+    focal_anim: niri_config::Animation,
 }
 
 #[derive(Debug)]
@@ -1852,6 +1854,8 @@ impl<W: LayoutElement> Layout<W> {
             clock: mon.clock.clone(),
             view_size: mon.view_size(),
             max_zoom: mon.options.zoom.max_zoom,
+            level_anim: self.options.animations.zoom_level_change.0,
+            focal_anim: self.options.animations.zoom_focal_pan.0,
         })
     }
 
@@ -2981,7 +2985,12 @@ impl<W: LayoutElement> Layout<W> {
             return;
         }
 
-        let focal_anim = ZoomFocalAnimation::new(context.clock, current_focal, target_focal);
+        let focal_anim = ZoomFocalAnimation::new(
+            context.clock,
+            current_focal,
+            target_focal,
+            context.focal_anim,
+        );
 
         let mut transition = state.transition.take().unwrap_or_default();
         transition.start_focal_animation(focal_anim);
@@ -3042,7 +3051,8 @@ impl<W: LayoutElement> Layout<W> {
                 let Some(state) = self.zoom_state_mut(output) else {
                     return;
                 };
-                let focal_anim = ZoomFocalAnimation::new(context.clock, focal, new_focal);
+                let focal_anim =
+                    ZoomFocalAnimation::new(context.clock, focal, new_focal, context.focal_anim);
                 let mut transition = state.transition.take().unwrap_or_default();
                 transition.start_focal_animation(focal_anim);
                 state.level = level;
@@ -4129,21 +4139,28 @@ impl<W: LayoutElement> Layout<W> {
             && focal_changed;
 
         if skip_level_animation {
+            // Centered zoom looks worse when both the level and focal move at
+            // once. Snap the discrete level change instead of animating a
+            // coupled recenter.
             state.level = target_level;
             state.focal = target_focal;
             state.transition = None;
             return;
         }
 
-        let level_anim =
-            ZoomLevelAnimation::new(context.clock.clone(), current_level, target_level)
-                .with_tracking_context(
-                    Some(cursor_local),
-                    Some(context.view_size),
-                    Some(*movement_mode),
-                    current_level,
-                    current_focal,
-                );
+        let level_anim = ZoomLevelAnimation::new(
+            context.clock.clone(),
+            current_level,
+            target_level,
+            context.level_anim,
+        )
+        .with_tracking_context(
+            Some(cursor_local),
+            Some(context.view_size),
+            Some(*movement_mode),
+            current_level,
+            current_focal,
+        );
 
         let dynamic_focal_tracking =
             level_anim.should_use_dynamic_focal_tracking(target_level, locked, level_changed);
@@ -4155,7 +4172,12 @@ impl<W: LayoutElement> Layout<W> {
         }
 
         if focal_changed && !dynamic_focal_tracking {
-            let focal_anim = ZoomFocalAnimation::new(context.clock, current_focal, target_focal);
+            let focal_anim = ZoomFocalAnimation::new(
+                context.clock,
+                current_focal,
+                target_focal,
+                context.focal_anim,
+            );
             transition.start_focal_animation(focal_anim);
         }
 
@@ -4263,6 +4285,7 @@ impl<W: LayoutElement> Layout<W> {
                 context.clock.clone(),
                 gesture.current_level,
                 gesture.start_level,
+                context.level_anim,
             )
             .with_tracking_context(
                 gesture.cursor_pos(),
@@ -4285,55 +4308,8 @@ impl<W: LayoutElement> Layout<W> {
         let mut gesture = gesture; // make mutable
         gesture.tracker.push(0., now);
 
-        let current_log_pos = gesture.tracker.pos();
-        let raw_target = log_pos_to_zoom_level(gesture.start_level, current_log_pos);
-        let mut target_level = raw_target.clamp(1.0, context.max_zoom);
-
-        if (target_level - 1.0).abs() < 0.05 {
-            target_level = 1.0;
-        }
-
-        let level_changed = (target_level - gesture.current_level).abs() > ZOOM_CHANGE_EPSILON;
-        let target_focal = gesture.compute_focal_or(target_level, gesture.current_focal);
-        let change_in_focal = gesture.current_focal - target_focal;
-        let focal_changed = change_in_focal.x.abs() > ZOOM_CHANGE_EPSILON
-            || change_in_focal.y.abs() > ZOOM_CHANGE_EPSILON;
-
-        let dynamic_focal_tracking =
-            gesture.should_use_dynamic_focal_tracking(target_level, state.locked, level_changed);
-
-        let level_anim = if level_changed {
-            Some(
-                ZoomLevelAnimation::new(context.clock.clone(), gesture.current_level, target_level)
-                    .with_tracking_context(
-                        gesture.cursor_pos(),
-                        gesture.output_size(),
-                        gesture.movement_mode().cloned(),
-                        gesture.current_level,
-                        gesture.current_focal,
-                    ),
-            )
-        } else {
-            None
-        };
-
-        let focal_anim = if focal_changed && !dynamic_focal_tracking {
-            Some(ZoomFocalAnimation::new(
-                context.clock,
-                gesture.current_focal,
-                target_focal,
-            ))
-        } else {
-            None
-        };
-
-        transition.finalize_gesture(level_anim, focal_anim);
-
-        state.level = gesture.current_level;
-        state.focal = gesture.current_focal;
-        if transition.transitioning() {
-            state.transition = Some(transition);
-        }
+        state.level = gesture.current_level.max(1.0);
+        state.focal = gesture.compute_focal_or(state.level, gesture.current_focal);
 
         Some(true)
     }

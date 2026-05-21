@@ -936,11 +936,11 @@ pub enum Action {
         #[cfg_attr(feature = "clap", arg(long))]
         id: u64,
     },
-    /// Set the zoom level of an output.
+    /// Set or adjust the zoom level of an output.
     SetZoomLevel {
-        /// Zoom level to set (absolute like "2.0" or relative like "+0.5", "-0.5").
+        /// Zoom level change (absolute like "2.0" or relative like "+0.5", "-0.5").
         #[cfg_attr(feature = "clap", arg(allow_hyphen_values = true))]
-        level: String,
+        level: ZoomLevelChange,
         /// Optional Output name to set the zoom level for.
         #[cfg_attr(feature = "clap", arg())]
         output: Option<String>,
@@ -976,6 +976,16 @@ pub enum SizeChange {
     AdjustFixed(i32),
     /// Add or subtract to the current size as a proportion of the working area.
     AdjustProportion(f64),
+}
+
+/// Zoom level change.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum ZoomLevelChange {
+    /// Set the zoom level directly.
+    Set(f64),
+    /// Add or subtract from the current zoom level.
+    Adjust(f64),
 }
 
 /// Change in floating window position.
@@ -1843,6 +1853,24 @@ impl FromStr for SizeChange {
     }
 }
 
+impl FromStr for ZoomLevelChange {
+    type Err = &'static str;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.bytes().next() {
+            Some(b'-' | b'+') => {
+                let value = s.parse().map_err(|_| "error parsing value")?;
+                Ok(Self::Adjust(value))
+            }
+            Some(_) => {
+                let value = s.parse().map_err(|_| "error parsing value")?;
+                Ok(Self::Set(value))
+            }
+            None => Err("value is missing"),
+        }
+    }
+}
+
 impl FromStr for PositionChange {
     type Err = &'static str;
 
@@ -2192,5 +2220,23 @@ mod tests {
         );
         assert!("-".parse::<PositionChange>().is_err());
         assert!("10% ".parse::<PositionChange>().is_err());
+    }
+
+    #[test]
+    fn parse_zoom_level_change() {
+        assert_eq!(
+            "2.0".parse::<ZoomLevelChange>().unwrap(),
+            ZoomLevelChange::Set(2.0)
+        );
+        assert_eq!(
+            "+0.5".parse::<ZoomLevelChange>().unwrap(),
+            ZoomLevelChange::Adjust(0.5)
+        );
+        assert_eq!(
+            "-0.5".parse::<ZoomLevelChange>().unwrap(),
+            ZoomLevelChange::Adjust(-0.5)
+        );
+
+        assert!("+".parse::<ZoomLevelChange>().is_err());
     }
 }
