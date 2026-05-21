@@ -53,7 +53,6 @@ use crate::niri::{CastTarget, PointerVisibility, State};
 use crate::ui::mru::{WindowMru, WindowMruUi};
 use crate::ui::screenshot_ui::ScreenshotUi;
 use crate::utils::spawning::{spawn, spawn_sh};
-
 use crate::utils::{center, get_monotonic_time, CastSessionId, ResizeEdge};
 
 pub mod backend_ext;
@@ -4264,8 +4263,7 @@ impl State {
             .clone()
             .or_else(|| self.niri.output_under_cursor())
         {
-            let sensitivity = self.niri.config.borrow().zoom.pinch_sensitivity
-                * output.current_scale().fractional_scale();
+            let sensitivity = self.niri.config.borrow().zoom.pinch_sensitivity;
 
             let timestamp = Duration::from_millis(event.time_msec() as u64);
             let scale = event.scale();

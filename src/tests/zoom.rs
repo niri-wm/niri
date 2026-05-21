@@ -27,6 +27,17 @@ fn zoom_state_action_query_reports_level_and_lock() {
     assert!(f.niri().layout.zoom_locked_for_output(&output));
 }
 
+/// Locked zoom accepts level changes but preserves the focal point.
+///
+/// Locking zoom blocks cursor-tracking focal recomputation, not level
+/// changes.  When locked, `set_zoom_level` changes the magnification but
+/// keeps the viewport center where it is.  Unlocking zoom later restores
+/// cursor tracking (e.g. `animate_zoom_unlock` recomputes the focal from
+/// the cursor position).
+///
+/// This distinction matters: a user who locks zoom to browse a specific
+/// part of the screen can still adjust the magnification level without
+/// the viewport jumping to follow the cursor.
 #[test]
 fn locked_zoom_level_change_preserves_focal() {
     let mut f = Fixture::new();
@@ -484,17 +495,16 @@ fn zoom_gesture_end_maintains_level_with_no_animation() {
         )
         .is_some());
 
-    // Non-cancelled gesture end — target equals current level when no
-    // rubber-banding or clamping divergence, so no level animation.
+    // Non-cancelled gesture end — when rubber-banding/clamping don't
+    // diverge the target, target equals current level, so no animation
+    // transition is created.  The level and focal must already be at
+    // their final values without waiting for any animation.
     assert_eq!(f.niri().layout.zoom_gesture_end(&output, false), Some(true));
-    assert!(f
-        .niri()
-        .layout
-        .zoom_state_for_output(&output)
-        .unwrap()
-        .transition
-        .is_none());
-    assert!((f.niri().layout.zoom_level_for_output(&output) - 2.0).abs() < 1e-6);
+    let state = f.niri().layout.zoom_state_for_output(&output).unwrap();
+    assert!(state.transition.is_none());
+    assert!((state.level - 2.0).abs() < 1e-6);
+    assert!((state.focal.x - 500.0).abs() < 50.0);
+    assert!((state.focal.y - 400.0).abs() < 50.0);
 }
 
 #[test]
@@ -537,22 +547,20 @@ fn zoom_gesture_cancel_animates_back_to_start_level() {
         )
         .is_some());
 
+    // Cancelled end — level should animate back to start level.
     assert_eq!(f.niri().layout.zoom_gesture_end(&output, true), Some(true));
-    assert!(f
-        .niri()
-        .layout
-        .zoom_state_for_output(&output)
-        .unwrap()
-        .transition
-        .is_some());
+    let state_before = f.niri().layout.zoom_state_for_output(&output).unwrap();
+    assert!(state_before.transition.is_some());
+    // Focal should still be near the cursor at cancel time.
+    assert!((state_before.focal.x - 500.0).abs() < 50.0);
+    assert!((state_before.focal.y - 400.0).abs() < 50.0);
 
     f.niri_complete_animations();
-    assert!((f.niri().layout.zoom_level_for_output(&output) - 1.0).abs() < 1e-6);
-    assert!(f
-        .niri()
-        .layout
-        .zoom_state_for_output(&output)
-        .unwrap()
-        .transition
-        .is_none());
+    let state_after = f.niri().layout.zoom_state_for_output(&output).unwrap();
+    assert!((state_after.level - 1.0).abs() < 1e-6);
+    assert!(state_after.transition.is_none());
+    // In CursorFollow mode cancel does not clear focal (no
+    // `clear_focal_animation`), so the focal stays near the cursor.
+    assert!((state_after.focal.x - 500.0).abs() < 50.0);
+    assert!((state_after.focal.y - 400.0).abs() < 50.0);
 }
