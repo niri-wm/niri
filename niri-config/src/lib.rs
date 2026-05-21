@@ -1648,6 +1648,33 @@ mod tests {
                         ),
                     },
                 ),
+                zoom_level_change: ZoomLevelChangeAnim(
+                    Animation {
+                        off: false,
+                        kind: Easing(
+                            EasingParams {
+                                duration_ms: 250,
+                                curve: EaseOutExpo,
+                            },
+                        ),
+                    },
+                ),
+                zoom_focal_pan: ZoomFocalPanAnim(
+                    Animation {
+                        off: false,
+                        kind: Easing(
+                            EasingParams {
+                                duration_ms: 250,
+                                curve: CubicBezier(
+                                    0.05,
+                                    0.7,
+                                    0.1,
+                                    1.0,
+                                ),
+                            },
+                        ),
+                    },
+                ),
             },
             blur: Blur {
                 off: false,

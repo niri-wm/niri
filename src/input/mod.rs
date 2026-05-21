@@ -53,7 +53,7 @@ use crate::niri::{CastTarget, PointerVisibility, State};
 use crate::ui::mru::{WindowMru, WindowMruUi};
 use crate::ui::screenshot_ui::ScreenshotUi;
 use crate::utils::spawning::{spawn, spawn_sh};
-use crate::utils::zoom::zoom_display_cursor_logical;
+
 use crate::utils::{center, get_monotonic_time, CastSessionId, ResizeEdge};
 
 pub mod backend_ext;
@@ -3199,7 +3199,7 @@ impl State {
 
                 if let Some(output) = output.cloned() {
                     let output = output.clone();
-                    let point = self.screenshot_ui_point_on_output(&output, pos, false);
+                    let point = self.screenshot_ui_point_on_output(&output, pos);
 
                     if self
                         .niri
@@ -3826,7 +3826,7 @@ impl State {
                         };
 
                         if let Some(output) = output.cloned() {
-                            let point = self.screenshot_ui_point_on_output(&output, pos, false);
+                            let point = self.screenshot_ui_point_on_output(&output, pos);
 
                             if self
                                 .niri
@@ -4405,6 +4405,32 @@ impl State {
         self.compute_absolute_location(evt, self.niri.output_for_touch())
     }
 
+    /// Adjust a touch position for zoom so that hitting the correct
+    /// visual content works.  Zoom is a pure rendering transform —
+    /// logical coordinates are never moved — so a touch at screen
+    /// position S hits content at  focal + (S – focal) / level.
+    fn adjust_touch_for_zoom(
+        &self,
+        output: &Output,
+        pos: Point<f64, Logical>,
+    ) -> Point<f64, Logical> {
+        if !self.niri.layout.zoom_is_active_for_output(output) {
+            return pos;
+        }
+        let snapshot = self.niri.layout.zoom_snapshot_for_output(output);
+        if snapshot.level <= 1.0 {
+            return pos;
+        }
+        let output_geo = self
+            .niri
+            .global_space
+            .output_geometry(output)
+            .unwrap()
+            .to_f64();
+        let focal_global = snapshot.focal + output_geo.loc;
+        focal_global + (pos - focal_global).downscale(snapshot.level)
+    }
+
     /// Clamp a position to the zoomed viewport when zoom is locked.
     ///
     /// This ensures that touch events do not go outside the zoomed area.
@@ -4433,33 +4459,31 @@ impl State {
 
     /// Converts a global logical position to screenshot UI physical coords
     /// for the given output.
+    ///
+    /// Under zoom we must invert the rendering transform to find the buffer
+    /// pixel that is visually at the click position. The zoom maps buffer
+    /// position C to visual position V = focal + (C − focal) × zoom, so:
+    ///   C = focal + (V − focal) / zoom
     fn screenshot_ui_point_on_output(
         &self,
         output: &Output,
         pos: Point<f64, Logical>,
-        touch: bool,
     ) -> Point<i32, Physical> {
         let geom = self.niri.global_space.output_geometry(output).unwrap();
         let geom_f64 = geom.to_f64();
-        let mut point_rel = pos - geom_f64.loc;
+        let point_rel = pos - geom_f64.loc;
 
-        if self.niri.layout.zoom_is_active_for_output(output) {
-            let zoom_snapshot = self.niri.layout.zoom_snapshot_for_output(output);
-            point_rel = if touch {
-                Point::from((
-                    zoom_snapshot.focal.x
-                        + (point_rel.x - zoom_snapshot.focal.x) / zoom_snapshot.level,
-                    zoom_snapshot.focal.y
-                        + (point_rel.y - zoom_snapshot.focal.y) / zoom_snapshot.level,
-                ))
-            } else {
-                zoom_display_cursor_logical(
-                    point_rel,
-                    geom_f64.size,
-                    zoom_snapshot.level,
-                    zoom_snapshot.focal,
-                )
-            };
+        let snapshot = self.niri.layout.zoom_snapshot_for_output(output);
+        if snapshot.level > 1.0 {
+            let buffer_logical =
+                snapshot.focal + (point_rel - snapshot.focal).downscale(snapshot.level);
+            let scale = Scale::from(output.current_scale().fractional_scale());
+            let buffer_point = buffer_logical.to_physical_precise_round(scale);
+
+            let size = output.current_mode().unwrap().size;
+            let transform = output.current_transform();
+            let size = transform.transform_size(size);
+            return buffer_point.constrain(Rectangle::from_size(size));
         }
 
         let scale = Scale::from(output.current_scale().fractional_scale());
@@ -4484,7 +4508,7 @@ impl State {
 
     fn update_screenshot_ui_motion(&mut self, pos: Point<f64, Logical>, slot: Option<TouchSlot>) {
         if let Some(output) = self.niri.screenshot_ui.selection_output() {
-            let point = self.screenshot_ui_point_on_output(output, pos, slot.is_some());
+            let point = self.screenshot_ui_point_on_output(output, pos);
             self.niri.screenshot_ui.pointer_motion(point, slot);
         }
     }
@@ -4501,7 +4525,17 @@ impl State {
 
         let serial = SERIAL_COUNTER.next_serial();
 
-        let under = self.niri.contents_under(pos);
+        // Zoom is a visual-only rendering transform, so the raw logical
+        // position from the touch event points to the *screen* position,
+        // not the content displayed there.  Transform to content space so
+        // hit-testing and client events target the correct surface.
+        let zoomed_pos = self
+            .niri
+            .output_for_touch()
+            .map(|output| self.adjust_touch_for_zoom(output, pos))
+            .unwrap_or(pos);
+
+        let under = self.niri.contents_under(zoomed_pos);
 
         let mod_key = self.backend.mod_key(&self.niri.config.borrow());
         let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
@@ -4517,7 +4551,7 @@ impl State {
             };
 
             if let Some(output) = output.cloned() {
-                let point = self.screenshot_ui_point_on_output(&output, pos, true);
+                let point = self.screenshot_ui_point_on_output(&output, pos);
 
                 if self
                     .niri
@@ -4528,7 +4562,7 @@ impl State {
                 }
             }
         } else if let Some(mru_output) = self.niri.window_mru_ui.output() {
-            if let Some((output, pos_within_output)) = self.niri.output_under(pos) {
+            if let Some((output, pos_within_output)) = self.niri.output_under(zoomed_pos) {
                 if mru_output == output {
                     let id = self.niri.window_mru_ui.pointer_motion(pos_within_output);
                     if id.is_some() {
@@ -4550,24 +4584,24 @@ impl State {
                 && under.layer.is_none()
                 && under.output.is_some()
             {
-                let (output, pos_within_output) = self.niri.output_under(pos).unwrap();
+                let (output, pos_within_output) = self.niri.output_under(zoomed_pos).unwrap();
                 let output = output.clone();
 
                 let mut matched_narrow = true;
-                let mut ws = self.niri.workspace_under(false, pos);
+                let mut ws = self.niri.workspace_under(false, zoomed_pos);
                 if ws.is_none() {
                     matched_narrow = false;
-                    ws = self.niri.workspace_under(true, pos);
+                    ws = self.niri.workspace_under(true, zoomed_pos);
                 }
                 let ws_id = ws.map(|(_, ws)| ws.id());
 
-                let mapped = self.niri.window_under(pos);
+                let mapped = self.niri.window_under(zoomed_pos);
                 let window = mapped.map(|mapped| mapped.window.clone());
 
                 let start_data = TouchGrabStartData {
                     focus: None,
                     slot,
-                    location: pos,
+                    location: zoomed_pos,
                 };
                 let start_timestamp = Duration::from_micros(evt.time());
                 let grab = TouchOverviewGrab::new(
@@ -4588,7 +4622,7 @@ impl State {
                     let start_data = TouchGrabStartData {
                         focus: None,
                         slot,
-                        location: pos,
+                        location: zoomed_pos,
                     };
                     let start_data = PointerOrTouchStartData::Touch(start_data);
                     if let Some(grab) = MoveGrab::new(self, start_data, window.clone(), true, None)
@@ -4613,7 +4647,7 @@ impl State {
             under.surface,
             &DownEvent {
                 slot,
-                location: pos,
+                location: zoomed_pos,
                 serial,
                 time: evt.time_msec(),
             },
@@ -4661,13 +4695,20 @@ impl State {
             self.niri.queue_redraw(&output);
         }
 
-        let under = self.niri.contents_under(pos);
+        // Transform to content space (same as on_touch_down).
+        let zoomed_pos = self
+            .niri
+            .output_for_touch()
+            .map(|output| self.adjust_touch_for_zoom(output, pos))
+            .unwrap_or(pos);
+
+        let under = self.niri.contents_under(zoomed_pos);
         handle.motion(
             self,
             under.surface,
             &TouchMotionEvent {
                 slot,
-                location: pos,
+                location: zoomed_pos,
                 time: evt.time_msec(),
             },
         );
@@ -4677,7 +4718,7 @@ impl State {
             .with_grab(|_, grab| Self::is_dnd_grab(grab.as_any()))
             .unwrap_or(false);
         if is_dnd_grab {
-            if let Some((output, pos_within_output)) = self.niri.output_under(pos) {
+            if let Some((output, pos_within_output)) = self.niri.output_under(zoomed_pos) {
                 let output = output.clone();
                 self.niri.layout.dnd_update(output, pos_within_output);
             }
