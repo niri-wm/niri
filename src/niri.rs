@@ -3966,13 +3966,29 @@ impl Niri {
                 }
             };
 
-            push(
-                ZoomedRenderElement::Pointer(zoom_wrap_pointer(
-                    elem,
-                    hotspot,
-                    target_rounded,
+            // Wrap pointer around its hotspot with optional scale.
+            let (cursor_zoom, scale_anchor, final_pos) = if scale_with_zoom {
+                let hotspot_scaled = hotspot.to_f64().upscale(zoom_snapshot.level).to_i32_round();
+                (
                     zoom_snapshot.level,
-                    scale_with_zoom,
+                    hotspot.to_f64(),
+                    (target_rounded - hotspot_scaled).to_f64(),
+                )
+            } else {
+                (
+                    1.0,
+                    Point::from((0.0, 0.0)),
+                    (target_rounded - hotspot).to_f64(),
+                )
+            };
+
+            push(
+                ZoomedRenderElement::Pointer(ZoomElement::from_element(
+                    elem,
+                    scale_anchor,
+                    cursor_zoom,
+                    final_pos,
+                    Relocate::Absolute,
                 ))
                 .into(),
             );
@@ -6798,56 +6814,6 @@ fn scale_relocate_crop<E: Element>(
     CropRenderElement::from_element(elem, output_scale, ws_geo)
 }
 
-/// Wrap an element with the standard zoom transform.
-///
-/// Rescales around the zoom focal point. Used for most elements (windows, backgrounds, etc.).
-pub fn zoom_wrap<E: Element>(
-    elem: E,
-    zoom_factor: f64,
-    output_scale: Scale<f64>,
-    zoom_focal: Point<f64, Logical>,
-    output_geo: Rectangle<i32, Logical>,
-) -> ZoomElement<E> {
-    let focal_physical: Point<f64, Physical> = zoom_focal.to_physical(output_scale);
-    ZoomElement::from_element(
-        elem,
-        focal_physical,
-        zoom_factor,
-        output_geo
-            .loc
-            .to_f64()
-            .to_physical(Scale::from(zoom_factor)),
-        Relocate::Relative,
-    )
-    .with_filter_opt(zoom_filter(zoom_factor))
-}
-
-/// Wrap a cursor render element with zoom transform for zoomed display.
-///
-/// Unlike content elements, which are rescaled around the zoom focal point,
-/// cursor elements must be rescaled around their hotspot so the cursor
-/// graphic remains correctly aligned with the zoomed cursor position.
-fn zoom_wrap_pointer<E: Element>(
-    elem: E,
-    hotspot: Point<i32, Physical>,
-    target_rounded: Point<i32, Physical>,
-    zoom: f64,
-    scale_with_zoom: bool,
-) -> RelocateRenderElement<RescaleRenderElement<E>> {
-    let (cursor_zoom, scale_anchor, final_pos) = if scale_with_zoom {
-        let hotspot_scaled = hotspot.to_f64().upscale(zoom).to_i32_round();
-        (zoom, hotspot, target_rounded - hotspot_scaled)
-    } else {
-        (1.0, Point::default(), target_rounded - hotspot)
-    };
-
-    RelocateRenderElement::from_element(
-        RescaleRenderElement::from_element(elem, scale_anchor, cursor_zoom),
-        final_pos,
-        Relocate::Absolute,
-    )
-}
-
 #[allow(clippy::too_many_arguments)]
 fn apply_zoom_to_render_element<R: NiriRenderer>(
     element: OutputRenderElements<R>,
@@ -6863,13 +6829,17 @@ fn apply_zoom_to_render_element<R: NiriRenderer>(
                 OutputRenderElements::ScreenshotUi(elem) => {
                     match elem {
                         ScreenshotUiRenderElement::Screenshot(tex) => {
-                            let e = zoom_wrap(
+                            let e = ZoomElement::from_element(
                                 tex,
+                                zoom_focal.to_physical(output_scale),
                                 zoom_factor,
-                                output_scale,
-                                zoom_focal,
-                                output_geo,
-                            );
+                                output_geo
+                                    .loc
+                                    .to_f64()
+                                    .to_physical(Scale::from(zoom_factor)),
+                                Relocate::Relative,
+                            )
+                            .with_filter_opt(zoom_filter(zoom_factor));
                             ZoomedRenderElement::Texture(e).into()
                         }
                         ScreenshotUiRenderElement::SolidColor(elem) => {
@@ -6892,7 +6862,17 @@ fn apply_zoom_to_render_element<R: NiriRenderer>(
                 }
                 $(
                     OutputRenderElements::$variant(elem) => {
-                        let e = zoom_wrap(elem, zoom_factor, output_scale, zoom_focal, output_geo);
+                        let e = ZoomElement::from_element(
+                            elem,
+                            zoom_focal.to_physical(output_scale),
+                            zoom_factor,
+                            output_geo
+                                .loc
+                                .to_f64()
+                                .to_physical(Scale::from(zoom_factor)),
+                            Relocate::Relative,
+                        )
+                        .with_filter_opt(zoom_filter(zoom_factor));
                         ZoomedRenderElement::$variant(e).into()
                     }
                 )*
@@ -6901,10 +6881,9 @@ fn apply_zoom_to_render_element<R: NiriRenderer>(
         }
     }
 
-    /* WindowMruUi, ExitConfirmDialog, Zoomed, Pointer
-     * are NOT in this list.
-     * They will be caught by the _ => element fallback and returned
-     * unchanged. Pointer is handled by render_pointer directly. */
+    // We don't zoom WindowMruUI and ExitConfirmDialog. Pointer is handled by render_pointer
+    // directly. The Zoomed variant is not here since we don't want to double-zoom if zoom is
+    // already applied.
     apply_zoom!(
         Monitor,
         RescaledTile,
@@ -6939,7 +6918,7 @@ niri_render_elements! {
         LayerSurface = ZoomElement<LayerSurfaceRenderElement<R>>,
         RelocatedLayerSurface = ZoomElement<CropRenderElement<RelocateRenderElement<RescaleRenderElement<LayerSurfaceRenderElement<R>>>>>,
         RelocatedColor = ZoomElement<CropRenderElement<RelocateRenderElement<RescaleRenderElement<SolidColorRenderElement>>>>,
-        Pointer = RelocateRenderElement<RescaleRenderElement<PointerRenderElements<R>>>,
+        Pointer = ZoomElement<PointerRenderElements<R>>,
         Wayland = ZoomElement<WaylandSurfaceRenderElement<R>>,
         SolidColor = ZoomElement<SolidColorRenderElement>,
         Texture = ZoomElement<PrimaryGpuTextureRenderElement>,
