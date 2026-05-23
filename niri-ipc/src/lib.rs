@@ -1778,6 +1778,19 @@ pub enum Event {
         /// Stream ID of the stopped screencast.
         stream_id: u64,
     },
+    /// Zoom state changed for an output.
+    ZoomChanged {
+        /// Name of the output.
+        output: String,
+        /// Current zoom level.
+        level: f64,
+        /// Focal point X coordinate within the output.
+        focal_x: f64,
+        /// Focal point Y coordinate within the output.
+        focal_y: f64,
+        /// Whether zoom focal point is locked.
+        is_locked: bool,
+    },
 }
 
 impl From<Duration> for Timestamp {

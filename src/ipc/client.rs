@@ -507,6 +507,17 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
                     Event::CastStopped { stream_id } => {
                         println!("Cast stopped: stream id {stream_id}");
                     }
+                    Event::ZoomChanged {
+                        output,
+                        level,
+                        focal_x,
+                        focal_y,
+                        is_locked,
+                    } => {
+                        println!(
+                            "Zoom on {output}: level={level} focal=({focal_x}, {focal_y}) locked={is_locked}"
+                        );
+                    }
                 }
             }
         }
