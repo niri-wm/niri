@@ -121,7 +121,8 @@ pub const ZOOM_GESTURE_RUBBER_BAND: RubberBand = RubberBand {
     limit: 0.05,
 };
 
-const ZOOM_CHANGE_EPSILON: f64 = 1e-9;
+/// Threshold for treating zoom-level / focal changes as "no change".
+const ZOOM_CHANGE_EPSILON: f64 = 1e-4;
 
 /// Size-relative units.
 pub struct SizeFrac;
@@ -4093,6 +4094,20 @@ impl<W: LayoutElement> Layout<W> {
         true
     }
 
+    /// Returns true if the animation config results in an immediate snap
+    /// (no visible animation), either because `off` is set or because a
+    /// zero-duration easing was configured.
+    fn anim_is_instant(anim: &niri_config::Animation) -> bool {
+        anim.off
+            || matches!(
+                anim.kind,
+                niri_config::animations::Kind::Easing(niri_config::animations::EasingParams {
+                    duration_ms: 0,
+                    ..
+                })
+            )
+    }
+
     /// Set the zoom level for the given output, computing the correct focal point
     /// and creating an animation when appropriate.
     pub fn set_zoom_level(
@@ -4133,16 +4148,14 @@ impl<W: LayoutElement> Layout<W> {
             return;
         }
 
-        let skip_level_animation = level_changed
-            && !locked
-            && matches!(movement_mode, ZoomMovementMode::Centered)
-            && focal_changed;
-
-        if skip_level_animation {
-            // Centered zoom looks worse when both the level and focal move at
-            // once. Snap the discrete level change instead of animating a
-            // coupled recenter.
+        if level_changed && Self::anim_is_instant(&context.level_anim) {
             state.level = target_level;
+            state.focal = target_focal;
+            state.transition = None;
+            return;
+        }
+
+        if !level_changed && focal_changed && Self::anim_is_instant(&context.focal_anim) {
             state.focal = target_focal;
             state.transition = None;
             return;
@@ -4168,17 +4181,30 @@ impl<W: LayoutElement> Layout<W> {
         let mut transition = state.transition.take().unwrap_or_default();
 
         if level_changed {
-            transition.start_level_animation(level_anim);
-        }
-
-        if focal_changed && !dynamic_focal_tracking {
-            let focal_anim = ZoomFocalAnimation::new(
+            if focal_changed && !dynamic_focal_tracking {
+                // Both level and focal change without dynamic tracking —
+                // compose into Animating { level, focal: Some(focal) } so
+                // both animations run in parallel on synchronized curves,
+                // instead of overwriting one with the other.
+                transition = ZoomTransition::Animating {
+                    level: level_anim,
+                    focal: Some(ZoomFocalAnimation::new(
+                        context.clock,
+                        current_focal,
+                        target_focal,
+                        context.focal_anim,
+                    )),
+                };
+            } else {
+                transition.start_level_animation(level_anim);
+            }
+        } else if focal_changed && !dynamic_focal_tracking {
+            transition.start_focal_animation(ZoomFocalAnimation::new(
                 context.clock,
                 current_focal,
                 target_focal,
                 context.focal_anim,
-            );
-            transition.start_focal_animation(focal_anim);
+            ));
         }
 
         state.level = current_level;
@@ -4276,11 +4302,6 @@ impl<W: LayoutElement> Layout<W> {
         let gesture = transition.take_level_gesture()?;
 
         if cancelled {
-            let clear_focal_animation = gesture.start_level > 1.0
-                && matches!(
-                    gesture.movement_mode(),
-                    Some(ZoomMovementMode::Centered | ZoomMovementMode::OnEdge)
-                );
             let level_anim = ZoomLevelAnimation::new(
                 context.clock.clone(),
                 gesture.current_level,
@@ -4294,7 +4315,7 @@ impl<W: LayoutElement> Layout<W> {
                 gesture.current_level,
                 gesture.current_focal,
             );
-            transition.cancel_gesture(level_anim, clear_focal_animation);
+            transition.cancel_gesture(level_anim);
 
             state.level = gesture.current_level;
             state.focal = gesture.current_focal;
