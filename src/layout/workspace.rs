@@ -53,6 +53,10 @@ pub struct Workspace<W: LayoutElement> {
     /// Whether the floating layout is active instead of the scrolling layout.
     floating_is_active: FloatingActive,
 
+    /// Tracks whether the tiling layout was active before focus shifted to the floating layout,
+    /// allowing focus to drop back down to tiling when a transient floating window is closed.
+    floating_focused_from_tiling: bool,
+
     /// The original output of this workspace.
     ///
     /// Most of the time this will be the workspace's current output, however, after an output
@@ -257,6 +261,7 @@ impl<W: LayoutElement> Workspace<W> {
             scrolling,
             floating,
             floating_is_active: FloatingActive::No,
+            floating_focused_from_tiling: false,
             original_output,
             scale,
             transform: output.current_transform(),
@@ -321,6 +326,7 @@ impl<W: LayoutElement> Workspace<W> {
             scrolling,
             floating,
             floating_is_active: FloatingActive::No,
+            floating_focused_from_tiling: false,
             output: None,
             scale,
             transform: Transform::Normal,
@@ -621,6 +627,9 @@ impl<W: LayoutElement> Workspace<W> {
                     self.floating.add_tile(tile, activate);
 
                     if activate || self.scrolling.is_empty() {
+                        if matches!(self.floating_is_active, FloatingActive::No | FloatingActive::NoButRaised) {
+                            self.floating_focused_from_tiling = true;
+                        }
                         self.floating_is_active = FloatingActive::Yes;
                     }
                 } else {
@@ -629,6 +638,7 @@ impl<W: LayoutElement> Workspace<W> {
 
                     if activate {
                         self.floating_is_active = FloatingActive::No;
+                        self.floating_focused_from_tiling = false;
                     }
                 }
             }
@@ -639,6 +649,7 @@ impl<W: LayoutElement> Workspace<W> {
 
                 if activate {
                     self.floating_is_active = FloatingActive::No;
+                    self.floating_focused_from_tiling = false;
                 }
             }
             WorkspaceAddWindowTarget::NextTo(next_to) => {
@@ -671,6 +682,9 @@ impl<W: LayoutElement> Workspace<W> {
                     }
 
                     if activate || self.scrolling.is_empty() {
+                        if matches!(self.floating_is_active, FloatingActive::No | FloatingActive::NoButRaised) {
+                            self.floating_focused_from_tiling = true;
+                        }
                         self.floating_is_active = FloatingActive::Yes;
                     }
                 } else if floating_has_window {
@@ -679,6 +693,7 @@ impl<W: LayoutElement> Workspace<W> {
 
                     if activate {
                         self.floating_is_active = FloatingActive::No;
+                        self.floating_focused_from_tiling = false;
                     }
                 } else {
                     self.scrolling
@@ -686,6 +701,7 @@ impl<W: LayoutElement> Workspace<W> {
 
                     if activate {
                         self.floating_is_active = FloatingActive::No;
+                        self.floating_focused_from_tiling = false;
                     }
                 }
             }
@@ -705,6 +721,7 @@ impl<W: LayoutElement> Workspace<W> {
 
         if activate {
             self.floating_is_active = FloatingActive::No;
+            self.floating_focused_from_tiling = false;
         }
     }
 
@@ -717,17 +734,22 @@ impl<W: LayoutElement> Workspace<W> {
 
         if activate {
             self.floating_is_active = FloatingActive::No;
+            self.floating_focused_from_tiling = false;
         }
     }
 
     fn update_focus_floating_tiling_after_removing(&mut self, removed_from_floating: bool) {
         if removed_from_floating {
-            if self.floating.is_empty() {
+            if self.floating.is_empty() || self.floating_focused_from_tiling {
                 self.floating_is_active = FloatingActive::No;
+                self.floating_focused_from_tiling = false;
             }
         } else {
             // Scrolling should remain focused if both are empty.
             if self.scrolling.is_empty() && !self.floating.is_empty() {
+                if matches!(self.floating_is_active, FloatingActive::No | FloatingActive::NoButRaised) {
+                    self.floating_focused_from_tiling = true;
+                }
                 self.floating_is_active = FloatingActive::Yes;
             }
         }
@@ -1410,6 +1432,7 @@ impl<W: LayoutElement> Workspace<W> {
             );
             if target_is_active {
                 self.floating_is_active = FloatingActive::No;
+                self.floating_focused_from_tiling = false;
             }
         } else {
             let mut removed = self.scrolling.remove_tile(&id, Transaction::new());
@@ -1433,6 +1456,9 @@ impl<W: LayoutElement> Workspace<W> {
 
             self.floating.add_tile(removed.tile, target_is_active);
             if target_is_active {
+                if matches!(self.floating_is_active, FloatingActive::No | FloatingActive::NoButRaised) {
+                    self.floating_focused_from_tiling = true;
+                }
                 self.floating_is_active = FloatingActive::Yes;
             }
         }
@@ -1478,8 +1504,12 @@ impl<W: LayoutElement> Workspace<W> {
         }
 
         self.floating_is_active = if self.floating_is_active.get() {
+            self.floating_focused_from_tiling = false;
             FloatingActive::No
         } else {
+            if matches!(self.floating_is_active, FloatingActive::No | FloatingActive::NoButRaised) {
+                self.floating_focused_from_tiling = true;
+            }
             FloatingActive::Yes
         };
     }
@@ -1831,10 +1861,14 @@ impl<W: LayoutElement> Workspace<W> {
 
     pub fn activate_window(&mut self, window: &W::Id) -> bool {
         if self.floating.activate_window(window) {
+            if matches!(self.floating_is_active, FloatingActive::No | FloatingActive::NoButRaised) {
+                self.floating_focused_from_tiling = true;
+            }
             self.floating_is_active = FloatingActive::Yes;
             true
         } else if self.scrolling.activate_window(window) {
             self.floating_is_active = FloatingActive::No;
+            self.floating_focused_from_tiling = false;
             true
         } else {
             false
@@ -1843,6 +1877,9 @@ impl<W: LayoutElement> Workspace<W> {
 
     pub fn activate_window_without_raising(&mut self, window: &W::Id) -> bool {
         if self.floating.activate_window_without_raising(window) {
+            if matches!(self.floating_is_active, FloatingActive::No | FloatingActive::NoButRaised) {
+                self.floating_focused_from_tiling = true;
+            }
             self.floating_is_active = FloatingActive::Yes;
             true
         } else if self.scrolling.activate_window(window) {
@@ -1851,6 +1888,7 @@ impl<W: LayoutElement> Workspace<W> {
                 FloatingActive::NoButRaised => FloatingActive::NoButRaised,
                 FloatingActive::Yes => FloatingActive::NoButRaised,
             };
+            self.floating_focused_from_tiling = false;
             true
         } else {
             false
