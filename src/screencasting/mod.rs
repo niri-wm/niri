@@ -204,12 +204,11 @@ impl State {
                 let mut pointer_location = Point::default();
 
                 if self.niri.pointer_visibility.is_visible() {
-                    // Pointer position is calculated relative to the main output viewport.
-                    // For window casts (screencasts of a single window), we intentionally
-                    // render the pointer without applying the global output zoom. This
-                    // preserves the canonical seam where window casts remain unzoomed
-                    // even if the output is being zoomed elsewhere. See Task 10 for
-                    // the formal documentation in the notepad.
+                    // Pointer position is calculated relative to the main output viewport. For
+                    // window casts (screencasts of a single window), we intentionally render the
+                    // pointer without applying the global output zoom. This preserves the canonical
+                    // seam where window casts remain unzoomed even if the output is being zoomed
+                    // elsewhere.
                     if let Some((pointer_pos, win_pos)) =
                         self.niri.pointer_pos_for_window_cast(mapped)
                     {
@@ -714,8 +713,7 @@ impl Niri {
             let mut pointer_location = Point::default();
 
             // Pointer rendering for window casts in the shared seam path remains
-            // unzoomed. See Task 10 for the explicit documentation and guardrails
-            // ensuring window-cast does not participate in output-zoom semantics.
+            // unzoomed; window-cast does not participate in output-zoom semantics.
             if self.pointer_visibility.is_visible() {
                 if let Some((pointer_pos, win_pos)) = self.pointer_pos_for_window_cast(mapped) {
                     // Pointer location must be relative to the screencast buffer.

@@ -35,6 +35,7 @@ pub struct Zoom {
     pub increment_type: ZoomIncrementType,
     pub pinch_sensitivity: f64,
     pub max_zoom: f64,
+    pub zoom_filter_threshold: f64,
 }
 
 impl Default for Zoom {
@@ -44,6 +45,7 @@ impl Default for Zoom {
             increment_type: ZoomIncrementType::Linear,
             pinch_sensitivity: 1.0,
             max_zoom: 10.0,
+            zoom_filter_threshold: 2.0,
         }
     }
 }
@@ -58,6 +60,8 @@ pub struct ZoomPart {
     pub pinch_sensitivity: Option<f64>,
     #[knuffel(child, unwrap(argument))]
     pub max_zoom: Option<f64>,
+    #[knuffel(child, unwrap(argument))]
+    pub zoom_filter_threshold: Option<f64>,
 }
 
 impl MergeWith<ZoomPart> for Zoom {
@@ -67,7 +71,8 @@ impl MergeWith<ZoomPart> for Zoom {
             movement_mode,
             increment_type,
             pinch_sensitivity,
-            max_zoom
+            max_zoom,
+            zoom_filter_threshold
         );
     }
 }

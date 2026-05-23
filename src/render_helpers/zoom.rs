@@ -9,19 +9,19 @@ use smithay::utils::{Buffer, Physical, Point, Rectangle, Scale, Transform};
 use crate::backend::tty::{TtyFrame, TtyRenderer, TtyRendererError};
 use crate::render_helpers::renderer::AsGlesFrame;
 
-/// Global zoom level threshold for filter selection.
+/// Default zoom level threshold for filter selection (2×).
 pub const ZOOM_FILTER_THRESHOLD: f64 = 2.0;
 
 /// Pick a texture filter based on zoom factor.
 ///
-/// At zoom levels below 2×, linear interpolation keeps things smooth.
-/// At 2× and above, nearest-neighbour preserves pixel-sharp clarity.
-pub fn zoom_filter(zoom_factor: f64) -> Option<TextureFilter> {
+/// At zoom levels below the threshold, linear interpolation keeps things smooth.
+/// At the threshold and above, nearest-neighbour preserves pixel-sharp clarity.
+pub fn zoom_filter(zoom_factor: f64, threshold: f64) -> Option<TextureFilter> {
     if zoom_factor <= 1.0 {
         return None;
     }
     Some(match zoom_factor {
-        z if z < ZOOM_FILTER_THRESHOLD => TextureFilter::Linear,
+        z if z < threshold => TextureFilter::Linear,
         _ => TextureFilter::Nearest,
     })
 }
@@ -34,6 +34,15 @@ pub struct ZoomElement<E> {
     location: Point<f64, Physical>,
     relocate: Relocate,
     filter: Option<TextureFilter>,
+    /// Filter to restore to after drawing (default: `TextureFilter::Linear`).
+    ///
+    /// Smithay's `Renderer` trait only exposes setters
+    /// ([`Renderer::upscale_filter`], [`Renderer::downscale_filter`]) — there
+    /// are no getters, and the `GlesRenderer`'s internal filter fields are
+    /// private.  True save/restore is therefore not possible without upstream
+    /// changes.  This field exists so callers who *do* know the previous
+    /// filter (e.g. from their own state tracking) can pass it in.
+    restore_filter: Option<TextureFilter>,
 }
 
 impl<E: Element> ZoomElement<E> {
@@ -51,6 +60,7 @@ impl<E: Element> ZoomElement<E> {
             location,
             relocate,
             filter: None,
+            restore_filter: Some(TextureFilter::Linear),
         }
     }
 
@@ -68,6 +78,17 @@ impl<E: Element> ZoomElement<E> {
     /// `None` is passed.
     pub fn with_filter_opt(mut self, filter: Option<TextureFilter>) -> Self {
         self.filter = filter;
+        self
+    }
+
+    /// Override the filter that will be restored *after* drawing the element.
+    ///
+    /// By default this is `Some(TextureFilter::Linear)`, matching Smithay's
+    /// `GlesRenderer` default. Pass `Some(TextureFilter::Nearest)` or your own
+    /// value if the render pipeline had a non-default filter before this
+    /// element was drawn.
+    pub fn with_restore_filter(mut self, filter: Option<TextureFilter>) -> Self {
+        self.restore_filter = filter;
         self
     }
 }
@@ -163,13 +184,11 @@ impl<E: RenderElement<GlesRenderer>> RenderElement<GlesRenderer> for ZoomElement
             self.element
                 .draw(frame, src, dst, damage, opaque_regions, cache)?;
 
-            // Restore renderer filter to `Linear` (Smithay's GlesRenderer
-            // default at construction).  A true save/restore would be better
-            // but Smithay's `Renderer` trait only has these setters and getters for the current
-            // filter.
-            let mut guard = frame.renderer();
-            guard.as_mut().upscale_filter(TextureFilter::Linear)?;
-            guard.as_mut().downscale_filter(TextureFilter::Linear)?;
+            if let Some(restore) = self.restore_filter {
+                let mut guard = frame.renderer();
+                guard.as_mut().upscale_filter(restore)?;
+                guard.as_mut().downscale_filter(restore)?;
+            }
             Ok(())
         } else {
             self.element
@@ -196,10 +215,11 @@ impl<E: RenderElement<GlesRenderer>> RenderElement<GlesRenderer> for ZoomElement
 
             self.element.capture_framebuffer(frame, src, dst, cache)?;
 
-            // Restore renderer filter
-            let mut guard = frame.renderer();
-            guard.as_mut().upscale_filter(TextureFilter::Linear)?;
-            guard.as_mut().downscale_filter(TextureFilter::Linear)?;
+            if let Some(restore) = self.restore_filter {
+                let mut guard = frame.renderer();
+                guard.as_mut().upscale_filter(restore)?;
+                guard.as_mut().downscale_filter(restore)?;
+            }
             Ok(())
         } else {
             self.element.capture_framebuffer(frame, src, dst, cache)
@@ -226,16 +246,16 @@ impl<'render, E: RenderElement<TtyRenderer<'render>>> RenderElement<TtyRenderer<
             guard.as_mut().upscale_filter(filter)?;
             guard.as_mut().downscale_filter(filter)?;
             drop(guard);
-            // gles borrow ends here
 
             self.element
                 .draw(frame, src, dst, damage, opaque_regions, cache)?;
 
-            // Restore renderer filter to `Linear`
-            let gles = frame.as_gles_frame();
-            let mut guard = gles.renderer();
-            guard.as_mut().upscale_filter(TextureFilter::Linear)?;
-            guard.as_mut().downscale_filter(TextureFilter::Linear)?;
+            if let Some(restore) = self.restore_filter {
+                let gles = frame.as_gles_frame();
+                let mut guard = gles.renderer();
+                guard.as_mut().upscale_filter(restore)?;
+                guard.as_mut().downscale_filter(restore)?;
+            }
             Ok(())
         } else {
             self.element
@@ -268,11 +288,12 @@ impl<'render, E: RenderElement<TtyRenderer<'render>>> RenderElement<TtyRenderer<
 
             self.element.capture_framebuffer(frame, src, dst, cache)?;
 
-            // Restore renderer filter to `Linear`
-            let gles = frame.as_gles_frame();
-            let mut guard = gles.renderer();
-            guard.as_mut().upscale_filter(TextureFilter::Linear)?;
-            guard.as_mut().downscale_filter(TextureFilter::Linear)?;
+            if let Some(restore) = self.restore_filter {
+                let gles = frame.as_gles_frame();
+                let mut guard = gles.renderer();
+                guard.as_mut().upscale_filter(restore)?;
+                guard.as_mut().downscale_filter(restore)?;
+            }
             Ok(())
         } else {
             self.element.capture_framebuffer(frame, src, dst, cache)

@@ -1463,6 +1463,47 @@ impl State {
 
         self.niri.config_error_notification.hide();
 
+        // Validate zoom config values.
+        if config.zoom.pinch_sensitivity <= 0.0 {
+            warn!(
+                "zoom.pinch_sensitivity must be > 0, got {}",
+                config.zoom.pinch_sensitivity
+            );
+            self.niri.config_error_notification.show();
+            self.niri.queue_redraw_all();
+
+            #[cfg(feature = "dbus")]
+            self.niri.a11y_announce_config_error();
+
+            return;
+        }
+        if config.zoom.max_zoom < 1.0 {
+            warn!(
+                "zoom.max_zoom must be >= 1.0, got {}",
+                config.zoom.max_zoom
+            );
+            self.niri.config_error_notification.show();
+            self.niri.queue_redraw_all();
+
+            #[cfg(feature = "dbus")]
+            self.niri.a11y_announce_config_error();
+
+            return;
+        }
+        if config.zoom.zoom_filter_threshold <= 0.0 {
+            warn!(
+                "zoom.zoom_filter_threshold must be > 0, got {}",
+                config.zoom.zoom_filter_threshold
+            );
+            self.niri.config_error_notification.show();
+            self.niri.queue_redraw_all();
+
+            #[cfg(feature = "dbus")]
+            self.niri.a11y_announce_config_error();
+
+            return;
+        }
+
         // Find & orphan removed named workspaces.
         let mut removed_workspaces: Vec<String> = vec![];
         for ws in &self.niri.config.borrow().workspaces {
@@ -4434,7 +4475,15 @@ impl Niri {
         let zoom_level = zoom_snapshot.level.max(1.0);
         let (zoom_level, zoom_focal) = (zoom_level, zoom_snapshot.focal);
 
-        apply_zoom_to_render_element(element, zoom_level, output_scale, zoom_focal, output_geo)
+        let zoom_filter_threshold = self.config.borrow().zoom.zoom_filter_threshold;
+        apply_zoom_to_render_element(
+            element,
+            zoom_level,
+            output_scale,
+            zoom_focal,
+            output_geo,
+            zoom_filter_threshold,
+        )
     }
 
     pub fn render_to_vec<R: NiriRenderer>(
@@ -6849,6 +6898,7 @@ fn apply_zoom_to_render_element<R: NiriRenderer>(
     output_scale: Scale<f64>,
     zoom_focal: Point<f64, Logical>,
     output_geo: Rectangle<i32, Logical>,
+    zoom_filter_threshold: f64,
 ) -> OutputRenderElements<R> {
     // Generate match arms for each OutputRenderElement variant.
     macro_rules! apply_zoom {
@@ -6867,7 +6917,7 @@ fn apply_zoom_to_render_element<R: NiriRenderer>(
                                     .to_physical(Scale::from(zoom_factor)),
                                 Relocate::Relative,
                             )
-                            .with_filter_opt(zoom_filter(zoom_factor));
+                            .with_filter_opt(zoom_filter(zoom_factor, zoom_filter_threshold));
                             ZoomedRenderElement::Texture(e).into()
                         }
                         ScreenshotUiRenderElement::SolidColor(elem) => {
@@ -6900,7 +6950,7 @@ fn apply_zoom_to_render_element<R: NiriRenderer>(
                                 .to_physical(Scale::from(zoom_factor)),
                             Relocate::Relative,
                         )
-                        .with_filter_opt(zoom_filter(zoom_factor));
+                        .with_filter_opt(zoom_filter(zoom_factor, zoom_filter_threshold));
                         ZoomedRenderElement::$variant(e).into()
                     }
                 )*

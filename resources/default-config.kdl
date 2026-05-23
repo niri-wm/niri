@@ -302,7 +302,43 @@ animations {
 
     // Slow down all animations by this factor. Values below 1 speed them up instead.
     // slowdown 3.0
+
+    // You can configure individual zoom animation settings here.
+    // See the wiki for detailed documentation.
+    //
+    // Zoom level transitions:
+    // zoom-level-change { off; }
+    //
+    // Zoom focal point pan:
+    // zoom-focal-pan { off; }
 }
+
+// Zoom settings.
+// https://niri-wm.github.io/niri/Configuration:-Zoom
+// zoom {
+//     // How much the viewport moves when you zoom in or out.
+//     // 0.5 means that zooming reacts at half the speed (slower movement).
+//     // pinch-sensitivity 1.0
+//
+//     // Maximum zoom level. Must be >= 1.0.
+//     // max-zoom 10.0
+//
+//     // How the zoom level changes when using scroll or keybinds:
+//     // "linear" - adds and subtracts the same amount (default).
+//     // "exponential" - multiplies the zoom level, enabling smoother changes at higher zoom.
+//     // increment-type "linear"
+//
+//     // How the viewport tracks the cursor:
+//     // "cursor-follow" - the viewport follows the cursor (default).
+//     // "centered" - the viewport stays centered on the output.
+//     // "on-edge" - the viewport only moves when the cursor reaches the edge.
+//     // movement-mode "cursor-follow"
+//
+//     // Zoom level at which the texture filter switches from Linear to Nearest.
+//     // Below this threshold, zooming uses smooth linear interpolation.
+//     // At or above this threshold, nearest-neighbour keeps pixel art sharp.
+//     // zoom-filter-threshold 2.0
+// }
 
 // Window rules let you adjust behavior for individual windows.
 // Find more information on the wiki:
