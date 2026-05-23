@@ -594,6 +594,99 @@ where
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::utils::MergeWith;
+
+    /// Config merge propagates `off` to the top-level `Animations` flag.
+    ///
+    /// When `AnimationsPart { off: true }` is merged into `Animations`, the
+    /// top-level `off` flag should be set to true.  This flag is then used by
+    /// the runtime clock to make all animations complete instantly.
+    #[test]
+    fn animations_off_merge_propagates_to_flag() {
+        let mut animations = Animations::default();
+        assert!(!animations.off, "default off should be false");
+
+        let part = AnimationsPart {
+            off: true,
+            on: false,
+            slowdown: None,
+            workspace_switch: None,
+            window_open: None,
+            window_close: None,
+            horizontal_view_movement: None,
+            window_movement: None,
+            window_resize: None,
+            config_notification_open_close: None,
+            exit_confirmation_open_close: None,
+            screenshot_ui_open: None,
+            overview_open_close: None,
+            recent_windows_close: None,
+            zoom_level_change: None,
+            zoom_focal_pan: None,
+        };
+
+        animations.merge_with(&part);
+        assert!(animations.off, "merge with off=true should set off flag");
+
+        // Individual zoom animation configs should retain their defaults
+        // since the part didn't specify them explicitly.
+        assert!(
+            !animations.zoom_level_change.0.off,
+            "zoom_level_change off should remain default (false) when not explicitly set"
+        );
+        assert!(
+            !animations.zoom_focal_pan.0.off,
+            "zoom_focal_pan off should remain default (false) when not explicitly set"
+        );
+    }
+
+    /// When `AnimationsPart { zoom_level_change: Some(ZoomLevelChangeAnim(Animation { off: true, .. })) }`
+    /// is merged, the per-animation off flag should be set on zoom_level_change.
+    #[test]
+    fn zoom_level_change_off_explicitly_set_via_merge() {
+        let mut animations = Animations::default();
+        assert!(!animations.zoom_level_change.0.off);
+
+        let part = AnimationsPart {
+            off: false,
+            on: false,
+            slowdown: None,
+            workspace_switch: None,
+            window_open: None,
+            window_close: None,
+            horizontal_view_movement: None,
+            window_movement: None,
+            window_resize: None,
+            config_notification_open_close: None,
+            exit_confirmation_open_close: None,
+            screenshot_ui_open: None,
+            overview_open_close: None,
+            recent_windows_close: None,
+            zoom_level_change: Some(ZoomLevelChangeAnim(Animation {
+                off: true,
+                kind: Kind::Easing(EasingParams {
+                    duration_ms: 250,
+                    curve: Curve::EaseOutExpo,
+                }),
+            })),
+            zoom_focal_pan: None,
+        };
+
+        animations.merge_with(&part);
+        assert!(
+            animations.zoom_level_change.0.off,
+            "zoom_level_change off should be true after merge"
+        );
+        assert!(
+            !animations.zoom_focal_pan.0.off,
+            "zoom_focal_pan should be unchanged"
+        );
+    }
+}
+
 impl Animation {
     fn decode_node<S: knuffel::traits::ErrorSpan>(
         node: &knuffel::ast::SpannedNode<S>,

@@ -872,9 +872,9 @@ fn height_resize_cancel_with_stationary_second_window() {
     Op::ConsumeWindowIntoColumn.apply(&mut layout);
 
     // No time had passed, so no change in coordinates yet.
-    assert_snapshot!(format_tiles(&layout), @r"
+    assert_snapshot!(format_tiles(&layout), @"
     100 × 102 at x:  0 y:  0
-    200 × 200 at x:100 y:  0
+    200 × 200 at x:  0 y:200
     ");
 
     // Advance the time a little.
