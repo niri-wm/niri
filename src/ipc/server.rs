@@ -15,7 +15,7 @@ use directories::BaseDirs;
 use futures_util::io::{AsyncReadExt, BufReader};
 use futures_util::{select_biased, AsyncBufReadExt, AsyncWrite, AsyncWriteExt, FutureExt as _};
 use niri_config::OutputName;
-use niri_ipc::state::{EventStreamState, EventStreamStatePart as _};
+use niri_ipc::state::{EventStreamState, EventStreamStatePart as _, ZoomOutputState};
 use niri_ipc::{
     Action, Event, KeyboardLayouts, OutputConfigChanged, Overview, Reply, Request, Response,
     Timestamp, WindowLayout, Workspace,
@@ -609,6 +609,48 @@ impl State {
         self.ipc_refresh_workspaces();
         self.ipc_refresh_windows();
         self.ipc_refresh_overview();
+
+        let Some(server) = &self.niri.ipc_server else {
+            return;
+        };
+
+        let mut state = server.event_stream_state.borrow_mut();
+        let state = &mut state.zoom;
+
+        for output in self.niri.layout.outputs() {
+            let snapshot = self.niri.layout.zoom_snapshot_for_output(output);
+            let name = output.name().clone();
+            let was = state.outputs.get(&name);
+            let is = ZoomOutputState {
+                level: snapshot.level,
+                focal_x: snapshot.focal.x,
+                focal_y: snapshot.focal.y,
+                is_locked: snapshot.locked,
+            };
+
+            // Use epsilon comparison for f64 fields — animation sampling
+            // can introduce tiny drift that shouldn't emit redundant events.
+            const EPS: f64 = 1e-4;
+            if let Some(was) = was {
+                if (was.level - is.level).abs() < EPS
+                    && (was.focal_x - is.focal_x).abs() < EPS
+                    && (was.focal_y - is.focal_y).abs() < EPS
+                    && was.is_locked == is.is_locked
+                {
+                    continue;
+                }
+            }
+
+            let event = Event::ZoomChanged {
+                output: name,
+                level: is.level,
+                focal_x: is.focal_x,
+                focal_y: is.focal_y,
+                is_locked: is.is_locked,
+            };
+            state.apply(event.clone());
+            server.send_event(event);
+        }
     }
 
     fn ipc_refresh_workspaces(&mut self) {
