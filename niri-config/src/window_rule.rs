@@ -34,6 +34,8 @@ pub struct WindowRule {
     pub open_floating: Option<bool>,
     #[knuffel(child, unwrap(argument))]
     pub open_focused: Option<bool>,
+    #[knuffel(child, unwrap(argument))]
+    pub focus_on_activate: Option<bool>,
 
     // Rules applied dynamically.
     #[knuffel(child, unwrap(argument))]
