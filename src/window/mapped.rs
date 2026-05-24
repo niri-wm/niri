@@ -548,7 +548,6 @@ impl Mapped {
                 renderer,
                 target: RenderTarget::Screencast,
                 xray: None,
-                apply_zoom: false,
             },
             location,
             scale,

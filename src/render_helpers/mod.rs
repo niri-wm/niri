@@ -55,11 +55,15 @@ pub mod zoom;
 /// A rendering context.
 ///
 /// Bundles together things needed by most rendering code.
+///
+/// Zoom application is structural, not configurable: the output rendering
+/// path always applies zoom when active, and non-output paths (screenshots,
+/// window casts, snapshots, visual tests) use separate entry points that
+/// never zoom.
 pub struct RenderCtx<'a, R> {
     pub renderer: &'a mut R,
     pub target: RenderTarget,
     pub xray: Option<&'a Xray>,
-    pub apply_zoom: bool,
 }
 
 impl<'a, R> RenderCtx<'a, R> {
@@ -70,7 +74,6 @@ impl<'a, R> RenderCtx<'a, R> {
             renderer: self.renderer,
             target: self.target,
             xray: self.xray,
-            apply_zoom: self.apply_zoom,
         }
     }
 }
@@ -81,7 +84,6 @@ impl<'a, R: AsGlesRenderer> RenderCtx<'a, R> {
             renderer: self.renderer.as_gles_renderer(),
             target: self.target,
             xray: self.xray,
-            apply_zoom: self.apply_zoom,
         }
     }
 }

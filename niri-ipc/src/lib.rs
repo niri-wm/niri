@@ -1779,6 +1779,13 @@ pub enum Event {
         stream_id: u64,
     },
     /// Zoom state changed for an output.
+    ///
+    /// NOTE: This event is emitted at compositor-commit granularity (via
+    /// `State::refresh`), not on every animation frame. During smooth zoom
+    /// transitions, consumers receive commit-time snapshots. Mid-animation
+    /// values may lag behind the visual state until the animation completes.
+    /// If per-frame zoom tracking is needed, events should be wired into the
+    /// animation tick instead.
     ZoomChanged {
         /// Name of the output.
         output: String,

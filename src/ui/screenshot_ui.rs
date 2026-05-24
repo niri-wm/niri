@@ -702,44 +702,53 @@ impl ScreenshotUi {
 
         if *show_pointer {
             if let Some(pointer) = screenshot.pointer.clone() {
-                if !scale_with_zoom {
-                    // Position and scale the pointer so it stays visually
-                    // consistent with the screenshot output texture as zoom
-                    // changes after capture.
-                    let hotspot = screenshot.pointer_hotspot.unwrap_or_default();
-                    let cursor_pos = pointer.geometry(output_scale).loc + hotspot;
-                    let target = zoom_transform_physical_point_f64(
-                        cursor_pos.to_f64(),
-                        zoom_factor,
-                        zoom_focal,
-                        output_scale,
-                    );
-                    let pointer_scale = zoom_factor / screenshot.capture_zoom_level;
-                    let scaled_hotspot = hotspot
-                        .to_f64()
-                        .upscale(pointer_scale)
-                        .to_i32_round::<i32>();
-                    let final_pos = target.to_i32_round() - scaled_hotspot;
-                    let elem = ZoomElement::from_element(
-                        pointer,
-                        hotspot.to_f64(),
-                        pointer_scale,
-                        final_pos.to_f64(),
-                        Relocate::Absolute,
-                    );
-                    push(OutputRenderElements::Zoomed(ZoomedRenderElement::Texture(
-                        elem,
-                    )));
+                let hotspot = screenshot.pointer_hotspot.unwrap_or_default();
+                let cursor_pos = pointer.geometry(output_scale).loc + hotspot;
+                let target = zoom_transform_physical_point_f64(
+                    cursor_pos.to_f64(),
+                    zoom_factor,
+                    zoom_focal,
+                    output_scale,
+                );
+
+                // When scale_with_zoom is set, the pointer should scale with
+                // the full zoom factor. Otherwise, it should only scale
+                // relative to the capture zoom level so it stays visually
+                // consistent with the screenshot output texture (which already
+                // has zoom baked in from capture).
+                let pointer_scale = if scale_with_zoom {
+                    zoom_factor
                 } else {
-                    push(OutputRenderElements::ScreenshotUi(
-                        ScreenshotUiRenderElement::Screenshot(pointer),
-                    ));
-                }
+                    zoom_factor / screenshot.capture_zoom_level
+                };
+                let scaled_hotspot = hotspot
+                    .to_f64()
+                    .upscale(pointer_scale)
+                    .to_i32_round::<i32>();
+                let final_pos = target.to_i32_round() - scaled_hotspot;
+                let elem = ZoomElement::from_element(
+                    pointer,
+                    hotspot.to_f64(),
+                    pointer_scale,
+                    final_pos.to_f64(),
+                    Relocate::Absolute,
+                );
+                push(OutputRenderElements::Zoomed(ZoomedRenderElement::Texture(
+                    elem,
+                )));
             }
         }
-        push(OutputRenderElements::ScreenshotUi(
-            screenshot.buffer.clone().into(),
-        ));
+
+        let tex = ZoomElement::from_element(
+            screenshot.buffer.clone(),
+            zoom_focal.to_physical(output_scale),
+            zoom_factor,
+            Point::from((0.0, 0.0)),
+            Relocate::Relative,
+        );
+        push(OutputRenderElements::Zoomed(ZoomedRenderElement::Texture(
+            tex,
+        )));
     }
 
     pub fn capture(

@@ -229,7 +229,6 @@ impl State {
                             renderer,
                             target: RenderTarget::Screencast,
                             xray: None,
-                            apply_zoom: false,
                         };
                         self.niri.render_pointer(ctx, output, &mut |elem| {
                             let elem =
@@ -595,7 +594,7 @@ impl Niri {
             // match the user's visible output. We keep the exact semantics:
             // - Cursor visibility is checked via display coordinates on the output
             // - Pointer rendering remains zoomed when appropriate
-            // - Main output rendering continues to use apply_zoom = true
+            // - Main output rendering continues to apply zoom
             if cursor_data.is_none() {
                 // Compute pointer visibility/location using the same viewport rules as
                 // the canonical seam (visible output viewport with possible zoom).
@@ -619,14 +618,13 @@ impl Niri {
                 };
 
                 // If pointer is to be drawn, render through render_pointer.
-                // render_pointer applies output zoom when ctx.apply_zoom is true.
+                // render_pointer_for_output applies output zoom.
                 let pointer_pos = match pointer_pos {
                     Some(_p) => {
                         let ctx = RenderCtx {
                             renderer,
                             target: RenderTarget::Screencast,
                             xray: None,
-                            apply_zoom: true,
                         };
                         Some(self.render_pointer_for_output(ctx, output, &mut |elem| {
                             elements.push(elem.into())
@@ -640,9 +638,10 @@ impl Niri {
                     renderer,
                     target: RenderTarget::Screencast,
                     xray: None,
-                    apply_zoom: true,
                 };
-                self.render(ctx, output, false, &mut |elem| elements.push(elem.into()));
+                self.render(ctx, output, false, true, &mut |elem| {
+                    elements.push(elem.into())
+                });
 
                 cursor_data = Some(CursorData::compute(
                     &elements,
@@ -730,7 +729,6 @@ impl Niri {
                         renderer,
                         target: RenderTarget::Screencast,
                         xray: None,
-                        apply_zoom: false,
                     };
 
                     self.render_pointer(ctx, output, &mut |elem| {

@@ -11,25 +11,28 @@ use crate::utils::zoom::*;
 /// Per-output zoom state.
 ///
 /// This struct holds the effective zoom values that external consumers (backends,
-/// input, niri rendering) read each frame. Layout writes these values every
-/// animation tick, so they always reflect the current animation/gesture state.
+/// input, niri rendering) read each frame through the `Layout` API. Layout writes
+/// these values every animation tick, so they always reflect the current
+/// animation/gesture state.
 ///
 /// Animation and gesture tracking live in the owned transition state.
 ///
-/// Mutable ownership boundaries:
-/// - Layout owns animated `level` / `focal` / `transition`.
-/// - Input owns `locked` toggling.
+/// Encapsulation boundaries:
+/// - `level`, `focal`, `transition` are `pub(super)` — only the `layout` module
+///   tree may write them. External consumers (input, rendering, IPC) must use
+///   `Layout`'s public methods (`zoom_snapshot_for_output`, `set_zoom_level`, etc.).
+/// - `locked` is `pub` (input-owned toggle, intentionally public for input module).
 #[derive(Debug, Clone)]
 pub struct OutputZoomState {
     /// Current effective zoom level (layout-owned, updated each frame).
-    pub level: f64,
+    pub(super) level: f64,
     /// Current effective focal point in output-local logical coordinates
     /// (layout-owned, updated each frame).
-    pub focal: Point<f64, Logical>,
+    pub(super) focal: Point<f64, Logical>,
     /// Whether focal point is locked (input-owned toggle).
     pub locked: bool,
     /// In-progress zoom transition, if any.
-    pub transition: Option<ZoomTransition>,
+    pub(super) transition: Option<ZoomTransition>,
 }
 
 impl OutputZoomState {
@@ -90,6 +93,40 @@ impl OutputZoomState {
 
     pub fn is_active(&self) -> bool {
         self.level > 1.0
+    }
+
+    /// Test-only constructor for creating arbitrary zoom states.
+    #[cfg(test)]
+    pub fn test_new(
+        level: f64,
+        focal: Point<f64, Logical>,
+        locked: bool,
+        transition: Option<ZoomTransition>,
+    ) -> Self {
+        Self {
+            level,
+            focal,
+            locked,
+            transition,
+        }
+    }
+
+    /// Test-only accessor for level.
+    #[cfg(test)]
+    pub fn test_level(&self) -> f64 {
+        self.level
+    }
+
+    /// Test-only accessor for focal.
+    #[cfg(test)]
+    pub fn test_focal(&self) -> Point<f64, Logical> {
+        self.focal
+    }
+
+    /// Test-only accessor for transition.
+    #[cfg(test)]
+    pub fn test_transition(&self) -> &Option<ZoomTransition> {
+        &self.transition
     }
 
     pub fn viewport_global(

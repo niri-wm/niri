@@ -3183,7 +3183,7 @@ impl State {
 
                 if let Some(output) = output.cloned() {
                     let output = output.clone();
-                    let point = self.screenshot_ui_point_on_output(&output, pos, true);
+                    let point = self.screenshot_ui_point_from_content(&output, pos);
 
                     if self
                         .niri
@@ -3796,7 +3796,7 @@ impl State {
                         };
 
                         if let Some(output) = output.cloned() {
-                            let point = self.screenshot_ui_point_on_output(&output, pos, false);
+                            let point = self.screenshot_ui_point_from_screen(&output, pos);
 
                             if self
                                 .niri
@@ -4515,34 +4515,27 @@ impl State {
         }
     }
 
-    /// Converts a global logical position to screenshot UI physical coords
-    /// for the given output.
-    ///
-    /// Convert a position to the buffer pixel under zoom for screenshot UI
-    /// hit-testing.
+    /// Converts a screen-space global logical position to screenshot UI
+    /// physical coords for the given output, applying inverse zoom when
+    /// active.
     ///
     /// Under zoom the rendering maps buffer position C to visual position
     /// V = focal + (C − focal) × zoom, so to find the buffer pixel from a
     /// visual position we invert: C = focal + (V − focal) / zoom.
     ///
-    /// * `in_content_space`: the position is **already** in content (buffer)
-    ///   logical space — skip the un-zoom.  The relative pointer tracks
-    ///   content-space coords because its deltas are scaled by 1/zoom.
-    /// * `!in_content_space`: the position is in screen (global) space and
-    ///   needs the un-zoom above.  Touch, tablet, and absolute pointer
-    ///   events report screen-space positions.
-    fn screenshot_ui_point_on_output(
+    /// Touch, tablet, and absolute pointer events report screen-space
+    /// positions and should use this function.
+    fn screenshot_ui_point_from_screen(
         &self,
         output: &Output,
         pos: Point<f64, Logical>,
-        in_content_space: bool,
     ) -> Point<i32, Physical> {
         let geom = self.niri.global_space.output_geometry(output).unwrap();
         let geom_f64 = geom.to_f64();
         let point_rel = pos - geom_f64.loc;
 
         let snapshot = self.niri.layout.zoom_snapshot_for_output(output);
-        if snapshot.level > 1.0 && !in_content_space {
+        if snapshot.level > 1.0 {
             let buffer_logical =
                 snapshot.focal + (point_rel - snapshot.focal).downscale(snapshot.level);
             let scale = Scale::from(output.current_scale().fractional_scale());
@@ -4564,11 +4557,34 @@ impl State {
         point.constrain(Rectangle::from_size(size))
     }
 
+    /// Converts a content-space logical position to screenshot UI physical
+    /// coords for the given output.
+    ///
+    /// The position is already in content (buffer) logical space — no inverse
+    /// zoom is applied.  The relative pointer tracks content-space coords
+    /// because its deltas are scaled by 1/zoom.
+    fn screenshot_ui_point_from_content(
+        &self,
+        output: &Output,
+        pos: Point<f64, Logical>,
+    ) -> Point<i32, Physical> {
+        let geom = self.niri.global_space.output_geometry(output).unwrap();
+        let point = pos - geom.loc.to_f64();
+        let scale = Scale::from(output.current_scale().fractional_scale());
+        let point = point.to_physical_precise_round(scale);
+
+        let size = output.current_mode().unwrap().size;
+        let transform = output.current_transform();
+        let size = transform.transform_size(size);
+
+        point.constrain(Rectangle::from_size(size))
+    }
+
     /// Routes relative-pointer motion to the screenshot UI.  The relative
     /// pointer tracks content-space coords (deltas are scaled by 1/zoom).
     fn update_screenshot_ui_pointer(&mut self, pos: Point<f64, Logical>) {
         if let Some(output) = self.niri.screenshot_ui.selection_output() {
-            let point = self.screenshot_ui_point_on_output(output, pos, true);
+            let point = self.screenshot_ui_point_from_content(output, pos);
             self.niri.screenshot_ui.pointer_motion(point, None);
         }
     }
@@ -4577,7 +4593,7 @@ impl State {
     /// Absolute and tablet events report screen-space positions.
     fn update_screenshot_ui_absolute(&mut self, pos: Point<f64, Logical>) {
         if let Some(output) = self.niri.screenshot_ui.selection_output() {
-            let point = self.screenshot_ui_point_on_output(output, pos, false);
+            let point = self.screenshot_ui_point_from_screen(output, pos);
             self.niri.screenshot_ui.pointer_motion(point, None);
         }
     }
@@ -4586,7 +4602,7 @@ impl State {
     /// screen-space positions.
     fn update_screenshot_ui_touch(&mut self, pos: Point<f64, Logical>, slot: TouchSlot) {
         if let Some(output) = self.niri.screenshot_ui.selection_output() {
-            let point = self.screenshot_ui_point_on_output(output, pos, false);
+            let point = self.screenshot_ui_point_from_screen(output, pos);
             self.niri.screenshot_ui.pointer_motion(point, Some(slot));
         }
     }
@@ -4632,7 +4648,7 @@ impl State {
             };
 
             if let Some(output) = output.cloned() {
-                let point = self.screenshot_ui_point_on_output(&output, pos, false);
+                let point = self.screenshot_ui_point_from_screen(&output, pos);
 
                 if self
                     .niri

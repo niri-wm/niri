@@ -614,6 +614,13 @@ impl State {
             return;
         };
 
+        // ⚠️ ZoomChanged emission granularity
+        // This runs on compositor commits (via State::refresh), NOT on every
+        // animation frame. During smooth zoom transitions, IPC consumers
+        // receive commit-time snapshots rather than per-frame animation
+        // state. This means mid-animation values may be stale until the
+        // animation completes. If smooth per-frame tracking is needed, this
+        // should be wired into the animation tick instead.
         let mut state = server.event_stream_state.borrow_mut();
         let state = &mut state.zoom;
 
@@ -628,7 +635,7 @@ impl State {
                 is_locked: snapshot.locked,
             };
 
-            // Use epsilon comparison for f64 fields — animation sampling
+            // Epsilon comparison for f64 fields — animation sampling
             // can introduce tiny drift that shouldn't emit redundant events.
             const EPS: f64 = 1e-4;
             if let Some(was) = was {
