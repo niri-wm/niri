@@ -1478,10 +1478,7 @@ impl State {
             return;
         }
         if config.zoom.max_zoom < 1.0 {
-            warn!(
-                "zoom.max_zoom must be >= 1.0, got {}",
-                config.zoom.max_zoom
-            );
+            warn!("zoom.max_zoom must be >= 1.0, got {}", config.zoom.max_zoom);
             self.niri.config_error_notification.show();
             self.niri.queue_redraw_all();
 
@@ -1715,7 +1712,8 @@ impl State {
 
                     // Update the focal point so that if the user changes the movement mode again
                     // while zoomed, it will be correct.
-                    self.niri.update_zoom_focal(&output, global_pointer_pos, None, true);
+                    self.niri
+                        .update_zoom_focal(&output, global_pointer_pos, None, true);
 
                     self.niri.queue_redraw(&output);
                 }
@@ -3835,7 +3833,11 @@ impl Niri {
 
     /// Returns the cursor hotspot in physical coordinates for the given output,
     /// or `None` if the cursor is hidden.
-    fn cursor_hotspot_physical(&self, output: &Output, output_scale: Scale<f64>) -> Option<Point<i32, Physical>> {
+    fn cursor_hotspot_physical(
+        &self,
+        output: &Output,
+        output_scale: Scale<f64>,
+    ) -> Option<Point<i32, Physical>> {
         let cursor_scale = output.current_scale().integer_scale();
         let render_cursor = self.cursor_manager.get_render_cursor(cursor_scale);
         match render_cursor {
@@ -3898,7 +3900,7 @@ impl Niri {
                 scale,
                 cursor,
             } => {
-                let (idx, frame) = cursor.frame(self.start_time.elapsed().as_millis() as u32);
+                let (idx, _frame) = cursor.frame(self.start_time.elapsed().as_millis() as u32);
                 let hotspot = cursor_hotspot.unwrap();
                 let final_pos = pointer_pos - hotspot;
 
@@ -3936,16 +3938,9 @@ impl Niri {
         pointer_pos_logical
     }
 
-    /// Renders the pointer cursor for an output. Returns the logical cursor
-    /// position.
-    ///
-    /// When zoom is active, applies a custom cursor transform via
-    /// `wrap_cursor_for_zoom` that rescales around the cursor hotspot rather
-    /// than the zoom focal point (see `zoomed_element` for why this separation
-    /// is necessary).
-    ///
-    /// Callers that do not want zoom (window casts, screenshots) should call
-    /// `render_pointer` directly instead.
+    /// Renders the pointer for an output, applying zoom transform around the
+    /// cursor hotspot. Callers that do not want zoom (window casts, screenshots)
+    /// should call `render_pointer` directly.
     pub(crate) fn render_pointer_for_output<R: NiriRenderer>(
         &self,
         ctx: RenderCtx<R>,
@@ -3987,15 +3982,10 @@ impl Niri {
                 return self.render_pointer(ctx, output, &mut |elem| push(elem.into()));
             }
 
-            // Cursor is on this output but outside the zoom viewport (possible
-            // in Centered or OnEdge mode where the cursor can leave the
-            // magnified region). We render it at native size (no zoom
-            // wrapping) but still position it at the zoom-transformed physical
-            // coordinates below, so it tracks the correct screen location
-            // without magnification.
+            // Cursor on this output but outside the zoom viewport: render at
+            // native size but still position at zoom-transformed coordinates.
         }
 
-        // Pattern A: pre-compute target_rounded (does not depend on element geometry).
         let display_cursor = cursor_logical_pos.unwrap_or(pointer_local);
         let cursor_pos_f64: Point<f64, Physical> = display_cursor.to_physical(output_scale);
         let target = zoom_transform_physical_point_f64(
@@ -4006,18 +3996,11 @@ impl Niri {
         );
         let target_rounded = target.to_i32_round();
 
-        // Pre-extract cursor hotspot via shared helper (used by both
-        // render_pointer and render_pointer_for_output) so we don't need to
-        // read elem.geometry().loc to determine it.
         let cursor_hotspot = self.cursor_hotspot_physical(output, output_scale);
         let pointer_local_phys: Point<f64, Physical> = pointer_local.to_physical(output_scale);
 
-        // Render the cursor without zoom wrapping (render_pointer pushes
-        // PointerRenderElements directly). We then manually wrap each
-        // element in a ZoomElement to rescale around the hotspot.
+        // Render without zoom, then wrap each element around its hotspot.
         self.render_pointer(ctx, output, &mut |elem| {
-            // Pattern A: determine hotspot based on element kind,
-            // avoiding elem.geometry().loc for cursor elements.
             let hotspot = match (elem.kind(), cursor_hotspot) {
                 (Kind::Cursor, Some(hotspot)) => hotspot,
                 _ => {
@@ -4451,12 +4434,22 @@ impl Niri {
         old_pos: Option<Point<f64, Logical>>,
         force: bool,
     ) {
-        let Some(output_geo) = self.global_space.output_geometry(output).map(|g| g.to_f64()) else {
+        let Some(output_geo) = self
+            .global_space
+            .output_geometry(output)
+            .map(|g| g.to_f64())
+        else {
             return;
         };
         let movement_mode = self.config.borrow().zoom.movement_mode;
-        self.layout
-            .update_zoom_base_focal(output, output_geo, movement_mode, cursor_pos, old_pos, force);
+        self.layout.update_zoom_base_focal(
+            output,
+            output_geo,
+            movement_mode,
+            cursor_pos,
+            old_pos,
+            force,
+        );
     }
 
     /// Applies the zoom transform to a render element.
@@ -4474,7 +4467,6 @@ impl Niri {
             return element;
         }
 
-        // Apply zoom to the render elements when needed.
         if !self.layout.zoom_is_active_for_output(output) {
             return element;
         }
@@ -6963,7 +6955,7 @@ fn apply_zoom_to_render_element<R: NiriRenderer>(
                                 .to_physical(Scale::from(zoom_factor)),
                             Relocate::Relative,
                         )
-                        .with_filter_opt(zoom_filter(zoom_factor, zoom_filter_threshold));
+                        .with_filter(zoom_filter(zoom_factor, zoom_filter_threshold));
                         ZoomedRenderElement::$variant(e).into()
                     }
                 )*
@@ -7014,8 +7006,7 @@ niri_render_elements! {
         SolidColor = ZoomElement<SolidColorRenderElement>,
         Texture = ZoomElement<PrimaryGpuTextureRenderElement>,
 
-        // Special case for ScreenshotUiRenderElement::SolidColor
-        ScreenshotSolidColor= SolidColorRenderElement,
+        ScreenshotSolidColor = SolidColorRenderElement,
     }
 }
 

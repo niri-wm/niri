@@ -2871,8 +2871,14 @@ impl<W: LayoutElement> Layout<W> {
 
     pub fn zoom_snapshot_for_output(&self, output: &Output) -> ZoomSnapshot {
         let now = self.clock.now();
-        self.zoom_state_ref(output)
-            .map_or_else(ZoomSnapshot::inactive, |state| state.snapshot_at(now))
+        self.zoom_state_ref(output).map_or_else(
+            || ZoomSnapshot {
+                level: 1.0,
+                focal: Point::from((0.0, 0.0)),
+                locked: false,
+            },
+            |state| state.snapshot_at(now),
+        )
     }
 
     /// Returns true if zoom level != 1.0 (zoom transform actively applied).
@@ -4318,7 +4324,14 @@ impl<W: LayoutElement> Layout<W> {
         let context = self.zoom_context_for_output(output)?;
         let state = self.zoom_state_mut(output)?;
         let mut transition = state.transition.take().unwrap_or_default();
-        let gesture = transition.take_level_gesture()?;
+        let gesture = match transition.take_level_gesture() {
+            Some(g) => g,
+            None => {
+                // Not a gesture — restore the original transition.
+                state.transition = Some(transition);
+                return None;
+            }
+        };
 
         if cancelled {
             let level_anim = ZoomLevelAnimation::new(
