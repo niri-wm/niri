@@ -34,7 +34,7 @@ use smithay::input::SeatHandler;
 use smithay::output::Output;
 use smithay::reexports::wayland_server::protocol::wl_data_source::WlDataSource;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::utils::{Logical, Physical, Point, Rectangle, Scale, Transform, SERIAL_COUNTER};
+use smithay::utils::{Logical, Physical, Point, Rectangle, Scale, Size, Transform, SERIAL_COUNTER};
 use smithay::wayland::keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitor;
 use smithay::wayland::pointer_constraints::{with_pointer_constraint, PointerConstraint};
 use smithay::wayland::tablet_manager::{TabletDescriptor, TabletSeatTrait};
@@ -282,10 +282,7 @@ impl State {
             // mid-gesture leaves stale state that would corrupt subsequent
             // gestures on a new touch device.
             self.niri.touch_points.clear();
-            if let Some(pinch) = self.niri.touch_pinch_state.take() {
-                self.niri.layout.zoom_gesture_end(&pinch.output, true);
-                self.niri.queue_redraw(&pinch.output);
-            }
+            self.cancel_touch_pinch(true);
 
             if self.niri.touch.is_empty() {
                 self.niri.seat.remove_touch();
@@ -705,10 +702,7 @@ impl State {
         if let Some(touch) = self.niri.seat.get_touch() {
             touch.cancel(self);
             self.niri.touch_points.clear();
-            if let Some(pinch) = self.niri.touch_pinch_state.take() {
-                self.niri.layout.zoom_gesture_end(&pinch.output, true);
-                self.niri.queue_redraw(&pinch.output);
-            }
+            self.cancel_touch_pinch(true);
         }
 
         match action {
@@ -4175,6 +4169,64 @@ impl State {
         );
     }
 
+    fn cancel_touch_pinch(&mut self, cancelled: bool) {
+        if let Some(pinch) = self.niri.touch_pinch_state.take() {
+            self.niri.layout.zoom_gesture_end(&pinch.output, cancelled);
+            self.niri.queue_redraw(&pinch.output);
+        }
+    }
+
+    fn pinch_config(&self) -> (f64, ZoomMovementMode) {
+        let zoom = &self.niri.config.borrow().zoom;
+        (zoom.pinch_sensitivity, zoom.movement_mode)
+    }
+
+    fn pinch_output_geometry(
+        &self,
+        output: &Output,
+        focal_point: Point<f64, Logical>,
+    ) -> (Option<Point<f64, Logical>>, Option<Size<f64, Logical>>) {
+        let output_geo = self
+            .niri
+            .global_space
+            .output_geometry(output)
+            .map(|g| g.to_f64());
+        (
+            output_geo.map(|g| focal_point - g.loc),
+            output_geo.map(|g| g.size),
+        )
+    }
+
+    /// Returns `true` if a zoom gesture was active and was updated.
+    fn pinch_update(
+        &mut self,
+        output: &Output,
+        scale: f64,
+        focal_pos: Point<f64, Logical>,
+        timestamp: Duration,
+    ) -> bool {
+        let (sensitivity, _) = self.pinch_config();
+        let (cursor_local, output_size) = self.pinch_output_geometry(output, focal_pos);
+        if self
+            .niri
+            .layout
+            .zoom_gesture_update(
+                output,
+                scale,
+                sensitivity,
+                timestamp,
+                cursor_local,
+                output_size,
+            )
+            .is_some()
+        {
+            self.niri.queue_redraw(output);
+            true
+        } else {
+            false
+        }
+    }
+
     fn on_gesture_pinch_begin<I: InputBackend>(&mut self, event: I::GesturePinchBeginEvent) {
         let serial = SERIAL_COUNTER.next_serial();
         let pointer = self.niri.seat.get_pointer().unwrap();
@@ -4193,14 +4245,9 @@ impl State {
                 }
 
                 let cursor_global = self.niri.seat.get_pointer().unwrap().current_location();
-                let output_geo = self
-                    .niri
-                    .global_space
-                    .output_geometry(&output)
-                    .map(|g| g.to_f64());
-                let cursor_local = output_geo.map(|g| cursor_global - g.loc);
-                let output_size = output_geo.map(|g| g.size);
-                let movement_mode = Some(self.niri.config.borrow().zoom.movement_mode);
+                let (cursor_local, output_size) =
+                    self.pinch_output_geometry(&output, cursor_global);
+                let movement_mode = Some(self.pinch_config().1);
                 self.niri.layout.zoom_gesture_begin(
                     &output,
                     cursor_local,
@@ -4234,29 +4281,11 @@ impl State {
             .clone()
             .or_else(|| self.niri.output_under_cursor())
         {
-            let sensitivity = self.niri.config.borrow().zoom.pinch_sensitivity;
-
             let timestamp = Duration::from_millis(event.time_msec() as u64);
             let scale = event.scale();
             let cursor_global = self.niri.seat.get_pointer().unwrap().current_location();
-            let output_geo = self
-                .niri
-                .global_space
-                .output_geometry(&output)
-                .map(|g| g.to_f64());
-            let cursor_local = output_geo.map(|g| cursor_global - g.loc);
-            let output_size = output_geo.map(|g| g.size);
 
-            // Returns Some if a zoom gesture was active (avoids check-then-act race).
-            if let Some(_changed) = self.niri.layout.zoom_gesture_update(
-                &output,
-                scale,
-                sensitivity,
-                timestamp,
-                cursor_local,
-                output_size,
-            ) {
-                self.niri.queue_redraw(&output);
+            if self.pinch_update(&output, scale, cursor_global, timestamp) {
                 return;
             }
         }
@@ -4439,10 +4468,7 @@ impl State {
         // pair of points against the initial 2-finger distance would produce
         // a nonsensical scale ratio and an abrupt zoom jump.
         if touch_count > 2 {
-            if let Some(pinch) = self.niri.touch_pinch_state.take() {
-                self.niri.layout.zoom_gesture_end(&pinch.output, true);
-                self.niri.queue_redraw(&pinch.output);
-            }
+            self.cancel_touch_pinch(true);
             return;
         }
 
@@ -4458,10 +4484,7 @@ impl State {
 
             let Some((output, _)) = self.niri.output_under(midpoint) else {
                 // Can't determine output — cancel any active pinch.
-                if let Some(pinch) = self.niri.touch_pinch_state.take() {
-                    self.niri.layout.zoom_gesture_end(&pinch.output, true);
-                    self.niri.queue_redraw(&pinch.output);
-                }
+                self.cancel_touch_pinch(true);
                 return;
             };
             let output = output.clone();
@@ -4470,17 +4493,10 @@ impl State {
                 return;
             }
 
-            let output_geo = self
-                .niri
-                .global_space
-                .output_geometry(&output)
-                .map(|g| g.to_f64());
-            let cursor_local = output_geo.map(|g| midpoint - g.loc);
-            let output_size = output_geo.map(|g| g.size);
-            let sensitivity = self.niri.config.borrow().zoom.pinch_sensitivity;
+            let (cursor_local, output_size) = self.pinch_output_geometry(&output, midpoint);
 
             if self.niri.touch_pinch_state.is_none() {
-                let movement_mode = Some(self.niri.config.borrow().zoom.movement_mode);
+                let movement_mode = Some(self.pinch_config().1);
                 self.niri.layout.zoom_gesture_begin(
                     &output,
                     cursor_local,
@@ -4496,22 +4512,11 @@ impl State {
                 if pinch.output == output {
                     let scale = distance / pinch.initial_distance;
 
-                    let _changed = self.niri.layout.zoom_gesture_update(
-                        &output,
-                        scale,
-                        sensitivity,
-                        timestamp,
-                        cursor_local,
-                        output_size,
-                    );
-                    self.niri.queue_redraw(&output);
+                    self.pinch_update(&output, scale, midpoint, timestamp);
                 }
             }
         } else if touch_count < 2 {
-            if let Some(pinch) = self.niri.touch_pinch_state.take() {
-                self.niri.layout.zoom_gesture_end(&pinch.output, false);
-                self.niri.queue_redraw(&pinch.output);
-            }
+            self.cancel_touch_pinch(false);
         }
     }
 
@@ -4835,10 +4840,7 @@ impl State {
     }
     fn on_touch_cancel<I: InputBackend>(&mut self, _evt: I::TouchCancelEvent) {
         self.niri.touch_points.clear();
-        if let Some(pinch) = self.niri.touch_pinch_state.take() {
-            self.niri.layout.zoom_gesture_end(&pinch.output, true);
-            self.niri.queue_redraw(&pinch.output);
-        }
+        self.cancel_touch_pinch(true);
 
         let Some(handle) = self.niri.seat.get_touch() else {
             return;

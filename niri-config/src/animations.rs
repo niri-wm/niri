@@ -643,8 +643,8 @@ mod tests {
         );
     }
 
-    /// When `AnimationsPart { zoom_level_change: Some(ZoomLevelChangeAnim(Animation { off: true, .. })) }`
-    /// is merged, the per-animation off flag should be set on zoom_level_change.
+    /// When `AnimationsPart { zoom_level_change: Some(ZoomLevelChangeAnim(Animation { off: true, ..
+    /// })) }` is merged, the per-animation off flag should be set on zoom_level_change.
     #[test]
     fn zoom_level_change_off_explicitly_set_via_merge() {
         let mut animations = Animations::default();

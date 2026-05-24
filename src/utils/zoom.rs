@@ -12,13 +12,8 @@ pub fn apply_zoom_viewport(
     output_rect
 }
 
-/// Given a global cursor position, the per-output origin and size, and the
-/// current zoom state (level and focal point), return the output-local logical
-/// cursor position where the cursor would be displayed on that output.
-///
-/// If the cursor is outside the output, return None. Otherwise return the
-/// clamped position in output-local logical coordinates, preserving the
-/// existing viewport clamping rules and out-of-output semantics.
+/// Output-local cursor display position under zoom. Returns `None` if cursor
+/// is outside the output.
 pub fn display_cursor_local_for_output(
     global_pointer: Point<f64, Logical>,
     output_pos: Point<f64, Logical>,
@@ -40,7 +35,7 @@ pub fn display_cursor_local_for_output(
     ))
 }
 
-/// Canonical per-output display cursor position helper in global coordinates.
+/// Convenience: local → global via `display_cursor_local_for_output`.
 pub fn canonical_display_cursor_global_pos(
     global_pointer: Point<f64, Logical>,
     output_pos: Point<f64, Logical>,
@@ -70,9 +65,8 @@ pub fn compute_focal_for_cursor(
 
     match movement_mode {
         ZoomMovementMode::CursorFollow => cursor_local,
-        // Centered and OnEdge share the same static focal computation.
-        // OnEdge only differs in how it updates/preserves the focal while
-        // the cursor moves relative to the current viewport.
+        // OnEdge uses the same static focal as Centered; it only differs in
+        // how it updates the focal as the cursor moves relative to the viewport.
         ZoomMovementMode::Centered | ZoomMovementMode::OnEdge => {
             let viewport_size = output_size.downscale(zoom_level);
             let viewport_loc = cursor_local - viewport_size.downscale(2.0).to_point();
@@ -123,7 +117,7 @@ fn compute_on_edge_zoom_update(
     focal_point: Point<f64, Logical>,
     zoom_factor: f64,
 ) -> Option<Point<f64, Logical>> {
-    let recentered = || {
+    let recenter = || {
         Some(compute_focal_for_cursor(
             cursor_position,
             zoom_factor,
@@ -133,7 +127,7 @@ fn compute_on_edge_zoom_update(
     };
 
     let Some(old_pos) = old_pos_global else {
-        return recentered();
+        return recenter();
     };
 
     let focal_global = focal_point + output_geometry.loc;
@@ -147,7 +141,7 @@ fn compute_on_edge_zoom_update(
     );
 
     if !zoomed_geometry_global.overlaps_or_touches(original_rect) {
-        return recentered();
+        return recenter();
     }
 
     let scale = zoom_factor / (zoom_factor - 1.0);
@@ -212,7 +206,6 @@ pub(crate) fn compute_on_edge_cursor_anchor(
 ) -> Point<f64, Logical> {
     let output_rect: Rectangle<f64, Logical> = Rectangle::from_size(output_size);
     let viewport = apply_zoom_viewport(output_rect, focal, zoom_level);
-    // Clamp cursor to viewport first — ensures normalized coords are already in [0,1]
     let constrained = cursor_local.constrain(Rectangle::new(
         viewport.loc,
         viewport.size - Size::from((f64::EPSILON, f64::EPSILON)),
@@ -270,8 +263,6 @@ pub(crate) fn compute_focal_for_on_edge_anchor(
     let viewport_loc: Point<f64, Logical> = cursor_local - anchor_offset;
     let scale_factor = zoom_level / (zoom_level - 1.0).max(0.001);
 
-    // The scaled and clamped viewport loc is the new focal point that will keep the cursor anchored
-    // at the same relative position within the viewport.
     viewport_loc
         .upscale(scale_factor)
         .constrain(Rectangle::from_size(

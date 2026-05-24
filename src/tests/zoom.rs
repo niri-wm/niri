@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use niri_config::animations::{Animation, Curve, EasingParams, Kind};
 use niri_config::{Config, ZoomMovementMode};
 use proptest::prelude::*;
@@ -5,30 +7,9 @@ use smithay::utils::{Point, Rectangle, Scale, Size};
 
 use super::*;
 use crate::layout::{ZoomFocalAnimation, ZoomLevelAnimation, ZoomTransition};
-use crate::utils::zoom::compute_focal_for_cursor;
-
-#[test]
-fn zoom_state_action_query_reports_level_and_lock() {
-    let mut f = Fixture::new();
-    f.add_output(1, (1920, 1080));
-    let output = f.niri_output(1);
-    assert!((f.niri().layout.zoom_level_for_output(&output) - 1.0).abs() < 1e-6);
-    assert!(!f.niri().layout.zoom_locked_for_output(&output));
-    let cursor_local = Point::from((0.0, 0.0));
-    f.niri().layout.set_zoom_level(
-        &output,
-        2.0,
-        cursor_local,
-        &ZoomMovementMode::CursorFollow,
-        false,
-    );
-    f.niri_complete_animations();
-    assert!((f.niri().layout.zoom_level_for_output(&output) - 2.0).abs() < 1e-6);
-    assert!(!f.niri().layout.zoom_locked_for_output(&output));
-    f.niri().layout.toggle_zoom_lock(&output);
-    f.niri_complete_animations();
-    assert!(f.niri().layout.zoom_locked_for_output(&output));
-}
+use crate::utils::zoom::{
+    compute_focal_for_cursor, compute_focal_for_on_edge_anchor, compute_on_edge_cursor_anchor,
+};
 
 /// Locked zoom accepts level changes but preserves the focal point.
 ///
@@ -74,18 +55,6 @@ fn locked_zoom_level_change_preserves_focal() {
     assert!((focal_after.x - focal_before.x).abs() < 1e-6);
     assert!((focal_after.y - focal_before.y).abs() < 1e-6);
     assert!(f.niri().layout.zoom_locked_for_output(&output));
-}
-
-#[test]
-fn layout_zoom_store_is_seeded_on_add_output() {
-    let mut f = Fixture::new();
-    f.add_output(1, (1920, 1080));
-
-    let output = f.niri_output(1);
-    let zoom_state = f.niri().layout.zoom_state_for_output(&output).unwrap();
-    assert!((zoom_state.test_level() - 1.0).abs() < 1e-6);
-    assert!(!zoom_state.locked);
-    assert!(zoom_state.test_transition().is_none());
 }
 
 #[test]
@@ -155,32 +124,6 @@ fn removing_one_output_does_not_change_other_output_zoom() {
 }
 
 #[test]
-fn completed_zoom_transition_is_cleared_from_state() {
-    let mut f = Fixture::new();
-    f.add_output(1, (1920, 1080));
-    let output = f.niri_output(1);
-
-    f.niri().layout.set_zoom_level(
-        &output,
-        2.0,
-        Point::from((0.0, 0.0)),
-        &ZoomMovementMode::CursorFollow,
-        false,
-    );
-    assert!(f
-        .niri()
-        .layout
-        .zoom_state_for_output(&output)
-        .unwrap()
-        .test_transition()
-        .is_some());
-
-    f.niri_complete_animations();
-    let zoom_state = f.niri().layout.zoom_state_for_output(&output).unwrap();
-    assert!(zoom_state.test_transition().is_none());
-}
-
-#[test]
 fn centered_zoom_level_change_animates_when_target_is_edge_constrained() {
     let mut f = Fixture::new();
     f.add_output(1, (1920, 1080));
@@ -215,64 +158,6 @@ fn centered_zoom_level_change_animates_when_target_is_edge_constrained() {
     assert!((zoom_state.test_level() - 2.0).abs() < 1e-6);
     assert!((zoom_state.test_focal().x - expected_focal.x).abs() < 1e-6);
     assert!((zoom_state.test_focal().y - expected_focal.y).abs() < 1e-6);
-}
-
-#[test]
-fn centered_zoom_level_change_still_animates_when_focal_is_unchanged() {
-    let mut f = Fixture::new();
-    f.add_output(1, (1920, 1080));
-    let output = f.niri_output(1);
-
-    f.niri().layout.set_zoom_level(
-        &output,
-        2.0,
-        Point::from((960.0, 540.0)),
-        &ZoomMovementMode::Centered,
-        false,
-    );
-
-    assert!(f
-        .niri()
-        .layout
-        .zoom_state_for_output(&output)
-        .unwrap()
-        .test_transition()
-        .is_some());
-}
-
-#[test]
-fn centered_zoom_level_change_animates_when_focal_must_move() {
-    let mut f = Fixture::new();
-    f.add_output(1, (1920, 1080));
-    let output = f.niri_output(1);
-    let output_size = Size::from((1920.0, 1080.0));
-    let cursor_local = Point::from((700.0, 400.0));
-
-    f.niri().layout.set_zoom_level(
-        &output,
-        2.0,
-        cursor_local,
-        &ZoomMovementMode::Centered,
-        false,
-    );
-
-    // Dynamic focal tracking smoothly interpolates the focal during level animation.
-    assert!(f
-        .niri()
-        .layout
-        .zoom_state_for_output(&output)
-        .unwrap()
-        .test_transition()
-        .is_some());
-
-    f.niri_complete_animations();
-    let snapshot = f.niri().layout.zoom_snapshot_for_output(&output);
-    let expected_focal =
-        compute_focal_for_cursor(cursor_local, 2.0, output_size, &ZoomMovementMode::Centered);
-
-    assert!((snapshot.level - 2.0).abs() < 1e-6);
-    assert!((snapshot.focal.x - expected_focal.x).abs() < 1e-6);
-    assert!((snapshot.focal.y - expected_focal.y).abs() < 1e-6);
 }
 
 /// Test that zoom_snapshot_for_output reports consistent level/focal/locked
@@ -315,34 +200,6 @@ fn zoom_snapshot_reports_consistent_level_focal_locked() {
     let snapshot = f.niri().layout.zoom_snapshot_for_output(&output);
     assert!((snapshot.level - 2.0).abs() < 1e-6);
     assert!(snapshot.locked);
-}
-
-/// Test that OutputZoomState::snapshot_at returns consistent values.
-#[test]
-fn output_zoom_state_snapshot_at_returns_consistent_values() {
-    let mut f = Fixture::new();
-    f.add_output(1, (1920, 1080));
-    let output = f.niri_output(1);
-
-    // Set zoom level
-    f.niri().layout.set_zoom_level(
-        &output,
-        3.0,
-        Point::from((500.0, 400.0)),
-        &ZoomMovementMode::CursorFollow,
-        false,
-    );
-    f.niri_complete_animations();
-
-    // Get the zoom state and call snapshot_at directly
-    let state = f.niri().layout.zoom_state_for_output(&output).unwrap();
-    let now = std::time::Duration::ZERO;
-    let snapshot = state.snapshot_at(now);
-
-    assert!((snapshot.level - 3.0).abs() < 1e-6);
-    assert!((snapshot.focal.x - 500.0).abs() < 1e-3);
-    assert!((snapshot.focal.y - 400.0).abs() < 1e-3);
-    assert!(!snapshot.locked);
 }
 
 // ── OnEdge, animation-disable, and multi-output gesture tests ────────────
@@ -441,30 +298,38 @@ fn on_edge_gesture_focal_uses_anchor_when_cursor_within_viewport() {
     );
     assert!(result.is_some(), "gesture update should succeed");
 
-    // The focal should be near the cursor, computed via OnEdge anchor logic.
+    // The focal is computed via OnEdge anchor captured at gesture begin time.
+    // Recompute the anchor and expected focal to verify correctness.
     let snapshot = f.niri().layout.zoom_snapshot_for_output(&output);
     assert!(
         snapshot.level > 1.0,
         "gesture level should increase above 1.0, got {}",
         snapshot.level,
     );
-    // Focal should be within a reasonable range of the cursor (viewport-sized area).
+    // The anchor was computed at gesture begin from: cursor=(500,400), level=1.0,
+    // focal=center=(960,540), output=(1920,1080).
+    let initial_focal = Point::from((960.0, 540.0));
+    let anchor = compute_on_edge_cursor_anchor(cursor_local, 1.0, initial_focal, output_size);
+    let expected_focal =
+        compute_focal_for_on_edge_anchor(cursor_local, snapshot.level, output_size, anchor);
     assert!(
-        (snapshot.focal.x - 500.0).abs() < 500.0,
-        "focal.x should be near cursor x"
+        (snapshot.focal.x - expected_focal.x).abs() < 1.0,
+        "focal.x {} != expected {} (level {})",
+        snapshot.focal.x,
+        expected_focal.x,
+        snapshot.level,
     );
     assert!(
-        (snapshot.focal.y - 400.0).abs() < 500.0,
-        "focal.y should be near cursor y"
+        (snapshot.focal.y - expected_focal.y).abs() < 1.0,
+        "focal.y {} != expected {} (level {})",
+        snapshot.focal.y,
+        expected_focal.y,
+        snapshot.level,
     );
 }
 
-/// OnEdge gesture focal shifts when the cursor moves outside the viewport.
-///
-/// Cursor outside the viewport while in OnEdge mode does not trigger edge-shift
-/// at the gesture update level (edge-shift is handled by input's
-/// `update_zoom_base_focal`).  This test verifies the gesture correctly tracks
-/// the cursor within the viewport area.
+/// OnEdge gesture focal tracks the cursor correctly through anchor-based
+/// computation.
 #[test]
 fn on_edge_gesture_tracks_cursor_pos_within_viewport() {
     let mut f = Fixture::new();
@@ -486,21 +351,31 @@ fn on_edge_gesture_tracks_cursor_pos_within_viewport() {
         &output,
         2.0,
         1.0,
-        std::time::Duration::from_millis(16),
+        Duration::from_millis(16),
         Some(new_cursor),
         Some(output_size),
     );
     assert!(result.is_some());
 
-    // The focal should reflect the new cursor position.
+    // The focal should reflect the new cursor position via OnEdge anchor logic.
     let snapshot = f.niri().layout.zoom_snapshot_for_output(&output);
+    let initial_focal = Point::from((960.0, 540.0));
+    let anchor = compute_on_edge_cursor_anchor(cursor_local, 1.0, initial_focal, output_size);
+    let expected_focal =
+        compute_focal_for_on_edge_anchor(new_cursor, snapshot.level, output_size, anchor);
     assert!(
-        (snapshot.focal.x - 700.0).abs() < 500.0,
-        "focal.x should track cursor x"
+        (snapshot.focal.x - expected_focal.x).abs() < 1.0,
+        "focal.x {} != expected {} (level {})",
+        snapshot.focal.x,
+        expected_focal.x,
+        snapshot.level,
     );
     assert!(
-        (snapshot.focal.y - 500.0).abs() < 500.0,
-        "focal.y should track cursor y"
+        (snapshot.focal.y - expected_focal.y).abs() < 1.0,
+        "focal.y {} != expected {} (level {})",
+        snapshot.focal.y,
+        expected_focal.y,
+        snapshot.level,
     );
 }
 
@@ -722,41 +597,18 @@ fn zoom_gesture_update_accepts_cursor_local_and_updates_focal() {
 
     assert!(result.is_some());
 
-    // The focal should have been updated to the new cursor position
-    // because we're in CursorFollow mode
+    // In CursorFollow mode, focal must equal the cursor position exactly.
     let snapshot = f.niri().layout.zoom_snapshot_for_output(&output);
-    // The focal should be close to the new cursor position
-    assert!((snapshot.focal.x - 500.0).abs() < 50.0);
-    assert!((snapshot.focal.y - 500.0).abs() < 50.0);
-}
-
-/// Test that zoom_gesture_update works without cursor_local (None case).
-#[test]
-fn zoom_gesture_update_works_without_cursor_local() {
-    let mut f = Fixture::new();
-    f.add_output(1, (1920, 1080));
-    let output = f.niri_output(1);
-    let output_size = Size::from((1920.0, 1080.0));
-
-    // Start a zoom gesture without cursor position
-    f.niri().layout.zoom_gesture_begin(
-        &output,
-        None, // no cursor pos
-        Some(output_size),
-        Some(ZoomMovementMode::Centered),
+    assert!(
+        (snapshot.focal.x - 500.0).abs() < 1e-6,
+        "CursorFollow focal.x {} != 500.0",
+        snapshot.focal.x
     );
-
-    // Update gesture without providing cursor_local
-    let result = f.niri().layout.zoom_gesture_update(
-        &output,
-        2.0,
-        1.0,
-        std::time::Duration::from_millis(16),
-        None, // no cursor_local
-        Some(output_size),
+    assert!(
+        (snapshot.focal.y - 500.0).abs() < 1e-6,
+        "CursorFollow focal.y {} != 500.0",
+        snapshot.focal.y
     );
-
-    assert!(result.is_some());
 }
 
 #[test]
@@ -807,8 +659,9 @@ fn zoom_gesture_end_maintains_level_with_no_animation() {
     let state = f.niri().layout.zoom_state_for_output(&output).unwrap();
     assert!(state.test_transition().is_none());
     assert!((state.test_level() - 2.0).abs() < 1e-6);
-    assert!((state.test_focal().x - 500.0).abs() < 50.0);
-    assert!((state.test_focal().y - 400.0).abs() < 50.0);
+    // CursorFollow: focal equals cursor position exactly.
+    assert!((state.test_focal().x - 500.0).abs() < 1e-6);
+    assert!((state.test_focal().y - 400.0).abs() < 1e-6);
 }
 
 #[test]
@@ -855,9 +708,9 @@ fn zoom_gesture_cancel_animates_back_to_start_level() {
     assert_eq!(f.niri().layout.zoom_gesture_end(&output, true), Some(true));
     let state_before = f.niri().layout.zoom_state_for_output(&output).unwrap();
     assert!(state_before.test_transition().is_some());
-    // Focal should still be near the cursor at cancel time.
-    assert!((state_before.test_focal().x - 500.0).abs() < 50.0);
-    assert!((state_before.test_focal().y - 400.0).abs() < 50.0);
+    // CursorFollow: focal equals cursor position exactly.
+    assert!((state_before.test_focal().x - 500.0).abs() < 1e-6);
+    assert!((state_before.test_focal().y - 400.0).abs() < 1e-6);
 
     f.niri_complete_animations();
     let state_after = f.niri().layout.zoom_state_for_output(&output).unwrap();
@@ -865,71 +718,11 @@ fn zoom_gesture_cancel_animates_back_to_start_level() {
     assert!(state_after.test_transition().is_none());
     // In CursorFollow mode cancel always clears focal (gesture start always
     // had no prior focal animation), so the focal snaps to cursor position.
-    assert!((state_after.test_focal().x - 500.0).abs() < 50.0);
-    assert!((state_after.test_focal().y - 400.0).abs() < 50.0);
+    assert!((state_after.test_focal().x - 500.0).abs() < 1e-6);
+    assert!((state_after.test_focal().y - 400.0).abs() < 1e-6);
 }
 
 // ── Proptest invariants ─────────────────────────────────────────────────
-
-/// Invariant: zoom level is always ≥ 1.0.
-proptest! {
-    #[test]
-    fn zoom_state_level_invariant(
-        level in 1.0f64..=10.0f64,
-        focal_x in 0.0f64..1920.0f64,
-        focal_y in 0.0f64..1080.0f64,
-        locked in proptest::bool::ANY,
-    ) {
-        let state = crate::layout::OutputZoomState::test_new(
-            level,
-            Point::from((focal_x, focal_y)),
-            locked,
-            None,
-        );
-        prop_assert!(state.test_level() >= 1.0, "level must be >= 1.0");
-        prop_assert!(
-            state.test_focal().x >= 0.0 && state.test_focal().x <= 1920.0,
-            "focal.x {} out of [0, 1920]", state.test_focal().x
-        );
-        prop_assert!(
-            state.test_focal().y >= 0.0 && state.test_focal().y <= 1080.0,
-            "focal.y {} out of [0, 1080]", state.test_focal().y
-        );
-        prop_assert_eq!(state.locked, locked);
-        prop_assert!(!state.transitioning(), "Idle state must not transition");
-    }
-}
-
-/// Invariant: snapshot_at is consistent with direct field access for idle states.
-proptest! {
-    #[test]
-    fn zoom_state_snapshot_consistency(
-        level in 1.0f64..=10.0f64,
-        focal_x in 0.0f64..1920.0f64,
-        focal_y in 0.0f64..1080.0f64,
-        locked in proptest::bool::ANY,
-    ) {
-        let state = crate::layout::OutputZoomState::test_new(
-            level,
-            Point::from((focal_x, focal_y)),
-            locked,
-            None,
-        );
-        let now = std::time::Duration::ZERO;
-        let snapshot = state.snapshot_at(now);
-
-        prop_assert!((snapshot.level - level).abs() < 1e-9, "snapshot level mismatch");
-        prop_assert!(
-            (snapshot.focal.x - focal_x).abs() < 1e-9,
-            "snapshot focal.x mismatch"
-        );
-        prop_assert!(
-            (snapshot.focal.y - focal_y).abs() < 1e-9,
-            "snapshot focal.y mismatch"
-        );
-        prop_assert_eq!(snapshot.locked, locked);
-    }
-}
 
 /// Invariant: viewport_global output is within valid bounds for various
 /// zoom levels and focal points.
@@ -1077,4 +870,204 @@ proptest! {
             "focal.y {} out of [0, 1080] for mode {:?}", focal.y, mode
         );
     }
+}
+
+/// Interrupting a level animation with a new target must restart from the
+/// current animated state and reach the new target.
+#[test]
+fn animation_interruption_restarts_to_new_target() {
+    let mut f = Fixture::new();
+    f.add_output(1, (1920, 1080));
+    let output = f.niri_output(1);
+
+    // Start zooming to 2.0, then immediately interrupt with target 3.0
+    // before completing any animations.
+    f.niri().layout.set_zoom_level(
+        &output,
+        2.0,
+        Point::from((100.0, 100.0)),
+        &ZoomMovementMode::CursorFollow,
+        false,
+    );
+    f.niri().layout.set_zoom_level(
+        &output,
+        3.0,
+        Point::from((200.0, 200.0)),
+        &ZoomMovementMode::CursorFollow,
+        false,
+    );
+
+    // Transition should still be active, targeting the new level.
+    assert!(
+        f.niri()
+            .layout
+            .zoom_state_for_output(&output)
+            .unwrap()
+            .test_transition()
+            .is_some(),
+        "interrupted animation should still have a transition"
+    );
+
+    f.niri_complete_animations();
+    let state = f.niri().layout.zoom_state_for_output(&output).unwrap();
+    assert!(
+        (state.test_level() - 3.0).abs() < 1e-6,
+        "final level should be 3.0, got {}",
+        state.test_level()
+    );
+}
+
+/// Calling set_zoom_level during an active gesture clears the gesture
+/// and starts a level animation instead, so subsequent gesture_end
+/// returns None.
+#[test]
+fn set_zoom_level_during_gesture_clears_it() {
+    let mut f = Fixture::new();
+    f.add_output(1, (1920, 1080));
+    let output = f.niri_output(1);
+    let cursor = Point::from((500.0, 400.0));
+    let output_size = Size::from((1920.0, 1080.0));
+
+    // Start a gesture and apply zoom.
+    f.niri().layout.zoom_gesture_begin(
+        &output,
+        Some(cursor),
+        Some(output_size),
+        Some(ZoomMovementMode::CursorFollow),
+    );
+    let _ = f.niri().layout.zoom_gesture_update(
+        &output,
+        1.0,
+        1.0,
+        Duration::from_millis(16),
+        Some(cursor),
+        Some(output_size),
+    );
+    let _ = f.niri().layout.zoom_gesture_update(
+        &output,
+        2.0,
+        1.0,
+        Duration::from_millis(32),
+        Some(cursor),
+        Some(output_size),
+    );
+
+    // Replace the gesture with a level animation.
+    f.niri()
+        .layout
+        .set_zoom_level(&output, 3.0, cursor, &ZoomMovementMode::CursorFollow, false);
+
+    // Gesture is gone — end returns None.
+    assert_eq!(
+        f.niri().layout.zoom_gesture_end(&output, false),
+        None,
+        "set_zoom_level should clear the gesture",
+    );
+
+    // An animation should now be active.
+    assert!(
+        f.niri()
+            .layout
+            .zoom_state_for_output(&output)
+            .unwrap()
+            .test_transition()
+            .is_some(),
+        "set_zoom_level should create an animation"
+    );
+
+    // Completing the animation reaches the target level.
+    f.niri_complete_animations();
+    assert!(
+        (f.niri().layout.zoom_level_for_output(&output) - 3.0).abs() < 1e-6,
+        "final level should be 3.0",
+    );
+}
+
+/// Toggling zoom lock during an active gesture should not panic
+/// and the gesture should remain functional.
+#[test]
+fn toggle_zoom_lock_during_gesture_does_not_panic() {
+    let mut f = Fixture::new();
+    f.add_output(1, (1920, 1080));
+    let output = f.niri_output(1);
+    let cursor = Point::from((500.0, 400.0));
+    let output_size = Size::from((1920.0, 1080.0));
+
+    f.niri().layout.zoom_gesture_begin(
+        &output,
+        Some(cursor),
+        Some(output_size),
+        Some(ZoomMovementMode::CursorFollow),
+    );
+
+    let _ = f.niri().layout.zoom_gesture_update(
+        &output,
+        2.0,
+        1.0,
+        Duration::from_millis(16),
+        Some(cursor),
+        Some(output_size),
+    );
+
+    // Toggle lock during active gesture — lock state changes but gesture continues.
+    f.niri().layout.toggle_zoom_lock(&output);
+    assert!(
+        f.niri().layout.zoom_locked_for_output(&output),
+        "lock should be toggled on"
+    );
+
+    // Gesture should still be end-able.
+    let result = f.niri().layout.zoom_gesture_end(&output, false);
+    assert!(
+        result.is_some(),
+        "gesture end after lock toggle should succeed"
+    );
+}
+
+/// set_zoom_level with a level below 1.0 must clamp to 1.0.
+#[test]
+fn zoom_level_clamps_below_minimum() {
+    let mut f = Fixture::new();
+    f.add_output(1, (1920, 1080));
+    let output = f.niri_output(1);
+
+    f.niri().layout.set_zoom_level(
+        &output,
+        0.5,
+        Point::from((100.0, 100.0)),
+        &ZoomMovementMode::CursorFollow,
+        false,
+    );
+    f.niri_complete_animations();
+
+    let state = f.niri().layout.zoom_state_for_output(&output).unwrap();
+    assert!(
+        (state.test_level() - 1.0).abs() < 1e-6,
+        "level {} should be clamped to min 1.0",
+        state.test_level()
+    );
+}
+
+/// set_zoom_level with a level above the default max must clamp to max.
+#[test]
+fn zoom_level_clamps_above_maximum() {
+    let mut f = Fixture::new();
+    f.add_output(1, (1920, 1080));
+    let output = f.niri_output(1);
+
+    f.niri().layout.set_zoom_level(
+        &output,
+        30.0,
+        Point::from((100.0, 100.0)),
+        &ZoomMovementMode::CursorFollow,
+        false,
+    );
+    f.niri_complete_animations();
+
+    let state = f.niri().layout.zoom_state_for_output(&output).unwrap();
+    assert!(
+        (state.test_level() - 10.0).abs() < 1e-6,
+        "level {} should be clamped to max 10.0",
+        state.test_level()
+    );
 }

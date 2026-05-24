@@ -8,35 +8,19 @@ use crate::animation::{Animation, Clock};
 use crate::input::swipe_tracker::SwipeTracker;
 use crate::utils::zoom::*;
 
-/// Per-output zoom state.
-///
-/// This struct holds the effective zoom values that external consumers (backends,
-/// input, niri rendering) read each frame through the `Layout` API. Layout writes
-/// these values every animation tick, so they always reflect the current
-/// animation/gesture state.
-///
-/// Animation and gesture tracking live in the owned transition state.
-///
-/// Encapsulation boundaries:
-/// - `level`, `focal`, `transition` are `pub(super)` — only the `layout` module
-///   tree may write them. External consumers (input, rendering, IPC) must use
-///   `Layout`'s public methods (`zoom_snapshot_for_output`, `set_zoom_level`, etc.).
-/// - `locked` is `pub` (input-owned toggle, intentionally public for input module).
+/// Per-output zoom state. Layout writes these every animation tick;
+/// external consumers read via `Layout`'s public API.
+/// `level`/`focal`/`transition` are `pub(super)` (layout module only);
+/// `locked` is `pub` (input-owned toggle).
 #[derive(Debug, Clone)]
 pub struct OutputZoomState {
-    /// Current effective zoom level (layout-owned, updated each frame).
     pub(super) level: f64,
-    /// Current effective focal point in output-local logical coordinates
-    /// (layout-owned, updated each frame).
     pub(super) focal: Point<f64, Logical>,
-    /// Whether focal point is locked (input-owned toggle).
     pub locked: bool,
-    /// In-progress zoom transition, if any.
     pub(super) transition: Option<ZoomTransition>,
 }
 
 impl OutputZoomState {
-    /// Create a new zoom state centered on the given output.
     pub fn new_for_output(output: &Output) -> Self {
         let mode_size = output.current_mode().map_or((0, 0).into(), |m| m.size);
         let scale = output.current_scale().fractional_scale();
@@ -71,15 +55,6 @@ impl OutputZoomState {
         }
     }
 
-    pub fn apply_pending_transition(&mut self) {
-        let now = self
-            .transition
-            .as_ref()
-            .and_then(ZoomTransition::sample_time)
-            .unwrap_or(Duration::ZERO);
-        self.apply_pending_transition_at(now);
-    }
-
     pub fn apply_pending_transition_at(&mut self, now: Duration) {
         let Some(transition) = self.transition.take() else {
             return;
@@ -95,7 +70,6 @@ impl OutputZoomState {
         self.level > 1.0
     }
 
-    /// Test-only constructor for creating arbitrary zoom states.
     #[cfg(test)]
     pub fn test_new(
         level: f64,
@@ -111,19 +85,16 @@ impl OutputZoomState {
         }
     }
 
-    /// Test-only accessor for level.
     #[cfg(test)]
     pub fn test_level(&self) -> f64 {
         self.level
     }
 
-    /// Test-only accessor for focal.
     #[cfg(test)]
     pub fn test_focal(&self) -> Point<f64, Logical> {
         self.focal
     }
 
-    /// Test-only accessor for transition.
     #[cfg(test)]
     pub fn test_transition(&self) -> &Option<ZoomTransition> {
         &self.transition
@@ -136,18 +107,6 @@ impl OutputZoomState {
         let focal_global = self.focal + output_geometry.loc;
         apply_zoom_viewport(output_geometry, focal_global, self.level)
     }
-
-    pub fn clamp_to_viewport(
-        &self,
-        pos: Point<f64, Logical>,
-        output_geometry: Rectangle<f64, Logical>,
-    ) -> Point<f64, Logical> {
-        let vp = self.viewport_global(output_geometry);
-        pos.constrain(Rectangle::new(
-            vp.loc,
-            vp.size - Size::from((f64::EPSILON, f64::EPSILON)),
-        ))
-    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -157,24 +116,6 @@ pub struct ZoomSnapshot {
     pub locked: bool,
 }
 
-impl ZoomSnapshot {
-    pub fn inactive() -> Self {
-        Self {
-            level: 1.0,
-            focal: Point::from((0.0, 0.0)),
-            locked: false,
-        }
-    }
-
-    pub fn is_active(self) -> bool {
-        self.level > 1.0
-    }
-}
-
-/// Shared cursor-tracking context for focal point computation.
-///
-/// Used by both `ZoomLevelAnimation` and `ZoomLevelGesture` to avoid
-/// duplicating the focal tracking logic.
 #[derive(Debug, Clone, Default)]
 pub struct FocalTrackingContext {
     cursor_pos: Option<Point<f64, Logical>>,
@@ -195,14 +136,7 @@ impl FocalTrackingContext {
             && target_level > 1.0
             && self.cursor_pos.is_some()
             && self.output_size.is_some()
-            && matches!(
-                self.movement_mode.as_ref(),
-                Some(
-                    ZoomMovementMode::OnEdge
-                        | ZoomMovementMode::CursorFollow
-                        | ZoomMovementMode::Centered
-                )
-            )
+            && self.movement_mode.is_some()
     }
 
     pub fn compute_focal(&self, level: f64, fallback: Point<f64, Logical>) -> Point<f64, Logical> {
@@ -242,7 +176,6 @@ impl FocalTrackingContext {
     }
 }
 
-/// Animation for zoom level changes.
 #[derive(Debug, Clone)]
 pub struct ZoomLevelAnimation {
     anim: Animation,
@@ -290,18 +223,6 @@ impl ZoomLevelAnimation {
             .should_use_dynamic_focal_tracking(target_level, locked, level_changed)
     }
 
-    pub fn value(&self) -> f64 {
-        if self.anim.is_done() {
-            self.target
-        } else {
-            self.anim.value()
-        }
-    }
-
-    pub fn is_done(&self) -> bool {
-        self.anim.is_done()
-    }
-
     pub fn value_at(&self, now: Duration) -> f64 {
         if self.anim.is_done_at(now) {
             self.target
@@ -319,16 +240,12 @@ impl ZoomLevelAnimation {
     }
 }
 
-/// Gesture tracking for zoom level changes.
 #[derive(Debug, Clone)]
 pub struct ZoomLevelGesture {
     pub tracker: SwipeTracker,
     pub start_level: f64,
     pub current_level: f64,
     pub current_focal: Point<f64, Logical>,
-    /// Last log-scale value for computing log-space deltas from Wayland pinch events.
-    /// Wayland provides absolute scale since gesture begin; we convert to log-space deltas.
-    /// `None` means the first update hasn't been received yet.
     pub last_log_scale: Option<f64>,
     tracking: FocalTrackingContext,
 }
@@ -411,8 +328,6 @@ impl ZoomLevelGesture {
     }
 }
 
-/// Animation for focal point panning.
-/// Uses separate X and Y animations to handle Point interpolation.
 #[derive(Debug, Clone)]
 pub struct ZoomFocalAnimation {
     pub x_anim: Animation,
@@ -436,26 +351,12 @@ impl ZoomFocalAnimation {
         }
     }
 
-    /// Get the current focal point value.
-    /// When both animations are done, returns the target.
-    pub fn value(&self) -> Point<f64, Logical> {
-        if self.is_done() {
-            self.target
-        } else {
-            Point::from((self.x_anim.value(), self.y_anim.value()))
-        }
-    }
-
     pub fn value_at(&self, now: Duration) -> Point<f64, Logical> {
         if self.is_done_at(now) {
             self.target
         } else {
             Point::from((self.x_anim.value_at(now), self.y_anim.value_at(now)))
         }
-    }
-
-    pub fn is_done(&self) -> bool {
-        self.x_anim.is_done() && self.y_anim.is_done()
     }
 
     pub fn is_done_at(&self, now: Duration) -> bool {
@@ -467,18 +368,10 @@ impl ZoomFocalAnimation {
     }
 }
 
-/// In-progress zoom transition.
-///
-/// Captures the mutually exclusive transition states as an enum rather than
-/// three independent `Option` fields (which allowed 8 combinatorial states).
 #[derive(Debug, Clone, Default)]
 pub enum ZoomTransition {
-    /// No transition in progress.
     #[default]
     Idle,
-    /// Zoom level is animating (deceleration after gesture, or keyboard-triggered).
-    /// Focal is either tracked dynamically from the level animation's tracking
-    /// context, or animated separately via `focal`.
     Animating {
         level: ZoomLevelAnimation,
         focal: Option<ZoomFocalAnimation>,
@@ -491,35 +384,11 @@ pub enum ZoomTransition {
 }
 
 impl ZoomTransition {
-    pub fn current_level(&self, fallback: f64) -> f64 {
-        match self {
-            Self::Animating { level, .. } => level.value(),
-            Self::Gesturing(g) => g.current_level,
-            _ => fallback,
-        }
-    }
-
     pub fn current_level_at(&self, fallback: f64, now: Duration) -> f64 {
         match self {
             Self::Animating { level, .. } => level.value_at(now),
             Self::Gesturing(g) => g.current_level,
             _ => fallback,
-        }
-    }
-
-    pub fn current_focal(
-        &self,
-        current_level: f64,
-        fallback: Point<f64, Logical>,
-    ) -> Point<f64, Logical> {
-        match self {
-            Self::Animating { focal: Some(f), .. } => f.value(),
-            Self::Animating { level, focal: None } => {
-                level.tracking.compute_focal(current_level, fallback)
-            }
-            Self::Gesturing(g) => g.compute_focal_or(current_level, g.current_focal),
-            Self::FocalOnly(f) => f.value(),
-            Self::Idle => fallback,
         }
     }
 
@@ -538,10 +407,6 @@ impl ZoomTransition {
             Self::FocalOnly(f) => f.value_at(now),
             Self::Idle => fallback,
         }
-    }
-
-    pub fn level_is_animation(&self) -> bool {
-        matches!(self, Self::Animating { .. })
     }
 
     pub fn is_animation_ongoing(&self) -> bool {
@@ -618,11 +483,6 @@ impl ZoomTransition {
         }
     }
 
-    pub fn apply_to_state(&self, zoom_state: &mut OutputZoomState) {
-        let now = self.sample_time().unwrap_or(Duration::ZERO);
-        self.apply_to_state_at(zoom_state, now);
-    }
-
     pub fn apply_to_state_at(&self, zoom_state: &mut OutputZoomState, now: Duration) {
         match self {
             Self::Idle => {}
@@ -672,12 +532,6 @@ impl ZoomTransition {
             Self::Animating { level, .. } => Some(level.sample_time()),
             Self::FocalOnly(f) => Some(f.sample_time()),
             _ => None,
-        }
-    }
-
-    pub fn clear_if_done(&mut self) {
-        if self.is_done() {
-            *self = Self::Idle;
         }
     }
 }
