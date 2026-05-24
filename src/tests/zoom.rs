@@ -83,9 +83,9 @@ fn layout_zoom_store_is_seeded_on_add_output() {
 
     let output = f.niri_output(1);
     let zoom_state = f.niri().layout.zoom_state_for_output(&output).unwrap();
-    assert!((zoom_state.level - 1.0).abs() < 1e-6);
+    assert!((zoom_state.test_level() - 1.0).abs() < 1e-6);
     assert!(!zoom_state.locked);
-    assert!(zoom_state.transition.is_none());
+    assert!(zoom_state.test_transition().is_none());
 }
 
 #[test]
@@ -172,12 +172,12 @@ fn completed_zoom_transition_is_cleared_from_state() {
         .layout
         .zoom_state_for_output(&output)
         .unwrap()
-        .transition
+        .test_transition()
         .is_some());
 
     f.niri_complete_animations();
     let zoom_state = f.niri().layout.zoom_state_for_output(&output).unwrap();
-    assert!(zoom_state.transition.is_none());
+    assert!(zoom_state.test_transition().is_none());
 }
 
 #[test]
@@ -203,7 +203,7 @@ fn centered_zoom_level_change_animates_when_target_is_edge_constrained() {
         .layout
         .zoom_state_for_output(&output)
         .unwrap()
-        .transition
+        .test_transition()
         .is_some());
 
     f.niri_complete_animations();
@@ -211,10 +211,10 @@ fn centered_zoom_level_change_animates_when_target_is_edge_constrained() {
     let expected_focal =
         compute_focal_for_cursor(cursor_local, 2.0, output_size, &ZoomMovementMode::Centered);
 
-    assert!(zoom_state.transition.is_none());
-    assert!((zoom_state.level - 2.0).abs() < 1e-6);
-    assert!((zoom_state.focal.x - expected_focal.x).abs() < 1e-6);
-    assert!((zoom_state.focal.y - expected_focal.y).abs() < 1e-6);
+    assert!(zoom_state.test_transition().is_none());
+    assert!((zoom_state.test_level() - 2.0).abs() < 1e-6);
+    assert!((zoom_state.test_focal().x - expected_focal.x).abs() < 1e-6);
+    assert!((zoom_state.test_focal().y - expected_focal.y).abs() < 1e-6);
 }
 
 #[test]
@@ -236,7 +236,7 @@ fn centered_zoom_level_change_still_animates_when_focal_is_unchanged() {
         .layout
         .zoom_state_for_output(&output)
         .unwrap()
-        .transition
+        .test_transition()
         .is_some());
 }
 
@@ -262,7 +262,7 @@ fn centered_zoom_level_change_animates_when_focal_must_move() {
         .layout
         .zoom_state_for_output(&output)
         .unwrap()
-        .transition
+        .test_transition()
         .is_some());
 
     f.niri_complete_animations();
@@ -368,17 +368,17 @@ fn on_edge_set_zoom_level_creates_animating_transition() {
     {
         let state = f.niri().layout.zoom_state_for_output(&output).unwrap();
         assert!(
-            state.transition.is_some(),
+            state.test_transition().is_some(),
             "OnEdge level change should create a transition"
         );
         assert!(
             matches!(
-                state.transition.as_ref().unwrap(),
+                state.test_transition().as_ref().unwrap(),
                 ZoomTransition::Animating { .. }
             ),
             "transition should be Animating for set_zoom_level"
         );
-        if let ZoomTransition::Animating { focal, .. } = state.transition.as_ref().unwrap() {
+        if let ZoomTransition::Animating { focal, .. } = state.test_transition().as_ref().unwrap() {
             assert!(
                 focal.is_none(),
                 "OnEdge should use dynamic focal tracking, not a separate focal animation"
@@ -530,11 +530,11 @@ fn off_true_zoom_level_change_skips_transition() {
     f.niri_complete_animations();
     let state = f.niri().layout.zoom_state_for_output(&output).unwrap();
     assert!(
-        state.transition.is_none(),
+        state.test_transition().is_none(),
         "off=true should not leave a pending transition"
     );
     assert!(
-        (state.level - 2.0).abs() < 1e-6,
+        (state.test_level() - 2.0).abs() < 1e-6,
         "off=true should snap to target level immediately"
     );
 }
@@ -570,11 +570,11 @@ fn zero_duration_zoom_level_change_skips_transition() {
     f.niri_complete_animations();
     let state = f.niri().layout.zoom_state_for_output(&output).unwrap();
     assert!(
-        state.transition.is_none(),
+        state.test_transition().is_none(),
         "zero-duration animation should not leave a pending transition"
     );
     assert!(
-        (state.level - 2.0).abs() < 1e-6,
+        (state.test_level() - 2.0).abs() < 1e-6,
         "zero-duration should snap to target level immediately"
     );
 }
@@ -805,10 +805,10 @@ fn zoom_gesture_end_maintains_level_with_no_animation() {
     // their final values without waiting for any animation.
     assert_eq!(f.niri().layout.zoom_gesture_end(&output, false), Some(true));
     let state = f.niri().layout.zoom_state_for_output(&output).unwrap();
-    assert!(state.transition.is_none());
-    assert!((state.level - 2.0).abs() < 1e-6);
-    assert!((state.focal.x - 500.0).abs() < 50.0);
-    assert!((state.focal.y - 400.0).abs() < 50.0);
+    assert!(state.test_transition().is_none());
+    assert!((state.test_level() - 2.0).abs() < 1e-6);
+    assert!((state.test_focal().x - 500.0).abs() < 50.0);
+    assert!((state.test_focal().y - 400.0).abs() < 50.0);
 }
 
 #[test]
@@ -854,19 +854,19 @@ fn zoom_gesture_cancel_animates_back_to_start_level() {
     // Cancelled end — level should animate back to start level.
     assert_eq!(f.niri().layout.zoom_gesture_end(&output, true), Some(true));
     let state_before = f.niri().layout.zoom_state_for_output(&output).unwrap();
-    assert!(state_before.transition.is_some());
+    assert!(state_before.test_transition().is_some());
     // Focal should still be near the cursor at cancel time.
-    assert!((state_before.focal.x - 500.0).abs() < 50.0);
-    assert!((state_before.focal.y - 400.0).abs() < 50.0);
+    assert!((state_before.test_focal().x - 500.0).abs() < 50.0);
+    assert!((state_before.test_focal().y - 400.0).abs() < 50.0);
 
     f.niri_complete_animations();
     let state_after = f.niri().layout.zoom_state_for_output(&output).unwrap();
-    assert!((state_after.level - 1.0).abs() < 1e-6);
-    assert!(state_after.transition.is_none());
+    assert!((state_after.test_level() - 1.0).abs() < 1e-6);
+    assert!(state_after.test_transition().is_none());
     // In CursorFollow mode cancel always clears focal (gesture start always
     // had no prior focal animation), so the focal snaps to cursor position.
-    assert!((state_after.focal.x - 500.0).abs() < 50.0);
-    assert!((state_after.focal.y - 400.0).abs() < 50.0);
+    assert!((state_after.test_focal().x - 500.0).abs() < 50.0);
+    assert!((state_after.test_focal().y - 400.0).abs() < 50.0);
 }
 
 // ── Proptest invariants ─────────────────────────────────────────────────
@@ -880,20 +880,20 @@ proptest! {
         focal_y in 0.0f64..1080.0f64,
         locked in proptest::bool::ANY,
     ) {
-        let state = crate::layout::OutputZoomState {
+        let state = crate::layout::OutputZoomState::test_new(
             level,
-            focal: Point::from((focal_x, focal_y)),
+            Point::from((focal_x, focal_y)),
             locked,
-            transition: None,
-        };
-        prop_assert!(state.level >= 1.0, "level must be >= 1.0");
+            None,
+        );
+        prop_assert!(state.test_level() >= 1.0, "level must be >= 1.0");
         prop_assert!(
-            state.focal.x >= 0.0 && state.focal.x <= 1920.0,
-            "focal.x {} out of [0, 1920]", state.focal.x
+            state.test_focal().x >= 0.0 && state.test_focal().x <= 1920.0,
+            "focal.x {} out of [0, 1920]", state.test_focal().x
         );
         prop_assert!(
-            state.focal.y >= 0.0 && state.focal.y <= 1080.0,
-            "focal.y {} out of [0, 1080]", state.focal.y
+            state.test_focal().y >= 0.0 && state.test_focal().y <= 1080.0,
+            "focal.y {} out of [0, 1080]", state.test_focal().y
         );
         prop_assert_eq!(state.locked, locked);
         prop_assert!(!state.transitioning(), "Idle state must not transition");
@@ -909,12 +909,12 @@ proptest! {
         focal_y in 0.0f64..1080.0f64,
         locked in proptest::bool::ANY,
     ) {
-        let state = crate::layout::OutputZoomState {
+        let state = crate::layout::OutputZoomState::test_new(
             level,
-            focal: Point::from((focal_x, focal_y)),
+            Point::from((focal_x, focal_y)),
             locked,
-            transition: None,
-        };
+            None,
+        );
         let now = std::time::Duration::ZERO;
         let snapshot = state.snapshot_at(now);
 
@@ -940,12 +940,12 @@ proptest! {
         focal_x in 0.0f64..1920.0f64,
         focal_y in 0.0f64..1080.0f64,
     ) {
-        let state = crate::layout::OutputZoomState {
+        let state = crate::layout::OutputZoomState::test_new(
             level,
-            focal: Point::from((focal_x, focal_y)),
-            locked: false,
-            transition: None,
-        };
+            Point::from((focal_x, focal_y)),
+            false,
+            None,
+        );
         let output_geo = Rectangle::new(
             Point::from((0.0f64, 0.0f64)),
             Size::from((1920.0f64, 1080.0f64)),
@@ -995,34 +995,36 @@ fn composed_level_focal_animation_completes_to_targets() {
     // exercising the same variant that the defensive compose path in set_zoom_level
     // produces.
     let clock = f.niri().clock.clone();
-    {
-        let state = f.niri().layout.zoom_state_mut(&output).unwrap();
-        state.focal = Point::from((960.0, 540.0));
+    let focal_init = Point::from((960.0, 540.0));
 
-        let level_config = Animation {
-            off: false,
-            kind: Kind::Easing(EasingParams {
-                duration_ms: 250,
-                curve: Curve::EaseOutExpo,
-            }),
-        };
-        let focal_config = Animation {
-            off: false,
-            kind: Kind::Easing(EasingParams {
-                duration_ms: 250,
-                curve: Curve::CubicBezier(0.05, 0.7, 0.1, 1.0),
-            }),
-        };
+    let level_config = Animation {
+        off: false,
+        kind: Kind::Easing(EasingParams {
+            duration_ms: 250,
+            curve: Curve::EaseOutExpo,
+        }),
+    };
+    let focal_config = Animation {
+        off: false,
+        kind: Kind::Easing(EasingParams {
+            duration_ms: 250,
+            curve: Curve::CubicBezier(0.05, 0.7, 0.1, 1.0),
+        }),
+    };
 
-        let level_anim = ZoomLevelAnimation::new(clock.clone(), 1.0, target_level, level_config);
+    let level_anim = ZoomLevelAnimation::new(clock.clone(), 1.0, target_level, level_config);
 
-        let focal_anim = ZoomFocalAnimation::new(clock, state.focal, target_focal, focal_config);
+    let focal_anim = ZoomFocalAnimation::new(clock, focal_init, target_focal, focal_config);
 
-        state.transition = Some(ZoomTransition::Animating {
+    f.niri().layout.zoom_set_state_for_test(
+        &output,
+        1.0,
+        focal_init,
+        Some(ZoomTransition::Animating {
             level: level_anim,
             focal: Some(focal_anim),
-        });
-    }
+        }),
+    );
 
     // Complete all animations.
     f.niri_complete_animations();

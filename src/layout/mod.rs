@@ -2887,6 +2887,25 @@ impl<W: LayoutElement> Layout<W> {
             .is_some_and(|state| state.locked)
     }
 
+    /// Test-only helper to directly set zoom state fields.
+    ///
+    /// Used by tests (not production code) to construct specific zoom states
+    /// without requiring the full `set_zoom_level` animation machinery.
+    #[cfg(test)]
+    pub fn zoom_set_state_for_test(
+        &mut self,
+        output: &Output,
+        level: f64,
+        focal: Point<f64, Logical>,
+        transition: Option<ZoomTransition>,
+    ) {
+        if let Some(state) = self.zoom_state_mut(output) {
+            state.level = level;
+            state.focal = focal;
+            state.transition = transition;
+        }
+    }
+
     pub fn zoom_clamp_to_viewport_for_output(
         &self,
         output: &Output,

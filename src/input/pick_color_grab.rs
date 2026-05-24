@@ -53,9 +53,8 @@ impl PickColorGrab {
                     renderer,
                     target: RenderTarget::Output,
                     xray: None,
-                    apply_zoom: false,
                 };
-                let elements = data.niri.render_to_vec(ctx, &output, false);
+                let elements = data.niri.render_to_vec(ctx, &output, false, false);
 
                 let mapping = match render_and_download(
                     renderer,
