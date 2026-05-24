@@ -1845,7 +1845,7 @@ impl<W: LayoutElement> Layout<W> {
         self.zoom_states.get(output)
     }
 
-    pub(super) fn zoom_state_mut(&mut self, output: &Output) -> Option<&mut OutputZoomState> {
+    pub(crate) fn zoom_state_mut(&mut self, output: &Output) -> Option<&mut OutputZoomState> {
         self.zoom_states.get_mut(output)
     }
 

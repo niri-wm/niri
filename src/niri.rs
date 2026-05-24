@@ -3969,6 +3969,13 @@ impl Niri {
                 };
                 return self.render_pointer(raw_ctx, output, &mut |elem| push(elem.into()));
             }
+
+            // Cursor is on this output but outside the zoom viewport (possible
+            // in Centered or OnEdge mode where the cursor can leave the
+            // magnified region).  We render it at native size (apply_zoom: false
+            // prevents ZoomElement wrapping) but still position it at the
+            // zoom-transformed physical coordinates below, so it tracks the
+            // correct screen location without magnification.
         }
 
         let raw_ctx = RenderCtx {
