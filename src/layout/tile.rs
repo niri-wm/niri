@@ -559,13 +559,17 @@ impl<W: LayoutElement> Tile<W> {
     }
 
     pub fn start_open_animation(&mut self) {
-        self.open_animation = Some(OpenAnimation::new(Animation::new(
-            self.clock.clone(),
-            0.,
-            1.,
-            0.,
-            self.options.animations.window_open.anim,
-        )));
+        let anim_config = self
+            .window()
+            .rules()
+            .window_open
+            .clone()
+            .unwrap_or(self.options.animations.window_open.clone());
+
+        self.open_animation = Some(OpenAnimation::new(
+            Animation::new(self.clock.clone(), 0., 1., 0., anim_config.anim),
+            anim_config.custom_shader,
+        ));
     }
 
     pub fn resize_animation(&self) -> Option<&Animation> {

@@ -1451,16 +1451,26 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         window: &W::Id,
         blocker: TransactionBlocker,
     ) {
-        let (tile, mut tile_pos) = self
-            .tiles_with_render_positions_mut(false)
-            .find(|(tile, _)| tile.window().id() == window)
-            .unwrap();
+        // Extract all data from the tile in a block to limit the mutable borrow's lifetime.
+        let (snapshot_opt, tile_size, anim_override, mut tile_pos) = {
+            let (tile, tile_pos) = self
+                .tiles_with_render_positions_mut(false)
+                .find(|(tile, _)| tile.window().id() == window)
+                .unwrap();
 
-        let Some(snapshot) = tile.take_unmap_snapshot() else {
+            let snapshot = tile.take_unmap_snapshot();
+            let tsz = tile.tile_size();
+            let override_opt = tile.window().rules().window_close.clone();
+
+            (snapshot, tsz, override_opt, tile_pos)
+        };
+        // Mutable borrow from tiles_with_render_positions_mut is released here.
+
+        let Some(snapshot) = snapshot_opt else {
             return;
         };
 
-        let tile_size = tile.tile_size();
+        let anim_config = anim_override.unwrap_or(self.options.animations.window_close.clone());
 
         let (col_idx, tile_idx) = self
             .columns
@@ -1503,7 +1513,14 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             tile_pos.x -= offset;
         }
 
-        self.start_close_animation_for_tile(renderer, snapshot, tile_size, tile_pos, blocker);
+        self.start_close_animation_for_tile(
+            renderer,
+            snapshot,
+            tile_size,
+            tile_pos,
+            blocker,
+            anim_config,
+        );
     }
 
     fn start_close_animation_for_tile(
@@ -1513,14 +1530,9 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         tile_size: Size<f64, Logical>,
         tile_pos: Point<f64, Logical>,
         blocker: TransactionBlocker,
+        anim_config: niri_config::animations::WindowCloseAnim,
     ) {
-        let anim = Animation::new(
-            self.clock.clone(),
-            0.,
-            1.,
-            0.,
-            self.options.animations.window_close.anim,
-        );
+        let anim = Animation::new(self.clock.clone(), 0., 1., 0., anim_config.anim);
 
         let blocker = if self.options.disable_transactions {
             TransactionBlocker::completed()
@@ -1530,7 +1542,14 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
         let scale = Scale::from(self.scale);
         let res = ClosingWindow::new(
-            renderer, snapshot, scale, tile_size, tile_pos, blocker, anim,
+            renderer,
+            snapshot,
+            scale,
+            tile_size,
+            tile_pos,
+            blocker,
+            anim,
+            anim_config.custom_shader,
         );
         match res {
             Ok(closing) => {

@@ -1,5 +1,6 @@
 use std::cmp::{max, min};
 
+use niri_config::animations::{WindowCloseAnim, WindowOpenAnim};
 use niri_config::utils::MergeWith as _;
 use niri_config::window_rule::{Match, WindowRule};
 use niri_config::{
@@ -125,6 +126,12 @@ pub struct ResolvedWindowRules {
 
     /// Rules for this window's popups.
     pub popups: ResolvedPopupsRules,
+
+    /// Window open animation override from window rules.
+    pub window_open: Option<WindowOpenAnim>,
+
+    /// Window close animation override from window rules.
+    pub window_close: Option<WindowCloseAnim>,
 }
 
 impl<'a> WindowRef<'a> {
@@ -308,6 +315,15 @@ impl ResolvedWindowRules {
                     .merge_with(&rule.background_effect);
 
                 resolved.popups.merge_with(&rule.popups);
+
+                if let Some(animations) = &rule.animations {
+                    if let Some(window_open) = &animations.window_open {
+                        resolved.window_open = Some(window_open.clone());
+                    }
+                    if let Some(window_close) = &animations.window_close {
+                        resolved.window_close = Some(window_close.clone());
+                    }
+                }
             }
 
             resolved.open_on_output = open_on_output.map(|x| x.to_owned());
