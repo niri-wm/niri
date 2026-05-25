@@ -26,6 +26,8 @@ pub struct Shaders {
     pub custom_layer_open: RefCell<Option<ShaderProgram>>,
     custom_layer_close_cache: RefCell<HashMap<String, ShaderProgram>>,
     custom_layer_open_cache: RefCell<HashMap<String, ShaderProgram>>,
+    custom_window_close_cache: RefCell<HashMap<String, ShaderProgram>>,
+    custom_window_open_cache: RefCell<HashMap<String, ShaderProgram>>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -170,6 +172,8 @@ impl Shaders {
             custom_layer_open: RefCell::new(None),
             custom_layer_close_cache: RefCell::new(HashMap::new()),
             custom_layer_open_cache: RefCell::new(HashMap::new()),
+            custom_window_close_cache: RefCell::new(HashMap::new()),
+            custom_window_open_cache: RefCell::new(HashMap::new()),
         }
     }
 
@@ -318,6 +322,10 @@ fn compile_close_program(
 }
 
 pub fn set_custom_window_close_program(renderer: &mut GlesRenderer, src: Option<&str>) {
+    // Drain per-source cache: old programs from previous configs are stranded. Destroying
+    // them frees GL resources; the cache is repopulated lazily on next per-window access.
+    destroy_window_close_cache(renderer);
+
     let program = if let Some(src) = src {
         match compile_close_program(renderer, src) {
             Ok(program) => Some(program),
@@ -361,6 +369,8 @@ fn compile_open_program(
 }
 
 pub fn set_custom_window_open_program(renderer: &mut GlesRenderer, src: Option<&str>) {
+    destroy_window_open_cache(renderer);
+
     let program = if let Some(src) = src {
         match compile_open_program(renderer, src) {
             Ok(program) => Some(program),
@@ -469,6 +479,68 @@ pub fn layer_close_program_for_source(
     Some(compiled)
 }
 
+pub fn window_open_program_for_source(
+    renderer: &mut GlesRenderer,
+    src: &str,
+) -> Option<ShaderProgram> {
+    let cached = {
+        let shaders = Shaders::get(renderer);
+        shaders.custom_window_open_cache.borrow().get(src).cloned()
+    };
+    if cached.is_some() {
+        return cached;
+    }
+
+    let compiled = match compile_open_program(renderer, src) {
+        Ok(program) => program,
+        Err(err) => {
+            warn!("error compiling custom window open shader: {err:?}");
+            return None;
+        }
+    };
+
+    {
+        let shaders = Shaders::get(renderer);
+        shaders
+            .custom_window_open_cache
+            .borrow_mut()
+            .insert(src.to_owned(), compiled.clone());
+    }
+
+    Some(compiled)
+}
+
+pub fn window_close_program_for_source(
+    renderer: &mut GlesRenderer,
+    src: &str,
+) -> Option<ShaderProgram> {
+    let cached = {
+        let shaders = Shaders::get(renderer);
+        shaders.custom_window_close_cache.borrow().get(src).cloned()
+    };
+    if cached.is_some() {
+        return cached;
+    }
+
+    let compiled = match compile_close_program(renderer, src) {
+        Ok(program) => program,
+        Err(err) => {
+            warn!("error compiling custom window close shader: {err:?}");
+            return None;
+        }
+    };
+
+    {
+        let shaders = Shaders::get(renderer);
+        shaders
+            .custom_window_close_cache
+            .borrow_mut()
+            .insert(src.to_owned(), compiled.clone());
+    }
+
+    Some(compiled)
+}
+
 fn destroy_layer_open_cache(renderer: &mut GlesRenderer) {
     let entries: Vec<_> = Shaders::get(renderer)
         .custom_layer_open_cache
@@ -491,6 +563,32 @@ fn destroy_layer_close_cache(renderer: &mut GlesRenderer) {
     for (key, program) in entries {
         if let Err(err) = program.destroy(renderer) {
             warn!("error destroying cached custom layer close shader for '{key}': {err:?}");
+        }
+    }
+}
+
+fn destroy_window_open_cache(renderer: &mut GlesRenderer) {
+    let entries: Vec<_> = Shaders::get(renderer)
+        .custom_window_open_cache
+        .borrow_mut()
+        .drain()
+        .collect();
+    for (key, program) in entries {
+        if let Err(err) = program.destroy(renderer) {
+            warn!("error destroying cached custom window open shader for '{key}': {err:?}");
+        }
+    }
+}
+
+fn destroy_window_close_cache(renderer: &mut GlesRenderer) {
+    let entries: Vec<_> = Shaders::get(renderer)
+        .custom_window_close_cache
+        .borrow_mut()
+        .drain()
+        .collect();
+    for (key, program) in entries {
+        if let Err(err) = program.destroy(renderer) {
+            warn!("error destroying cached custom window close shader for '{key}': {err:?}");
         }
     }
 }

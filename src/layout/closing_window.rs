@@ -9,8 +9,8 @@ use smithay::wayland::compositor::{Blocker, BlockerState};
 use crate::animation::Animation;
 use crate::niri_render_elements;
 use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
-use crate::render_helpers::shader_element::ShaderRenderElement;
-use crate::render_helpers::shaders::{ProgramType, Shaders};
+use crate::render_helpers::shader_element::{ShaderProgram, ShaderRenderElement};
+use crate::render_helpers::shaders::{layer_close_program_for_source, ProgramType, Shaders};
 use crate::render_helpers::snapshot::{
     render_close_fallback, render_close_shader, BakedSnapshot, RenderSnapshot,
 };
@@ -34,6 +34,9 @@ pub struct ClosingWindow {
 
     /// Random seed for the shader.
     random_seed: f32,
+
+    /// Optional custom shader source from window rules.
+    custom_shader: Option<String>,
 }
 
 niri_render_elements! {
@@ -67,6 +70,7 @@ impl AnimationState {
 }
 
 impl ClosingWindow {
+    #[allow(clippy::too_many_arguments)]
     pub fn new<E: RenderElement<GlesRenderer>>(
         renderer: &mut GlesRenderer,
         snapshot: RenderSnapshot<E, E>,
@@ -75,6 +79,7 @@ impl ClosingWindow {
         pos: Point<f64, Logical>,
         blocker: TransactionBlocker,
         anim: Animation,
+        custom_shader: Option<String>,
     ) -> anyhow::Result<Self> {
         let _span = tracy_client::span!("ClosingWindow::new");
 
@@ -86,6 +91,7 @@ impl ClosingWindow {
             pos,
             anim_state: AnimationState::new(blocker, anim),
             random_seed: fastrand::f32(),
+            custom_shader,
         })
     }
 
@@ -146,7 +152,7 @@ impl ClosingWindow {
         let progress = anim.value();
         let clamped_progress = anim.clamped_value().clamp(0., 1.);
 
-        if let Some(shader) = Shaders::get(ctx.renderer).program(ProgramType::WindowClose) {
+        if let Some(shader) = self.resolve_shader(ctx.renderer) {
             // ClosingWindow uses the normal buffer for tex coord calculation (not the picked
             // buffer) because the blocked-out buffer may have different dimensions.
             let elem = render_close_shader(
@@ -175,5 +181,13 @@ impl ClosingWindow {
             scale,
         )
         .into()
+    }
+
+    fn resolve_shader(&self, renderer: &mut GlesRenderer) -> Option<ShaderProgram> {
+        if let Some(src) = self.custom_shader.as_deref() {
+            return layer_close_program_for_source(renderer, src);
+        }
+
+        Shaders::get(renderer).program(ProgramType::LayerClose)
     }
 }
