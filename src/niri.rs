@@ -3719,18 +3719,36 @@ impl Niri {
         match render_cursor {
             RenderCursor::Hidden => (),
             RenderCursor::Surface { surface, hotspot } => {
-                let pointer_pos =
+                let mult = self.cursor_manager.size_multiplier() as f64;
+                let surface_top_left =
                     (pointer_pos - hotspot.to_f64()).to_physical_precise_round(output_scale);
 
-                push_elements_from_surface_tree(
-                    renderer,
-                    &surface,
-                    pointer_pos,
-                    output_scale,
-                    1.,
-                    Kind::Cursor,
-                    &mut |elem| push(elem.into()),
-                );
+                if (mult - 1.0).abs() < 0.001 {
+                    push_elements_from_surface_tree(
+                        renderer,
+                        &surface,
+                        surface_top_left,
+                        output_scale,
+                        1.,
+                        Kind::Cursor,
+                        &mut |elem| push(elem.into()),
+                    );
+                } else {
+                    let anchor: Point<i32, Physical> =
+                        pointer_pos.to_physical_precise_round(output_scale);
+                    push_elements_from_surface_tree(
+                        renderer,
+                        &surface,
+                        surface_top_left,
+                        output_scale,
+                        1.,
+                        Kind::Cursor,
+                        &mut |elem| {
+                            let scaled = RescaleRenderElement::from_element(elem, anchor, mult);
+                            push(scaled.into());
+                        },
+                    );
+                }
             }
             RenderCursor::Named {
                 icon,
@@ -3863,7 +3881,21 @@ impl Niri {
                 });
 
                 let surface_pos = pointer_pos.to_i32_round() - hotspot;
-                let bbox = bbox_from_surface_tree(surface, surface_pos);
+                let raw_bbox = bbox_from_surface_tree(surface, surface_pos);
+
+                // Expand bbox by the magnify multiplier around the hotspot so that overlap
+                // detection covers the scaled surface cursor.
+                let mult = self.cursor_manager.size_multiplier() as f64;
+                let bbox = if mult > 1.01 {
+                    let anchor: Point<i32, Logical> = pointer_pos.to_i32_round();
+                    let dx = ((raw_bbox.loc.x - anchor.x) as f64 * mult).round() as i32;
+                    let dy = ((raw_bbox.loc.y - anchor.y) as f64 * mult).round() as i32;
+                    let w = (raw_bbox.size.w as f64 * mult).round() as i32;
+                    let h = (raw_bbox.size.h as f64 * mult).round() as i32;
+                    Rectangle::new((anchor.x + dx, anchor.y + dy).into(), (w, h).into())
+                } else {
+                    raw_bbox
+                };
 
                 let dnd = self
                     .dnd_icon
@@ -6524,6 +6556,7 @@ fn scale_relocate_crop<E: Element>(
 niri_render_elements! {
     PointerRenderElements<R> => {
         Wayland = WaylandSurfaceRenderElement<R>,
+        WaylandRescaled = RescaleRenderElement<WaylandSurfaceRenderElement<R>>,
         NamedPointer = MemoryRenderBufferRenderElement<R>,
     }
 }
