@@ -574,7 +574,13 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
                 return Ok(());
             }
 
-            for (output_name, Zoom { level, is_locked }) in zoom_states {
+            for (
+                output_name,
+                Zoom {
+                    level, is_locked, ..
+                },
+            ) in zoom_states
+            {
                 println!("Output \"{output_name}\":");
                 println!("  Zoom level: {:.2}", level);
                 println!("  Zoom locked: {}", if is_locked { "yes" } else { "no" });

@@ -133,6 +133,8 @@ fn compute_on_edge_zoom_update(
     let focal_global = focal_point + output_geometry.loc;
     let zoomed_geometry_global = apply_zoom_viewport(output_geometry, focal_global, zoom_factor);
 
+    // Jump threshold: within this distance the focal follows smoothly;
+    // beyond it the viewport jumps to the cursor (at least 8px at 1x).
     let jump_threshold = (16.0 * output.current_scale().fractional_scale()) / zoom_factor;
     let jump_detect_size: Size<f64, Logical> = (jump_threshold, jump_threshold).into();
     let original_rect = Rectangle::new(

@@ -116,7 +116,7 @@ const OVERVIEW_GESTURE_RUBBER_BAND: RubberBand = RubberBand {
     limit: 0.05,
 };
 
-pub const ZOOM_GESTURE_RUBBER_BAND: RubberBand = RubberBand {
+pub(super) const ZOOM_GESTURE_RUBBER_BAND: RubberBand = RubberBand {
     stiffness: 0.5,
     limit: 0.05,
 };
@@ -4211,13 +4211,14 @@ impl<W: LayoutElement> Layout<W> {
                 // compose into Animating { level, focal: Some(focal) } so
                 // both animations run in parallel on synchronized curves,
                 // instead of overwriting one with the other.
+                // Reuse level config for focal to share duration/curve.
                 transition = ZoomTransition::Animating {
-                    level: level_anim,
+                    level: Some(level_anim),
                     focal: Some(ZoomFocalAnimation::new(
                         context.clock,
                         current_focal,
                         target_focal,
-                        context.focal_anim,
+                        context.level_anim,
                     )),
                 };
             } else {
@@ -4282,7 +4283,7 @@ impl<W: LayoutElement> Layout<W> {
         timestamp: Duration,
         cursor_local: Option<Point<f64, Logical>>,
         output_size: Option<Size<f64, Logical>>,
-    ) -> Option<bool> {
+    ) -> Option<()> {
         let max_zoom = self.zoom_context_for_output(output)?.max_zoom;
         let state = self.zoom_state_mut(output)?;
         let gesture = state.transition.as_mut()?.level_gesture_mut()?;
@@ -4317,7 +4318,7 @@ impl<W: LayoutElement> Layout<W> {
 
         gesture.current_focal = gesture.compute_focal_or(new_level, gesture.current_focal);
 
-        Some(true)
+        Some(())
     }
 
     pub fn zoom_gesture_end(&mut self, output: &Output, cancelled: bool) -> Option<bool> {

@@ -113,6 +113,8 @@ impl<D: SeatHandler> PointerOrTouchStartData<D> {
 }
 
 impl State {
+    /// Returns the output for zoom actions, preferring the requested output,
+    /// then the screenshot selection output, then the layout's active output.
     fn active_zoom_output(&self, requested_output: Option<&str>) -> Option<Output> {
         match requested_output {
             Some(name) => self.niri.output_by_name_match(name).cloned(),
@@ -4181,6 +4183,7 @@ impl State {
         (zoom.pinch_sensitivity, zoom.movement_mode)
     }
 
+    #[allow(clippy::type_complexity)]
     fn pinch_output_geometry(
         &self,
         output: &Output,
@@ -5213,6 +5216,7 @@ fn allowed_during_screenshot(action: &Action) -> bool {
             | Action::SetWindowWidth(_)
             | Action::SetWindowHeight(_)
             | Action::SetColumnWidth(_)
+            // Zoom is visible behind the overlay and doesn't affect the capture.
             | Action::SetZoomLevel(_, _)
             | Action::ToggleZoomLock(_)
     )
