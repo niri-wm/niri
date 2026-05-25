@@ -9,8 +9,6 @@ use smithay::utils::{Buffer, Physical, Point, Rectangle, Scale, Transform};
 use crate::backend::tty::{TtyFrame, TtyRenderer, TtyRendererError};
 use crate::render_helpers::renderer::AsGlesFrame;
 
-pub const ZOOM_FILTER_THRESHOLD: f64 = 2.0;
-
 /// Helper macro: wrap a draw/capture_framebuffer call with filter set/restore.
 ///
 /// `$get_guard` is an expression that yields a renderer guard (e.g. `frame.renderer()` or

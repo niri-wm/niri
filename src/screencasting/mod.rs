@@ -588,7 +588,7 @@ impl Niri {
                 continue;
             }
 
-            // Prepare pointer rendering for screencasts. The canonical seam for
+            // Prepare pointer rendering for screencasts. The rendering path for
             // pointer-zoom related calculations is implemented in Niri and should
             // be reused here to ensure the screencast viewport and zoom behavior
             // match the user's visible output. We keep the exact semantics:
@@ -597,7 +597,7 @@ impl Niri {
             // - Main output rendering continues to apply zoom
             if cursor_data.is_none() {
                 // Compute pointer visibility/location using the same viewport rules as
-                // the canonical seam (visible output viewport with possible zoom).
+                // the visible output viewport (with possible zoom).
                 let pointer_pos = if self.pointer_visibility.is_visible() {
                     // Note: This mirrors the logic from the seam in Niri where the
                     // display location is calculated against the visible zoomed
@@ -711,7 +711,7 @@ impl Niri {
             let mut elements = Vec::new();
             let mut pointer_location = Point::default();
 
-            // Pointer rendering for window casts in the shared seam path remains
+            // Pointer rendering for window casts in the same output path remains
             // unzoomed; window-cast does not participate in output-zoom semantics.
             if self.pointer_visibility.is_visible() {
                 if let Some((pointer_pos, win_pos)) = self.pointer_pos_for_window_cast(mapped) {

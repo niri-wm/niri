@@ -179,7 +179,6 @@ impl FocalTrackingContext {
 #[derive(Debug, Clone)]
 pub struct ZoomLevelAnimation {
     anim: Animation,
-    target: f64,
     tracking: FocalTrackingContext,
 }
 
@@ -187,7 +186,6 @@ impl ZoomLevelAnimation {
     pub fn new(clock: Clock, from: f64, to: f64, config: niri_config::Animation) -> Self {
         Self {
             anim: Animation::new(clock, from, to, 0.0, config),
-            target: to,
             tracking: FocalTrackingContext::default(),
         }
     }
@@ -224,11 +222,7 @@ impl ZoomLevelAnimation {
     }
 
     pub fn value_at(&self, now: Duration) -> f64 {
-        if self.anim.is_done_at(now) {
-            self.target
-        } else {
-            self.anim.value_at(now)
-        }
+        self.anim.value_at(now)
     }
 
     pub fn is_done_at(&self, now: Duration) -> bool {
@@ -332,8 +326,6 @@ impl ZoomLevelGesture {
 pub struct ZoomFocalAnimation {
     pub x_anim: Animation,
     pub y_anim: Animation,
-    pub target: Point<f64, Logical>,
-    pub start: Point<f64, Logical>,
 }
 
 impl ZoomFocalAnimation {
@@ -346,17 +338,11 @@ impl ZoomFocalAnimation {
         Self {
             x_anim: Animation::new(clock.clone(), from.x, to.x, 0.0, config),
             y_anim: Animation::new(clock, from.y, to.y, 0.0, config),
-            target: to,
-            start: from,
         }
     }
 
     pub fn value_at(&self, now: Duration) -> Point<f64, Logical> {
-        if self.is_done_at(now) {
-            self.target
-        } else {
-            Point::from((self.x_anim.value_at(now), self.y_anim.value_at(now)))
-        }
+        Point::from((self.x_anim.value_at(now), self.y_anim.value_at(now)))
     }
 
     pub fn is_done_at(&self, now: Duration) -> bool {
@@ -369,24 +355,24 @@ impl ZoomFocalAnimation {
 }
 
 #[derive(Debug, Clone, Default)]
+#[allow(clippy::large_enum_variant)]
 pub enum ZoomTransition {
     #[default]
     Idle,
     Animating {
-        level: ZoomLevelAnimation,
+        level: Option<ZoomLevelAnimation>,
         focal: Option<ZoomFocalAnimation>,
     },
     /// Pinch gesture in progress.
     Gesturing(ZoomLevelGesture),
-    /// Focal-only animation (level is stable, e.g. during unlock or
-    /// cursor-moved focal correction).
-    FocalOnly(ZoomFocalAnimation),
 }
 
 impl ZoomTransition {
     pub fn current_level_at(&self, fallback: f64, now: Duration) -> f64 {
         match self {
-            Self::Animating { level, .. } => level.value_at(now),
+            Self::Animating {
+                level: Some(level), ..
+            } => level.value_at(now),
             Self::Gesturing(g) => g.current_level,
             _ => fallback,
         }
@@ -400,17 +386,21 @@ impl ZoomTransition {
     ) -> Point<f64, Logical> {
         match self {
             Self::Animating { focal: Some(f), .. } => f.value_at(now),
-            Self::Animating { level, focal: None } => {
-                level.tracking.compute_focal(current_level, fallback)
-            }
+            Self::Animating {
+                level: Some(level),
+                focal: None,
+            } => level.tracking.compute_focal(current_level, fallback),
+            Self::Animating {
+                level: None,
+                focal: None,
+            } => fallback,
             Self::Gesturing(g) => g.compute_focal_or(current_level, g.current_focal),
-            Self::FocalOnly(f) => f.value_at(now),
             Self::Idle => fallback,
         }
     }
 
     pub fn is_animation_ongoing(&self) -> bool {
-        matches!(self, Self::Animating { .. } | Self::FocalOnly(_))
+        matches!(self, Self::Animating { .. })
     }
 
     pub fn level_gesture_mut(&mut self) -> Option<&mut ZoomLevelGesture> {
@@ -433,7 +423,7 @@ impl ZoomTransition {
     /// Start a new level animation from current state.
     pub fn start_level_animation(&mut self, anim: ZoomLevelAnimation) {
         *self = Self::Animating {
-            level: anim,
+            level: Some(anim),
             focal: None,
         };
     }
@@ -443,9 +433,13 @@ impl ZoomTransition {
         *self = Self::Gesturing(gesture);
     }
 
-    /// Start a focal-only animation (for unlock).
+    /// Start a focal-only animation (for unlock or cursor-moved correction).
+    /// The level stays stable while only the focal point animates.
     pub fn start_focal_animation(&mut self, focal_anim: ZoomFocalAnimation) {
-        *self = Self::FocalOnly(focal_anim);
+        *self = Self::Animating {
+            level: None,
+            focal: Some(focal_anim),
+        };
     }
 
     /// End gesture, converting to deceleration animation.
@@ -453,7 +447,7 @@ impl ZoomTransition {
     /// cleared any prior focal animation when the gesture began.
     pub fn cancel_gesture(&mut self, level_anim: ZoomLevelAnimation) {
         *self = Self::Animating {
-            level: level_anim,
+            level: Some(level_anim),
             focal: None,
         };
     }
@@ -466,18 +460,26 @@ impl ZoomTransition {
     ) {
         *self = match (level_anim, focal_anim) {
             (Some(level), Some(focal)) => Self::Animating {
-                level,
+                level: Some(level),
                 focal: Some(focal),
             },
-            (Some(level), None) => Self::Animating { level, focal: None },
-            (None, Some(focal)) => Self::FocalOnly(focal),
+            (Some(level), None) => Self::Animating {
+                level: Some(level),
+                focal: None,
+            },
+            (None, Some(focal)) => Self::Animating {
+                level: None,
+                focal: Some(focal),
+            },
             (None, None) => Self::Idle,
         };
     }
 
     pub fn set_cursor_pos(&mut self, pos: Point<f64, Logical>) {
         match self {
-            Self::Animating { level, .. } => level.set_cursor_pos(pos),
+            Self::Animating {
+                level: Some(level), ..
+            } => level.set_cursor_pos(pos),
             Self::Gesturing(g) => g.set_cursor_pos(pos),
             _ => {}
         }
@@ -486,7 +488,10 @@ impl ZoomTransition {
     pub fn apply_to_state_at(&self, zoom_state: &mut OutputZoomState, now: Duration) {
         match self {
             Self::Idle => {}
-            Self::Animating { level, focal } => {
+            Self::Animating {
+                level: Some(level),
+                focal,
+            } => {
                 let current_level = level.value_at(now);
                 zoom_state.level = current_level;
                 if let Some(f) = focal {
@@ -497,12 +502,19 @@ impl ZoomTransition {
                         .compute_focal(current_level, zoom_state.focal);
                 }
             }
+            Self::Animating {
+                level: None,
+                focal: Some(f),
+            } => {
+                zoom_state.focal = f.value_at(now);
+            }
+            Self::Animating {
+                level: None,
+                focal: None,
+            } => {}
             Self::Gesturing(g) => {
                 zoom_state.level = g.current_level;
                 zoom_state.focal = g.compute_focal_or(g.current_level, g.current_focal);
-            }
-            Self::FocalOnly(f) => {
-                zoom_state.focal = f.value_at(now);
             }
         }
     }
@@ -519,18 +531,24 @@ impl ZoomTransition {
     pub fn is_done_at(&self, now: Duration) -> bool {
         match self {
             Self::Animating { level, focal } => {
-                level.is_done_at(now) && focal.as_ref().is_none_or(|f| f.is_done_at(now))
+                let level_done = level.as_ref().is_none_or(|l| l.is_done_at(now));
+                let focal_done = focal.as_ref().is_none_or(|f| f.is_done_at(now));
+                level_done && focal_done
             }
             Self::Gesturing(_) => false,
-            Self::FocalOnly(f) => f.is_done_at(now),
             Self::Idle => true,
         }
     }
 
     pub fn sample_time(&self) -> Option<Duration> {
         match self {
-            Self::Animating { level, .. } => Some(level.sample_time()),
-            Self::FocalOnly(f) => Some(f.sample_time()),
+            Self::Animating {
+                level: Some(level), ..
+            } => Some(level.sample_time()),
+            Self::Animating {
+                level: None,
+                focal: Some(f),
+            } => Some(f.sample_time()),
             _ => None,
         }
     }

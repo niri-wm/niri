@@ -464,11 +464,14 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
                     .outputs()
                     .fold(HashMap::new(), |mut acc, output| {
                         let level = state.niri.layout.zoom_level_for_output(output);
+                        let snapshot = state.niri.layout.zoom_snapshot_for_output(output);
                         acc.insert(
                             output.name().clone(),
                             niri_ipc::Zoom {
                                 is_locked: state.niri.layout.zoom_locked_for_output(output),
                                 level,
+                                focal_x: snapshot.focal.x,
+                                focal_y: snapshot.focal.y,
                             },
                         );
                         acc
@@ -614,13 +617,7 @@ impl State {
             return;
         };
 
-        // ⚠️ ZoomChanged emission granularity
-        // This runs on compositor commits (via State::refresh), NOT on every
-        // animation frame. During smooth zoom transitions, IPC consumers
-        // receive commit-time snapshots rather than per-frame animation
-        // state. This means mid-animation values may be stale until the
-        // animation completes. If smooth per-frame tracking is needed, this
-        // should be wired into the animation tick instead.
+        // Emitted at commit granularity — see Event::ZoomChanged docs.
         let mut state = server.event_stream_state.borrow_mut();
         let state = &mut state.zoom;
 

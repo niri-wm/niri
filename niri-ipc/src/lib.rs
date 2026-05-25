@@ -1603,6 +1603,10 @@ pub struct Zoom {
     pub level: f64,
     /// Whether zoom focal point is locked
     pub is_locked: bool,
+    /// Focal point X coordinate in logical pixels
+    pub focal_x: f64,
+    /// Focal point Y coordinate in logical pixels
+    pub focal_y: f64,
 }
 
 /// Kind of screencast.
@@ -1780,20 +1784,16 @@ pub enum Event {
     },
     /// Zoom state changed for an output.
     ///
-    /// NOTE: This event is emitted at compositor-commit granularity (via
-    /// `State::refresh`), not on every animation frame. During smooth zoom
-    /// transitions, consumers receive commit-time snapshots. Mid-animation
-    /// values may lag behind the visual state until the animation completes.
-    /// If per-frame zoom tracking is needed, events should be wired into the
-    /// animation tick instead.
+    /// Emitted at commit granularity (not per animation frame), so
+    /// mid-transition values may lag behind the visual state.
     ZoomChanged {
         /// Name of the output.
         output: String,
         /// Current zoom level.
         level: f64,
-        /// Focal point X coordinate within the output.
+        /// Focal point X coordinate in logical pixels.
         focal_x: f64,
-        /// Focal point Y coordinate within the output.
+        /// Focal point Y coordinate in logical pixels.
         focal_y: f64,
         /// Whether zoom focal point is locked.
         is_locked: bool,
