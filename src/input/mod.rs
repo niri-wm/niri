@@ -646,10 +646,6 @@ impl State {
     }
 
     pub fn handle_bind(&mut self, bind: Bind) {
-        debug!(
-            "handle_bind: trigger={:?}, cooldown={:?}, action={:?}",
-            bind.key.trigger, bind.cooldown, bind.action
-        );
         let Some(cooldown) = bind.cooldown else {
             self.do_action(bind.action, bind.allow_when_locked);
             return;
@@ -662,11 +658,8 @@ impl State {
 
         match self.niri.bind_cooldown_timers.entry(bind.key) {
             // The bind is on cooldown.
-            Entry::Occupied(_) => {
-                debug!("handle_bind: ON COOLDOWN, skipping");
-            }
+            Entry::Occupied(_) => {}
             Entry::Vacant(entry) => {
-                debug!("handle_bind: executing, starting cooldown {:?}", cooldown);
                 let timer = Timer::from_duration(cooldown);
                 let token = self
                     .niri
@@ -3149,12 +3142,12 @@ impl State {
                 // for Continuous events use amount().
                 let (horizontal, vertical) = if source == AxisSource::Wheel {
                     (
-                        horizontal_amount_v120.unwrap_or(0.) / 120.,
-                        vertical_amount_v120.unwrap_or(0.) / 120.,
+                        horizontal_amount_v120.unwrap_or(0.0) / 120.0,
+                        vertical_amount_v120.unwrap_or(0.0) / 120.0,
                     )
                 } else {
-                    let h = event.amount(Axis::Horizontal).unwrap_or(0.);
-                    let v = event.amount(Axis::Vertical).unwrap_or(0.);
+                    let h = event.amount(Axis::Horizontal).unwrap_or(0.0);
+                    let v = event.amount(Axis::Vertical).unwrap_or(0.0);
                     (h, v)
                 };
 
@@ -3165,30 +3158,14 @@ impl State {
 
                 let config = self.niri.config.borrow();
                 let bindings = make_binds_iter(&config, &mut self.niri.window_mru_ui, modifiers);
-                let bind_up = find_configured_bind(
-                    bindings.clone(),
-                    mod_key,
-                    Trigger::TrackpointScrollUp,
-                    mods,
-                );
-                let bind_down = find_configured_bind(
-                    bindings.clone(),
-                    mod_key,
-                    Trigger::TrackpointScrollDown,
-                    mods,
-                );
-                let bind_left = find_configured_bind(
-                    bindings.clone(),
-                    mod_key,
-                    Trigger::TrackpointScrollLeft,
-                    mods,
-                );
-                let bind_right = find_configured_bind(
-                    bindings,
-                    mod_key,
-                    Trigger::TrackpointScrollRight,
-                    mods,
-                );
+                let bind_up =
+                    find_configured_bind(bindings.clone(), mod_key, Trigger::TrackpointScrollUp, mods);
+                let bind_down =
+                    find_configured_bind(bindings.clone(), mod_key, Trigger::TrackpointScrollDown, mods);
+                let bind_left =
+                    find_configured_bind(bindings.clone(), mod_key, Trigger::TrackpointScrollLeft, mods);
+                let bind_right =
+                    find_configured_bind(bindings, mod_key, Trigger::TrackpointScrollRight, mods);
                 drop(config);
 
                 // Ensure a minimum cooldown for all trackpoint scroll binds,
@@ -3203,7 +3180,7 @@ impl State {
 
                 if v_ticks < 0 {
                     for _ in 0..(-v_ticks) {
-                        let bind = ensure_cooldown(bind_up.clone().unwrap_or_else(|| Bind {
+                        let bind = ensure_cooldown(bind_up.clone().unwrap_or(Bind {
                             key: Key {
                                 trigger: Trigger::TrackpointScrollUp,
                                 modifiers: Modifiers::SUPER,
@@ -3219,7 +3196,7 @@ impl State {
                     }
                 } else if v_ticks > 0 {
                     for _ in 0..v_ticks {
-                        let bind = ensure_cooldown(bind_down.clone().unwrap_or_else(|| Bind {
+                        let bind = ensure_cooldown(bind_down.clone().unwrap_or(Bind {
                             key: Key {
                                 trigger: Trigger::TrackpointScrollDown,
                                 modifiers: Modifiers::SUPER,
@@ -3242,7 +3219,7 @@ impl State {
 
                 if h_ticks > 0 {
                     for _ in 0..h_ticks {
-                        let bind = ensure_cooldown(bind_right.clone().unwrap_or_else(|| Bind {
+                        let bind = ensure_cooldown(bind_right.clone().unwrap_or(Bind {
                             key: Key {
                                 trigger: Trigger::TrackpointScrollRight,
                                 modifiers: Modifiers::SUPER,
@@ -3258,7 +3235,7 @@ impl State {
                     }
                 } else if h_ticks < 0 {
                     for _ in 0..(-h_ticks) {
-                        let bind = ensure_cooldown(bind_left.clone().unwrap_or_else(|| Bind {
+                        let bind = ensure_cooldown(bind_left.clone().unwrap_or(Bind {
                             key: Key {
                                 trigger: Trigger::TrackpointScrollLeft,
                                 modifiers: Modifiers::SUPER,
