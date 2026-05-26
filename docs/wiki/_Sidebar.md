@@ -17,6 +17,7 @@
 * [Window Effects](./Window-Effects.md)
 * [Packaging niri](./Packaging-niri.md)
 * [Integrating niri](./Integrating-niri.md)
+* [Security Model](./Security-Model.md)
 * [Accessibility](./Accessibility.md)
 * [Name and Logo](./Name-and-Logo.md)
 * [FAQ](./FAQ.md)
