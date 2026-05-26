@@ -440,6 +440,40 @@ animations {
 }
 ```
 
+#### `zoom-level-change`
+
+<sup>Since: next release</sup>
+
+Animation when the zoom level changes, for example when zooming in or out via a pinch gesture or a key binding.
+
+This one uses an easing type by default.
+
+```kdl
+animations {
+    zoom-level-change {
+        duration-ms 250
+        curve "ease-out-expo"
+    }
+}
+```
+
+#### `zoom-focal-pan`
+
+<sup>Since: next release</sup>
+
+Animation when the zoom focal point pans, for example when the cursor moves while zoomed in or when unlocking the focal point.
+
+This one uses an easing type with a custom cubic-bezier curve by default.
+
+```kdl
+animations {
+    zoom-focal-pan {
+        duration-ms 250
+        curve "cubic-bezier" 0.05 0.7 0.1 1.0
+    }
+}
+```
+
 ### Synchronized Animations
 
 <sup>Since: 0.1.5</sup>

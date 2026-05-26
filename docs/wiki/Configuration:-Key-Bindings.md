@@ -416,3 +416,57 @@ binds {
     Super+Alt+L allow-inhibiting=false { spawn "swaylock"; }
 }
 ```
+
+#### `set-zoom-level`
+
+<sup>Since: next release</sup>
+
+Set or adjust the zoom level of the focused output (or a specific output).
+
+Takes a zoom level and an optional output name. The zoom level can be:
+
+- An absolute value: `"2.0"` sets zoom to 2×.
+- A relative value: `"+0.5"` increases zoom by 0.5; `"-0.5"` decreases it.
+
+```kdl
+binds {
+    // Zoom to 2x.
+    Mod+Equal { set-zoom-level "2.0"; }
+
+    // Zoom in by 0.5.
+    Mod+Plus  { set-zoom-level "+0.5"; }
+
+    // Zoom out by 0.5.
+    Mod+Minus { set-zoom-level "-0.5"; }
+
+    // Reset to 1x.
+    Mod+0     { set-zoom-level "1.0"; }
+
+    // Zoom a specific output.
+    Mod+Shift+Equal { set-zoom-level "+0.5" "eDP-1"; }
+}
+```
+
+#### `toggle-zoom-lock`
+
+<sup>Since: next release</sup>
+
+Toggle the zoom level and focal point lock for the focused output (or a specific
+output).
+
+When the focal point is locked, the viewport stops tracking the cursor,
+effectively "freezing" the view in place. This is useful when you want to
+inspect a specific area of the screen without the viewport moving as you move
+the mouse.
+
+Use `toggle-zoom-lock` to lock the focal point, and toggle it again to unlock it
+and resume cursor tracking.
+
+```kdl
+binds {
+    Mod+Z { toggle-zoom-lock; }
+
+    // Lock zoom on a specific output.
+    Mod+Shift+Z { toggle-zoom-lock "eDP-1"; }
+}
+```
