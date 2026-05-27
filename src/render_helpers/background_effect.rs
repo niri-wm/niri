@@ -211,9 +211,9 @@ impl BackgroundEffect {
             );
         } else {
             // Render non-xray effect.
-            let elem =
-                self.nonxray
-                    .render(ns, params, blur_options, noise, saturation, alpha_mask);
+            let elem = self
+                .nonxray
+                .render(ns, params, blur_options, noise, saturation, alpha_mask);
             push(elem.into());
         }
     }
@@ -335,8 +335,7 @@ pub fn render_for_tile(
         let mut surface_geo_logical = surface_geo(states).unwrap_or_default().to_f64();
         surface_geo_logical.loc += surface_off;
 
-        let alpha_mask = if background_effect.options.ignore_opacity.is_some()
-            && !should_block_out
+        let alpha_mask = if background_effect.options.ignore_opacity.is_some() && !should_block_out
         {
             let _ = import_surface(ctx.renderer, states);
             let data = states.data_map.get::<RendererSurfaceStateUserData>();

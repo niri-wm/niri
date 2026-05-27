@@ -136,12 +136,11 @@ impl Xray {
                 mask.surface_geo.size.h as f32,
             );
             let clip_loc = Vec2::new(clip_geo.loc.x as f32, clip_geo.loc.y as f32);
-            let surface_loc = Vec2::new(
-                mask.surface_geo.loc.x as f32,
-                mask.surface_geo.loc.y as f32,
-            );
+            let surface_loc =
+                Vec2::new(mask.surface_geo.loc.x as f32, mask.surface_geo.loc.y as f32);
             let clip_size_v = Vec2::new(clip_geo.size.w as f32, clip_geo.size.h as f32);
-            // clip_to_surface(p) = (clip_geo.loc + p * clip_geo.size - surface_geo.loc) / surface_geo.size
+            // clip_to_surface(p) = (clip_geo.loc + p * clip_geo.size - surface_geo.loc) /
+            // surface_geo.size
             let m = Mat3::from_scale(Vec2::ONE / surface_size)
                 * Mat3::from_translation(clip_loc - surface_loc)
                 * Mat3::from_scale(clip_size_v);
@@ -218,11 +217,13 @@ impl Xray {
                 geometry.loc += params.geometry.loc;
 
                 let alpha_mask =
-                    clip_to_surface.as_ref().map(|(m, tex, threshold)| XrayAlphaMask {
-                        surface_tex: tex.clone(),
-                        surface_to_geo: *m * input_to_clip_geo,
-                        threshold: *threshold,
-                    });
+                    clip_to_surface
+                        .as_ref()
+                        .map(|(m, tex, threshold)| XrayAlphaMask {
+                            surface_tex: tex.clone(),
+                            surface_to_geo: *m * input_to_clip_geo,
+                            threshold: *threshold,
+                        });
 
                 let elem = XrayElement {
                     buffer: self.background[ctx.target as usize].clone(),
@@ -275,8 +276,9 @@ impl Xray {
             let input_to_clip_geo = Mat3::from_scale(buf_size / clip_geo_size)
                 * Mat3::from_translation(-clip_pos_in_backdrop / buf_size);
 
-            let alpha_mask =
-                clip_to_surface.as_ref().map(|(m, tex, threshold)| XrayAlphaMask {
+            let alpha_mask = clip_to_surface
+                .as_ref()
+                .map(|(m, tex, threshold)| XrayAlphaMask {
                     surface_tex: tex.clone(),
                     surface_to_geo: *m * input_to_clip_geo,
                     threshold: *threshold,
@@ -407,16 +409,8 @@ impl RenderElement<GlesRenderer> for XrayElement {
             frame.with_context(|gl| unsafe {
                 gl.ActiveTexture(ffi::TEXTURE1);
                 gl.BindTexture(ffi::TEXTURE_2D, tex_id);
-                gl.TexParameteri(
-                    ffi::TEXTURE_2D,
-                    ffi::TEXTURE_MIN_FILTER,
-                    ffi::LINEAR as i32,
-                );
-                gl.TexParameteri(
-                    ffi::TEXTURE_2D,
-                    ffi::TEXTURE_MAG_FILTER,
-                    ffi::LINEAR as i32,
-                );
+                gl.TexParameteri(ffi::TEXTURE_2D, ffi::TEXTURE_MIN_FILTER, ffi::LINEAR as i32);
+                gl.TexParameteri(ffi::TEXTURE_2D, ffi::TEXTURE_MAG_FILTER, ffi::LINEAR as i32);
                 gl.TexParameteri(
                     ffi::TEXTURE_2D,
                     ffi::TEXTURE_WRAP_S,

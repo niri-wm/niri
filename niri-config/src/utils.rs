@@ -108,9 +108,11 @@ impl<S: knuffel::traits::ErrorSpan> knuffel::DecodeScalar<S> for BoolOrFloat {
         ctx: &mut knuffel::decode::Context<S>,
     ) -> Result<Self, DecodeError<S>> {
         match &**val {
-            knuffel::ast::Literal::Bool(b) => {
-                Ok(if *b { BoolOrFloat::True } else { BoolOrFloat::False })
-            }
+            knuffel::ast::Literal::Bool(b) => Ok(if *b {
+                BoolOrFloat::True
+            } else {
+                BoolOrFloat::False
+            }),
             knuffel::ast::Literal::Decimal(ref value) => match value.try_into() {
                 Ok(v) => {
                     if (0.0..=1.0).contains(&v) {
