@@ -618,12 +618,16 @@ impl Mapped {
     }
 
     pub fn set_label(&mut self, name: String, value: Option<String>) {
-        let mut labels = self.labels.take().unwrap_or_else(HashMap::new);
+        let labels = if let Some(labels) = self.labels.as_mut() {
+            labels
+        } else {
+            self.labels = Some(HashMap::new());
+            self.labels.as_mut().unwrap()
+        };
         let old = labels.insert(name, value.clone());
 
-        let changed = old.map(|v| v != value).unwrap_or(true);
+        let changed = old.is_some_and(|v| v != value);
 
-        self.labels = Some(labels);
         self.need_to_recompute_rules |= changed;
     }
 
