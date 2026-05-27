@@ -20,6 +20,7 @@ use crate::dbus::mutter_screen_cast::{self, CursorMode, ScreenCastToNiri, Stream
 use crate::niri::{CastTarget, Niri, OutputRenderElements, PointerRenderElements, State};
 use crate::niri_render_elements;
 use crate::render_helpers::{RenderCtx, RenderTarget};
+use crate::utils::zoom::zoom_transform_physical_point_f64;
 use crate::utils::{get_monotonic_time, CastSessionId, CastStreamId};
 use crate::window::mapped::{MappedId, WindowCastRenderElements};
 
@@ -617,18 +618,29 @@ impl Niri {
                     None
                 };
 
-                // If pointer is to be drawn, render through render_pointer.
-                // render_pointer_for_output applies output zoom.
+                // Render pointer with output zoom, then compute the
+                // zoom-transformed cursor position for PipeWire metadata.
                 let pointer_pos = match pointer_pos {
-                    Some(_p) => {
+                    Some(display_cursor) => {
                         let ctx = RenderCtx {
                             renderer,
                             target: RenderTarget::Screencast,
                             xray: None,
                         };
-                        Some(self.render_pointer_for_output(ctx, output, &mut |elem| {
+                        self.render_pointer_for_output(ctx, output, &mut |elem| {
                             elements.push(elem.into())
-                        }))
+                        });
+
+                        // Compute zoom-transformed cursor hotspot position.
+                        let cursor_phys = display_cursor.to_physical(scale);
+                        let zoom = self.layout.zoom_snapshot_for_output(output);
+                        let target = zoom_transform_physical_point_f64(
+                            cursor_phys,
+                            zoom.level,
+                            zoom.focal,
+                            scale,
+                        );
+                        Some(target.to_i32_round::<i32>().to_f64().to_logical(scale))
                     }
                     None => None,
                 };

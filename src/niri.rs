@@ -3858,7 +3858,7 @@ impl Niri {
         ctx: RenderCtx<R>,
         output: &Output,
         push: &mut dyn FnMut(PointerRenderElements<R>),
-    ) -> Point<f64, Logical> {
+    ) {
         let _span = tracy_client::span!("Niri::render_pointer");
         let output_scale_fractional = output.current_scale();
         let output_pos = self.global_space.output_geometry(output).unwrap().loc;
@@ -3934,8 +3934,6 @@ impl Niri {
                 &mut |elem| push(elem.into()),
             );
         }
-
-        pointer_pos_logical
     }
 
     /// Renders the pointer for an output, applying zoom transform around the
@@ -3946,15 +3944,14 @@ impl Niri {
         ctx: RenderCtx<R>,
         output: &Output,
         push: &mut dyn FnMut(OutputRenderElements<R>),
-    ) -> Point<f64, Logical> {
-        let zoom_active = self.layout.zoom_is_active_for_output(output);
-        if !zoom_active {
-            return self.render_pointer(ctx, output, &mut |elem| push(elem.into()));
+    ) {
+        if !self.layout.zoom_is_active_for_output(output) {
+            self.render_pointer(ctx, output, &mut |elem| push(elem.into()));
+            return;
         }
 
         let output_scale = Scale::from(output.current_scale().fractional_scale());
         let output_pos = self.global_space.output_geometry(output).unwrap().loc;
-        let scale_with_zoom = self.config.borrow().cursor.scale_with_zoom;
 
         // Check whether we need to draw the tablet cursor or the regular cursor.
         let pointer_pos = self
@@ -3979,7 +3976,8 @@ impl Niri {
                 .unwrap_or(false);
 
             if !cursor_on_this_output {
-                return self.render_pointer(ctx, output, &mut |elem| push(elem.into()));
+                self.render_pointer(ctx, output, &mut |elem| push(elem.into()));
+                return;
             }
 
             // Cursor on this output but outside the zoom viewport: render at
@@ -3996,48 +3994,12 @@ impl Niri {
         );
         let target_rounded = target.to_i32_round();
 
-        let cursor_hotspot = self.cursor_hotspot_physical(output, output_scale);
         let pointer_local_phys: Point<f64, Physical> = pointer_local.to_physical(output_scale);
 
         // Render without zoom, then wrap each element around its hotspot.
         self.render_pointer(ctx, output, &mut |elem| {
-            let hotspot = match (elem.kind(), cursor_hotspot) {
-                (Kind::Cursor, Some(hotspot)) => hotspot,
-                _ => {
-                    let elem_loc = elem.geometry(output_scale).loc;
-                    (pointer_local_phys - elem_loc.to_f64()).to_i32_round()
-                }
-            };
-
-            // Wrap pointer around its hotspot with optional scale.
-            let (cursor_zoom, scale_anchor, final_pos) = if scale_with_zoom {
-                let hotspot_scaled = hotspot.to_f64().upscale(zoom_snapshot.level).to_i32_round();
-                (
-                    zoom_snapshot.level,
-                    hotspot.to_f64(),
-                    (target_rounded - hotspot_scaled).to_f64(),
-                )
-            } else {
-                (
-                    1.0,
-                    Point::from((0.0, 0.0)),
-                    (target_rounded - hotspot).to_f64(),
-                )
-            };
-
-            push(
-                ZoomedRenderElement::Pointer(ZoomElement::from_element(
-                    elem,
-                    scale_anchor,
-                    cursor_zoom,
-                    final_pos,
-                    Relocate::Absolute,
-                ))
-                .into(),
-            );
+            push(self.zoomed_pointer(elem, output, target_rounded, pointer_local_phys));
         });
-
-        target_rounded.to_f64().to_logical(output_scale)
     }
 
     /// Checks if the pointer should be included on a window cast or screenshot.
@@ -4452,12 +4414,53 @@ impl Niri {
         );
     }
 
-    /// Applies the zoom transform to a render element.
-    ///
-    /// Pointer elements are handled separately in `render_pointer_for_output`
-    /// because cursors must rescale around their hotspot (not the focal point)
-    /// to stay aligned with the pointer position, and may span outputs or use
-    /// a hardware cursor plane.
+    /// Applies the zoom transform to the pointer/cursor render element by wrapping it in a
+    /// hotspot-centered zoom transform, to keep it aligned with the pointer position.
+    fn zoomed_pointer<R: NiriRenderer>(
+        &self,
+        elem: PointerRenderElements<R>,
+        output: &Output,
+        target_rounded: Point<i32, Physical>,
+        pointer_local_phys: Point<f64, Physical>,
+    ) -> OutputRenderElements<R> {
+        let output_scale = Scale::from(output.current_scale().fractional_scale());
+        let zoom_snapshot = self.layout.zoom_snapshot_for_output(output);
+        let scale_with_zoom = self.config.borrow().cursor.scale_with_zoom;
+        let cursor_hotspot = self.cursor_hotspot_physical(output, output_scale);
+
+        let hotspot = match (elem.kind(), cursor_hotspot) {
+            (Kind::Cursor, Some(h)) => h,
+            _ => {
+                let elem_loc = elem.geometry(output_scale).loc;
+                (pointer_local_phys - elem_loc.to_f64()).to_i32_round()
+            }
+        };
+
+        let (cursor_zoom, scale_anchor, final_pos) = if scale_with_zoom {
+            let hotspot_scaled = hotspot.to_f64().upscale(zoom_snapshot.level).to_i32_round();
+            (
+                zoom_snapshot.level,
+                hotspot.to_f64(),
+                (target_rounded - hotspot_scaled).to_f64(),
+            )
+        } else {
+            (
+                1.0,
+                Point::from((0.0, 0.0)),
+                (target_rounded - hotspot).to_f64(),
+            )
+        };
+
+        ZoomedRenderElement::Pointer(ZoomElement::from_element(
+            elem,
+            scale_anchor,
+            cursor_zoom,
+            final_pos,
+            Relocate::Absolute,
+        ))
+        .into()
+    }
+
     fn zoomed_element<R: NiriRenderer>(
         &self,
         element: OutputRenderElements<R>,
@@ -4472,20 +4475,78 @@ impl Niri {
         }
 
         let output_scale = Scale::from(output.current_scale().fractional_scale());
-        let output_geo = self.global_space.output_geometry(output).unwrap();
 
         let zoom_snapshot = self.layout.zoom_snapshot_for_output(output);
         let zoom_level = zoom_snapshot.level.max(1.0);
         let (zoom_level, zoom_focal) = (zoom_level, zoom_snapshot.focal);
+        // Elements are in output-local coordinates; focal is also output-local.
 
         let zoom_filter_threshold = self.config.borrow().zoom.zoom_filter_threshold;
-        apply_zoom_to_render_element(
-            element,
-            zoom_level,
-            output_scale,
-            zoom_focal,
-            output_geo,
-            zoom_filter_threshold,
+        macro_rules! apply_zoom {
+            ($($variant:ident),*) => {
+                match element {
+                    OutputRenderElements::ScreenshotUi(elem) => {
+                        match elem {
+                            // The screenshot buffer texture already has zoom baked
+                            // in from capture (capture_screenshots goes through
+                            // render() -> zoomed_element()).
+                            ScreenshotUiRenderElement::Screenshot(tex) => {
+                                OutputRenderElements::ScreenshotUi(
+                                    ScreenshotUiRenderElement::Screenshot(tex),
+                                )
+                            }
+                            ScreenshotUiRenderElement::SolidColor(elem) => {
+                                // Pre-compute exact zoomed geometry from corner
+                                // points to avoid 1-pixel gaps between adjacent
+                                // solid-color tiles that RescaleRenderElement's
+                                // per-element rounding causes.
+                                let geo = elem.geometry(output_scale);
+                                let orig_rect = Rectangle::new(geo.loc, geo.size);
+                                let zoomed_rect = zoom_transform_physical_rect(
+                                    orig_rect,
+                                    zoom_level,
+                                    zoom_focal,
+                                    output_scale,
+                                );
+                                let zoomed = elem.with_geometry_physical(zoomed_rect, output_scale);
+                                ZoomedRenderElement::ScreenshotSolidColor(zoomed).into()
+                            }
+                        }
+                    }
+                    $(
+                        OutputRenderElements::$variant(elem) => {
+                            let e = ZoomElement::from_element(
+                                elem,
+                                zoom_focal.to_physical(output_scale),
+                                zoom_level,
+                                Point::from((0.0, 0.0)),
+                                Relocate::Relative,
+                            )
+                            .with_filter(zoom_filter(zoom_level, zoom_filter_threshold));
+                            ZoomedRenderElement::$variant(e).into()
+                        }
+                    )*
+                    _ => element,
+                }
+            }
+        }
+
+        // We don't zoom WindowMruUI and ExitConfirmDialog.
+        // Pointer is handled by render_pointer directly.
+        // The Zoomed variant is not here since we don't
+        // want to double-zoom if zoom is already applied.
+        // Pointer elements are handled separately in `render_pointer_for_output`
+        // because cursors must rescale around their hotspot (not the focal point)
+        // to stay aligned with the pointer position, and may span outputs or use
+        // a hardware cursor plane.
+        apply_zoom!(
+            Monitor,
+            RescaledTile,
+            LayerSurface,
+            Wayland,
+            SolidColor,
+            RelocatedColor,
+            RelocatedLayerSurface
         )
     }
 
@@ -5889,7 +5950,7 @@ impl Niri {
                     xray: None,
                 };
 
-                let pointer_pos = self.render_pointer(ctx, &output, &mut |elem| {
+                self.render_pointer(ctx, &output, &mut |elem| {
                     pointer.push(elem.into());
                 });
 
@@ -5908,7 +5969,12 @@ impl Niri {
                     }
 
                     res.ok().map(|(texture, sync_point, geo)| {
-                        let pointer_pos = pointer_pos.to_physical_precise_round(scale);
+                        let cursor_pos = self
+                            .tablet_cursor_location
+                            .unwrap_or_else(|| self.seat.get_pointer().unwrap().current_location());
+                        let output_pos = self.global_space.output_geometry(&output).unwrap().loc;
+                        let pointer_pos =
+                            (cursor_pos - output_pos.to_f64()).to_physical_precise_round(scale);
                         let hotspot = pointer_pos - geo.loc;
                         (texture, sync_point, geo, hotspot)
                     })
@@ -6900,81 +6966,6 @@ fn scale_relocate_crop<E: Element>(
     let elem = RescaleRenderElement::from_element(elem, Point::from((0, 0)), zoom);
     let elem = RelocateRenderElement::from_element(elem, ws_geo.loc, Relocate::Relative);
     CropRenderElement::from_element(elem, output_scale, ws_geo)
-}
-
-#[allow(clippy::too_many_arguments)]
-fn apply_zoom_to_render_element<R: NiriRenderer>(
-    element: OutputRenderElements<R>,
-    zoom_factor: f64,
-    output_scale: Scale<f64>,
-    zoom_focal: Point<f64, Logical>,
-    output_geo: Rectangle<i32, Logical>,
-    zoom_filter_threshold: f64,
-) -> OutputRenderElements<R> {
-    macro_rules! apply_zoom {
-        ($($variant:ident),*) => {
-            match element {
-                OutputRenderElements::ScreenshotUi(elem) => {
-                    match elem {
-                        // The screenshot buffer texture already has zoom baked
-                        // in from capture (capture_screenshots goes through
-                        // render() -> zoomed_element()).
-                        ScreenshotUiRenderElement::Screenshot(tex) => {
-                            OutputRenderElements::ScreenshotUi(
-                                ScreenshotUiRenderElement::Screenshot(tex),
-                            )
-                        }
-                        ScreenshotUiRenderElement::SolidColor(elem) => {
-                            // Pre-compute exact zoomed geometry from corner
-                            // points to avoid 1-pixel gaps between adjacent
-                            // solid-color tiles that RescaleRenderElement's
-                            // per-element rounding causes.
-                            let geo = elem.geometry(output_scale);
-                            let orig_rect = Rectangle::new(geo.loc, geo.size);
-                            let zoomed_rect = zoom_transform_physical_rect(
-                                orig_rect,
-                                zoom_factor,
-                                zoom_focal,
-                                output_scale,
-                            );
-                            let zoomed = elem.with_geometry_physical(zoomed_rect, output_scale);
-                            ZoomedRenderElement::ScreenshotSolidColor(zoomed).into()
-                        }
-                    }
-                }
-                $(
-                    OutputRenderElements::$variant(elem) => {
-                        let e = ZoomElement::from_element(
-                            elem,
-                            zoom_focal.to_physical(output_scale),
-                            zoom_factor,
-                            output_geo
-                                .loc
-                                .to_f64()
-                                .to_physical(output_scale),
-                            Relocate::Relative,
-                        )
-                        .with_filter(zoom_filter(zoom_factor, zoom_filter_threshold));
-                        ZoomedRenderElement::$variant(e).into()
-                    }
-                )*
-                _ => element,
-            }
-        }
-    }
-
-    // We don't zoom WindowMruUI and ExitConfirmDialog. Pointer is handled by render_pointer
-    // directly. The Zoomed variant is not here since we don't want to double-zoom if zoom is
-    // already applied.
-    apply_zoom!(
-        Monitor,
-        RescaledTile,
-        LayerSurface,
-        Wayland,
-        SolidColor,
-        RelocatedColor,
-        RelocatedLayerSurface
-    )
 }
 
 niri_render_elements! {
