@@ -631,6 +631,17 @@ impl State {
                 });
             }
 
+            // Check if this workspace's resting horizontal scroll position changed. This is
+            // intentionally a per-workspace event so a viewport move emits a single event for the
+            // workspace, instead of fanning out to one WindowLayout update per tile.
+            let scrolling_view_pos = ws.scrolling_view_pos();
+            if ipc_ws.scrolling_view_pos != scrolling_view_pos {
+                events.push(Event::WorkspaceViewPosChanged {
+                    workspace_id: id,
+                    view_pos: scrolling_view_pos,
+                });
+            }
+
             // Check if this workspace urgent state changed.
             let urgent = ws.is_urgent();
             if urgent != ipc_ws.is_urgent {
@@ -672,6 +683,7 @@ impl State {
                         is_active: mon.is_some_and(|mon| mon.active_workspace_idx() == ws_idx),
                         is_focused: Some(id) == focused_ws_id,
                         active_window_id: ws.active_window().map(|win| win.id().get()),
+                        scrolling_view_pos: ws.scrolling_view_pos(),
                     }
                 })
                 .collect();
