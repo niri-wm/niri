@@ -16,6 +16,12 @@ Settings from included files will be merged with the settings from the main conf
 Included config files can in turn include more files.
 All included files are watched for changes, and the config live-reloads when any of them change.
 
+You can include by filename or path.
+
+* Relative to the current file: `other.kdl` or `./other.kdl`
+* By absolute path: `/path/to/file.kdl`
+* <sup>Since: 26.04</sup> Home dir paths: `~/file.kdl` expands to `/home/user/file.kdl`
+
 Includes work only at the top level of the config:
 
 ```kdl,must-fail
@@ -116,7 +122,7 @@ window-rule {
 
 ### Optional includes
 
-<sup>Since: next release</sup>
+<sup>Since: 26.04</sup>
 
 By default, including a nonexistent file will cause an error.
 You can allow nonexistent includes by setting `optional=true`:

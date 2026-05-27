@@ -19,7 +19,7 @@ use zbus::object_server::SignalEmitter;
 use crate::dbus::mutter_screen_cast::{self, CursorMode, ScreenCastToNiri, StreamTargetId};
 use crate::niri::{CastTarget, Niri, OutputRenderElements, PointerRenderElements, State};
 use crate::niri_render_elements;
-use crate::render_helpers::RenderTarget;
+use crate::render_helpers::{RenderCtx, RenderTarget};
 use crate::utils::{get_monotonic_time, CastSessionId, CastStreamId};
 use crate::window::mapped::{MappedId, WindowCastRenderElements};
 
@@ -201,11 +201,6 @@ impl State {
 
             self.backend.with_primary_renderer(|renderer| {
                 let mut elements = Vec::new();
-                mapped.render_for_screen_cast(renderer, scale, &mut |elem| {
-                    elements.push(CastRenderElement::from(elem))
-                });
-
-                let mut pointer_elements = Vec::new();
                 let mut pointer_location = Point::default();
 
                 if self.niri.pointer_visibility.is_visible() {
@@ -225,11 +220,18 @@ impl State {
                         self.niri.render_pointer(renderer, output, &mut |elem| {
                             let elem =
                                 RelocateRenderElement::from_element(elem, pos, Relocate::Relative);
-                            pointer_elements.push(CastRenderElement::from(elem));
+                            elements.push(CastRenderElement::from(elem));
                         });
                     }
                 }
-                let cursor_data = CursorData::compute(&pointer_elements, pointer_location, scale);
+
+                let main_start = elements.len();
+                mapped.render_for_screen_cast(renderer, scale, &mut |elem| {
+                    elements.push(CastRenderElement::from(elem))
+                });
+
+                let cursor_data =
+                    CursorData::compute(&elements, main_start, pointer_location, scale);
 
                 if cast.dequeue_buffer_and_render(
                     renderer,
@@ -546,7 +548,6 @@ impl Niri {
         let scale = Scale::from(output.current_scale().fractional_scale());
 
         let mut elements = Vec::new();
-        let mut pointer = Vec::new();
         let mut cursor_data = None;
 
         let mut casts_to_stop = vec![];
@@ -575,14 +576,6 @@ impl Niri {
             }
 
             if cursor_data.is_none() {
-                self.render_inner(
-                    renderer,
-                    output,
-                    false,
-                    RenderTarget::Screencast,
-                    &mut |elem| elements.push(elem.into()),
-                );
-
                 let mut pointer_pos = Point::default();
                 if self.pointer_visibility.is_visible() {
                     let output_geo = self.global_space.output_geometry(output).unwrap().to_f64();
@@ -594,12 +587,25 @@ impl Niri {
                     if output_geo.contains(pointer_loc) {
                         pointer_pos = pointer_loc - output_geo.loc;
                         self.render_pointer(renderer, output, &mut |elem| {
-                            pointer.push(elem.into())
+                            elements.push(elem.into())
                         });
                     }
                 }
 
-                cursor_data = Some(CursorData::compute(&pointer, pointer_pos, scale));
+                let main_start = elements.len();
+                let ctx = RenderCtx {
+                    renderer,
+                    target: RenderTarget::Screencast,
+                    xray: None,
+                };
+                self.render(ctx, output, false, &mut |elem| elements.push(elem.into()));
+
+                cursor_data = Some(CursorData::compute(
+                    &elements,
+                    main_start,
+                    pointer_pos,
+                    scale,
+                ));
             }
             let cursor_data = cursor_data.as_ref().unwrap();
 
@@ -660,11 +666,6 @@ impl Niri {
             }
 
             let mut elements = Vec::new();
-            mapped.render_for_screen_cast(renderer, scale, &mut |elem| {
-                elements.push(CastRenderElement::from(elem))
-            });
-
-            let mut pointer_elements = Vec::new();
             let mut pointer_location = Point::default();
 
             if self.pointer_visibility.is_visible() {
@@ -681,11 +682,17 @@ impl Niri {
                     self.render_pointer(renderer, output, &mut |elem| {
                         let elem =
                             RelocateRenderElement::from_element(elem, pos, Relocate::Relative);
-                        pointer_elements.push(CastRenderElement::from(elem));
+                        elements.push(CastRenderElement::from(elem));
                     });
                 }
             }
-            let cursor_data = CursorData::compute(&pointer_elements, pointer_location, scale);
+
+            let main_start = elements.len();
+            mapped.render_for_screen_cast(renderer, scale, &mut |elem| {
+                elements.push(CastRenderElement::from(elem))
+            });
+
+            let cursor_data = CursorData::compute(&elements, main_start, pointer_location, scale);
 
             if cast.dequeue_buffer_and_render(renderer, &elements, &cursor_data, bbox.size, scale) {
                 cast.last_frame_time = target_presentation_time;

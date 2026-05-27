@@ -20,6 +20,7 @@
       rust-overlay,
     }:
     let
+      revision = self.shortRev or self.dirtyShortRev or "unknown";
       niri-package =
         {
           lib,
@@ -46,7 +47,7 @@
 
         rustPlatform.buildRustPackage {
           pname = "niri";
-          version = self.shortRev or self.dirtyShortRev or "unknown";
+          version = revision;
 
           src = lib.fileset.toSource {
             root = ./.;
@@ -134,7 +135,7 @@
             ''
             + lib.optionalString withSystemd ''
               install -Dm755 resources/niri-session $out/bin/niri-session
-              install -Dm644 resources/niri{.service,-shutdown.target} -t $out/share/systemd/user
+              install -Dm644 resources/niri{.service,-shutdown.target} -t $out/lib/systemd/user
             '';
 
           env = {
@@ -148,7 +149,7 @@
                 "-Wl,--pop-state"
               ]
             );
-            NIRI_BUILD_COMMIT = self.shortRev;
+            NIRI_BUILD_COMMIT = revision;
           };
 
           passthru = {
