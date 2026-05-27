@@ -447,6 +447,16 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
                              active window changed to {active_window_id:?}"
                         );
                     }
+                    Event::WorkspaceViewPosChanged {
+                        workspace_id,
+                        view_pos,
+                    } => {
+                        println!(
+                            "Workspace {workspace_id}: \
+                             scrolling view position changed to {}",
+                            fmt_rounded(view_pos)
+                        );
+                    }
                     Event::WindowsChanged { windows } => {
                         println!("Windows changed: {windows:?}");
                     }
