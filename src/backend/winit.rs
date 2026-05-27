@@ -18,6 +18,7 @@ use smithay::reexports::wayland_protocols::wp::presentation_time::server::wp_pre
 use smithay::reexports::winit::dpi::LogicalSize;
 use smithay::reexports::winit::platform::wayland::WindowAttributesExtWayland;
 use smithay::reexports::winit::window::Window;
+use smithay::utils::{Physical, Size};
 use smithay::wayland::dmabuf::{DmabufFeedbackBuilder, DmabufGlobal};
 use smithay::wayland::presentation::Refresh;
 
@@ -43,8 +44,23 @@ impl Winit {
     ) -> Result<Self, winit::Error> {
         let _span = tracy_client::span!("Winit::new");
 
+        let name = OutputName {
+            connector: "winit".to_string(),
+            make: Some("Smithay".to_string()),
+            model: Some("Winit".to_string()),
+            serial: None,
+        };
+
+        let size = config
+            .borrow()
+            .outputs
+            .find(&name)
+            .and_then(|output| output.mode)
+            .map(|mode| LogicalSize::new(mode.mode.width as f64, mode.mode.height as f64))
+            .unwrap_or_else(|| LogicalSize::new(1280.0, 800.0));
+
         let builder = Window::default_attributes()
-            .with_inner_size(LogicalSize::new(1280.0, 800.0))
+            .with_inner_size(size)
             // .with_resizable(false)
             .with_title("niri")
             .with_name("niri", "");
@@ -68,12 +84,7 @@ impl Winit {
         output.change_current_state(Some(mode), None, None, None);
         output.set_preferred(mode);
 
-        output.user_data().insert_if_missing(|| OutputName {
-            connector: "winit".to_string(),
-            make: Some("Smithay".to_string()),
-            model: Some("Winit".to_string()),
-            serial: None,
-        });
+        output.user_data().insert_if_missing(move || name);
 
         let physical_properties = output.physical_properties();
         let ipc_outputs = Arc::new(Mutex::new(HashMap::from([(
@@ -103,31 +114,7 @@ impl Winit {
         event_loop
             .insert_source(winit, move |event, _, state| match event {
                 WinitEvent::Resized { size, .. } => {
-                    let winit = state.backend.winit();
-                    winit.output.change_current_state(
-                        Some(Mode {
-                            size,
-                            refresh: 60_000,
-                        }),
-                        None,
-                        None,
-                        None,
-                    );
-
-                    {
-                        let mut ipc_outputs = winit.ipc_outputs.lock().unwrap();
-                        let output = ipc_outputs.values_mut().next().unwrap();
-                        let mode = &mut output.modes[0];
-                        mode.width = size.w.clamp(0, u16::MAX as i32) as u16;
-                        mode.height = size.h.clamp(0, u16::MAX as i32) as u16;
-                        if let Some(logical) = output.logical.as_mut() {
-                            logical.width = size.w as u32;
-                            logical.height = size.h as u32;
-                        }
-                        state.niri.ipc_outputs_changed = true;
-                    }
-
-                    state.niri.output_resized(&winit.output);
+                    state.backend.winit().resize(size, &mut state.niri);
                 }
                 WinitEvent::Input(event) => state.process_input_event(event),
                 WinitEvent::Focus(_) => (),
@@ -318,5 +305,65 @@ impl Winit {
 
     pub fn ipc_outputs(&self) -> Arc<Mutex<IpcOutputMap>> {
         self.ipc_outputs.clone()
+    }
+
+    pub fn on_output_config_changed(&mut self, niri: &mut Niri) {
+        let _span = tracy_client::span!("Winit::on_output_config_changed");
+
+        let new_size = self
+            .config
+            .borrow()
+            .outputs
+            .find(&self.output.user_data().get::<OutputName>().unwrap())
+            .and_then(|output| output.mode)
+            .map(|mode| Size::new(mode.mode.width as f64, mode.mode.height as f64));
+
+        let Some(new_size) = new_size else {
+            return;
+        };
+
+        let old_size = self
+            .backend
+            .window_size()
+            .to_f64()
+            .to_logical(self.backend.scale_factor());
+
+        if new_size != old_size {
+            if let Some(size) = self
+                .backend
+                .window()
+                .request_inner_size(LogicalSize::new(new_size.w, new_size.h))
+            {
+                self.resize(Size::new(size.width as i32, size.height as i32), niri);
+            }
+            // If request returned None, resize is handled by Resize event
+        }
+    }
+
+    fn resize(&mut self, size: Size<i32, Physical>, niri: &mut Niri) {
+        self.output.change_current_state(
+            Some(Mode {
+                size,
+                refresh: 60_000,
+            }),
+            None,
+            None,
+            None,
+        );
+
+        {
+            let mut ipc_outputs = self.ipc_outputs.lock().unwrap();
+            let output = ipc_outputs.values_mut().next().unwrap();
+            let mode = &mut output.modes[0];
+            mode.width = size.w.clamp(0, u16::MAX as i32) as u16;
+            mode.height = size.h.clamp(0, u16::MAX as i32) as u16;
+            if let Some(logical) = output.logical.as_mut() {
+                logical.width = size.w as u32;
+                logical.height = size.h as u32;
+            }
+            niri.ipc_outputs_changed = true;
+        }
+
+        niri.output_resized(&self.output);
     }
 }
