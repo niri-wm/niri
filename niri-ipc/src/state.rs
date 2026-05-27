@@ -158,6 +158,14 @@ impl EventStreamStatePart for WorkspacesState {
                 let ws = ws.expect("changed workspace was missing from the map");
                 ws.active_window_id = active_window_id;
             }
+            Event::WorkspaceViewPosChanged {
+                workspace_id,
+                view_pos,
+            } => {
+                let ws = self.workspaces.get_mut(&workspace_id);
+                let ws = ws.expect("changed workspace was missing from the map");
+                ws.scrolling_view_pos = view_pos;
+            }
             event => return Some(event),
         }
         None
@@ -319,5 +327,40 @@ impl EventStreamStatePart for CastsState {
             event => return Some(event),
         }
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ws(id: u64, view_pos: f64) -> Workspace {
+        Workspace {
+            id,
+            idx: 1,
+            name: None,
+            output: None,
+            is_urgent: false,
+            is_active: true,
+            is_focused: true,
+            active_window_id: None,
+            scrolling_view_pos: view_pos,
+        }
+    }
+
+    #[test]
+    fn view_pos_changed_updates_only_the_named_workspace() {
+        let mut state = WorkspacesState::default();
+        state.apply(Event::WorkspacesChanged {
+            workspaces: vec![ws(1, 0.0), ws(2, 100.0)],
+        });
+
+        state.apply(Event::WorkspaceViewPosChanged {
+            workspace_id: 1,
+            view_pos: 250.5,
+        });
+
+        assert_eq!(state.workspaces[&1].scrolling_view_pos, 250.5);
+        assert_eq!(state.workspaces[&2].scrolling_view_pos, 100.0);
     }
 }
