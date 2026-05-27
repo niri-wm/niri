@@ -276,7 +276,13 @@ enum RequestSizeOnce {
 }
 
 impl Mapped {
-    pub fn new(window: Window, rules: ResolvedWindowRules, hook: HookId, config: &Config) -> Self {
+    pub fn new(
+        window: Window,
+        rules: ResolvedWindowRules,
+        hook: HookId,
+        config: &Config,
+        labels: Option<HashMap<String, Option<String>>>,
+    ) -> Self {
         let surface = window.wl_surface().expect("no X11 support");
         let credentials = get_credentials_for_surface(&surface);
         let mut rv = Self {
@@ -312,7 +318,7 @@ impl Mapped {
             is_pending_maximized: false,
             uncommitted_maximized: Vec::new(),
             focus_timestamp: None,
-            labels: None,
+            labels,
         };
 
         rv.is_maximized = rv.sizing_mode().is_maximized();

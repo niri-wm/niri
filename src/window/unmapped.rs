@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use niri_config::PresetSize;
 use smithay::desktop::Window;
 use smithay::output::Output;
@@ -12,6 +14,8 @@ pub struct Unmapped {
     pub state: InitialConfigureState,
     /// Activation token, if one was used on this unmapped window.
     pub activation_token_data: Option<XdgActivationTokenData>,
+    /// The labels assigned to the window
+    pub labels: Option<HashMap<String, Option<String>>>,
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -79,7 +83,7 @@ pub enum InitialConfigureState {
 
 impl Unmapped {
     /// Wraps a newly created window that hasn't been initially configured yet.
-    pub fn new(window: Window) -> Self {
+    pub fn new(window: Window, labels: Option<HashMap<String, Option<String>>>) -> Self {
         Self {
             window,
             state: InitialConfigureState::NotConfigured {
@@ -87,6 +91,7 @@ impl Unmapped {
                 wants_maximized: false,
             },
             activation_token_data: None,
+            labels,
         }
     }
 

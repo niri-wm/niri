@@ -85,6 +85,7 @@ impl CompositorHandler for State {
                         window,
                         state,
                         activation_token_data,
+                        labels,
                     } = entry.remove();
 
                     window.on_commit();
@@ -197,7 +198,7 @@ impl CompositorHandler for State {
                     let hook = add_mapped_toplevel_pre_commit_hook(toplevel);
                     let mapped = {
                         let config = self.niri.config.borrow();
-                        Mapped::new(window, rules, hook, &config)
+                        Mapped::new(window, rules, hook, &config, labels)
                     };
                     let window = mapped.window.clone();
 
@@ -263,6 +264,7 @@ impl CompositorHandler for State {
             if let Some((mapped, output)) = self.niri.layout.find_window_and_output(surface) {
                 let window = mapped.window.clone();
                 let output = output.cloned();
+                let labels = mapped.labels().cloned();
 
                 let id = mapped.id();
 
@@ -310,7 +312,7 @@ impl CompositorHandler for State {
 
                     // Newly-unmapped toplevels must perform the initial commit-configure sequence
                     // afresh.
-                    let unmapped = Unmapped::new(window);
+                    let unmapped = Unmapped::new(window, labels);
                     self.niri.unmapped_windows.insert(surface.clone(), unmapped);
 
                     if let Some(output) = output {

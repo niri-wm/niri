@@ -181,7 +181,7 @@ impl<'a> WindowRef<'a> {
 
     pub fn labels(self) -> Option<&'a HashMap<String, Option<String>>> {
         match self {
-            WindowRef::Unmapped(_) => None,
+            WindowRef::Unmapped(unmapped) => unmapped.labels.as_ref(),
             WindowRef::Mapped(mapped) => mapped.labels(),
         }
     }
