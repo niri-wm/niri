@@ -1,7 +1,9 @@
 use std::sync::{Arc, Mutex};
 
 use niri_config::CornerRadius;
-use smithay::backend::renderer::gles::GlesRenderer;
+use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
+use smithay::backend::renderer::utils::{import_surface, RendererSurfaceStateUserData};
+use smithay::backend::renderer::Renderer as _;
 use smithay::utils::{Logical, Point, Rectangle, Scale};
 use smithay::wayland::compositor::{with_states, SurfaceData};
 use wayland_server::protocol::wl_surface::WlSurface;
@@ -34,6 +36,7 @@ pub struct BackgroundEffect {
 pub struct Options {
     pub blur: bool,
     pub xray: bool,
+    pub ignore_opacity: Option<f64>,
     pub noise: Option<f64>,
     pub saturation: Option<f64>,
 }
@@ -124,6 +127,7 @@ impl BackgroundEffect {
         let mut options = Options {
             blur,
             xray: effect.xray == Some(true),
+            ignore_opacity: effect.ignore_opacity,
             noise: effect.noise,
             saturation: effect.saturation,
         };
@@ -154,6 +158,7 @@ impl BackgroundEffect {
         ns: Option<usize>,
         mut params: RenderParams,
         xray_pos: XrayPos,
+        alpha_mask: Option<AlphaMask>,
         push: &mut dyn FnMut(BackgroundEffectElement),
     ) {
         if !self.is_visible() {
@@ -180,6 +185,14 @@ impl BackgroundEffect {
         };
         let saturation = self.options.saturation.unwrap_or(saturation) as f32;
 
+        let alpha_mask = match (self.options.ignore_opacity, alpha_mask) {
+            (Some(threshold), Some(mut m)) => {
+                m.threshold = threshold as f32;
+                Some(m)
+            }
+            _ => None,
+        };
+
         if self.options.xray {
             let Some(xray) = ctx.xray else {
                 return;
@@ -193,16 +206,24 @@ impl BackgroundEffect {
                 blur,
                 noise,
                 saturation,
+                alpha_mask,
                 &mut |elem| push(elem.into()),
             );
         } else {
             // Render non-xray effect.
-            let elem = self
-                .nonxray
-                .render(ns, params, blur_options, noise, saturation);
+            let elem =
+                self.nonxray
+                    .render(ns, params, blur_options, noise, saturation, alpha_mask);
             push(elem.into());
         }
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct AlphaMask {
+    pub surface_tex: GlesTexture,
+    pub surface_geo: Rectangle<f64, Logical>,
+    pub threshold: f32,
 }
 
 fn render_params_for_tile(
@@ -311,8 +332,32 @@ pub fn render_for_tile(
             return;
         }
 
-        let mut surface_geo = surface_geo(states).unwrap_or_default().to_f64();
-        surface_geo.loc += surface_off;
+        let mut surface_geo_logical = surface_geo(states).unwrap_or_default().to_f64();
+        surface_geo_logical.loc += surface_off;
+
+        let alpha_mask = if background_effect.options.ignore_opacity.is_some()
+            && !should_block_out
+        {
+            let _ = import_surface(ctx.renderer, states);
+            let data = states.data_map.get::<RendererSurfaceStateUserData>();
+            let texture = data.and_then(|data| {
+                data.lock()
+                    .unwrap()
+                    .texture(ctx.renderer.context_id())
+                    .cloned()
+            });
+
+            let mut mask_geo = surface_geo_logical.upscale(surface_anim_scale);
+            mask_geo.loc += geometry.loc;
+
+            texture.map(|surface_tex| AlphaMask {
+                surface_tex,
+                surface_geo: mask_geo,
+                threshold: 0.0,
+            })
+        } else {
+            None
+        };
 
         let Some(params) = render_params_for_tile(
             geometry,
@@ -320,13 +365,13 @@ pub fn render_for_tile(
             clip_to_geometry,
             should_block_out,
             blur_region,
-            surface_geo,
+            surface_geo_logical,
             surface_anim_scale,
         ) else {
             return;
         };
 
         let xray_pos = xray_pos.offset(params.geometry.loc - geometry.loc);
-        background_effect.render(ctx, ns, params, xray_pos, push);
+        background_effect.render(ctx, ns, params, xray_pos, alpha_mask, push);
     });
 }
