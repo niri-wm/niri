@@ -3129,13 +3129,12 @@ impl State {
         // Handle trackpoint scroll with Super modifier before anything else,
         // since trackpoint devices may produce Wheel or Continuous events
         // depending on the device/firmware.
-        {
-            let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
+        if let Some(keyboard) = self.niri.seat.get_keyboard() {
+            let mods = keyboard.modifier_state();
             let modifiers = modifiers_from_state(mods);
 
             let is_trackpoint_scroll = modifiers.contains(Modifiers::SUPER)
-                && (is_from_trackpoint
-                    || source == smithay::backend::input::AxisSource::Continuous);
+                && (is_from_trackpoint || source == AxisSource::Continuous);
 
             if is_trackpoint_scroll {
                 // For Wheel events use amount_v120 (converted to scroll units),
@@ -3156,17 +3155,19 @@ impl State {
                     .vertical_finger_scroll_tracker
                     .accumulate(vertical);
 
-                let config = self.niri.config.borrow();
-                let bindings = make_binds_iter(&config, &mut self.niri.window_mru_ui, modifiers);
-                let bind_up =
-                    find_configured_bind(bindings.clone(), mod_key, Trigger::TrackpointScrollUp, mods);
-                let bind_down =
-                    find_configured_bind(bindings.clone(), mod_key, Trigger::TrackpointScrollDown, mods);
-                let bind_left =
-                    find_configured_bind(bindings.clone(), mod_key, Trigger::TrackpointScrollLeft, mods);
-                let bind_right =
-                    find_configured_bind(bindings, mod_key, Trigger::TrackpointScrollRight, mods);
-                drop(config);
+                let (bind_up, bind_down, bind_left, bind_right) = {
+                    let config = self.niri.config.borrow();
+                    let bindings =
+                        make_binds_iter(&config, &mut self.niri.window_mru_ui, modifiers);
+                    let find_bind =
+                        |trigger| find_configured_bind(bindings.clone(), mod_key, trigger, mods);
+                    (
+                        find_bind(Trigger::TrackpointScrollUp),
+                        find_bind(Trigger::TrackpointScrollDown),
+                        find_bind(Trigger::TrackpointScrollLeft),
+                        find_bind(Trigger::TrackpointScrollRight),
+                    )
+                };
 
                 // Ensure a minimum cooldown for all trackpoint scroll binds,
                 // even if the user-configured bind doesn't specify one.
