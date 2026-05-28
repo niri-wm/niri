@@ -94,19 +94,32 @@ impl CursorManager {
         scale: i32,
         fractional_scale: f64,
     ) -> RenderCursor {
-        let pixel_size = self.effective_cursor_pixel_size(scale, fractional_scale);
+        let pixel_size = self.texture_pixel_size(scale, fractional_scale);
+        // Smooth residual scaling on top of the chosen discrete texture size.
+        // When the multiplier exceeds what `CURSOR_SIZES` provides, this keeps
+        // growing past 1.0 and yields a pixelated-but-continuous magnification.
+        let nat_size = self.effective_cursor_pixel_size(scale, fractional_scale) as f64;
+        let mult = self.dynamic_size_multiplier.get() as f64;
+        let desired = nat_size * mult;
+        let rescale = if pixel_size > 0 {
+            desired / pixel_size as f64
+        } else {
+            1.0
+        };
         self.get_cursor_with_name(icon, scale, fractional_scale)
             .map(|cursor| RenderCursor::Named {
                 icon,
                 scale,
                 cursor,
                 pixel_size,
+                rescale,
             })
             .unwrap_or_else(|| RenderCursor::Named {
                 icon: Default::default(),
                 scale,
                 cursor: self.get_default_cursor(scale, fractional_scale),
                 pixel_size,
+                rescale,
             })
     }
 
@@ -123,13 +136,14 @@ impl CursorManager {
 
     /// Set the common dynamic multiplier for cursor sizes.
     pub fn set_size_multiplier(&mut self, m: f32) {
-        let m = m.clamp(1.0, 3.0);
+        let m = m.max(1.0);
         let old = self.dynamic_size_multiplier.get();
         if (old - m).abs() > 0.001 {
             self.dynamic_size_multiplier.set(m);
-            // Only clear cache when crossing significant size boundaries to avoid flicker
-            // During smooth animations, the cache can be reused for nearby sizes
-            if (old <= 1.01 && m > 1.01) || (old > 1.01 && m <= 1.01) || (old - m).abs() > 0.5 {
+            // Only clear cache when crossing the magnification boundary; for
+            // intermediate values the residual rescale handles smoothness so
+            // we can reuse cached textures.
+            if (old <= 1.01) != (m <= 1.01) {
                 self.named_cursor_cache.get_mut().clear();
             }
         }
@@ -140,71 +154,64 @@ impl CursorManager {
     }
 
     /// Compute the effective pixel size for the cursor considering fractional scaling.
+    ///
+    /// This always returns a size from `CURSOR_SIZES` (the "natural" set of sizes a
+    /// well-behaved xcursor theme provides). It does *not* fold in the dynamic
+    /// magnification multiplier: that is applied at render time via a smooth
+    /// rescale element on top of the chosen texture, so we can grow past the
+    /// largest provided size without losing animation smoothness.
     pub fn effective_cursor_pixel_size(&self, scale: i32, fractional_scale: f64) -> i32 {
         let base_size = self.size as f32;
-        let mult = self.dynamic_size_multiplier.get();
 
-        // Use fractional scale for more accurate size calculation
         let effective_scale = if (fractional_scale - scale as f64).abs() > 0.01 {
             fractional_scale as f32
         } else {
             scale as f32
         };
 
-        // Calculate the target size using the effective scale
-        let target_size = (base_size * effective_scale * mult).round() as i32;
+        let target_size = (base_size * effective_scale).round() as i32;
 
-        // Find the closest available cursor size
-        let available_size = if mult > 1.01 {
-            // When magnified, ensure we pick a visibly larger size
-            let base_target = (base_size * effective_scale).round() as i32;
-            let base_available = CURSOR_SIZES
-                .iter()
-                .min_by_key(|&&s| (s - base_target).abs())
-                .copied()
-                .unwrap_or(base_target);
+        let snapped = CURSOR_SIZES
+            .iter()
+            .min_by_key(|&&s| (s - target_size).abs())
+            .copied()
+            .unwrap_or(target_size);
 
-            // Calculate minimum size that would be visibly larger
-            // Use a progressive scale based on the multiplier value
-            let scale_factor = if mult < 1.5 {
-                // For smaller magnification, require at least 25% increase
-                1.25
-            } else if mult < 2.0 {
-                // For medium magnification, scale proportionally
-                1.0 + (mult - 1.0) * 0.5
-            } else {
-                // For large magnification, scale more aggressively
-                mult * 0.8
-            };
+        snapped.min(MAX_CURSOR_PIXELS).max(1)
+    }
 
-            let min_magnified = (base_available as f32 * scale_factor).round() as i32;
+    /// Pixel size used for the cached cursor texture, taking magnification into
+    /// account: while magnified we pick the largest theme-provided size that
+    /// still fits within the desired multiplier, so the residual rescale stays
+    /// in the `[1.0, next_size/this_size)` range and looks sharp until we run
+    /// out of available sizes (after which we keep upscaling, pixelated).
+    pub fn texture_pixel_size(&self, scale: i32, fractional_scale: f64) -> i32 {
+        let base_size = self.size as f32;
+        let mult = self.dynamic_size_multiplier.get();
 
-            // Find the smallest size that meets our minimum
-            let magnified = CURSOR_SIZES
-                .iter()
-                .find(|&&s| s >= min_magnified)
-                .copied();
-
-            // If we found a suitable size, use it; otherwise interpolate
-            magnified.unwrap_or_else(|| {
-                // For smooth animation, allow intermediate sizes
-                target_size.min(MAX_CURSOR_PIXELS).max(base_available + 4)
-            })
+        let effective_scale = if (fractional_scale - scale as f64).abs() > 0.01 {
+            fractional_scale as f32
         } else {
-            // Normal size: find closest available
-            CURSOR_SIZES
-                .iter()
-                .min_by_key(|&&s| (s - target_size).abs())
-                .copied()
-                .unwrap_or(target_size)
+            scale as f32
         };
 
-        available_size.min(MAX_CURSOR_PIXELS).max(1)
+        let desired = (base_size * effective_scale * mult).round() as i32;
+
+        let chosen = CURSOR_SIZES
+            .iter()
+            .copied()
+            .filter(|&s| s <= desired)
+            .max()
+            .or_else(|| CURSOR_SIZES.iter().copied().min())
+            .unwrap_or(desired);
+
+        chosen.min(MAX_CURSOR_PIXELS).max(1)
     }
 
     pub fn get_cursor_with_name(&self, icon: CursorIcon, scale: i32, fractional_scale: f64) -> Option<Rc<XCursor>> {
-        // Use consistent size calculation for cache lookup
-        let pixel_size = self.effective_cursor_pixel_size(scale, fractional_scale);
+        // Use texture pixel size (includes magnification snap) for the cache key
+        // so each discrete size we render gets its own entry.
+        let pixel_size = self.texture_pixel_size(scale, fractional_scale);
         self.named_cursor_cache
             .borrow_mut()
             .entry((icon, pixel_size))
@@ -320,6 +327,11 @@ pub enum RenderCursor {
         scale: i32,
         cursor: Rc<XCursor>,
         pixel_size: i32,
+        /// Residual scale applied around the hotspot at render time, on top of
+        /// the discrete texture size chosen above. Values >1.0 magnify; equal
+        /// to 1.0 when not magnified or when the multiplier landed exactly on a
+        /// theme-provided size.
+        rescale: f64,
     },
 }
 

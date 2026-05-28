@@ -3755,10 +3755,11 @@ impl Niri {
                 scale,
                 cursor,
                 pixel_size,
+                rescale,
             } => {
                 let (idx, frame) = cursor.frame(self.start_time.elapsed().as_millis() as u32);
                 let hotspot = XCursor::hotspot(frame).to_logical(scale);
-                let pointer_pos =
+                let element_pos =
                     (pointer_pos - hotspot.to_f64()).to_physical_precise_round(output_scale);
 
                 let texture = self
@@ -3766,14 +3767,24 @@ impl Niri {
                     .get(icon, pixel_size, scale, &cursor, idx);
                 match MemoryRenderBufferRenderElement::from_buffer(
                     renderer,
-                    pointer_pos,
+                    element_pos,
                     &texture,
                     None,
                     None,
                     None,
                     Kind::Cursor,
                 ) {
-                    Ok(element) => push(element.into()),
+                    Ok(element) => {
+                        if (rescale - 1.0).abs() < 0.001 {
+                            push(element.into());
+                        } else {
+                            let anchor: Point<i32, Physical> =
+                                pointer_pos.to_physical_precise_round(output_scale);
+                            let scaled =
+                                RescaleRenderElement::from_element(element, anchor, rescale);
+                            push(scaled.into());
+                        }
+                    }
                     Err(err) => {
                         warn!("error importing a cursor texture: {err:?}");
                     }
@@ -6558,6 +6569,7 @@ niri_render_elements! {
         Wayland = WaylandSurfaceRenderElement<R>,
         WaylandRescaled = RescaleRenderElement<WaylandSurfaceRenderElement<R>>,
         NamedPointer = MemoryRenderBufferRenderElement<R>,
+        NamedPointerRescaled = RescaleRenderElement<MemoryRenderBufferRenderElement<R>>,
     }
 }
 
