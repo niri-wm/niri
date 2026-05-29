@@ -15,6 +15,7 @@ output "eDP-1" {
     variable-refresh-rate // on-demand=true
     focus-at-startup
     backdrop-color "#001100"
+    max-bpc 8
 
     hot-corners {
         // off
@@ -276,6 +277,23 @@ The alpha channel for this color will be ignored.
 ```kdl
 output "HDMI-A-1" {
     backdrop-color "#001100"
+}
+```
+
+### `max-bpc`
+
+<sup>Since: next release</sup>
+
+Set the maximum bits per channel (BPC) for this output.
+You *do not* need to set this option unless you hit bandwidth issues (can't set a monitor configuration that works on other compositor) or lower-than-expected color depth.
+Particularly, 10-bit color output may work even if max-bpc is 8.
+
+Valid values are `6`, `8`, `10`, `12`, `14`, `16`.
+
+```kdl
+// Set 8 max-bpc on HDMI-A-1 to lower the bandwidth.
+output "HDMI-A-1" {
+    max-bpc 8
 }
 ```
 
