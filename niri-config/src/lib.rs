@@ -928,6 +928,8 @@ mod tests {
                 Mod+Shift+E allow-inhibiting=false { quit skip-confirmation=true; }
                 Mod+WheelScrollDown cooldown-ms=150 { focus-workspace-down; }
                 Super+Alt+S allow-when-locked=true { spawn-sh "pkill orca || exec orca"; }
+                Mod release=true { toggle-overview; }
+                Shift+Mod release=true allow-invalidation=false { toggle-window-floating; }
             }
 
             switch-events {
@@ -1964,9 +1966,11 @@ mod tests {
                         },
                         action: ToggleKeyboardShortcutsInhibit,
                         repeat: true,
+                        release: false,
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: false,
+                        allow_invalidation: true,
                         hotkey_overlay_title: Some(
                             Some(
                                 "Inhibit",
@@ -1984,9 +1988,11 @@ mod tests {
                         },
                         action: ToggleKeyboardShortcutsInhibit,
                         repeat: true,
+                        release: false,
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: false,
+                        allow_invalidation: true,
                         hotkey_overlay_title: None,
                     },
                     Bind {
@@ -2004,9 +2010,11 @@ mod tests {
                             ],
                         ),
                         repeat: true,
+                        release: false,
                         cooldown: None,
                         allow_when_locked: true,
                         allow_inhibiting: true,
+                        allow_invalidation: true,
                         hotkey_overlay_title: None,
                     },
                     Bind {
@@ -2020,9 +2028,11 @@ mod tests {
                         },
                         action: CloseWindow,
                         repeat: true,
+                        release: false,
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: true,
+                        allow_invalidation: true,
                         hotkey_overlay_title: Some(
                             None,
                         ),
@@ -2038,9 +2048,11 @@ mod tests {
                         },
                         action: FocusMonitorLeft,
                         repeat: true,
+                        release: false,
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: true,
+                        allow_invalidation: true,
                         hotkey_overlay_title: None,
                     },
                     Bind {
@@ -2056,9 +2068,11 @@ mod tests {
                             "eDP-1",
                         ),
                         repeat: true,
+                        release: false,
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: true,
+                        allow_invalidation: true,
                         hotkey_overlay_title: None,
                     },
                     Bind {
@@ -2072,9 +2086,11 @@ mod tests {
                         },
                         action: MoveWindowToMonitorRight,
                         repeat: true,
+                        release: false,
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: true,
+                        allow_invalidation: true,
                         hotkey_overlay_title: None,
                     },
                     Bind {
@@ -2090,9 +2106,11 @@ mod tests {
                             "eDP-1",
                         ),
                         repeat: true,
+                        release: false,
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: true,
+                        allow_invalidation: true,
                         hotkey_overlay_title: None,
                     },
                     Bind {
@@ -2108,9 +2126,11 @@ mod tests {
                             "DP-1",
                         ),
                         repeat: true,
+                        release: false,
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: true,
+                        allow_invalidation: true,
                         hotkey_overlay_title: None,
                     },
                     Bind {
@@ -2124,9 +2144,11 @@ mod tests {
                         },
                         action: ConsumeWindowIntoColumn,
                         repeat: true,
+                        release: false,
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: true,
+                        allow_invalidation: true,
                         hotkey_overlay_title: None,
                     },
                     Bind {
@@ -2144,9 +2166,11 @@ mod tests {
                             ),
                         ),
                         repeat: true,
+                        release: false,
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: true,
+                        allow_invalidation: true,
                         hotkey_overlay_title: None,
                     },
                     Bind {
@@ -2164,9 +2188,11 @@ mod tests {
                             ),
                         ),
                         repeat: true,
+                        release: false,
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: true,
+                        allow_invalidation: true,
                         hotkey_overlay_title: None,
                     },
                     Bind {
@@ -2182,9 +2208,11 @@ mod tests {
                             true,
                         ),
                         repeat: true,
+                        release: false,
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: false,
+                        allow_invalidation: true,
                         hotkey_overlay_title: None,
                     },
                     Bind {
@@ -2196,11 +2224,13 @@ mod tests {
                         },
                         action: FocusWorkspaceDown,
                         repeat: true,
+                        release: false,
                         cooldown: Some(
                             150ms,
                         ),
                         allow_when_locked: false,
                         allow_inhibiting: true,
+                        allow_invalidation: true,
                         hotkey_overlay_title: None,
                     },
                     Bind {
@@ -2216,9 +2246,43 @@ mod tests {
                             "pkill orca || exec orca",
                         ),
                         repeat: true,
+                        release: false,
                         cooldown: None,
                         allow_when_locked: true,
                         allow_inhibiting: true,
+                        allow_invalidation: true,
+                        hotkey_overlay_title: None,
+                    },
+                    Bind {
+                        key: Key {
+                            trigger: KeyCompositor,
+                            modifiers: Modifiers(
+                                0x0,
+                            ),
+                        },
+                        action: ToggleOverview,
+                        repeat: true,
+                        release: true,
+                        cooldown: None,
+                        allow_when_locked: false,
+                        allow_inhibiting: true,
+                        allow_invalidation: true,
+                        hotkey_overlay_title: None,
+                    },
+                    Bind {
+                        key: Key {
+                            trigger: KeyCompositor,
+                            modifiers: Modifiers(
+                                SHIFT,
+                            ),
+                        },
+                        action: ToggleWindowFloating,
+                        repeat: true,
+                        release: true,
+                        cooldown: None,
+                        allow_when_locked: false,
+                        allow_inhibiting: true,
+                        allow_invalidation: false,
                         hotkey_overlay_title: None,
                     },
                 ],
@@ -2339,9 +2403,11 @@ mod tests {
                             ),
                         },
                         repeat: true,
+                        release: false,
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: true,
+                        allow_invalidation: true,
                         hotkey_overlay_title: None,
                     },
                     Bind {
@@ -2361,9 +2427,11 @@ mod tests {
                             ),
                         },
                         repeat: true,
+                        release: false,
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: true,
+                        allow_invalidation: true,
                         hotkey_overlay_title: None,
                     },
                     Bind {
@@ -2385,9 +2453,11 @@ mod tests {
                             ),
                         },
                         repeat: true,
+                        release: false,
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: true,
+                        allow_invalidation: true,
                         hotkey_overlay_title: None,
                     },
                 ],
