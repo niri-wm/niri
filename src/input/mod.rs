@@ -5195,6 +5195,9 @@ fn allowed_when_locked(action: &Action) -> bool {
             | Action::PowerOnMonitors
             | Action::SwitchLayout(_)
             | Action::ToggleKeyboardShortcutsInhibit
+            // Zoom is an accessibility feature that should work on the lockscreen.
+            | Action::SetZoomLevel(_, _)
+            | Action::ToggleZoomLock(_)
     )
 }
 
