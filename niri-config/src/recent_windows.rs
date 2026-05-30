@@ -328,7 +328,7 @@ where
             ));
         }
 
-        // FIXME: To support this, all the mods_with_mouse_binds()/mods_with_wheel_binds()/etc.
+        // FIXME: To support this, all the mods_with_mouse_binds()/mods_with_*wheel_binds()/etc.
         // will need to learn about recent-windows bindings.
         if !matches!(key.trigger, Trigger::Keysym(_)) {
             ctx.emit_error(DecodeError::unexpected(
