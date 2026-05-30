@@ -2778,17 +2778,18 @@ impl State {
 
         // Handle cursor and focal center movement across outputs with different zoom levels or
         // locked zoom.
-        if let Some((new_out, _)) = self.niri.output_under(new_pos) {
-            let new_out = new_out.clone();
+        let redraw_output = self.niri.output_under(new_pos).map(|(out, _)| out.clone());
+        if let Some(ref new_out) = redraw_output {
             self.niri
-                .update_zoom_focal(&new_out, new_pos, Some(pos), false);
+                .update_zoom_focal(new_out, new_pos, Some(pos), false);
         }
 
         self.update_screenshot_ui_pointer(new_pos);
 
         // Redraw to update the cursor position.
-        // FIXME: redraw only outputs overlapping the cursor.
-        self.niri.queue_redraw_all();
+        if let Some(output) = redraw_output {
+            self.niri.queue_redraw(&output);
+        }
     }
 
     fn on_pointer_motion_absolute<I: InputBackend>(
@@ -2872,16 +2873,17 @@ impl State {
             }
         }
 
-        if let Some((output, _)) = self.niri.output_under(pos) {
-            let output = output.clone();
-            self.niri.update_zoom_focal(&output, pos, None, false);
+        let redraw_output = self.niri.output_under(pos).map(|(out, _)| out.clone());
+        if let Some(ref output) = redraw_output {
+            self.niri.update_zoom_focal(output, pos, None, false);
         }
 
         self.update_screenshot_ui_absolute(pos);
 
         // Redraw to update the cursor position.
-        // FIXME: redraw only outputs overlapping the cursor.
-        self.niri.queue_redraw_all();
+        if let Some(output) = redraw_output {
+            self.niri.queue_redraw(&output);
+        }
     }
 
     fn on_pointer_button<I: InputBackend>(&mut self, event: I::PointerButtonEvent) {
