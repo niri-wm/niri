@@ -39,6 +39,15 @@ impl OutputZoomState {
             .is_some_and(ZoomTransition::transitioning)
     }
 
+    /// Returns true only for `Animating` transitions (not `Gesturing`).
+    ///
+    /// See `ZoomTransition::is_animating()` for rationale.
+    pub fn is_animating(&self) -> bool {
+        self.transition
+            .as_ref()
+            .is_some_and(ZoomTransition::is_animating)
+    }
+
     pub fn snapshot_at(&self, now: Duration) -> ZoomSnapshot {
         let level = self.transition.as_ref().map_or(self.level, |transition| {
             transition.current_level_at(self.level, now)
@@ -521,6 +530,16 @@ impl ZoomTransition {
 
     pub fn transitioning(&self) -> bool {
         !self.is_done()
+    }
+
+    /// Returns true only for `Animating` transitions (not `Gesturing`).
+    ///
+    /// Used by `are_animations_ongoing()` to avoid driving the render loop
+    /// during gestures — gesture updates already call `queue_redraw()`
+    /// explicitly, so the VBlank-driven redraw loop is unnecessary and
+    /// creates a render storm that can starve input processing.
+    pub fn is_animating(&self) -> bool {
+        matches!(self, Self::Animating { .. })
     }
 
     pub fn is_done(&self) -> bool {
