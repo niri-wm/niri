@@ -143,6 +143,7 @@ use crate::layout::tile::TileRenderElement;
 use crate::layout::workspace::{Workspace, WorkspaceId};
 use crate::layout::{
     HitType, Layout, LayoutElement as _, LayoutElementRenderElement, MonitorRenderElement,
+    ZoomSnapshot,
 };
 use crate::niri_render_elements;
 use crate::protocols::ext_workspace::{self, ExtWorkspaceManagerState};
@@ -3959,6 +3960,7 @@ impl Niri {
             .unwrap_or_else(|| self.seat.get_pointer().unwrap().current_location());
         let pointer_local = pointer_pos - output_pos.to_f64();
         let zoom_snapshot = self.layout.zoom_snapshot_for_output(output);
+        let scale_with_zoom = self.config.borrow().cursor.scale_with_zoom;
 
         let cursor_logical_pos = display_cursor_local_for_output(
             pointer_pos,
@@ -3998,7 +4000,14 @@ impl Niri {
 
         // Render without zoom, then wrap each element around its hotspot.
         self.render_pointer(ctx, output, &mut |elem| {
-            push(self.zoomed_pointer(elem, output, target_rounded, pointer_local_phys));
+            push(self.zoomed_pointer(
+                elem,
+                output,
+                target_rounded,
+                pointer_local_phys,
+                &zoom_snapshot,
+                scale_with_zoom,
+            ));
         });
     }
 
@@ -4422,10 +4431,10 @@ impl Niri {
         output: &Output,
         target_rounded: Point<i32, Physical>,
         pointer_local_phys: Point<f64, Physical>,
+        zoom_snapshot: &ZoomSnapshot,
+        scale_with_zoom: bool,
     ) -> OutputRenderElements<R> {
         let output_scale = Scale::from(output.current_scale().fractional_scale());
-        let zoom_snapshot = self.layout.zoom_snapshot_for_output(output);
-        let scale_with_zoom = self.config.borrow().cursor.scale_with_zoom;
         let cursor_hotspot = self.cursor_hotspot_physical(output, output_scale);
 
         let hotspot = match (elem.kind(), cursor_hotspot) {
@@ -4465,23 +4474,22 @@ impl Niri {
         &self,
         element: OutputRenderElements<R>,
         output: &Output,
+        zoom_snapshot: &ZoomSnapshot,
+        zoom_filter_threshold: f64,
     ) -> OutputRenderElements<R> {
         if matches!(element, OutputRenderElements::Pointer(_)) {
             return element;
         }
 
-        if !self.layout.zoom_is_active_for_output(output) {
+        let zoom_level = zoom_snapshot.level.max(1.0);
+        if zoom_level <= 1.0 {
             return element;
         }
 
         let output_scale = Scale::from(output.current_scale().fractional_scale());
 
-        let zoom_snapshot = self.layout.zoom_snapshot_for_output(output);
-        let zoom_level = zoom_snapshot.level.max(1.0);
-        let (zoom_level, zoom_focal) = (zoom_level, zoom_snapshot.focal);
+        let zoom_focal = zoom_snapshot.focal;
         // Elements are in output-local coordinates; focal is also output-local.
-
-        let zoom_filter_threshold = self.config.borrow().zoom.zoom_filter_threshold;
         macro_rules! apply_zoom {
             ($($variant:ident),*) => {
                 match element {
@@ -4592,11 +4600,14 @@ impl Niri {
         let state = self.output_state.get(output).unwrap();
         ctx.xray = Some(&state.xray);
 
+        let zoom_snapshot = self.layout.zoom_snapshot_for_output(output);
+        let zoom_filter_threshold = self.config.borrow().zoom.zoom_filter_threshold;
+
         // Apply zoom to elements pushed from render_inner when needed, except for pointer elements
         // which are handled separately in render_pointer_for_output.
         let push = if apply_zoom {
-            &mut |elem| {
-                let elem = self.zoomed_element(elem, output);
+            &mut move |elem| {
+                let elem = self.zoomed_element(elem, output, &zoom_snapshot, zoom_filter_threshold);
                 push(elem);
             }
         } else {
