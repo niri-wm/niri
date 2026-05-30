@@ -691,6 +691,13 @@ fn print_window(window: &Window) {
         println!("  App ID: (unset)");
     }
 
+    match &window.xdg_tag {
+        (Some(tag), Some(description)) => println!("  XDG Tag: {description} [{tag}]"),
+        (None, Some(description)) => println!("  XDG Tag: {description}"),
+        (Some(tag), None) => println!("  XDG Tag: [{tag}]"),
+        (None, None) => println!("  XDG Tag: (unset)"),
+    }
+
     println!(
         "  Is floating: {}",
         if window.is_floating { "yes" } else { "no" }

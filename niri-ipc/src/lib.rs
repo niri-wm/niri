@@ -1368,6 +1368,8 @@ pub struct Window {
     ///
     /// The timestamp comes from the monotonic clock.
     pub focus_timestamp: Option<Timestamp>,
+    /// xdg-toplevel-tag tag and description, if set.
+    pub xdg_tag: (Option<String>, Option<String>),
 }
 
 /// A moment in time.

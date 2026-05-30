@@ -13,8 +13,9 @@ use smithay::wayland::compositor::with_states;
 use smithay::wayland::shell::xdg::{
     SurfaceCachedState, ToplevelSurface, XdgToplevelSurfaceRoleAttributes,
 };
+use smithay::wayland::xdg_toplevel_tag::XdgToplevelTagSurfaceData;
 
-use crate::utils::with_toplevel_role;
+use crate::utils::with_toplevel_role_and_tag;
 
 pub mod mapped;
 pub use mapped::Mapped;
@@ -185,7 +186,7 @@ impl ResolvedWindowRules {
 
         let mut resolved = ResolvedWindowRules::default();
 
-        with_toplevel_role(window.toplevel(), |role| {
+        with_toplevel_role_and_tag(window.toplevel(), |role, tag| {
             // Ensure server_pending like in Smithay's with_pending_state().
             if role.server_pending.is_none() {
                 role.server_pending = Some(role.current_server_state().clone());
@@ -202,7 +203,7 @@ impl ResolvedWindowRules {
                         }
                     }
 
-                    window_matches(window, role, m)
+                    window_matches(window, role, tag, m)
                 };
 
                 if !(rule.matches.is_empty() || rule.matches.iter().any(matches)) {
@@ -383,7 +384,12 @@ impl ResolvedWindowRules {
     }
 }
 
-fn window_matches(window: WindowRef, role: &XdgToplevelSurfaceRoleAttributes, m: &Match) -> bool {
+fn window_matches(
+    window: WindowRef,
+    role: &XdgToplevelSurfaceRoleAttributes,
+    tag_data: Option<&XdgToplevelTagSurfaceData>,
+    m: &Match,
+) -> bool {
     // Must be ensured by the caller.
     let server_pending = role.server_pending.as_ref().unwrap();
 
@@ -423,6 +429,15 @@ fn window_matches(window: WindowRef, role: &XdgToplevelSurfaceRoleAttributes, m:
             return false;
         };
         if !title_re.0.is_match(title) {
+            return false;
+        }
+    }
+
+    if let Some(tag_re) = &m.xdg_tag {
+        let Some(tag) = &tag_data.and_then(|x| x.tag()) else {
+            return false;
+        };
+        if !tag_re.0.is_match(tag.as_ref()) {
             return false;
         }
     }

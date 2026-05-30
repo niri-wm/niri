@@ -61,6 +61,7 @@ use smithay::wayland::tablet_manager::TabletSeatHandler;
 use smithay::wayland::xdg_activation::{
     XdgActivationHandler, XdgActivationState, XdgActivationToken, XdgActivationTokenData,
 };
+use smithay::wayland::xdg_toplevel_tag::XdgToplevelTagHandler;
 use smithay::{
     delegate_cursor_shape, delegate_data_control, delegate_data_device, delegate_dmabuf,
     delegate_drm_lease, delegate_ext_data_control, delegate_fractional_scale,
@@ -70,6 +71,7 @@ use smithay::{
     delegate_relative_pointer, delegate_seat, delegate_security_context, delegate_session_lock,
     delegate_single_pixel_buffer, delegate_tablet_manager, delegate_text_input_manager,
     delegate_viewporter, delegate_virtual_keyboard_manager, delegate_xdg_activation,
+    delegate_xdg_toplevel_tag,
 };
 
 pub use crate::handlers::xdg_shell::KdeDecorationsModeState;
@@ -861,3 +863,6 @@ impl MutterX11InteropHandler for State {}
 delegate_mutter_x11_interop!(State);
 
 delegate_single_pixel_buffer!(State);
+
+impl XdgToplevelTagHandler for State {}
+delegate_xdg_toplevel_tag!(State);

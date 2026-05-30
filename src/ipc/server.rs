@@ -34,7 +34,7 @@ use crate::backend::IpcOutputMap;
 use crate::input::pick_window_grab::PickWindowGrab;
 use crate::layout::workspace::WorkspaceId;
 use crate::niri::State;
-use crate::utils::{version, with_toplevel_role};
+use crate::utils::{version, with_toplevel_role, with_toplevel_role_and_tag};
 use crate::window::Mapped;
 
 // If an event stream client fails to read events fast enough that we accumulate more than this
@@ -517,10 +517,17 @@ fn make_ipc_window(
     workspace_id: Option<WorkspaceId>,
     layout: WindowLayout,
 ) -> niri_ipc::Window {
-    with_toplevel_role(mapped.toplevel(), |role| niri_ipc::Window {
+    with_toplevel_role_and_tag(mapped.toplevel(), |role, tag| niri_ipc::Window {
         id: mapped.id().get(),
         title: role.title.clone(),
         app_id: role.app_id.clone(),
+        xdg_tag: match tag {
+            Some(tag) => (
+                tag.tag().map(|x| x.as_ref().to_owned()),
+                tag.description().map(|x| x.as_ref().to_owned()),
+            ),
+            None => (None, None),
+        },
         pid: mapped.credentials().map(|c| c.pid),
         workspace_id: workspace_id.map(|id| id.get()),
         is_focused: mapped.is_focused(),
