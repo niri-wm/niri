@@ -4311,8 +4311,7 @@ impl<W: LayoutElement> Layout<W> {
         gesture.tracker.push(log_delta, timestamp);
 
         let log_pos = gesture.tracker.pos();
-        let raw_level = log_pos_to_zoom_level(gesture.start_level, log_pos);
-        let new_level = clamp_zoom_level_with_rubber_band(raw_level, 1.0, max_zoom);
+        let new_level = compute_gesture_zoom_level(gesture.start_level, log_pos, 1.0, max_zoom);
 
         gesture.current_level = new_level;
 
@@ -5620,4 +5619,19 @@ pub fn clamp_zoom_level_with_rubber_band(level: f64, min_level: f64, max_level: 
 /// start_level * exp(log_pos) gives the new zoom level.
 pub fn log_pos_to_zoom_level(start_level: f64, log_pos: f64) -> f64 {
     start_level * log_pos.exp()
+}
+
+/// Combined computation of gesture zoom level with rubber-band clamping, all in log-space
+pub fn compute_gesture_zoom_level(
+    start_level: f64,
+    log_pos: f64,
+    min_level: f64,
+    max_level: f64,
+) -> f64 {
+    let log_level = start_level.ln() + log_pos;
+    let log_min = min_level.ln();
+    let log_max = max_level.ln();
+    ZOOM_GESTURE_RUBBER_BAND
+        .clamp(log_min, log_max, log_level)
+        .exp()
 }
