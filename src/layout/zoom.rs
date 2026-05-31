@@ -261,23 +261,7 @@ impl ZoomLevelGesture {
         output_size: Option<Size<f64, Logical>>,
         movement_mode: Option<ZoomMovementMode>,
     ) -> Self {
-        let on_edge_cursor_anchor =
-            if let (Some(cursor_local), Some(output_size)) = (cursor_pos, output_size) {
-                if matches!(movement_mode.as_ref(), Some(ZoomMovementMode::OnEdge)) {
-                    Some(compute_on_edge_cursor_anchor(
-                        cursor_local,
-                        start_level,
-                        current_focal,
-                        output_size,
-                    ))
-                } else {
-                    None
-                }
-            } else {
-                None
-            };
-
-        Self {
+        let mut result = Self {
             tracker: SwipeTracker::new(),
             start_level,
             current_level: start_level,
@@ -287,9 +271,15 @@ impl ZoomLevelGesture {
                 cursor_pos,
                 output_size,
                 movement_mode,
-                on_edge_cursor_anchor,
+                on_edge_cursor_anchor: None,
             },
-        }
+        };
+        // Compute the OnEdge anchor using the shared helper instead of
+        // duplicating the logic inline.
+        result.tracking.on_edge_cursor_anchor = result
+            .tracking
+            .compute_on_edge_anchor(start_level, current_focal);
+        result
     }
 
     pub fn compute_focal_or(
@@ -409,7 +399,7 @@ impl ZoomTransition {
     }
 
     pub fn is_animation_ongoing(&self) -> bool {
-        matches!(self, Self::Animating { .. })
+        self.is_animating()
     }
 
     pub fn level_gesture_mut(&mut self) -> Option<&mut ZoomLevelGesture> {
@@ -458,29 +448,6 @@ impl ZoomTransition {
         *self = Self::Animating {
             level: Some(level_anim),
             focal: None,
-        };
-    }
-
-    /// End gesture, optionally starting level and/or focal animations.
-    pub fn finalize_gesture(
-        &mut self,
-        level_anim: Option<ZoomLevelAnimation>,
-        focal_anim: Option<ZoomFocalAnimation>,
-    ) {
-        *self = match (level_anim, focal_anim) {
-            (Some(level), Some(focal)) => Self::Animating {
-                level: Some(level),
-                focal: Some(focal),
-            },
-            (Some(level), None) => Self::Animating {
-                level: Some(level),
-                focal: None,
-            },
-            (None, Some(focal)) => Self::Animating {
-                level: None,
-                focal: Some(focal),
-            },
-            (None, None) => Self::Idle,
         };
     }
 
