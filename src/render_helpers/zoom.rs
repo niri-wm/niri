@@ -101,6 +101,8 @@ impl<E: Element> Element for ZoomElement<E> {
             Relocate::Relative => geometry.loc += self.location,
         }
 
+        // NOTE: to_i32_up() would avoid 1-pixel jitter here but breaks
+        // the screenshot selection region by oversizing geometry.
         let loc = geometry.loc.to_i32_round();
         let bottom_right = (geometry.loc + geometry.size.to_f64()).to_i32_round();
         Rectangle::new(loc, (bottom_right - loc).to_size())
@@ -121,13 +123,11 @@ impl<E: Element> Element for ZoomElement<E> {
         self.element
             .damage_since(scale, commit)
             .into_iter()
-            .map(|rect| rect.to_f64().upscale(self.scale).to_i32_up())
+            .map(|rect| rect.to_f64().upscale(self.scale).to_i32_round())
             .collect()
     }
 
     fn opaque_regions(&self, scale: Scale<f64>) -> OpaqueRegions<i32, Physical> {
-        // Opaque regions are also element-relative and therefore only need the
-        // zoom scale propagated.
         self.element
             .opaque_regions(scale)
             .into_iter()
