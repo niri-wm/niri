@@ -63,11 +63,7 @@ impl Animation {
         let mut rv = Self::ease(clock, from, to, initial_velocity, 0, Curve::EaseOutCubic);
         if config.off {
             rv.is_off = true;
-            // When off=true, make from == to so that value_at() immediately
-            // returns the target value even when at == start_time (same
-            // LazyClock tick). Otherwise at==start_time would return `from`,
-            // and is_done_at() would return true, causing the transition to
-            // be cleared without ever writing the target value.
+            // Force from == to so value_at() returns the target even at start_time.
             rv.from = rv.to;
             return rv;
         }
@@ -261,11 +257,9 @@ impl Animation {
     }
 
     pub fn value_at(&self, at: Duration) -> f64 {
-        // Global animation-off flag: return target immediately, even before
-        // the time checks. Otherwise the at==start_time early-return would
-        // return `from` while `should_complete_instantly()` makes
-        // `is_done_at()` return true, causing the transition to be cleared
-        // without ever writing the target value.
+        // Global animation-off flag: return target immediately to avoid the
+        // at==start_time early-return below returning `from` while
+        // is_done_at() already says we're done.
         if self.clock.should_complete_instantly() || self.duration.is_zero() {
             return self.to;
         }

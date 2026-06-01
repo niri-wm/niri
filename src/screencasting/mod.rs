@@ -205,11 +205,7 @@ impl State {
                 let mut pointer_location = Point::default();
 
                 if self.niri.pointer_visibility.is_visible() {
-                    // Pointer position is calculated relative to the main output viewport. For
-                    // window casts (screencasts of a single window), we intentionally render the
-                    // pointer without applying the global output zoom. This preserves the canonical
-                    // seam where window casts remain unzoomed even if the output is being zoomed
-                    // elsewhere.
+                    // Window casts intentionally render the pointer without applying global zoom.
                     if let Some((pointer_pos, win_pos)) =
                         self.niri.pointer_pos_for_window_cast(mapped)
                     {
@@ -589,20 +585,14 @@ impl Niri {
                 continue;
             }
 
-            // Prepare pointer rendering for screencasts. The rendering path for
-            // pointer-zoom related calculations is implemented in Niri and should
-            // be reused here to ensure the screencast viewport and zoom behavior
-            // match the user's visible output. We keep the exact semantics:
-            // - Cursor visibility is checked via display coordinates on the output
-            // - Pointer rendering remains zoomed when appropriate
-            // - Main output rendering continues to apply zoom
+            // Prepare pointer rendering for screencasts. Mirrors the rendering path in Niri
+            // so screencast viewport and zoom behavior match the user's visible output.
             if cursor_data.is_none() {
                 // Compute pointer visibility/location using the same viewport rules as
                 // the visible output viewport (with possible zoom).
                 let pointer_pos = if self.pointer_visibility.is_visible() {
-                    // Note: This mirrors the logic from the seam in Niri where the
-                    // display location is calculated against the visible zoomed
-                    // viewport and only rendered if inside the output's viewport.
+                    // Cursor is rendered only if its display position falls inside the output
+                    // viewport.
                     let output_geo = self.global_space.output_geometry(output).unwrap().to_f64();
                     let pointer_loc = self
                         .tablet_cursor_location
