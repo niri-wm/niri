@@ -1690,29 +1690,14 @@ impl State {
             if let Some((output, _)) = self.niri.output_under(global_pointer_pos) {
                 let output = output.clone();
                 if !self.niri.layout.zoom_locked_for_output(&output) {
-                    let output_geo = self
-                        .niri
-                        .global_space
-                        .output_geometry(&output)
-                        .unwrap()
-                        .to_f64();
-                    let cursor_local = global_pointer_pos - output_geo.loc;
                     let movement_mode = self.niri.config.borrow().zoom.movement_mode;
-                    let (locked, current_level) = (
-                        self.niri.layout.zoom_locked_for_output(&output),
-                        self.niri.layout.zoom_level_for_output(&output),
-                    );
 
-                    self.niri.layout.set_zoom_level(
-                        &output,
-                        current_level,
-                        cursor_local,
-                        &movement_mode,
-                        locked,
-                    );
+                    // Update the mode in any active transition's tracking context.
+                    self.niri
+                        .layout
+                        .update_zoom_movement_mode(&output, movement_mode);
 
-                    // Update the focal point so that if the user changes the movement mode again
-                    // while zoomed, it will be correct.
+                    // Animate focal only when idle; active transitions update it each tick.
                     self.niri
                         .update_zoom_focal(&output, global_pointer_pos, None, true);
 
@@ -4517,7 +4502,7 @@ impl Niri {
                                     output_scale,
                                 );
                                 let zoomed = elem.with_geometry_physical(zoomed_rect, output_scale);
-                                ZoomedRenderElement::ScreenshotSolidColor(zoomed).into()
+                                OutputRenderElements::SolidColor(zoomed).into()
                             }
                         }
                     }
@@ -6743,7 +6728,7 @@ impl Niri {
                         target,
                         xray: None,
                     };
-                    let elements = self.render_to_vec(ctx, &output, false, false);
+                    let elements = self.render_to_vec(ctx, &output, false, true);
                     let elements = elements.iter().rev();
 
                     let res = render_to_texture(
@@ -7006,8 +6991,6 @@ niri_render_elements! {
         Wayland = ZoomElement<WaylandSurfaceRenderElement<R>>,
         SolidColor = ZoomElement<SolidColorRenderElement>,
         Texture = ZoomElement<PrimaryGpuTextureRenderElement>,
-
-        ScreenshotSolidColor = SolidColorRenderElement,
     }
 }
 

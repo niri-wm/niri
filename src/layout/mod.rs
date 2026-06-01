@@ -58,7 +58,7 @@ use self::monitor::{Monitor, WorkspaceSwitch};
 use self::workspace::{OutputId, Workspace};
 pub use self::zoom::{
     FocalTrackingContext, OutputZoomState, ZoomFocalAnimation, ZoomLevelAnimation,
-    ZoomLevelGesture, ZoomSnapshot, ZoomTransition,
+    ZoomLevelGesture, ZoomLevelTransition, ZoomSnapshot,
 };
 use crate::animation::{Animation, Clock};
 use crate::input::swipe_tracker::SwipeTracker;
@@ -2884,7 +2884,7 @@ impl<W: LayoutElement> Layout<W> {
     /// Returns true if zoom level != 1.0 (zoom transform actively applied).
     pub fn zoom_is_active_for_output(&self, output: &Output) -> bool {
         self.zoom_state_ref(output)
-            .is_some_and(OutputZoomState::is_active)
+            .is_some_and(|state| state.is_active(self.clock.now()))
     }
 
     /// Returns true if zoom is locked (user cannot change zoom level).
@@ -2903,12 +2903,14 @@ impl<W: LayoutElement> Layout<W> {
         output: &Output,
         level: f64,
         focal: Point<f64, Logical>,
-        transition: Option<ZoomTransition>,
+        level_transition: ZoomLevelTransition,
+        focal_animation: Option<ZoomFocalAnimation>,
     ) {
         if let Some(state) = self.zoom_state_mut(output) {
             state.level = level;
             state.focal = focal;
-            state.transition = transition;
+            state.level_transition = level_transition;
+            state.focal_animation = focal_animation;
         }
     }
 
@@ -2919,8 +2921,9 @@ impl<W: LayoutElement> Layout<W> {
         output_geometry: Rectangle<f64, Logical>,
     ) -> Option<Point<f64, Logical>> {
         let state = self.zoom_state_ref(output)?;
-        if state.is_active() {
-            let snapshot = state.snapshot_at(self.clock.now());
+        let now = self.clock.now();
+        if state.is_active(now) {
+            let snapshot = state.snapshot_at(now);
             let focal_global = snapshot.focal + output_geometry.loc;
             let viewport = apply_zoom_viewport(output_geometry, focal_global, snapshot.level);
             Some(pos.constrain(Rectangle::new(
@@ -2963,11 +2966,7 @@ impl<W: LayoutElement> Layout<W> {
     /// so `focal_point()` tracks the live cursor and avoids jitter.
     pub fn set_zoom_cursor_pos(&mut self, output: &Output, pos: Point<f64, Logical>) {
         if let Some(state) = self.zoom_state_mut(output) {
-            // Store cursor position in zoom state for gesture/animation coordination.
-            // The cursor position is used to compute focal points dynamically.
-            if let Some(transition) = state.transition.as_mut() {
-                transition.set_cursor_pos(pos);
-            }
+            state.set_cursor_pos(pos);
         }
     }
 
@@ -3018,13 +3017,7 @@ impl<W: LayoutElement> Layout<W> {
             context.focal_anim,
         );
 
-        let mut transition = state.transition.take().unwrap_or_default();
-        transition.start_focal_animation(focal_anim);
-        state.level = current_level;
-        state.focal = current_focal;
-        if transition.transitioning() {
-            state.transition = Some(transition);
-        }
+        state.focal_animation = Some(focal_anim);
     }
 
     pub fn update_zoom_base_focal(
@@ -3079,19 +3072,25 @@ impl<W: LayoutElement> Layout<W> {
                 };
                 let focal_anim =
                     ZoomFocalAnimation::new(context.clock, focal, new_focal, context.focal_anim);
-                let mut transition = state.transition.take().unwrap_or_default();
-                transition.start_focal_animation(focal_anim);
-                state.level = level;
-                state.focal = focal;
-                if transition.transitioning() {
-                    state.transition = Some(transition);
-                }
+                state.focal_animation = Some(focal_anim);
             } else {
                 let Some(state) = self.zoom_state_mut(output) else {
                     return;
                 };
                 state.focal = new_focal;
             }
+        }
+    }
+
+    /// Update the movement mode on an output's active zoom level transition.
+    ///
+    /// When a level animation or gesture is running, the movement mode is
+    /// captured in the transition's tracking context at creation time. This
+    /// method updates that stored mode so subsequent focal computations use
+    /// the new mode's logic (e.g. OnEdge anchor is recomputed).
+    pub fn update_zoom_movement_mode(&mut self, output: &Output, movement_mode: ZoomMovementMode) {
+        if let Some(state) = self.zoom_state_mut(output) {
+            state.update_movement_mode(movement_mode);
         }
     }
 
@@ -4119,20 +4118,6 @@ impl<W: LayoutElement> Layout<W> {
         true
     }
 
-    /// Returns true if the animation config results in an immediate snap
-    /// (no visible animation), either because `off` is set or because a
-    /// zero-duration easing was configured.
-    fn anim_is_instant(anim: &niri_config::Animation) -> bool {
-        anim.off
-            || matches!(
-                anim.kind,
-                niri_config::animations::Kind::Easing(niri_config::animations::EasingParams {
-                    duration_ms: 0,
-                    ..
-                })
-            )
-    }
-
     /// Set the zoom level for the given output, computing the correct focal point
     /// and creating an animation when appropriate.
     pub fn set_zoom_level(
@@ -4173,70 +4158,47 @@ impl<W: LayoutElement> Layout<W> {
             return;
         }
 
-        if level_changed && Self::anim_is_instant(&context.level_anim) {
-            state.level = target_level;
-            state.focal = target_focal;
-            state.transition = None;
-            return;
-        }
-
-        if !level_changed && focal_changed && Self::anim_is_instant(&context.focal_anim) {
-            state.focal = target_focal;
-            state.transition = None;
-            return;
-        }
-
-        let level_anim = ZoomLevelAnimation::new(
-            context.clock.clone(),
-            current_level,
-            target_level,
-            context.level_anim,
-        )
-        .with_tracking_context(
-            Some(cursor_local),
-            Some(context.view_size),
-            Some(*movement_mode),
-            current_level,
-            current_focal,
-        );
-
-        let dynamic_focal_tracking =
-            level_anim.should_use_dynamic_focal_tracking(target_level, locked, level_changed);
-
-        let mut transition = state.transition.take().unwrap_or_default();
-
+        // Create level animation if level changed.
         if level_changed {
+            let level_anim = ZoomLevelAnimation::new(
+                context.clock.clone(),
+                current_level,
+                target_level,
+                context.level_anim,
+            )
+            .with_tracking_context(
+                Some(cursor_local),
+                Some(context.view_size),
+                Some(*movement_mode),
+                current_level,
+                current_focal,
+            );
+
+            let dynamic_focal_tracking =
+                level_anim.should_use_dynamic_focal_tracking(target_level, locked, level_changed);
+
+            state.level_transition = ZoomLevelTransition::Animating(level_anim);
+
+            // Synchronized level+focal animation using the level config so both share
+            // duration/curve.
             if focal_changed && !dynamic_focal_tracking {
-                // Both level and focal change without dynamic tracking —
-                // compose into Animating { level, focal: Some(focal) } so
-                // both animations run in parallel on synchronized curves,
-                // instead of overwriting one with the other.
-                // Reuse level config for focal to share duration/curve.
-                transition = ZoomTransition::Animating {
-                    level: Some(level_anim),
-                    focal: Some(ZoomFocalAnimation::new(
-                        context.clock,
-                        current_focal,
-                        target_focal,
-                        context.level_anim,
-                    )),
-                };
-            } else {
-                transition.start_level_animation(level_anim);
+                let focal_anim = ZoomFocalAnimation::new(
+                    context.clock,
+                    current_focal,
+                    target_focal,
+                    context.level_anim,
+                );
+                state.focal_animation = Some(focal_anim);
             }
-        } else if focal_changed && !dynamic_focal_tracking {
-            transition.start_focal_animation(ZoomFocalAnimation::new(
+        } else if focal_changed {
+            // Focal-only change: focal animation uses its own config.
+            let focal_anim = ZoomFocalAnimation::new(
                 context.clock,
                 current_focal,
                 target_focal,
                 context.focal_anim,
-            ));
-        }
-
-        state.level = current_level;
-        state.focal = current_focal;
-        if transition.transitioning() {
-            state.transition = Some(transition);
+            );
+            state.focal_animation = Some(focal_anim);
         }
     }
 
@@ -4247,16 +4209,14 @@ impl<W: LayoutElement> Layout<W> {
         output_size: Option<Size<f64, Logical>>,
         movement_mode: Option<ZoomMovementMode>,
     ) {
+        let Some(context) = self.zoom_context_for_output(output) else {
+            return;
+        };
         let Some(state) = self.zoom_state_mut(output) else {
             return;
         };
 
-        let now = state
-            .transition
-            .as_ref()
-            .and_then(ZoomTransition::sample_time)
-            .unwrap_or(Duration::ZERO);
-        let snapshot = state.snapshot_at(now);
+        let snapshot = state.snapshot_at(context.clock.now());
         let current_level = snapshot.level;
         let current_focal = snapshot.focal;
 
@@ -4268,11 +4228,8 @@ impl<W: LayoutElement> Layout<W> {
             movement_mode,
         );
 
-        let mut transition = state.transition.take().unwrap_or_default();
-        transition.start_gesture(gesture);
-        if transition.transitioning() {
-            state.transition = Some(transition);
-        }
+        state.level_transition = ZoomLevelTransition::Gesturing(gesture);
+        state.focal_animation = None;
     }
 
     pub fn zoom_gesture_update(
@@ -4286,7 +4243,7 @@ impl<W: LayoutElement> Layout<W> {
     ) -> Option<()> {
         let max_zoom = self.zoom_context_for_output(output)?.max_zoom;
         let state = self.zoom_state_mut(output)?;
-        let gesture = state.transition.as_mut()?.level_gesture_mut()?;
+        let gesture = state.level_transition.gesture_mut()?;
 
         if let Some(cursor_local) = cursor_local {
             gesture.set_cursor_pos(cursor_local);
@@ -4323,15 +4280,7 @@ impl<W: LayoutElement> Layout<W> {
     pub fn zoom_gesture_end(&mut self, output: &Output, cancelled: bool) -> Option<bool> {
         let context = self.zoom_context_for_output(output)?;
         let state = self.zoom_state_mut(output)?;
-        let mut transition = state.transition.take().unwrap_or_default();
-        let gesture = match transition.take_level_gesture() {
-            Some(g) => g,
-            None => {
-                // Not a gesture — restore the original transition.
-                state.transition = Some(transition);
-                return None;
-            }
-        };
+        let gesture = state.level_transition.take_gesture()?;
 
         if cancelled {
             let level_anim = ZoomLevelAnimation::new(
@@ -4347,13 +4296,9 @@ impl<W: LayoutElement> Layout<W> {
                 gesture.current_level,
                 gesture.current_focal,
             );
-            transition.cancel_gesture(level_anim);
 
-            state.level = gesture.current_level;
+            state.level_transition = ZoomLevelTransition::Animating(level_anim);
             state.focal = gesture.current_focal;
-            if transition.transitioning() {
-                state.transition = Some(transition);
-            }
             return Some(true);
         }
 
