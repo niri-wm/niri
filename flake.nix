@@ -135,7 +135,7 @@
             ''
             + lib.optionalString withSystemd ''
               install -Dm755 resources/niri-session $out/bin/niri-session
-              install -Dm644 resources/niri{.service,-shutdown.target} -t $out/share/systemd/user
+              install -Dm644 resources/niri{.service,-shutdown.target} -t $out/lib/systemd/user
             '';
 
           env = {
