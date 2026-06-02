@@ -1097,6 +1097,12 @@ pub enum OutputAction {
         #[cfg_attr(feature = "clap", command(flatten))]
         vrr: VrrToSet,
     },
+    /// Set the maximum bits per channel (bit depth).
+    MaxBpc {
+        /// Maximum bits per channel to set.
+        #[cfg_attr(feature = "clap", arg())]
+        max_bpc: MaxBpc,
+    },
 }
 
 /// Output mode to set.
@@ -1228,6 +1234,8 @@ pub struct Output {
     ///
     /// `None` if the output is not mapped to any logical output (for example, if it is disabled).
     pub logical: Option<LogicalOutput>,
+    /// Maximum bits per channel (bit depth), if known.
+    pub max_bpc: Option<u8>,
 }
 
 /// Output mode.
@@ -1289,6 +1297,32 @@ pub enum Transform {
     /// Rotated by 270° and flipped horizontally.
     #[cfg_attr(feature = "clap", value(name("flipped-270")))]
     Flipped270,
+}
+
+/// Output maximum bits per channel.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum MaxBpc {
+    /// 6-bit.
+    #[serde(rename = "6")]
+    _6 = 6,
+    /// 8-bit.
+    #[default]
+    #[serde(rename = "8")]
+    _8 = 8,
+    /// 10-bit.
+    #[serde(rename = "10")]
+    _10 = 10,
+    /// 12-bit.
+    #[serde(rename = "12")]
+    _12 = 12,
+    /// 14-bit.
+    #[serde(rename = "14")]
+    _14 = 14,
+    /// 16-bit.
+    #[serde(rename = "16")]
+    _16 = 16,
 }
 
 /// Toplevel window.
@@ -1865,6 +1899,30 @@ impl FromStr for Transform {
                 r#""flipped", "flipped-90", "flipped-180" or "flipped-270""#
             )),
         }
+    }
+}
+
+impl TryFrom<u8> for MaxBpc {
+    type Error = &'static str;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            6 => Ok(MaxBpc::_6),
+            8 => Ok(MaxBpc::_8),
+            10 => Ok(MaxBpc::_10),
+            12 => Ok(MaxBpc::_12),
+            14 => Ok(MaxBpc::_14),
+            16 => Ok(MaxBpc::_16),
+            _ => Err("invalid max-bpc, can be 6, 8, 10, 12, 14, 16"),
+        }
+    }
+}
+
+impl FromStr for MaxBpc {
+    type Err = &'static str;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::try_from(s.parse::<u8>().unwrap_or_default())
     }
 }
 
