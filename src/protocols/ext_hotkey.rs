@@ -28,6 +28,10 @@ struct BoundHotkey {
     keysym: u32,
     // Semantic modifier bits only (CTRL, SHIFT, ALT, SUPER).
     modifiers: Modifiers,
+    // Advisory (and spoofable) identity from the bind request, used only to build a human-readable
+    // already_bound message so a clashing client can show what owns the combination.
+    app_id: String,
+    description: String,
 }
 
 struct HeldHotkey {
@@ -186,27 +190,45 @@ where
                 keysym,
                 modifiers,
                 seat: _,
-                app_id: _,
-                description: _,
+                app_id,
+                description,
             } => {
                 let hotkey = data_init.init(id, ());
 
                 let keysym = Keysym::new(keysym);
                 let modifiers = parse_modifiers(modifiers);
 
-                match state.ext_hotkey_decide(keysym, modifiers) {
-                    Ok(()) => {
-                        hotkey.bound();
-                        state.ext_hotkey_manager_state().hotkeys.push(BoundHotkey {
-                            resource: hotkey,
-                            keysym: keysym.raw(),
-                            modifiers,
-                        });
-                    }
-                    Err((reason, message)) => {
-                        hotkey.denied(reason, message);
-                    }
+                // Compositor policy (combination validity, conflicts with configured binds).
+                if let Err((reason, message)) = state.ext_hotkey_decide(keysym, modifiers) {
+                    hotkey.denied(reason, message);
+                    return;
                 }
+
+                // Exclusivity: the combination is owned by at most one hotkey. If another already
+                // holds it, deny and name the owner so the client can show what owns it.
+                let mgr = state.ext_hotkey_manager_state();
+                let owner = mgr
+                    .hotkeys
+                    .iter()
+                    .find(|h| {
+                        h.keysym == keysym.raw()
+                            && h.modifiers == modifiers
+                            && h.resource.is_alive()
+                    })
+                    .map(|h| already_bound_message(&h.app_id, &h.description));
+                if let Some(message) = owner {
+                    hotkey.denied(DenyReason::AlreadyBound, message);
+                    return;
+                }
+
+                hotkey.bound();
+                mgr.hotkeys.push(BoundHotkey {
+                    resource: hotkey,
+                    keysym: keysym.raw(),
+                    modifiers,
+                    app_id,
+                    description,
+                });
             }
             ext_hotkey_manager_v1::Request::Destroy => (),
         }
@@ -235,6 +257,15 @@ where
 
     fn destroyed(state: &mut D, _client: ClientId, resource: &ExtHotkeyV1, _data: &()) {
         state.ext_hotkey_manager_state().forget(resource);
+    }
+}
+
+fn already_bound_message(app_id: &str, description: &str) -> String {
+    match (app_id.is_empty(), description.is_empty()) {
+        (false, false) => format!("Already bound by {app_id} ({description})"),
+        (false, true) => format!("Already bound by {app_id}"),
+        (true, false) => format!("Already bound ({description})"),
+        (true, true) => String::from("Already bound by another application"),
     }
 }
 
