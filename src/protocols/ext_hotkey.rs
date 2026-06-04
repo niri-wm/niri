@@ -1,0 +1,279 @@
+//! The `ext_hotkey_v1` protocol: client-managed global hotkeys. A client binds a key combination
+//! and the compositor arbitrates (`bound`/`denied`/`revoked`);
+//! For every bind that is accepted, the compositor fires `pressed`/ `released` regardless of
+//! keyboard focus.
+
+pub use ext_hotkey_v1::{DenyReason, RevokeReason};
+use niri_config::Modifiers;
+use smithay::input::keyboard::Keysym;
+use smithay::reexports::wayland_server::backend::ClientId;
+use smithay::reexports::wayland_server::{
+    Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource, WEnum,
+};
+
+use super::raw::ext_hotkey::v1::server::ext_hotkey_manager_v1::{self, ExtHotkeyManagerV1};
+use super::raw::ext_hotkey::v1::server::ext_hotkey_v1::{self, ExtHotkeyV1};
+
+const VERSION: u32 = 1;
+
+pub struct ExtHotkeyManagerState {
+    hotkeys: Vec<BoundHotkey>,
+    // Held hotkeys keyed by triggering keycode, so `released` fires on key release regardless of
+    // the current modifier state.
+    held: Vec<HeldHotkey>,
+}
+
+struct BoundHotkey {
+    resource: ExtHotkeyV1,
+    keysym: u32,
+    // Semantic modifier bits only (CTRL, SHIFT, ALT, SUPER).
+    modifiers: Modifiers,
+}
+
+struct HeldHotkey {
+    keycode: u32,
+    resource: ExtHotkeyV1,
+}
+
+pub struct ExtHotkeyManagerGlobalData {
+    filter: Box<dyn for<'c> Fn(&'c Client) -> bool + Send + Sync>,
+}
+
+pub trait ExtHotkeyHandler {
+    fn ext_hotkey_manager_state(&mut self) -> &mut ExtHotkeyManagerState;
+
+    // Compositor policy: accept or deny a bind request, where
+    // `message` is advisory text for the client's UI. `modifiers` holds only the semantic bits.
+    // We try to forward the most helpful `message` we can so that clients can gracefully
+    // communicate errors to the user.
+    fn ext_hotkey_decide(
+        &mut self,
+        keysym: Keysym,
+        modifiers: Modifiers,
+    ) -> Result<(), (DenyReason, String)>;
+}
+
+impl ExtHotkeyManagerState {
+    pub fn new<D, F>(display: &DisplayHandle, filter: F) -> Self
+    where
+        D: GlobalDispatch<ExtHotkeyManagerV1, ExtHotkeyManagerGlobalData>,
+        D: Dispatch<ExtHotkeyManagerV1, ()>,
+        D: Dispatch<ExtHotkeyV1, ()>,
+        D: ExtHotkeyHandler,
+        D: 'static,
+        F: for<'c> Fn(&'c Client) -> bool + Send + Sync + 'static,
+    {
+        let global_data = ExtHotkeyManagerGlobalData {
+            filter: Box::new(filter),
+        };
+        display.create_global::<D, ExtHotkeyManagerV1, _>(VERSION, global_data);
+
+        Self {
+            hotkeys: Vec::new(),
+            held: Vec::new(),
+        }
+    }
+
+    // Fires `pressed` on every matching hotkey; returns true if any fired (so the caller
+    // intercepts the key). `modifiers` must hold only the semantic bits.
+    pub fn on_key_press(
+        &mut self,
+        keycode: u32,
+        keysym: u32,
+        modifiers: Modifiers,
+        serial: u32,
+        time: u32,
+    ) -> bool {
+        let mut fired = false;
+        for hotkey in &self.hotkeys {
+            if hotkey.keysym == keysym
+                && hotkey.modifiers == modifiers
+                && hotkey.resource.is_alive()
+            {
+                hotkey.resource.pressed(serial, time);
+                self.held.push(HeldHotkey {
+                    keycode,
+                    resource: hotkey.resource.clone(),
+                });
+                fired = true;
+            }
+        }
+        fired
+    }
+
+    pub fn on_key_release(&mut self, keycode: u32, serial: u32, time: u32) -> bool {
+        let mut fired = false;
+        self.held.retain(|held| {
+            if held.keycode != keycode {
+                return true;
+            }
+            if held.resource.is_alive() {
+                held.resource.released(serial, time);
+            }
+            fired = true;
+            false
+        });
+        fired
+    }
+
+    // revoke hotkeys that may be invalidated by a change in compositor policy or by a config
+    // reload.
+    pub fn revoke_if(
+        &mut self,
+        reason: RevokeReason,
+        mut revoke_message: impl FnMut(Keysym, Modifiers) -> Option<String>,
+    ) {
+        self.hotkeys.retain(|hotkey| {
+            let Some(message) = revoke_message(Keysym::new(hotkey.keysym), hotkey.modifiers) else {
+                return true;
+            };
+            if hotkey.resource.is_alive() {
+                hotkey.resource.revoked(reason, message);
+            }
+            false
+        });
+    }
+
+    fn forget(&mut self, resource: &ExtHotkeyV1) {
+        self.hotkeys.retain(|h| h.resource != *resource);
+        self.held.retain(|h| h.resource != *resource);
+    }
+}
+
+impl<D> GlobalDispatch<ExtHotkeyManagerV1, ExtHotkeyManagerGlobalData, D> for ExtHotkeyManagerState
+where
+    D: GlobalDispatch<ExtHotkeyManagerV1, ExtHotkeyManagerGlobalData>,
+    D: Dispatch<ExtHotkeyManagerV1, ()>,
+    D: Dispatch<ExtHotkeyV1, ()>,
+    D: ExtHotkeyHandler,
+    D: 'static,
+{
+    fn bind(
+        _state: &mut D,
+        _handle: &DisplayHandle,
+        _client: &Client,
+        manager: New<ExtHotkeyManagerV1>,
+        _manager_state: &ExtHotkeyManagerGlobalData,
+        data_init: &mut DataInit<'_, D>,
+    ) {
+        data_init.init(manager, ());
+    }
+
+    fn can_view(client: Client, global_data: &ExtHotkeyManagerGlobalData) -> bool {
+        (global_data.filter)(&client)
+    }
+}
+
+impl<D> Dispatch<ExtHotkeyManagerV1, (), D> for ExtHotkeyManagerState
+where
+    D: Dispatch<ExtHotkeyManagerV1, ()>,
+    D: Dispatch<ExtHotkeyV1, ()>,
+    D: ExtHotkeyHandler,
+    D: 'static,
+{
+    fn request(
+        state: &mut D,
+        _client: &Client,
+        _resource: &ExtHotkeyManagerV1,
+        request: <ExtHotkeyManagerV1 as Resource>::Request,
+        _data: &(),
+        _dhandle: &DisplayHandle,
+        data_init: &mut DataInit<'_, D>,
+    ) {
+        match request {
+            ext_hotkey_manager_v1::Request::Bind {
+                id,
+                keysym,
+                modifiers,
+                seat: _,
+                app_id: _,
+                description: _,
+            } => {
+                let hotkey = data_init.init(id, ());
+
+                let keysym = Keysym::new(keysym);
+                let modifiers = parse_modifiers(modifiers);
+
+                match state.ext_hotkey_decide(keysym, modifiers) {
+                    Ok(()) => {
+                        hotkey.bound();
+                        state.ext_hotkey_manager_state().hotkeys.push(BoundHotkey {
+                            resource: hotkey,
+                            keysym: keysym.raw(),
+                            modifiers,
+                        });
+                    }
+                    Err((reason, message)) => {
+                        hotkey.denied(reason, message);
+                    }
+                }
+            }
+            ext_hotkey_manager_v1::Request::Destroy => (),
+        }
+    }
+}
+
+impl<D> Dispatch<ExtHotkeyV1, (), D> for ExtHotkeyManagerState
+where
+    D: Dispatch<ExtHotkeyV1, ()>,
+    D: ExtHotkeyHandler,
+    D: 'static,
+{
+    fn request(
+        _state: &mut D,
+        _client: &Client,
+        _resource: &ExtHotkeyV1,
+        request: <ExtHotkeyV1 as Resource>::Request,
+        _data: &(),
+        _dhandle: &DisplayHandle,
+        _data_init: &mut DataInit<'_, D>,
+    ) {
+        match request {
+            ext_hotkey_v1::Request::Destroy => (),
+        }
+    }
+
+    fn destroyed(state: &mut D, _client: ClientId, resource: &ExtHotkeyV1, _data: &()) {
+        state.ext_hotkey_manager_state().forget(resource);
+    }
+}
+
+// protocol mods to niri mods
+fn parse_modifiers(modifiers: WEnum<ext_hotkey_manager_v1::Modifiers>) -> Modifiers {
+    let bits = match modifiers {
+        WEnum::Value(m) => m.bits(),
+        WEnum::Unknown(bits) => bits,
+    };
+
+    let mut out = Modifiers::empty();
+    if bits & 1 != 0 {
+        out |= Modifiers::SHIFT;
+    }
+    if bits & 2 != 0 {
+        out |= Modifiers::CTRL;
+    }
+    if bits & 4 != 0 {
+        out |= Modifiers::ALT;
+    }
+    if bits & 8 != 0 {
+        out |= Modifiers::SUPER;
+    }
+    out
+}
+
+#[macro_export]
+macro_rules! delegate_ext_hotkey {
+    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
+        smithay::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
+            $crate::protocols::raw::ext_hotkey::v1::server::ext_hotkey_manager_v1::ExtHotkeyManagerV1: $crate::protocols::ext_hotkey::ExtHotkeyManagerGlobalData
+        ] => $crate::protocols::ext_hotkey::ExtHotkeyManagerState);
+
+        smithay::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
+            $crate::protocols::raw::ext_hotkey::v1::server::ext_hotkey_manager_v1::ExtHotkeyManagerV1: ()
+        ] => $crate::protocols::ext_hotkey::ExtHotkeyManagerState);
+
+        smithay::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
+            $crate::protocols::raw::ext_hotkey::v1::server::ext_hotkey_v1::ExtHotkeyV1: ()
+        ] => $crate::protocols::ext_hotkey::ExtHotkeyManagerState);
+    };
+}

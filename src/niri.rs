@@ -145,6 +145,7 @@ use crate::layout::{
     HitType, Layout, LayoutElement as _, LayoutElementRenderElement, MonitorRenderElement,
 };
 use crate::niri_render_elements;
+use crate::protocols::ext_hotkey::{ExtHotkeyManagerState, RevokeReason};
 use crate::protocols::ext_workspace::{self, ExtWorkspaceManagerState};
 use crate::protocols::foreign_toplevel::{self, ForeignToplevelManagerState};
 use crate::protocols::gamma_control::GammaControlManagerState;
@@ -312,6 +313,7 @@ pub struct Niri {
     pub gamma_control_manager_state: GammaControlManagerState,
     pub activation_state: XdgActivationState,
     pub mutter_x11_interop_state: MutterX11InteropManagerState,
+    pub ext_hotkey_state: ExtHotkeyManagerState,
 
     // This will not work as is outside of tests, so it is gated with #[cfg(test)] for now. In
     // particular, shaders will need to learn about the single pixel buffer. Also, it must be
@@ -1536,6 +1538,14 @@ impl State {
             self.niri.mods_with_wheel_binds = mods_with_wheel_binds(new_mod_key, &config.binds);
             self.niri.mods_with_finger_scroll_binds =
                 mods_with_finger_scroll_binds(new_mod_key, &config.binds);
+
+            // ext-hotkey: a config change may introduce new user defined shortcuts that should
+            // replace what was previously owned by a client.
+            self.niri
+                .ext_hotkey_state
+                .revoke_if(RevokeReason::Superseded, |keysym, modifiers| {
+                    crate::input::conflicting_bind_message(&config, new_mod_key, keysym, modifiers)
+                });
         }
 
         if config.window_rules != old_config.window_rules {
@@ -2368,6 +2378,9 @@ impl Niri {
         let mutter_x11_interop_state =
             MutterX11InteropManagerState::new::<State, _>(&display_handle, move |_| true);
 
+        let ext_hotkey_state =
+            ExtHotkeyManagerState::new::<State, _>(&display_handle, move |_| true);
+
         #[cfg(test)]
         let single_pixel_buffer_state = SinglePixelBufferState::new::<State>(&display_handle);
 
@@ -2561,6 +2574,7 @@ impl Niri {
             gamma_control_manager_state,
             activation_state,
             mutter_x11_interop_state,
+            ext_hotkey_state,
             #[cfg(test)]
             single_pixel_buffer_state,
 
