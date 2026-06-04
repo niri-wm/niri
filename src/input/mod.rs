@@ -3010,6 +3010,9 @@ impl State {
 
                 // FIXME: granular.
                 self.niri.queue_redraw_all();
+            } else if self.niri.pointer_contents.layer.is_some() {
+                // do nothing; shell layers shouldn't refocus the monitor,
+                // in case the shell layer is a virtual input source
             } else if let Some(output) = self.niri.output_under_cursor() {
                 self.niri.layout.focus_output(&output);
 
@@ -4216,6 +4219,9 @@ impl State {
 
                 // FIXME: granular.
                 self.niri.queue_redraw_all();
+            } else if under.layer.is_some() {
+                // do nothing; shell layers shouldn't refocus the monitor,
+                // in case the shell layer is a virtual input source
             } else if let Some(output) = under.output {
                 self.niri.layout.focus_output(&output);
 
