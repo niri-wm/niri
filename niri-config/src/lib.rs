@@ -720,6 +720,7 @@ mod tests {
                 tablet {
                     map-to-output "eDP-1"
                     map-to-focused-output
+                    map-to-focused-window
                     calibration-matrix 1.0 2.0 3.0 \
                                        4.0 5.0 6.0
                 }
@@ -744,6 +745,7 @@ mod tests {
                 transform "flipped-90"
                 position x=10 y=20
                 mode "1920x1080@144"
+                max-bpc 10
                 variable-refresh-rate on-demand=true
                 background-color "rgba(25, 25, 102, 1.0)"
                 hot-corners {
@@ -856,7 +858,7 @@ mod tests {
                 window-open { off; }
 
                 window-close {
-                    curve "cubic-bezier" 0.05 0.7 0.1 1  
+                    curve "cubic-bezier" 0.05 0.7 0.1 1
                 }
 
                 recent-windows-close {
@@ -1113,6 +1115,7 @@ mod tests {
                         "eDP-1",
                     ),
                     map_to_focused_output: true,
+                    map_to_focused_window: true,
                     left_handed: false,
                 },
                 touch: Touch {
@@ -1157,6 +1160,11 @@ mod tests {
                                 x: 10,
                                 y: 20,
                             },
+                        ),
+                        max_bpc: Some(
+                            MaxBpc(
+                                _10,
+                            ),
                         ),
                         mode: Some(
                             Mode {
@@ -1203,6 +1211,7 @@ mod tests {
                         scale: None,
                         transform: Normal,
                         position: None,
+                        max_bpc: None,
                         mode: Some(
                             Mode {
                                 custom: true,
@@ -1229,6 +1238,7 @@ mod tests {
                         scale: None,
                         transform: Normal,
                         position: None,
+                        max_bpc: None,
                         mode: None,
                         modeline: Some(
                             Modeline {
@@ -2242,7 +2252,6 @@ mod tests {
                 enable_overlay_planes: false,
                 disable_cursor_plane: false,
                 disable_direct_scanout: false,
-                keep_max_bpc_unchanged: false,
                 restrict_primary_scanout_to_matching_format: false,
                 force_disable_connectors_on_resume: false,
                 render_drm_device: Some(
