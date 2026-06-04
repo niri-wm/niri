@@ -29,24 +29,12 @@
     accepts it or rejects it with a reason. The compositor remains the eventual
     arbiter (it may deny a request, revoke a binding at any time, or apply
     whatever policy it likes), but within that the application manages its own
-    bindings, including changing them at runtime (for example from its own
-    settings UI), with no out-of-band user configuration, no persisted compositor
-    state, and no per-change confirmation dialog.
-
-    This is the same model native applications already use on Windows
-    (RegisterHotKey), macOS (RegisterEventHotKey), and X11 (XGrabKey). A
-    cross-platform application or UI toolkit can therefore map its existing
-    global-hotkey API directly onto this protocol, so supporting Wayland becomes a
-    port rather than a redesign. That is the key difference from the
-    org.freedesktop.portal GlobalShortcuts interface and compositor protocols such
-    as hyprland-global-shortcuts-v1, which register an anonymous action and let
-    the user choose its trigger out-of-band (with the binding outliving the
-    client); here the client owns the trigger and the compositor arbitrates.
-    It is unrelated to keyboard-shortcuts-inhibit, which lets a focused client
-    suppress the compositor's own shortcuts.
+    bindings, including changing them at runtime, with no out-of-band user
+    configuration and no persisted compositor state.
 
     A hotkey is a key combination that fires regardless of which surface holds
-    keyboard focus.
+    keyboard focus. This is unrelated to keyboard-shortcuts-inhibit, which lets a
+    focused client suppress the compositor's own shortcuts.
 
     Whether a combination is exclusive is compositor policy. A compositor MAY
     treat combinations as exclusive and reject a clashing request with
@@ -133,7 +121,7 @@
 
         The keysym identifies the trigger key using the keysym numbering shared
         with the keymap delivered over wl_keyboard (for the xkb_v1 keymap format,
-        an XKB_KEY_* value), taken in its unshifted form. A compositor SHOULD match
+        an XKB_KEY_* value), taken in its unshifted form (XKB_KEY_b not XKB_KEY_B). A compositor SHOULD match
         it against any of the user's layout groups, so a binding keeps firing after
         the user switches layout group. This is one deliberately specified rule,
         not a universal one: other platforms differ (macOS matches a physical
@@ -156,7 +144,7 @@
         the security-context mechanism rather than relying on this string.
 
         description is a human-readable, localized description of what the hotkey
-        does (e.g. "Toggle the launcher"), for display in compositor UI.
+		  does (e.g. "Toggle the launcher"), for display in compositor UI or even in this protocol error messages.
       </description>
       <arg name="id" type="new_id" interface="ext_hotkey_v1"
            summary="the new hotkey object"/>
