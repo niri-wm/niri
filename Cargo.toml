@@ -50,11 +50,9 @@ readme = "README.md"
 keywords = ["wayland", "compositor", "tiling", "smithay", "wm"]
 
 [dependencies]
-# accesskit_unix 0.18 has a regression where it doesn't work in normal configurations.
-# accesskit 0.21 is its correct dependent version.
-# https://github.com/niri-wm/niri/issues/3594
-accesskit = { version = "0.24", optional = true }
-accesskit_unix = { version = "0.21", optional = true }
+# unfortunately, pinned to 0.21/0.17 — accesskit_unix 0.18+ breaks screen readers (niri-wm/niri#3594)
+accesskit = { version = "0.21", optional = true } # do not upgrade that from 0.21 until resolution on #3594
+accesskit_unix = { version = "0.17", optional = true } # do not upgrade that from 0.17 until resolution on #3594
 anyhow.workspace = true
 arrayvec = "0.7"
 async-channel = "2.5"
@@ -62,11 +60,7 @@ async-io = { version = "2.6", optional = true }
 atomic = "0.6"
 bitflags.workspace = true
 bytemuck = { version = "1.25", features = ["derive"] }
-calloop = { version = "0.14", features = [
-  "executor",
-  "futures-io",
-  "signals",
-] }
+calloop = { version = "0.14", features = ["executor", "futures-io", "signals"] }
 clap = { workspace = true, features = ["string"] }
 clap_complete = "4.6"
 clap_complete_nushell = "4.6"
@@ -83,10 +77,10 @@ input = { version = "0.10", features = ["libinput_1_21"] }
 keyframe = { version = "1.1", default-features = false }
 libc = "0.2"
 libdisplay-info = "0.3"
-log = { version = "0.4", features = [
-  "max_level_trace",
-  "release_max_level_debug",
-] }
+# log = { version = "0.4", features = [
+#   "max_level_trace",
+#  "release_max_level_debug",
+# ] } unused dep
 niri-config = { version = "26.4.0", path = "niri-config" }
 niri-ipc = { version = "26.4.0", path = "niri-ipc", features = ["clap"] }
 ordered-float = "5.3"
@@ -94,7 +88,7 @@ pango = { version = "0.22", features = ["v1_44"] }
 pangocairo = "0.22"
 pipewire = { version = "0.10", optional = true, features = ["v0_3_33"] }
 png = "0.18"
-profiling = "1.0"
+# profiling = "1.0"
 sd-notify = "0.5"
 serde.workspace = true
 serde_json.workspace = true
@@ -149,7 +143,7 @@ systemd = ["dbus"]
 xdp-gnome-screencast = ["dbus", "pipewire"]
 # Enables the Tracy profiler instrumentation.
 profile-with-tracy = [
-  "profiling/profile-with-tracy",
+  # "profiling/profile-with-tracy",
   "tracy-client/default",
   "smithay/tracy_gpu_profiling",
 ]

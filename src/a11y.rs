@@ -3,7 +3,7 @@ use std::thread;
 
 use accesskit::{
     ActionHandler, ActionRequest, ActivationHandler, DeactivationHandler, Live, Node, NodeId, Role,
-    Tree, TreeId, TreeUpdate,
+    Tree, TreeUpdate,
 };
 use accesskit_unix::Adapter;
 use calloop::LoopHandle;
@@ -218,7 +218,6 @@ impl Niri {
         }
 
         let update = TreeUpdate {
-            tree_id: TreeId::ROOT,
             nodes,
             tree: None,
             focus,
@@ -245,7 +244,6 @@ impl Niri {
         node.set_live(Live::Polite);
 
         let update = TreeUpdate {
-            tree_id: TreeId::ROOT,
             nodes: vec![(ID_ANNOUNCEMENT, node)],
             tree: None,
             focus: self.a11y.focus,
@@ -332,7 +330,6 @@ impl Niri {
         // get updated right away anyway.
 
         TreeUpdate {
-            tree_id: TreeId::ROOT,
             nodes: vec![
                 (ID_ROOT, root),
                 (ID_ANNOUNCEMENT, node),
