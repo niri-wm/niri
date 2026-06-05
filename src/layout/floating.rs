@@ -520,11 +520,10 @@ impl<W: LayoutElement> FloatingSpace<W> {
         }
 
         // Stop interactive resize.
-        if let Some(resize) = &self.interactive_resize {
-            if tile.window().id() == &resize.window {
+        if let Some(resize) = &self.interactive_resize
+            && tile.window().id() == &resize.window {
                 self.interactive_resize = None;
             }
-        }
 
         // Store the floating size if we have one.
         if let Some(size) = tile.window().expected_size() {
@@ -1153,11 +1152,10 @@ impl<W: LayoutElement> FloatingSpace<W> {
             return;
         };
 
-        if let Some(window) = window {
-            if window != &resize.window {
+        if let Some(window) = window
+            && window != &resize.window {
                 return;
             }
-        }
 
         self.interactive_resize = None;
     }

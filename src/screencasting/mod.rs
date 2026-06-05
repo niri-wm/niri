@@ -203,8 +203,8 @@ impl State {
                 let mut elements = Vec::new();
                 let mut pointer_location = Point::default();
 
-                if self.niri.pointer_visibility.is_visible() {
-                    if let Some((pointer_pos, win_pos)) =
+                if self.niri.pointer_visibility.is_visible()
+                    && let Some((pointer_pos, win_pos)) =
                         self.niri.pointer_pos_for_window_cast(mapped)
                     {
                         // Pointer location must be relative to the screencast buffer.
@@ -223,7 +223,6 @@ impl State {
                             elements.push(CastRenderElement::from(elem));
                         });
                     }
-                }
 
                 let main_start = elements.len();
                 mapped.render_for_screen_cast(renderer, scale, &mut |elem| {
@@ -269,11 +268,10 @@ impl State {
             }
             CastTarget::Window { id } => {
                 let mut windows = self.niri.layout.windows();
-                if let Some((_, mapped)) = windows.find(|(_, mapped)| mapped.id().get() == *id) {
-                    if let Some(output) = self.niri.casting.mapped_cast_output.get(&mapped.window) {
+                if let Some((_, mapped)) = windows.find(|(_, mapped)| mapped.id().get() == *id)
+                    && let Some(output) = self.niri.casting.mapped_cast_output.get(&mapped.window) {
                         refresh = Some(output.current_mode().unwrap().refresh as u32);
                     }
-                }
             }
         }
 
@@ -284,13 +282,12 @@ impl State {
                 continue;
             }
 
-            if let Some(refresh) = refresh {
-                if let Err(err) = cast.set_refresh(refresh) {
+            if let Some(refresh) = refresh
+                && let Err(err) = cast.set_refresh(refresh) {
                     warn!("error changing cast FPS: {err:?}");
                     to_stop.push(cast.session_id);
                     continue;
                 }
-            }
 
             cast.target = target.clone();
             to_redraw.push(cast.stream_id);
@@ -668,8 +665,8 @@ impl Niri {
             let mut elements = Vec::new();
             let mut pointer_location = Point::default();
 
-            if self.pointer_visibility.is_visible() {
-                if let Some((pointer_pos, win_pos)) = self.pointer_pos_for_window_cast(mapped) {
+            if self.pointer_visibility.is_visible()
+                && let Some((pointer_pos, win_pos)) = self.pointer_pos_for_window_cast(mapped) {
                     // Pointer location must be relative to the screencast buffer.
                     // - win_pos is the position of the main window surface in output-local
                     //   coordinates
@@ -685,7 +682,6 @@ impl Niri {
                         elements.push(CastRenderElement::from(elem));
                     });
                 }
-            }
 
             let main_start = elements.len();
             mapped.render_for_screen_cast(renderer, scale, &mut |elem| {

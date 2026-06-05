@@ -1,29 +1,28 @@
 [workspace]
-members = [
-    "niri-config",
-    "niri-ipc",
-    "niri-visual-tests",
-]
+members = ["niri-config", "niri-ipc", "niri-visual-tests"]
 
 [workspace.package]
 version = "26.4.0"
 description = "A scrollable-tiling Wayland compositor"
 authors = ["Ivan Molodetskikh <yalterz@gmail.com>"]
 license = "GPL-3.0-or-later"
-edition = "2021"
+edition = "2024"
 repository = "https://github.com/niri-wm/niri"
-rust-version = "1.85"
+rust-version = "1.96"
 
 [workspace.dependencies]
-anyhow = "1.0.102"
-bitflags = "2.11.1"
-clap = { version = "4.6.1", features = ["derive"] }
-insta = "1.47.2"
-serde = { version = "1.0.228", features = ["derive"] }
-serde_json = "1.0.149"
-tracing = { version = "0.1.44", features = ["max_level_trace", "release_max_level_debug"] }
-tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
-tracy-client = { version = "0.18.4", default-features = false }
+anyhow = "1.0"
+bitflags = "2.12"
+clap = { version = "4.6", features = ["derive"] }
+insta = "1.47"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tracing = { version = "0.1", features = [
+  "max_level_trace",
+  "release_max_level_debug",
+] }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracy-client = { version = "0.18", default-features = false }
 
 [workspace.dependencies.smithay]
 # version = "0.4.1"
@@ -54,81 +53,91 @@ keywords = ["wayland", "compositor", "tiling", "smithay", "wm"]
 # accesskit_unix 0.18 has a regression where it doesn't work in normal configurations.
 # accesskit 0.21 is its correct dependent version.
 # https://github.com/niri-wm/niri/issues/3594
-accesskit = { version = "0.21", optional = true }
-accesskit_unix = { version = "0.17", optional = true }
+accesskit = { version = "0.24", optional = true }
+accesskit_unix = { version = "0.21", optional = true }
 anyhow.workspace = true
-arrayvec = "0.7.6"
-async-channel = "2.5.0"
-async-io = { version = "2.6.0", optional = true }
-atomic = "0.6.1"
+arrayvec = "0.7"
+async-channel = "2.5"
+async-io = { version = "2.6", optional = true }
+atomic = "0.6"
 bitflags.workspace = true
-bytemuck = { version = "1.25.0", features = ["derive"] }
-calloop = { version = "0.14.4", features = ["executor", "futures-io", "signals"] }
+bytemuck = { version = "1.25", features = ["derive"] }
+calloop = { version = "0.14", features = [
+  "executor",
+  "futures-io",
+  "signals",
+] }
 clap = { workspace = true, features = ["string"] }
-clap_complete = "4.6.2"
-clap_complete_nushell = "4.6.0"
-directories = "6.0.0"
-drm-ffi = "0.9.1"
-fastrand = "2.4.1"
-futures-util = { version = "0.3.32", default-features = false, features = ["std", "io"] }
-git-version = "0.3.9"
-glam = "0.32.1"
-input = { version = "0.10.0", features = ["libinput_1_21"] }
-keyframe = { version = "1.1.1", default-features = false }
-libc = "0.2.185"
-libdisplay-info = "0.3.0"
-log = { version = "0.4.29", features = ["max_level_trace", "release_max_level_debug"] }
+clap_complete = "4.6"
+clap_complete_nushell = "4.6"
+directories = "6.0"
+drm-ffi = "0.9"
+fastrand = "2.4"
+futures-util = { version = "0.3", default-features = false, features = [
+  "std",
+  "io",
+] }
+git-version = "0.3"
+glam = "0.33"
+input = { version = "0.10", features = ["libinput_1_21"] }
+keyframe = { version = "1.1", default-features = false }
+libc = "0.2"
+libdisplay-info = "0.3"
+log = { version = "0.4", features = [
+  "max_level_trace",
+  "release_max_level_debug",
+] }
 niri-config = { version = "26.4.0", path = "niri-config" }
 niri-ipc = { version = "26.4.0", path = "niri-ipc", features = ["clap"] }
-ordered-float = "5.3.0"
-pango = { version = "0.21.5", features = ["v1_44"] }
-pangocairo = "0.21.5"
-pipewire = { version = "0.9.2", optional = true, features = ["v0_3_33"] }
-png = "0.18.1"
-profiling = "1.0.17"
-sd-notify = "0.5.0"
+ordered-float = "5.3"
+pango = { version = "0.22", features = ["v1_44"] }
+pangocairo = "0.22"
+pipewire = { version = "0.10", optional = true, features = ["v0_3_33"] }
+png = "0.18"
+profiling = "1.0"
+sd-notify = "0.5"
 serde.workspace = true
 serde_json.workspace = true
 smithay-drm-extras.workspace = true
 tracing-subscriber.workspace = true
 tracing.workspace = true
 tracy-client.workspace = true
-wayland-backend = "0.3.15"
-wayland-scanner = "0.31.10"
-wayland-server = "0.31.13"
-xcursor = "0.3.10"
-zbus = { version = "5.13.2", optional = true }
+wayland-backend = "0.3"
+wayland-scanner = "0.31"
+wayland-server = "0.31"
+xcursor = "0.3"
+zbus = { version = "5.16", optional = true }
 
 [dependencies.smithay]
 workspace = true
 features = [
-    "backend_drm",
-    "backend_egl",
-    "backend_gbm",
-    "backend_libinput",
-    "backend_session_libseat",
-    "backend_udev",
-    "backend_winit",
-    "desktop",
-    "renderer_gl",
-    "renderer_pixman",
-    "renderer_multi",
-    "use_system_lib",
-    "wayland_frontend",
+  "backend_drm",
+  "backend_egl",
+  "backend_gbm",
+  "backend_libinput",
+  "backend_session_libseat",
+  "backend_udev",
+  "backend_winit",
+  "desktop",
+  "renderer_gl",
+  "renderer_pixman",
+  "renderer_multi",
+  "use_system_lib",
+  "wayland_frontend",
 ]
 
 [dev-dependencies]
-approx = "0.5.1"
-calloop-wayland-source = "0.4.1"
+approx = "0.5"
+calloop-wayland-source = "0.4"
 insta.workspace = true
-proptest = "1.11.0"
-proptest-derive = { version = "0.8.0", features = ["boxed_union"] }
-rayon = "1.12.0"
-wayland-client = "0.31.14"
-xshell = "0.2.7"
+proptest = "1.11"
+proptest-derive = { version = "0.8", features = ["boxed_union"] }
+rayon = "1.12"
+wayland-client = "0.31"
+xshell = "0.2"
 
 [build-dependencies]
-pkg-config = "0.3.33"
+pkg-config = "0.3"
 
 [features]
 default = ["dbus", "systemd", "xdp-gnome-screencast"]
@@ -139,9 +148,17 @@ systemd = ["dbus"]
 # Enables screencasting support through xdg-desktop-portal-gnome.
 xdp-gnome-screencast = ["dbus", "pipewire"]
 # Enables the Tracy profiler instrumentation.
-profile-with-tracy = ["profiling/profile-with-tracy", "tracy-client/default", "smithay/tracy_gpu_profiling"]
+profile-with-tracy = [
+  "profiling/profile-with-tracy",
+  "tracy-client/default",
+  "smithay/tracy_gpu_profiling",
+]
 # Enables the on-demand Tracy profiler instrumentation.
-profile-with-tracy-ondemand = ["profile-with-tracy", "tracy-client/ondemand", "tracy-client/manual-lifetime"]
+profile-with-tracy-ondemand = [
+  "profile-with-tracy",
+  "tracy-client/ondemand",
+  "tracy-client/manual-lifetime",
+]
 # Enables Tracy allocation profiling.
 profile-with-tracy-allocations = ["profile-with-tracy"]
 # Enables dinit integration (global environment).
@@ -167,12 +184,12 @@ similar.opt-level = 3
 [package.metadata.generate-rpm]
 version = "26.04"
 assets = [
-    { source = "target/release/niri", dest = "/usr/bin/", mode = "755" },
-    { source = "resources/niri-session", dest = "/usr/bin/", mode = "755" },
-    { source = "resources/niri.desktop", dest = "/usr/share/wayland-sessions/", mode = "644" },
-    { source = "resources/niri-portals.conf", dest = "/usr/share/xdg-desktop-portal/", mode = "644" },
-    { source = "resources/niri.service", dest = "/usr/lib/systemd/user/", mode = "644" },
-    { source = "resources/niri-shutdown.target", dest = "/usr/lib/systemd/user/", mode = "644" },
+  { source = "target/release/niri", dest = "/usr/bin/", mode = "755" },
+  { source = "resources/niri-session", dest = "/usr/bin/", mode = "755" },
+  { source = "resources/niri.desktop", dest = "/usr/share/wayland-sessions/", mode = "644" },
+  { source = "resources/niri-portals.conf", dest = "/usr/share/xdg-desktop-portal/", mode = "644" },
+  { source = "resources/niri.service", dest = "/usr/lib/systemd/user/", mode = "644" },
+  { source = "resources/niri-shutdown.target", dest = "/usr/lib/systemd/user/", mode = "644" },
 ]
 [package.metadata.generate-rpm.requires]
 alacritty = "*"
@@ -181,10 +198,34 @@ fuzzel = "*"
 [package.metadata.deb]
 depends = "alacritty, fuzzel"
 assets = [
-    ["target/release/niri", "usr/bin/", "755"],
-    ["resources/niri-session", "usr/bin/", "755"],
-    ["resources/niri.desktop", "/usr/share/wayland-sessions/", "644"],
-    ["resources/niri-portals.conf", "/usr/share/xdg-desktop-portal/", "644"],
-    ["resources/niri.service", "/usr/lib/systemd/user/", "644"],
-    ["resources/niri-shutdown.target", "/usr/lib/systemd/user/", "644"],
+  [
+    "target/release/niri",
+    "usr/bin/",
+    "755",
+  ],
+  [
+    "resources/niri-session",
+    "usr/bin/",
+    "755",
+  ],
+  [
+    "resources/niri.desktop",
+    "/usr/share/wayland-sessions/",
+    "644",
+  ],
+  [
+    "resources/niri-portals.conf",
+    "/usr/share/xdg-desktop-portal/",
+    "644",
+  ],
+  [
+    "resources/niri.service",
+    "/usr/lib/systemd/user/",
+    "644",
+  ],
+  [
+    "resources/niri-shutdown.target",
+    "/usr/lib/systemd/user/",
+    "644",
+  ],
 ]

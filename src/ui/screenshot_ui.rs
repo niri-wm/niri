@@ -686,11 +686,10 @@ impl ScreenshotUi {
         };
         let screenshot = &output_data.screenshot[index];
 
-        if *show_pointer {
-            if let Some(pointer) = screenshot.pointer.clone() {
+        if *show_pointer
+            && let Some(pointer) = screenshot.pointer.clone() {
                 push(pointer.into());
             }
-        }
         push(screenshot.buffer.clone().into());
     }
 
@@ -717,8 +716,8 @@ impl ScreenshotUi {
 
         // Composite the pointer on top if needed.
         let mut tex_rect = None;
-        if *show_pointer {
-            if let Some(pointer) = screenshot.pointer.clone() {
+        if *show_pointer
+            && let Some(pointer) = screenshot.pointer.clone() {
                 let scale = pointer.0.buffer().texture_scale();
                 let offset = rect.loc.upscale(-1);
 
@@ -746,7 +745,6 @@ impl ScreenshotUi {
                     }
                 }
             }
-        }
 
         let (texture, rect) = tex_rect.unwrap_or_else(|| (screenshot.texture.clone(), rect));
         // The size doesn't actually matter because we're not transforming anything.
@@ -866,22 +864,19 @@ impl ScreenshotUi {
         };
 
         // Check if this is a second touch (different slot) while already dragging.
-        if let Some(new_slot) = slot {
-            if let Button::Down {
+        if let Some(new_slot) = slot
+            && let Button::Down {
                 on_capture_button: false,
                 move_state,
                 last_pos,
                 ..
             } = button
-            {
-                if move_state.is_none() {
+                && move_state.is_none() {
                     *move_state = Some(MoveState {
                         pointer_offset: last_pos.1 - selection.1,
                         touch_slot: Some(new_slot),
                     });
                 }
-            }
-        }
 
         if button.is_down() {
             return false;
@@ -967,11 +962,10 @@ impl ScreenshotUi {
 
         if touch_slot != slot {
             // This is not our main touch, but it might be the move touch. If so, stop the move.
-            if let Some(state) = move_state {
-                if state.touch_slot.is_some_and(|m_slot| Some(m_slot) == slot) {
+            if let Some(state) = move_state
+                && state.touch_slot.is_some_and(|m_slot| Some(m_slot) == slot) {
                     *move_state = None;
-                }
-            };
+                };
 
             return None;
         }

@@ -23,11 +23,9 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
             | Action::ScreenshotScreen { path, .. }
             | Action::ScreenshotWindow { path, .. },
     } = &mut msg
-    {
-        if let Some(path) = path {
+        && let Some(path) = path {
             ensure_absolute_path(path).context("error making the path absolute")?;
         }
-    }
 
     let request = match &msg {
         Msg::Version => Request::Version,

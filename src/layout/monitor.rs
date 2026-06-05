@@ -415,11 +415,10 @@ impl<W: LayoutElement> Monitor<W> {
             self.active_workspace_idx += 1;
         }
 
-        if let Some(switch) = &mut self.workspace_switch {
-            if idx as f64 <= switch.target_idx() {
+        if let Some(switch) = &mut self.workspace_switch
+            && idx as f64 <= switch.target_idx() {
                 switch.offset(1);
             }
-        }
     }
 
     pub fn add_workspace_top(&mut self) {
@@ -1060,11 +1059,10 @@ impl<W: LayoutElement> Monitor<W> {
                     }
                 }
 
-                if let Some(anim) = &mut gesture.animation {
-                    if anim.is_done() {
+                if let Some(anim) = &mut gesture.animation
+                    && anim.is_done() {
                         gesture.animation = None;
                     }
-                }
             }
             None => (),
         }
@@ -1383,12 +1381,11 @@ impl<W: LayoutElement> Monitor<W> {
         // If the view jumped (can happen when going from corrected to uncorrected render_idx, for
         // example when toggling the overview in the middle of an overview animation), then restart
         // the workspace switch to avoid jumps.
-        if prev_render_idx != new_render_idx {
-            if let Some(WorkspaceSwitch::Animation(anim)) = &mut self.workspace_switch {
+        if prev_render_idx != new_render_idx
+            && let Some(WorkspaceSwitch::Animation(anim)) = &mut self.workspace_switch {
                 // FIXME: maintain velocity.
                 *anim = anim.restarted(prev_render_idx, anim.to(), 0.);
             }
-        }
     }
 
     #[cfg(test)]
@@ -1403,8 +1400,7 @@ impl<W: LayoutElement> Monitor<W> {
             Some(WorkspaceSwitch::Animation(switch_anim)),
             Some(OverviewProgress::Animation(progress_anim)),
         ) = (&self.workspace_switch, &self.overview_progress)
-        {
-            if switch_anim.start_time() == progress_anim.start_time()
+            && switch_anim.start_time() == progress_anim.start_time()
                 && (switch_anim.duration().as_secs_f64() - progress_anim.duration().as_secs_f64())
                     .abs()
                     <= 0.001
@@ -1461,8 +1457,7 @@ impl<W: LayoutElement> Monitor<W> {
                     + switch_anim.to() * (from_ws_height_with_gap - ws_height_with_gap);
 
                 return -first_ws_y / ws_height_with_gap;
-            }
-        };
+            };
 
         if let Some(switch) = &self.workspace_switch {
             switch.current_idx()
@@ -1530,7 +1525,7 @@ impl<W: LayoutElement> Monitor<W> {
     ) -> impl Iterator<Item = (&mut Workspace<W>, Rectangle<f64, Logical>)> {
         let output_geo = Rectangle::from_size(self.view_size);
 
-        let geo = self.workspaces_render_geo();
+        let geo: Vec<_> = self.workspaces_render_geo().collect();
         zip(self.workspaces.iter_mut(), geo)
             // Cull out workspaces outside the output.
             .filter(move |(_ws, geo)| !cull || geo.intersection(output_geo).is_some())
@@ -1723,7 +1718,7 @@ impl<W: LayoutElement> Monitor<W> {
         for (ws, geo) in self.workspaces_with_render_geo() {
             // Macro instead of closure because ws and insert hint have different elem types.
             macro_rules! push {
-                () => {{
+                () => {
                     &mut |elem| {
                         let elem = CropRenderElement::from_element(elem, scale, crop_bounds);
                         if let Some(elem) = elem {
@@ -1731,19 +1726,18 @@ impl<W: LayoutElement> Monitor<W> {
                             push(scale_relocate(geo, elem));
                         }
                     }
-                }};
+                };
             }
 
             let xray_pos = XrayPos::new(geo.loc, zoom);
 
             ws.render_floating(ctx.r(), xray_pos, focus_ring, push!());
 
-            if let Some(loc) = insert_hint_render_loc {
-                if loc.workspace == InsertWorkspace::Existing(ws.id()) {
+            if let Some(loc) = insert_hint_render_loc
+                && loc.workspace == InsertWorkspace::Existing(ws.id()) {
                     self.insert_hint_element
                         .render(ctx.renderer, loc.location, push!());
                 }
-            }
 
             ws.render_scrolling(ctx.r(), xray_pos, focus_ring, push!());
         }

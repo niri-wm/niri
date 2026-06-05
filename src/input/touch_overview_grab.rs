@@ -128,12 +128,11 @@ impl TouchGrab<State> for TouchOverviewGrab {
             return;
         }
 
-        if matches!(self.gesture, GestureState::InteractiveMove) {
-            if let Some(window) = &self.window.as_ref() {
+        if matches!(self.gesture, GestureState::InteractiveMove)
+            && let Some(window) = &self.window.as_ref() {
                 data.niri.layout.toggle_window_floating(Some(window));
                 data.niri.queue_redraw_all();
             }
-        }
     }
 
     fn up(
@@ -170,8 +169,8 @@ impl TouchGrab<State> for TouchOverviewGrab {
         let layout = &mut data.niri.layout;
 
         // Check if we should become interactive move.
-        if matches!(self.gesture, GestureState::Recognizing) {
-            if let Some(window) = self.window.as_ref().filter(|win| win.alive()) {
+        if matches!(self.gesture, GestureState::Recognizing)
+            && let Some(window) = self.window.as_ref().filter(|win| win.alive()) {
                 let passed = timestamp.saturating_sub(self.start_timestamp);
                 if INTERACTIVE_MOVE_THRESHOLD <= passed
                     && layout.interactive_move_begin(
@@ -183,7 +182,6 @@ impl TouchGrab<State> for TouchOverviewGrab {
                     self.gesture = GestureState::InteractiveMove;
                 }
             }
-        }
 
         // Check if we should become a spatial scroll.
         if matches!(self.gesture, GestureState::Recognizing) {
@@ -191,14 +189,12 @@ impl TouchGrab<State> for TouchOverviewGrab {
 
             // Check if the gesture moved far enough to decide. Threshold copied from libadwaita.
             if c.x * c.x + c.y * c.y >= 16. * 16. {
-                if let Some(ws_id) = self.workspace_id.filter(|_| c.x.abs() > c.y.abs()) {
-                    if let Some((ws_idx, ws)) = layout.find_workspace_by_id(ws_id) {
-                        if ws.current_output() == Some(&self.output) {
+                if let Some(ws_id) = self.workspace_id.filter(|_| c.x.abs() > c.y.abs())
+                    && let Some((ws_idx, ws)) = layout.find_workspace_by_id(ws_id)
+                        && ws.current_output() == Some(&self.output) {
                             layout.view_offset_gesture_begin(&self.output, Some(ws_idx), false);
                             self.gesture = GestureState::ViewOffset;
                         }
-                    }
-                }
 
                 if matches!(self.gesture, GestureState::Recognizing) {
                     layout.workspace_switch_gesture_begin(&self.output, false);

@@ -258,11 +258,10 @@ impl OutputDevice {
                 if let Some(enc) = info.current_encoder() {
                     match self.drm.get_encoder(enc) {
                         Ok(enc) => {
-                            if let Some(current_crtc) = enc.crtc() {
-                                if current_crtc != crtc {
+                            if let Some(current_crtc) = enc.crtc()
+                                && current_crtc != crtc {
                                     has_different_crtc = true;
                                 }
-                            }
                         }
                         Err(err) => {
                             debug!("couldn't get encoder: {err:?}");
@@ -706,11 +705,10 @@ impl Tty {
                             if let Err(err) = res {
                                 warn!("error applying pending gamma change: {err:?}");
                             }
-                        } else if let Some(gamma_props) = &surface.gamma_props {
-                            if let Err(err) = gamma_props.restore_gamma(&device.drm) {
+                        } else if let Some(gamma_props) = &surface.gamma_props
+                            && let Err(err) = gamma_props.restore_gamma(&device.drm) {
                                 warn!("error restoring gamma: {err:?}");
                             }
-                        }
                     }
                 }
 
@@ -1512,11 +1510,10 @@ impl Tty {
 
         // Some buggy monitors replug upon powering off, so powering on here would prevent such
         // monitors from powering off. Therefore, we avoid unconditionally powering on.
-        if !niri.monitors_active {
-            if let Err(err) = compositor.clear() {
+        if !niri.monitors_active
+            && let Err(err) = compositor.clear() {
                 warn!("error clearing drm surface: {err:?}");
             }
-        }
 
         let vrr_enabled = compositor.vrr_enabled();
 
@@ -1943,14 +1940,13 @@ impl Tty {
                         .borrow()
                         .debug
                         .wait_for_frame_completion_before_queueing;
-                if needs_sync {
-                    if let PrimaryPlaneElement::Swapchain(element) = res.primary_element {
+                if needs_sync
+                    && let PrimaryPlaneElement::Swapchain(element) = res.primary_element {
                         let _span = tracy_client::span!("wait for completion");
                         if let Err(err) = element.sync.wait() {
                             warn!("error waiting for frame completion: {err:?}");
                         }
                     }
-                }
 
                 niri.update_primary_scanout_output(output, &res.states);
                 if let Some(dmabuf_feedback) = surface.dmabuf_feedback.as_ref() {
@@ -2720,11 +2716,10 @@ impl GammaProps {
                 })?;
         }
 
-        if let Some(blob) = mem::replace(&mut self.previous_blob, blob) {
-            if let Err(err) = device.destroy_property_blob(blob.get()) {
+        if let Some(blob) = mem::replace(&mut self.previous_blob, blob)
+            && let Err(err) = device.destroy_property_blob(blob.get()) {
                 warn!("error destroying previous GAMMA_LUT blob: {err:?}");
             }
-        }
 
         Ok(())
     }
@@ -3381,17 +3376,15 @@ fn set_connector_properties(
     max_bpc: Option<MaxBpc>,
     reset_hdr: bool,
 ) {
-    if let Some(max_bpc) = max_bpc {
-        if let Err(err) = props.set_max_bpc(max_bpc) {
+    if let Some(max_bpc) = max_bpc
+        && let Err(err) = props.set_max_bpc(max_bpc) {
             debug!("failed to set `max bpc` property: {err}");
         }
-    }
 
-    if reset_hdr {
-        if let Err(err) = props.reset_hdr() {
+    if reset_hdr
+        && let Err(err) = props.reset_hdr() {
             debug!("failed to set HDR properties: {err}");
         }
-    }
 
     if let Err(err) = props.commit() {
         warn!("failed to atomically commit properties: {err}");
@@ -3488,7 +3481,7 @@ unsafe fn init_libinput_plugin_system(libinput: &Libinput) {
         use input::ffi::libinput;
         use input::AsRaw as _;
 
-        extern "C" {
+        unsafe extern "C" {
             fn libinput_plugin_system_append_path(libinput: *const libinput, path: *const c_char);
             fn libinput_plugin_system_append_default_paths(libinput: *const libinput);
             fn libinput_plugin_system_load_plugins(

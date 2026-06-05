@@ -282,7 +282,7 @@ impl<S: ErrorSpan> knuffel::DecodeScalar<S> for MaxBpc {
         ctx: &mut Context<S>,
     ) -> Result<Self, DecodeError<S>> {
         match &**value {
-            knuffel::ast::Literal::Int(ref val) => match u8::try_from(val) {
+            knuffel::ast::Literal::Int(val) => match u8::try_from(val) {
                 Ok(v) => niri_ipc::MaxBpc::try_from(v)
                     .map(MaxBpc)
                     .map_err(|e| DecodeError::conversion(value, e)),
@@ -347,10 +347,10 @@ impl<S: ErrorSpan> knuffel::Decode<S> for Mode {
                 if custom {
                     if mode.refresh.is_none() {
                         return Err("no refresh rate found; required for custom mode");
-                    } else if let Some(refresh) = mode.refresh {
-                        if refresh <= 0. {
-                            return Err("custom mode refresh rate must be > 0");
-                        }
+                    } else if let Some(refresh) = mode.refresh
+                        && refresh <= 0.
+                    {
+                        return Err("custom mode refresh rate must be > 0");
                     }
                 }
                 Ok(mode)

@@ -41,11 +41,11 @@ static GLOBAL: tracy_client::ProfiledAllocator<std::alloc::System> =
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Set backtrace defaults if not set.
     if env::var_os("RUST_BACKTRACE").is_none() {
-        env::set_var("RUST_BACKTRACE", "1");
+        unsafe { env::set_var("RUST_BACKTRACE", "1") };
         REMOVE_ENV_RUST_BACKTRACE.store(true, Ordering::Relaxed);
     }
     if env::var_os("RUST_LIB_BACKTRACE").is_none() {
-        env::set_var("RUST_LIB_BACKTRACE", "0");
+        unsafe { env::set_var("RUST_LIB_BACKTRACE", "0") };
         REMOVE_ENV_RUST_LIB_BACKTRACE.store(true, Ordering::Relaxed);
     }
 
@@ -78,22 +78,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if env::var_os("WSL_DISTRO_NAME").is_none() {
             if env::var_os("DISPLAY").is_some() {
                 warn!("running as a session but DISPLAY is set, removing it");
-                env::remove_var("DISPLAY");
+                unsafe { env::remove_var("DISPLAY") };
             }
             if env::var_os("WAYLAND_DISPLAY").is_some() {
                 warn!("running as a session but WAYLAND_DISPLAY is set, removing it");
-                env::remove_var("WAYLAND_DISPLAY");
+                unsafe { env::remove_var("WAYLAND_DISPLAY") };
             }
             if env::var_os("WAYLAND_SOCKET").is_some() {
                 warn!("running as a session but WAYLAND_SOCKET is set, removing it");
-                env::remove_var("WAYLAND_SOCKET");
+                unsafe { env::remove_var("WAYLAND_SOCKET") };
             }
         }
 
         // Set the current desktop for xdg-desktop-portal.
-        env::set_var("XDG_CURRENT_DESKTOP", "niri");
+        unsafe { env::set_var("XDG_CURRENT_DESKTOP", "niri") };
         // Ensure the session type is set to Wayland for xdg-autostart and Qt apps.
-        env::set_var("XDG_SESSION_TYPE", "wayland");
+        unsafe { env::set_var("XDG_SESSION_TYPE", "wayland") };
     }
 
     // Handle subcommands.
@@ -147,7 +147,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Load the config.
     let config_path = config_path(cli.config);
-    env::remove_var("NIRI_CONFIG");
+    unsafe { env::remove_var("NIRI_CONFIG") };
     let (config_created_at, config_load_result) = config_path.load_or_create();
     let config_errored = config_load_result.config.is_err();
     let mut config = config_load_result.config.unwrap_or_else(|err| {
@@ -187,7 +187,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Set WAYLAND_DISPLAY for children.
     let socket_name = state.niri.socket_name.as_deref().unwrap();
-    env::set_var("WAYLAND_DISPLAY", socket_name);
+    unsafe { env::set_var("WAYLAND_DISPLAY", socket_name) };
     info!(
         "listening on Wayland socket: {}",
         socket_name.to_string_lossy()
@@ -196,7 +196,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Set NIRI_SOCKET for children.
     if let Some(ipc) = &state.niri.ipc_server {
         let socket_path = ipc.socket_path.as_deref().unwrap();
-        env::set_var(SOCKET_PATH_ENV, socket_path);
+        unsafe { env::set_var(SOCKET_PATH_ENV, socket_path) };
         info!("IPC listening on: {}", socket_path.to_string_lossy());
     }
 
@@ -205,11 +205,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let Some(satellite) = &state.niri.satellite {
         let name = satellite.display_name();
         *CHILD_DISPLAY.write().unwrap() = Some(name.to_owned());
-        env::set_var("DISPLAY", name);
+        unsafe { env::set_var("DISPLAY", name) };
         info!("listening on X11 socket: {name}");
     } else {
         // Avoid spawning children in the host X11.
-        env::remove_var("DISPLAY");
+        unsafe { env::remove_var("DISPLAY") };
     }
 
     if cli.session {
@@ -218,11 +218,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // Inhibit power key handling so we can suspend on it.
         #[cfg(feature = "dbus")]
-        if !state.niri.config.borrow().input.disable_power_key_handling {
-            if let Err(err) = state.niri.inhibit_power_key() {
+        if !state.niri.config.borrow().input.disable_power_key_handling
+            && let Err(err) = state.niri.inhibit_power_key() {
                 warn!("error inhibiting power key: {err:?}");
             }
-        }
     }
 
     #[cfg(feature = "dbus")]
@@ -369,7 +368,7 @@ fn notify_fd() -> anyhow::Result<()> {
         Err(env::VarError::NotPresent) => return Ok(()),
         Err(err) => return Err(err.into()),
     };
-    env::remove_var("NOTIFY_FD");
+    unsafe { env::remove_var("NOTIFY_FD") };
     let mut notif = unsafe { File::from_raw_fd(fd) };
     notif.write_all(b"READY=1\n")?;
     Ok(())

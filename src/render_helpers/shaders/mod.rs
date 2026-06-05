@@ -260,11 +260,10 @@ pub fn set_custom_resize_program(renderer: &mut GlesRenderer, src: Option<&str>)
         None
     };
 
-    if let Some(prev) = Shaders::get(renderer).replace_custom_resize_program(program) {
-        if let Err(err) = prev.destroy(renderer) {
+    if let Some(prev) = Shaders::get(renderer).replace_custom_resize_program(program)
+        && let Err(err) = prev.destroy(renderer) {
             warn!("error destroying previous custom resize shader: {err:?}");
         }
-    }
 }
 
 fn compile_close_program(
@@ -303,11 +302,10 @@ pub fn set_custom_close_program(renderer: &mut GlesRenderer, src: Option<&str>) 
         None
     };
 
-    if let Some(prev) = Shaders::get(renderer).replace_custom_close_program(program) {
-        if let Err(err) = prev.destroy(renderer) {
+    if let Some(prev) = Shaders::get(renderer).replace_custom_close_program(program)
+        && let Err(err) = prev.destroy(renderer) {
             warn!("error destroying previous custom close shader: {err:?}");
         }
-    }
 }
 
 fn compile_open_program(
@@ -346,11 +344,10 @@ pub fn set_custom_open_program(renderer: &mut GlesRenderer, src: Option<&str>) {
         None
     };
 
-    if let Some(prev) = Shaders::get(renderer).replace_custom_open_program(program) {
-        if let Err(err) = prev.destroy(renderer) {
+    if let Some(prev) = Shaders::get(renderer).replace_custom_open_program(program)
+        && let Err(err) = prev.destroy(renderer) {
             warn!("error destroying previous custom open shader: {err:?}");
         }
-    }
 }
 
 pub fn mat3_uniform(name: &str, mat: Mat3) -> Uniform<'_> {

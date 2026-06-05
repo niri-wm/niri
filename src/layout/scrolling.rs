@@ -343,11 +343,10 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     }
 
     pub fn advance_animations(&mut self) {
-        if let ViewOffset::Animation(anim) = &self.view_offset {
-            if anim.is_done() {
+        if let ViewOffset::Animation(anim) = &self.view_offset
+            && anim.is_done() {
                 self.view_offset = ViewOffset::Static(anim.to());
             }
-        }
 
         if let ViewOffset::Gesture(gesture) = &mut self.view_offset {
             // Make sure the last event time doesn't go too much out of date (for
@@ -367,11 +366,10 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                 }
             }
 
-            if let Some(anim) = &mut gesture.animation {
-                if anim.is_done() {
+            if let Some(anim) = &mut gesture.animation
+                && anim.is_done() {
                     gesture.animation = None;
                 }
-            }
         }
 
         for col in &mut self.columns {
@@ -1098,18 +1096,16 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         }
 
         // If one window is left, reset its weight to 1.
-        if column.data.len() == 1 {
-            if let WindowHeight::Auto { weight } = &mut column.data[0].height {
+        if column.data.len() == 1
+            && let WindowHeight::Auto { weight } = &mut column.data[0].height {
                 *weight = 1.;
             }
-        }
 
         // Stop interactive resize.
-        if let Some(resize) = &self.interactive_resize {
-            if tile.window().id() == &resize.window {
+        if let Some(resize) = &self.interactive_resize
+            && tile.window().id() == &resize.window {
                 self.interactive_resize = None;
             }
-        }
 
         let tile = RemovedTile {
             tile,
@@ -1181,15 +1177,14 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         self.data.remove(column_idx);
 
         // Stop interactive resize.
-        if let Some(resize) = &self.interactive_resize {
-            if column
+        if let Some(resize) = &self.interactive_resize
+            && column
                 .tiles
                 .iter()
                 .any(|tile| tile.window().id() == &resize.window)
             {
                 self.interactive_resize = None;
             }
-        }
 
         if column_idx + 1 == self.active_column_idx {
             // The previous column, that we were going to activate upon removal of the active
@@ -2340,7 +2335,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     }
 
     fn columns_mut(&mut self) -> impl Iterator<Item = (&mut Column<W>, f64)> + '_ {
-        let offsets = self.column_xs(self.data.iter().copied());
+        let offsets: Vec<f64> = self.column_xs(self.data.iter().copied()).collect();
         zip(&mut self.columns, offsets)
     }
 
@@ -2360,7 +2355,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     }
 
     fn columns_in_render_order_mut(&mut self) -> impl Iterator<Item = (&mut Column<W>, f64)> + '_ {
-        let offsets = self.column_xs_in_render_order(self.data.iter().copied());
+        let offsets: Vec<f64> = self.column_xs_in_render_order(self.data.iter().copied()).collect();
 
         let (first, active, rest) = if self.columns.is_empty() {
             (&mut [][..], &mut [][..], &mut [][..])
@@ -3632,11 +3627,10 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     pub fn refresh(&mut self, is_active: bool, is_focused: bool) {
         for (col_idx, col) in self.columns.iter_mut().enumerate() {
             let mut col_resize_data = None;
-            if let Some(resize) = &self.interactive_resize {
-                if col.contains(&resize.window) {
+            if let Some(resize) = &self.interactive_resize
+                && col.contains(&resize.window) {
                     col_resize_data = Some(resize.data);
                 }
-            }
 
             let is_tabbed = col.display_mode == ColumnDisplay::Tabbed;
             let extra_size = col.extra_size();
@@ -4072,11 +4066,10 @@ impl<W: LayoutElement> Column<W> {
     }
 
     pub fn advance_animations(&mut self) {
-        if let Some(move_) = &mut self.move_animation {
-            if move_.anim.is_done() {
+        if let Some(move_) = &mut self.move_animation
+            && move_.anim.is_done() {
                 self.move_animation = None;
             }
-        }
 
         for tile in &mut self.tiles {
             tile.advance_animations();
@@ -4108,7 +4101,7 @@ impl<W: LayoutElement> Column<W> {
         }
 
         let config = self.tab_indicator.config();
-        let offsets = self.tile_offsets_iter(self.data.iter().copied());
+        let offsets: Vec<_> = self.tile_offsets_iter(self.data.iter().copied()).collect();
         let tabs = zip(&self.tiles, offsets)
             .enumerate()
             .map(|(tile_idx, (tile, tile_off))| {
@@ -4492,8 +4485,8 @@ impl<W: LayoutElement> Column<W> {
         // If there are multiple windows in a column, clamp the non-auto window's height according
         // to other windows' min sizes.
         let mut max_non_auto_window_height = None;
-        if self.tiles.len() > 1 && !is_tabbed {
-            if let Some(non_auto_idx) = self
+        if self.tiles.len() > 1 && !is_tabbed
+            && let Some(non_auto_idx) = self
                 .data
                 .iter()
                 .position(|data| !matches!(data.height, WindowHeight::Auto { .. }))
@@ -4512,7 +4505,6 @@ impl<W: LayoutElement> Column<W> {
                     tile.window_height_for_tile_height(height_left).round(),
                 ));
             }
-        }
 
         // Compute the tile heights. Start by converting window heights to tile heights.
         let mut heights = zip(&self.tiles, &self.data)
@@ -5265,7 +5257,7 @@ impl<W: LayoutElement> Column<W> {
     }
 
     fn tiles_mut(&mut self) -> impl Iterator<Item = (&mut Tile<W>, Point<f64, Logical>)> + '_ {
-        let offsets = self.tile_offsets_iter(self.data.iter().copied());
+        let offsets: Vec<_> = self.tile_offsets_iter(self.data.iter().copied()).collect();
         zip(&mut self.tiles, offsets)
     }
 
@@ -5290,7 +5282,7 @@ impl<W: LayoutElement> Column<W> {
     fn tiles_in_render_order_mut(
         &mut self,
     ) -> impl Iterator<Item = (&mut Tile<W>, Point<f64, Logical>)> + '_ {
-        let offsets = self.tile_offsets_in_render_order(self.data.iter().copied());
+        let offsets: Vec<_> = self.tile_offsets_in_render_order(self.data.iter().copied()).collect();
 
         let (first, rest) = self.tiles.split_at_mut(self.active_tile_idx);
         let (active, rest) = rest.split_at_mut(1);
@@ -5540,11 +5532,10 @@ fn cancel_resize_for_column<W: LayoutElement>(
     interactive_resize: &mut Option<InteractiveResize<W>>,
     column: &mut Column<W>,
 ) {
-    if let Some(resize) = interactive_resize {
-        if column.contains(&resize.window) {
+    if let Some(resize) = interactive_resize
+        && column.contains(&resize.window) {
             *interactive_resize = None;
         }
-    }
 
     for tile in &mut column.tiles {
         tile.window_mut().cancel_interactive_resize();

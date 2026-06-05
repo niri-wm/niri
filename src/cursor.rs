@@ -51,11 +51,10 @@ impl CursorManager {
 
     /// Checks if the cursor WlSurface is alive, and if not, cleans it up.
     pub fn check_cursor_image_surface_alive(&mut self) {
-        if let CursorImageStatus::Surface(surface) = &self.current_cursor {
-            if !surface.alive() {
+        if let CursorImageStatus::Surface(surface) = &self.current_cursor
+            && !surface.alive() {
                 self.current_cursor = CursorImageStatus::default_named();
             }
-        }
     }
 
     /// Get the current rendering cursor.
@@ -188,8 +187,11 @@ impl CursorManager {
 
     /// Set the common XCURSOR env variables.
     fn ensure_env(theme: &str, size: u8) {
-        env::set_var("XCURSOR_THEME", theme);
-        env::set_var("XCURSOR_SIZE", size.to_string());
+        // SAFETY: single-threaded at this call site.
+        unsafe {
+            env::set_var("XCURSOR_THEME", theme);
+            env::set_var("XCURSOR_SIZE", size.to_string());
+        }
     }
 
     fn fallback_cursor() -> XCursor {

@@ -1755,15 +1755,14 @@ impl<W: LayoutElement> Workspace<W> {
 
     pub fn window_under(&self, pos: Point<f64, Logical>) -> Option<(&W, HitType)> {
         // This logic is consistent with tiles_with_render_positions().
-        if self.is_floating_visible() {
-            if let Some(rv) = self
+        if self.is_floating_visible()
+            && let Some(rv) = self
                 .floating
                 .tiles_with_render_positions()
                 .find_map(|(tile, tile_pos)| HitType::hit_tile(tile, tile_pos, pos))
             {
                 return Some(rv);
             }
-        }
 
         self.scrolling.window_under(pos)
     }

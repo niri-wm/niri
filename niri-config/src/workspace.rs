@@ -66,7 +66,7 @@ impl<S: knuffel::traits::ErrorSpan> knuffel::DecodeScalar<S> for WorkspaceName {
         #[derive(Debug)]
         struct WorkspaceNameSet(Vec<String>);
         match &**val {
-            knuffel::ast::Literal::String(ref s) => {
+            knuffel::ast::Literal::String(s) => {
                 let mut name_set: Vec<String> = match ctx.get::<WorkspaceNameSet>() {
                     Some(h) => h.0.clone(),
                     None => Vec::new(),

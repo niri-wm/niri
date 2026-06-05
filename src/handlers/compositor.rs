@@ -346,8 +346,8 @@ impl CompositorHandler for State {
                 self.niri.layout.update_window(&window, serial);
 
                 // Move the toplevel according to the attach offset.
-                if let Some(delta) = buffer_delta {
-                    if delta.x != 0 || delta.y != 0 {
+                if let Some(delta) = buffer_delta
+                    && (delta.x != 0 || delta.y != 0) {
                         let (x, y) = delta.to_f64().into();
                         self.niri.layout.move_floating_window(
                             Some(&window),
@@ -356,7 +356,6 @@ impl CompositorHandler for State {
                             false,
                         );
                     }
-                }
 
                 // Popup placement depends on window size which might have changed.
                 self.update_reactive_popups(&window);
@@ -460,8 +459,8 @@ impl CompositorHandler for State {
 
         // This might be a lock surface.
         for (output, state) in &self.niri.output_state {
-            if let Some(lock_surface) = &state.lock_surface {
-                if lock_surface.wl_surface() == &root_surface {
+            if let Some(lock_surface) = &state.lock_surface
+                && lock_surface.wl_surface() == &root_surface {
                     if matches!(self.niri.lock_state, LockState::WaitingForSurfaces { .. }) {
                         self.niri.maybe_continue_to_locking();
                     } else {
@@ -470,7 +469,6 @@ impl CompositorHandler for State {
 
                     return;
                 }
-            }
         }
 
         // This message can trigger for lock surfaces that had a commit right after we unlocked
@@ -488,13 +486,12 @@ impl CompositorHandler for State {
         // This is still not perfect, as this function is called already after the (first)
         // subsurface is destroyed; in the case of alacritty, this is the top CSD shadow. But, it
         // gets most of the job done.
-        if let Some(root) = self.niri.root_surface.get(surface) {
-            if let Some((mapped, output)) = self.niri.layout.find_window_and_output(root) {
+        if let Some(root) = self.niri.root_surface.get(surface)
+            && let Some((mapped, output)) = self.niri.layout.find_window_and_output(root) {
                 let window = mapped.window.clone();
                 let output = output.cloned();
                 self.store_unmap_snapshot(&window, output.as_ref());
             }
-        }
 
         self.niri
             .root_surface
@@ -546,9 +543,9 @@ impl State {
                         _ => None,
                     })
             });
-            if let Some(dmabuf) = maybe_dmabuf {
-                if let Ok((blocker, source)) = dmabuf.generate_blocker(Interest::READ) {
-                    if let Some(client) = surface.client() {
+            if let Some(dmabuf) = maybe_dmabuf
+                && let Ok((blocker, source)) = dmabuf.generate_blocker(Interest::READ)
+                    && let Some(client) = surface.client() {
                         let res =
                             state
                                 .niri
@@ -565,8 +562,6 @@ impl State {
                             trace!("added default dmabuf blocker");
                         }
                     }
-                }
-            }
         });
 
         let s = surface.clone();

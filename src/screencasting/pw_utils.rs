@@ -241,11 +241,10 @@ impl PipeWire {
                 warn!(id, seq, res, message, "pw error");
 
                 // Reset PipeWire on connection errors.
-                if id == PW_ID_CORE && res == -32 {
-                    if let Err(err) = to_niri_.send(PwToNiri::FatalError) {
+                if id == PW_ID_CORE && res == -32
+                    && let Err(err) = to_niri_.send(PwToNiri::FatalError) {
                         warn!("error sending FatalError to niri: {err:?}");
                     }
-                }
             })
             .register();
         mem::forget(listener);
@@ -260,7 +259,7 @@ impl PipeWire {
         let token = event_loop
             .insert_source(generic, move |_, wrapper, _| {
                 let _span = tracy_client::span!("pipewire iteration");
-                wrapper.0.loop_().iterate(Duration::ZERO);
+                wrapper.0.loop_().iterate(pipewire::loop_::Timeout::Finite(Duration::ZERO));
                 Ok(PostAction::Continue)
             })
             .unwrap();
@@ -1394,7 +1393,7 @@ fn allocate_dmabuf(
     Ok(dmabuf)
 }
 
-unsafe fn return_unused_buffer(stream: &Stream, pw_buffer: NonNull<pw_buffer>) {
+unsafe fn return_unused_buffer(stream: &Stream, pw_buffer: NonNull<pw_buffer>) { unsafe {
     // pw_stream_return_buffer() requires too new PipeWire (1.4.0). So, mark as
     // corrupted and queue.
     let pw_buffer = pw_buffer.as_ptr();
@@ -1410,9 +1409,9 @@ unsafe fn return_unused_buffer(stream: &Stream, pw_buffer: NonNull<pw_buffer>) {
     }
 
     pw_stream_queue_buffer(stream.as_raw_ptr(), pw_buffer);
-}
+}}
 
-unsafe fn mark_buffer_as_good(pw_buffer: NonNull<pw_buffer>, sequence: &mut u64) {
+unsafe fn mark_buffer_as_good(pw_buffer: NonNull<pw_buffer>, sequence: &mut u64) { unsafe {
     let pw_buffer = pw_buffer.as_ptr();
     let spa_buffer = (*pw_buffer).buffer;
     let chunk = (*(*spa_buffer).datas).chunk;
@@ -1435,12 +1434,12 @@ unsafe fn mark_buffer_as_good(pw_buffer: NonNull<pw_buffer>, sequence: &mut u64)
         (*header).flags = 0;
         (*header).seq = *sequence;
     }
-}
+}}
 
-unsafe fn find_meta_header(buffer: *mut spa_buffer) -> Option<NonNull<spa_meta_header>> {
+unsafe fn find_meta_header(buffer: *mut spa_buffer) -> Option<NonNull<spa_meta_header>> { unsafe {
     let p = spa_buffer_find_meta_data(buffer, SPA_META_Header, size_of::<spa_meta_header>()).cast();
     NonNull::new(p)
-}
+}}
 
 unsafe fn add_invisible_cursor(spa_buffer: *mut spa_buffer) {
     unsafe {

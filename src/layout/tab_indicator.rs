@@ -57,11 +57,10 @@ impl TabIndicator {
     }
 
     pub fn advance_animations(&mut self) {
-        if let Some(anim) = &mut self.open_anim {
-            if anim.is_done() {
+        if let Some(anim) = &mut self.open_anim
+            && anim.is_done() {
                 self.open_anim = None;
             }
-        }
     }
 
     pub fn are_animations_ongoing(&self) -> bool {
@@ -189,7 +188,7 @@ impl TabIndicator {
         let shared_rounded_corners = self.config.gaps_between_tabs == 0.;
         let mut tabs_left = tab_count;
 
-        let rects = self.tab_rects(area, count, scale);
+        let rects: Vec<_> = self.tab_rects(area, count, scale).collect();
         for ((shader, loc), (tab, rect)) in zip(
             zip(&mut self.shaders, &mut self.shader_locs),
             zip(tabs, rects),

@@ -99,14 +99,13 @@ impl OutputManagementManagerState {
                 if old.vrr_enabled != conf.vrr_enabled {
                     changed = true;
                     for client in self.clients.values() {
-                        if let Some((head, _)) = client.heads.get(output) {
-                            if head.version() >= zwlr_output_head_v1::EVT_ADAPTIVE_SYNC_SINCE {
+                        if let Some((head, _)) = client.heads.get(output)
+                            && head.version() >= zwlr_output_head_v1::EVT_ADAPTIVE_SYNC_SINCE {
                                 head.adaptive_sync(match conf.vrr_enabled {
                                     true => AdaptiveSyncState::Enabled,
                                     false => AdaptiveSyncState::Disabled,
                                 });
                             }
-                        }
                     }
                 }
 
@@ -871,11 +870,10 @@ fn send_new_head<D>(
     new_head.name(conf.name.clone());
     // Format matches what Output::new() does internally.
     new_head.description(format!("{} - {} - {}", conf.make, conf.model, conf.name));
-    if let Some((width, height)) = conf.physical_size {
-        if let (Ok(a), Ok(b)) = (width.try_into(), height.try_into()) {
+    if let Some((width, height)) = conf.physical_size
+        && let (Ok(a), Ok(b)) = (width.try_into(), height.try_into()) {
             new_head.physical_size(a, b);
         }
-    }
     let mut new_modes = Vec::with_capacity(conf.modes.len());
     for (index, mode) in conf.modes.iter().enumerate() {
         let new_mode = client
@@ -906,11 +904,10 @@ fn send_new_head<D>(
     if new_head.version() >= zwlr_output_head_v1::EVT_MODEL_SINCE {
         new_head.model(conf.model.clone());
     }
-    if new_head.version() >= zwlr_output_head_v1::EVT_SERIAL_NUMBER_SINCE {
-        if let Some(serial) = &conf.serial {
+    if new_head.version() >= zwlr_output_head_v1::EVT_SERIAL_NUMBER_SINCE
+        && let Some(serial) = &conf.serial {
             new_head.serial_number(serial.clone());
         }
-    }
 
     if new_head.version() >= zwlr_output_head_v1::EVT_ADAPTIVE_SYNC_SINCE {
         new_head.adaptive_sync(match conf.vrr_enabled {

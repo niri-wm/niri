@@ -118,12 +118,11 @@ impl EffectBuffer {
 
         self.blur_options = options;
 
-        if let Some(offscreen) = &mut self.offscreen {
-            if offscreen.blurred.is_some() {
+        if let Some(offscreen) = &mut self.offscreen
+            && offscreen.blurred.is_some() {
                 offscreen.blurred = None;
                 self.commit_counter.increment();
             }
-        }
     }
 
     pub fn elements(&mut self) -> &mut Vec<OutputRenderElements<GlesRenderer>> {
@@ -145,12 +144,11 @@ impl EffectBuffer {
             return false;
         };
 
-        if blur {
-            if let Err(err) = self.prepare_blur(renderer) {
+        if blur
+            && let Err(err) = self.prepare_blur(renderer) {
                 warn!("error preparing blur: {err:?}");
                 return false;
             }
-        }
 
         true
     }
@@ -269,12 +267,11 @@ impl EffectBuffer {
             return Ok(());
         }
 
-        if let Some(blur) = &self.blur {
-            if blur.context_id() != renderer.context_id() {
+        if let Some(blur) = &self.blur
+            && blur.context_id() != renderer.context_id() {
                 debug!("recreating blur: renderer changed");
                 self.blur = None;
             }
-        }
 
         let blur = if let Some(blur) = &mut self.blur {
             blur

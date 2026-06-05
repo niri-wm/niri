@@ -171,12 +171,11 @@ impl ScreencopyQueue {
         self.screencopies
             .retain(|screencopy| screencopy.output() != output);
 
-        if let Some(cast) = &mut self.cast {
-            if self.screencopies.is_empty() {
+        if let Some(cast) = &mut self.cast
+            && self.screencopies.is_empty() {
                 // Queue became empty, update deadline for considering the cast stopped.
                 cast.update_deadline();
             }
-        }
     }
 
     fn remove_frame(&mut self, frame: &ZwlrScreencopyFrameV1) {
@@ -189,12 +188,11 @@ impl ScreencopyQueue {
         self.screencopies
             .retain(|screencopy| screencopy.frame != *frame);
 
-        if let Some(cast) = &mut self.cast {
-            if self.screencopies.is_empty() {
+        if let Some(cast) = &mut self.cast
+            && self.screencopies.is_empty() {
                 // Queue became empty, update deadline for considering the cast stopped.
                 cast.update_deadline();
             }
-        }
     }
 }
 

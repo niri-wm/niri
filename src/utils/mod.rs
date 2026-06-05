@@ -395,12 +395,11 @@ pub fn with_toplevel_last_uncommitted_configure<T>(
         } else if let Some(last_acked) = &role.last_acked {
             let mut configure = Some(last_acked);
 
-            if let Some(committed) = &guard.current().last_acked {
-                if committed.serial.is_no_older_than(&last_acked.serial) {
+            if let Some(committed) = &guard.current().last_acked
+                && committed.serial.is_no_older_than(&last_acked.serial) {
                     // Already committed to this configure.
                     configure = None;
                 }
-            }
 
             f(configure)
         } else {

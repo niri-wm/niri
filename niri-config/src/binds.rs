@@ -744,8 +744,8 @@ impl<S: knuffel::traits::ErrorSpan> knuffel::DecodeScalar<S> for WorkspaceRefere
         ctx: &mut knuffel::decode::Context<S>,
     ) -> Result<WorkspaceReference, DecodeError<S>> {
         match &**val {
-            knuffel::ast::Literal::String(ref s) => Ok(WorkspaceReference::Name(s.clone().into())),
-            knuffel::ast::Literal::Int(ref value) => match value.try_into() {
+            knuffel::ast::Literal::String(s) => Ok(WorkspaceReference::Name(s.clone().into())),
+            knuffel::ast::Literal::Int(value) => match value.try_into() {
                 Ok(v) => Ok(WorkspaceReference::Index(v)),
                 Err(e) => {
                     ctx.emit_error(DecodeError::conversion(val, e));
@@ -902,14 +902,14 @@ where
             }
             match Action::decode_node(child, ctx) {
                 Ok(action) => {
-                    if !matches!(action, Action::Spawn(_) | Action::SpawnSh(_)) {
-                        if let Some(node) = allow_when_locked_node {
-                            ctx.emit_error(DecodeError::unexpected(
-                                node,
-                                "property",
-                                "allow-when-locked can only be set on spawn binds",
-                            ));
-                        }
+                    if !matches!(action, Action::Spawn(_) | Action::SpawnSh(_))
+                        && let Some(node) = allow_when_locked_node
+                    {
+                        ctx.emit_error(DecodeError::unexpected(
+                            node,
+                            "property",
+                            "allow-when-locked can only be set on spawn binds",
+                        ));
                     }
 
                     // The toggle-inhibit action must always be uninhibitable.

@@ -559,8 +559,7 @@ impl ForeignToplevelHandler for State {
 
             if let Some(requested_output) =
                 wl_output.and_then(|o| self.niri.output_from_resource(&o))
-            {
-                if Some(&requested_output) != current_output {
+                && Some(&requested_output) != current_output {
                     self.niri.layout.move_to_output(
                         Some(&window),
                         &requested_output,
@@ -568,7 +567,6 @@ impl ForeignToplevelHandler for State {
                         ActivateWindow::Smart,
                     );
                 }
-            }
 
             self.niri.layout.set_fullscreen(&window, true);
         }
@@ -605,11 +603,10 @@ impl ExtWorkspaceHandler for State {
     fn activate_workspace(&mut self, id: WorkspaceId) {
         let reference = niri_config::WorkspaceReference::Id(id.get());
         if let Some((mut output, index)) = self.niri.find_output_and_workspace_index(reference) {
-            if let Some(active) = self.niri.layout.active_output() {
-                if output.as_ref() == Some(active) {
+            if let Some(active) = self.niri.layout.active_output()
+                && output.as_ref() == Some(active) {
                     output = None;
                 }
-            }
 
             if let Some(output) = output {
                 self.niri.layout.focus_output(&output);

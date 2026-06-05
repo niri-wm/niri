@@ -1395,17 +1395,14 @@ impl LayoutElement for Mapped {
     fn on_commit(&mut self, commit_serial: Serial) {
         if let Some(InteractiveResize::WaitingForLastCommit { serial, .. }) =
             &self.interactive_resize
-        {
-            if commit_serial.is_no_older_than(serial) {
+            && commit_serial.is_no_older_than(serial) {
                 self.interactive_resize = None;
             }
-        }
 
-        if let Some(RequestSizeOnce::WaitingForCommit(serial)) = &self.request_size_once {
-            if commit_serial.is_no_older_than(serial) {
+        if let Some(RequestSizeOnce::WaitingForCommit(serial)) = &self.request_size_once
+            && commit_serial.is_no_older_than(serial) {
                 self.request_size_once = Some(RequestSizeOnce::UseWindowSize);
             }
-        }
 
         // "Commit" our "acked" pending windowed fullscreen state.
         self.uncommitted_windowed_fullscreen

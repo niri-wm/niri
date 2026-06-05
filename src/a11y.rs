@@ -3,7 +3,7 @@ use std::thread;
 
 use accesskit::{
     ActionHandler, ActionRequest, ActivationHandler, DeactivationHandler, Live, Node, NodeId, Role,
-    Tree, TreeUpdate,
+    Tree, TreeId, TreeUpdate,
 };
 use accesskit_unix::Adapter;
 use calloop::LoopHandle;
@@ -118,8 +118,8 @@ impl Niri {
 
         let mut announcement = None;
         let ws_id = self.layout.active_workspace().map(|ws| ws.id());
-        if let Some(ws_id) = ws_id {
-            if self.a11y.workspace_id != Some(ws_id) {
+        if let Some(ws_id) = ws_id
+            && self.a11y.workspace_id != Some(ws_id) {
                 let (_, idx, ws) = self
                     .layout
                     .workspaces()
@@ -134,7 +134,6 @@ impl Niri {
 
                 announcement = Some(buf);
             }
-        }
         self.a11y.workspace_id = ws_id;
 
         let focus = self.a11y_focus();
@@ -218,6 +217,7 @@ impl Niri {
         }
 
         let update = TreeUpdate {
+            tree_id: TreeId::ROOT,
             nodes,
             tree: None,
             focus,
@@ -244,6 +244,7 @@ impl Niri {
         node.set_live(Live::Polite);
 
         let update = TreeUpdate {
+            tree_id: TreeId::ROOT,
             nodes: vec![(ID_ANNOUNCEMENT, node)],
             tree: None,
             focus: self.a11y.focus,
@@ -330,6 +331,7 @@ impl Niri {
         // get updated right away anyway.
 
         TreeUpdate {
+            tree_id: TreeId::ROOT,
             nodes: vec![
                 (ID_ROOT, root),
                 (ID_ANNOUNCEMENT, node),
