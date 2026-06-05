@@ -3809,7 +3809,11 @@ impl State {
                             let config = self.niri.config.borrow();
                             let bindings = config.binds.0.iter();
                             find_configured_bind(bindings, mod_key, trigger, mods)
-                        };
+                        }
+                        .filter(|bind| {
+                            !self.niri.screenshot_ui.is_open()
+                                || allowed_during_screenshot(&bind.action)
+                        });
                         if let Some(bind) = bind {
                             self.niri.suppressed_buttons.insert(button);
                             self.handle_bind(bind.clone());
