@@ -1,4 +1,4 @@
-use knuffel::errors::DecodeError;
+use knus::errors::DecodeError;
 use niri_ipc::{ColumnDisplay, SizeChange};
 
 use crate::appearance::{
@@ -94,44 +94,44 @@ impl MergeWith<LayoutPart> for Layout {
     }
 }
 
-#[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]
+#[derive(knus::Decode, Debug, Default, Clone, PartialEq)]
 pub struct LayoutPart {
-    #[knuffel(child)]
+    #[knus(child)]
     pub focus_ring: Option<BorderRule>,
-    #[knuffel(child)]
+    #[knus(child)]
     pub border: Option<BorderRule>,
-    #[knuffel(child)]
+    #[knus(child)]
     pub shadow: Option<ShadowRule>,
-    #[knuffel(child)]
+    #[knus(child)]
     pub tab_indicator: Option<TabIndicatorPart>,
-    #[knuffel(child)]
+    #[knus(child)]
     pub insert_hint: Option<InsertHintPart>,
-    #[knuffel(child, unwrap(children))]
+    #[knus(child, unwrap(children))]
     pub preset_column_widths: Option<Vec<PresetSize>>,
-    #[knuffel(child)]
+    #[knus(child)]
     pub default_column_width: Option<DefaultPresetSize>,
-    #[knuffel(child, unwrap(children))]
+    #[knus(child, unwrap(children))]
     pub preset_window_heights: Option<Vec<PresetSize>>,
-    #[knuffel(child, unwrap(argument))]
+    #[knus(child, unwrap(argument))]
     pub center_focused_column: Option<CenterFocusedColumn>,
-    #[knuffel(child)]
+    #[knus(child)]
     pub always_center_single_column: Option<Flag>,
-    #[knuffel(child)]
+    #[knus(child)]
     pub empty_workspace_above_first: Option<Flag>,
-    #[knuffel(child, unwrap(argument, str))]
+    #[knus(child, unwrap(argument, str))]
     pub default_column_display: Option<ColumnDisplay>,
-    #[knuffel(child, unwrap(argument))]
+    #[knus(child, unwrap(argument))]
     pub gaps: Option<FloatOrInt<0, 65535>>,
-    #[knuffel(child)]
+    #[knus(child)]
     pub struts: Option<Struts>,
-    #[knuffel(child)]
+    #[knus(child)]
     pub background_color: Option<Color>,
 }
 
-#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+#[derive(knus::Decode, Debug, Clone, Copy, PartialEq)]
 pub enum PresetSize {
-    Proportion(#[knuffel(argument)] f64),
-    Fixed(#[knuffel(argument)] i32),
+    Proportion(#[knus(argument)] f64),
+    Fixed(#[knus(argument)] i32),
 }
 
 impl From<PresetSize> for SizeChange {
@@ -146,19 +146,19 @@ impl From<PresetSize> for SizeChange {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DefaultPresetSize(pub Option<PresetSize>);
 
-#[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq)]
+#[derive(knus::Decode, Debug, Default, Clone, Copy, PartialEq)]
 pub struct Struts {
-    #[knuffel(child, unwrap(argument), default)]
+    #[knus(child, unwrap(argument), default)]
     pub left: FloatOrInt<-65535, 65535>,
-    #[knuffel(child, unwrap(argument), default)]
+    #[knus(child, unwrap(argument), default)]
     pub right: FloatOrInt<-65535, 65535>,
-    #[knuffel(child, unwrap(argument), default)]
+    #[knus(child, unwrap(argument), default)]
     pub top: FloatOrInt<-65535, 65535>,
-    #[knuffel(child, unwrap(argument), default)]
+    #[knus(child, unwrap(argument), default)]
     pub bottom: FloatOrInt<-65535, 65535>,
 }
 
-#[derive(knuffel::DecodeScalar, Debug, Default, PartialEq, Eq, Clone, Copy)]
+#[derive(knus::DecodeScalar, Debug, Default, PartialEq, Eq, Clone, Copy)]
 pub enum CenterFocusedColumn {
     /// Focusing a column will not center the column.
     #[default]
@@ -170,13 +170,13 @@ pub enum CenterFocusedColumn {
     OnOverflow,
 }
 
-impl<S> knuffel::Decode<S> for DefaultPresetSize
+impl<S> knus::Decode<S> for DefaultPresetSize
 where
-    S: knuffel::traits::ErrorSpan,
+    S: knus::traits::ErrorSpan,
 {
     fn decode_node(
-        node: &knuffel::ast::SpannedNode<S>,
-        ctx: &mut knuffel::decode::Context<S>,
+        node: &knus::ast::SpannedNode<S>,
+        ctx: &mut knus::decode::Context<S>,
     ) -> Result<Self, DecodeError<S>> {
         expect_only_children(node, ctx);
 

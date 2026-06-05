@@ -1,7 +1,7 @@
 use std::ops::{Mul, MulAssign};
 use std::str::FromStr;
 
-use knuffel::errors::DecodeError;
+use knus::errors::DecodeError;
 use miette::{miette, IntoDiagnostic as _};
 use smithay::backend::renderer::Color32F;
 
@@ -83,17 +83,17 @@ impl From<Color> for Color32F {
     }
 }
 
-#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+#[derive(knus::Decode, Debug, Clone, Copy, PartialEq)]
 pub struct Gradient {
-    #[knuffel(property, str)]
+    #[knus(property, str)]
     pub from: Color,
-    #[knuffel(property, str)]
+    #[knus(property, str)]
     pub to: Color,
-    #[knuffel(property, default = 180)]
+    #[knus(property, default = 180)]
     pub angle: i16,
-    #[knuffel(property, default)]
+    #[knus(property, default)]
     pub relative_to: GradientRelativeTo,
-    #[knuffel(property(name = "in"), str, default)]
+    #[knus(property(name = "in"), str, default)]
     pub in_: GradientInterpolation,
 }
 
@@ -109,7 +109,7 @@ impl From<Color> for Gradient {
     }
 }
 
-#[derive(knuffel::DecodeScalar, Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[derive(knus::DecodeScalar, Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum GradientRelativeTo {
     #[default]
     Window,
@@ -381,11 +381,11 @@ impl MergeWith<ShadowRule> for Shadow {
     }
 }
 
-#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+#[derive(knus::Decode, Debug, Clone, Copy, PartialEq)]
 pub struct ShadowOffset {
-    #[knuffel(property, default)]
+    #[knus(property, default)]
     pub x: FloatOrInt<-65535, 65535>,
-    #[knuffel(property, default)]
+    #[knus(property, default)]
     pub y: FloatOrInt<-65535, 65535>,
 }
 
@@ -427,19 +427,19 @@ impl From<WorkspaceShadow> for Shadow {
     }
 }
 
-#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+#[derive(knus::Decode, Debug, Clone, Copy, PartialEq)]
 pub struct WorkspaceShadowPart {
-    #[knuffel(child)]
+    #[knus(child)]
     pub off: bool,
-    #[knuffel(child)]
+    #[knus(child)]
     pub on: bool,
-    #[knuffel(child)]
+    #[knus(child)]
     pub offset: Option<ShadowOffset>,
-    #[knuffel(child, unwrap(argument))]
+    #[knus(child, unwrap(argument))]
     pub softness: Option<FloatOrInt<0, 1024>>,
-    #[knuffel(child, unwrap(argument))]
+    #[knus(child, unwrap(argument))]
     pub spread: Option<FloatOrInt<-1024, 1024>>,
-    #[knuffel(child)]
+    #[knus(child)]
     pub color: Option<Color>,
 }
 
@@ -526,49 +526,49 @@ impl MergeWith<TabIndicatorPart> for TabIndicator {
     }
 }
 
-#[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq)]
+#[derive(knus::Decode, Debug, Default, Clone, Copy, PartialEq)]
 pub struct TabIndicatorPart {
-    #[knuffel(child)]
+    #[knus(child)]
     pub off: bool,
-    #[knuffel(child)]
+    #[knus(child)]
     pub on: bool,
-    #[knuffel(child)]
+    #[knus(child)]
     pub hide_when_single_tab: Option<Flag>,
-    #[knuffel(child)]
+    #[knus(child)]
     pub place_within_column: Option<Flag>,
-    #[knuffel(child, unwrap(argument))]
+    #[knus(child, unwrap(argument))]
     pub gap: Option<FloatOrInt<-65535, 65535>>,
-    #[knuffel(child, unwrap(argument))]
+    #[knus(child, unwrap(argument))]
     pub width: Option<FloatOrInt<0, 65535>>,
-    #[knuffel(child)]
+    #[knus(child)]
     pub length: Option<TabIndicatorLength>,
-    #[knuffel(child, unwrap(argument))]
+    #[knus(child, unwrap(argument))]
     pub position: Option<TabIndicatorPosition>,
-    #[knuffel(child, unwrap(argument))]
+    #[knus(child, unwrap(argument))]
     pub gaps_between_tabs: Option<FloatOrInt<0, 65535>>,
-    #[knuffel(child, unwrap(argument))]
+    #[knus(child, unwrap(argument))]
     pub corner_radius: Option<FloatOrInt<0, 65535>>,
-    #[knuffel(child)]
+    #[knus(child)]
     pub active_color: Option<Color>,
-    #[knuffel(child)]
+    #[knus(child)]
     pub inactive_color: Option<Color>,
-    #[knuffel(child)]
+    #[knus(child)]
     pub urgent_color: Option<Color>,
-    #[knuffel(child)]
+    #[knus(child)]
     pub active_gradient: Option<Gradient>,
-    #[knuffel(child)]
+    #[knus(child)]
     pub inactive_gradient: Option<Gradient>,
-    #[knuffel(child)]
+    #[knus(child)]
     pub urgent_gradient: Option<Gradient>,
 }
 
-#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+#[derive(knus::Decode, Debug, Clone, Copy, PartialEq)]
 pub struct TabIndicatorLength {
-    #[knuffel(property)]
+    #[knus(property)]
     pub total_proportion: Option<f64>,
 }
 
-#[derive(knuffel::DecodeScalar, Debug, Clone, Copy, PartialEq)]
+#[derive(knus::DecodeScalar, Debug, Clone, Copy, PartialEq)]
 pub enum TabIndicatorPosition {
     Left,
     Right,
@@ -604,79 +604,79 @@ impl MergeWith<InsertHintPart> for InsertHint {
     }
 }
 
-#[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq)]
+#[derive(knus::Decode, Debug, Default, Clone, Copy, PartialEq)]
 pub struct InsertHintPart {
-    #[knuffel(child)]
+    #[knus(child)]
     pub off: bool,
-    #[knuffel(child)]
+    #[knus(child)]
     pub on: bool,
-    #[knuffel(child)]
+    #[knus(child)]
     pub color: Option<Color>,
-    #[knuffel(child)]
+    #[knus(child)]
     pub gradient: Option<Gradient>,
 }
 
-#[derive(knuffel::DecodeScalar, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(knus::DecodeScalar, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlockOutFrom {
     Screencast,
     ScreenCapture,
 }
 
-#[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq)]
+#[derive(knus::Decode, Debug, Default, Clone, Copy, PartialEq)]
 pub struct BorderRule {
-    #[knuffel(child)]
+    #[knus(child)]
     pub off: bool,
-    #[knuffel(child)]
+    #[knus(child)]
     pub on: bool,
-    #[knuffel(child, unwrap(argument))]
+    #[knus(child, unwrap(argument))]
     pub width: Option<FloatOrInt<0, 65535>>,
-    #[knuffel(child)]
+    #[knus(child)]
     pub active_color: Option<Color>,
-    #[knuffel(child)]
+    #[knus(child)]
     pub inactive_color: Option<Color>,
-    #[knuffel(child)]
+    #[knus(child)]
     pub urgent_color: Option<Color>,
-    #[knuffel(child)]
+    #[knus(child)]
     pub active_gradient: Option<Gradient>,
-    #[knuffel(child)]
+    #[knus(child)]
     pub inactive_gradient: Option<Gradient>,
-    #[knuffel(child)]
+    #[knus(child)]
     pub urgent_gradient: Option<Gradient>,
 }
 
-#[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq)]
+#[derive(knus::Decode, Debug, Default, Clone, Copy, PartialEq)]
 pub struct ShadowRule {
-    #[knuffel(child)]
+    #[knus(child)]
     pub off: bool,
-    #[knuffel(child)]
+    #[knus(child)]
     pub on: bool,
-    #[knuffel(child)]
+    #[knus(child)]
     pub offset: Option<ShadowOffset>,
-    #[knuffel(child, unwrap(argument))]
+    #[knus(child, unwrap(argument))]
     pub softness: Option<FloatOrInt<0, 1024>>,
-    #[knuffel(child, unwrap(argument))]
+    #[knus(child, unwrap(argument))]
     pub spread: Option<FloatOrInt<-1024, 1024>>,
-    #[knuffel(child, unwrap(argument))]
+    #[knus(child, unwrap(argument))]
     pub draw_behind_window: Option<bool>,
-    #[knuffel(child)]
+    #[knus(child)]
     pub color: Option<Color>,
-    #[knuffel(child)]
+    #[knus(child)]
     pub inactive_color: Option<Color>,
 }
 
-#[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq)]
+#[derive(knus::Decode, Debug, Default, Clone, Copy, PartialEq)]
 pub struct TabIndicatorRule {
-    #[knuffel(child)]
+    #[knus(child)]
     pub active_color: Option<Color>,
-    #[knuffel(child)]
+    #[knus(child)]
     pub inactive_color: Option<Color>,
-    #[knuffel(child)]
+    #[knus(child)]
     pub urgent_color: Option<Color>,
-    #[knuffel(child)]
+    #[knus(child)]
     pub active_gradient: Option<Gradient>,
-    #[knuffel(child)]
+    #[knus(child)]
     pub inactive_gradient: Option<Gradient>,
-    #[knuffel(child)]
+    #[knus(child)]
     pub urgent_gradient: Option<Gradient>,
 }
 
@@ -795,15 +795,15 @@ impl FromStr for Color {
     }
 }
 
-#[derive(knuffel::Decode)]
+#[derive(knus::Decode)]
 struct ColorRgba {
-    #[knuffel(argument)]
+    #[knus(argument)]
     r: u8,
-    #[knuffel(argument)]
+    #[knus(argument)]
     g: u8,
-    #[knuffel(argument)]
+    #[knus(argument)]
     b: u8,
-    #[knuffel(argument)]
+    #[knus(argument)]
     a: u8,
 }
 
@@ -815,13 +815,13 @@ impl From<ColorRgba> for Color {
 }
 
 // Manual impl to allow both one-argument string and 4-argument RGBA forms.
-impl<S> knuffel::Decode<S> for Color
+impl<S> knus::Decode<S> for Color
 where
-    S: knuffel::traits::ErrorSpan,
+    S: knus::traits::ErrorSpan,
 {
     fn decode_node(
-        node: &knuffel::ast::SpannedNode<S>,
-        ctx: &mut knuffel::decode::Context<S>,
+        node: &knus::ast::SpannedNode<S>,
+        ctx: &mut knus::decode::Context<S>,
     ) -> Result<Self, DecodeError<S>> {
         // Check for unexpected type name.
         if let Some(type_name) = &node.type_name {
@@ -843,7 +843,7 @@ where
             ctx.emit_error(DecodeError::TypeName {
                 span: typ.span().clone(),
                 found: Some((**typ).clone()),
-                expected: knuffel::errors::ExpectedType::no_type(),
+                expected: knus::errors::ExpectedType::no_type(),
                 rust_type: "str",
             });
         }
@@ -851,7 +851,7 @@ where
         // Check the argument type.
         let rv = match *val.literal {
             // If it's a string, use FromStr.
-            knuffel::ast::Literal::String(ref s) => {
+            knus::ast::Literal::String(ref s) => {
                 Color::from_str(s).map_err(|e| DecodeError::conversion(&val.literal, e))
             }
             // Otherwise, fall back to the 4-argument RGBA form.
@@ -887,13 +887,13 @@ where
     }
 }
 
-impl<S> knuffel::Decode<S> for CornerRadius
+impl<S> knus::Decode<S> for CornerRadius
 where
-    S: knuffel::traits::ErrorSpan,
+    S: knus::traits::ErrorSpan,
 {
     fn decode_node(
-        node: &knuffel::ast::SpannedNode<S>,
-        ctx: &mut knuffel::decode::Context<S>,
+        node: &knus::ast::SpannedNode<S>,
+        ctx: &mut knus::decode::Context<S>,
     ) -> Result<Self, DecodeError<S>> {
         // Check for unexpected type name.
         if let Some(type_name) = &node.type_name {
@@ -904,28 +904,28 @@ where
             ));
         }
 
-        let decode_radius = |ctx: &mut knuffel::decode::Context<S>,
-                             val: &knuffel::ast::Value<S>| {
+        let decode_radius = |ctx: &mut knus::decode::Context<S>,
+                             val: &knus::ast::Value<S>| {
             // Check for unexpected type name.
             if let Some(typ) = &val.type_name {
                 ctx.emit_error(DecodeError::TypeName {
                     span: typ.span().clone(),
                     found: Some((**typ).clone()),
-                    expected: knuffel::errors::ExpectedType::no_type(),
+                    expected: knus::errors::ExpectedType::no_type(),
                     rust_type: "str",
                 });
             }
 
             // Decode both integers and floats.
             let radius = match *val.literal {
-                knuffel::ast::Literal::Int(ref x) => f32::from(match x.try_into() {
+                knus::ast::Literal::Int(ref x) => f32::from(match x.try_into() {
                     Ok(x) => x,
                     Err(err) => {
                         ctx.emit_error(DecodeError::conversion(&val.literal, err));
                         0i16
                     }
                 }),
-                knuffel::ast::Literal::Decimal(ref x) => match x.try_into() {
+                knus::ast::Literal::Decimal(ref x) => match x.try_into() {
                     Ok(x) => x,
                     Err(err) => {
                         ctx.emit_error(DecodeError::conversion(&val.literal, err));
@@ -934,7 +934,7 @@ where
                 },
                 _ => {
                     ctx.emit_error(DecodeError::scalar_kind(
-                        knuffel::decode::Kind::Int,
+                        knus::decode::Kind::Int,
                         &val.literal,
                     ));
                     0.
@@ -1027,19 +1027,19 @@ impl Default for Blur {
     }
 }
 
-#[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq)]
+#[derive(knus::Decode, Debug, Default, Clone, Copy, PartialEq)]
 pub struct BlurPart {
-    #[knuffel(child)]
+    #[knus(child)]
     pub off: bool,
-    #[knuffel(child)]
+    #[knus(child)]
     pub on: bool,
-    #[knuffel(child, unwrap(argument))]
+    #[knus(child, unwrap(argument))]
     pub passes: Option<u8>,
-    #[knuffel(child, unwrap(argument))]
+    #[knus(child, unwrap(argument))]
     pub offset: Option<FloatOrInt<0, 100>>,
-    #[knuffel(child, unwrap(argument))]
+    #[knus(child, unwrap(argument))]
     pub noise: Option<FloatOrInt<0, 1000>>,
-    #[knuffel(child, unwrap(argument))]
+    #[knus(child, unwrap(argument))]
     pub saturation: Option<FloatOrInt<0, 1000>>,
 }
 
@@ -1055,15 +1055,15 @@ impl MergeWith<BlurPart> for Blur {
     }
 }
 
-#[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq)]
+#[derive(knus::Decode, Debug, Default, Clone, Copy, PartialEq)]
 pub struct BackgroundEffectRule {
-    #[knuffel(child, unwrap(argument))]
+    #[knus(child, unwrap(argument))]
     pub xray: Option<bool>,
-    #[knuffel(child, unwrap(argument))]
+    #[knus(child, unwrap(argument))]
     pub blur: Option<bool>,
-    #[knuffel(child, unwrap(argument))]
+    #[knus(child, unwrap(argument))]
     pub noise: Option<FloatOrInt<0, 1000>>,
-    #[knuffel(child, unwrap(argument))]
+    #[knus(child, unwrap(argument))]
     pub saturation: Option<FloatOrInt<0, 1000>>,
 }
 

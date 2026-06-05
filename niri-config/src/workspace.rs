@@ -1,14 +1,14 @@
-use knuffel::errors::DecodeError;
+use knus::errors::DecodeError;
 
 use crate::LayoutPart;
 
-#[derive(knuffel::Decode, Debug, Clone, PartialEq)]
+#[derive(knus::Decode, Debug, Clone, PartialEq)]
 pub struct Workspace {
-    #[knuffel(argument)]
+    #[knus(argument)]
     pub name: WorkspaceName,
-    #[knuffel(child, unwrap(argument))]
+    #[knus(child, unwrap(argument))]
     pub open_on_output: Option<String>,
-    #[knuffel(child)]
+    #[knus(child)]
     pub layout: Option<WorkspaceLayoutPart>,
 }
 
@@ -18,10 +18,10 @@ pub struct WorkspaceName(pub String);
 #[derive(Debug, Clone, PartialEq)]
 pub struct WorkspaceLayoutPart(pub LayoutPart);
 
-impl<S: knuffel::traits::ErrorSpan> knuffel::Decode<S> for WorkspaceLayoutPart {
+impl<S: knus::traits::ErrorSpan> knus::Decode<S> for WorkspaceLayoutPart {
     fn decode_node(
-        node: &knuffel::ast::SpannedNode<S>,
-        ctx: &mut knuffel::decode::Context<S>,
+        node: &knus::ast::SpannedNode<S>,
+        ctx: &mut knus::decode::Context<S>,
     ) -> Result<Self, DecodeError<S>> {
         for child in node.children() {
             let name = &**child.node_name;
@@ -45,10 +45,10 @@ impl<S: knuffel::traits::ErrorSpan> knuffel::Decode<S> for WorkspaceLayoutPart {
     }
 }
 
-impl<S: knuffel::traits::ErrorSpan> knuffel::DecodeScalar<S> for WorkspaceName {
+impl<S: knus::traits::ErrorSpan> knus::DecodeScalar<S> for WorkspaceName {
     fn type_check(
-        type_name: &Option<knuffel::span::Spanned<knuffel::ast::TypeName, S>>,
-        ctx: &mut knuffel::decode::Context<S>,
+        type_name: &Option<knus::span::Spanned<knus::ast::TypeName, S>>,
+        ctx: &mut knus::decode::Context<S>,
     ) {
         if let Some(type_name) = &type_name {
             ctx.emit_error(DecodeError::unexpected(
@@ -60,13 +60,13 @@ impl<S: knuffel::traits::ErrorSpan> knuffel::DecodeScalar<S> for WorkspaceName {
     }
 
     fn raw_decode(
-        val: &knuffel::span::Spanned<knuffel::ast::Literal, S>,
-        ctx: &mut knuffel::decode::Context<S>,
+        val: &knus::span::Spanned<knus::ast::Literal, S>,
+        ctx: &mut knus::decode::Context<S>,
     ) -> Result<WorkspaceName, DecodeError<S>> {
         #[derive(Debug)]
         struct WorkspaceNameSet(Vec<String>);
         match &**val {
-            knuffel::ast::Literal::String(s) => {
+            knus::ast::Literal::String(s) => {
                 let mut name_set: Vec<String> = match ctx.get::<WorkspaceNameSet>() {
                     Some(h) => h.0.clone(),
                     None => Vec::new(),

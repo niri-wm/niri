@@ -2,15 +2,15 @@ use crate::appearance::{Color, WorkspaceShadow, WorkspaceShadowPart, DEFAULT_BAC
 use crate::utils::{Flag, MergeWith};
 use crate::FloatOrInt;
 
-#[derive(knuffel::Decode, Debug, Clone, PartialEq, Eq)]
+#[derive(knus::Decode, Debug, Clone, PartialEq, Eq)]
 pub struct SpawnAtStartup {
-    #[knuffel(arguments)]
+    #[knus(arguments)]
     pub command: Vec<String>,
 }
 
-#[derive(knuffel::Decode, Debug, Clone, PartialEq, Eq)]
+#[derive(knus::Decode, Debug, Clone, PartialEq, Eq)]
 pub struct SpawnShAtStartup {
-    #[knuffel(argument)]
+    #[knus(argument)]
     pub command: String,
 }
 
@@ -33,15 +33,15 @@ impl Default for Cursor {
     }
 }
 
-#[derive(knuffel::Decode, Debug, PartialEq)]
+#[derive(knus::Decode, Debug, PartialEq)]
 pub struct CursorPart {
-    #[knuffel(child, unwrap(argument))]
+    #[knus(child, unwrap(argument))]
     pub xcursor_theme: Option<String>,
-    #[knuffel(child, unwrap(argument))]
+    #[knus(child, unwrap(argument))]
     pub xcursor_size: Option<u8>,
-    #[knuffel(child)]
+    #[knus(child)]
     pub hide_when_typing: Option<Flag>,
-    #[knuffel(child, unwrap(argument))]
+    #[knus(child, unwrap(argument))]
     pub hide_after_inactive_ms: Option<u32>,
 }
 
@@ -53,8 +53,8 @@ impl MergeWith<CursorPart> for Cursor {
     }
 }
 
-#[derive(knuffel::Decode, Debug, Clone, PartialEq)]
-pub struct ScreenshotPath(#[knuffel(argument)] pub Option<String>);
+#[derive(knus::Decode, Debug, Clone, PartialEq)]
+pub struct ScreenshotPath(#[knus(argument)] pub Option<String>);
 
 impl Default for ScreenshotPath {
     fn default() -> Self {
@@ -70,11 +70,11 @@ pub struct HotkeyOverlay {
     pub hide_not_bound: bool,
 }
 
-#[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[derive(knus::Decode, Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct HotkeyOverlayPart {
-    #[knuffel(child)]
+    #[knus(child)]
     pub skip_at_startup: Option<Flag>,
-    #[knuffel(child)]
+    #[knus(child)]
     pub hide_not_bound: Option<Flag>,
 }
 
@@ -89,9 +89,9 @@ pub struct ConfigNotification {
     pub disable_failed: bool,
 }
 
-#[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[derive(knus::Decode, Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct ConfigNotificationPart {
-    #[knuffel(child)]
+    #[knus(child)]
     pub disable_failed: Option<Flag>,
 }
 
@@ -106,9 +106,9 @@ pub struct Clipboard {
     pub disable_primary: bool,
 }
 
-#[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[derive(knus::Decode, Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct ClipboardPart {
-    #[knuffel(child)]
+    #[knus(child)]
     pub disable_primary: Option<Flag>,
 }
 
@@ -135,13 +135,13 @@ impl Default for Overview {
     }
 }
 
-#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+#[derive(knus::Decode, Debug, Clone, Copy, PartialEq)]
 pub struct OverviewPart {
-    #[knuffel(child, unwrap(argument))]
+    #[knus(child, unwrap(argument))]
     pub zoom: Option<FloatOrInt<0, 1>>,
-    #[knuffel(child)]
+    #[knus(child)]
     pub backdrop_color: Option<Color>,
-    #[knuffel(child)]
+    #[knus(child)]
     pub workspace_shadow: Option<WorkspaceShadowPart>,
 }
 
@@ -152,14 +152,14 @@ impl MergeWith<OverviewPart> for Overview {
     }
 }
 
-#[derive(knuffel::Decode, Debug, Default, Clone, PartialEq, Eq)]
-pub struct Environment(#[knuffel(children)] pub Vec<EnvironmentVariable>);
+#[derive(knus::Decode, Debug, Default, Clone, PartialEq, Eq)]
+pub struct Environment(#[knus(children)] pub Vec<EnvironmentVariable>);
 
-#[derive(knuffel::Decode, Debug, Clone, PartialEq, Eq)]
+#[derive(knus::Decode, Debug, Clone, PartialEq, Eq)]
 pub struct EnvironmentVariable {
-    #[knuffel(node_name)]
+    #[knus(node_name)]
     pub name: String,
-    #[knuffel(argument)]
+    #[knus(argument)]
     pub value: Option<String>,
 }
 
@@ -178,13 +178,13 @@ impl Default for XwaylandSatellite {
     }
 }
 
-#[derive(knuffel::Decode, Debug, Clone, PartialEq, Eq)]
+#[derive(knus::Decode, Debug, Clone, PartialEq, Eq)]
 pub struct XwaylandSatellitePart {
-    #[knuffel(child)]
+    #[knus(child)]
     pub off: bool,
-    #[knuffel(child)]
+    #[knus(child)]
     pub on: bool,
-    #[knuffel(child, unwrap(argument))]
+    #[knus(child, unwrap(argument))]
     pub path: Option<String>,
 }
 

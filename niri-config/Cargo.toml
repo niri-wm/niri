@@ -10,10 +10,10 @@ repository.workspace = true
 [dependencies]
 bitflags.workspace = true
 csscolorparser = "0.8"
-knuffel = "3.2"
-miette = { version = "5.10.0", features = [
+knus = "3.3"
+miette = { version = "7.6", features = [
   "fancy-no-backtrace",
-] } # has to stay "5.10.0" because knuffel requires 5.x
+] }
 niri-ipc = { version = "26.4.0", path = "../niri-ipc" }
 regex = "1.12"
 smithay = { workspace = true, features = ["backend_libinput"] }

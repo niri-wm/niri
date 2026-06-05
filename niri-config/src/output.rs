@@ -1,10 +1,10 @@
 use std::str::FromStr;
 
-use knuffel::ast::SpannedNode;
-use knuffel::decode::Context;
-use knuffel::errors::DecodeError;
-use knuffel::traits::ErrorSpan;
-use knuffel::Decode;
+use knus::ast::SpannedNode;
+use knus::decode::Context;
+use knus::errors::DecodeError;
+use knus::traits::ErrorSpan;
+use knus::Decode;
 use niri_ipc::{ConfiguredMode, HSyncPolarity, Transform, VSyncPolarity};
 
 use crate::gestures::HotCorners;
@@ -47,36 +47,36 @@ pub struct Modeline {
     pub vsync_polarity: niri_ipc::VSyncPolarity,
 }
 
-#[derive(knuffel::Decode, Debug, Clone, PartialEq)]
+#[derive(knus::Decode, Debug, Clone, PartialEq)]
 pub struct Output {
-    #[knuffel(child)]
+    #[knus(child)]
     pub off: bool,
-    #[knuffel(argument)]
+    #[knus(argument)]
     pub name: String,
-    #[knuffel(child, unwrap(argument))]
+    #[knus(child, unwrap(argument))]
     pub scale: Option<FloatOrInt<0, 10>>,
-    #[knuffel(child, unwrap(argument, str), default = Transform::Normal)]
+    #[knus(child, unwrap(argument, str), default = Transform::Normal)]
     pub transform: Transform,
-    #[knuffel(child)]
+    #[knus(child)]
     pub position: Option<Position>,
-    #[knuffel(child, unwrap(argument))]
+    #[knus(child, unwrap(argument))]
     pub max_bpc: Option<MaxBpc>,
-    #[knuffel(child)]
+    #[knus(child)]
     pub mode: Option<Mode>,
-    #[knuffel(child)]
+    #[knus(child)]
     pub modeline: Option<Modeline>,
-    #[knuffel(child)]
+    #[knus(child)]
     pub variable_refresh_rate: Option<Vrr>,
-    #[knuffel(child)]
+    #[knus(child)]
     pub focus_at_startup: bool,
     // Deprecated; use layout.background_color.
-    #[knuffel(child)]
+    #[knus(child)]
     pub background_color: Option<Color>,
-    #[knuffel(child)]
+    #[knus(child)]
     pub backdrop_color: Option<Color>,
-    #[knuffel(child)]
+    #[knus(child)]
     pub hot_corners: Option<HotCorners>,
-    #[knuffel(child)]
+    #[knus(child)]
     pub layout: Option<LayoutPart>,
 }
 
@@ -123,20 +123,20 @@ pub struct OutputName {
     pub serial: Option<String>,
 }
 
-#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(knus::Decode, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Position {
-    #[knuffel(property)]
+    #[knus(property)]
     pub x: i32,
-    #[knuffel(property)]
+    #[knus(property)]
     pub y: i32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct MaxBpc(pub niri_ipc::MaxBpc);
 
-#[derive(knuffel::Decode, Debug, Clone, PartialEq, Default)]
+#[derive(knus::Decode, Debug, Clone, PartialEq, Default)]
 pub struct Vrr {
-    #[knuffel(property, default = false)]
+    #[knus(property, default = false)]
     pub on_demand: bool,
 }
 
@@ -263,9 +263,9 @@ impl OutputName {
     }
 }
 
-impl<S: ErrorSpan> knuffel::DecodeScalar<S> for MaxBpc {
+impl<S: ErrorSpan> knus::DecodeScalar<S> for MaxBpc {
     fn type_check(
-        type_name: &Option<knuffel::span::Spanned<knuffel::ast::TypeName, S>>,
+        type_name: &Option<knus::span::Spanned<knus::ast::TypeName, S>>,
         ctx: &mut Context<S>,
     ) {
         if let Some(type_name) = &type_name {
@@ -278,11 +278,11 @@ impl<S: ErrorSpan> knuffel::DecodeScalar<S> for MaxBpc {
     }
 
     fn raw_decode(
-        value: &knuffel::span::Spanned<knuffel::ast::Literal, S>,
+        value: &knus::span::Spanned<knus::ast::Literal, S>,
         ctx: &mut Context<S>,
     ) -> Result<Self, DecodeError<S>> {
         match &**value {
-            knuffel::ast::Literal::Int(val) => match u8::try_from(val) {
+            knus::ast::Literal::Int(val) => match u8::try_from(val) {
                 Ok(v) => niri_ipc::MaxBpc::try_from(v)
                     .map(MaxBpc)
                     .map_err(|e| DecodeError::conversion(value, e)),
@@ -292,14 +292,14 @@ impl<S: ErrorSpan> knuffel::DecodeScalar<S> for MaxBpc {
                 }
             },
             _ => {
-                ctx.emit_error(DecodeError::scalar_kind(knuffel::decode::Kind::Int, value));
+                ctx.emit_error(DecodeError::scalar_kind(knus::decode::Kind::Int, value));
                 Ok(Self::default())
             }
         }
     }
 }
 
-impl<S: ErrorSpan> knuffel::Decode<S> for Mode {
+impl<S: ErrorSpan> knus::Decode<S> for Mode {
     fn decode_node(node: &SpannedNode<S>, ctx: &mut Context<S>) -> Result<Self, DecodeError<S>> {
         if let Some(type_name) = &node.type_name {
             ctx.emit_error(DecodeError::unexpected(
@@ -328,7 +328,7 @@ impl<S: ErrorSpan> knuffel::Decode<S> for Mode {
                             "unexpected duplicate property `custom`",
                         ))
                     }
-                    custom = Some(knuffel::traits::DecodeScalar::decode(val, ctx)?)
+                    custom = Some(knus::traits::DecodeScalar::decode(val, ctx)?)
                 }
                 name_str => ctx.emit_error(DecodeError::unexpected(
                     node,
@@ -341,7 +341,7 @@ impl<S: ErrorSpan> knuffel::Decode<S> for Mode {
 
         let mut arguments = node.arguments.iter();
         let mode = if let Some(mode_str) = arguments.next() {
-            let temp_mode: String = knuffel::traits::DecodeScalar::decode(mode_str, ctx)?;
+            let temp_mode: String = knus::traits::DecodeScalar::decode(mode_str, ctx)?;
 
             let res = ConfiguredMode::from_str(temp_mode.as_str()).and_then(|mode| {
                 if custom {
@@ -417,7 +417,7 @@ impl<S: ErrorSpan> Decode<S> for Modeline {
                 let $value_field = arguments.next().ok_or_else(|| {
                     DecodeError::missing(node, format!("missing {} argument", stringify!($value)))
                 })?;
-                let $field = knuffel::traits::DecodeScalar::decode($value_field, ctx)?;
+                let $field = knus::traits::DecodeScalar::decode($value_field, ctx)?;
             };
         }
 

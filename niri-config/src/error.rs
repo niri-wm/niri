@@ -21,8 +21,8 @@ pub struct ConfigParseResult<T, E> {
 /// Allows miette's Report formatting to have main + include errors all in one.
 #[derive(Debug)]
 pub struct ConfigIncludeError {
-    pub main: knuffel::Error,
-    pub includes: Vec<knuffel::Error>,
+    pub main: knus::Error,
+    pub includes: Vec<knus::Error>,
 }
 
 impl<T, E> ConfigParseResult<T, E> {
