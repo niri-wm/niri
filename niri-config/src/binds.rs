@@ -1,5 +1,5 @@
-use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use std::str::FromStr;
 use std::time::Duration;
 
@@ -9,12 +9,12 @@ use miette::miette;
 use niri_ipc::{
     ColumnDisplay, LayoutSwitchTarget, PositionChange, SizeChange, WorkspaceReferenceArg,
 };
-use smithay::input::keyboard::keysyms::KEY_NoSymbol;
-use smithay::input::keyboard::xkb::{keysym_from_name, KEYSYM_CASE_INSENSITIVE, KEYSYM_NO_FLAGS};
 use smithay::input::keyboard::Keysym;
+use smithay::input::keyboard::keysyms::KEY_NoSymbol;
+use smithay::input::keyboard::xkb::{KEYSYM_CASE_INSENSITIVE, KEYSYM_NO_FLAGS, keysym_from_name};
 
 use crate::recent_windows::{MruDirection, MruFilter, MruScope};
-use crate::utils::{expect_only_children, MergeWith};
+use crate::utils::{MergeWith, expect_only_children};
 
 #[derive(Debug, Default, PartialEq)]
 pub struct Binds(pub Vec<Bind>);
@@ -853,9 +853,9 @@ where
                     repeat = knus::traits::DecodeScalar::decode(val, ctx)?;
                 }
                 "cooldown-ms" => {
-                    cooldown = Some(Duration::from_millis(
-                        knus::traits::DecodeScalar::decode(val, ctx)?,
-                    ));
+                    cooldown = Some(Duration::from_millis(knus::traits::DecodeScalar::decode(
+                        val, ctx,
+                    )?));
                 }
                 "allow-when-locked" => {
                     allow_when_locked = knus::traits::DecodeScalar::decode(val, ctx)?;

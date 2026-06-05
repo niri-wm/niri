@@ -8,7 +8,7 @@ use std::thread;
 use calloop::channel::Sender;
 use calloop::generic::Generic;
 use calloop::{Interest, Mode, PostAction, RegistrationToken};
-use smithay::reexports::rustix::io::{fcntl_setfd, FdFlags};
+use smithay::reexports::rustix::io::{FdFlags, fcntl_setfd};
 
 use crate::niri::State;
 use crate::utils::expand_home;

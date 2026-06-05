@@ -1,8 +1,8 @@
-use knus::errors::DecodeError;
 use knus::Decode as _;
+use knus::errors::DecodeError;
 
-use crate::utils::{expect_only_children, parse_arg_node, MergeWith};
 use crate::FloatOrInt;
+use crate::utils::{MergeWith, expect_only_children, parse_arg_node};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Animations {

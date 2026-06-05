@@ -7,7 +7,7 @@ use smithay::wayland::background_effect::{
     self, BackgroundEffectSurfaceCachedState, ExtBackgroundEffectHandler,
 };
 use smithay::wayland::compositor::{
-    add_post_commit_hook, with_states, RegionAttributes, SurfaceData,
+    RegionAttributes, SurfaceData, add_post_commit_hook, with_states,
 };
 
 use crate::niri::State;

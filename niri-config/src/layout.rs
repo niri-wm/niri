@@ -2,9 +2,9 @@ use knus::errors::DecodeError;
 use niri_ipc::{ColumnDisplay, SizeChange};
 
 use crate::appearance::{
-    Border, FocusRing, InsertHint, Shadow, TabIndicator, DEFAULT_BACKGROUND_COLOR,
+    Border, DEFAULT_BACKGROUND_COLOR, FocusRing, InsertHint, Shadow, TabIndicator,
 };
-use crate::utils::{expect_only_children, Flag, MergeWith};
+use crate::utils::{Flag, MergeWith, expect_only_children};
 use crate::{BorderRule, Color, FloatOrInt, InsertHintPart, ShadowRule, TabIndicatorPart};
 
 #[derive(Debug, Clone, PartialEq)]

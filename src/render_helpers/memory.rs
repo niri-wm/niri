@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use smithay::backend::allocator::format::get_bpp;
 use smithay::backend::allocator::Fourcc;
+use smithay::backend::allocator::format::get_bpp;
 use smithay::utils::{Buffer, Logical, Scale, Size, Transform};
 
 #[derive(Clone)]

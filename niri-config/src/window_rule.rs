@@ -1,12 +1,12 @@
 use niri_ipc::ColumnDisplay;
 
+use crate::FloatOrInt;
 use crate::appearance::{
     BackgroundEffect, BackgroundEffectRule, BlockOutFrom, BorderRule, CornerRadius, ShadowRule,
     TabIndicatorRule,
 };
 use crate::layout::DefaultPresetSize;
 use crate::utils::{MergeWith, RegexEq};
-use crate::FloatOrInt;
 
 #[derive(knus::Decode, Debug, Default, Clone, PartialEq)]
 pub struct WindowRule {

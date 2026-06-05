@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use smithay::backend::input::ButtonState;
 use smithay::desktop::Window;
+use smithay::input::SeatHandler;
 use smithay::input::pointer::{
     AxisFrame, ButtonEvent, CursorIcon, CursorImageStatus, GestureHoldBeginEvent,
     GestureHoldEndEvent, GesturePinchBeginEvent, GesturePinchEndEvent, GesturePinchUpdateEvent,
@@ -12,9 +13,8 @@ use smithay::input::pointer::{
 use smithay::input::touch::{
     self, GrabStartData as TouchGrabStartData, TouchGrab, TouchInnerHandle,
 };
-use smithay::input::SeatHandler;
 use smithay::output::Output;
-use smithay::utils::{IsAlive, Logical, Point, Serial, SERIAL_COUNTER};
+use smithay::utils::{IsAlive, Logical, Point, SERIAL_COUNTER, Serial};
 
 use crate::input::PointerOrTouchStartData;
 use crate::niri::State;

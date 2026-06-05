@@ -15,11 +15,7 @@ fn extract_kdl_from_file(file_contents: &str, filename: &str) -> Vec<KdlCodeBloc
             // Removes the > from callouts that might contain ```kdl```
             let line = line.trim();
             if line.starts_with('>') {
-                if line.len() == 1 {
-                    ""
-                } else {
-                    &line[2..]
-                }
+                if line.len() == 1 { "" } else { &line[2..] }
             } else {
                 line
             }

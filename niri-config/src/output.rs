@@ -1,10 +1,10 @@
 use std::str::FromStr;
 
+use knus::Decode;
 use knus::ast::SpannedNode;
 use knus::decode::Context;
 use knus::errors::DecodeError;
 use knus::traits::ErrorSpan;
-use knus::Decode;
 use niri_ipc::{ConfiguredMode, HSyncPolarity, Transform, VSyncPolarity};
 
 use crate::gestures::HotCorners;

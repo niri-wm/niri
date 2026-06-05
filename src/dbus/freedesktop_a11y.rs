@@ -9,7 +9,7 @@ use std::time::Duration;
 use anyhow::Context;
 use futures_util::StreamExt;
 use smithay::backend::input::{KeyState, Keycode};
-use smithay::input::keyboard::{xkb, Keysym};
+use smithay::input::keyboard::{Keysym, xkb};
 use zbus::blocking::object_server::InterfaceRef;
 use zbus::fdo::{self, RequestNameFlags};
 use zbus::interface;

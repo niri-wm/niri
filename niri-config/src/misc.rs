@@ -1,6 +1,6 @@
-use crate::appearance::{Color, WorkspaceShadow, WorkspaceShadowPart, DEFAULT_BACKDROP_COLOR};
-use crate::utils::{Flag, MergeWith};
 use crate::FloatOrInt;
+use crate::appearance::{Color, DEFAULT_BACKDROP_COLOR, WorkspaceShadow, WorkspaceShadowPart};
+use crate::utils::{Flag, MergeWith};
 
 #[derive(knus::Decode, Debug, Clone, PartialEq, Eq)]
 pub struct SpawnAtStartup {

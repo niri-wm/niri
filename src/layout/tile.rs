@@ -13,7 +13,7 @@ use super::opening_window::{OpenAnimation, OpeningWindowRenderElement};
 use super::shadow::Shadow;
 use super::{
     HitType, LayoutElement, LayoutElementRenderElement, LayoutElementRenderSnapshot, Options,
-    SizeFrac, RESIZE_ANIMATION_THRESHOLD,
+    RESIZE_ANIMATION_THRESHOLD, SizeFrac,
 };
 use crate::animation::{Animation, Clock};
 use crate::layout::SizingMode;
@@ -412,28 +412,34 @@ impl<W: LayoutElement> Tile<W> {
 
     pub fn advance_animations(&mut self) {
         if let Some(open) = &mut self.open_animation
-            && open.is_done() {
-                self.open_animation = None;
-            }
+            && open.is_done()
+        {
+            self.open_animation = None;
+        }
 
         if let Some(resize) = &mut self.resize_animation
-            && resize.anim.is_done() {
-                self.resize_animation = None;
-            }
+            && resize.anim.is_done()
+        {
+            self.resize_animation = None;
+        }
 
         if let Some(move_) = &mut self.move_x_animation
-            && move_.anim.is_done() {
-                self.move_x_animation = None;
-            }
+            && move_.anim.is_done()
+        {
+            self.move_x_animation = None;
+        }
         if let Some(move_) = &mut self.move_y_animation
-            && move_.anim.is_done() {
-                self.move_y_animation = None;
-            }
+            && move_.anim.is_done()
+        {
+            self.move_y_animation = None;
+        }
 
         if let Some(alpha) = &mut self.alpha_animation
-            && !alpha.hold_after_done && alpha.anim.is_done() {
-                self.alpha_animation = None;
-            }
+            && !alpha.hold_after_done
+            && alpha.anim.is_done()
+        {
+            self.alpha_animation = None;
+        }
     }
 
     pub fn are_animations_ongoing(&self) -> bool {
@@ -645,11 +651,12 @@ impl<W: LayoutElement> Tile<W> {
 
     pub fn ensure_alpha_animates_to_1(&mut self) {
         if let Some(alpha) = &self.alpha_animation
-            && alpha.anim.to() != 1. {
-                // Cancel animation instead of starting a new one because the user likely wants to
-                // see the tile right away.
-                self.alpha_animation = None;
-            }
+            && alpha.anim.to() != 1.
+        {
+            // Cancel animation instead of starting a new one because the user likely wants to
+            // see the tile right away.
+            self.alpha_animation = None;
+        }
     }
 
     pub fn hold_alpha_animation_after_done(&mut self) {
@@ -672,9 +679,10 @@ impl<W: LayoutElement> Tile<W> {
 
     fn fullscreen_progress(&self) -> f64 {
         if let Some(resize) = &self.resize_animation
-            && let Some(anim) = &resize.fullscreen_progress {
-                return anim.clamped_value().clamp(0., 1.);
-            }
+            && let Some(anim) = &resize.fullscreen_progress
+        {
+            return anim.clamped_value().clamp(0., 1.);
+        }
 
         if self.sizing_mode.is_fullscreen() {
             1.
@@ -685,15 +693,12 @@ impl<W: LayoutElement> Tile<W> {
 
     fn expanded_progress(&self) -> f64 {
         if let Some(resize) = &self.resize_animation
-            && let Some(anim) = &resize.expanded_progress {
-                return anim.clamped_value().clamp(0., 1.);
-            }
-
-        if self.sizing_mode.is_normal() {
-            0.
-        } else {
-            1.
+            && let Some(anim) = &resize.expanded_progress
+        {
+            return anim.clamped_value().clamp(0., 1.);
         }
+
+        if self.sizing_mode.is_normal() { 0. } else { 1. }
     }
 
     /// Returns `None` if the border is hidden and `Some(width)` if it should be shown.
@@ -1167,16 +1172,17 @@ impl<W: LayoutElement> Tile<W> {
                     // If we should clip to geometry, render a clipped window.
                     if clip_to_geometry
                         && let Some(shader) = clip_shader.clone()
-                            && ClippedSurfaceRenderElement::will_clip(&elem, scale, geo, radius) {
-                                return ClippedSurfaceRenderElement::new(
-                                    elem,
-                                    scale,
-                                    geo,
-                                    shader.clone(),
-                                    radius,
-                                )
-                                .into();
-                            }
+                        && ClippedSurfaceRenderElement::will_clip(&elem, scale, geo, radius)
+                    {
+                        return ClippedSurfaceRenderElement::new(
+                            elem,
+                            scale,
+                            geo,
+                            shader.clone(),
+                            radius,
+                        )
+                        .into();
+                    }
 
                     // Otherwise, render it normally.
                     LayoutElementRenderElement::Wayland(elem).into()

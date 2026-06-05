@@ -10,13 +10,13 @@ mod imp {
     use std::ptr::null;
     use std::time::Duration;
 
-    use anyhow::{ensure, Context};
+    use anyhow::{Context, ensure};
     use gtk::gdk;
     use gtk::prelude::*;
     use niri::animation::Clock;
     use niri::render_helpers::{resources, shaders};
-    use smithay::backend::egl::ffi::egl;
     use smithay::backend::egl::EGLContext;
+    use smithay::backend::egl::ffi::egl;
     use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
     use smithay::backend::renderer::{Bind, Color32F, Frame, Offscreen, Renderer};
     use smithay::reexports::gbm::Format as Fourcc;

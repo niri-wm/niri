@@ -1,11 +1,11 @@
 use std::time::Duration;
 
 use smithay::desktop::Window;
+use smithay::input::SeatHandler;
 use smithay::input::touch::{
     DownEvent, GrabStartData as TouchGrabStartData, MotionEvent, OrientationEvent, ShapeEvent,
     TouchGrab, TouchInnerHandle, UpEvent,
 };
-use smithay::input::SeatHandler;
 use smithay::output::Output;
 use smithay::utils::{IsAlive, Logical, Point, Serial};
 
@@ -129,10 +129,11 @@ impl TouchGrab<State> for TouchOverviewGrab {
         }
 
         if matches!(self.gesture, GestureState::InteractiveMove)
-            && let Some(window) = &self.window.as_ref() {
-                data.niri.layout.toggle_window_floating(Some(window));
-                data.niri.queue_redraw_all();
-            }
+            && let Some(window) = &self.window.as_ref()
+        {
+            data.niri.layout.toggle_window_floating(Some(window));
+            data.niri.queue_redraw_all();
+        }
     }
 
     fn up(
@@ -170,18 +171,19 @@ impl TouchGrab<State> for TouchOverviewGrab {
 
         // Check if we should become interactive move.
         if matches!(self.gesture, GestureState::Recognizing)
-            && let Some(window) = self.window.as_ref().filter(|win| win.alive()) {
-                let passed = timestamp.saturating_sub(self.start_timestamp);
-                if INTERACTIVE_MOVE_THRESHOLD <= passed
-                    && layout.interactive_move_begin(
-                        window.clone(),
-                        &self.output,
-                        self.start_pos_within_output,
-                    )
-                {
-                    self.gesture = GestureState::InteractiveMove;
-                }
+            && let Some(window) = self.window.as_ref().filter(|win| win.alive())
+        {
+            let passed = timestamp.saturating_sub(self.start_timestamp);
+            if INTERACTIVE_MOVE_THRESHOLD <= passed
+                && layout.interactive_move_begin(
+                    window.clone(),
+                    &self.output,
+                    self.start_pos_within_output,
+                )
+            {
+                self.gesture = GestureState::InteractiveMove;
             }
+        }
 
         // Check if we should become a spatial scroll.
         if matches!(self.gesture, GestureState::Recognizing) {
@@ -191,10 +193,11 @@ impl TouchGrab<State> for TouchOverviewGrab {
             if c.x * c.x + c.y * c.y >= 16. * 16. {
                 if let Some(ws_id) = self.workspace_id.filter(|_| c.x.abs() > c.y.abs())
                     && let Some((ws_idx, ws)) = layout.find_workspace_by_id(ws_id)
-                        && ws.current_output() == Some(&self.output) {
-                            layout.view_offset_gesture_begin(&self.output, Some(ws_idx), false);
-                            self.gesture = GestureState::ViewOffset;
-                        }
+                    && ws.current_output() == Some(&self.output)
+                {
+                    layout.view_offset_gesture_begin(&self.output, Some(ws_idx), false);
+                    self.gesture = GestureState::ViewOffset;
+                }
 
                 if matches!(self.gesture, GestureState::Recognizing) {
                     layout.workspace_switch_gesture_begin(&self.output, false);

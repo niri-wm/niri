@@ -6,9 +6,9 @@ use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, Instant};
 
 use atomic::Ordering;
-use calloop::ping::{make_ping, Ping};
-use calloop::timer::{TimeoutAction, Timer};
 use calloop::LoopHandle;
+use calloop::ping::{Ping, make_ping};
+use calloop::timer::{TimeoutAction, Timer};
 use smithay::reexports::wayland_server::Client;
 use smithay::wayland::compositor::{Blocker, BlockerState};
 

@@ -1,7 +1,7 @@
+use smithay::backend::renderer::Color32F;
 use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::element::{Element, Id, Kind};
 use smithay::backend::renderer::utils::CommitCounter;
-use smithay::backend::renderer::Color32F;
 use smithay::utils::Scale;
 
 use super::renderer::NiriRenderer;

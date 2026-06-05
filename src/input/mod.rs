@@ -1,6 +1,6 @@
 use std::any::Any;
-use std::collections::hash_map::Entry;
 use std::collections::HashSet;
+use std::collections::hash_map::Entry;
 use std::time::Duration;
 
 use calloop::timer::{TimeoutAction, Timer};
@@ -18,8 +18,9 @@ use smithay::backend::input::{
     TabletToolTipState, TouchEvent,
 };
 use smithay::backend::libinput::LibinputInputBackend;
+use smithay::input::SeatHandler;
 use smithay::input::dnd::DnDGrab;
-use smithay::input::keyboard::{keysyms, FilterResult, Keysym, Layout, ModifiersState};
+use smithay::input::keyboard::{FilterResult, Keysym, Layout, ModifiersState, keysyms};
 use smithay::input::pointer::{
     AxisFrame, ButtonEvent, CursorIcon, CursorImageStatus, Focus, GestureHoldBeginEvent,
     GestureHoldEndEvent, GesturePinchBeginEvent, GesturePinchEndEvent, GesturePinchUpdateEvent,
@@ -29,13 +30,12 @@ use smithay::input::pointer::{
 use smithay::input::touch::{
     DownEvent, GrabStartData as TouchGrabStartData, MotionEvent as TouchMotionEvent, UpEvent,
 };
-use smithay::input::SeatHandler;
 use smithay::output::Output;
 use smithay::reexports::wayland_server::protocol::wl_data_source::WlDataSource;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::utils::{Logical, Point, Rectangle, Transform, SERIAL_COUNTER};
+use smithay::utils::{Logical, Point, Rectangle, SERIAL_COUNTER, Transform};
 use smithay::wayland::keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitor;
-use smithay::wayland::pointer_constraints::{with_pointer_constraint, PointerConstraint};
+use smithay::wayland::pointer_constraints::{PointerConstraint, with_pointer_constraint};
 use smithay::wayland::tablet_manager::{TabletDescriptor, TabletSeatTrait};
 use touch_overview_grab::TouchOverviewGrab;
 
@@ -52,7 +52,7 @@ use crate::niri::{CastTarget, PointerVisibility, State};
 use crate::ui::mru::{WindowMru, WindowMruUi};
 use crate::ui::screenshot_ui::ScreenshotUi;
 use crate::utils::spawning::{spawn, spawn_sh};
-use crate::utils::{center, get_monotonic_time, CastSessionId, ResizeEdge};
+use crate::utils::{CastSessionId, ResizeEdge, center, get_monotonic_time};
 
 pub mod backend_ext;
 pub mod move_grab;
@@ -220,9 +220,9 @@ impl State {
                         .seat
                         .get_keyboard()
                         .map(|keyboard| keyboard.led_state())
-                    {
-                        device.led_update(led_state.into());
-                    }
+                {
+                    device.led_update(led_state.into());
+                }
 
                 if device.has_capability(input::DeviceCapability::Touch) {
                     self.niri.touch.insert(device.clone());
@@ -353,18 +353,19 @@ impl State {
 
             let device = event.device();
             if let Some(device) = (&device as &dyn Any).downcast_ref::<input::Device>()
-                && let Some(data) = self.niri.tablets.get(device) {
-                    // This code does the same thing as mutter with "keep aspect ratio" enabled.
-                    let size = transform.invert().transform_size(target_geo.size);
-                    let output_aspect_ratio = size.w / size.h;
-                    let ratio = data.aspect_ratio / output_aspect_ratio;
+                && let Some(data) = self.niri.tablets.get(device)
+            {
+                // This code does the same thing as mutter with "keep aspect ratio" enabled.
+                let size = transform.invert().transform_size(target_geo.size);
+                let output_aspect_ratio = size.w / size.h;
+                let ratio = data.aspect_ratio / output_aspect_ratio;
 
-                    if ratio > 1. {
-                        pos.x *= ratio;
-                    } else {
-                        pos.y /= ratio;
-                    }
-                };
+                if ratio > 1. {
+                    pos.x *= ratio;
+                } else {
+                    pos.y /= ratio;
+                }
+            };
 
             pos.x *= target_geo.size.w;
             pos.y *= target_geo.size.h;
@@ -405,10 +406,9 @@ impl State {
         // 4. Release Left (PgDown repeat stops)
         // But it's good enough for now.
         // FIXME: handle this properly.
-        if !pressed
-            && let Some(token) = self.niri.bind_repeat_timer.take() {
-                self.niri.event_loop.remove(token);
-            }
+        if !pressed && let Some(token) = self.niri.bind_repeat_timer.take() {
+            self.niri.event_loop.remove(token);
+        }
 
         if pressed {
             self.hide_cursor_if_needed();
@@ -553,12 +553,13 @@ impl State {
 
                 if matches!(res, FilterResult::Forward) {
                     // If we didn't find any bind, try other hardcoded keys.
-                    if this.niri.keyboard_focus.is_overview() && pressed
+                    if this.niri.keyboard_focus.is_overview()
+                        && pressed
                         && let Some(bind) = raw.and_then(|raw| hardcoded_overview_bind(raw, *mods))
-                        {
-                            this.niri.suppressed_keys.insert(key_code);
-                            return FilterResult::Intercept(Some(bind));
-                        }
+                    {
+                        this.niri.suppressed_keys.insert(key_code);
+                        return FilterResult::Intercept(Some(bind));
+                    }
 
                     // Interaction with the active window, immediately update the active window's
                     // focus timestamp without waiting for a possible pending MRU lock-in delay.
@@ -1309,9 +1310,10 @@ impl State {
                     // The source output is always the active output, so if the target output is
                     // also the active output, we don't need to use move_to_output().
                     if let Some(active) = self.niri.layout.active_output()
-                        && output.as_ref() == Some(active) {
-                            output = None;
-                        }
+                        && output.as_ref() == Some(active)
+                    {
+                        output = None;
+                    }
 
                     let activate = if focus {
                         ActivateWindow::Smart
@@ -1350,51 +1352,49 @@ impl State {
                 if let Some(window) = window
                     && let Some((output, index)) =
                         self.niri.find_output_and_workspace_index(reference)
-                    {
-                        let target_was_active = self
-                            .niri
-                            .layout
-                            .active_output()
-                            .is_some_and(|active| output.as_ref() == Some(active));
+                {
+                    let target_was_active = self
+                        .niri
+                        .layout
+                        .active_output()
+                        .is_some_and(|active| output.as_ref() == Some(active));
 
-                        let activate = if focus {
-                            ActivateWindow::Smart
-                        } else {
-                            ActivateWindow::No
-                        };
+                    let activate = if focus {
+                        ActivateWindow::Smart
+                    } else {
+                        ActivateWindow::No
+                    };
 
-                        if let Some(output) = output {
-                            self.niri.layout.move_to_output(
-                                Some(&window),
-                                &output,
-                                Some(index),
-                                activate,
-                            );
+                    if let Some(output) = output {
+                        self.niri.layout.move_to_output(
+                            Some(&window),
+                            &output,
+                            Some(index),
+                            activate,
+                        );
 
-                            // If the active output changed (window was moved and focused).
-                            #[allow(clippy::collapsible_if)]
-                            if !target_was_active
-                                && self.niri.layout.active_output() == Some(&output)
-                            {
-                                if !self.maybe_warp_cursor_to_focus_centered() {
-                                    self.move_cursor_to_output(&output);
-                                }
-                            }
-                        } else {
-                            self.niri
-                                .layout
-                                .move_to_workspace(Some(&window), index, activate);
-
-                            // If we focused the target window.
-                            let new_focus = self.niri.layout.focus();
-                            if new_focus.is_some_and(|win| win.window == window) {
-                                self.maybe_warp_cursor_to_focus();
+                        // If the active output changed (window was moved and focused).
+                        #[allow(clippy::collapsible_if)]
+                        if !target_was_active && self.niri.layout.active_output() == Some(&output) {
+                            if !self.maybe_warp_cursor_to_focus_centered() {
+                                self.move_cursor_to_output(&output);
                             }
                         }
+                    } else {
+                        self.niri
+                            .layout
+                            .move_to_workspace(Some(&window), index, activate);
 
-                        // FIXME: granular
-                        self.niri.queue_redraw_all();
+                        // If we focused the target window.
+                        let new_focus = self.niri.layout.focus();
+                        if new_focus.is_some_and(|win| win.window == window) {
+                            self.maybe_warp_cursor_to_focus();
+                        }
                     }
+
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
+                }
             }
             Action::MoveColumnToWorkspaceDown(focus) => {
                 self.niri.layout.move_column_to_workspace_down(focus);
@@ -1413,9 +1413,10 @@ impl State {
                     self.niri.find_output_and_workspace_index(reference)
                 {
                     if let Some(active) = self.niri.layout.active_output()
-                        && output.as_ref() == Some(active) {
-                            output = None;
-                        }
+                        && output.as_ref() == Some(active)
+                    {
+                        output = None;
+                    }
 
                     if let Some(output) = output {
                         self.niri
@@ -1450,12 +1451,13 @@ impl State {
             }
             Action::FocusWorkspaceDownUnderMouse => {
                 if let Some(output) = self.niri.output_under_cursor()
-                    && let Some(mon) = self.niri.layout.monitor_for_output_mut(&output) {
-                        mon.switch_workspace_down();
-                        self.maybe_warp_cursor_to_focus();
-                        self.niri.layer_shell_on_demand_focus = None;
-                        self.niri.queue_redraw(&output);
-                    }
+                    && let Some(mon) = self.niri.layout.monitor_for_output_mut(&output)
+                {
+                    mon.switch_workspace_down();
+                    self.maybe_warp_cursor_to_focus();
+                    self.niri.layer_shell_on_demand_focus = None;
+                    self.niri.queue_redraw(&output);
+                }
             }
             Action::FocusWorkspaceUp => {
                 self.niri.layout.switch_workspace_up();
@@ -1466,21 +1468,23 @@ impl State {
             }
             Action::FocusWorkspaceUpUnderMouse => {
                 if let Some(output) = self.niri.output_under_cursor()
-                    && let Some(mon) = self.niri.layout.monitor_for_output_mut(&output) {
-                        mon.switch_workspace_up();
-                        self.maybe_warp_cursor_to_focus();
-                        self.niri.layer_shell_on_demand_focus = None;
-                        self.niri.queue_redraw(&output);
-                    }
+                    && let Some(mon) = self.niri.layout.monitor_for_output_mut(&output)
+                {
+                    mon.switch_workspace_up();
+                    self.maybe_warp_cursor_to_focus();
+                    self.niri.layer_shell_on_demand_focus = None;
+                    self.niri.queue_redraw(&output);
+                }
             }
             Action::FocusWorkspace(reference) => {
                 if let Some((mut output, index)) =
                     self.niri.find_output_and_workspace_index(reference)
                 {
                     if let Some(active) = self.niri.layout.active_output()
-                        && output.as_ref() == Some(active) {
-                            output = None;
-                        }
+                        && output.as_ref() == Some(active)
+                    {
+                        output = None;
+                    }
 
                     if let Some(output) = output {
                         self.niri.layout.focus_output(&output);
@@ -2095,10 +2099,10 @@ impl State {
             Action::MoveWorkspaceToMonitor(new_output) => {
                 if let Some(new_output) = self.niri.output_by_name_match(&new_output).cloned()
                     && self.niri.layout.move_workspace_to_output(&new_output)
-                        && !self.maybe_warp_cursor_to_focus_centered()
-                    {
-                        self.move_cursor_to_output(&new_output);
-                    }
+                    && !self.maybe_warp_cursor_to_focus_centered()
+                {
+                    self.move_cursor_to_output(&new_output);
+                }
             }
             Action::MoveWorkspaceToMonitorByRef {
                 output_name,
@@ -2107,16 +2111,16 @@ impl State {
                 if let Some((output, old_idx)) =
                     self.niri.find_output_and_workspace_index(reference)
                     && let Some(new_output) = self.niri.output_by_name_match(&output_name).cloned()
-                        && self.niri.layout.move_workspace_to_output_by_id(
-                            old_idx,
-                            output,
-                            &new_output,
-                        ) {
-                            // Cursor warp already calls `queue_redraw_all`
-                            if !self.maybe_warp_cursor_to_focus_centered() {
-                                self.move_cursor_to_output(&new_output);
-                            }
-                        }
+                    && self
+                        .niri
+                        .layout
+                        .move_workspace_to_output_by_id(old_idx, output, &new_output)
+                {
+                    // Cursor warp already calls `queue_redraw_all`
+                    if !self.maybe_warp_cursor_to_focus_centered() {
+                        self.move_cursor_to_output(&new_output);
+                    }
+                }
             }
             Action::ToggleWindowFloating => {
                 self.niri.layout.toggle_window_floating(None);
@@ -2203,11 +2207,12 @@ impl State {
                     .active_workspace_mut()
                     .and_then(|ws| ws.active_window_mut());
                 if let Some(window) = active_window
-                    && window.rules().opacity.is_some_and(|o| o != 1.) {
-                        window.toggle_ignore_opacity_window_rule();
-                        // FIXME: granular
-                        self.niri.queue_redraw_all();
-                    }
+                    && window.rules().opacity.is_some_and(|o| o != 1.)
+                {
+                    window.toggle_ignore_opacity_window_rule();
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
+                }
             }
             Action::ToggleWindowRuleOpacityById(id) => {
                 let window = self
@@ -2216,11 +2221,12 @@ impl State {
                     .workspaces_mut()
                     .find_map(|ws| ws.windows_mut().find(|w| w.id().get() == id));
                 if let Some(window) = window
-                    && window.rules().opacity.is_some_and(|o| o != 1.) {
-                        window.toggle_ignore_opacity_window_rule();
-                        // FIXME: granular
-                        self.niri.queue_redraw_all();
-                    }
+                    && window.rules().opacity.is_some_and(|o| o != 1.)
+                {
+                    window.toggle_ignore_opacity_window_rule();
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
+                }
             }
             Action::SetDynamicCastWindow => {
                 let id = self
@@ -2359,10 +2365,11 @@ impl State {
             Action::MruCloseCurrentWindow => {
                 if self.niri.window_mru_ui.is_open()
                     && let Some(id) = self.niri.window_mru_ui.current_window_id()
-                        && let Some(w) = self.niri.find_window_by_id(id)
-                            && let Some(tl) = w.toplevel() {
-                                tl.send_close();
-                            }
+                    && let Some(w) = self.niri.find_window_by_id(id)
+                    && let Some(tl) = w.toplevel()
+                {
+                    tl.send_close();
+                }
             }
             Action::MruFirst => {
                 if self.niri.window_mru_ui.is_open() {
@@ -2433,9 +2440,10 @@ impl State {
 
                 // Constraint does not apply if not within region.
                 if let Some(region) = constraint.region()
-                    && !region.contains(pos_within_surface.to_i32_round()) {
-                        return;
-                    }
+                    && !region.contains(pos_within_surface.to_i32_round())
+                {
+                    return;
+                }
 
                 match &*constraint {
                     PointerConstraint::Locked(_locked) => {
@@ -2477,22 +2485,24 @@ impl State {
                     return Some((output.clone(), false));
                 }
             } else if let Some(grab) = grab.downcast_ref::<MoveGrab>()
-                && let Some(output) = grab.view_offset_output() {
-                    return Some((output.clone(), true));
-                }
+                && let Some(output) = grab.view_offset_output()
+            {
+                return Some((output.clone(), true));
+            }
             None
         });
         if let Some((output, horizontal)) = spatial_grab.flatten()
-            && let Some(geo) = self.niri.global_space.output_geometry(&output) {
-                let geo = geo.to_f64();
-                if horizontal {
-                    new_pos.x = (new_pos.x - geo.loc.x).rem_euclid(geo.size.w) + geo.loc.x;
-                    new_pos.y = new_pos.y.clamp(geo.loc.y, geo.loc.y + geo.size.h - 1.);
-                } else {
-                    new_pos.x = new_pos.x.clamp(geo.loc.x, geo.loc.x + geo.size.w - 1.);
-                    new_pos.y = (new_pos.y - geo.loc.y).rem_euclid(geo.size.h) + geo.loc.y;
-                }
+            && let Some(geo) = self.niri.global_space.output_geometry(&output)
+        {
+            let geo = geo.to_f64();
+            if horizontal {
+                new_pos.x = (new_pos.x - geo.loc.x).rem_euclid(geo.size.w) + geo.loc.x;
+                new_pos.y = new_pos.y.clamp(geo.loc.y, geo.loc.y + geo.size.h - 1.);
+            } else {
+                new_pos.x = new_pos.x.clamp(geo.loc.x, geo.loc.x + geo.size.w - 1.);
+                new_pos.y = (new_pos.y - geo.loc.y).rem_euclid(geo.size.h) + geo.loc.y;
             }
+        }
 
         if self
             .niri
@@ -2532,9 +2542,10 @@ impl State {
 
         if let Some(mru_output) = self.niri.window_mru_ui.output()
             && let Some((output, pos_within_output)) = self.niri.output_under(new_pos)
-                && mru_output == output {
-                    self.niri.window_mru_ui.pointer_motion(pos_within_output);
-                }
+            && mru_output == output
+        {
+            self.niri.window_mru_ui.pointer_motion(pos_within_output);
+        }
 
         let under = self.niri.contents_under(new_pos);
 
@@ -2618,11 +2629,10 @@ impl State {
         let is_dnd_grab = pointer
             .with_grab(|_, grab| Self::is_dnd_grab(grab.as_any()))
             .unwrap_or(false);
-        if is_dnd_grab
-            && let Some((output, pos_within_output)) = self.niri.output_under(new_pos) {
-                let output = output.clone();
-                self.niri.layout.dnd_update(output, pos_within_output);
-            }
+        if is_dnd_grab && let Some((output, pos_within_output)) = self.niri.output_under(new_pos) {
+            let output = output.clone();
+            self.niri.layout.dnd_update(output, pos_within_output);
+        }
 
         // Redraw to update the cursor position.
         // FIXME: redraw only outputs overlapping the cursor.
@@ -2660,9 +2670,10 @@ impl State {
 
         if let Some(mru_output) = self.niri.window_mru_ui.output()
             && let Some((output, pos_within_output)) = self.niri.output_under(pos)
-                && mru_output == output {
-                    self.niri.window_mru_ui.pointer_motion(pos_within_output);
-                }
+            && mru_output == output
+        {
+            self.niri.window_mru_ui.pointer_motion(pos_within_output);
+        }
 
         let under = self.niri.contents_under(pos);
 
@@ -2707,11 +2718,10 @@ impl State {
         let is_dnd_grab = pointer
             .with_grab(|_, grab| Self::is_dnd_grab(grab.as_any()))
             .unwrap_or(false);
-        if is_dnd_grab
-            && let Some((output, pos_within_output)) = self.niri.output_under(pos) {
-                let output = output.clone();
-                self.niri.layout.dnd_update(output, pos_within_output);
-            }
+        if is_dnd_grab && let Some((output, pos_within_output)) = self.niri.output_under(pos) {
+            let output = output.clone();
+            self.niri.layout.dnd_update(output, pos_within_output);
+        }
 
         // Redraw to update the cursor position.
         // FIXME: redraw only outputs overlapping the cursor.
@@ -2780,11 +2790,12 @@ impl State {
                 })
                 .filter(|bind| {
                     !self.niri.screenshot_ui.is_open() || allowed_during_screenshot(&bind.action)
-                }) {
-                    self.niri.suppressed_buttons.insert(button_code);
-                    self.handle_bind(bind.clone());
-                    return;
-                };
+                })
+            {
+                self.niri.suppressed_buttons.insert(button_code);
+                self.handle_bind(bind.clone());
+                return;
+            };
 
             // We received an event for the regular pointer, so show it now.
             self.niri.pointer_visibility = PointerVisibility::Visible;
@@ -2792,32 +2803,35 @@ impl State {
 
             let is_overview_open = self.niri.layout.is_overview_open();
 
-            if is_overview_open && !pointer.is_grabbed() && button == Some(MouseButton::Right)
-                && let Some((output, ws)) = self.niri.workspace_under_cursor(true) {
-                    let ws_id = ws.id();
-                    let ws_idx = self.niri.layout.find_workspace_by_id(ws_id).unwrap().0;
+            if is_overview_open
+                && !pointer.is_grabbed()
+                && button == Some(MouseButton::Right)
+                && let Some((output, ws)) = self.niri.workspace_under_cursor(true)
+            {
+                let ws_id = ws.id();
+                let ws_idx = self.niri.layout.find_workspace_by_id(ws_id).unwrap().0;
 
-                    self.niri.layout.focus_output(&output);
+                self.niri.layout.focus_output(&output);
 
-                    let location = pointer.current_location();
-                    let start_data = PointerGrabStartData {
-                        focus: None,
-                        button: button_code,
-                        location,
-                    };
-                    self.niri
-                        .layout
-                        .view_offset_gesture_begin(&output, Some(ws_idx), false);
-                    let grab = SpatialMovementGrab::new(start_data, output, ws_id, true);
-                    pointer.set_grab(self, grab, serial, Focus::Clear);
-                    self.niri
-                        .cursor_manager
-                        .set_cursor_image(CursorImageStatus::Named(CursorIcon::AllScroll));
+                let location = pointer.current_location();
+                let start_data = PointerGrabStartData {
+                    focus: None,
+                    button: button_code,
+                    location,
+                };
+                self.niri
+                    .layout
+                    .view_offset_gesture_begin(&output, Some(ws_idx), false);
+                let grab = SpatialMovementGrab::new(start_data, output, ws_id, true);
+                pointer.set_grab(self, grab, serial, Focus::Clear);
+                self.niri
+                    .cursor_manager
+                    .set_cursor_image(CursorImageStatus::Named(CursorIcon::AllScroll));
 
-                    // FIXME: granular.
-                    self.niri.queue_redraw_all();
-                    return;
-                }
+                // FIXME: granular.
+                self.niri.queue_redraw_all();
+                return;
+            }
 
             if button == Some(MouseButton::Middle) && !pointer.is_grabbed() && mod_down {
                 let output_ws = if is_overview_open {
@@ -2920,25 +2934,26 @@ impl State {
                         }
 
                         if let Some((last_time, last_edges)) = last
-                            && time.saturating_sub(last_time) <= DOUBLE_CLICK_TIME {
-                                // Allow quick resize after a triple click.
-                                last_cell.set(None);
+                            && time.saturating_sub(last_time) <= DOUBLE_CLICK_TIME
+                        {
+                            // Allow quick resize after a triple click.
+                            last_cell.set(None);
 
-                                let intersection = edges.intersection(last_edges);
-                                if intersection.intersects(ResizeEdge::LEFT_RIGHT) {
-                                    // FIXME: don't activate once we can pass specific windows
-                                    // to actions.
-                                    self.niri.layout.activate_window(&window);
-                                    self.niri.layout.toggle_full_width();
-                                }
-                                if intersection.intersects(ResizeEdge::TOP_BOTTOM) {
-                                    self.niri.layout.activate_window(&window);
-                                    self.niri.layout.reset_window_height(Some(&window));
-                                }
-                                // FIXME: granular.
-                                self.niri.queue_redraw_all();
-                                return;
+                            let intersection = edges.intersection(last_edges);
+                            if intersection.intersects(ResizeEdge::LEFT_RIGHT) {
+                                // FIXME: don't activate once we can pass specific windows
+                                // to actions.
+                                self.niri.layout.activate_window(&window);
+                                self.niri.layout.toggle_full_width();
                             }
+                            if intersection.intersects(ResizeEdge::TOP_BOTTOM) {
+                                self.niri.layout.activate_window(&window);
+                                self.niri.layout.reset_window_height(Some(&window));
+                            }
+                            // FIXME: granular.
+                            self.niri.queue_redraw_all();
+                            return;
+                        }
 
                         self.niri.layout.activate_window(&window);
 
@@ -3296,12 +3311,13 @@ impl State {
                     // Maybe begin, then update.
                     if is_vertical {
                         if action.begin()
-                            && let Some(output) = self.niri.output_under_cursor() {
-                                self.niri
-                                    .layout
-                                    .workspace_switch_gesture_begin(&output, true);
-                                redraw = true;
-                            }
+                            && let Some(output) = self.niri.output_under_cursor()
+                        {
+                            self.niri
+                                .layout
+                                .workspace_switch_gesture_begin(&output, true);
+                            redraw = true;
+                        }
 
                         let res = self
                             .niri
@@ -3312,18 +3328,16 @@ impl State {
                         }
                     } else {
                         if action.begin()
-                            && let Some((output, ws)) = self.niri.workspace_under_cursor(true) {
-                                let ws_id = ws.id();
-                                let ws_idx =
-                                    self.niri.layout.find_workspace_by_id(ws_id).unwrap().0;
+                            && let Some((output, ws)) = self.niri.workspace_under_cursor(true)
+                        {
+                            let ws_id = ws.id();
+                            let ws_idx = self.niri.layout.find_workspace_by_id(ws_id).unwrap().0;
 
-                                self.niri.layout.view_offset_gesture_begin(
-                                    &output,
-                                    Some(ws_idx),
-                                    true,
-                                );
-                                redraw = true;
-                            }
+                            self.niri
+                                .layout
+                                .view_offset_gesture_begin(&output, Some(ws_idx), true);
+                            redraw = true;
+                        }
 
                         let res = self
                             .niri
@@ -3537,9 +3551,10 @@ impl State {
 
         if let Some(mru_output) = self.niri.window_mru_ui.output()
             && let Some((output, pos_within_output)) = self.niri.output_under(pos)
-                && mru_output == output {
-                    self.niri.window_mru_ui.pointer_motion(pos_within_output);
-                }
+            && mru_output == output
+        {
+            self.niri.window_mru_ui.pointer_motion(pos_within_output);
+        }
 
         let under = self.niri.contents_under(pos);
 
@@ -3763,28 +3778,29 @@ impl State {
             };
 
             if let Some(trigger) = trigger
-                && event.button_state() == ButtonState::Pressed {
-                    let mod_key = self.backend.mod_key(&self.niri.config.borrow());
-                    let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
-                    let modifiers = modifiers_from_state(mods);
+                && event.button_state() == ButtonState::Pressed
+            {
+                let mod_key = self.backend.mod_key(&self.niri.config.borrow());
+                let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
+                let modifiers = modifiers_from_state(mods);
 
-                    if self.niri.mods_with_tablet_stylus_binds.contains(&modifiers) {
-                        let bind = {
-                            let config = self.niri.config.borrow();
-                            let bindings = config.binds.0.iter();
-                            find_configured_bind(bindings, mod_key, trigger, mods)
-                        }
-                        .filter(|bind| {
-                            !self.niri.screenshot_ui.is_open()
-                                || allowed_during_screenshot(&bind.action)
-                        });
-                        if let Some(bind) = bind {
-                            self.niri.suppressed_buttons.insert(button);
-                            self.handle_bind(bind.clone());
-                            return;
-                        }
+                if self.niri.mods_with_tablet_stylus_binds.contains(&modifiers) {
+                    let bind = {
+                        let config = self.niri.config.borrow();
+                        let bindings = config.binds.0.iter();
+                        find_configured_bind(bindings, mod_key, trigger, mods)
+                    }
+                    .filter(|bind| {
+                        !self.niri.screenshot_ui.is_open()
+                            || allowed_during_screenshot(&bind.action)
+                    });
+                    if let Some(bind) = bind {
+                        self.niri.suppressed_buttons.insert(button);
+                        self.handle_bind(bind.clone());
+                        return;
                     }
                 }
+            }
 
             tool.button(
                 button,
@@ -3851,10 +3867,11 @@ impl State {
 
         let device = event.device();
         if let Some(device) = (&device as &dyn Any).downcast_ref::<input::Device>()
-            && device.config_scroll_natural_scroll_enabled() {
-                delta_x = -delta_x;
-                delta_y = -delta_y;
-            }
+            && device.config_scroll_natural_scroll_enabled()
+        {
+            delta_x = -delta_x;
+            delta_y = -delta_y;
+        }
 
         let is_overview_open = self.niri.layout.is_overview_open();
 
@@ -4301,11 +4318,10 @@ impl State {
         let is_dnd_grab = handle
             .with_grab(|_, grab| Self::is_dnd_grab(grab.as_any()))
             .unwrap_or(false);
-        if is_dnd_grab
-            && let Some((output, pos_within_output)) = self.niri.output_under(pos) {
-                let output = output.clone();
-                self.niri.layout.dnd_update(output, pos_within_output);
-            }
+        if is_dnd_grab && let Some((output, pos_within_output)) = self.niri.output_under(pos) {
+            let output = output.clone();
+            self.niri.layout.dnd_update(output, pos_within_output);
+        }
     }
     fn on_touch_frame<I: InputBackend>(&mut self, _evt: I::TouchFrameEvent) {
         let Some(handle) = self.niri.seat.get_touch() else {
@@ -4394,29 +4410,29 @@ fn should_intercept_key<'a>(
         let mut use_screenshot_ui_action = true;
 
         if let Some(bind) = &final_bind
-            && allowed_during_screenshot(&bind.action) {
-                use_screenshot_ui_action = false;
-            }
+            && allowed_during_screenshot(&bind.action)
+        {
+            use_screenshot_ui_action = false;
+        }
 
-        if use_screenshot_ui_action
-            && let Some(raw) = raw {
-                final_bind = screenshot_ui.action(raw, mods).map(|action| Bind {
-                    key: Key {
-                        trigger: Trigger::Keysym(raw),
-                        // Not entirely correct but it doesn't matter in how we currently use it.
-                        modifiers: Modifiers::empty(),
-                    },
-                    action,
-                    repeat: true,
-                    cooldown: None,
-                    allow_when_locked: false,
-                    // The screenshot UI owns the focus anyway, so this doesn't really matter.
-                    // But logically, nothing can inhibit its actions. Only opening it can be
-                    // inhibited.
-                    allow_inhibiting: false,
-                    hotkey_overlay_title: None,
-                });
-            }
+        if use_screenshot_ui_action && let Some(raw) = raw {
+            final_bind = screenshot_ui.action(raw, mods).map(|action| Bind {
+                key: Key {
+                    trigger: Trigger::Keysym(raw),
+                    // Not entirely correct but it doesn't matter in how we currently use it.
+                    modifiers: Modifiers::empty(),
+                },
+                action,
+                repeat: true,
+                cooldown: None,
+                allow_when_locked: false,
+                // The screenshot UI owns the focus anyway, so this doesn't really matter.
+                // But logically, nothing can inhibit its actions. Only opening it can be
+                // inhibited.
+                allow_inhibiting: false,
+                hotkey_overlay_title: None,
+            });
+        }
     }
 
     match (final_bind, pressed) {

@@ -6,8 +6,8 @@
 //! 3. Pass every [`Event`] to [`EventStreamStatePart::apply`] on your state.
 //! 4. Read the fields of the state as needed.
 
-use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 
 use crate::{Cast, Event, KeyboardLayouts, Window, Workspace};
 

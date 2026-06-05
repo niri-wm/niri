@@ -1,9 +1,9 @@
 use smithay::desktop::Window;
+use smithay::input::SeatHandler;
 use smithay::input::touch::{
     DownEvent, GrabStartData as TouchGrabStartData, MotionEvent, OrientationEvent, ShapeEvent,
     TouchGrab, TouchInnerHandle, UpEvent,
 };
-use smithay::input::SeatHandler;
 use smithay::utils::{IsAlive, Logical, Point, Serial};
 
 use crate::niri::State;

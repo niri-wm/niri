@@ -1,5 +1,5 @@
-use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use std::iter::zip;
 use std::mem;
 
@@ -100,12 +100,13 @@ impl OutputManagementManagerState {
                     changed = true;
                     for client in self.clients.values() {
                         if let Some((head, _)) = client.heads.get(output)
-                            && head.version() >= zwlr_output_head_v1::EVT_ADAPTIVE_SYNC_SINCE {
-                                head.adaptive_sync(match conf.vrr_enabled {
-                                    true => AdaptiveSyncState::Enabled,
-                                    false => AdaptiveSyncState::Disabled,
-                                });
-                            }
+                            && head.version() >= zwlr_output_head_v1::EVT_ADAPTIVE_SYNC_SINCE
+                        {
+                            head.adaptive_sync(match conf.vrr_enabled {
+                                true => AdaptiveSyncState::Enabled,
+                                false => AdaptiveSyncState::Disabled,
+                            });
+                        }
                     }
                 }
 
@@ -871,9 +872,10 @@ fn send_new_head<D>(
     // Format matches what Output::new() does internally.
     new_head.description(format!("{} - {} - {}", conf.make, conf.model, conf.name));
     if let Some((width, height)) = conf.physical_size
-        && let (Ok(a), Ok(b)) = (width.try_into(), height.try_into()) {
-            new_head.physical_size(a, b);
-        }
+        && let (Ok(a), Ok(b)) = (width.try_into(), height.try_into())
+    {
+        new_head.physical_size(a, b);
+    }
     let mut new_modes = Vec::with_capacity(conf.modes.len());
     for (index, mode) in conf.modes.iter().enumerate() {
         let new_mode = client
@@ -905,9 +907,10 @@ fn send_new_head<D>(
         new_head.model(conf.model.clone());
     }
     if new_head.version() >= zwlr_output_head_v1::EVT_SERIAL_NUMBER_SINCE
-        && let Some(serial) = &conf.serial {
-            new_head.serial_number(serial.clone());
-        }
+        && let Some(serial) = &conf.serial
+    {
+        new_head.serial_number(serial.clone());
+    }
 
     if new_head.version() >= zwlr_output_head_v1::EVT_ADAPTIVE_SYNC_SINCE {
         new_head.adaptive_sync(match conf.vrr_enabled {

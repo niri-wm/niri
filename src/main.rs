@@ -21,10 +21,10 @@ use niri::dbus;
 use niri::ipc::client::handle_msg;
 use niri::niri::State;
 use niri::utils::spawning::{
-    spawn, spawn_sh, store_and_increase_nofile_rlimit, CHILD_DISPLAY, CHILD_ENV,
-    REMOVE_ENV_RUST_BACKTRACE, REMOVE_ENV_RUST_LIB_BACKTRACE,
+    CHILD_DISPLAY, CHILD_ENV, REMOVE_ENV_RUST_BACKTRACE, REMOVE_ENV_RUST_LIB_BACKTRACE, spawn,
+    spawn_sh, store_and_increase_nofile_rlimit,
 };
-use niri::utils::{cause_panic, version, watcher, xwayland, IS_SYSTEMD_SERVICE};
+use niri::utils::{IS_SYSTEMD_SERVICE, cause_panic, version, watcher, xwayland};
 use niri_config::{Config, ConfigPath};
 use niri_ipc::socket::SOCKET_PATH_ENV;
 use sd_notify::NotifyState;
@@ -219,9 +219,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Inhibit power key handling so we can suspend on it.
         #[cfg(feature = "dbus")]
         if !state.niri.config.borrow().input.disable_power_key_handling
-            && let Err(err) = state.niri.inhibit_power_key() {
-                warn!("error inhibiting power key: {err:?}");
-            }
+            && let Err(err) = state.niri.inhibit_power_key()
+        {
+            warn!("error inhibiting power key: {err:?}");
+        }
     }
 
     #[cfg(feature = "dbus")]

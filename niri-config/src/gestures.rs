@@ -1,5 +1,5 @@
-use crate::utils::MergeWith;
 use crate::FloatOrInt;
+use crate::utils::MergeWith;
 
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub struct Gestures {

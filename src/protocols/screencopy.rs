@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use calloop::generic::Generic;
@@ -24,7 +24,7 @@ use wayland_backend::server::Credentials;
 use zwlr_screencopy_frame_v1::{Flags, ZwlrScreencopyFrameV1};
 use zwlr_screencopy_manager_v1::ZwlrScreencopyManagerV1;
 
-use crate::utils::{get_credentials_for_client, get_monotonic_time, CastSessionId, CastStreamId};
+use crate::utils::{CastSessionId, CastStreamId, get_credentials_for_client, get_monotonic_time};
 
 const VERSION: u32 = 3;
 
@@ -172,10 +172,11 @@ impl ScreencopyQueue {
             .retain(|screencopy| screencopy.output() != output);
 
         if let Some(cast) = &mut self.cast
-            && self.screencopies.is_empty() {
-                // Queue became empty, update deadline for considering the cast stopped.
-                cast.update_deadline();
-            }
+            && self.screencopies.is_empty()
+        {
+            // Queue became empty, update deadline for considering the cast stopped.
+            cast.update_deadline();
+        }
     }
 
     fn remove_frame(&mut self, frame: &ZwlrScreencopyFrameV1) {
@@ -189,10 +190,11 @@ impl ScreencopyQueue {
             .retain(|screencopy| screencopy.frame != *frame);
 
         if let Some(cast) = &mut self.cast
-            && self.screencopies.is_empty() {
-                // Queue became empty, update deadline for considering the cast stopped.
-                cast.update_deadline();
-            }
+            && self.screencopies.is_empty()
+        {
+            // Queue became empty, update deadline for considering the cast stopped.
+            cast.update_deadline();
+        }
     }
 }
 

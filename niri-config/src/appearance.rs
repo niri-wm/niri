@@ -2,11 +2,11 @@ use std::ops::{Mul, MulAssign};
 use std::str::FromStr;
 
 use knus::errors::DecodeError;
-use miette::{miette, IntoDiagnostic as _};
+use miette::{IntoDiagnostic as _, miette};
 use smithay::backend::renderer::Color32F;
 
-use crate::utils::{Flag, MergeWith};
 use crate::FloatOrInt;
+use crate::utils::{Flag, MergeWith};
 
 pub const DEFAULT_BACKGROUND_COLOR: Color = Color::from_array_unpremul([0.25, 0.25, 0.25, 1.]);
 pub const DEFAULT_BACKDROP_COLOR: Color = Color::from_array_unpremul([0.15, 0.15, 0.15, 1.]);
@@ -743,7 +743,7 @@ impl FromStr for GradientInterpolation {
             x => {
                 return Err(miette!(
                     "invalid color space {x}; can be srgb, srgb-linear, oklab or oklch"
-                ))
+                ));
             }
         };
 
@@ -768,7 +768,7 @@ impl FromStr for GradientInterpolation {
                         return Err(miette!(
                             "invalid hue interpolation {x}; \
                              can be shorter, longer, increasing, decreasing"
-                        ))
+                        ));
                     }
                 }
             }
@@ -904,8 +904,7 @@ where
             ));
         }
 
-        let decode_radius = |ctx: &mut knus::decode::Context<S>,
-                             val: &knus::ast::Value<S>| {
+        let decode_radius = |ctx: &mut knus::decode::Context<S>, val: &knus::ast::Value<S>| {
             // Check for unexpected type name.
             if let Some(typ) = &val.type_name {
                 ctx.emit_error(DecodeError::TypeName {
@@ -1180,9 +1179,11 @@ mod tests {
         assert!("oklch shorter".parse::<GradientInterpolation>().is_err());
         assert!("oklch shorter h".parse::<GradientInterpolation>().is_err());
         assert!("oklch a hue".parse::<GradientInterpolation>().is_err());
-        assert!("oklch shorter hue a"
-            .parse::<GradientInterpolation>()
-            .is_err());
+        assert!(
+            "oklch shorter hue a"
+                .parse::<GradientInterpolation>()
+                .is_err()
+        );
     }
 
     #[test]

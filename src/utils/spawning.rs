@@ -2,12 +2,12 @@ use std::ffi::OsStr;
 use std::os::unix::process::CommandExt;
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::RwLock;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::{io, thread};
 
 use atomic::Atomic;
-use libc::{getrlimit, rlim_t, rlimit, setrlimit, RLIMIT_NOFILE};
+use libc::{RLIMIT_NOFILE, getrlimit, rlim_t, rlimit, setrlimit};
 use niri_config::Environment;
 use smithay::wayland::xdg_activation::XdgActivationToken;
 
@@ -38,8 +38,7 @@ pub fn store_and_increase_nofile_rlimit() {
 
     trace!(
         "changing nofile rlimit from {} to {}",
-        rlim.rlim_cur,
-        rlim.rlim_max
+        rlim.rlim_cur, rlim.rlim_max
     );
     rlim.rlim_cur = rlim.rlim_max;
 
@@ -209,7 +208,7 @@ mod systemd {
 
     use smithay::reexports::rustix;
     use smithay::reexports::rustix::io::{close, read, retry_on_intr, write};
-    use smithay::reexports::rustix::pipe::{pipe_with, PipeFlags};
+    use smithay::reexports::rustix::pipe::{PipeFlags, pipe_with};
 
     use super::*;
 

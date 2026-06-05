@@ -3,7 +3,7 @@ use std::iter::Peekable;
 use std::path::Path;
 use std::{env, slice};
 
-use anyhow::{anyhow, bail, Context};
+use anyhow::{Context, anyhow, bail};
 use niri_config::OutputName;
 use niri_ipc::socket::Socket;
 use niri_ipc::{
@@ -23,9 +23,10 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
             | Action::ScreenshotScreen { path, .. }
             | Action::ScreenshotWindow { path, .. },
     } = &mut msg
-        && let Some(path) = path {
-            ensure_absolute_path(path).context("error making the path absolute")?;
-        }
+        && let Some(path) = path
+    {
+        ensure_absolute_path(path).context("error making the path absolute")?;
+    }
 
     let request = match &msg {
         Msg::Version => Request::Version,

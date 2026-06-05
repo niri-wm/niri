@@ -197,9 +197,10 @@ impl ResolvedWindowRules {
             for rule in rules {
                 let matches = |m: &Match| {
                     if let Some(at_startup) = m.at_startup
-                        && at_startup != is_at_startup {
-                            return false;
-                        }
+                        && at_startup != is_at_startup
+                    {
+                        return false;
+                    }
 
                     window_matches(window, role, m)
                 };
@@ -387,14 +388,16 @@ fn window_matches(window: WindowRef, role: &XdgToplevelSurfaceRoleAttributes, m:
     let server_pending = role.server_pending.as_ref().unwrap();
 
     if let Some(is_focused) = m.is_focused
-        && window.is_focused() != is_focused {
-            return false;
-        }
+        && window.is_focused() != is_focused
+    {
+        return false;
+    }
 
     if let Some(is_urgent) = m.is_urgent
-        && window.is_urgent() != is_urgent {
-            return false;
-        }
+        && window.is_urgent() != is_urgent
+    {
+        return false;
+    }
 
     if let Some(is_active) = m.is_active {
         // Our "is-active" definition corresponds to the window having a pending Activated state.
@@ -425,19 +428,22 @@ fn window_matches(window: WindowRef, role: &XdgToplevelSurfaceRoleAttributes, m:
     }
 
     if let Some(is_active_in_column) = m.is_active_in_column
-        && window.is_active_in_column() != is_active_in_column {
-            return false;
-        }
+        && window.is_active_in_column() != is_active_in_column
+    {
+        return false;
+    }
 
     if let Some(is_floating) = m.is_floating
-        && window.is_floating() != is_floating {
-            return false;
-        }
+        && window.is_floating() != is_floating
+    {
+        return false;
+    }
 
     if let Some(is_window_cast_target) = m.is_window_cast_target
-        && window.is_window_cast_target() != is_window_cast_target {
-            return false;
-        }
+        && window.is_window_cast_target() != is_window_cast_target
+    {
+        return false;
+    }
 
     true
 }

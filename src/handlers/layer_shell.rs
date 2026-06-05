@@ -1,8 +1,8 @@
 use smithay::delegate_layer_shell;
-use smithay::desktop::{layer_map_for_output, LayerSurface, PopupKind, WindowSurfaceType};
+use smithay::desktop::{LayerSurface, PopupKind, WindowSurfaceType, layer_map_for_output};
 use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::wayland::compositor::{add_pre_commit_hook, get_parent, with_states, HookId};
+use smithay::wayland::compositor::{HookId, add_pre_commit_hook, get_parent, with_states};
 use smithay::wayland::shell::wlr_layer::{
     self, Layer, LayerSurface as WlrLayerSurface, LayerSurfaceCachedState, LayerSurfaceData,
     WlrLayerShellHandler, WlrLayerShellState,

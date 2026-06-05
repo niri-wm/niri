@@ -3,9 +3,9 @@ use std::cell::Cell;
 use calloop::Interest;
 use niri_config::PresetSize;
 use smithay::desktop::{
-    find_popup_root_surface, get_popup_toplevel_coords, layer_map_for_output, utils, LayerSurface,
-    PopupKeyboardGrab, PopupKind, PopupManager, PopupPointerGrab, PopupUngrabStrategy, Window,
-    WindowSurfaceType,
+    LayerSurface, PopupKeyboardGrab, PopupKind, PopupManager, PopupPointerGrab,
+    PopupUngrabStrategy, Window, WindowSurfaceType, find_popup_root_surface,
+    get_popup_toplevel_coords, layer_map_for_output, utils,
 };
 use smithay::input::pointer::Focus;
 use smithay::output::Output;
@@ -19,8 +19,8 @@ use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::{self, Resource, WEnum};
 use smithay::utils::{Logical, Rectangle, Serial};
 use smithay::wayland::compositor::{
-    add_blocker, add_pre_commit_hook, with_states, BufferAssignment, CompositorHandler as _,
-    HookId, SurfaceAttributes,
+    BufferAssignment, CompositorHandler as _, HookId, SurfaceAttributes, add_blocker,
+    add_pre_commit_hook, with_states,
 };
 use smithay::wayland::dmabuf::get_dmabuf;
 use smithay::wayland::input_method::InputMethodSeat;
@@ -40,12 +40,12 @@ use tracing::field::Empty;
 use crate::input::move_grab::MoveGrab;
 use crate::input::resize_grab::ResizeGrab;
 use crate::input::touch_resize_grab::TouchResizeGrab;
-use crate::input::{PointerOrTouchStartData, DOUBLE_CLICK_TIME};
+use crate::input::{DOUBLE_CLICK_TIME, PointerOrTouchStartData};
 use crate::layout::ActivateWindow;
 use crate::niri::{CastTarget, PopupGrabState, State};
 use crate::utils::transaction::Transaction;
 use crate::utils::{
-    get_monotonic_time, output_matches_name, send_scale_transform, update_tiled_state, ResizeEdge,
+    ResizeEdge, get_monotonic_time, output_matches_name, send_scale_transform, update_tiled_state,
 };
 use crate::window::{InitialConfigureState, ResolvedWindowRules, Unmapped, WindowRef};
 
@@ -81,16 +81,17 @@ impl XdgShellHandler for State {
             if grab_serial == serial {
                 let start_data = grab.start_data();
                 if let Some((focus, _)) = &start_data.focus
-                    && focus.id().same_client_as(&wl_surface.id()) {
-                        // Deny move requests from DnD grabs to work around
-                        // https://gitlab.gnome.org/GNOME/gtk/-/issues/7113
-                        let is_dnd_grab = Self::is_dnd_grab(grab.as_any());
+                    && focus.id().same_client_as(&wl_surface.id())
+                {
+                    // Deny move requests from DnD grabs to work around
+                    // https://gitlab.gnome.org/GNOME/gtk/-/issues/7113
+                    let is_dnd_grab = Self::is_dnd_grab(grab.as_any());
 
-                        if !is_dnd_grab {
-                            grab_start_data =
-                                Some(PointerOrTouchStartData::Pointer(start_data.clone()));
-                        }
+                    if !is_dnd_grab {
+                        grab_start_data =
+                            Some(PointerOrTouchStartData::Pointer(start_data.clone()));
                     }
+                }
             }
         });
 
@@ -100,16 +101,17 @@ impl XdgShellHandler for State {
                 if grab_serial == serial {
                     let start_data = grab.start_data();
                     if let Some((focus, _)) = &start_data.focus
-                        && focus.id().same_client_as(&wl_surface.id()) {
-                            // Deny move requests from DnD grabs to work around
-                            // https://gitlab.gnome.org/GNOME/gtk/-/issues/7113
-                            let is_dnd_grab = Self::is_dnd_grab(grab.as_any());
+                        && focus.id().same_client_as(&wl_surface.id())
+                    {
+                        // Deny move requests from DnD grabs to work around
+                        // https://gitlab.gnome.org/GNOME/gtk/-/issues/7113
+                        let is_dnd_grab = Self::is_dnd_grab(grab.as_any());
 
-                            if !is_dnd_grab {
-                                grab_start_data =
-                                    Some(PointerOrTouchStartData::Touch(start_data.clone()));
-                            }
+                        if !is_dnd_grab {
+                            grab_start_data =
+                                Some(PointerOrTouchStartData::Touch(start_data.clone()));
                         }
+                    }
                 }
             });
         }
@@ -161,19 +163,21 @@ impl XdgShellHandler for State {
         let pointer = self.niri.seat.get_pointer().unwrap();
         if pointer.has_grab(serial)
             && let Some(start_data) = pointer.grab_start_data()
-                && let Some((focus, _)) = &start_data.focus
-                    && focus.id().same_client_as(&wl_surface.id()) {
-                        grab_start_data = Some(PointerOrTouchStartData::Pointer(start_data));
-                    }
+            && let Some((focus, _)) = &start_data.focus
+            && focus.id().same_client_as(&wl_surface.id())
+        {
+            grab_start_data = Some(PointerOrTouchStartData::Pointer(start_data));
+        }
 
         // See if this comes from a touch grab.
         if let Some(touch) = self.niri.seat.get_touch()
             && touch.has_grab(serial)
-                && let Some(start_data) = touch.grab_start_data()
-                    && let Some((focus, _)) = &start_data.focus
-                        && focus.id().same_client_as(&wl_surface.id()) {
-                            grab_start_data = Some(PointerOrTouchStartData::Touch(start_data));
-                        }
+            && let Some(start_data) = touch.grab_start_data()
+            && let Some((focus, _)) = &start_data.focus
+            && focus.id().same_client_as(&wl_surface.id())
+        {
+            grab_start_data = Some(PointerOrTouchStartData::Touch(start_data));
+        }
 
         let Some(start_data) = grab_start_data else {
             return;
@@ -200,25 +204,26 @@ impl XdgShellHandler for State {
         }
 
         if let Some((last_time, last_edges)) = last
-            && time.saturating_sub(last_time) <= DOUBLE_CLICK_TIME {
-                // Allow quick resize after a triple click.
-                last_cell.set(None);
+            && time.saturating_sub(last_time) <= DOUBLE_CLICK_TIME
+        {
+            // Allow quick resize after a triple click.
+            last_cell.set(None);
 
-                let intersection = edges.intersection(last_edges);
-                if intersection.intersects(ResizeEdge::LEFT_RIGHT) {
-                    // FIXME: don't activate once we can pass specific windows to actions.
-                    self.niri.layout.activate_window(&window);
-                    self.niri.layer_shell_on_demand_focus = None;
-                    self.niri.layout.toggle_full_width();
-                }
-                if intersection.intersects(ResizeEdge::TOP_BOTTOM) {
-                    self.niri.layer_shell_on_demand_focus = None;
-                    self.niri.layout.reset_window_height(Some(&window));
-                }
-                // FIXME: granular.
-                self.niri.queue_redraw_all();
-                return;
+            let intersection = edges.intersection(last_edges);
+            if intersection.intersects(ResizeEdge::LEFT_RIGHT) {
+                // FIXME: don't activate once we can pass specific windows to actions.
+                self.niri.layout.activate_window(&window);
+                self.niri.layer_shell_on_demand_focus = None;
+                self.niri.layout.toggle_full_width();
             }
+            if intersection.intersects(ResizeEdge::TOP_BOTTOM) {
+                self.niri.layer_shell_on_demand_focus = None;
+                self.niri.layout.reset_window_height(Some(&window));
+            }
+            // FIXME: granular.
+            self.niri.queue_redraw_all();
+            return;
+        }
 
         if !self
             .niri
@@ -290,11 +295,12 @@ impl XdgShellHandler for State {
                 // This is a grab for a layer surface.
 
                 if let Some(mapped) = self.niri.mapped_layer_surfaces.get(layer)
-                    && mapped.place_within_backdrop() {
-                        trace!("ignoring popup grab for a layer surface within overview backdrop");
-                        let _ = PopupManager::dismiss_popup(&root, &popup);
-                        return;
-                    }
+                    && mapped.place_within_backdrop()
+                {
+                    trace!("ignoring popup grab for a layer surface within overview backdrop");
+                    let _ = PopupManager::dismiss_popup(&root, &popup);
+                    return;
+                }
             } else {
                 // This is a grab for a regular window; check that there's no layer surface with a
                 // higher input priority.
@@ -615,14 +621,15 @@ impl XdgShellHandler for State {
             let window = mapped.window.clone();
 
             if let Some(requested_output) = requested_output
-                && Some(&requested_output) != current_output {
-                    self.niri.layout.move_to_output(
-                        Some(&window),
-                        &requested_output,
-                        None,
-                        ActivateWindow::Smart,
-                    );
-                }
+                && Some(&requested_output) != current_output
+            {
+                self.niri.layout.move_to_output(
+                    Some(&window),
+                    &requested_output,
+                    None,
+                    ActivateWindow::Smart,
+                );
+            }
 
             self.niri.layout.set_fullscreen(&window, true);
         } else if let Some(unmapped) = self.niri.unmapped_windows.get_mut(toplevel.wl_surface()) {
@@ -898,9 +905,10 @@ impl XdgShellHandler for State {
             let output = output.cloned();
             let window = mapped.window.clone();
             if self.niri.layout.descendants_added(&window)
-                && let Some(output) = output {
-                    self.niri.queue_redraw(&output);
-                }
+                && let Some(output) = output
+            {
+                self.niri.queue_redraw(&output);
+            }
         }
     }
 }
@@ -1177,9 +1185,10 @@ impl State {
             }
 
             if let Some(unmapped) = state.niri.unmapped_windows.get(toplevel.wl_surface())
-                && unmapped.needs_initial_configure() {
-                    state.send_initial_configure(&toplevel);
-                }
+                && unmapped.needs_initial_configure()
+            {
+                state.send_initial_configure(&toplevel);
+            }
         });
     }
 
@@ -1367,16 +1376,17 @@ impl State {
             .niri
             .layout
             .find_window_and_output_mut(toplevel.wl_surface())
-            && mapped.recompute_window_rules(window_rules, self.niri.is_at_startup) {
-                drop(config);
-                let output = output.cloned();
-                let window = mapped.window.clone();
-                self.niri.layout.update_window(&window, None);
+            && mapped.recompute_window_rules(window_rules, self.niri.is_at_startup)
+        {
+            drop(config);
+            let output = output.cloned();
+            let window = mapped.window.clone();
+            self.niri.layout.update_window(&window, None);
 
-                if let Some(output) = output {
-                    self.niri.queue_redraw(&output);
-                }
+            if let Some(output) = output {
+                self.niri.queue_redraw(&output);
             }
+        }
     }
 }
 
@@ -1504,26 +1514,27 @@ pub fn add_mapped_toplevel_pre_commit_hook(toplevel: &ToplevelSurface) -> HookId
 
         if let Some((blocker, source)) =
             dmabuf.and_then(|dmabuf| dmabuf.generate_blocker(Interest::READ).ok())
-            && let Some(client) = surface.client() {
-                let res = state
-                    .niri
-                    .event_loop
-                    .insert_source(source, move |_, _, state| {
-                        // This surface is now ready for the transaction.
-                        drop(transaction_for_dmabuf.take());
+            && let Some(client) = surface.client()
+        {
+            let res = state
+                .niri
+                .event_loop
+                .insert_source(source, move |_, _, state| {
+                    // This surface is now ready for the transaction.
+                    drop(transaction_for_dmabuf.take());
 
-                        let display_handle = state.niri.display_handle.clone();
-                        state
-                            .client_compositor_state(&client)
-                            .blocker_cleared(state, &display_handle);
+                    let display_handle = state.niri.display_handle.clone();
+                    state
+                        .client_compositor_state(&client)
+                        .blocker_cleared(state, &display_handle);
 
-                        Ok(())
-                    });
-                if res.is_ok() {
-                    add_blocker(surface, blocker);
-                    trace!("added dmabuf blocker");
-                }
+                    Ok(())
+                });
+            if res.is_ok() {
+                add_blocker(surface, blocker);
+                trace!("added dmabuf blocker");
             }
+        }
 
         let window = mapped.window.clone();
         if got_unmapped {

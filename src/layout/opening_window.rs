@@ -3,19 +3,19 @@ use std::rc::Rc;
 
 use anyhow::Context as _;
 use glam::{Mat3, Vec2};
+use smithay::backend::renderer::Texture;
 use smithay::backend::renderer::element::utils::{
     Relocate, RelocateRenderElement, RescaleRenderElement,
 };
 use smithay::backend::renderer::element::{Element as _, Kind, RenderElement};
 use smithay::backend::renderer::gles::{GlesRenderer, Uniform};
-use smithay::backend::renderer::Texture;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Size};
 
 use crate::animation::Animation;
 use crate::niri_render_elements;
 use crate::render_helpers::offscreen::{OffscreenBuffer, OffscreenData, OffscreenRenderElement};
 use crate::render_helpers::shader_element::ShaderRenderElement;
-use crate::render_helpers::shaders::{mat3_uniform, ProgramType, Shaders};
+use crate::render_helpers::shaders::{ProgramType, Shaders, mat3_uniform};
 
 #[derive(Debug)]
 pub struct OpenAnimation {

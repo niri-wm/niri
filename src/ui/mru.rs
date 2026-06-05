@@ -13,12 +13,12 @@ use niri_config::{
 use pango::FontDescription;
 use pangocairo::cairo::{self, ImageSurface};
 use smithay::backend::allocator::Fourcc;
+use smithay::backend::renderer::Color32F;
+use smithay::backend::renderer::element::Kind;
 use smithay::backend::renderer::element::utils::{
     Relocate, RelocateRenderElement, RescaleRenderElement,
 };
-use smithay::backend::renderer::element::Kind;
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
-use smithay::backend::renderer::Color32F;
 use smithay::input::keyboard::Keysym;
 use smithay::output::Output;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Size, Transform};
@@ -28,6 +28,7 @@ use crate::layout::focus_ring::{FocusRing, FocusRingRenderElement};
 use crate::layout::{Layout, LayoutElement as _, LayoutElementRenderElement};
 use crate::niri::Niri;
 use crate::niri_render_elements;
+use crate::render_helpers::RenderCtx;
 use crate::render_helpers::border::BorderRenderElement;
 use crate::render_helpers::clipped_surface::ClippedSurfaceRenderElement;
 use crate::render_helpers::gradient_fade_texture::GradientFadeTextureRenderElement;
@@ -36,13 +37,12 @@ use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
 use crate::render_helpers::texture::{TextureBuffer, TextureRenderElement};
-use crate::render_helpers::RenderCtx;
 use crate::utils::{
     baba_is_float_offset, output_size, round_logical_in_physical, to_physical_precise_round,
     with_toplevel_role,
 };
-use crate::window::mapped::MappedId;
 use crate::window::Mapped;
+use crate::window::mapped::MappedId;
 
 #[cfg(test)]
 mod tests;
@@ -382,11 +382,12 @@ impl Thumbnail {
         let clip = move |elem| match elem {
             LayoutElementRenderElement::Wayland(elem) => {
                 if let Some(shader) = clip_shader.clone()
-                    && ClippedSurfaceRenderElement::will_clip(&elem, s, geo, radius) {
-                        let elem =
-                            ClippedSurfaceRenderElement::new(elem, s, geo, shader.clone(), radius);
-                        return ThumbnailRenderElement::ClippedSurface(elem);
-                    }
+                    && ClippedSurfaceRenderElement::will_clip(&elem, s, geo, radius)
+                {
+                    let elem =
+                        ClippedSurfaceRenderElement::new(elem, s, geo, shader.clone(), radius);
+                    return ThumbnailRenderElement::ClippedSurface(elem);
+                }
 
                 // If we don't have the shader, render it normally.
                 let elem = LayoutElementRenderElement::Wayland(elem);
@@ -867,9 +868,10 @@ impl ViewPos {
 
     fn advance_animations(&mut self) {
         if let ViewPos::Animation(anim) = self
-            && anim.is_done() {
-                *self = ViewPos::Static(anim.to());
-            }
+            && anim.is_done()
+        {
+            *self = ViewPos::Static(anim.to());
+        }
     }
 
     fn animate_from_with_config(

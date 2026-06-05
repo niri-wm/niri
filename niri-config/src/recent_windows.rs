@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use knus::errors::DecodeError;
 use smithay::input::keyboard::Keysym;
 
-use crate::utils::{expect_only_children, MergeWith};
+use crate::utils::{MergeWith, expect_only_children};
 use crate::{Action, Bind, Color, FloatOrInt, Key, Modifiers, Trigger};
 
 #[derive(Debug, PartialEq)]

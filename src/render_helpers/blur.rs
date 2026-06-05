@@ -2,9 +2,9 @@ use std::cmp::max;
 use std::iter::{once, zip};
 use std::rc::Rc;
 
-use anyhow::{ensure, Context as _};
+use anyhow::{Context as _, ensure};
 use smithay::backend::allocator::Fourcc;
-use smithay::backend::renderer::gles::{ffi, link_program, GlesError, GlesRenderer, GlesTexture};
+use smithay::backend::renderer::gles::{GlesError, GlesRenderer, GlesTexture, ffi, link_program};
 use smithay::backend::renderer::{ContextId, Renderer as _, Texture as _};
 use smithay::gpu_span_location;
 use smithay::utils::{Buffer, Size};
@@ -55,22 +55,24 @@ struct BlurProgramInternal {
     attrib_vert: ffi::types::GLint,
 }
 
-unsafe fn compile_program(gl: &ffi::Gles2, src: &str) -> Result<BlurProgramInternal, GlesError> { unsafe {
-    let program = link_program(gl, include_str!("shaders/blur.vert"), src)?;
+unsafe fn compile_program(gl: &ffi::Gles2, src: &str) -> Result<BlurProgramInternal, GlesError> {
+    unsafe {
+        let program = link_program(gl, include_str!("shaders/blur.vert"), src)?;
 
-    let vert = c"vert";
-    let tex = c"tex";
-    let half_pixel = c"half_pixel";
-    let offset = c"offset";
+        let vert = c"vert";
+        let tex = c"tex";
+        let half_pixel = c"half_pixel";
+        let offset = c"offset";
 
-    Ok(BlurProgramInternal {
-        program,
-        uniform_tex: gl.GetUniformLocation(program, tex.as_ptr()),
-        uniform_half_pixel: gl.GetUniformLocation(program, half_pixel.as_ptr()),
-        uniform_offset: gl.GetUniformLocation(program, offset.as_ptr()),
-        attrib_vert: gl.GetAttribLocation(program, vert.as_ptr()),
-    })
-}}
+        Ok(BlurProgramInternal {
+            program,
+            uniform_tex: gl.GetUniformLocation(program, tex.as_ptr()),
+            uniform_half_pixel: gl.GetUniformLocation(program, half_pixel.as_ptr()),
+            uniform_offset: gl.GetUniformLocation(program, offset.as_ptr()),
+            attrib_vert: gl.GetAttribLocation(program, vert.as_ptr()),
+        })
+    }
+}
 
 impl BlurProgram {
     pub fn compile(renderer: &mut GlesRenderer) -> anyhow::Result<Self> {
@@ -123,10 +125,7 @@ impl Blur {
             if old_size != size {
                 trace!(
                     "recreating textures: output size changed from {} × {} to {} × {}",
-                    old_size.w,
-                    old_size.h,
-                    size.w,
-                    size.h
+                    old_size.w, old_size.h, size.w, size.h
                 );
                 self.textures.clear();
             } else if !output.is_unique_reference() {

@@ -10,6 +10,7 @@ use gtk::{gdk, gio, glib};
 use smithay_view::SmithayView;
 use tracing_subscriber::EnvFilter;
 
+use crate::cases::TestCase;
 use crate::cases::gradient_angle::GradientAngle;
 use crate::cases::gradient_area::GradientArea;
 use crate::cases::gradient_oklab::GradientOklab;
@@ -26,7 +27,6 @@ use crate::cases::gradient_srgblinear_alpha::GradientSrgbLinearAlpha;
 use crate::cases::layout::Layout;
 use crate::cases::tile::Tile;
 use crate::cases::window::Window;
-use crate::cases::TestCase;
 
 mod cases;
 mod smithay_view;

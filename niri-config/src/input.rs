@@ -4,9 +4,9 @@ use miette::miette;
 use smithay::input::keyboard::XkbConfig;
 use smithay::reexports::input;
 
+use crate::FloatOrInt;
 use crate::binds::Modifiers;
 use crate::utils::{Flag, MergeWith, Percent};
-use crate::FloatOrInt;
 
 #[derive(Debug, Default, PartialEq)]
 pub struct Input {

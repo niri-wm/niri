@@ -1,11 +1,11 @@
 use std::os::fd::OwnedFd;
 use std::os::unix::net::{SocketAddr, UnixListener};
 
-use anyhow::{anyhow, ensure, Context as _};
+use anyhow::{Context as _, anyhow, ensure};
 use rustix::fs::{lstat, mkdir};
 use rustix::io::Errno;
 use rustix::process::getuid;
-use smithay::reexports::rustix::fs::{unlink, OFlags};
+use smithay::reexports::rustix::fs::{OFlags, unlink};
 use smithay::reexports::rustix::process::getpid;
 use smithay::reexports::rustix::{self};
 

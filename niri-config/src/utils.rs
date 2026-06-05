@@ -138,10 +138,8 @@ impl<S: knus::traits::ErrorSpan, const MIN: i32, const MAX: i32> knus::DecodeSca
     }
 }
 
-pub fn expect_only_children<S>(
-    node: &knus::ast::SpannedNode<S>,
-    ctx: &mut knus::decode::Context<S>,
-) where
+pub fn expect_only_children<S>(node: &knus::ast::SpannedNode<S>, ctx: &mut knus::decode::Context<S>)
+where
     S: knus::traits::ErrorSpan,
 {
     if let Some(type_name) = &node.type_name {

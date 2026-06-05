@@ -30,13 +30,14 @@ impl SwipeTracker {
         // For the events that we care about, timestamps should always increase
         // monotonically.
         if let Some(last) = self.history.back()
-            && timestamp < last.timestamp {
-                trace!(
-                    "ignoring event with timestamp {timestamp:?} earlier than last {:?}",
-                    last.timestamp
-                );
-                return;
-            }
+            && timestamp < last.timestamp
+        {
+            trace!(
+                "ignoring event with timestamp {timestamp:?} earlier than last {:?}",
+                last.timestamp
+            );
+            return;
+        }
 
         self.history.push_back(Event { delta, timestamp });
         self.pos += delta;

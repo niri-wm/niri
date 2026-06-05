@@ -13,7 +13,7 @@ use calloop::futures::Scheduler;
 use calloop::io::Async;
 use directories::BaseDirs;
 use futures_util::io::{AsyncReadExt, BufReader};
-use futures_util::{select_biased, AsyncBufReadExt, AsyncWrite, AsyncWriteExt, FutureExt as _};
+use futures_util::{AsyncBufReadExt, AsyncWrite, AsyncWriteExt, FutureExt as _, select_biased};
 use niri_config::OutputName;
 use niri_ipc::state::{EventStreamState, EventStreamStatePart as _};
 use niri_ipc::{
@@ -214,9 +214,10 @@ async fn handle_client(ctx: ClientCtx, stream: Async<'static, UnixStream>) -> an
         };
 
         if let Err(err) = &reply
-            && !requested_error {
-                warn!("error processing IPC request: {err:?}");
-            }
+            && !requested_error
+        {
+            warn!("error processing IPC request: {err:?}");
+        }
 
         buf.clear();
         serde_json::to_writer(&mut buf, &reply).context("error formatting reply")?;
@@ -464,13 +465,14 @@ fn validate_action(action: &Action) -> Result<(), String> {
     | Action::ScreenshotScreen { path, .. }
     | Action::ScreenshotWindow { path, .. }
     | Action::LoadConfigFile { path } = action
-        && let Some(path) = path {
-            // Relative paths are resolved against the niri compositor's working directory, which
-            // is almost certainly not what you want.
-            if !Path::new(path).is_absolute() {
-                return Err(format!("path must be absolute: {path}"));
-            }
+        && let Some(path) = path
+    {
+        // Relative paths are resolved against the niri compositor's working directory, which
+        // is almost certainly not what you want.
+        if !Path::new(path).is_absolute() {
+            return Err(format!("path must be absolute: {path}"));
         }
+    }
 
     if let Action::LoadConfigFile { path: Some(path) } = action {
         let p = Path::new(path);

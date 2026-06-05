@@ -210,7 +210,7 @@ impl DisplayConfig {
                             x => {
                                 return Err(zbus::fdo::Error::Failed(format!(
                                     "Unknown transform {x}",
-                                )))
+                                )));
                             }
                         },
                         position: Some(niri_config::Position {

@@ -5,9 +5,9 @@ use smithay::backend::renderer::gles::GlesTexture;
 use smithay::utils::{Scale, Transform};
 
 use crate::animation::Clock;
+use crate::render_helpers::RenderTarget;
 use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use crate::render_helpers::texture::{TextureBuffer, TextureRenderElement};
-use crate::render_helpers::RenderTarget;
 
 pub const DELAY: Duration = Duration::from_millis(250);
 pub const DURATION: Duration = Duration::from_millis(500);

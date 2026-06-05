@@ -1,6 +1,6 @@
+use smithay::backend::renderer::Renderer;
 use smithay::backend::renderer::element::{Element, Id, RenderElement};
 use smithay::backend::renderer::utils::CommitCounter;
-use smithay::backend::renderer::Renderer;
 use smithay::utils::user_data::UserDataMap;
 use smithay::utils::{Buffer, Logical, Physical, Rectangle, Scale, Size};
 

@@ -4,8 +4,8 @@ use std::mem;
 use niri_config::{CornerRadius, Gradient, GradientRelativeTo, TabIndicatorPosition};
 use smithay::utils::{Logical, Point, Rectangle, Size};
 
-use super::tile::Tile;
 use super::LayoutElement;
+use super::tile::Tile;
 use crate::animation::{Animation, Clock};
 use crate::niri_render_elements;
 use crate::render_helpers::border::BorderRenderElement;
@@ -58,9 +58,10 @@ impl TabIndicator {
 
     pub fn advance_animations(&mut self) {
         if let Some(anim) = &mut self.open_anim
-            && anim.is_done() {
-                self.open_anim = None;
-            }
+            && anim.is_done()
+        {
+            self.open_anim = None;
+        }
     }
 
     pub fn are_animations_ongoing(&self) -> bool {

@@ -1,7 +1,7 @@
 use std::time::Duration;
 
-use keyframe::functions::{EaseOutCubic, EaseOutQuad};
 use keyframe::EasingFunction;
+use keyframe::functions::{EaseOutCubic, EaseOutQuad};
 
 mod bezier;
 use bezier::CubicBezier;

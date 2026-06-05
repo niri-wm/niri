@@ -21,9 +21,9 @@ use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
-use knus::errors::DecodeError;
 use knus::Decode as _;
-use miette::{miette, Context as _, IntoDiagnostic as _};
+use knus::errors::DecodeError;
+use miette::{Context as _, IntoDiagnostic as _, miette};
 
 #[macro_use]
 pub mod macros;
@@ -403,20 +403,20 @@ where
                             let relative_path = path.strip_prefix(root_base).ok().unwrap_or(&path);
                             let filename = relative_path.to_str().unwrap_or(filename);
 
-                            let part = knus::parse_with_context::<
-                                ConfigPart,
-                                knus::span::Span,
-                                _,
-                            >(filename, &text, |ctx| {
-                                ctx.set(BasePath(base));
-                                ctx.set(RootBase(root_base.clone()));
-                                ctx.set(Recursion(recursion));
-                                ctx.set(includes.clone());
-                                ctx.set(include_errors.clone());
-                                ctx.set(IncludeStack(include_stack));
-                                ctx.set(SawMruBinds(saw_mru_binds.clone()));
-                                ctx.set(config.clone());
-                            });
+                            let part = knus::parse_with_context::<ConfigPart, knus::span::Span, _>(
+                                filename,
+                                &text,
+                                |ctx| {
+                                    ctx.set(BasePath(base));
+                                    ctx.set(RootBase(root_base.clone()));
+                                    ctx.set(Recursion(recursion));
+                                    ctx.set(includes.clone());
+                                    ctx.set(include_errors.clone());
+                                    ctx.set(IncludeStack(include_stack));
+                                    ctx.set(SawMruBinds(saw_mru_binds.clone()));
+                                    ctx.set(config.clone());
+                                },
+                            );
 
                             match part {
                                 Ok(_) => {}
@@ -504,10 +504,8 @@ impl Config {
         let include_errors = Rc::new(RefCell::new(IncludeErrors(Vec::new())));
         let include_stack = HashSet::from([path.to_path_buf()]);
 
-        let part = knus::parse_with_context::<ConfigPart, knus::span::Span, _>(
-            filename,
-            text,
-            |ctx| {
+        let part =
+            knus::parse_with_context::<ConfigPart, knus::span::Span, _>(filename, text, |ctx| {
                 ctx.set(BasePath(base.clone()));
                 ctx.set(RootBase(base));
                 ctx.set(Recursion(0));
@@ -516,8 +514,7 @@ impl Config {
                 ctx.set(IncludeStack(include_stack));
                 ctx.set(SawMruBinds(Rc::new(Cell::new(false))));
                 ctx.set(config.clone());
-            },
-        );
+            });
 
         let includes = includes.take().0;
         let include_errors = include_errors.take().0;

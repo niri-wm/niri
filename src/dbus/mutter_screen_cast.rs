@@ -7,7 +7,7 @@ use serde::Deserialize;
 use zbus::fdo::RequestNameFlags;
 use zbus::object_server::{InterfaceRef, SignalEmitter};
 use zbus::zvariant::{DeserializeDict, OwnedObjectPath, SerializeDict, Type, Value};
-use zbus::{fdo, interface, ObjectServer};
+use zbus::{ObjectServer, fdo, interface};
 
 use super::Start;
 use crate::backend::IpcOutputMap;
@@ -131,7 +131,7 @@ impl ScreenCast {
             Err(err) => {
                 return Err(fdo::Error::Failed(format!(
                     "error creating session object: {err:?}"
-                )))
+                )));
             }
         }
 
@@ -228,7 +228,7 @@ impl Session {
             Err(err) => {
                 return Err(fdo::Error::Failed(format!(
                     "error creating stream object: {err:?}"
-                )))
+                )));
             }
         }
 
@@ -267,7 +267,7 @@ impl Session {
             Err(err) => {
                 return Err(fdo::Error::Failed(format!(
                     "error creating stream object: {err:?}"
-                )))
+                )));
             }
         }
 
@@ -282,7 +282,7 @@ impl Session {
 impl Stream {
     #[zbus(signal)]
     pub async fn pipe_wire_stream_added(ctxt: &SignalEmitter<'_>, node_id: u32)
-        -> zbus::Result<()>;
+    -> zbus::Result<()>;
 
     #[zbus(property)]
     async fn parameters(&self) -> StreamParameters {

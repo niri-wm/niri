@@ -10,17 +10,17 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::{io, mem};
 
-use anyhow::{anyhow, bail, ensure, Context};
+use anyhow::{Context, anyhow, bail, ensure};
 use bytemuck::cast_slice_mut;
 use drm_ffi::drm_mode_modeinfo;
 use libc::dev_t;
 use niri_config::output::{MaxBpc, Modeline};
 use niri_config::{Config, OutputName};
 use niri_ipc::{HSyncPolarity, VSyncPolarity};
+use smithay::backend::allocator::Fourcc;
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::allocator::format::FormatSet;
 use smithay::backend::allocator::gbm::{GbmAllocator, GbmBufferFlags, GbmDevice};
-use smithay::backend::allocator::Fourcc;
 use smithay::backend::drm::compositor::{DrmCompositor, FrameFlags, PrimaryPlaneElement};
 use smithay::backend::drm::exporter::gbm::GbmFramebufferExporter;
 use smithay::backend::drm::{
@@ -43,8 +43,8 @@ use smithay::reexports::calloop::{Dispatcher, LoopHandle, RegistrationToken};
 use smithay::reexports::drm::control::atomic::AtomicModeReq;
 use smithay::reexports::drm::control::dumbbuffer::DumbBuffer;
 use smithay::reexports::drm::control::{
-    self, connector, crtc, plane, property, AtomicCommitFlags, Device, Mode as DrmMode, ModeFlags,
-    ModeTypeFlags, PlaneType, ResourceHandle,
+    self, AtomicCommitFlags, Device, Mode as DrmMode, ModeFlags, ModeTypeFlags, PlaneType,
+    ResourceHandle, connector, crtc, plane, property,
 };
 use smithay::reexports::gbm::Modifier;
 use smithay::reexports::input::Libinput;
@@ -67,8 +67,8 @@ use crate::frame_clock::FrameClock;
 use crate::niri::{Niri, RedrawState, State};
 use crate::render_helpers::debug::draw_damage;
 use crate::render_helpers::renderer::AsGlesRenderer;
-use crate::render_helpers::{resources, shaders, RenderCtx, RenderTarget};
-use crate::utils::{get_monotonic_time, is_laptop_panel, logical_output, PanelOrientation};
+use crate::render_helpers::{RenderCtx, RenderTarget, resources, shaders};
+use crate::utils::{PanelOrientation, get_monotonic_time, is_laptop_panel, logical_output};
 
 const SUPPORTED_COLOR_FORMATS: [Fourcc; 8] = [
     Fourcc::Xrgb2101010,
@@ -259,9 +259,10 @@ impl OutputDevice {
                     match self.drm.get_encoder(enc) {
                         Ok(enc) => {
                             if let Some(current_crtc) = enc.crtc()
-                                && current_crtc != crtc {
-                                    has_different_crtc = true;
-                                }
+                                && current_crtc != crtc
+                            {
+                                has_different_crtc = true;
+                            }
                         }
                         Err(err) => {
                             debug!("couldn't get encoder: {err:?}");
@@ -706,9 +707,10 @@ impl Tty {
                                 warn!("error applying pending gamma change: {err:?}");
                             }
                         } else if let Some(gamma_props) = &surface.gamma_props
-                            && let Err(err) = gamma_props.restore_gamma(&device.drm) {
-                                warn!("error restoring gamma: {err:?}");
-                            }
+                            && let Err(err) = gamma_props.restore_gamma(&device.drm)
+                        {
+                            warn!("error restoring gamma: {err:?}");
+                        }
                     }
                 }
 
@@ -1511,9 +1513,10 @@ impl Tty {
         // Some buggy monitors replug upon powering off, so powering on here would prevent such
         // monitors from powering off. Therefore, we avoid unconditionally powering on.
         if !niri.monitors_active
-            && let Err(err) = compositor.clear() {
-                warn!("error clearing drm surface: {err:?}");
-            }
+            && let Err(err) = compositor.clear()
+        {
+            warn!("error clearing drm surface: {err:?}");
+        }
 
         let vrr_enabled = compositor.vrr_enabled();
 
@@ -1940,13 +1943,12 @@ impl Tty {
                         .borrow()
                         .debug
                         .wait_for_frame_completion_before_queueing;
-                if needs_sync
-                    && let PrimaryPlaneElement::Swapchain(element) = res.primary_element {
-                        let _span = tracy_client::span!("wait for completion");
-                        if let Err(err) = element.sync.wait() {
-                            warn!("error waiting for frame completion: {err:?}");
-                        }
+                if needs_sync && let PrimaryPlaneElement::Swapchain(element) = res.primary_element {
+                    let _span = tracy_client::span!("wait for completion");
+                    if let Err(err) = element.sync.wait() {
+                        warn!("error waiting for frame completion: {err:?}");
                     }
+                }
 
                 niri.update_primary_scanout_output(output, &res.states);
                 if let Some(dmabuf_feedback) = surface.dmabuf_feedback.as_ref() {
@@ -2717,9 +2719,10 @@ impl GammaProps {
         }
 
         if let Some(blob) = mem::replace(&mut self.previous_blob, blob)
-            && let Err(err) = device.destroy_property_blob(blob.get()) {
-                warn!("error destroying previous GAMMA_LUT blob: {err:?}");
-            }
+            && let Err(err) = device.destroy_property_blob(blob.get())
+        {
+            warn!("error destroying previous GAMMA_LUT blob: {err:?}");
+        }
 
         Ok(())
     }
@@ -3377,14 +3380,14 @@ fn set_connector_properties(
     reset_hdr: bool,
 ) {
     if let Some(max_bpc) = max_bpc
-        && let Err(err) = props.set_max_bpc(max_bpc) {
-            debug!("failed to set `max bpc` property: {err}");
-        }
+        && let Err(err) = props.set_max_bpc(max_bpc)
+    {
+        debug!("failed to set `max bpc` property: {err}");
+    }
 
-    if reset_hdr
-        && let Err(err) = props.reset_hdr() {
-            debug!("failed to set HDR properties: {err}");
-        }
+    if reset_hdr && let Err(err) = props.reset_hdr() {
+        debug!("failed to set HDR properties: {err}");
+    }
 
     if let Err(err) = props.commit() {
         warn!("failed to atomically commit properties: {err}");
@@ -3474,12 +3477,12 @@ fn make_output_name(
 unsafe fn init_libinput_plugin_system(libinput: &Libinput) {
     #[cfg(have_libinput_plugin_system)]
     unsafe {
-        use std::ffi::{c_char, c_int, CString};
+        use std::ffi::{CString, c_char, c_int};
         use std::os::unix::ffi::OsStringExt;
 
         use directories::BaseDirs;
-        use input::ffi::libinput;
         use input::AsRaw as _;
+        use input::ffi::libinput;
 
         unsafe extern "C" {
             fn libinput_plugin_system_append_path(libinput: *const libinput, path: *const c_char);

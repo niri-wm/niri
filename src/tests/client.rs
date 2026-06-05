@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use std::fmt;
 use std::fmt::Write as _;
 use std::os::unix::net::UnixStream;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use calloop::EventLoop;

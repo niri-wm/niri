@@ -10,8 +10,8 @@
 //!   expected to be stable across sessions.
 //! - Workspace name: name for named workspaces, index for unnamed.
 
-use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use std::mem;
 
 use arrayvec::ArrayVec;
@@ -222,20 +222,21 @@ fn send_workspace_enter_leave(
     enter: bool,
 ) {
     if let Some(output) = &data.output
-        && let Some(group_data) = workspace_groups.get(output) {
-            for group in &group_data.instances {
-                let manager: &ExtWorkspaceManagerV1 = group.data().unwrap();
-                for workspace in &data.instances {
-                    if workspace.data() == Some(manager) {
-                        if enter {
-                            group.workspace_enter(workspace);
-                        } else {
-                            group.workspace_leave(workspace);
-                        }
+        && let Some(group_data) = workspace_groups.get(output)
+    {
+        for group in &group_data.instances {
+            let manager: &ExtWorkspaceManagerV1 = group.data().unwrap();
+            for workspace in &data.instances {
+                if workspace.data() == Some(manager) {
+                    if enter {
+                        group.workspace_enter(workspace);
+                    } else {
+                        group.workspace_leave(workspace);
                     }
                 }
             }
         }
+    }
 }
 
 fn remove_workspace_instances(

@@ -16,13 +16,13 @@ use smithay::backend::input::{InputEvent, TabletToolDescriptor};
 use smithay::desktop::{PopupKind, PopupManager};
 use smithay::input::dnd::{self, DnDGrab, DndGrabHandler, DndTarget};
 use smithay::input::pointer::{CursorIcon, CursorImageStatus, Focus, PointerHandle};
-use smithay::input::{keyboard, Seat, SeatHandler, SeatState};
+use smithay::input::{Seat, SeatHandler, SeatState, keyboard};
 use smithay::output::Output;
-use smithay::reexports::rustix::fs::{fcntl_setfl, OFlags};
+use smithay::reexports::rustix::fs::{OFlags, fcntl_setfl};
 use smithay::reexports::wayland_protocols_wlr::screencopy::v1::server::zwlr_screencopy_manager_v1::ZwlrScreencopyManagerV1;
+use smithay::reexports::wayland_server::Resource;
 use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::reexports::wayland_server::Resource;
 use smithay::utils::{Logical, Point, Rectangle, Serial};
 use smithay::wayland::compositor::{get_parent, with_states};
 use smithay::wayland::dmabuf::{DmabufGlobal, DmabufHandler, DmabufState, ImportNotifier};
@@ -37,18 +37,18 @@ use smithay::wayland::keyboard_shortcuts_inhibit::{
     KeyboardShortcutsInhibitHandler, KeyboardShortcutsInhibitState, KeyboardShortcutsInhibitor,
 };
 use smithay::wayland::output::OutputHandler;
-use smithay::wayland::pointer_constraints::{with_pointer_constraint, PointerConstraintsHandler};
+use smithay::wayland::pointer_constraints::{PointerConstraintsHandler, with_pointer_constraint};
 use smithay::wayland::security_context::{
     SecurityContext, SecurityContextHandler, SecurityContextListenerSource,
 };
 use smithay::wayland::selection::data_device::{
-    set_data_device_focus, DataDeviceHandler, DataDeviceState, WaylandDndGrabHandler,
+    DataDeviceHandler, DataDeviceState, WaylandDndGrabHandler, set_data_device_focus,
 };
 use smithay::wayland::selection::ext_data_control::{
     DataControlHandler as ExtDataControlHandler, DataControlState as ExtDataControlState,
 };
 use smithay::wayland::selection::primary_selection::{
-    set_primary_focus, PrimarySelectionHandler, PrimarySelectionState,
+    PrimarySelectionHandler, PrimarySelectionState, set_primary_focus,
 };
 use smithay::wayland::selection::wlr_data_control::{
     DataControlHandler as WlrDataControlHandler, DataControlState as WlrDataControlState,
@@ -73,8 +73,8 @@ use smithay::{
 };
 
 pub use crate::handlers::xdg_shell::KdeDecorationsModeState;
-use crate::layout::workspace::WorkspaceId;
 use crate::layout::ActivateWindow;
+use crate::layout::workspace::WorkspaceId;
 use crate::niri::{DndIcon, NewClient, State};
 use crate::protocols::ext_workspace::{self, ExtWorkspaceHandler, ExtWorkspaceManagerState};
 use crate::protocols::foreign_toplevel::{
@@ -559,14 +559,15 @@ impl ForeignToplevelHandler for State {
 
             if let Some(requested_output) =
                 wl_output.and_then(|o| self.niri.output_from_resource(&o))
-                && Some(&requested_output) != current_output {
-                    self.niri.layout.move_to_output(
-                        Some(&window),
-                        &requested_output,
-                        None,
-                        ActivateWindow::Smart,
-                    );
-                }
+                && Some(&requested_output) != current_output
+            {
+                self.niri.layout.move_to_output(
+                    Some(&window),
+                    &requested_output,
+                    None,
+                    ActivateWindow::Smart,
+                );
+            }
 
             self.niri.layout.set_fullscreen(&window, true);
         }
@@ -604,9 +605,10 @@ impl ExtWorkspaceHandler for State {
         let reference = niri_config::WorkspaceReference::Id(id.get());
         if let Some((mut output, index)) = self.niri.find_output_and_workspace_index(reference) {
             if let Some(active) = self.niri.layout.active_output()
-                && output.as_ref() == Some(active) {
-                    output = None;
-                }
+                && output.as_ref() == Some(active)
+            {
+                output = None;
+            }
 
             if let Some(output) = output {
                 self.niri.layout.focus_output(&output);

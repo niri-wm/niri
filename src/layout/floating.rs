@@ -17,13 +17,13 @@ use super::{
 };
 use crate::animation::{Animation, Clock};
 use crate::niri_render_elements;
+use crate::render_helpers::RenderCtx;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::xray::XrayPos;
-use crate::render_helpers::RenderCtx;
 use crate::utils::transaction::TransactionBlocker;
 use crate::utils::{
-    center_preferring_top_left_in_area, clamp_preferring_top_left_in_area, ensure_min_max_size,
-    ensure_min_max_size_maybe_zero, ResizeEdge,
+    ResizeEdge, center_preferring_top_left_in_area, clamp_preferring_top_left_in_area,
+    ensure_min_max_size, ensure_min_max_size_maybe_zero,
 };
 use crate::window::ResolvedWindowRules;
 
@@ -521,9 +521,10 @@ impl<W: LayoutElement> FloatingSpace<W> {
 
         // Stop interactive resize.
         if let Some(resize) = &self.interactive_resize
-            && tile.window().id() == &resize.window {
-                self.interactive_resize = None;
-            }
+            && tile.window().id() == &resize.window
+        {
+            self.interactive_resize = None;
+        }
 
         // Store the floating size if we have one.
         if let Some(size) = tile.window().expected_size() {
@@ -1153,9 +1154,10 @@ impl<W: LayoutElement> FloatingSpace<W> {
         };
 
         if let Some(window) = window
-            && window != &resize.window {
-                return;
-            }
+            && window != &resize.window
+        {
+            return;
+        }
 
         self.interactive_resize = None;
     }

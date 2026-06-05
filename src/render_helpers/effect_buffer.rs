@@ -1,6 +1,6 @@
 use std::mem;
 
-use anyhow::{ensure, Context as _};
+use anyhow::{Context as _, ensure};
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::element::{Id, RenderElementStates};
@@ -119,10 +119,11 @@ impl EffectBuffer {
         self.blur_options = options;
 
         if let Some(offscreen) = &mut self.offscreen
-            && offscreen.blurred.is_some() {
-                offscreen.blurred = None;
-                self.commit_counter.increment();
-            }
+            && offscreen.blurred.is_some()
+        {
+            offscreen.blurred = None;
+            self.commit_counter.increment();
+        }
     }
 
     pub fn elements(&mut self) -> &mut Vec<OutputRenderElements<GlesRenderer>> {
@@ -144,11 +145,10 @@ impl EffectBuffer {
             return false;
         };
 
-        if blur
-            && let Err(err) = self.prepare_blur(renderer) {
-                warn!("error preparing blur: {err:?}");
-                return false;
-            }
+        if blur && let Err(err) = self.prepare_blur(renderer) {
+            warn!("error preparing blur: {err:?}");
+            return false;
+        }
 
         true
     }
@@ -268,10 +268,11 @@ impl EffectBuffer {
         }
 
         if let Some(blur) = &self.blur
-            && blur.context_id() != renderer.context_id() {
-                debug!("recreating blur: renderer changed");
-                self.blur = None;
-            }
+            && blur.context_id() != renderer.context_id()
+        {
+            debug!("recreating blur: renderer changed");
+            self.blur = None;
+        }
 
         let blur = if let Some(blur) = &mut self.blur {
             blur
