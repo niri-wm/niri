@@ -4763,8 +4763,18 @@ fn hardcoded_overview_bind(raw: Keysym, mods: ModifiersState) -> Option<Bind> {
 }
 
 pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::Device) {
-    // According to Mutter code, this setting is specific to touchpads.
-    let is_touchpad = device.config_tap_finger_count() > 0;
+    // Detect touchpads. Prefer udev's ID_INPUT_TOUCHPAD because
+    // config_tap_finger_count() can return 0 on devices that initialise
+    // in a degraded multi-touch state (e.g. Synaptics RMI4 clickpads),
+    // which would silently skip the entire touchpad{} config block.
+    // Falls back to the old check when no udev device is attached
+    // (e.g. winit backend during development).
+    let is_touchpad = if let Some(udev_device) = unsafe { device.udev_device() } {
+        udev_device.property_value("ID_INPUT_TOUCHPAD").is_some()
+            || device.config_tap_finger_count() > 0
+    } else {
+        device.config_tap_finger_count() > 0
+    };
     if is_touchpad {
         let c = &config.touchpad;
         let _ = device.config_send_events_set_mode(if c.off {
