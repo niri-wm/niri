@@ -53,7 +53,7 @@ keywords = ["wayland", "compositor", "tiling", "smithay", "wm"]
 # accesskit_unix 0.18 regressed screen reader support (niri-wm/niri#3594, AccessKit/accesskit-c#76).
 # Root cause: 0.18 switched to activating only when a screen reader is detected, using the wrong
 # D-Bus property (ScreenReaderEnabled). Fix landed in accesskit_unix main (PR #715, commit e7299a7)
-# switching to IsEnabled — expected in 0.21.2, not yet published on crates.io (as of 2026-06-06).
+# switching to IsEnabled; expected in 0.21.2, not yet published on crates.io (as of 2026-06-06).
 # When 0.21.2 ships: bump both to accesskit="0.24" + accesskit_unix="0.21", and adapt to
 # `tree_id: TreeId::ROOT` in src/a11y.rs (TreeUpdate gained that field in accesskit 0.22+).
 accesskit = { version = "0.21", optional = true }
