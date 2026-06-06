@@ -50,9 +50,14 @@ readme = "README.md"
 keywords = ["wayland", "compositor", "tiling", "smithay", "wm"]
 
 [dependencies]
-# unfortunately, pinned to 0.21/0.17 — accesskit_unix 0.18+ breaks screen readers (niri-wm/niri#3594)
-accesskit = { version = "0.21", optional = true } # do not upgrade that from 0.21 until resolution on #3594
-accesskit_unix = { version = "0.17", optional = true } # do not upgrade that from 0.17 until resolution on #3594
+# accesskit_unix 0.18 regressed screen reader support (niri-wm/niri#3594, AccessKit/accesskit-c#76).
+# Root cause: 0.18 switched to activating only when a screen reader is detected, using the wrong
+# D-Bus property (ScreenReaderEnabled). Fix landed in accesskit_unix main (PR #715, commit e7299a7)
+# switching to IsEnabled — expected in 0.21.2, not yet published on crates.io (as of 2026-06-06).
+# When 0.21.2 ships: bump both to accesskit="0.24" + accesskit_unix="0.21", and adapt to
+# `tree_id: TreeId::ROOT` in src/a11y.rs (TreeUpdate gained that field in accesskit 0.22+).
+accesskit = { version = "0.21", optional = true }
+accesskit_unix = { version = "0.17", optional = true }
 anyhow.workspace = true
 arrayvec = "0.7"
 async-channel = "2.5"
