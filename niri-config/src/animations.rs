@@ -10,6 +10,7 @@ pub struct Animations {
     pub slowdown: f64,
     pub workspace_switch: WorkspaceSwitchAnim,
     pub window_open: WindowOpenAnim,
+    pub layer_open: LayerOpenAnim,
     pub window_close: WindowCloseAnim,
     pub horizontal_view_movement: HorizontalViewMovementAnim,
     pub window_movement: WindowMovementAnim,
@@ -30,6 +31,7 @@ impl Default for Animations {
             horizontal_view_movement: Default::default(),
             window_movement: Default::default(),
             window_open: Default::default(),
+            layer_open: Default::default(),
             window_close: Default::default(),
             window_resize: Default::default(),
             config_notification_open_close: Default::default(),
@@ -53,6 +55,8 @@ pub struct AnimationsPart {
     pub workspace_switch: Option<WorkspaceSwitchAnim>,
     #[knuffel(child)]
     pub window_open: Option<WindowOpenAnim>,
+    #[knuffel(child)]
+    pub layer_open: Option<LayerOpenAnim>,
     #[knuffel(child)]
     pub window_close: Option<WindowCloseAnim>,
     #[knuffel(child)]
@@ -88,6 +92,7 @@ impl MergeWith<AnimationsPart> for Animations {
             (self, part),
             workspace_switch,
             window_open,
+            layer_open,
             window_close,
             horizontal_view_movement,
             window_movement,
@@ -169,6 +174,21 @@ impl Default for WindowOpenAnim {
             },
             custom_shader: None,
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LayerOpenAnim(pub Animation);
+
+impl Default for LayerOpenAnim {
+    fn default() -> Self {
+        Self(Animation {
+            off: false,
+            kind: Kind::Easing(EasingParams {
+                duration_ms: 150,
+                curve: Curve::EaseOutExpo,
+            }),
+        })
     }
 }
 
@@ -394,6 +414,21 @@ where
             anim,
             custom_shader,
         })
+    }
+}
+
+impl<S> knuffel::Decode<S> for LayerOpenAnim
+where
+    S: knuffel::traits::ErrorSpan,
+{
+    fn decode_node(
+        node: &knuffel::ast::SpannedNode<S>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) -> Result<Self, DecodeError<S>> {
+        let default = Self::default().0;
+        Ok(Self(Animation::decode_node(node, ctx, default, |_, _| {
+            Ok(false)
+        })?))
     }
 }
 

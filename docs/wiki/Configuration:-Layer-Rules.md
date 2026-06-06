@@ -35,6 +35,7 @@ layer-rule {
     geometry-corner-radius 12
     place-within-backdrop true
     baba-is-float true
+    open-animation true
 
     background-effect {
         xray true
@@ -225,6 +226,22 @@ layer-rule {
     match namespace="^launcher$"
 
     baba-is-float true
+}
+```
+
+#### `open-animation`
+
+Set to `true` to animate this layer surface opening.
+Layer surfaces do not animate by default.
+
+The timing is configured with [`animations.layer-open`](./Configuration:-Animations.md#layer-open).
+
+```kdl
+// Animate fuzzel opening.
+layer-rule {
+    match namespace="^launcher$"
+
+    open-animation true
 }
 ```
 

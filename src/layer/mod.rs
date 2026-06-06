@@ -28,6 +28,9 @@ pub struct ResolvedLayerRules {
     /// Whether to bob this window up and down.
     pub baba_is_float: bool,
 
+    /// Whether to animate this layer surface opening.
+    pub open_animation: Option<bool>,
+
     /// Background effect configuration.
     pub background_effect: BackgroundEffect,
 
@@ -74,6 +77,9 @@ impl ResolvedLayerRules {
             }
             if let Some(x) = rule.baba_is_float {
                 resolved.baba_is_float = x;
+            }
+            if let Some(x) = rule.open_animation {
+                resolved.open_animation = Some(x);
             }
 
             resolved.shadow.merge_with(&rule.shadow);

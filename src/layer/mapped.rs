@@ -8,7 +8,8 @@ use smithay::wayland::compositor::{remove_pre_commit_hook, HookId};
 use smithay::wayland::shell::wlr_layer::{ExclusiveZone, Layer};
 
 use super::ResolvedLayerRules;
-use crate::animation::Clock;
+use crate::animation::{Animation, Clock};
+use crate::layout::opening_window::{OpenAnimation, OpeningWindowRenderElement};
 use crate::layout::shadow::Shadow;
 use crate::niri_render_elements;
 use crate::render_helpers::background_effect::BackgroundEffectElement;
@@ -42,6 +43,9 @@ pub struct MappedLayer {
     /// The shadow around the surface.
     shadow: Shadow,
 
+    /// The animation upon opening this layer surface.
+    open_animation: Option<OpenAnimation>,
+
     /// The blur config, passed for background effect rendering.
     blur_config: niri_config::Blur,
 
@@ -61,6 +65,7 @@ niri_render_elements! {
         SolidColor = SolidColorRenderElement,
         Shadow = ShadowRenderElement,
         BackgroundEffect = BackgroundEffectElement,
+        Opening = OpeningWindowRenderElement,
     }
 }
 
@@ -79,6 +84,8 @@ impl MappedLayer {
         shadow_config.on = false;
         shadow_config.merge_with(&rules.shadow);
 
+        let open_animation = layer_open_animation(&rules, clock.clone(), config);
+
         Self {
             surface,
             pre_commit_hook,
@@ -88,6 +95,7 @@ impl MappedLayer {
             view_size,
             scale,
             shadow: Shadow::new(shadow_config),
+            open_animation,
             blur_config: config.blur,
             clock,
         }
@@ -127,7 +135,17 @@ impl MappedLayer {
     }
 
     pub fn are_animations_ongoing(&self) -> bool {
-        self.rules.baba_is_float
+        self.rules.baba_is_float || self.open_animation.is_some()
+    }
+
+    pub fn advance_animations(&mut self) {
+        if self
+            .open_animation
+            .as_ref()
+            .is_some_and(OpenAnimation::is_done)
+        {
+            self.open_animation = None;
+        }
     }
 
     pub fn surface(&self) -> &LayerSurface {
@@ -192,10 +210,64 @@ impl MappedLayer {
         xray_pos: XrayPos,
         push: &mut dyn FnMut(LayerSurfaceRenderElement<R>),
     ) {
+        if let Some(open) = &self.open_animation {
+            if !open.is_done() {
+                let scale = Scale::from(self.scale);
+
+                let bob_offset = self.bob_offset();
+                let location = location + bob_offset;
+                let xray_pos = xray_pos.offset(bob_offset);
+
+                let mut ctx = ctx.as_gles();
+                let mut elements = Vec::new();
+                self.render_normal_inner(
+                    ctx.r(),
+                    ns,
+                    Point::new(0., 0.),
+                    xray_pos,
+                    false,
+                    &mut |elem| elements.push(elem),
+                );
+
+                match open.render(
+                    ctx.renderer,
+                    &elements,
+                    self.block_out_buffer.size(),
+                    location,
+                    scale,
+                    1.,
+                ) {
+                    Ok((elem, _data)) => {
+                        push(elem.into());
+                        return;
+                    }
+                    Err(err) => {
+                        warn!("error rendering layer surface opening animation: {err:?}");
+                    }
+                }
+            }
+        }
+
+        self.render_normal_inner(ctx.r(), ns, location, xray_pos, true, push);
+    }
+
+    fn render_normal_inner<R: NiriRenderer>(
+        &self,
+        mut ctx: RenderCtx<R>,
+        ns: Option<usize>,
+        location: Point<f64, Logical>,
+        xray_pos: XrayPos,
+        apply_bob: bool,
+        push: &mut dyn FnMut(LayerSurfaceRenderElement<R>),
+    ) {
         let scale = Scale::from(self.scale);
         let alpha = self.rules.opacity.unwrap_or(1.).clamp(0., 1.);
 
-        let bob_offset = self.bob_offset();
+        let bob_offset = if apply_bob {
+            self.bob_offset()
+        } else {
+            Point::from((0., 0.))
+        };
         let location = location + bob_offset;
         let xray_pos = xray_pos.offset(bob_offset);
 
@@ -324,6 +396,24 @@ impl MappedLayer {
             );
         }
     }
+}
+
+fn layer_open_animation(
+    rules: &ResolvedLayerRules,
+    clock: Clock,
+    config: &Config,
+) -> Option<OpenAnimation> {
+    if !rules.open_animation.unwrap_or(false) {
+        return None;
+    }
+
+    Some(OpenAnimation::new(Animation::new(
+        clock,
+        0.,
+        1.,
+        0.,
+        config.animations.layer_open.0,
+    )))
 }
 
 impl Drop for MappedLayer {

@@ -25,6 +25,11 @@ animations {
         curve "ease-out-expo"
     }
 
+    layer-open {
+        duration-ms 150
+        curve "ease-out-expo"
+    }
+
     window-close {
         duration-ms 150
         curve "ease-out-quad"
@@ -218,6 +223,22 @@ animations {
                 return color * niri_clamped_progress;
             }
         "
+    }
+}
+```
+
+#### `layer-open`
+
+Layer-shell surface opening animation.
+
+Layer-shell surfaces do not animate by default.
+Enable it for specific surfaces with the [`open-animation` layer rule](./Configuration:-Layer-Rules.md#open-animation).
+
+```kdl
+animations {
+    layer-open {
+        duration-ms 150
+        curve "ease-out-expo"
     }
 }
 ```

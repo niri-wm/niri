@@ -857,6 +857,11 @@ mod tests {
 
                 window-open { off; }
 
+                layer-open {
+                    duration-ms 250
+                    curve "ease-out-cubic"
+                }
+
                 window-close {
                     curve "cubic-bezier" 0.05 0.7 0.1 1
                 }
@@ -910,6 +915,7 @@ mod tests {
             layer-rule {
                 match namespace="^notifications$"
                 block-out-from "screencast"
+                open-animation true
             }
 
             binds {
@@ -1533,6 +1539,17 @@ mod tests {
                     },
                     custom_shader: None,
                 },
+                layer_open: LayerOpenAnim(
+                    Animation {
+                        off: false,
+                        kind: Easing(
+                            EasingParams {
+                                duration_ms: 250,
+                                curve: EaseOutCubic,
+                            },
+                        ),
+                    },
+                ),
                 window_close: WindowCloseAnim {
                     anim: Animation {
                         off: false,
@@ -1933,6 +1950,9 @@ mod tests {
                     geometry_corner_radius: None,
                     place_within_backdrop: None,
                     baba_is_float: None,
+                    open_animation: Some(
+                        true,
+                    ),
                     background_effect: BackgroundEffectRule {
                         xray: None,
                         blur: None,

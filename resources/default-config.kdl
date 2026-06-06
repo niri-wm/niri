@@ -302,6 +302,13 @@ animations {
 
     // Slow down all animations by this factor. Values below 1 speed them up instead.
     // slowdown 3.0
+
+    // Layer-shell opening animation. You need to enable it for specific surfaces
+    // with layer-rule { open-animation true; }.
+    // layer-open {
+    //     duration-ms 150
+    //     curve "ease-out-expo"
+    // }
 }
 
 // Window rules let you adjust behavior for individual windows.
