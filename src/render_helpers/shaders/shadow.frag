@@ -16,10 +16,12 @@ uniform float sigma;
 uniform mat3 input_to_geo;
 uniform vec2 geo_size;
 uniform vec4 corner_radius;
+uniform float corner_exponent;
 
 uniform mat3 window_input_to_geo;
 uniform vec2 window_geo_size;
 uniform vec4 window_corner_radius;
+uniform float window_corner_exponent;
 
 // Based on: https://madebyevan.com/shaders/fast-rounded-rectangle-shadows/
 //
@@ -40,15 +42,20 @@ vec2 erf(vec2 x) {
 }
 
 // Return the blurred mask along the x dimension
-float roundedBoxShadowX(float x, float y, float sigma, float corner, vec2 halfSize) {
+float roundedBoxShadowX(float x, float y, float sigma, float corner, vec2 halfSize, float exponent) {
   float delta = min(halfSize.y - corner - abs(y), 0.0);
-  float curved = halfSize.x - corner + sqrt(max(0.0, corner * corner - delta * delta));
+  float curved;
+  if (abs(exponent - 2.0) < 0.001) {
+    curved = halfSize.x - corner + sqrt(max(0.0, corner * corner - delta * delta));
+  } else {
+    @EXPONENT_SHADOW_X_IMPL@
+  }
   vec2 integral = 0.5 + 0.5 * erf((x + vec2(-curved, curved)) * (sqrt(0.5) / sigma));
   return integral.y - integral.x;
 }
 
 // Return the mask for the shadow of a box from lower to upper
-float roundedBoxShadow(vec2 lower, vec2 upper, vec2 point, float sigma, float corner) {
+float roundedBoxShadow(vec2 lower, vec2 upper, vec2 point, float sigma, float corner, float exponent) {
   // Center everything to make the math easier
   vec2 center = (lower + upper) * 0.5;
   vec2 halfSize = (upper - lower) * 0.5;
@@ -65,14 +72,14 @@ float roundedBoxShadow(vec2 lower, vec2 upper, vec2 point, float sigma, float co
   float y = start + step * 0.5;
   float value = 0.0;
   for (int i = 0; i < 4; i++) {
-    value += roundedBoxShadowX(point.x, point.y - y, sigma, corner, halfSize) * gaussian(y, sigma) * step;
+    value += roundedBoxShadowX(point.x, point.y - y, sigma, corner, halfSize, exponent) * gaussian(y, sigma) * step;
     y += step;
   }
 
   return value;
 }
 
-float niri_rounding_alpha(vec2 coords, vec2 size, vec4 corner_radius);
+float niri_rounding_alpha(vec2 coords, vec2 size, vec4 corner_radius, float corner_exponent);
 
 void main() {
     vec3 coords_geo = input_to_geo * vec3(niri_v_coords, 1.0);
@@ -83,7 +90,7 @@ void main() {
     float shadow_value;
     if (sigma < 0.1) {
         // With low enough sigma just draw a rounded rectangle.
-        shadow_value = niri_rounding_alpha(coords_geo.xy, geo_size, corner_radius);
+        shadow_value = niri_rounding_alpha(coords_geo.xy, geo_size, corner_radius, corner_exponent);
     } else {
         shadow_value = roundedBoxShadow(
             vec2(0.0, 0.0),
@@ -94,7 +101,8 @@ void main() {
             //
             // GTK seems to call blurring separately for the rect and for the 4 corners:
             // https://gitlab.gnome.org/GNOME/gtk/-/blob/gtk-4-16/gsk/gpu/shaders/gskgpuboxshadow.glsl
-            corner_radius.x
+            corner_radius.x,
+            corner_exponent
         );
     }
     color = color * shadow_value;
@@ -103,7 +111,7 @@ void main() {
     if (window_geo_size != vec2(0.0, 0.0)) {
         if (0.0 <= coords_window_geo.x && coords_window_geo.x <= window_geo_size.x
                 && 0.0 <= coords_window_geo.y && coords_window_geo.y <= window_geo_size.y) {
-            float alpha = niri_rounding_alpha(coords_window_geo.xy, window_geo_size, window_corner_radius);
+            float alpha = niri_rounding_alpha(coords_window_geo.xy, window_geo_size, window_corner_radius, window_corner_exponent);
             color = color * (1.0 - alpha);
         }
     }

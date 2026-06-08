@@ -73,6 +73,7 @@ layout {
         position "right"
         gaps-between-tabs 2
         corner-radius 8
+        corner-radius-exponent 4
         active-color "red"
         inactive-color "gray"
         urgent-color "blue"
@@ -458,6 +459,15 @@ It can be `left`, `right`, `top`, or `bottom`.
 
 `corner-radius` sets the rounded corner radius for tabs in the indicator in logical pixels.
 When `gaps-between-tabs` is zero, only the first and the last tabs have rounded corners, otherwise all tabs do.
+
+`corner-radius-exponent` <sup>Since: next release</sup> sets the shape of the rounded corners.
+The default is `2` for normal circular rounding, values greater than `2` make "squircle" corners, and `1` make the corners "chamfered".
+
+Tab corner exponents are picked in this order:
+
+1. `corner-radius-exponent` from the `tab-indicator` window rule, if set.
+1. `geometry-corner-radius-exponent` from the window rule, if set.
+1. `corner-radius-exponent` from the `tab-indicator` layout options.
 
 `active-color`, `inactive-color`, `urgent-color`, `active-gradient`, `inactive-gradient`, `urgent-gradient` let you override the colors for the tabs.
 They have the same semantics as the border and focus ring colors and gradients.

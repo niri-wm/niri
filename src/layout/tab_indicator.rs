@@ -28,6 +28,8 @@ pub struct TabInfo {
     pub gradient: Gradient,
     /// Tab geometry in the same coordinate system as the area.
     pub geometry: Rectangle<f64, Logical>,
+    /// Corner exponent for this tab.
+    pub corner_exponent: f32,
 }
 
 niri_render_elements! {
@@ -263,6 +265,7 @@ impl TabIndicator {
                 Rectangle::from_size(rect.size),
                 0.,
                 radius,
+                tab.corner_exponent,
                 scale as f32,
                 1.,
             );
@@ -406,7 +409,19 @@ impl TabInfo {
             .unwrap_or_else(gradient_from_border);
 
         let geometry = Rectangle::new(position, tile.animated_tile_size());
+        let corner_exponent = rule.corner_radius_exponent.map_or_else(
+            || {
+                rules
+                    .geometry_corner_radius_exponent
+                    .unwrap_or(config.corner_radius_exponent as f32)
+            },
+            |x| x.0 as f32,
+        );
 
-        TabInfo { gradient, geometry }
+        TabInfo {
+            gradient,
+            geometry,
+            corner_exponent,
+        }
     }
 }

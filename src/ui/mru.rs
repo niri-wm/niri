@@ -8,7 +8,7 @@ use std::time::Duration;
 use anyhow::ensure;
 use niri_config::{
     Action, Bind, Color, Config, CornerRadius, GradientInterpolation, Key, Modifiers, MruDirection,
-    MruFilter, MruScope, Trigger,
+    MruFilter, MruScope, Trigger, DEFAULT_CORNER_RADIUS_EXPONENT,
 };
 use pango::FontDescription;
 use pangocairo::cairo::{self, ImageSurface};
@@ -383,8 +383,17 @@ impl Thumbnail {
             LayoutElementRenderElement::Wayland(elem) => {
                 if let Some(shader) = clip_shader.clone() {
                     if ClippedSurfaceRenderElement::will_clip(&elem, s, geo, radius) {
-                        let elem =
-                            ClippedSurfaceRenderElement::new(elem, s, geo, shader.clone(), radius);
+                        let elem = ClippedSurfaceRenderElement::new(
+                            elem,
+                            s,
+                            geo,
+                            shader.clone(),
+                            radius,
+                            mapped
+                                .rules()
+                                .geometry_corner_radius_exponent
+                                .unwrap_or(DEFAULT_CORNER_RADIUS_EXPONENT),
+                        );
                         return ThumbnailRenderElement::ClippedSurface(elem);
                     }
                 }
@@ -411,6 +420,10 @@ impl Thumbnail {
                         Rectangle::from_size(geo.size),
                         0.,
                         radius,
+                        mapped
+                            .rules()
+                            .geometry_corner_radius_exponent
+                            .unwrap_or(DEFAULT_CORNER_RADIUS_EXPONENT),
                         scale as f32,
                         1.,
                     )
@@ -536,6 +549,7 @@ impl Thumbnail {
                 false,
                 Rectangle::default(),
                 radius,
+                DEFAULT_CORNER_RADIUS_EXPONENT,
                 scale,
                 0.5,
             );
@@ -557,6 +571,7 @@ impl Thumbnail {
                 false,
                 Rectangle::default(),
                 radius.expanded_by(config.width as f32),
+                DEFAULT_CORNER_RADIUS_EXPONENT,
                 scale,
                 1.,
             );

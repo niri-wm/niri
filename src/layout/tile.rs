@@ -2,7 +2,7 @@ use core::f64;
 use std::rc::Rc;
 
 use niri_config::utils::MergeWith as _;
-use niri_config::{Color, CornerRadius, GradientInterpolation};
+use niri_config::{Color, CornerRadius, GradientInterpolation, DEFAULT_CORNER_RADIUS_EXPONENT};
 use niri_ipc::WindowLayout;
 use smithay::backend::renderer::element::{Element, Kind};
 use smithay::backend::renderer::gles::GlesRenderer;
@@ -408,6 +408,11 @@ impl<W: LayoutElement> Tile<W> {
             .geometry_corner_radius()
             .fit_to(window_size.w as f32, window_size.h as f32);
         self.rounded_corner_damage.set_corner_radius(radius);
+        self.rounded_corner_damage.set_corner_exponent(
+            rules
+                .geometry_corner_radius_exponent
+                .unwrap_or(DEFAULT_CORNER_RADIUS_EXPONENT),
+        );
     }
 
     pub fn advance_animations(&mut self) {
@@ -460,7 +465,6 @@ impl<W: LayoutElement> Tile<W> {
         let rules = self.window.rules();
         let animated_tile_size = self.animated_tile_size();
         let expanded_progress = self.expanded_progress();
-
         let draw_border_with_background = rules
             .draw_border_with_background
             .unwrap_or_else(|| !self.window.has_ssd());
@@ -500,6 +504,9 @@ impl<W: LayoutElement> Tile<W> {
                 view_rect.size,
             ),
             radius,
+            rules
+                .geometry_corner_radius_exponent
+                .unwrap_or(DEFAULT_CORNER_RADIUS_EXPONENT),
             self.scale,
             1. - expanded_progress as f32,
         );
@@ -515,6 +522,9 @@ impl<W: LayoutElement> Tile<W> {
             animated_tile_size,
             is_active,
             radius,
+            rules
+                .geometry_corner_radius_exponent
+                .unwrap_or(DEFAULT_CORNER_RADIUS_EXPONENT),
             self.scale,
             1. - expanded_progress as f32,
         );
@@ -532,6 +542,9 @@ impl<W: LayoutElement> Tile<W> {
             self.window.is_urgent(),
             view_rect,
             radius,
+            rules
+                .geometry_corner_radius_exponent
+                .unwrap_or(DEFAULT_CORNER_RADIUS_EXPONENT),
             self.scale,
             1. - expanded_progress as f32,
         );
@@ -1073,7 +1086,6 @@ impl<W: LayoutElement> Tile<W> {
             .window
             .geometry_corner_radius()
             .scaled_by(1. - expanded_progress as f32);
-
         // Popups go on top, whether it's resize or not.
         self.window.render_popups(
             ctx.r(),
@@ -1134,6 +1146,9 @@ impl<W: LayoutElement> Tile<W> {
                             resize.anim.value() as f32,
                             resize.anim.clamped_value().clamp(0., 1.) as f32,
                             radius,
+                            rules
+                                .geometry_corner_radius_exponent
+                                .unwrap_or(DEFAULT_CORNER_RADIUS_EXPONENT),
                             clip_to_geometry,
                             win_alpha,
                         );
@@ -1182,6 +1197,9 @@ impl<W: LayoutElement> Tile<W> {
                                     geo,
                                     shader.clone(),
                                     radius,
+                                    rules
+                                        .geometry_corner_radius_exponent
+                                        .unwrap_or(DEFAULT_CORNER_RADIUS_EXPONENT),
                                 )
                                 .into();
                             }
@@ -1209,6 +1227,9 @@ impl<W: LayoutElement> Tile<W> {
                             Rectangle::from_size(geo.size),
                             0.,
                             radius,
+                            rules
+                                .geometry_corner_radius_exponent
+                                .unwrap_or(DEFAULT_CORNER_RADIUS_EXPONENT),
                             scale.x as f32,
                             1.,
                         )
@@ -1263,6 +1284,9 @@ impl<W: LayoutElement> Tile<W> {
                     Rectangle::from_size(size),
                     0.,
                     radius,
+                    rules
+                        .geometry_corner_radius_exponent
+                        .unwrap_or(DEFAULT_CORNER_RADIUS_EXPONENT),
                     scale.x as f32,
                     alpha,
                 )
@@ -1309,6 +1333,9 @@ impl<W: LayoutElement> Tile<W> {
             clip_to_geometry,
             surface_anim_scale,
             radius,
+            rules
+                .geometry_corner_radius_exponent
+                .unwrap_or(DEFAULT_CORNER_RADIUS_EXPONENT),
             xray_pos,
             &mut |elem| push(elem.into()),
         );

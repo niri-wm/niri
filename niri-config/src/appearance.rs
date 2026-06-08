@@ -148,6 +148,8 @@ pub struct CornerRadius {
     pub bottom_left: f32,
 }
 
+pub const DEFAULT_CORNER_RADIUS_EXPONENT: f32 = 2.;
+
 impl From<CornerRadius> for [f32; 4] {
     fn from(value: CornerRadius) -> Self {
         [
@@ -466,6 +468,7 @@ pub struct TabIndicator {
     pub position: TabIndicatorPosition,
     pub gaps_between_tabs: f64,
     pub corner_radius: f64,
+    pub corner_radius_exponent: f64,
     pub active_color: Option<Color>,
     pub inactive_color: Option<Color>,
     pub urgent_color: Option<Color>,
@@ -488,6 +491,7 @@ impl Default for TabIndicator {
             position: TabIndicatorPosition::Left,
             gaps_between_tabs: 0.,
             corner_radius: 0.,
+            corner_radius_exponent: DEFAULT_CORNER_RADIUS_EXPONENT as f64,
             active_color: None,
             inactive_color: None,
             urgent_color: None,
@@ -513,6 +517,7 @@ impl MergeWith<TabIndicatorPart> for TabIndicator {
             width,
             gaps_between_tabs,
             corner_radius,
+            corner_radius_exponent,
         );
 
         merge_clone!((self, part), length, position);
@@ -548,6 +553,8 @@ pub struct TabIndicatorPart {
     pub gaps_between_tabs: Option<FloatOrInt<0, 65535>>,
     #[knuffel(child, unwrap(argument))]
     pub corner_radius: Option<FloatOrInt<0, 65535>>,
+    #[knuffel(child, unwrap(argument))]
+    pub corner_radius_exponent: Option<FloatOrInt<1, { i32::MAX }>>,
     #[knuffel(child)]
     pub active_color: Option<Color>,
     #[knuffel(child)]
@@ -666,6 +673,8 @@ pub struct ShadowRule {
 
 #[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq)]
 pub struct TabIndicatorRule {
+    #[knuffel(child, unwrap(argument))]
+    pub corner_radius_exponent: Option<FloatOrInt<1, { i32::MAX }>>,
     #[knuffel(child)]
     pub active_color: Option<Color>,
     #[knuffel(child)]
@@ -713,6 +722,8 @@ impl MergeWith<Self> for ShadowRule {
 
 impl MergeWith<Self> for TabIndicatorRule {
     fn merge_with(&mut self, part: &Self) {
+        merge_clone_opt!((self, part), corner_radius_exponent);
+
         merge_color_gradient_opt!(
             (self, part),
             (active_color, active_gradient),

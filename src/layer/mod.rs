@@ -21,6 +21,8 @@ pub struct ResolvedLayerRules {
 
     /// Corner radius to assume this layer surface has.
     pub geometry_corner_radius: Option<CornerRadius>,
+    /// Exponent to use for corner rounding.
+    pub geometry_corner_radius_exponent: Option<f32>,
 
     /// Whether to place this layer surface within the overview backdrop.
     pub place_within_backdrop: bool,
@@ -68,6 +70,9 @@ impl ResolvedLayerRules {
             }
             if let Some(x) = rule.geometry_corner_radius {
                 resolved.geometry_corner_radius = Some(x);
+            }
+            if let Some(x) = rule.geometry_corner_radius_exponent {
+                resolved.geometry_corner_radius_exponent = Some(x.0 as f32);
             }
             if let Some(x) = rule.place_within_backdrop {
                 resolved.place_within_backdrop = x;

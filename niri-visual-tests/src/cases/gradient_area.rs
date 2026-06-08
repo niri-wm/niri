@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use niri::layout::focus_ring::FocusRing;
 use niri::render_helpers::border::BorderRenderElement;
-use niri_config::{Color, CornerRadius, GradientInterpolation};
+use niri_config::{Color, CornerRadius, GradientInterpolation, DEFAULT_CORNER_RADIUS_EXPONENT};
 use smithay::backend::renderer::element::RenderElement;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::utils::{Physical, Point, Rectangle, Size};
@@ -86,6 +86,7 @@ impl TestCase for GradientArea {
             false,
             Rectangle::default(),
             CornerRadius::default(),
+            DEFAULT_CORNER_RADIUS_EXPONENT,
             1.,
             1.,
         );
@@ -103,6 +104,7 @@ impl TestCase for GradientArea {
                 Rectangle::from_size(rect_size).to_f64(),
                 0.,
                 CornerRadius::default(),
+                DEFAULT_CORNER_RADIUS_EXPONENT,
                 1.,
                 1.,
             )
