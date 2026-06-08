@@ -2631,7 +2631,11 @@ impl State {
                     .with_grab(|_, grab| grab_allows_hot_corner(grab))
                     .unwrap_or(true)
             {
-                self.niri.layout.toggle_overview();
+                if let Some((output, pos_within_output)) = self.niri.output_under(new_pos) {
+                    if let Some(action) = self.niri.hot_corner_action(output, pos_within_output) {
+                        self.do_action(action, false);
+                    }
+                }
             }
             self.niri.pointer_inside_hot_corner = true;
         }
@@ -2718,7 +2722,11 @@ impl State {
                     .with_grab(|_, grab| grab_allows_hot_corner(grab))
                     .unwrap_or(true)
             {
-                self.niri.layout.toggle_overview();
+                if let Some((output, pos_within_output)) = self.niri.output_under(pos) {
+                    if let Some(action) = self.niri.hot_corner_action(output, pos_within_output) {
+                        self.do_action(action, false);
+                    }
+                }
             }
             self.niri.pointer_inside_hot_corner = true;
         }

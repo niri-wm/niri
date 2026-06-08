@@ -16,7 +16,7 @@ use calloop::futures::Scheduler;
 use niri_config::debug::PreviewRender;
 use niri_config::output::MaxBpc;
 use niri_config::{
-    Config, FloatOrInt, Key, Modifiers, OutputName, TrackLayout, WarpMouseToFocusMode,
+    Action, Config, FloatOrInt, Key, Modifiers, OutputName, TrackLayout, WarpMouseToFocusMode,
     WorkspaceReference, Xkb,
 };
 use smithay::backend::allocator::Fourcc;
@@ -3067,18 +3067,14 @@ impl Niri {
         Some((output, pos_within_output))
     }
 
-    fn is_inside_hot_corner(&self, output: &Output, pos: Point<f64, Logical>) -> bool {
+    pub fn hot_corner_action(&self, output: &Output, pos: Point<f64, Logical>) -> Option<Action> {
         let config = self.config.borrow();
         let hot_corners = output
             .user_data()
             .get::<OutputName>()
             .and_then(|name| config.outputs.find(name))
-            .and_then(|c| c.hot_corners)
-            .unwrap_or(config.gestures.hot_corners);
-
-        if hot_corners.off {
-            return false;
-        }
+            .and_then(|c| c.hot_corners.as_ref())
+            .unwrap_or(&config.gestures.hot_corners);
 
         // Use size from the ceiled output geometry, since that's what we currently use for pointer
         // motion clamping.
@@ -3089,25 +3085,24 @@ impl Niri {
             Rectangle::new(corner, Size::new(1., 1.)).contains(pos)
         };
 
-        if hot_corners.top_right && contains(Point::new(size.w - 1., 0.)) {
-            return true;
+        if contains(Point::new(size.w - 1., 0.)) {
+            return hot_corners.action_top_right();
         }
-        if hot_corners.bottom_left && contains(Point::new(0., size.h - 1.)) {
-            return true;
+        if contains(Point::new(0., size.h - 1.)) {
+            return hot_corners.action_bottom_left();
         }
-        if hot_corners.bottom_right && contains(Point::new(size.w - 1., size.h - 1.)) {
-            return true;
+        if contains(Point::new(size.w - 1., size.h - 1.)) {
+            return hot_corners.action_bottom_right();
         }
-
-        // If the user didn't explicitly set any corners, we default to top-left.
-        if (hot_corners.top_left
-            || !(hot_corners.top_right || hot_corners.bottom_right || hot_corners.bottom_left))
-            && contains(Point::new(0., 0.))
-        {
-            return true;
+        if contains(Point::new(0., 0.)) {
+            return hot_corners.action_top_left();
         }
 
-        false
+        None
+    }
+
+    fn is_inside_hot_corner(&self, output: &Output, pos: Point<f64, Logical>) -> bool {
+        self.hot_corner_action(output, pos).is_some()
     }
 
     pub fn is_sticky_obscured_under(

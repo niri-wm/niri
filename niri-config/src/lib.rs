@@ -871,6 +871,13 @@ mod tests {
                     trigger-width 10
                     max-speed 50
                 }
+
+                hot-corners {
+                    top-left
+                    top-right {
+                        power-off-monitors
+                    }
+                }
             }
 
             environment {
@@ -1197,10 +1204,26 @@ mod tests {
                         hot_corners: Some(
                             HotCorners {
                                 off: true,
-                                top_left: true,
-                                top_right: true,
-                                bottom_left: true,
-                                bottom_right: true,
+                                top_left: Some(
+                                    HotCorner {
+                                        action: None,
+                                    },
+                                ),
+                                top_right: Some(
+                                    HotCorner {
+                                        action: None,
+                                    },
+                                ),
+                                bottom_left: Some(
+                                    HotCorner {
+                                        action: None,
+                                    },
+                                ),
+                                bottom_right: Some(
+                                    HotCorner {
+                                        action: None,
+                                    },
+                                ),
                             },
                         ),
                         layout: None,
@@ -1666,10 +1689,20 @@ mod tests {
                 },
                 hot_corners: HotCorners {
                     off: false,
-                    top_left: false,
-                    top_right: false,
-                    bottom_left: false,
-                    bottom_right: false,
+                    top_left: Some(
+                        HotCorner {
+                            action: None,
+                        },
+                    ),
+                    top_right: Some(
+                        HotCorner {
+                            action: Some(
+                                PowerOffMonitors,
+                            ),
+                        },
+                    ),
+                    bottom_left: None,
+                    bottom_right: None,
                 },
             },
             overview: Overview {
