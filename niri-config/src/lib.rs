@@ -1664,6 +1664,9 @@ mod tests {
                     delay_ms: 100,
                     max_speed: 1500.0,
                 },
+                edge_overscroll: EdgeOverscroll {
+                    resistance: 0.0,
+                },
                 hot_corners: HotCorners {
                     off: false,
                     top_left: false,

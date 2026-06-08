@@ -111,6 +111,37 @@ impl<D: SeatHandler> PointerOrTouchStartData<D> {
     }
 }
 
+/// Adjacent target a true-screen-edge overscroll points at. The overscroll vector
+/// is `(pre - clamped)` in compositor coords (Y-down): `+x` past the right
+/// edge, `-x` past the left, `+y` past the bottom, `-y` past the top. The
+/// dominant axis wins; ties favour horizontal (column) over vertical
+/// (workspace). `None` only for a zero vector (never happens when the caller
+/// gates on `edge_overscroll_px > 0`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum EdgeOverscrollDir {
+    Left,
+    Right,
+    Up,
+    Down,
+}
+
+fn edge_overscroll_dir(dx: f64, dy: f64) -> Option<EdgeOverscrollDir> {
+    if dx == 0.0 && dy == 0.0 {
+        return None;
+    }
+    Some(if dx.abs() >= dy.abs() {
+        if dx > 0.0 {
+            EdgeOverscrollDir::Right
+        } else {
+            EdgeOverscrollDir::Left
+        }
+    } else if dy > 0.0 {
+        EdgeOverscrollDir::Down
+    } else {
+        EdgeOverscrollDir::Up
+    })
+}
+
 impl State {
     pub fn process_input_event<I: InputBackend + 'static>(&mut self, event: InputEvent<I>)
     where
@@ -2517,6 +2548,12 @@ impl State {
             }
         }
 
+        // How far the motion was clipped away by a true screen edge this
+        // event (0 when the pointer stayed on an output). This is the
+        // deliberate "pushing past the edge" signal the edge overscroll gates on.
+        let mut edge_overscroll_px = 0.0;
+        let mut edge_overscroll_vec = (0.0_f64, 0.0_f64);
+
         if self
             .niri
             .global_space
@@ -2529,18 +2566,123 @@ impl State {
                 // The pointer was previously on some output. Clip the movement against its
                 // boundaries.
                 let geom = self.niri.global_space.output_geometry(output).unwrap();
+                let pre = new_pos;
                 new_pos.x = new_pos
                     .x
                     .clamp(geom.loc.x as f64, (geom.loc.x + geom.size.w - 1) as f64);
                 new_pos.y = new_pos
                     .y
                     .clamp(geom.loc.y as f64, (geom.loc.y + geom.size.h - 1) as f64);
+                edge_overscroll_vec = (pre.x - new_pos.x, pre.y - new_pos.y);
+                edge_overscroll_px =
+                    (edge_overscroll_vec.0.powi(2) + edge_overscroll_vec.1.powi(2)).sqrt();
             } else {
                 // The pointer was not on any output in the first place. Find one for it.
                 // Let's do the simple thing and just put it on the first output.
                 let output = self.niri.global_space.outputs().next().unwrap();
                 let geom = self.niri.global_space.output_geometry(output).unwrap();
                 new_pos = center(geom).to_f64();
+            }
+        }
+
+        // True-screen-edge overscroll → pan focus to the adjacent column /
+        // workspace. Deliberate by construction: the cursor is pinned at a
+        // hard screen edge and you must keep shoving past it — that can't
+        // happen by accident, so there is no time delay and no heuristic.
+        {
+            let threshold = self
+                .niri
+                .config
+                .borrow()
+                .gestures
+                .edge_overscroll
+                .resistance;
+
+            // Monitor the pointer is overscrolling (used for the fullscreen
+            // check and to act on the right monitor below).
+            let ptr_output = self.niri.global_space.output_under(pos).next().cloned();
+
+            // Don't let an edge overscroll pan focus out of a fullscreen window:
+            // fullscreen content owns the screen, so leaving it must be
+            // explicit (keybind), never an edge shove.
+            let on_fullscreen = ptr_output
+                .as_ref()
+                .and_then(|o| self.niri.layout.monitor_for_output(o))
+                .is_some_and(|m| m.active_workspace_ref().is_active_pending_fullscreen());
+
+            // Suppress when the overscroll direction points at a reachable
+            // monitor neighbor: that's an inner edge between adjacent monitors,
+            // not a true screen edge, and the user is trying to move the cursor
+            // to that neighbor (not pan columns). Inner edges can still clip
+            // even with perfectly aligned monitors — a diagonal nibble near
+            // the top/bottom of an inner edge lands `new_pos` in the dead
+            // space above/below both monitors, so the clamp fires against
+            // the current monitor and produces an overscroll vector dominantly
+            // on the horizontal axis even though the user is heading sideways
+            // toward the neighbor.
+            let dir = edge_overscroll_dir(edge_overscroll_vec.0, edge_overscroll_vec.1);
+            let has_neighbor_in_dir = match (dir, ptr_output.as_ref()) {
+                (Some(EdgeOverscrollDir::Left), Some(o)) => {
+                    self.niri.output_left_of(o).is_some()
+                }
+                (Some(EdgeOverscrollDir::Right), Some(o)) => {
+                    self.niri.output_right_of(o).is_some()
+                }
+                (Some(EdgeOverscrollDir::Up), Some(o)) => self.niri.output_up_of(o).is_some(),
+                (Some(EdgeOverscrollDir::Down), Some(o)) => {
+                    self.niri.output_down_of(o).is_some()
+                }
+                _ => false,
+            };
+
+            // Gate firing on exactly the conditions stock focus-follows-mouse
+            // respects, plus pointer grabs and fullscreen: never mutate layout
+            // state while locked, in the overview/screenshot/MRU UIs, mid
+            // drag/resize, or on a fullscreen window. The accumulator is still
+            // reset in those states so it can't fire stale the instant the
+            // state clears.
+            let pointer = self.niri.seat.get_pointer().unwrap();
+            let active = threshold > 0.0
+                && !pointer.is_grabbed()
+                && pointer_confined.is_none()
+                && !self.niri.is_locked()
+                && !self.niri.screenshot_ui.is_open()
+                && !self.niri.window_mru_ui.is_open()
+                && !self.niri.layout.is_overview_open()
+                && !on_fullscreen
+                && !has_neighbor_in_dir;
+
+            if active && edge_overscroll_px > 0.0 {
+                self.niri.edge_overscroll_accum += edge_overscroll_px;
+                if !self.niri.edge_overscroll_latched && self.niri.edge_overscroll_accum >= threshold {
+                    self.niri.edge_overscroll_latched = true;
+
+                    // Act on the monitor the pointer is overscrolling, not
+                    // whichever monitor happens to be active (FFM has not yet
+                    // re-synced the active output at this point). `ptr_output`
+                    // is always Some here: overscroll only accumulates when the
+                    // pre-clamp pointer was on an output.
+                    debug_assert!(
+                        ptr_output.is_some(),
+                        "edge overscroll fired with no pointer output"
+                    );
+                    if let Some(output) = &ptr_output {
+                        self.niri.layout.focus_output(output);
+                    }
+
+                    match dir {
+                        Some(EdgeOverscrollDir::Right) => self.niri.layout.focus_right(),
+                        Some(EdgeOverscrollDir::Left) => self.niri.layout.focus_left(),
+                        Some(EdgeOverscrollDir::Down) => self.niri.layout.switch_workspace_down(),
+                        Some(EdgeOverscrollDir::Up) => self.niri.layout.switch_workspace_up(),
+                        None => {}
+                    }
+                    self.niri.layer_shell_on_demand_focus = None;
+                }
+            } else {
+                // Suppressed or pointer back inside: reset for the next push.
+                self.niri.edge_overscroll_accum = 0.0;
+                self.niri.edge_overscroll_latched = false;
             }
         }
 
@@ -2597,7 +2739,8 @@ impl State {
             }
         }
 
-        self.niri.handle_focus_follows_mouse(&under);
+        self.niri
+            .handle_focus_follows_mouse(&under);
 
         self.niri.pointer_contents.clone_from(&under);
 
@@ -2693,6 +2836,12 @@ impl State {
         }
 
         let under = self.niri.contents_under(pos);
+
+        // Absolute positioning can't overscroll a screen edge; clear any
+        // in-progress edge overscroll so a device switch mid-push can't carry stale
+        // accumulation into the next relative-motion event.
+        self.niri.edge_overscroll_accum = 0.0;
+        self.niri.edge_overscroll_latched = false;
 
         self.niri.handle_focus_follows_mouse(&under);
 
@@ -5177,6 +5326,60 @@ mod tests {
 
     use super::*;
     use crate::animation::Clock;
+
+    #[test]
+    fn edge_overscroll_dir_dominant_axis_and_signs() {
+        // Y-down: +x right, -x left, +y down (workspace), -y up.
+        assert_eq!(edge_overscroll_dir(10.0, 0.0), Some(EdgeOverscrollDir::Right));
+        assert_eq!(edge_overscroll_dir(-10.0, 0.0), Some(EdgeOverscrollDir::Left));
+        assert_eq!(edge_overscroll_dir(0.0, 10.0), Some(EdgeOverscrollDir::Down));
+        assert_eq!(edge_overscroll_dir(0.0, -10.0), Some(EdgeOverscrollDir::Up));
+        // Dominant axis wins.
+        assert_eq!(edge_overscroll_dir(9.0, -3.0), Some(EdgeOverscrollDir::Right));
+        assert_eq!(edge_overscroll_dir(-2.0, 8.0), Some(EdgeOverscrollDir::Down));
+        // Ties favour horizontal (column) over vertical (workspace).
+        assert_eq!(edge_overscroll_dir(5.0, 5.0), Some(EdgeOverscrollDir::Right));
+        assert_eq!(edge_overscroll_dir(-5.0, -5.0), Some(EdgeOverscrollDir::Left));
+        // Zero vector → no action.
+        assert_eq!(edge_overscroll_dir(0.0, 0.0), None);
+    }
+
+    #[test]
+    fn edge_overscroll_diagonal_near_top_of_inner_edge() {
+        // Reporter's failure mode: in a perfectly aligned horizontal pair
+        //   M1: (0, 0)-(1920, 1080)
+        //   M2: (1920, 0)-(3840, 1080)
+        // a diagonal nibble near the top-right corner of M1 (cursor at y=5,
+        // delta = (+20, -10)) puts the pre-clamp position at (1935, -5) —
+        // above all outputs. output_under(new_pos) is None, so the clamp
+        // fires against M1, producing a dominantly horizontal overscroll
+        // vector — and without neighbor-aware gating the gesture would call
+        // focus_right() inside M1 instead of letting the cursor cross to M2.
+        //
+        // The fix is structural (the `has_neighbor_in_dir` check in
+        // on_pointer_motion uses Niri::output_right_of to detect M2). This
+        // test pins the math so a tie-break or sign change can't silently
+        // flip Right ↔ Up here and re-open the bug.
+        let geo = Rectangle::<i32, Logical>::new(
+            Point::from((0, 0)),
+            smithay::utils::Size::from((1920, 1080)),
+        );
+        let pre_x = 1935.0_f64;
+        let pre_y = -5.0_f64;
+        let clamped_x = pre_x.clamp(geo.loc.x as f64, (geo.loc.x + geo.size.w - 1) as f64);
+        let clamped_y = pre_y.clamp(geo.loc.y as f64, (geo.loc.y + geo.size.h - 1) as f64);
+        assert_eq!(clamped_x, 1919.0);
+        assert_eq!(clamped_y, 0.0);
+
+        let dx = pre_x - clamped_x;
+        let dy = pre_y - clamped_y;
+        assert_eq!((dx, dy), (16.0, -5.0));
+
+        // Dominant axis is horizontal (Right). On a horizontal multi-monitor
+        // setup the on_pointer_motion gate suppresses for this direction
+        // because output_right_of(M1) returns Some(M2).
+        assert_eq!(edge_overscroll_dir(dx, dy), Some(EdgeOverscrollDir::Right));
+    }
 
     #[test]
     fn bindings_suppress_keys() {
