@@ -882,6 +882,7 @@ mod tests {
                 match app-id=".*alacritty"
                 exclude title="~"
                 exclude is-active=true is-focused=false
+                exclude is-fullscreen=true
 
                 open-on-output "eDP-1"
                 open-maximized true
@@ -1736,6 +1737,7 @@ mod tests {
                             is_floating: None,
                             is_window_cast_target: None,
                             is_urgent: None,
+                            is_fullscreen: None,
                             at_startup: None,
                         },
                     ],
@@ -1755,6 +1757,7 @@ mod tests {
                             is_floating: None,
                             is_window_cast_target: None,
                             is_urgent: None,
+                            is_fullscreen: None,
                             at_startup: None,
                         },
                         Match {
@@ -1770,6 +1773,21 @@ mod tests {
                             is_floating: None,
                             is_window_cast_target: None,
                             is_urgent: None,
+                            is_fullscreen: None,
+                            at_startup: None,
+                        },
+                        Match {
+                            app_id: None,
+                            title: None,
+                            is_active: None,
+                            is_focused: None,
+                            is_active_in_column: None,
+                            is_floating: None,
+                            is_window_cast_target: None,
+                            is_urgent: None,
+                            is_fullscreen: Some(
+                                true,
+                            ),
                             at_startup: None,
                         },
                     ],

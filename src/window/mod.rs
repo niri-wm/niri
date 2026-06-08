@@ -409,6 +409,15 @@ fn window_matches(window: WindowRef, role: &XdgToplevelSurfaceRoleAttributes, m:
         }
     }
 
+    if let Some(is_fullscreen) = m.is_fullscreen {
+        let pending_fullscreen = server_pending
+            .states
+            .contains(xdg_toplevel::State::Fullscreen);
+        if is_fullscreen != pending_fullscreen {
+            return false;
+        }
+    }
+
     if let Some(app_id_re) = &m.app_id {
         let Some(app_id) = &role.app_id else {
             return false;
