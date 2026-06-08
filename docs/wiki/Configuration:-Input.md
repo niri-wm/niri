@@ -105,6 +105,7 @@ input {
     // warp-mouse-to-focus
     // focus-follows-mouse max-scroll-amount="0%"
     // workspace-auto-back-and-forth
+    // disable-mouse-warp-to-focused-output
 
     // mod-key "Super"
     // mod-key-nested "Alt"
@@ -373,6 +374,18 @@ Niri will correctly switch to the workspace you came from, even if workspaces we
 ```kdl
 input {
     workspace-auto-back-and-forth
+}
+```
+
+#### `disable-mouse-warp-to-focused-output`
+
+<sup>Since: next release</sup>
+
+Prevents warping the cursor to a different output when switching monitors.
+
+```kdl
+input {
+    disable-mouse-warp-to-focused-output
 }
 ```
 
