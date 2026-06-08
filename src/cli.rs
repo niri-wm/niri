@@ -67,6 +67,8 @@ pub enum Msg {
     Workspaces,
     /// List open windows.
     Windows,
+    /// List window geometries.
+    WindowGeometries,
     /// List open layer-shell surfaces.
     Layers,
     /// Get the configured keyboard layouts.

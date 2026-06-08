@@ -43,6 +43,7 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
         },
         Msg::Workspaces => Request::Workspaces,
         Msg::Windows => Request::Windows,
+        Msg::WindowGeometries => Request::WindowGeometries,
         Msg::Layers => Request::Layers,
         Msg::KeyboardLayouts => Request::KeyboardLayouts,
         Msg::EventStream => Request::EventStream,
@@ -198,6 +199,27 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
             for window in windows {
                 print_window(&window);
                 println!();
+            }
+        }
+        Msg::WindowGeometries => {
+            let Response::WindowGeometries(mut geometries) = response else {
+                bail!("unexpected response: expected WindowGeometries, got {response:?}");
+            };
+
+            if json {
+                let geometries =
+                    serde_json::to_string(&geometries).context("error formatting response")?;
+                println!("{geometries}");
+                return Ok(());
+            }
+
+            geometries.sort_unstable_by(|a, b| a.id.cmp(&b.id));
+
+            for geom in geometries {
+                println!(
+                    "Window ID {}: x={}, y={}, width={}, height={}",
+                    geom.id, geom.x, geom.y, geom.width, geom.height
+                );
             }
         }
         Msg::Layers => {
