@@ -5,7 +5,7 @@ use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
-use std::{env, io, process};
+use std::{env, io, process, thread};
 
 use anyhow::Context;
 use async_channel::{Receiver, Sender, TrySendError};
@@ -679,9 +679,54 @@ impl State {
             events.push(Event::WorkspacesChanged { workspaces });
         }
 
+        let mut window_changed = false;
         for event in events {
+            window_changed |= matches!(
+                event,
+                Event::WindowsChanged { .. }
+                    | Event::WindowOpenedOrChanged { .. }
+                    | Event::WindowLayoutsChanged { .. }
+                    | Event::WindowClosed { .. }
+            );
             state.apply(event.clone());
             server.send_event(event);
+        }
+
+        #[cfg(feature = "dbus")]
+        if window_changed {
+            let Some(dbus) = self.niri.dbus.as_ref() else {
+                return;
+            };
+            let Some(conn) = dbus.conn_introspect.clone() else {
+                return;
+            };
+            if let Err(e) = thread::Builder::new()
+                .name("Introspect WindowsChanged Emitter".to_string())
+                .spawn(move || {
+                    use crate::dbus::gnome_shell_introspect::Introspect;
+
+                    let iface = match conn
+                        .object_server()
+                        .interface::<_, Introspect>("/org/gnome/Shell/Introspect")
+                    {
+                        Ok(iface) => iface,
+                        Err(e) => {
+                            warn!("failed to get Introspect interface: {}", e);
+                            return;
+                        }
+                    };
+                    async_io::block_on(async {
+                        if let Err(e) = Introspect::windows_changed(iface.signal_emitter()).await {
+                            warn!("error emitting WindowsChanged: {}", e);
+                        }
+                    })
+                })
+            {
+                warn!(
+                    "error spawning a thread to emit WindowsChanged signal: {}",
+                    e
+                );
+            };
         }
     }
 
