@@ -3631,6 +3631,59 @@ fn move_window_to_workspace_maximize_and_fullscreen() {
 }
 
 #[test]
+fn auto_consume_matches_rule_identity() {
+    let consume_rule_1 = OpenConsumeIntoColumn {
+        strategy: niri_config::window_rule::ConsumeIntoColumn::Active,
+        rule_idx: 1,
+    };
+    let consume_rule_2 = OpenConsumeIntoColumn {
+        strategy: niri_config::window_rule::ConsumeIntoColumn::Active,
+        rule_idx: 2,
+    };
+
+    let rules_for = |consume_rule| ResolvedWindowRules {
+        open_consume_into_column: Some(consume_rule),
+        ..ResolvedWindowRules::default()
+    };
+
+    let ops = [
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams {
+                rules: Some(rules_for(consume_rule_1)),
+                ..TestWindowParams::new(1)
+            },
+        },
+        Op::AddWindow {
+            params: TestWindowParams {
+                rules: Some(rules_for(consume_rule_2)),
+                ..TestWindowParams::new(2)
+            },
+        },
+        Op::AddWindow {
+            params: TestWindowParams {
+                rules: Some(rules_for(consume_rule_1)),
+                ..TestWindowParams::new(3)
+            },
+        },
+    ];
+
+    let mut layout = check_ops(ops);
+    layout.auto_consume_window(&3, consume_rule_1);
+    layout.verify_invariants();
+
+    let mut positions = Vec::new();
+    layout.with_windows(|win, _, _, layout| {
+        if let Some(pos) = layout.pos_in_scrolling_layout {
+            positions.push((*win.id(), pos));
+        }
+    });
+    positions.sort_by_key(|(id, _)| *id);
+
+    assert_eq!(positions, vec![(1, (1, 1)), (2, (2, 1)), (3, (1, 2))]);
+}
+
+#[test]
 fn tabs_with_different_border() {
     let ops = [
         Op::AddOutput(1),

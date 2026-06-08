@@ -73,6 +73,7 @@ use crate::utils::{
     ensure_min_max_size_maybe_zero, output_matches_name, output_size,
     round_logical_in_physical_max1, ResizeEdge,
 };
+use crate::window::OpenConsumeIntoColumn;
 use crate::window::ResolvedWindowRules;
 
 pub mod closing_window;
@@ -1105,6 +1106,15 @@ impl<W: LayoutElement> Layout<W> {
                 }
 
                 None
+            }
+        }
+    }
+
+    pub fn auto_consume_window(&mut self, window_id: &W::Id, consume_rule: OpenConsumeIntoColumn) {
+        for ws in self.workspaces_mut() {
+            if ws.has_window(window_id) {
+                ws.auto_consume_window(window_id, consume_rule);
+                return;
             }
         }
     }

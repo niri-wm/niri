@@ -1,7 +1,7 @@
 use std::cmp::{max, min};
 
 use niri_config::utils::MergeWith as _;
-use niri_config::window_rule::{Match, WindowRule};
+use niri_config::window_rule::{ConsumeIntoColumn, Match, WindowRule};
 use niri_config::{
     BackgroundEffect, BlockOutFrom, BorderRule, CornerRadius, FloatingPosition, PresetSize,
     ResolvedPopupsRules, ShadowRule, TabIndicatorRule,
@@ -27,6 +27,16 @@ pub use unmapped::{InitialConfigureState, Unmapped};
 pub enum WindowRef<'a> {
     Unmapped(&'a Unmapped),
     Mapped(&'a Mapped),
+}
+
+/// Auto-consume rule resolved for a window.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OpenConsumeIntoColumn {
+    /// Strategy to use when selecting an existing matching column.
+    pub strategy: ConsumeIntoColumn,
+
+    /// Index of the window-rule block that supplied the auto-consume rule.
+    pub rule_idx: usize,
 }
 
 /// Rules fully resolved for a window.
@@ -72,6 +82,9 @@ pub struct ResolvedWindowRules {
 
     /// Whether the window should open focused.
     pub open_focused: Option<bool>,
+
+    /// Auto-consume rule for this window, if any.
+    pub open_consume_into_column: Option<OpenConsumeIntoColumn>,
 
     /// Extra bound on the minimum window width.
     pub min_width: Option<u16>,
@@ -194,7 +207,7 @@ impl ResolvedWindowRules {
             let mut open_on_output = None;
             let mut open_on_workspace = None;
 
-            for rule in rules {
+            for (rule_idx, rule) in rules.iter().enumerate() {
                 let matches = |m: &Match| {
                     if let Some(at_startup) = m.at_startup {
                         if at_startup != is_at_startup {
@@ -255,6 +268,11 @@ impl ResolvedWindowRules {
 
                 if let Some(x) = rule.open_focused {
                     resolved.open_focused = Some(x);
+                }
+
+                if let Some(strategy) = rule.open_consume_into_column {
+                    resolved.open_consume_into_column =
+                        Some(OpenConsumeIntoColumn { strategy, rule_idx });
                 }
 
                 if let Some(x) = rule.min_width {

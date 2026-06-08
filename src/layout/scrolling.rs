@@ -4,6 +4,7 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use niri_config::utils::MergeWith as _;
+use niri_config::window_rule::ConsumeIntoColumn;
 use niri_config::{CenterFocusedColumn, PresetSize, Struts};
 use niri_ipc::{ColumnDisplay, SizeChange, WindowLayout};
 use ordered_float::NotNan;
@@ -25,7 +26,7 @@ use crate::render_helpers::xray::XrayPos;
 use crate::render_helpers::RenderCtx;
 use crate::utils::transaction::{Transaction, TransactionBlocker};
 use crate::utils::ResizeEdge;
-use crate::window::ResolvedWindowRules;
+use crate::window::{OpenConsumeIntoColumn, ResolvedWindowRules};
 
 /// Amount of touchpad movement to scroll the view for the width of one working area.
 const VIEW_GESTURE_WORKING_AREA_MOVEMENT: f64 = 1200.;
@@ -1984,6 +1985,76 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         self.add_tile_to_column(target_column_idx, None, removed.tile, false);
 
         let target_column = &mut self.columns[target_column_idx];
+        offset += prev_off - target_column.tile_offset(target_column.tiles.len() - 1);
+        offset.x -= target_column.render_offset().x;
+
+        let new_tile = target_column.tiles.last_mut().unwrap();
+        new_tile.animate_move_from(offset);
+    }
+
+    pub fn auto_consume_window(&mut self, window_id: &W::Id, consume_rule: OpenConsumeIntoColumn) {
+        if self.columns.len() < 2 {
+            return;
+        }
+
+        // Find the column containing the newly opened window.
+        let Some(new_col_idx) = self.columns.iter().position(|col| col.contains(window_id)) else {
+            return;
+        };
+
+        let is_eligible = |col: &Column<W>| {
+            // Match by the rule block that enabled auto-consume, not merely by
+            // the presence of auto-consume. This keeps separate rules in separate
+            // pools while letting one rule with multiple matches share a pool.
+            col.tiles().any(|(tile, _)| {
+                tile.window().rules().open_consume_into_column == Some(consume_rule)
+            })
+        };
+
+        // Find the first matching column, skipping the new window's own column.
+        let find_first = || {
+            self.columns
+                .iter()
+                .enumerate()
+                .position(|(idx, col)| idx != new_col_idx && is_eligible(col))
+        };
+
+        // Find the target column based on the configured strategy.
+        let target_col_idx = match consume_rule.strategy {
+            // Active: prefer the column to the left of the new window (the previously active
+            // column in the common case), falling back to the first matching column.
+            ConsumeIntoColumn::Active => new_col_idx
+                .checked_sub(1)
+                .filter(|&idx| is_eligible(&self.columns[idx]))
+                .or_else(find_first),
+            // First: leftmost matching column.
+            ConsumeIntoColumn::First => find_first(),
+        };
+        let Some(target_col_idx) = target_col_idx else {
+            return;
+        };
+
+        // Calculate animation offset before removing the tile.
+        let tile_idx = self.columns[new_col_idx].position(window_id).unwrap();
+        let offset = self.column_x(new_col_idx) + self.columns[new_col_idx].render_offset().x
+            - self.column_x(target_col_idx);
+        let mut offset = Point::from((offset, 0.));
+        let prev_off = self.columns[new_col_idx].tile_offset(tile_idx);
+
+        // Remove the new window's tile from its column.
+        let removed = self.remove_tile(window_id, Transaction::new());
+
+        // If the new column was to the left of the target, removing it shifts the target index
+        // down by one.
+        let adjusted_target_idx = if new_col_idx < target_col_idx {
+            target_col_idx - 1
+        } else {
+            target_col_idx
+        };
+
+        self.add_tile_to_column(adjusted_target_idx, None, removed.tile, true);
+
+        let target_column = &mut self.columns[adjusted_target_idx];
         offset += prev_off - target_column.tile_offset(target_column.tiles.len() - 1);
         offset.x -= target_column.render_offset().x;
 

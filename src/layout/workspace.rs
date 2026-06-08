@@ -40,7 +40,7 @@ use crate::utils::{
     ensure_min_max_size, ensure_min_max_size_maybe_zero, output_size, send_scale_transform,
     ResizeEdge,
 };
-use crate::window::ResolvedWindowRules;
+use crate::window::{OpenConsumeIntoColumn, ResolvedWindowRules};
 
 #[derive(Debug)]
 pub struct Workspace<W: LayoutElement> {
@@ -1119,6 +1119,14 @@ impl<W: LayoutElement> Workspace<W> {
             return;
         }
         self.scrolling.consume_into_column();
+    }
+
+    pub fn auto_consume_window(&mut self, window_id: &W::Id, consume_rule: OpenConsumeIntoColumn) {
+        // Skip floating windows; auto-consume only applies to tiled layout.
+        if self.floating.has_window(window_id) {
+            return;
+        }
+        self.scrolling.auto_consume_window(window_id, consume_rule);
     }
 
     pub fn expel_from_column(&mut self) {
