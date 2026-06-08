@@ -379,12 +379,13 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
 
                 let is_active = if ws.is_active { " * " } else { "   " };
                 let idx = ws.idx;
+                let wid = ws.id;
                 let name = if let Some(name) = ws.name.as_deref() {
                     format!(" \"{name}\"")
                 } else {
                     String::new()
                 };
-                println!("{is_active}{idx}{name}");
+                println!("{is_active}{idx}\t{wid}\t{name}");
             }
         }
         Msg::KeyboardLayouts => {
