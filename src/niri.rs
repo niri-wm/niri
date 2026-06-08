@@ -2437,7 +2437,11 @@ impl Niri {
             .insert_source(
                 Timer::from_duration(Duration::from_secs(1)),
                 |_, _, state| {
-                    state.niri.send_frame_callbacks_on_fallback_timer();
+                    // No-op while monitors are off: ticking smithay's frame-throttle bookkeeping
+                    // serves no purpose when nothing is being presented.
+                    if state.niri.monitors_active {
+                        state.niri.send_frame_callbacks_on_fallback_timer();
+                    }
                     TimeoutAction::ToDuration(Duration::from_secs(1))
                 },
             )
@@ -3696,6 +3700,83 @@ impl Niri {
         }
     }
 
+    pub fn queue_estimated_vblank_timer(
+        &mut self,
+        output: Output,
+        target_presentation_time: Duration,
+    ) {
+        let output_state = self.output_state.get_mut(&output).unwrap();
+        match mem::take(&mut output_state.redraw_state) {
+            RedrawState::Idle => unreachable!(),
+            RedrawState::Queued => (),
+            RedrawState::WaitingForVBlank { .. } => unreachable!(),
+            RedrawState::WaitingForEstimatedVBlank(token)
+            | RedrawState::WaitingForEstimatedVBlankAndQueued(token) => {
+                output_state.redraw_state = RedrawState::WaitingForEstimatedVBlank(token);
+                return;
+            }
+        }
+
+        let now = get_monotonic_time();
+        let mut duration = target_presentation_time.saturating_sub(now);
+
+        // No use setting a zero timer, since we'll send frame callbacks anyway right after the
+        // call to render(). This can happen for example with unknown presentation time from DRM.
+        if duration.is_zero() {
+            duration += output_state
+                .frame_clock
+                .refresh_interval()
+                // Unknown refresh interval, i.e. winit backend. Would be good to estimate it
+                // somehow but it's not that important for this code path.
+                .unwrap_or(Duration::from_micros(16_667));
+        }
+
+        trace!("queueing estimated vblank timer to fire in {duration:?}");
+
+        let timer = Timer::from_duration(duration);
+        let token = self
+            .event_loop
+            .insert_source(timer, move |_, _, data| {
+                data.niri.on_estimated_vblank_timer(output.clone());
+                TimeoutAction::Drop
+            })
+            .unwrap();
+        output_state.redraw_state = RedrawState::WaitingForEstimatedVBlank(token);
+    }
+
+    fn on_estimated_vblank_timer(&mut self, output: Output) {
+        let span = tracy_client::span!("Niri::on_estimated_vblank_timer");
+
+        let name = output.name();
+        span.emit_text(&name);
+
+        let Some(output_state) = self.output_state.get_mut(&output) else {
+            error!("missing output state for {name}");
+            return;
+        };
+
+        // We waited for the timer, now we can send frame callbacks again.
+        output_state.frame_callback_sequence = output_state.frame_callback_sequence.wrapping_add(1);
+
+        match mem::replace(&mut output_state.redraw_state, RedrawState::Idle) {
+            RedrawState::Idle => unreachable!(),
+            RedrawState::Queued => unreachable!(),
+            RedrawState::WaitingForVBlank { .. } => unreachable!(),
+            RedrawState::WaitingForEstimatedVBlank(_) => (),
+            // The timer fired just in front of a redraw.
+            RedrawState::WaitingForEstimatedVBlankAndQueued(_) => {
+                output_state.redraw_state = RedrawState::Queued;
+                return;
+            }
+        }
+
+        if output_state.unfinished_animations_remain {
+            self.queue_redraw(&output);
+        } else {
+            self.send_frame_callbacks(&output);
+        }
+    }
+
     pub fn render_pointer<R: NiriRenderer>(
         &self,
         renderer: &mut R,
@@ -4631,6 +4712,18 @@ impl Niri {
 
             // Render.
             res = backend.render(self, output, target_presentation_time);
+        } else {
+            // Clear unfinished_animations_remain so the estimated-vblank timer doesn't keep
+            // re-queuing redraws at refresh-rate cadence while monitors are off. Recomputed when
+            // monitors come back active.
+            self.output_state
+                .get_mut(output)
+                .unwrap()
+                .unfinished_animations_remain = false;
+
+            // With monitors off, reuse the throttle Tty::render schedules on NoDamage, so
+            // commit-driven queue_redraw doesn't busy-loop the redraw path.
+            self.queue_estimated_vblank_timer(output.clone(), target_presentation_time);
         }
 
         let is_locked = self.is_locked();
@@ -4699,7 +4792,12 @@ impl Niri {
         //
         // However, this should probably be restricted to sending frame callbacks to more surfaces,
         // to err on the safe side.
-        self.send_frame_callbacks(output);
+        //
+        // With monitors off, skip frame callbacks entirely. We never present anything, so inviting
+        // clients to commit just queues buffers that go nowhere.
+        if self.monitors_active {
+            self.send_frame_callbacks(output);
+        }
         backend.with_primary_renderer(|renderer| {
             #[cfg(feature = "xdp-gnome-screencast")]
             {
