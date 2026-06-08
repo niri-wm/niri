@@ -196,7 +196,7 @@ impl Backend {
     pub fn on_output_config_changed(&mut self, niri: &mut Niri) {
         match self {
             Backend::Tty(tty) => tty.on_output_config_changed(niri),
-            Backend::Winit(_) => (),
+            Backend::Winit(w) => w.on_output_config_changed(niri),
             Backend::Headless(_) => (),
         }
     }
