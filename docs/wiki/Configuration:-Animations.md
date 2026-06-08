@@ -222,6 +222,16 @@ animations {
 }
 ```
 
+You can also refer to a shader file by specifying its path. <sup>Since: next release</sup>
+
+```kdl,must-fail
+animations {
+    window-open {
+        custom-shader path="./my-shader.glsl"
+    }
+}
+```
+
 #### `window-close`
 
 <sup>Since: 0.1.5</sup>
