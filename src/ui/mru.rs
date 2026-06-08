@@ -1834,7 +1834,7 @@ fn make_preset_opened_binds() -> Vec<Bind> {
                 // The modifier is filled dynamically.
                 modifiers: Modifiers::empty(),
             },
-            action,
+            actions: vec![action].into(),
             repeat: true,
             cooldown: None,
             allow_when_locked: false,
@@ -1882,7 +1882,11 @@ fn make_dynamic_opened_binds(config: &Config) -> Vec<Bind> {
     let mut binds: HashMap<Trigger, Vec<Bind>> = HashMap::new();
 
     for bind in &config.binds.0 {
-        let action = match &bind.action {
+        let Some(action) = bind.single_action() else {
+            continue;
+        };
+
+        let action = match action {
             Action::FocusColumnRight
             | Action::FocusColumnRightOrFirst
             | Action::FocusColumnOrMonitorRight
@@ -1907,7 +1911,7 @@ fn make_dynamic_opened_binds(config: &Config) -> Vec<Bind> {
         };
 
         binds.entry(bind.key.trigger).or_default().push(Bind {
-            action,
+            actions: vec![action].into(),
             ..bind.clone()
         });
     }
