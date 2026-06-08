@@ -440,6 +440,52 @@ animations {
 }
 ```
 
+#### `screen-transition`
+
+<sup>Since: next release</sup>
+
+The cross-fade animation of the `do-screen-transition` action.
+
+```kdl
+animations {
+    screen-transition {
+        curve "ease-out-expo"
+    }
+}
+```
+
+##### `custom-shader`
+
+<sup>Since: next release</sup>
+
+You can write a custom shader for drawing the screen during a screen transition animation.
+
+See [this example shader](./examples/screen_transition_custom_shader.frag) for a full documentation with several animations to experiment with.
+
+If a custom shader fails to compile, niri will print a warning and fall back to the default, or previous successfully compiled shader.
+When running niri as a systemd service, you can see the warnings in the journal: `journalctl -ef /usr/bin/niri`
+
+> [!WARNING]
+>
+> Custom shaders do not have a backwards compatibility guarantee.
+> I may need to change their interface as I'm developing new features.
+
+<!-- Example: screen transition will show the previous screen texture and gradually fade in the next screen texture on top of it. -->
+
+```kdl
+animations {
+    screen-transition {
+        custom-shader r"
+            vec4 screen_transition_color(vec3 coords_curr_geo, vec3 size_curr_geo) {
+                vec3 coords_tex = niri_geo_to_tex * coords_curr_geo;
+                vec4 color = texture2D(niri_tex_from, coords_tex.st);
+                return color * (1.0 - niri_clamped_progress);
+            }
+        "
+    }
+}
+```
+
 ### Synchronized Animations
 
 <sup>Since: 0.1.5</sup>
