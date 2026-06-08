@@ -21,7 +21,7 @@ use crate::backend::tty::{TtyFrame, TtyRenderer, TtyRendererError};
 /// Renders a shader with optional texture input, on the primary GPU.
 #[derive(Debug, Clone)]
 pub struct ShaderRenderElement {
-    program: ProgramType,
+    program: ShaderSelection,
     id: Id,
     commit_counter: CommitCounter,
     area: Rectangle<f64, Logical>,
@@ -32,6 +32,12 @@ pub struct ShaderRenderElement {
     additional_uniforms: Rc<[Uniform<'static>]>,
     textures: HashMap<String, GlesTexture>,
     kind: Kind,
+}
+
+#[derive(Debug, Clone)]
+enum ShaderSelection {
+    ProgramType(ProgramType),
+    Direct(ShaderProgram),
 }
 
 #[derive(Debug, Clone)]
@@ -191,7 +197,32 @@ impl ShaderRenderElement {
         kind: Kind,
     ) -> Self {
         Self {
-            program,
+            program: ShaderSelection::ProgramType(program),
+            id: Id::new(),
+            commit_counter: CommitCounter::default(),
+            area: Rectangle::from_size(size),
+            opaque_regions: opaque_regions.unwrap_or_default(),
+            scale,
+            alpha,
+            additional_uniforms,
+            textures,
+            kind,
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_with_shader(
+        shader: ShaderProgram,
+        size: Size<f64, Logical>,
+        opaque_regions: Option<Vec<Rectangle<f64, Logical>>>,
+        scale: f32,
+        alpha: f32,
+        additional_uniforms: Rc<[Uniform<'static>]>,
+        textures: HashMap<String, GlesTexture>,
+        kind: Kind,
+    ) -> Self {
+        Self {
+            program: ShaderSelection::Direct(shader),
             id: Id::new(),
             commit_counter: CommitCounter::default(),
             area: Rectangle::from_size(size),
@@ -206,7 +237,7 @@ impl ShaderRenderElement {
 
     pub fn empty(program: ProgramType, kind: Kind) -> Self {
         Self {
-            program,
+            program: ShaderSelection::ProgramType(program),
             id: Id::new(),
             commit_counter: CommitCounter::default(),
             area: Rectangle::default(),
@@ -300,7 +331,13 @@ impl RenderElement<GlesRenderer> for ShaderRenderElement {
 
         let frame = frame.as_gles_frame();
 
-        let Some(shader) = Shaders::get_from_frame(frame).program(self.program) else {
+        let shader = match &self.program {
+            ShaderSelection::ProgramType(program) => {
+                Shaders::get_from_frame(frame).program(*program)
+            }
+            ShaderSelection::Direct(shader) => Some(shader.clone()),
+        };
+        let Some(shader) = shader else {
             return Ok(());
         };
 

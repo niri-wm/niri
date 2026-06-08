@@ -28,7 +28,7 @@ use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::{Interest, LoopHandle, Mode, PostAction};
 use smithay::reexports::rustix::fs::unlink;
 use smithay::utils::SERIAL_COUNTER;
-use smithay::wayland::shell::wlr_layer::{KeyboardInteractivity, Layer};
+use smithay::wayland::shell::wlr_layer::{Anchor, ExclusiveZone, KeyboardInteractivity, Layer};
 
 use crate::backend::IpcOutputMap;
 use crate::input::pick_window_grab::PickWindowGrab;
@@ -312,11 +312,38 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
                                     niri_ipc::LayerSurfaceKeyboardInteractivity::OnDemand
                                 }
                             };
+                        let anchors = {
+                            let anchor = surface.cached_state().anchor;
+                            let mut values = Vec::with_capacity(4);
+                            if anchor.contains(Anchor::TOP) {
+                                values.push(String::from("top"));
+                            }
+                            if anchor.contains(Anchor::BOTTOM) {
+                                values.push(String::from("bottom"));
+                            }
+                            if anchor.contains(Anchor::LEFT) {
+                                values.push(String::from("left"));
+                            }
+                            if anchor.contains(Anchor::RIGHT) {
+                                values.push(String::from("right"));
+                            }
+                            values
+                        };
+                        let anchor_sides = surface.cached_state().anchor.bits().count_ones() as u8;
+                        let exclusive_zone = match surface.cached_state().exclusive_zone {
+                            ExclusiveZone::Exclusive(_) => {
+                                niri_ipc::LayerSurfaceExclusiveZone::Exclusive
+                            }
+                            _ => niri_ipc::LayerSurfaceExclusiveZone::Neutral,
+                        };
 
                         layers.push(niri_ipc::LayerSurface {
                             namespace: surface.namespace().to_owned(),
                             output: name.clone(),
                             layer,
+                            anchors,
+                            anchor_sides,
+                            exclusive_zone,
                             keyboard_interactivity,
                         });
                     }
