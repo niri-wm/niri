@@ -1028,6 +1028,11 @@ impl WindowMruUi {
         let UiState::Open(inner) = &mut self.state else {
             return None;
         };
+
+        if !inner.config.borrow().recent_windows.enable_mouse{
+            return None;
+        }
+
         // Don't handle pointer until the UI is visible.
         if !inner.is_fully_open() {
             return None;
