@@ -64,6 +64,8 @@ pub struct WindowRule {
     #[knuffel(child, unwrap(argument))]
     pub baba_is_float: Option<bool>,
     #[knuffel(child, unwrap(argument))]
+    pub float_above_fullscreen: Option<bool>,
+    #[knuffel(child, unwrap(argument))]
     pub block_out_from: Option<BlockOutFrom>,
     #[knuffel(child, unwrap(argument))]
     pub variable_refresh_rate: Option<bool>,
