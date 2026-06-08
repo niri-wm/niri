@@ -4757,14 +4757,32 @@ impl<W: LayoutElement> Layout<W> {
 
         if let Some(InteractiveMoveState::Moving(move_)) = &mut self.interactive_move {
             if move_.tile.window().id() == window {
-                let Some(snapshot) = move_.tile.take_unmap_snapshot() else {
+                // Extract all tile data in a block to limit the mutable borrow.
+                let (
+                    snapshot_opt,
+                    tile_pos,
+                    tile_size,
+                    output,
+                    pointer_pos_within_output,
+                    anim_override,
+                ) = {
+                    let snapshot = move_.tile.take_unmap_snapshot();
+                    let tpos = move_.tile_render_location(zoom);
+                    let tsz = move_.tile.tile_size();
+                    let output = move_.output.clone();
+                    let pointer = move_.pointer_pos_within_output;
+                    let override_opt = move_.tile.window().rules().window_close.clone();
+                    (snapshot, tpos, tsz, output, pointer, override_opt)
+                };
+                // Mutable borrow from self.interactive_move is released here.
+
+                let Some(snapshot) = snapshot_opt else {
                     return;
                 };
-                let tile_pos = move_.tile_render_location(zoom);
-                let tile_size = move_.tile.tile_size();
 
-                let output = move_.output.clone();
-                let pointer_pos_within_output = move_.pointer_pos_within_output;
+                let anim_config =
+                    anim_override.unwrap_or(self.options.animations.window_close.clone());
+
                 let Some(mon) = self.monitor_for_output_mut(&output) else {
                     return;
                 };
@@ -4779,7 +4797,15 @@ impl<W: LayoutElement> Layout<W> {
                     .unwrap();
 
                 let tile_pos = tile_pos - ws_geo.loc;
-                ws.start_close_animation_for_tile(renderer, snapshot, tile_size, tile_pos, blocker);
+
+                ws.start_close_animation_for_tile(
+                    renderer,
+                    snapshot,
+                    tile_size,
+                    tile_pos,
+                    blocker,
+                    anim_config,
+                );
                 return;
             }
         }

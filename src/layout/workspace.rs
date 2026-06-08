@@ -1744,9 +1744,16 @@ impl<W: LayoutElement> Workspace<W> {
         tile_size: Size<f64, Logical>,
         tile_pos: Point<f64, Logical>,
         blocker: TransactionBlocker,
+        anim_config: niri_config::animations::WindowCloseAnim,
     ) {
-        self.floating
-            .start_close_animation_for_tile(renderer, snapshot, tile_size, tile_pos, blocker);
+        self.floating.start_close_animation_for_tile(
+            renderer,
+            snapshot,
+            tile_size,
+            tile_pos,
+            blocker,
+            anim_config,
+        );
     }
 
     pub fn start_open_animation(&mut self, id: &W::Id) -> bool {

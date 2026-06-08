@@ -17,8 +17,10 @@ use smithay::wayland::compositor::{Blocker, BlockerState};
 use crate::animation::Animation;
 use crate::niri_render_elements;
 use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
-use crate::render_helpers::shader_element::ShaderRenderElement;
-use crate::render_helpers::shaders::{mat3_uniform, ProgramType, Shaders};
+use crate::render_helpers::shader_element::{ShaderProgram, ShaderRenderElement};
+use crate::render_helpers::shaders::{
+    mat3_uniform, window_close_program_for_source, ProgramType, Shaders,
+};
 use crate::render_helpers::snapshot::RenderSnapshot;
 use crate::render_helpers::texture::{TextureBuffer, TextureRenderElement};
 use crate::render_helpers::{render_to_encompassing_texture, RenderCtx, RenderTarget};
@@ -61,6 +63,9 @@ pub struct ClosingWindow {
 
     /// Random seed for the shader.
     random_seed: f32,
+
+    /// Optional custom shader source from window rules.
+    custom_shader: Option<String>,
 }
 
 niri_render_elements! {
@@ -94,6 +99,7 @@ impl AnimationState {
 }
 
 impl ClosingWindow {
+    #[allow(clippy::too_many_arguments)]
     pub fn new<E: RenderElement<GlesRenderer>>(
         renderer: &mut GlesRenderer,
         snapshot: RenderSnapshot<E, E>,
@@ -102,6 +108,7 @@ impl ClosingWindow {
         pos: Point<f64, Logical>,
         blocker: TransactionBlocker,
         anim: Animation,
+        custom_shader: Option<String>,
     ) -> anyhow::Result<Self> {
         let _span = tracy_client::span!("ClosingWindow::new");
 
@@ -154,6 +161,7 @@ impl ClosingWindow {
             blocked_out_buffer_offset,
             anim_state: AnimationState::new(blocker, anim),
             random_seed: fastrand::f32(),
+            custom_shader,
         })
     }
 
@@ -223,10 +231,7 @@ impl ClosingWindow {
         let progress = anim.value();
         let clamped_progress = anim.clamped_value().clamp(0., 1.);
 
-        if Shaders::get(ctx.renderer)
-            .program(ProgramType::Close)
-            .is_some()
-        {
+        if let Some(shader) = self.resolve_shader(ctx.renderer) {
             let area_loc = Vec2::new(view_rect.loc.x as f32, view_rect.loc.y as f32);
             let area_size = Vec2::new(view_rect.size.w as f32, view_rect.size.h as f32);
 
@@ -250,8 +255,8 @@ impl ClosingWindow {
             let geo_to_tex =
                 Mat3::from_translation(-tex_loc / tex_size) * Mat3::from_scale(geo_size / tex_size);
 
-            return ShaderRenderElement::new(
-                ProgramType::Close,
+            return ShaderRenderElement::new_with_shader(
+                shader,
                 view_rect.size,
                 None,
                 scale.x as f32,
@@ -298,5 +303,13 @@ impl ClosingWindow {
         );
 
         elem.into()
+    }
+
+    fn resolve_shader(&self, renderer: &mut GlesRenderer) -> Option<ShaderProgram> {
+        if let Some(src) = self.custom_shader.as_deref() {
+            return window_close_program_for_source(renderer, src);
+        }
+
+        Shaders::get(renderer).program(ProgramType::Close)
     }
 }
