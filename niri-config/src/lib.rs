@@ -1645,6 +1645,28 @@ mod tests {
                         ),
                     },
                 ),
+                border_fade: BorderFadeAnim(
+                    Animation {
+                        off: true,
+                        kind: Easing(
+                            EasingParams {
+                                duration_ms: 200,
+                                curve: EaseOutCubic,
+                            },
+                        ),
+                    },
+                ),
+                border_angle: BorderAngleAnim(
+                    Animation {
+                        off: true,
+                        kind: Easing(
+                            EasingParams {
+                                duration_ms: 2000,
+                                curve: Linear,
+                            },
+                        ),
+                    },
+                ),
             },
             blur: Blur {
                 off: false,

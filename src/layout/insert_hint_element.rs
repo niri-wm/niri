@@ -51,8 +51,9 @@ impl InsertHintElement {
         radius: CornerRadius,
         scale: f64,
     ) {
-        self.inner
-            .update_render_elements(size, true, false, false, view_rect, radius, scale, 1.);
+        self.inner.update_render_elements(
+            size, true, false, false, view_rect, radius, scale, 1., None, 0.,
+        );
     }
 
     pub fn render(
