@@ -622,6 +622,12 @@ pub enum BlockOutFrom {
     ScreenCapture,
 }
 
+#[derive(knuffel::DecodeScalar, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InhibitIdle {
+    Always,
+    Fullscreen,
+}
+
 #[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq)]
 pub struct BorderRule {
     #[knuffel(child)]
