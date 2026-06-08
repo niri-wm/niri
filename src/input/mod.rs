@@ -47,7 +47,7 @@ use self::spatial_movement_grab::SpatialMovementGrab;
 #[cfg(feature = "dbus")]
 use crate::dbus::freedesktop_a11y::KbMonBlock;
 use crate::layout::scrolling::ScrollDirection;
-use crate::layout::{ActivateWindow, LayoutElement as _};
+use crate::layout::{ActivateWindow, HitType, LayoutElement as _};
 use crate::niri::{CastTarget, PointerVisibility, State};
 use crate::ui::mru::{WindowMru, WindowMruUi};
 use crate::ui::screenshot_ui::ScreenshotUi;
@@ -3112,6 +3112,62 @@ impl State {
         };
 
         let is_mru_open = self.niri.window_mru_ui.is_open();
+
+        // Scroll over tab indicator to switch tabs in that column.
+        // Gated on config flag layout.tab-indicator.scroll-to-switch-tabs (default off).
+        // Does not intercept wheel scrolls in overview or MRU UI.
+        let scroll_to_switch_tabs = self
+            .niri
+            .config
+            .borrow()
+            .layout
+            .tab_indicator
+            .scroll_to_switch_tabs;
+        let should_handle_tab_indicator_scroll = scroll_to_switch_tabs
+            && source == AxisSource::Wheel
+            && !should_handle_in_overview
+            && !is_mru_open;
+        if should_handle_tab_indicator_scroll {
+            let pos = pointer.current_location();
+            let is_over_tab_indicator =
+                self.niri
+                    .contents_under(pos)
+                    .window
+                    .is_some_and(|(_, hit)| {
+                        matches!(
+                            hit,
+                            HitType::Activate {
+                                is_tab_indicator: true
+                            }
+                        )
+                    });
+            let vertical = vertical_amount_v120.unwrap_or(0.);
+            if is_over_tab_indicator && vertical != 0. {
+                let ticks = self.niri.tab_indicator_wheel_tracker.accumulate(vertical);
+                if ticks != 0 {
+                    if let Some((output, pos_within_output)) = self.niri.output_under(pos) {
+                        let output = output.clone();
+                        if self.niri.layout.activate_tab_under(
+                            &output,
+                            pos_within_output,
+                            i32::from(ticks),
+                        ) {
+                            self.maybe_warp_cursor_to_focus();
+                            self.niri.layer_shell_on_demand_focus = None;
+                            self.niri.queue_redraw(&output);
+                        }
+                    }
+                }
+                // Don't let leftover state in the regular wheel trackers fire stale binds.
+                self.niri.horizontal_wheel_tracker.reset();
+                self.niri.vertical_wheel_tracker.reset();
+                return;
+            }
+        }
+        // If this axis frame was not consumed as vertical tab-indicator scrolling, discard any
+        // partial accumulation. This covers moving off the indicator, horizontal-only wheel frames,
+        // and config/overview/MRU changes that temporarily disable the feature path.
+        self.niri.tab_indicator_wheel_tracker.reset();
 
         // Handle wheel scroll bindings.
         if source == AxisSource::Wheel {
