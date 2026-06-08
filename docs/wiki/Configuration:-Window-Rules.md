@@ -58,6 +58,7 @@ window-rule {
     default-column-display "tabbed"
     default-floating-position x=100 y=200 relative-to="bottom-left"
     scroll-factor 0.75
+    focus-on-activate true
 
     focus-ring {
         // off
@@ -593,6 +594,25 @@ window-rule {
 >
 > This is because window title (and app ID) are not double-buffered in the Wayland protocol, so they are not tied to specific window contents.
 > There's no robust way for Firefox to synchronize visibly showing a different tab and changing the window title.
+
+#### `focus-on-activate`
+
+<sup>Since: next release</sup>
+
+Set this to `false` to prevent the window from receiving focus when it requests activation.
+This is useful for apps that steal focus on incoming messages or when opening popup windows like Picture-in-Picture.
+
+When set to `false`, the window will instead be marked as urgent.
+
+```kdl
+// Don't let Firefox PiP steal focus.
+window-rule {
+    match title="^Picture-in-Picture$"
+
+    open-floating true
+    focus-on-activate false
+}
+```
 
 #### `opacity`
 

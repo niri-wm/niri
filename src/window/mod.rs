@@ -73,6 +73,9 @@ pub struct ResolvedWindowRules {
     /// Whether the window should open focused.
     pub open_focused: Option<bool>,
 
+    /// Whether the window should receive focus on xdg-activation requests.
+    pub focus_on_activate: Option<bool>,
+
     /// Extra bound on the minimum window width.
     pub min_width: Option<u16>,
     /// Extra bound on the minimum window height.
@@ -255,6 +258,10 @@ impl ResolvedWindowRules {
 
                 if let Some(x) = rule.open_focused {
                     resolved.open_focused = Some(x);
+                }
+
+                if let Some(x) = rule.focus_on_activate {
+                    resolved.focus_on_activate = Some(x);
                 }
 
                 if let Some(x) = rule.min_width {

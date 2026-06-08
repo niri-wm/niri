@@ -1800,6 +1800,7 @@ mod tests {
                     open_focused: Some(
                         true,
                     ),
+                    focus_on_activate: None,
                     min_width: None,
                     min_height: None,
                     max_width: None,
