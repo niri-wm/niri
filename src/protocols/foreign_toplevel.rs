@@ -63,6 +63,17 @@ pub struct ForeignToplevelGlobalData {
 }
 
 impl ForeignToplevelManagerState {
+    /// Find the surface (WlSurface) associated with the given ext_foreign_toplevel_handle_v1.
+    pub fn find_surface_for_handle(
+        &self,
+        handle: &smithay::reexports::wayland_protocols::ext::foreign_toplevel_list::v1::server::ext_foreign_toplevel_handle_v1::ExtForeignToplevelHandleV1,
+    ) -> Option<&WlSurface> {
+        self.toplevels
+            .iter()
+            .find(|(_, data)| data.ext_list_instances.contains(handle))
+            .map(|(surface, _)| surface)
+    }
+
     pub fn new<D, F>(display: &DisplayHandle, filter: F) -> Self
     where
         D: GlobalDispatch<ZwlrForeignToplevelManagerV1, ForeignToplevelGlobalData>,
