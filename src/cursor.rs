@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::env;
 use std::fs::File;
@@ -15,6 +15,11 @@ use smithay::wayland::compositor::with_states;
 use xcursor::parser::{parse_xcursor, Image};
 use xcursor::CursorTheme;
 
+const MAX_CURSOR_PIXELS: i32 = 256;
+const CURSOR_SIZES: &[i32] = &[
+    12, 16, 18, 20, 24, 28, 32, 36, 40, 48, 56, 64, 72, 80, 96, 112, 128, 144, 160, 192, 224, 256,
+];
+
 /// Some default looking `left_ptr` icon.
 static FALLBACK_CURSOR_DATA: &[u8] = include_bytes!("../resources/cursor.rgba");
 
@@ -25,6 +30,7 @@ pub struct CursorManager {
     size: u8,
     current_cursor: CursorImageStatus,
     named_cursor_cache: RefCell<XCursorCache>,
+    dynamic_size_multiplier: Cell<f32>,
 }
 
 impl CursorManager {
@@ -36,6 +42,7 @@ impl CursorManager {
         Self {
             theme,
             size,
+            dynamic_size_multiplier: Cell::new(1.0),
             current_cursor: CursorImageStatus::default_named(),
             named_cursor_cache: Default::default(),
         }
@@ -59,7 +66,7 @@ impl CursorManager {
     }
 
     /// Get the current rendering cursor.
-    pub fn get_render_cursor(&self, scale: i32) -> RenderCursor {
+    pub fn get_render_cursor(&self, scale: i32, fractional_scale: f64) -> RenderCursor {
         match self.current_cursor.clone() {
             CursorImageStatus::Hidden => RenderCursor::Hidden,
             CursorImageStatus::Surface(surface) => {
@@ -75,21 +82,44 @@ impl CursorManager {
 
                 RenderCursor::Surface { hotspot, surface }
             }
-            CursorImageStatus::Named(icon) => self.get_render_cursor_named(icon, scale),
+            CursorImageStatus::Named(icon) => {
+                self.get_render_cursor_named(icon, scale, fractional_scale)
+            }
         }
     }
 
-    fn get_render_cursor_named(&self, icon: CursorIcon, scale: i32) -> RenderCursor {
-        self.get_cursor_with_name(icon, scale)
+    fn get_render_cursor_named(
+        &self,
+        icon: CursorIcon,
+        scale: i32,
+        fractional_scale: f64,
+    ) -> RenderCursor {
+        let pixel_size = self.texture_pixel_size(scale, fractional_scale);
+        // Smooth residual scaling on top of the chosen discrete texture size.
+        // When the multiplier exceeds what `CURSOR_SIZES` provides, this keeps
+        // growing past 1.0 and yields a pixelated-but-continuous magnification.
+        let nat_size = self.effective_cursor_pixel_size(scale, fractional_scale) as f64;
+        let mult = self.dynamic_size_multiplier.get() as f64;
+        let desired = nat_size * mult;
+        let rescale = if pixel_size > 0 {
+            desired / pixel_size as f64
+        } else {
+            1.0
+        };
+        self.get_cursor_with_name(icon, scale, fractional_scale)
             .map(|cursor| RenderCursor::Named {
                 icon,
                 scale,
                 cursor,
+                pixel_size,
+                rescale,
             })
             .unwrap_or_else(|| RenderCursor::Named {
                 icon: Default::default(),
                 scale,
-                cursor: self.get_default_cursor(scale),
+                cursor: self.get_default_cursor(scale, fractional_scale),
+                pixel_size,
+                rescale,
             })
     }
 
@@ -98,25 +128,100 @@ impl CursorManager {
             CursorImageStatus::Hidden => false,
             CursorImageStatus::Surface(_) => false,
             CursorImageStatus::Named(icon) => self
-                .get_cursor_with_name(*icon, scale)
-                .unwrap_or_else(|| self.get_default_cursor(scale))
+                .get_cursor_with_name(*icon, scale, scale as f64)
+                .unwrap_or_else(|| self.get_default_cursor(scale, scale as f64))
                 .is_animated_cursor(),
         }
     }
 
-    /// Get named cursor for the given `icon` and `scale`.
-    pub fn get_cursor_with_name(&self, icon: CursorIcon, scale: i32) -> Option<Rc<XCursor>> {
+    /// Set the common dynamic multiplier for cursor sizes.
+    pub fn set_size_multiplier(&mut self, m: f32) {
+        let m = m.max(1.0);
+        let old = self.dynamic_size_multiplier.get();
+        if (old - m).abs() > 0.001 {
+            self.dynamic_size_multiplier.set(m);
+            // Only clear cache when crossing the magnification boundary; for
+            // intermediate values the residual rescale handles smoothness so
+            // we can reuse cached textures.
+            if (old <= 1.01) != (m <= 1.01) {
+                self.named_cursor_cache.get_mut().clear();
+            }
+        }
+    }
+
+    pub fn size_multiplier(&self) -> f32 {
+        self.dynamic_size_multiplier.get()
+    }
+
+    /// Compute the effective pixel size for the cursor considering fractional scaling.
+    ///
+    /// This always returns a size from `CURSOR_SIZES` (the "natural" set of sizes a
+    /// well-behaved xcursor theme provides). It does *not* fold in the dynamic
+    /// magnification multiplier: that is applied at render time via a smooth
+    /// rescale element on top of the chosen texture, so we can grow past the
+    /// largest provided size without losing animation smoothness.
+    pub fn effective_cursor_pixel_size(&self, scale: i32, fractional_scale: f64) -> i32 {
+        let base_size = self.size as f32;
+
+        let effective_scale = if (fractional_scale - scale as f64).abs() > 0.01 {
+            fractional_scale as f32
+        } else {
+            scale as f32
+        };
+
+        let target_size = (base_size * effective_scale).round() as i32;
+
+        let snapped = CURSOR_SIZES
+            .iter()
+            .min_by_key(|&&s| (s - target_size).abs())
+            .copied()
+            .unwrap_or(target_size);
+
+        snapped.min(MAX_CURSOR_PIXELS).max(1)
+    }
+
+    /// Pixel size used for the cached cursor texture, taking magnification into
+    /// account: while magnified we pick the largest theme-provided size that
+    /// still fits within the desired multiplier, so the residual rescale stays
+    /// in the `[1.0, next_size/this_size)` range and looks sharp until we run
+    /// out of available sizes (after which we keep upscaling, pixelated).
+    pub fn texture_pixel_size(&self, scale: i32, fractional_scale: f64) -> i32 {
+        let base_size = self.size as f32;
+        let mult = self.dynamic_size_multiplier.get();
+
+        let effective_scale = if (fractional_scale - scale as f64).abs() > 0.01 {
+            fractional_scale as f32
+        } else {
+            scale as f32
+        };
+
+        let desired = (base_size * effective_scale * mult).round() as i32;
+
+        let chosen = CURSOR_SIZES
+            .iter()
+            .copied()
+            .filter(|&s| s <= desired)
+            .max()
+            .or_else(|| CURSOR_SIZES.iter().copied().min())
+            .unwrap_or(desired);
+
+        chosen.min(MAX_CURSOR_PIXELS).max(1)
+    }
+
+    pub fn get_cursor_with_name(&self, icon: CursorIcon, scale: i32, fractional_scale: f64) -> Option<Rc<XCursor>> {
+        // Use texture pixel size (includes magnification snap) for the cache key
+        // so each discrete size we render gets its own entry.
+        let pixel_size = self.texture_pixel_size(scale, fractional_scale);
         self.named_cursor_cache
             .borrow_mut()
-            .entry((icon, scale))
-            .or_insert_with_key(|(icon, scale)| {
-                let size = self.size as i32 * scale;
-                let mut cursor = Self::load_xcursor(&self.theme, icon.name(), size);
+            .entry((icon, pixel_size))
+            .or_insert_with_key(|(icon, size)| {
+                let mut cursor = Self::load_xcursor(&self.theme, icon.name(), *size);
 
                 // Check alternative names to account for non-compliant themes.
                 if cursor.is_err() {
                     for name in icon.alt_names() {
-                        cursor = Self::load_xcursor(&self.theme, name, size);
+                        cursor = Self::load_xcursor(&self.theme, name, *size);
                         if cursor.is_ok() {
                             break;
                         }
@@ -138,9 +243,8 @@ impl CursorManager {
     }
 
     /// Get default cursor.
-    pub fn get_default_cursor(&self, scale: i32) -> Rc<XCursor> {
-        // The default cursor always has a fallback.
-        self.get_cursor_with_name(CursorIcon::Default, scale)
+    pub fn get_default_cursor(&self, scale: i32, fractional_scale: f64) -> Rc<XCursor> {
+        self.get_cursor_with_name(CursorIcon::Default, scale, fractional_scale)
             .unwrap()
     }
 
@@ -222,10 +326,17 @@ pub enum RenderCursor {
         icon: CursorIcon,
         scale: i32,
         cursor: Rc<XCursor>,
+        pixel_size: i32,
+        /// Residual scale applied around the hotspot at render time, on top of
+        /// the discrete texture size chosen above. Values >1.0 magnify; equal
+        /// to 1.0 when not magnified or when the multiplier landed exactly on a
+        /// theme-provided size.
+        rescale: f64,
     },
 }
 
-type TextureCache = HashMap<(CursorIcon, i32), Vec<MemoryRenderBuffer>>;
+/// Key is: (CursorIcon, pixel_size, output_integer_scale)
+type TextureCache = HashMap<(CursorIcon, i32, i32), Vec<MemoryRenderBuffer>>;
 
 #[derive(Default)]
 pub struct CursorTextureCache {
@@ -240,13 +351,14 @@ impl CursorTextureCache {
     pub fn get(
         &self,
         icon: CursorIcon,
-        scale: i32,
+        pixel_size: i32,
+        output_scale: i32,
         cursor: &XCursor,
         idx: usize,
     ) -> MemoryRenderBuffer {
         self.cache
             .borrow_mut()
-            .entry((icon, scale))
+            .entry((icon, pixel_size, output_scale))
             .or_insert_with(|| {
                 cursor
                     .frames()
@@ -256,7 +368,7 @@ impl CursorTextureCache {
                             &frame.pixels_rgba,
                             Fourcc::Argb8888,
                             (frame.width as i32, frame.height as i32),
-                            scale,
+                            output_scale,
                             Transform::Normal,
                             None,
                         )
