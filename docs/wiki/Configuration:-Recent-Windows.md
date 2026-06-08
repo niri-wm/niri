@@ -21,6 +21,7 @@ recent-windows {
     }
 
     previews {
+        // off
         max-height 480
         max-scale 0.5
     }
@@ -100,6 +101,8 @@ recent-windows {
 
 Controls the window previews in the switcher.
 
+- `off`: switches from thumbnail previews to a compact vertical list of window titles.
+
 - `max-scale`: maximum scale of the window previews.
 Windows cannot be scaled bigger than this value.
 - `max-height`: maximum height of the window previews.
@@ -108,6 +111,15 @@ Further limits the size of the previews in order to occupy less space on large m
 On smaller monitors, the previews will be primarily limited by `max-scale`, and on larger monitors they will be primarily limited by `max-height`.
 
 The `max-scale` limit is imposed twice: on the final window scale, and on the window height which cannot exceed `monitor height × max scale`.
+
+```kdl
+recent-windows {
+    // Use a compact list instead of big thumbnails and ignores max-scale and max-height.
+    previews {
+        off
+    }
+}
+```
 
 ```kdl
 recent-windows {
