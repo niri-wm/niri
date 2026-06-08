@@ -31,6 +31,7 @@ use smithay::wayland::shell::xdg::{
     ToplevelCachedState, ToplevelConfigure, ToplevelState, ToplevelSurface, XdgToplevelSurfaceData,
     XdgToplevelSurfaceRoleAttributes,
 };
+use smithay::wayland::xdg_toplevel_tag::XdgToplevelTagSurfaceData;
 use wayland_backend::server::Credentials;
 
 use crate::handlers::KdeDecorationsModeState;
@@ -353,6 +354,24 @@ pub fn with_toplevel_role<T>(
             .unwrap();
 
         f(&mut role)
+    })
+}
+
+pub fn with_toplevel_role_and_tag<T>(
+    toplevel: &ToplevelSurface,
+    f: impl FnOnce(&mut XdgToplevelSurfaceRoleAttributes, Option<&XdgToplevelTagSurfaceData>) -> T,
+) -> T {
+    with_states(toplevel.wl_surface(), |states| {
+        let mut role = states
+            .data_map
+            .get::<XdgToplevelSurfaceData>()
+            .unwrap()
+            .lock()
+            .unwrap();
+
+        let tag = states.data_map.get::<XdgToplevelTagSurfaceData>();
+
+        f(&mut role, tag)
     })
 }
 

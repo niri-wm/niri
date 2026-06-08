@@ -137,6 +137,8 @@ pub struct Match {
     pub is_urgent: Option<bool>,
     #[knuffel(property)]
     pub at_startup: Option<bool>,
+    #[knuffel(property, str)]
+    pub xdg_tag: Option<RegexEq>,
 }
 
 #[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
