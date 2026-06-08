@@ -928,6 +928,22 @@ https://github.com/user-attachments/assets/3f4cb1a4-40b2-4766-98b7-eec014c19509
 
 </video>
 
+#### `disable-mod-mouse-actions`
+
+<sup>Since: next release</sup>
+
+Disables the niri-side <kbd>Mod</kbd>+<kbd>Left Mouse</kbd> interactive move and <kbd>Mod</kbd>+<kbd>Right Mouse</kbd> interactive resize for matching windows.
+Also disables the corresponding <kbd>Mod</kbd>+touch move grab.
+
+Useful for windows that want to handle <kbd>Mod</kbd>+click themselves, such as games or remote desktop clients.
+
+```kdl
+window-rule {
+    match app-id="^remote-desktop$"
+    disable-mod-mouse-actions true
+}
+```
+
 #### `background-effect`
 
 <sup>Since: 26.04</sup>
