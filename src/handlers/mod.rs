@@ -33,6 +33,9 @@ use smithay::wayland::fractional_scale::FractionalScaleHandler;
 use smithay::wayland::idle_inhibit::IdleInhibitHandler;
 use smithay::wayland::idle_notify::{IdleNotifierHandler, IdleNotifierState};
 use smithay::wayland::input_method::{InputMethodHandler, PopupSurface};
+use smithay::wayland::input_method_v1::{
+    InputMethodV1Handler, PopupSurface as InputMethodPopupSurfaceV1,
+};
 use smithay::wayland::keyboard_shortcuts_inhibit::{
     KeyboardShortcutsInhibitHandler, KeyboardShortcutsInhibitState, KeyboardShortcutsInhibitor,
 };
@@ -65,11 +68,12 @@ use smithay::{
     delegate_cursor_shape, delegate_data_control, delegate_data_device, delegate_dmabuf,
     delegate_drm_lease, delegate_ext_data_control, delegate_fractional_scale,
     delegate_idle_inhibit, delegate_idle_notify, delegate_input_method_manager,
-    delegate_keyboard_shortcuts_inhibit, delegate_output, delegate_pointer_constraints,
-    delegate_pointer_gestures, delegate_presentation, delegate_primary_selection,
-    delegate_relative_pointer, delegate_seat, delegate_security_context, delegate_session_lock,
-    delegate_single_pixel_buffer, delegate_tablet_manager, delegate_text_input_manager,
-    delegate_viewporter, delegate_virtual_keyboard_manager, delegate_xdg_activation,
+    delegate_input_method_manager_v1, delegate_keyboard_shortcuts_inhibit, delegate_output,
+    delegate_pointer_constraints, delegate_pointer_gestures, delegate_presentation,
+    delegate_primary_selection, delegate_relative_pointer, delegate_seat,
+    delegate_security_context, delegate_session_lock, delegate_single_pixel_buffer,
+    delegate_tablet_manager, delegate_text_input_manager, delegate_viewporter,
+    delegate_virtual_keyboard_manager, delegate_xdg_activation,
 };
 
 pub use crate::handlers::xdg_shell::KdeDecorationsModeState;
@@ -250,11 +254,105 @@ impl InputMethodHandler for State {
     }
 
     fn parent_geometry(&self, parent: &WlSurface) -> Rectangle<i32, Logical> {
+        let mut root = parent.clone();
+        while let Some(next) = get_parent(&root) {
+            root = next;
+        }
+
         self.niri
             .layout
-            .find_window_and_output(parent)
+            .find_window_and_output(&root)
             .map(|(mapped, _)| mapped.window.geometry())
             .unwrap_or_default()
+    }
+}
+
+impl InputMethodV1Handler for State {
+    fn new_popup(&mut self, surface: InputMethodPopupSurfaceV1) {
+        if let Some(parent) = surface.get_parent().map(|parent| parent.surface.clone()) {
+            let mut root = parent;
+            while let Some(next) = get_parent(&root) {
+                root = next;
+            }
+
+            if let Some(output) = self.niri.output_for_root(&root) {
+                let scale = output.current_scale();
+                let transform = output.current_transform();
+                let wl_surface = surface.wl_surface();
+                with_states(wl_surface, |data| {
+                    send_scale_transform(wl_surface, data, scale, transform);
+                });
+            }
+        }
+
+        self.niri
+            .input_method_v1_popups
+            .retain(|p| p.alive() && p.wl_surface() != surface.wl_surface());
+        self.niri.input_method_v1_popups.push(surface);
+        self.niri.queue_redraw_all();
+    }
+
+    fn popup_repositioned(&mut self, surface: InputMethodPopupSurfaceV1) {
+        self.niri
+            .input_method_v1_popups
+            .retain(|p| p.alive() && p.wl_surface() != surface.wl_surface());
+        self.niri.input_method_v1_popups.push(surface);
+        self.niri.queue_redraw_all();
+    }
+
+    fn dismiss_popup(&mut self, surface: InputMethodPopupSurfaceV1) {
+        self.niri
+            .input_method_v1_popups
+            .retain(|p| p.wl_surface() != surface.wl_surface());
+        self.niri.queue_redraw_all();
+    }
+
+    fn parent_geometry(&self, parent: &WlSurface) -> Rectangle<i32, Logical> {
+        self.input_method_parent_geometry(parent)
+    }
+}
+
+impl State {
+    fn input_method_parent_geometry(&self, parent: &WlSurface) -> Rectangle<i32, Logical> {
+        let mut root = parent.clone();
+        while let Some(next) = get_parent(&root) {
+            root = next;
+        }
+
+        let Some((mapped, output)) = self.niri.layout.find_window_and_output(&root) else {
+            return Rectangle::default();
+        };
+
+        let window_geometry = mapped.window.geometry();
+        let window = mapped.window.clone();
+        let Some(output) = output.cloned() else {
+            return window_geometry;
+        };
+
+        let Some(mon) = self.niri.layout.monitor_for_output(&output) else {
+            return window_geometry;
+        };
+        let Some((ws, ws_geo)) = mon
+            .workspaces_with_render_geo()
+            .find(|(ws, _)| ws.has_window(&window))
+        else {
+            return window_geometry;
+        };
+        let Some((tile, tile_offset, _)) = ws
+            .tiles_with_render_positions()
+            .find(|(tile, _, _)| tile.window().window == window)
+        else {
+            return window_geometry;
+        };
+
+        let zoom = mon.overview_zoom();
+        let Some(output_geo) = self.niri.global_space.output_geometry(&output) else {
+            return window_geometry;
+        };
+
+        let loc =
+            output_geo.loc.to_f64() + ws_geo.loc + tile_offset.upscale(zoom) + tile.window_loc();
+        Rectangle::new(loc.to_i32_round(), window_geometry.size)
     }
 }
 
@@ -279,6 +377,7 @@ impl KeyboardShortcutsInhibitHandler for State {
 }
 
 delegate_input_method_manager!(State);
+delegate_input_method_manager_v1!(State);
 delegate_keyboard_shortcuts_inhibit!(State);
 delegate_virtual_keyboard_manager!(State);
 
