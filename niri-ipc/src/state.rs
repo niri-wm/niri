@@ -49,6 +49,9 @@ pub struct EventStreamState {
 
     /// State of screencasts.
     pub casts: CastsState,
+
+    /// State of zoom.
+    pub zoom: ZoomChangedState,
 }
 
 /// The workspaces state communicated over the event stream.
@@ -93,6 +96,26 @@ pub struct CastsState {
     pub casts: HashMap<u64, Cast>,
 }
 
+/// Zoom state for a single output tracked in the event stream.
+#[derive(Debug, Clone)]
+pub struct ZoomOutputState {
+    /// Current zoom level.
+    pub level: f64,
+    /// Focal point X coordinate within the output.
+    pub focal_x: f64,
+    /// Focal point Y coordinate within the output.
+    pub focal_y: f64,
+    /// Whether zoom focal point is locked.
+    pub is_locked: bool,
+}
+
+/// The zoom state communicated over the event stream.
+#[derive(Debug, Default)]
+pub struct ZoomChangedState {
+    /// Map from output name to zoom state.
+    pub outputs: HashMap<String, ZoomOutputState>,
+}
+
 impl EventStreamStatePart for EventStreamState {
     fn replicate(&self) -> Vec<Event> {
         let mut events = Vec::new();
@@ -102,6 +125,7 @@ impl EventStreamStatePart for EventStreamState {
         events.extend(self.overview.replicate());
         events.extend(self.config.replicate());
         events.extend(self.casts.replicate());
+        events.extend(self.zoom.replicate());
         events
     }
 
@@ -112,6 +136,7 @@ impl EventStreamStatePart for EventStreamState {
         let event = self.overview.apply(event)?;
         let event = self.config.apply(event)?;
         let event = self.casts.apply(event)?;
+        let event = self.zoom.apply(event)?;
         Some(event)
     }
 }
@@ -315,6 +340,45 @@ impl EventStreamStatePart for CastsState {
             Event::CastStopped { stream_id } => {
                 let cast = self.casts.remove(&stream_id);
                 cast.expect("stopped cast was missing from the map");
+            }
+            event => return Some(event),
+        }
+        None
+    }
+}
+
+impl EventStreamStatePart for ZoomChangedState {
+    fn replicate(&self) -> Vec<Event> {
+        self.outputs
+            .iter()
+            .map(|(output, state)| Event::ZoomChanged {
+                output: output.clone(),
+                level: state.level,
+                focal_x: state.focal_x,
+                focal_y: state.focal_y,
+                is_locked: state.is_locked,
+            })
+            .collect()
+    }
+
+    fn apply(&mut self, event: Event) -> Option<Event> {
+        match event {
+            Event::ZoomChanged {
+                output,
+                level,
+                focal_x,
+                focal_y,
+                is_locked,
+            } => {
+                self.outputs.insert(
+                    output,
+                    ZoomOutputState {
+                        level,
+                        focal_x,
+                        focal_y,
+                        is_locked,
+                    },
+                );
             }
             event => return Some(event),
         }

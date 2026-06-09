@@ -1,5 +1,5 @@
 use std::cell::RefCell;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::ffi::OsStr;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
@@ -15,7 +15,7 @@ use directories::BaseDirs;
 use futures_util::io::{AsyncReadExt, BufReader};
 use futures_util::{select_biased, AsyncBufReadExt, AsyncWrite, AsyncWriteExt, FutureExt as _};
 use niri_config::OutputName;
-use niri_ipc::state::{EventStreamState, EventStreamStatePart as _};
+use niri_ipc::state::{EventStreamState, EventStreamStatePart as _, ZoomOutputState};
 use niri_ipc::{
     Action, Event, KeyboardLayouts, OutputConfigChanged, Overview, Reply, Request, Response,
     Timestamp, WindowLayout, Workspace,
@@ -455,6 +455,34 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
             let casts = state.casts.casts.values().cloned().collect();
             Response::Casts(casts)
         }
+        Request::ZoomState => {
+            let (tx, rx) = async_channel::bounded(1);
+            ctx.event_loop.insert_idle(move |state| {
+                let zooms = state
+                    .niri
+                    .layout
+                    .outputs()
+                    .fold(HashMap::new(), |mut acc, output| {
+                        let level = state.niri.layout.zoom_level_for_output(output);
+                        let snapshot = state.niri.layout.zoom_snapshot_for_output(output);
+                        acc.insert(
+                            output.name().clone(),
+                            niri_ipc::Zoom {
+                                is_locked: state.niri.layout.zoom_locked_for_output(output),
+                                level,
+                                focal_x: snapshot.focal.x,
+                                focal_y: snapshot.focal.y,
+                            },
+                        );
+                        acc
+                    });
+
+                let _ = tx.send_blocking(zooms);
+            });
+            let result = rx.recv().await;
+            let zooms = result.map_err(|_| String::from("error getting zoom states"))?;
+            Response::ZoomState(zooms)
+        }
     };
 
     Ok(response)
@@ -584,6 +612,49 @@ impl State {
         self.ipc_refresh_workspaces();
         self.ipc_refresh_windows();
         self.ipc_refresh_overview();
+
+        let Some(server) = &self.niri.ipc_server else {
+            return;
+        };
+
+        // Emitted at commit granularity — see Event::ZoomChanged docs.
+        let mut state = server.event_stream_state.borrow_mut();
+        let state = &mut state.zoom;
+
+        for output in self.niri.layout.outputs() {
+            let snapshot = self.niri.layout.zoom_snapshot_for_output(output);
+            let name = output.name().clone();
+            let was = state.outputs.get(&name);
+            let is = ZoomOutputState {
+                level: snapshot.level,
+                focal_x: snapshot.focal.x,
+                focal_y: snapshot.focal.y,
+                is_locked: snapshot.locked,
+            };
+
+            // Epsilon comparison for f64 fields — animation sampling
+            // can introduce tiny drift that shouldn't emit redundant events.
+            const EPS: f64 = 1e-4;
+            if let Some(was) = was {
+                if (was.level - is.level).abs() < EPS
+                    && (was.focal_x - is.focal_x).abs() < EPS
+                    && (was.focal_y - is.focal_y).abs() < EPS
+                    && was.is_locked == is.is_locked
+                {
+                    continue;
+                }
+            }
+
+            let event = Event::ZoomChanged {
+                output: name,
+                level: is.level,
+                focal_x: is.focal_x,
+                focal_y: is.focal_y,
+                is_locked: is.is_locked,
+            };
+            state.apply(event.clone());
+            server.send_event(event);
+        }
     }
 
     fn ipc_refresh_workspaces(&mut self) {

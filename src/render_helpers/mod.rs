@@ -50,10 +50,16 @@ pub mod solid_color;
 pub mod surface;
 pub mod texture;
 pub mod xray;
+pub mod zoom;
 
 /// A rendering context.
 ///
 /// Bundles together things needed by most rendering code.
+///
+/// Zoom application is structural, not configurable: the output rendering
+/// path always applies zoom when active, and non-output paths (screenshots,
+/// window casts, snapshots, visual tests) use separate entry points that
+/// never zoom.
 pub struct RenderCtx<'a, R> {
     pub renderer: &'a mut R,
     pub target: RenderTarget,
