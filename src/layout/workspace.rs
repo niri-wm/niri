@@ -949,6 +949,22 @@ impl<W: LayoutElement> Workspace<W> {
         }
     }
 
+    pub fn focus_left_wrapping(&mut self) -> bool {
+        if self.floating_is_active.get() {
+            self.floating.focus_left()
+        } else {
+            self.scrolling.focus_left_wrapping()
+        }
+    }
+
+    pub fn focus_right_wrapping(&mut self) -> bool {
+        if self.floating_is_active.get() {
+            self.floating.focus_right()
+        } else {
+            self.scrolling.focus_right_wrapping()
+        }
+    }
+
     pub fn focus_column(&mut self, index: usize) {
         if self.floating_is_active.get() {
             self.focus_tiling();
