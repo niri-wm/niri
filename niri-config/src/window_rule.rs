@@ -134,6 +134,8 @@ pub struct Match {
     #[knuffel(property)]
     pub is_window_cast_target: Option<bool>,
     #[knuffel(property)]
+    pub sizing_mode: Option<u8>,
+    #[knuffel(property)]
     pub is_urgent: Option<bool>,
     #[knuffel(property)]
     pub at_startup: Option<bool>,
