@@ -455,7 +455,7 @@ fn render(
     })
 }
 
-fn action_name(action: &Action) -> String {
+pub(crate) fn action_name(action: &Action) -> String {
     match action {
         Action::Quit(_) => String::from("Exit niri"),
         Action::ShowHotkeyOverlay => String::from("Show Important Hotkeys"),
