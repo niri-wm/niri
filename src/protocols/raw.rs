@@ -24,7 +24,7 @@ pub mod mutter_x11_interop {
     }
 }
 
-pub mod ext_hotkey {
+pub mod vicinae_hotkey {
     pub mod v1 {
         pub use self::generated::server;
 
@@ -40,11 +40,11 @@ pub mod ext_hotkey {
                 pub mod __interfaces {
                     use smithay::reexports::wayland_server;
                     use wayland_server::protocol::__interfaces::*;
-                    wayland_scanner::generate_interfaces!("resources/ext-hotkey-v1.xml");
+                    wayland_scanner::generate_interfaces!("resources/vicinae-hotkey-v1.xml");
                 }
                 use self::__interfaces::*;
 
-                wayland_scanner::generate_server_code!("resources/ext-hotkey-v1.xml");
+                wayland_scanner::generate_server_code!("resources/vicinae-hotkey-v1.xml");
             }
         }
     }

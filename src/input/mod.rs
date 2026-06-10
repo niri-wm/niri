@@ -49,7 +49,7 @@ use crate::dbus::freedesktop_a11y::KbMonBlock;
 use crate::layout::scrolling::ScrollDirection;
 use crate::layout::{ActivateWindow, LayoutElement as _};
 use crate::niri::{CastTarget, PointerVisibility, State};
-use crate::protocols::ext_hotkey::DenyReason;
+use crate::protocols::vicinae_hotkey::DenyReason;
 use crate::ui::mru::{WindowMru, WindowMruUi};
 use crate::ui::screenshot_ui::ScreenshotUi;
 use crate::utils::spawning::{spawn, spawn_sh};
@@ -556,13 +556,13 @@ impl State {
                 };
 
                 if matches!(res, FilterResult::Forward) {
-                    // Client-managed global hotkeys (ext_hotkey_v1).
+                    // Client-managed global hotkeys (vicinae_hotkey_v1).
                     // These only fire when no niri bind matched, so configured binds always take
                     // precedence.
                     let semantic = modifiers
                         & (Modifiers::CTRL | Modifiers::SHIFT | Modifiers::ALT | Modifiers::SUPER);
                     let serial = u32::from(serial);
-                    let hotkeys = &mut this.niri.ext_hotkey_state;
+                    let hotkeys = &mut this.niri.vicinae_hotkey_state;
                     if !pressed {
                         if hotkeys.on_key_release(key_code.raw(), serial, time) {
                             return FilterResult::Intercept(None);
@@ -4588,7 +4588,7 @@ fn find_configured_bind<'a>(
     None
 }
 
-// the ext-hotkey bind policy.
+// the vicinae-hotkey bind policy.
 // In order to prevent clients from hijacking important keybinds, we define our own rules
 // for what clients are allowed to bind or not.
 // NOTE: it's yet unclear how much we want to harden this. Maybe we should propose something more
@@ -5652,7 +5652,7 @@ mod tests {
     }
 
     #[test]
-    fn ext_hotkey_decide_policy() {
+    fn vicinae_hotkey_decide_policy() {
         let mod_key = ModKey::Super;
         let config = Config {
             binds: Binds(vec![Bind {

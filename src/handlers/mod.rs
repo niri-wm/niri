@@ -76,7 +76,6 @@ pub use crate::handlers::xdg_shell::KdeDecorationsModeState;
 use crate::layout::workspace::WorkspaceId;
 use crate::layout::ActivateWindow;
 use crate::niri::{DndIcon, NewClient, State};
-use crate::protocols::ext_hotkey::{DenyReason, ExtHotkeyHandler, ExtHotkeyManagerState};
 use crate::protocols::ext_workspace::{self, ExtWorkspaceHandler, ExtWorkspaceManagerState};
 use crate::protocols::foreign_toplevel::{
     self, ForeignToplevelHandler, ForeignToplevelManagerState,
@@ -85,6 +84,9 @@ use crate::protocols::gamma_control::{GammaControlHandler, GammaControlManagerSt
 use crate::protocols::mutter_x11_interop::MutterX11InteropHandler;
 use crate::protocols::output_management::{OutputManagementHandler, OutputManagementManagerState};
 use crate::protocols::screencopy::{Screencopy, ScreencopyHandler, ScreencopyManagerState};
+use crate::protocols::vicinae_hotkey::{
+    DenyReason, VicinaeHotkeyHandler, VicinaeHotkeyManagerState,
+};
 use crate::protocols::virtual_pointer::{
     VirtualPointerAxisEvent, VirtualPointerButtonEvent, VirtualPointerHandler,
     VirtualPointerInputBackend, VirtualPointerManagerState, VirtualPointerMotionAbsoluteEvent,
@@ -92,9 +94,9 @@ use crate::protocols::virtual_pointer::{
 };
 use crate::utils::{output_size, send_scale_transform};
 use crate::{
-    delegate_ext_hotkey, delegate_ext_workspace, delegate_foreign_toplevel, delegate_gamma_control,
+    delegate_ext_workspace, delegate_foreign_toplevel, delegate_gamma_control,
     delegate_mutter_x11_interop, delegate_output_management, delegate_screencopy,
-    delegate_virtual_pointer,
+    delegate_vicinae_hotkey, delegate_virtual_pointer,
 };
 
 pub const XDG_ACTIVATION_TOKEN_TIMEOUT: Duration = Duration::from_secs(10);
@@ -861,12 +863,12 @@ delegate_output_management!(State);
 impl MutterX11InteropHandler for State {}
 delegate_mutter_x11_interop!(State);
 
-impl ExtHotkeyHandler for State {
-    fn ext_hotkey_manager_state(&mut self) -> &mut ExtHotkeyManagerState {
-        &mut self.niri.ext_hotkey_state
+impl VicinaeHotkeyHandler for State {
+    fn vicinae_hotkey_manager_state(&mut self) -> &mut VicinaeHotkeyManagerState {
+        &mut self.niri.vicinae_hotkey_state
     }
 
-    fn ext_hotkey_decide(
+    fn vicinae_hotkey_decide(
         &mut self,
         keysym: keyboard::Keysym,
         modifiers: niri_config::Modifiers,
@@ -876,6 +878,6 @@ impl ExtHotkeyHandler for State {
         crate::input::decide_hotkey(&config, mod_key, keysym, modifiers)
     }
 }
-delegate_ext_hotkey!(State);
+delegate_vicinae_hotkey!(State);
 
 delegate_single_pixel_buffer!(State);
