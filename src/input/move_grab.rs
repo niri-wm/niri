@@ -478,9 +478,15 @@ impl TouchGrab<State> for MoveGrab {
             return;
         }
 
-        if !self.on_toggle_floating(data) {
-            handle.unset_grab(self, data);
-        }
+        // Second finger landed: cancel the move grab so the multi-finger
+        // gesture recognizer can take over. On mouse, the second button
+        // toggles floating (see `button` impl above), but on touch a new
+        // finger almost always means "this is becoming a multi-finger
+        // gesture" rather than a deliberate float toggle. The points are
+        // already tracked in `touch_gesture_points` (inserted in
+        // `on_touch_down` before this call), so the recognizer picks up
+        // seamlessly once the grab releases.
+        handle.unset_grab(self, data);
     }
 
     fn up(
