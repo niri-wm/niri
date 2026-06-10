@@ -1,4 +1,5 @@
 use std::cell::{Cell, Ref, RefCell};
+use std::collections::HashMap;
 use std::time::Duration;
 
 use niri_config::{Color, Config, CornerRadius, GradientInterpolation, WindowRule};
@@ -193,6 +194,9 @@ pub struct Mapped {
 
     /// Most recent monotonic time when the window had the focus.
     focus_timestamp: Option<Duration>,
+
+    /// The labels assigned to the window
+    labels: Option<HashMap<String, Option<String>>>,
 }
 
 niri_render_elements! {
@@ -272,7 +276,13 @@ enum RequestSizeOnce {
 }
 
 impl Mapped {
-    pub fn new(window: Window, rules: ResolvedWindowRules, hook: HookId, config: &Config) -> Self {
+    pub fn new(
+        window: Window,
+        rules: ResolvedWindowRules,
+        hook: HookId,
+        config: &Config,
+        labels: Option<HashMap<String, Option<String>>>,
+    ) -> Self {
         let surface = window.wl_surface().expect("no X11 support");
         let credentials = get_credentials_for_surface(&surface);
         let mut rv = Self {
@@ -308,6 +318,7 @@ impl Mapped {
             is_pending_maximized: false,
             uncommitted_maximized: Vec::new(),
             focus_timestamp: None,
+            labels,
         };
 
         rv.is_maximized = rv.sizing_mode().is_maximized();
@@ -610,6 +621,40 @@ impl Mapped {
 
     pub fn is_urgent(&self) -> bool {
         self.is_urgent
+    }
+
+    pub fn set_label(&mut self, name: String, value: Option<String>) {
+        let labels = if let Some(labels) = self.labels.as_mut() {
+            labels
+        } else {
+            self.labels = Some(HashMap::new());
+            self.labels.as_mut().unwrap()
+        };
+        let old = labels.insert(name, value.clone());
+
+        let changed = old.is_some_and(|v| v != value);
+
+        self.need_to_recompute_rules |= changed;
+    }
+
+    pub fn unset_label(&mut self, name: String) {
+        let old = self.labels.as_mut().and_then(|ls| ls.remove(&name));
+        self.need_to_recompute_rules |= old.is_some();
+    }
+
+    pub fn toggle_label(&mut self, name: String) {
+        let mut labels = self.labels.take().unwrap_or_else(HashMap::new);
+
+        if labels.remove(&name).is_none() {
+            labels.insert(name, None);
+        }
+
+        self.labels = Some(labels);
+        self.need_to_recompute_rules = true;
+    }
+
+    pub fn labels(&self) -> Option<&HashMap<String, Option<String>>> {
+        self.labels.as_ref()
     }
 }
 
