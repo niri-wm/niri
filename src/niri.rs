@@ -509,6 +509,12 @@ pub struct Niri {
     /// Tap candidate for N-finger tap detection. Runs in parallel with
     /// swipe/pinch/rotate recognition. Killed by wobble or recognizer lock.
     pub touch_tap_candidate: Option<TapCandidate>,
+    /// Window awaiting deferred tap-to-focus activation (`focus-on-touch
+    /// "touch-up"`). Recorded at touch-down instead of activating
+    /// immediately; committed in `on_touch_up` when the last finger lifts,
+    /// unless the sequence was claimed as a compositor gesture in between
+    /// (the claim transition clears this, as does `on_touch_cancel`).
+    pub touch_pending_activation: Option<Window>,
     /// Touchpad hold-gesture tracking for N-finger tap-hold detection.
     /// Stores finger_count from GestureHoldBegin. Cleared on
     /// GestureHoldEnd; if !cancelled and fingers >= 3, fires a
@@ -2774,6 +2780,7 @@ impl Niri {
             touch_gesture_cumulative_rotation: 0.0,
             touch_gesture_previous_angles: HashMap::new(),
             touch_tap_candidate: None,
+            touch_pending_activation: None,
             touchpad_hold_begin: None,
             touchpad_drag_pending: None,
             touchpad_pinch_fingers: None,

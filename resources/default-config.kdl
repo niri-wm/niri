@@ -80,6 +80,13 @@ input {
     //     // natural-scroll
     //     // map-to-output "eDP-1"
     //     //
+    //     // When tap-to-focus commits. "touch-down" (default): focus the
+    //     // window as soon as the first finger lands. "touch-up": defer
+    //     // focus until the touch ends, so the first finger of a
+    //     // multi-finger gesture doesn't focus (and scroll the view to)
+    //     // whatever window it happens to land on.
+    //     // focus-on-touch "touch-up"
+    //     //
     //     // Touchscreen gesture binds live in the main binds {} block
     //     // using parameterized triggers with KDL properties, e.g.
     //     //   TouchSwipe  fingers=3 direction="up"   { focus-workspace-up; }
@@ -108,7 +115,6 @@ input {
     //     //     // Default 1.2 = small pinch-priority bias at high finger
     //     //     // counts. Set 1.0 to disable.
     //     //     swipe-multi-finger-scale 1.2
-    //     //     // IPC progress scaling (doesn't affect classification).
     //     //
     //     //     // Rotation — angles in DEGREES.
     //     //     rotation-trigger-angle 20.0    // ° before rotation can latch

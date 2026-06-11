@@ -27,7 +27,7 @@ use std::time::{Duration, Instant};
 use niri_config::binds::{
     PinchDirection, RotateDirection, SwipeDirection, Trigger, MAX_FINGERS, MIN_FINGERS,
 };
-use niri_config::input::{EdgeZone, ScreenEdge};
+use niri_config::input::{EdgeZone, FocusOnTouch, ScreenEdge};
 use niri_config::touch_binds::{continuous_gesture_kind, ContinuousGestureKind, TouchGestureType};
 use niri_config::Action;
 use smithay::backend::input::{Event as _, TouchEvent};
@@ -308,7 +308,30 @@ impl State {
                 );
                 handle.set_grab(self, grab, serial);
             } else if let Some((window, _)) = under.window {
-                self.niri.layout.activate_window(&window);
+                // Deferred tap-to-focus (`focus-on-touch "touch-up"`): record
+                // the window instead of activating now, and commit on
+                // touch-up only if the sequence never becomes a compositor
+                // gesture. Otherwise the first finger of a multi-finger
+                // gesture focuses (and scrolls the view to fit) whatever
+                // window it lands on before the other fingers arrive.
+                // Mod+touch activates immediately regardless — the move grab
+                // below needs the window active, and Mod is an explicit
+                // request for a compositor action.
+                let defer_focus = !mod_down
+                    && self
+                        .niri
+                        .config
+                        .borrow()
+                        .input
+                        .touchscreen
+                        .focus_on_touch
+                        .unwrap_or_default()
+                        == FocusOnTouch::TouchUp;
+                if defer_focus {
+                    self.niri.touch_pending_activation = Some(window.clone());
+                } else {
+                    self.niri.layout.activate_window(&window);
+                }
 
                 // Check if we need to start a touch move grab.
                 if mod_down {
@@ -362,6 +385,9 @@ impl State {
                 tracking_gesture,
                 in_edge_zone,
             );
+            // The sequence is now claimed as a compositor gesture — drop any
+            // deferred tap-to-focus so the gesture leaves focus untouched.
+            self.niri.touch_pending_activation = None;
             // Transition into gesture tracking — if earlier fingers in this
             // sequence were already forwarded to a client as wl_touch.down,
             // their matching .up events will be suppressed by this same
@@ -558,6 +584,16 @@ impl State {
             self.niri.touch_gesture_initial_spread = None;
             self.niri.touch_gesture_cumulative_rotation = 0.0;
             self.niri.touch_gesture_previous_angles.clear();
+
+            // Deferred tap-to-focus commit (`focus-on-touch "touch-up"`):
+            // the sequence ended without being claimed as a compositor
+            // gesture (a claim clears this at the transition), so it was a
+            // plain app interaction — focus the window it landed on now.
+            if let Some(window) = self.niri.touch_pending_activation.take() {
+                self.niri.layout.activate_window(&window);
+                // FIXME: granular.
+                self.niri.queue_redraw_all();
+            }
 
             // End any ongoing gesture animations.
             if let Some(output) = self.niri.layout.workspace_switch_gesture_end(Some(true)) {
@@ -1223,6 +1259,7 @@ impl State {
         self.niri.touch_gesture_cumulative_rotation = 0.0;
         self.niri.touch_gesture_previous_angles.clear();
         self.niri.touch_tap_candidate = None;
+        self.niri.touch_pending_activation = None;
         self.niri.touchscreen_gesture_passthrough = false;
         self.niri.touch_frame_dirty = false;
         self.niri.touch_frame_delta = (0., 0.);

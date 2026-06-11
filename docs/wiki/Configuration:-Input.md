@@ -291,6 +291,7 @@ Settings specific to `tablet` and `touchscreen`:
 Settings specific to `touchscreen`:
 
 - `natural-scroll`: <sup>Since: next</sup> if set, inverts the scrolling direction for touchscreen swipe gestures.
+- `focus-on-touch "touch-down" | "touch-up"`: <sup>Since: next</sup> when tap-to-focus commits. `"touch-down"` (default) focuses the window under the finger as soon as it lands. `"touch-up"` defers focus until the touch ends, and skips it entirely if the touch turned into a compositor gesture — so the first finger of a multi-finger gesture no longer focuses (and scrolls the view to fit) whatever window it happens to land on. With `"touch-up"`, a plain tap focuses exactly as before, just on finger lift. This also covers clients that request self-activation via `xdg-activation` from the forwarded touch-down serial (e.g. Chromium-based browsers): their request is routed through the same deferral instead of focusing immediately.
 - `gestures {}`: <sup>Since: next</sup> tuning parameters for touchscreen gesture recognition.
 
 > [!NOTE]
@@ -299,7 +300,7 @@ Settings specific to `touchscreen`:
 
 The `touchscreen { gestures { } }` tuning parameters are:
 
-All knobs are grouped as: **trigger** (classifier commit gates), **dominance** (3-way race tuning), **progress** (IPC output scaling), and **misc**.
+All knobs are grouped as: **trigger** (classifier commit gates), **dominance** (3-way race tuning), and **misc**.
 
 **Swipe:**
 

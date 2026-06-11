@@ -404,6 +404,8 @@ pub struct Touchscreen {
     pub calibration_matrix: Option<Vec<f32>>,
     #[knuffel(child, unwrap(argument))]
     pub map_to_output: Option<String>,
+    #[knuffel(child, unwrap(argument, str))]
+    pub focus_on_touch: Option<FocusOnTouch>,
     #[knuffel(child)]
     pub gestures: Option<TouchscreenGesturesConfig>,
 }
@@ -713,6 +715,36 @@ impl FromStr for WarpMouseToFocusMode {
             "center-xy-always" => Ok(Self::CenterXyAlways),
             _ => Err(miette!(
                 r#"invalid mode for warp-mouse-to-focus, can be "center-xy" or "center-xy-always" (or leave unset for separate centering)"#
+            )),
+        }
+    }
+}
+
+/// When touchscreen tap-to-focus commits (`input { touchscreen {
+/// focus-on-touch "..." } }`).
+#[derive(Debug, Default, PartialEq, Eq, Clone, Copy)]
+pub enum FocusOnTouch {
+    /// Focus the window under the finger as soon as it lands (default,
+    /// matches upstream niri behavior).
+    #[default]
+    TouchDown,
+    /// Defer focus until the touch sequence ends. If the sequence is
+    /// claimed as a compositor gesture (3+ fingers or an edge swipe),
+    /// focus never moves — so the first finger of a multi-finger swipe
+    /// can no longer focus (and scroll the view to fit) whatever window
+    /// it happened to land on.
+    TouchUp,
+}
+
+impl FromStr for FocusOnTouch {
+    type Err = miette::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "touch-down" => Ok(Self::TouchDown),
+            "touch-up" => Ok(Self::TouchUp),
+            _ => Err(miette!(
+                r#"invalid focus-on-touch, can be "touch-down" or "touch-up""#
             )),
         }
     }
