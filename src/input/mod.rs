@@ -2929,10 +2929,17 @@ impl State {
                 else if button == Some(MouseButton::Right) && !pointer.is_grabbed() && mod_down {
                     let location = pointer.current_location();
                     let (output, pos_within_output) = self.niri.output_under(location).unwrap();
+                    let center_area_percentage = self
+                        .niri
+                        .config
+                        .borrow()
+                        .input
+                        .center_area_percentage
+                        .unwrap_or_default();
                     let edges = self
                         .niri
                         .layout
-                        .resize_edges_under(output, pos_within_output)
+                        .resize_edges_under(output, pos_within_output, center_area_percentage)
                         .unwrap_or(ResizeEdge::empty());
 
                     if !edges.is_empty() {

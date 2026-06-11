@@ -2,6 +2,7 @@ use std::cmp::max;
 use std::rc::Rc;
 use std::time::Duration;
 
+use niri_config::input::CenterAreaPercentage;
 use niri_config::utils::MergeWith as _;
 use niri_config::{
     CenterFocusedColumn, CornerRadius, OutputName, PresetSize, Workspace as WorkspaceConfig,
@@ -1768,7 +1769,11 @@ impl<W: LayoutElement> Workspace<W> {
         self.scrolling.window_under(pos)
     }
 
-    pub fn resize_edges_under(&self, pos: Point<f64, Logical>) -> Option<ResizeEdge> {
+    pub fn resize_edges_under(
+        &self,
+        pos: Point<f64, Logical>,
+        center_area_percentage: CenterAreaPercentage,
+    ) -> Option<ResizeEdge> {
         self.tiles_with_render_positions()
             .find_map(|(tile, tile_pos, visible)| {
                 // This logic should be consistent with window_under() in when it returns Some vs.
@@ -1780,17 +1785,23 @@ impl<W: LayoutElement> Workspace<W> {
                 let pos_within_tile = pos - tile_pos;
 
                 if tile.hit(pos_within_tile).is_some() {
+                    let w = center_area_percentage.width.map(|p| p.0).unwrap_or(1. / 3.);
+                    let h = center_area_percentage
+                        .height
+                        .map(|p| p.0)
+                        .unwrap_or(1. / 3.);
+
                     let size = tile.tile_size().to_f64();
 
                     let mut edges = ResizeEdge::empty();
-                    if pos_within_tile.x < size.w / 3. {
+                    if pos_within_tile.x < ((size.w * (1. - w)) / 2.) {
                         edges |= ResizeEdge::LEFT;
-                    } else if 2. * size.w / 3. < pos_within_tile.x {
+                    } else if ((size.w * (1. + w)) / 2.) < pos_within_tile.x {
                         edges |= ResizeEdge::RIGHT;
                     }
-                    if pos_within_tile.y < size.h / 3. {
+                    if pos_within_tile.y < ((size.h * (1. - h)) / 2.) {
                         edges |= ResizeEdge::TOP;
-                    } else if 2. * size.h / 3. < pos_within_tile.y {
+                    } else if ((size.h * (1. + h)) / 2.) < pos_within_tile.y {
                         edges |= ResizeEdge::BOTTOM;
                     }
                     return Some(edges);

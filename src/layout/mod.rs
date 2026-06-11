@@ -37,6 +37,7 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use monitor::{InsertHint, InsertPosition, InsertWorkspace, MonitorAddWindowTarget};
+use niri_config::input::CenterAreaPercentage;
 use niri_config::utils::MergeWith as _;
 use niri_config::{
     Config, CornerRadius, LayoutPart, PresetSize, Workspace as WorkspaceConfig, WorkspaceReference,
@@ -2336,9 +2337,10 @@ impl<W: LayoutElement> Layout<W> {
         &self,
         output: &Output,
         pos_within_output: Point<f64, Logical>,
+        center_area_percentage: CenterAreaPercentage,
     ) -> Option<ResizeEdge> {
         let mon = self.monitor_for_output(output)?;
-        mon.resize_edges_under(pos_within_output)
+        mon.resize_edges_under(pos_within_output, center_area_percentage)
     }
 
     pub fn workspace_under(

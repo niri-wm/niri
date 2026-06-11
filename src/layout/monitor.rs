@@ -3,6 +3,7 @@ use std::iter::zip;
 use std::rc::Rc;
 use std::time::Duration;
 
+use niri_config::input::CenterAreaPercentage;
 use niri_config::{CornerRadius, LayoutPart};
 use smithay::backend::renderer::element::utils::{
     CropRenderElement, Relocate, RelocateRenderElement, RescaleRenderElement,
@@ -1575,13 +1576,17 @@ impl<W: LayoutElement> Monitor<W> {
         }
     }
 
-    pub fn resize_edges_under(&self, pos_within_output: Point<f64, Logical>) -> Option<ResizeEdge> {
+    pub fn resize_edges_under(
+        &self,
+        pos_within_output: Point<f64, Logical>,
+        center_area_percentage: CenterAreaPercentage,
+    ) -> Option<ResizeEdge> {
         if self.overview_progress.is_some() {
             return None;
         }
 
         let (ws, geo) = self.workspace_under(pos_within_output)?;
-        ws.resize_edges_under(pos_within_output - geo.loc)
+        ws.resize_edges_under(pos_within_output - geo.loc, center_area_percentage)
     }
 
     pub(super) fn insert_position(
