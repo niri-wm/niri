@@ -79,6 +79,8 @@ pub struct WindowRule {
     pub background_effect: BackgroundEffectRule,
     #[knuffel(child, default)]
     pub popups: PopupsRule,
+    #[knuffel(child, unwrap(argument))]
+    pub touchscreen_gesture_passthrough: Option<bool>,
 }
 
 /// Rules for popup surfaces.

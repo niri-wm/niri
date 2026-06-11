@@ -827,11 +827,18 @@ impl XdgActivationHandler for State {
                 if token_data.user_data.get::<UrgentOnlyMarker>().is_some() {
                     mapped.set_urgent(true);
                     self.niri.queue_redraw_all();
-                } else {
+                } else if self.niri.touch_pending_activation.as_ref() != Some(&window) {
                     self.niri.layout.activate_window(&window);
                     self.niri.layer_shell_on_demand_focus = None;
                     self.niri.queue_redraw_all();
                 }
+                // Otherwise: deferred tap-to-focus (`focus-on-touch
+                // "touch-up"`) — this window is already pending activation
+                // from the in-progress touch. Some clients (Chromium)
+                // request self-activation with the forwarded touch-down
+                // serial, which would defeat the deferral. Let the pending
+                // mechanism decide instead: focus on lift, or never if the
+                // touch turns into a compositor gesture.
             } else if let Some(unmapped) = self.niri.unmapped_windows.get_mut(&surface) {
                 unmapped.activation_token_data = Some(token_data);
             }
