@@ -5371,13 +5371,13 @@ impl<W: LayoutElement> Column<W> {
         let is_tabbed = self.display_mode == ColumnDisplay::Tabbed;
 
         let tile_count = self.tiles.len();
-        if tile_count == 1 {
-            if let WindowHeight::Auto { weight } = self.data[0].height {
-                assert_eq!(
-                    weight, 1.,
-                    "auto height weight must reset to 1 for a single window"
-                );
-            }
+        if tile_count == 1
+            && let WindowHeight::Auto { weight } = self.data[0].height
+        {
+            assert_eq!(
+                weight, 1.,
+                "auto height weight must reset to 1 for a single window"
+            );
         }
 
         let working_size = self.working_area.size;

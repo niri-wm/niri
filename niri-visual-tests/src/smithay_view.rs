@@ -74,10 +74,10 @@ mod imp {
             self.gl_area.connect_render({
                 let imp = self.downgrade();
                 move |_, gl_context| {
-                    if let Some(imp) = imp.upgrade() {
-                        if let Err(err) = imp.render(gl_context) {
-                            warn!("error rendering: {err:?}");
-                        }
+                    if let Some(imp) = imp.upgrade()
+                        && let Err(err) = imp.render(gl_context)
+                    {
+                        warn!("error rendering: {err:?}");
                     }
                     glib::Propagation::Stop
                 }
@@ -86,10 +86,10 @@ mod imp {
             obj.add_tick_callback(|obj, _frame_clock| {
                 let imp = obj.imp();
 
-                if let Some(case) = &mut *imp.test_case.borrow_mut() {
-                    if case.are_animations_ongoing() {
-                        imp.gl_area.queue_draw();
-                    }
+                if let Some(case) = &mut *imp.test_case.borrow_mut()
+                    && case.are_animations_ongoing()
+                {
+                    imp.gl_area.queue_draw();
                 }
 
                 glib::ControlFlow::Continue
@@ -225,39 +225,43 @@ mod imp {
     }
 
     unsafe fn create_renderer() -> anyhow::Result<RendererData> {
-        smithay::backend::egl::ffi::make_sure_egl_is_loaded()
-            .context("error loading EGL symbols in Smithay")?;
+        unsafe {
+            smithay::backend::egl::ffi::make_sure_egl_is_loaded()
+                .context("error loading EGL symbols in Smithay")?;
 
-        let egl_display = egl::GetCurrentDisplay();
-        ensure!(egl_display != egl::NO_DISPLAY, "no current EGL display");
+            let egl_display = egl::GetCurrentDisplay();
+            ensure!(egl_display != egl::NO_DISPLAY, "no current EGL display");
 
-        let egl_context = egl::GetCurrentContext();
-        ensure!(egl_context != egl::NO_CONTEXT, "no current EGL context");
+            let egl_context = egl::GetCurrentContext();
+            ensure!(egl_context != egl::NO_CONTEXT, "no current EGL context");
 
-        // There's no config ID on the EGL context and there's no current EGL surface, but we don't
-        // really use it anyway so just get some random one.
-        let mut egl_config_id = null();
-        let mut num_configs = 0;
-        let res = egl::GetConfigs(egl_display, &mut egl_config_id, 1, &mut num_configs);
-        ensure!(res == egl::TRUE, "error choosing EGL config");
-        ensure!(num_configs != 0, "no EGL config");
+            // There's no config ID on the EGL context and there's no current EGL surface, but we
+            // don't really use it anyway so just get some random one.
+            let mut egl_config_id = null();
+            let mut num_configs = 0;
+            let res = egl::GetConfigs(egl_display, &mut egl_config_id, 1, &mut num_configs);
+            ensure!(res == egl::TRUE, "error choosing EGL config");
+            ensure!(num_configs != 0, "no EGL config");
 
-        let egl_context = EGLContext::from_raw(egl_display, egl_config_id as *const _, egl_context)
-            .context("error creating EGL context")?;
+            let egl_context =
+                EGLContext::from_raw(egl_display, egl_config_id as *const _, egl_context)
+                    .context("error creating EGL context")?;
 
-        let mut renderer = GlesRenderer::new(egl_context).context("error creating GlesRenderer")?;
+            let mut renderer =
+                GlesRenderer::new(egl_context).context("error creating GlesRenderer")?;
 
-        let dummy_texture = renderer
-            .create_buffer(Fourcc::Abgr8888, Size::from((1, 1)))
-            .context("error creating dummy texture")?;
+            let dummy_texture = renderer
+                .create_buffer(Fourcc::Abgr8888, Size::from((1, 1)))
+                .context("error creating dummy texture")?;
 
-        resources::init(&mut renderer);
-        shaders::init(&mut renderer);
+            resources::init(&mut renderer);
+            shaders::init(&mut renderer);
 
-        Ok(RendererData {
-            renderer,
-            dummy_texture,
-        })
+            Ok(RendererData {
+                renderer,
+                dummy_texture,
+            })
+        }
     }
 }
 
