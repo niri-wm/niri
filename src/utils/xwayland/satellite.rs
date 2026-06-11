@@ -19,10 +19,18 @@ pub struct Satellite {
     abstract_token: Option<RegistrationToken>,
     unix_token: Option<RegistrationToken>,
     to_main: Sender<ToMain>,
+    pid: Option<u32>,
+}
+
+impl Satellite {
+    pub fn pid(&self) -> Option<u32> {
+        self.pid
+    }
 }
 
 enum ToMain {
     SetupWatch,
+    Pid(Option<u32>),
 }
 
 impl Satellite {
@@ -61,6 +69,11 @@ pub fn setup(state: &mut State) {
         .insert_source(rx, move |event, _, state| match event {
             calloop::channel::Event::Msg(msg) => match msg {
                 ToMain::SetupWatch => setup_watch(state),
+                ToMain::Pid(pid) => {
+                    if let Some(s) = state.niri.satellite.as_mut() {
+                        s.pid = pid;
+                    }
+                }
             },
             calloop::channel::Event::Closed => (),
         })
@@ -71,6 +84,7 @@ pub fn setup(state: &mut State) {
         abstract_token: None,
         unix_token: None,
         to_main,
+        pid: None,
     });
 
     setup_watch(state);
@@ -250,7 +264,7 @@ fn spawn(path: String, xwl: &Satellite) {
     let res = thread::Builder::new()
         .name("Xwl-s Spawner".to_owned())
         .spawn(move || {
-            spawn_and_wait(&path, process, abstract_fd, unix_fd);
+            spawn_and_wait(&path, process, abstract_fd, unix_fd, to_main.clone());
 
             // Once xwayland-satellite crashes or fails to spawn, re-establish our X11 socket watch
             // to try again next time.
@@ -268,6 +282,7 @@ fn spawn_and_wait(
     mut process: Command,
     abstract_fd: Option<OwnedFd>,
     unix_fd: OwnedFd,
+    to_main: Sender<ToMain>,
 ) {
     let abstract_raw = abstract_fd.as_ref().map(|fd| fd.as_raw_fd());
     let unix_raw = unix_fd.as_raw_fd();
@@ -307,6 +322,8 @@ fn spawn_and_wait(
         }
     };
 
+    let _ = to_main.send(ToMain::Pid(Some(child.id())));
+
     // The process spawned, we can drop our fds.
     drop(abstract_fd);
     drop(unix_fd);
@@ -315,10 +332,12 @@ fn spawn_and_wait(
         Ok(status) => status,
         Err(err) => {
             warn!("error waiting for xwayland-satellite: {err:?}");
+            let _ = to_main.send(ToMain::Pid(None));
             return;
         }
     };
 
     // This is most likely a crash, hence warn!().
     warn!("xwayland-satellite exited with: {status}");
+    let _ = to_main.send(ToMain::Pid(None));
 }
