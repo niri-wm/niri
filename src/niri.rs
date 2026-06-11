@@ -170,6 +170,7 @@ use crate::ui::config_error_notification::ConfigErrorNotification;
 use crate::ui::exit_confirm_dialog::{ExitConfirmDialog, ExitConfirmDialogRenderElement};
 use crate::ui::hotkey_overlay::HotkeyOverlay;
 use crate::ui::mru::{MruCloseRequest, WindowMruUi, WindowMruUiRenderElement};
+use crate::ui::spawn_overlay::{SpawnDirection, SpawnOverlay};
 use crate::ui::screen_transition::{self, ScreenTransition};
 use crate::ui::screenshot_ui::{OutputScreenshot, ScreenshotUi, ScreenshotUiRenderElement};
 use crate::utils::scale::{closest_representable_scale, guess_monitor_scale};
@@ -389,6 +390,8 @@ pub struct Niri {
     pub screenshot_ui: ScreenshotUi,
     pub config_error_notification: ConfigErrorNotification,
     pub hotkey_overlay: HotkeyOverlay,
+    pub spawn_overlay: SpawnOverlay,
+    pub pending_spawn_position: Option<SpawnDirection>,
     pub exit_confirm_dialog: ExitConfirmDialog,
 
     pub window_mru_ui: WindowMruUi,
@@ -519,6 +522,7 @@ pub enum KeyboardFocus {
     LayerShell { surface: WlSurface },
     LockScreen { surface: Option<WlSurface> },
     ScreenshotUi,
+    SpawnOverlay,
     ExitConfirmDialog,
     Overview,
     Mru,
@@ -668,6 +672,7 @@ impl KeyboardFocus {
             KeyboardFocus::LayerShell { surface } => Some(surface),
             KeyboardFocus::LockScreen { surface } => surface.as_ref(),
             KeyboardFocus::ScreenshotUi => None,
+            KeyboardFocus::SpawnOverlay => None,
             KeyboardFocus::ExitConfirmDialog => None,
             KeyboardFocus::Overview => None,
             KeyboardFocus::Mru => None,
@@ -680,6 +685,7 @@ impl KeyboardFocus {
             KeyboardFocus::LayerShell { surface } => Some(surface),
             KeyboardFocus::LockScreen { surface } => surface,
             KeyboardFocus::ScreenshotUi => None,
+            KeyboardFocus::SpawnOverlay => None,
             KeyboardFocus::ExitConfirmDialog => None,
             KeyboardFocus::Overview => None,
             KeyboardFocus::Mru => None,
@@ -1150,6 +1156,8 @@ impl State {
             }
         } else if self.niri.screenshot_ui.is_open() {
             KeyboardFocus::ScreenshotUi
+        } else if self.niri.spawn_overlay.is_open() {
+            KeyboardFocus::SpawnOverlay
         } else if self.niri.window_mru_ui.is_open() {
             KeyboardFocus::Mru
         } else if let Some(output) = self.niri.layout.active_output() {
@@ -1545,6 +1553,10 @@ impl State {
                 mods_with_tablet_stylus_binds(new_mod_key, &config.binds);
             self.niri.mods_with_finger_scroll_binds =
                 mods_with_finger_scroll_binds(new_mod_key, &config.binds);
+        }
+
+        if config.layout != old_config.layout {
+            self.niri.spawn_overlay.on_config_updated();
         }
 
         if config.window_rules != old_config.window_rules {
@@ -2428,6 +2440,8 @@ impl Niri {
             hotkey_overlay.show();
         }
 
+        let spawn_overlay = SpawnOverlay::new(config.clone());
+
         let exit_confirm_dialog = ExitConfirmDialog::new(animation_clock.clone(), config.clone());
 
         #[cfg(feature = "dbus")]
@@ -2611,6 +2625,8 @@ impl Niri {
             screenshot_ui,
             config_error_notification,
             hotkey_overlay,
+            spawn_overlay,
+            pending_spawn_position: None,
             exit_confirm_dialog,
 
             window_mru_ui,
@@ -3995,6 +4011,7 @@ impl Niri {
             // layer-shell, the layout will briefly draw as active, despite never having focus.
             KeyboardFocus::LockScreen { .. } => true,
             KeyboardFocus::ScreenshotUi => true,
+            KeyboardFocus::SpawnOverlay => true,
             KeyboardFocus::ExitConfirmDialog => true,
             KeyboardFocus::Overview => true,
             KeyboardFocus::Mru => true,
@@ -4292,6 +4309,11 @@ impl Niri {
 
         // Draw the hotkey overlay on top.
         if let Some(element) = self.hotkey_overlay.render(ctx.renderer, output) {
+            push(element.into());
+        }
+
+        // Draw the spawn position overlay.
+        for element in self.spawn_overlay.render(renderer, output) {
             push(element.into());
         }
 
