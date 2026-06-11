@@ -752,6 +752,7 @@ mod tests {
 
                 touchscreen {
                     map-to-output "eDP-1"
+                    focus-on-touch "touch-up"
                 }
 
                 disable-power-key-handling
@@ -1151,6 +1152,9 @@ mod tests {
                     calibration_matrix: None,
                     map_to_output: Some(
                         "eDP-1",
+                    ),
+                    focus_on_touch: Some(
+                        TouchUp,
                     ),
                     gestures: None,
                 },
