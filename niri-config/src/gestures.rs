@@ -109,4 +109,10 @@ pub struct HotCorners {
     pub bottom_left: bool,
     #[knuffel(child)]
     pub bottom_right: bool,
+    #[knuffel(child, unwrap(argument))]
+    pub open_delay_ms: Option<u16>,
+    #[knuffel(child, unwrap(argument))]
+    pub open_region_width: Option<u16>,
+    #[knuffel(child, unwrap(argument))]
+    pub open_region_height: Option<u16>,
 }
