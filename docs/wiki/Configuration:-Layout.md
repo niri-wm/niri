@@ -9,6 +9,7 @@ layout {
     gaps 16
     center-focused-column "never"
     always-center-single-column
+    center-single-window
     empty-workspace-above-first
     default-column-display "tabbed"
     background-color "#003300"
@@ -139,6 +140,18 @@ If set, niri will always center a single column on a workspace, regardless of th
 ```kdl
 layout {
     always-center-single-column
+}
+```
+
+### `center-single-window`
+
+<sup>Since: next release</sup>
+
+If set, niri will vertically center single windows in columns.
+
+```kdl
+layout {
+    center-single-window
 }
 ```
 

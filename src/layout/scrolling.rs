@@ -1072,13 +1072,9 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
         let movement_config = anim_config.unwrap_or(self.options.animations.window_movement.0);
 
-        // Animate movement of other tiles.
-        // FIXME: tiles can move by X too, in a centered or resizing layout with one window smaller
-        // than the others.
-        let offset_y = column.tile_offset(tile_idx + 1).y - column.tile_offset(tile_idx).y;
-        for tile in &mut column.tiles[tile_idx + 1..] {
-            tile.animate_move_y_from(offset_y);
-        }
+        // Capture positions of all tiles before removal for animating leftover windows.
+        let prev_offsets: Vec<Point<f64, Logical>> =
+            column.tile_offsets().take(column.tiles.len()).collect();
 
         if column.display_mode == ColumnDisplay::Tabbed && tile_idx != column.active_tile_idx {
             // Fade in when removing background tab from a tabbed column.
@@ -1134,6 +1130,22 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         }
 
         column.update_tile_sizes_with_transaction(true, transaction);
+
+        // Animate tiles to their new positions. This also fixes movement by X due to resizing in
+        // centered columns and such.
+        let mut prev_iter = prev_offsets
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| *i != tile_idx);
+        for (tile, new_pos) in column.tiles_mut() {
+            if let Some((_, &old_pos)) = prev_iter.next() {
+                let offset = old_pos - new_pos;
+                if offset.x.abs() != 0. || offset.y.abs() != 0. {
+                    tile.animate_move_from(offset);
+                }
+            }
+        }
+
         self.data[column_idx].update(column);
         let offset = prev_width - column.width();
 
@@ -4376,6 +4388,35 @@ impl<W: LayoutElement> Column<W> {
                     tile.offset_move_y_anim_current(offset);
                 }
             }
+            // Animate vertically centering single window in a column.
+            if self.tiles.len() == 1
+                && self.sizing_mode().is_normal()
+                && self.options.layout.center_single_window
+            {
+                let column_height_avail = self.working_area.size.h - self.options.layout.gaps * 2.;
+                let prev_center = if prev_height < column_height_avail {
+                    (column_height_avail - prev_height) / 2.
+                } else {
+                    0.
+                };
+                let new_height = self.data[tile_idx].size.h;
+                let new_center = if new_height < column_height_avail {
+                    (column_height_avail - new_height) / 2.
+                } else {
+                    0.
+                };
+                let offset = prev_center - new_center;
+                if offset.abs() != 0. {
+                    if self.tiles[tile_idx].resize_animation().is_some() {
+                        self.tiles[tile_idx].animate_move_y_from_with_config(
+                            offset,
+                            self.options.animations.window_resize.anim,
+                        );
+                    } else {
+                        self.tiles[tile_idx].offset_move_y_anim_current(offset);
+                    }
+                }
+            }
         }
     }
 
@@ -5212,6 +5253,19 @@ impl<W: LayoutElement> Column<W> {
             .unwrap_or(0.);
 
         let mut origin = self.tiles_origin();
+
+        // Center single windows vertically in columns.
+        if self.tiles.len() == 1
+            && !tabbed
+            && self.sizing_mode().is_normal()
+            && self.options.layout.center_single_window
+        {
+            let tile_height = self.data[0].size.h;
+            let column_height_avail = self.working_area.size.h - gaps * 2.;
+            if tile_height < column_height_avail {
+                origin.y += (column_height_avail - tile_height) / 2.;
+            }
+        }
 
         // Chain with a dummy value to be able to get one past all tiles' Y.
         let dummy = TileData {
