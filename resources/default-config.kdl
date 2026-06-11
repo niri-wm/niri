@@ -121,6 +121,9 @@ layout {
     //   together with the previously focused column.
     center-focused-column "never"
 
+    // Make numbered workspace references like "focus-workspace 1" global across outputs.
+    // global-workspace-indices
+
     // You can customize the widths that "switch-preset-column-width" (Mod+R) toggles between.
     preset-column-widths {
         // Proportion sets the width as a fraction of the output width, taking gaps into account.

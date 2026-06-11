@@ -154,6 +154,29 @@ layout {
 }
 ```
 
+### `global-workspace-indices`
+
+If set, workspace numbers become globally unique across all outputs.
+
+Direct numeric references like `focus-workspace 1` and `move-column-to-workspace 2`
+target that global workspace number instead of the currently focused monitor's
+workspace position.
+
+Sequential actions like `focus-workspace-up`, `focus-workspace-down`, and the
+corresponding move-to-workspace actions keep operating on the current output,
+but step through globally unique workspace numbers instead of monitor-local
+positions.
+
+In this mode, each active or non-empty workspace gets a unique numeric index
+across all outputs, and empty internal placeholder workspaces are not exported
+through IPC or ext-workspace.
+
+```kdl
+layout {
+    global-workspace-indices
+}
+```
+
 ### `default-column-display`
 
 <sup>Since: 25.02</sup>

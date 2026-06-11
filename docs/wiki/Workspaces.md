@@ -35,6 +35,14 @@ Several actions in niri can address workspaces "by index": `focus-workspace 2`, 
 This index refers to whichever workspace *currently happens to be* at this position on the focused monitor.
 So, `focus-workspace 2` will always put you on the second workspace of the monitor, whichever workspace that currently is.
 
+If you enable `layout { global-workspace-indices; }`, workspace numbers become globally unique
+across all outputs instead. In that mode, each active or non-empty workspace gets a unique numeric
+index, and direct references like `focus-workspace 2` will target that global workspace rather
+than a monitor-local position.
+
+Sequential workspace actions still operate on the current output, but they step through globally
+unique workspace numbers rather than the monitor's local workspace positions.
+
 This is an important distinction from WMs with static workspace systems.
 In niri, workspaces *do not have indices on their own*.
 If you take the first workspace and move it further down on the monitor, `focus-workspace 1` will now put you on a different workspace (the one that was below the first workspace before you moved it).

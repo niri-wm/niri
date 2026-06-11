@@ -220,7 +220,6 @@ impl CompositorHandler for State {
                         is_floating,
                         activate,
                     );
-                    let output = output.cloned();
 
                     // The window state cannot contain Fullscreen and Maximized at once. Therefore,
                     // if the window ended up fullscreen, then we only know that it is also
