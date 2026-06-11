@@ -721,10 +721,8 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     fn update_focus_floating_tiling_after_removing(&mut self, removed_from_floating: bool) {
-        if removed_from_floating {
-            if self.floating.is_empty() {
-                self.floating_is_active = FloatingActive::No;
-            }
+        if removed_from_floating && self.options.layout.focus_tiled_on_float_close {
+            self.floating_is_active = FloatingActive::No;
         } else {
             // Scrolling should remain focused if both are empty.
             if self.scrolling.is_empty() && !self.floating.is_empty() {
