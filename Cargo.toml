@@ -54,8 +54,7 @@ keywords = ["wayland", "compositor", "tiling", "smithay", "wm"]
 # it switched to activating only when a screen reader is detected, using the wrong D-Bus property
 # (ScreenReaderEnabled). The fix (PR # 715 on accesskit, switching back to IsEnabled) is merged in
 # accesskit_unix main but not in a published release yet; it is expected in the next point release (will be out soon).
-# We track latest anyway since that fix is imminent. NOTE: this revives the regression until the
-# fix is released, so verify screen reader behavior once 0.21.2 is out.
+# We track latest anyway since that fix is imminent. NOTE: this revives the regression until the fix is released.
 accesskit = { version = "0.24", optional = true }
 accesskit_unix = { version = "0.21", optional = true }
 anyhow.workspace = true
