@@ -340,6 +340,20 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
             let window = windows.values().find(|win| win.is_focused).cloned();
             Response::FocusedWindow(window)
         }
+        Request::WindowUnderCursor => {
+            let (tx, rx) = async_channel::bounded(1);
+            ctx.event_loop.insert_idle(move |state| {
+                let id = state.niri.window_under_cursor().map(Mapped::id);
+                let _ = tx.send_blocking(id);
+            });
+            let result = rx.recv().await;
+            let id = result.map_err(|_| String::from("error getting window under cursor info"))?;
+            let window = id.and_then(|id| {
+                let state = ctx.event_stream_state.borrow();
+                state.windows.windows.get(&id.get()).cloned()
+            });
+            Response::WindowUnderCursor(window)
+        }
         Request::PickWindow => {
             let (tx, rx) = async_channel::bounded(1);
             ctx.event_loop.insert_idle(move |state| {
