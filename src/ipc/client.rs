@@ -33,6 +33,7 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
         Msg::Version => Request::Version,
         Msg::Outputs => Request::Outputs,
         Msg::FocusedWindow => Request::FocusedWindow,
+        Msg::WindowUnderCursor => Request::WindowUnderCursor,
         Msg::FocusedOutput => Request::FocusedOutput,
         Msg::PickWindow => Request::PickWindow,
         Msg::PickColor => Request::PickColor,
@@ -179,6 +180,23 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
                 print_window(&window);
             } else {
                 println!("No window is focused.");
+            }
+        }
+        Msg::WindowUnderCursor => {
+            let Response::WindowUnderCursor(window) = response else {
+                bail!("unexpected response: expected WindowUnderCursor, got {response:?}");
+            };
+
+            if json {
+                let window = serde_json::to_string(&window).context("error formatting response")?;
+                println!("{window}");
+                return Ok(());
+            }
+
+            if let Some(window) = window {
+                print_window(&window);
+            } else {
+                println!("No window is under the cursor.");
             }
         }
         Msg::Windows => {

@@ -75,6 +75,8 @@ pub enum Msg {
     FocusedOutput,
     /// Print information about the focused window.
     FocusedWindow,
+    /// Print information about the window under the cursor.
+    WindowUnderCursor,
     /// Pick a window with the mouse and print information about it.
     PickWindow,
     /// Pick a color from the screen with the mouse.
