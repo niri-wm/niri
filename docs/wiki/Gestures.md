@@ -174,6 +174,8 @@ binds {
 - `fingers=` — integer in `3..=10`. Rejecting `<3` preserves the 2-finger passthrough contract used by clients for scrolling/zooming. Required.
 - `direction=` — one of `"up"`, `"down"`, `"left"`, `"right"`. Required.
 
+Swipe recognition is tuned in `input { touchscreen { gestures { } } }` by `swipe-trigger-distance` (px of centroid motion before a swipe commits, default 100) and `swipe-multi-finger-scale` (ramps that distance for 4+ finger swipes, default 1.2; set 1.0 to disable the bias).
+
 #### Pinch Gestures
 
 ```kdl
@@ -355,6 +357,23 @@ Dragging a tiled window horizontally will scroll the view instead.
 You can customize the look of the window insertion preview in the [`insert-hint` layout config](./Configuration:-Layout.md#insert-hint).
 
 <sup>Since: 25.11</sup> Tap with a second finger while moving to toggle between floating and tiling layout to put the window into.
+
+#### Flick to Throw
+
+<sup>Since: next release</sup>
+
+On a multi-display setup, releasing a one-finger window move with enough velocity **throws** the window to the neighbouring display in the flick direction. This is the touch counterpart to dragging a window across the bezel with the mouse: the cursor can physically cross the boundary, but your finger can't leave the glass, so a quick flick stands in for that crossing.
+
+It is **touch only** — mouse drag-releases are unaffected — and works for any single-finger move, whether started with <kbd>Mod</kbd> + touch or by dragging a window's titlebar (client `xdg_toplevel.move`); both run through the same interactive-move handler. A second finger still ends the move early, as before, so the flick is single-finger only.
+
+- **Floating windows** throw in all four directions.
+- **Tiled windows** throw once they have been picked up into a move: lead with an up/down motion to detach the window from its column, then fling it in any direction. A *purely sideways* drag on a tiled window stays column navigation (horizontal view scroll) and is never a throw.
+- If there is no display in the flicked direction, the window simply drops in place — it is never thrown off the edge.
+
+This is a built-in interactive-move behaviour, not a `binds {}` trigger. Two knobs in `input { touchscreen { gestures { } } }` control it (see [Configuration: Input](./Configuration:-Input.md#touchscreen)):
+
+- `flick-to-monitor` — enable or disable the throw. Default: on.
+- `flick-velocity-threshold` — minimum release speed in logical px/s to count as a throw rather than a normal drop. Raise it to require a more deliberate fling; lower it for a hair trigger. Default: `800.0`.
 
 ### Tablet
 

@@ -532,6 +532,25 @@ impl Touchscreen {
             .and_then(|g| g.tap_hold_trigger_delay_ms)
             .unwrap_or(200.0)
     }
+
+    /// Whether flick-to-throw is enabled. Default on; an explicit
+    /// `flick-to-monitor false` in the gestures block disables it.
+    pub fn flick_to_monitor(&self) -> bool {
+        self.gestures
+            .as_ref()
+            .and_then(|g| g.flick_to_monitor)
+            .unwrap_or(true)
+    }
+
+    /// Minimum release speed (logical px/s) for a single-finger
+    /// move-release to throw the window to the adjacent display. Default
+    /// 800.
+    pub fn flick_velocity_threshold(&self) -> f64 {
+        self.gestures
+            .as_ref()
+            .and_then(|g| g.flick_velocity_threshold)
+            .unwrap_or(800.0)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -663,6 +682,20 @@ pub struct TouchscreenGesturesConfig {
     /// hold-drag. Default: 200.
     #[knuffel(child, unwrap(argument))]
     pub tap_hold_trigger_delay_ms: Option<f64>,
+    /// Flick-to-throw toggle. When enabled, releasing a single-finger
+    /// window move (`Mod+touch` drag, or dragging a window by its
+    /// titlebar) with a release speed above `flick_velocity_threshold`
+    /// throws the window to the adjacent display in the flick direction
+    /// instead of dropping it in place. Touch only — mouse moves are
+    /// unaffected. Default: enabled. Set `flick-to-monitor false` to
+    /// disable.
+    #[knuffel(child, unwrap(argument))]
+    pub flick_to_monitor: Option<bool>,
+    /// Minimum release speed (in logical pixels per second) for a
+    /// single-finger move-release to count as a flick/throw rather than a
+    /// normal positional drop. Default: 800.0.
+    #[knuffel(child, unwrap(argument))]
+    pub flick_velocity_threshold: Option<f64>,
 }
 
 /// Tuning parameters for touchpad gesture recognition.

@@ -119,6 +119,13 @@ input {
     //     //     // Rotation — angles in DEGREES.
     //     //     rotation-trigger-angle 20.0    // ° before rotation can latch
     //     //     rotation-dominance-ratio 0.5   // arc must beat swipe × this (higher = stricter)
+    //     //
+    //     //     // Flick-to-throw: release a one-finger window move with
+    //     //     // velocity to throw the window to the adjacent display.
+    //     //     // Touch only; on by default. Floating windows throw any
+    //     //     // direction, tiled windows throw once picked up into a move.
+    //     //     flick-to-monitor true
+    //     //     flick-velocity-threshold 800.0 // min release px/s to count as a throw
     //     // }
     // }
 

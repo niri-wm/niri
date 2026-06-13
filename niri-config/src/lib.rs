@@ -649,6 +649,32 @@ mod tests {
         assert_eq!(config.input.keyboard.repeat_rate, 25);
     }
 
+    #[test]
+    fn touchscreen_flick_defaults() {
+        let config = Config::parse_mem("").unwrap();
+        assert!(config.input.touchscreen.flick_to_monitor());
+        assert_eq!(config.input.touchscreen.flick_velocity_threshold(), 800.0);
+    }
+
+    #[test]
+    fn touchscreen_flick_overrides() {
+        let config = Config::parse_mem(
+            r##"
+            input {
+                touchscreen {
+                    gestures {
+                        flick-to-monitor false
+                        flick-velocity-threshold 1200.0
+                    }
+                }
+            }
+            "##,
+        )
+        .unwrap();
+        assert!(!config.input.touchscreen.flick_to_monitor());
+        assert_eq!(config.input.touchscreen.flick_velocity_threshold(), 1200.0);
+    }
+
     #[track_caller]
     fn do_parse(text: &str) -> Config {
         Config::parse_mem(text)

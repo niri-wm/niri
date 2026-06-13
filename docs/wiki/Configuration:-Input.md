@@ -322,6 +322,11 @@ All knobs are grouped as: **trigger** (classifier commit gates), **dominance** (
 
 - `edge-start-distance <float>`: width in pixels of the screen-edge start zone. A touch must *begin* within this distance from an edge to count as a `TouchEdge` gesture; touches starting farther in are treated as regular swipes. Default: `30.0`.
 
+**Flick to throw:**
+
+- `flick-to-monitor <bool>`: <sup>Since: next</sup> when enabled, releasing a single-finger window move with enough velocity throws the window to the adjacent display in the flick direction. Touch only — mouse moves already relocate across the bezel when the cursor crosses. Default: `true`. See [Flick to Throw](./Gestures.md#flick-to-throw) for the floating-vs-tiled behaviour.
+- `flick-velocity-threshold <float>`: minimum release speed in logical pixels per second for a move-release to count as a throw rather than a normal positional drop. Raise it to require a more deliberate fling; lower it for a hair trigger. Default: `800.0`.
+
 Example:
 
 ```kdl
