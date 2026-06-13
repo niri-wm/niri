@@ -65,7 +65,10 @@ pub enum InitialConfigureState {
         ///   should fetch the parent's current output again upon mapping.
         output: Option<Output>,
 
-        /// Workspace to open this window on.
+        /// Name of the workspace this window was assigned to, if it is a named workspace.
+        ///
+        /// Remembered so that the window can be placed back onto the same named workspace when it
+        /// finally maps, even if the active workspace changed in the meantime.
         workspace_name: Option<String>,
 
         /// Whether the window should be maximized.

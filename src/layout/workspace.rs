@@ -106,6 +106,9 @@ pub struct Workspace<W: LayoutElement> {
     /// Optional name of this workspace.
     pub(super) name: Option<String>,
 
+    /// Fixed index for static workspaces
+    pub(super) static_index: Option<u8>,
+
     /// Layout config overrides for this workspace.
     layout_config: Option<niri_config::LayoutPart>,
 
@@ -268,7 +271,8 @@ impl<W: LayoutElement> Workspace<W> {
             clock,
             base_options,
             options,
-            name: config.map(|c| c.name.0),
+            name: config.as_ref().map(|c| c.name.0.clone()),
+            static_index: config.as_ref().and_then(|c| c.index.map(|i| i.0)),
             layout_config,
             id: WorkspaceId::next(),
         }
@@ -332,7 +336,8 @@ impl<W: LayoutElement> Workspace<W> {
             clock,
             base_options,
             options,
-            name: config.map(|c| c.name.0),
+            name: config.as_ref().map(|c| c.name.0.clone()),
+            static_index: config.as_ref().and_then(|c| c.index.map(|i| i.0)),
             layout_config,
             id: WorkspaceId::next(),
         }
@@ -350,12 +355,21 @@ impl<W: LayoutElement> Workspace<W> {
         self.name.as_ref()
     }
 
+    pub fn static_index(&self) -> Option<u8> {
+        self.static_index
+    }
+
+    pub fn set_static_index(&mut self, index: u8) {
+        self.static_index = Some(index);
+    }
+
     pub fn unname(&mut self) {
         self.name = None;
+        self.static_index = None;
     }
 
     pub fn has_windows_or_name(&self) -> bool {
-        self.has_windows() || self.name.is_some()
+        self.has_windows() || self.name.is_some() || self.static_index.is_some()
     }
 
     pub fn scale(&self) -> smithay::output::Scale {

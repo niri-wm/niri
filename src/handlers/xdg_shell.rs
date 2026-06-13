@@ -1053,8 +1053,13 @@ impl State {
         // Pick the target monitor. First, check if we had a workspace set in the window rules.
         let mon = rules
             .open_on_workspace
-            .as_deref()
-            .and_then(|name| self.niri.layout.monitor_for_workspace(name));
+            .as_ref()
+            .and_then(|reference| {
+                self.niri.layout.monitor_for_workspace_ref(
+                    reference,
+                    rules.open_on_output.as_deref(),
+                )
+            });
 
         // If not, check if we had an output set in the window rules.
         let mon = mon.or_else(|| {
@@ -1114,9 +1119,11 @@ impl State {
         // Tell the surface the preferred size and bounds for its likely output.
         let ws = rules
             .open_on_workspace
-            .as_deref()
-            .and_then(|name| mon.map(|mon| mon.find_named_workspace(name)))
-            .unwrap_or_else(|| {
+            .as_ref()
+            .and_then(|reference| {
+                mon.and_then(|mon| mon.find_workspace_by_reference(reference))
+            })
+            .or_else(|| {
                 mon.map(|mon| mon.active_workspace_ref())
                     .or_else(|| self.niri.layout.active_workspace())
             });
@@ -1165,6 +1172,7 @@ impl State {
         update_tiled_state(toplevel, config.prefer_no_csd, rules.tiled_state);
 
         // Set the configured settings.
+        let workspace_name = ws.and_then(|w| w.name().cloned());
         *state = InitialConfigureState::Configured {
             rules,
             width,
@@ -1173,7 +1181,7 @@ impl State {
             floating_height,
             is_full_width,
             output,
-            workspace_name: ws.and_then(|w| w.name().cloned()),
+            workspace_name,
             is_pending_maximized,
         };
 

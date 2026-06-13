@@ -1,5 +1,6 @@
 use niri_ipc::ColumnDisplay;
 
+use crate::binds::WorkspaceReference;
 use crate::appearance::{
     BackgroundEffect, BackgroundEffectRule, BlockOutFrom, BorderRule, CornerRadius, ShadowRule,
     TabIndicatorRule,
@@ -23,7 +24,7 @@ pub struct WindowRule {
     #[knuffel(child, unwrap(argument))]
     pub open_on_output: Option<String>,
     #[knuffel(child, unwrap(argument))]
-    pub open_on_workspace: Option<String>,
+    pub open_on_workspace: Option<WorkspaceReference>,
     #[knuffel(child, unwrap(argument))]
     pub open_maximized: Option<bool>,
     #[knuffel(child, unwrap(argument))]

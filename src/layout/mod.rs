@@ -1784,6 +1784,28 @@ impl<W: LayoutElement> Layout<W> {
         })
     }
 
+    pub fn monitor_for_workspace_ref(
+        &self,
+        reference: &WorkspaceReference,
+        output_hint: Option<&str>,
+    ) -> Option<&Monitor<W>> {
+        match reference {
+            WorkspaceReference::Name(name) => self.monitor_for_workspace(name),
+            WorkspaceReference::Index(_) => output_hint
+                .and_then(|name| {
+                    self.monitors()
+                        .find(|monitor| output_matches_name(&monitor.output, name))
+                })
+                .or_else(|| self.active_monitor_ref()),
+            WorkspaceReference::Id(id) => self.monitors().find(|monitor| {
+                monitor
+                    .workspaces
+                    .iter()
+                    .any(|ws| ws.id().get() == *id)
+            }),
+        }
+    }
+
     pub fn outputs(&self) -> impl Iterator<Item = &Output> + '_ {
         self.monitors().map(|mon| &mon.output)
     }
@@ -2935,22 +2957,60 @@ impl<W: LayoutElement> Layout<W> {
                     clock,
                     options,
                 );
-                mon.insert_workspace(ws, 0, false);
+
+                let insert_idx = if mon.options.layout.static_workspaces {
+                    ws_config
+                        .index
+                        .map(|index| index.0.saturating_sub(1) as usize)
+                        .unwrap_or(0)
+                } else {
+                    0
+                };
+
+                if mon.options.layout.static_workspaces {
+                    mon.ensure_workspace_slot(insert_idx);
+                }
+                mon.insert_workspace(ws, insert_idx, false);
             }
             MonitorSet::NoOutputs { workspaces } => {
                 let ws =
                     Workspace::new_with_config_no_outputs(Some(ws_config.clone()), clock, options);
-                workspaces.insert(0, ws);
+
+                let insert_idx = if self.options.layout.static_workspaces {
+                    ws_config
+                        .index
+                        .map(|index| index.0.saturating_sub(1) as usize)
+                        .unwrap_or(0)
+                } else {
+                    0
+                };
+
+                if self.options.layout.static_workspaces {
+                    while insert_idx >= workspaces.len() {
+                        workspaces.push(Workspace::new_no_outputs(
+                            self.clock.clone(),
+                            self.options.clone(),
+                        ));
+                    }
+                }
+
+                workspaces.insert(insert_idx.min(workspaces.len()), ws);
             }
         }
     }
 
     pub fn update_config(&mut self, config: &Config) {
         // Update workspace-specific config for all named workspaces.
+        let static_workspaces = self.options.layout.static_workspaces;
         for ws in self.workspaces_mut() {
             let Some(name) = ws.name() else { continue };
             if let Some(config) = config.workspaces.iter().find(|w| &w.name.0 == name) {
                 ws.update_layout_config(config.layout.clone().map(|x| x.0));
+                if static_workspaces {
+                    if let Some(index) = config.index {
+                        ws.set_static_index(index.0);
+                    }
+                }
             }
         }
 

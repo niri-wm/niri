@@ -3,7 +3,7 @@ use std::iter::zip;
 use std::rc::Rc;
 use std::time::Duration;
 
-use niri_config::{CornerRadius, LayoutPart};
+use niri_config::{CornerRadius, LayoutPart, WorkspaceReference};
 use smithay::backend::renderer::element::utils::{
     CropRenderElement, Relocate, RelocateRenderElement, RescaleRenderElement,
 };
@@ -324,6 +324,24 @@ impl<W: LayoutElement> Monitor<W> {
             active_workspace_idx += 1;
         }
 
+        if options.layout.static_workspaces && !workspaces.is_empty() {
+            let old_active_id = workspaces
+                .get(active_workspace_idx)
+                .map(|ws| ws.id());
+            workspaces = Self::arrange_static_workspaces(
+                output.clone(),
+                clock.clone(),
+                options.clone(),
+                workspaces,
+            );
+            if let Some(id) = old_active_id {
+                if let Some((idx, _)) = workspaces.iter().enumerate().find(|(_, ws)| ws.id() == id)
+                {
+                    active_workspace_idx = idx;
+                }
+            }
+        }
+
         let ws = Workspace::new(output.clone(), clock.clone(), options.clone());
         workspaces.push(ws);
 
@@ -359,6 +377,77 @@ impl<W: LayoutElement> Monitor<W> {
         self.workspaces
     }
 
+    fn arrange_static_workspaces(
+        output: Output,
+        clock: Clock,
+        options: Rc<Options>,
+        mut workspaces: Vec<Workspace<W>>,
+    ) -> Vec<Workspace<W>> {
+        let range_start = if options.layout.empty_workspace_above_first {
+            1
+        } else {
+            0
+        };
+
+        let mut prefix = workspaces.drain(..range_start).collect::<Vec<_>>();
+        let mut indexed = Vec::new();
+        let mut unindexed = Vec::new();
+
+        for ws in workspaces {
+            if let Some(idx) = ws.static_index() {
+                indexed.push((idx, ws));
+            } else {
+                unindexed.push(ws);
+            }
+        }
+
+        indexed.sort_by_key(|(idx, _)| *idx);
+
+        if indexed.is_empty() {
+            prefix.extend(unindexed);
+            return prefix;
+        }
+
+        let max_idx = indexed
+            .iter()
+            .map(|(idx, _)| *idx as usize)
+            .max()
+            .unwrap_or(0);
+
+        let mut result = prefix;
+        let mut indexed_iter = indexed.into_iter().peekable();
+
+        for i in 1..=max_idx {
+            if indexed_iter.peek().is_some_and(|(idx, _)| *idx == i as u8) {
+                result.push(indexed_iter.next().unwrap().1);
+            } else {
+                let mut ws = Workspace::new(output.clone(), clock.clone(), options.clone());
+                ws.set_static_index(i as u8);
+                result.push(ws);
+            }
+        }
+
+        result.extend(unindexed);
+        result.extend(indexed_iter.map(|(_, ws)| ws));
+
+        result
+    }
+
+    pub fn ensure_workspace_slot(&mut self, idx: usize) {
+        while idx >= self.workspaces.len().saturating_sub(1) {
+            let insert_at = self.workspaces.len().saturating_sub(1);
+            let mut ws = Workspace::new(
+                self.output.clone(),
+                self.clock.clone(),
+                self.options.clone(),
+            );
+            if self.options.layout.static_workspaces {
+                ws.set_static_index((insert_at + 1) as u8);
+            }
+            self.workspaces.insert(insert_at, ws);
+        }
+    }
+
     pub fn output(&self) -> &Output {
         &self.output
     }
@@ -381,6 +470,20 @@ impl<W: LayoutElement> Monitor<W> {
                 .as_ref()
                 .is_some_and(|name| name.eq_ignore_ascii_case(workspace_name))
         })
+    }
+
+    pub fn find_workspace_by_reference(&self, reference: &WorkspaceReference) -> Option<&Workspace<W>> {
+        match reference {
+            WorkspaceReference::Name(name) => self.find_named_workspace(name),
+            WorkspaceReference::Index(index) => {
+                let idx = index.saturating_sub(1) as usize;
+                self.workspaces.get(idx)
+            }
+            WorkspaceReference::Id(id) => self
+                .workspaces
+                .iter()
+                .find(|ws| ws.id().get() == *id),
+        }
     }
 
     pub fn find_named_workspace_index(&self, workspace_name: &str) -> Option<usize> {
@@ -636,6 +739,12 @@ impl<W: LayoutElement> Monitor<W> {
             }
 
             if !self.workspaces[idx].has_windows_or_name() {
+                if self.options.layout.static_workspaces
+                    && self.workspaces[idx].static_index().is_some()
+                {
+                    continue;
+                }
+
                 self.workspaces.remove(idx);
                 if self.active_workspace_idx > idx {
                     self.active_workspace_idx -= 1;

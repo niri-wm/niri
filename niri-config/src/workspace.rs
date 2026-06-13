@@ -2,10 +2,15 @@ use knuffel::errors::DecodeError;
 
 use crate::LayoutPart;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WorkspaceIndex(pub u8);
+
 #[derive(knuffel::Decode, Debug, Clone, PartialEq)]
 pub struct Workspace {
     #[knuffel(argument)]
     pub name: WorkspaceName,
+    #[knuffel(child, unwrap(argument))]
+    pub index: Option<WorkspaceIndex>,
     #[knuffel(child, unwrap(argument))]
     pub open_on_output: Option<String>,
     #[knuffel(child)]
@@ -91,6 +96,73 @@ impl<S: knuffel::traits::ErrorSpan> knuffel::DecodeScalar<S> for WorkspaceName {
                     "workspace names must be strings",
                 ));
                 Ok(Self(String::new()))
+            }
+        }
+    }
+}
+
+impl<S: knuffel::traits::ErrorSpan> knuffel::DecodeScalar<S> for WorkspaceIndex {
+    fn type_check(
+        type_name: &Option<knuffel::span::Spanned<knuffel::ast::TypeName, S>>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) {
+        if let Some(type_name) = &type_name {
+            ctx.emit_error(DecodeError::unexpected(
+                type_name,
+                "type name",
+                "no type name expected for this node",
+            ));
+        }
+    }
+
+    fn raw_decode(
+        val: &knuffel::span::Spanned<knuffel::ast::Literal, S>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) -> Result<WorkspaceIndex, DecodeError<S>> {
+        match &**val {
+            knuffel::ast::Literal::Int(ref value) => match value.try_into() {
+                Ok(v @ 1..=255) => {
+                    #[derive(Debug)]
+                    struct WorkspaceIndexSet(Vec<u8>);
+                    let mut index_set: Vec<u8> = match ctx.get::<WorkspaceIndexSet>() {
+                        Some(h) => h.0.clone(),
+                        None => Vec::new(),
+                    };
+
+                    if index_set.contains(&v) {
+                        ctx.emit_error(DecodeError::unexpected(
+                            val,
+                            "workspace index",
+                            format!("duplicate workspace index: {v}"),
+                        ));
+                        return Ok(WorkspaceIndex(0));
+                    }
+
+                    index_set.push(v);
+                    ctx.set(WorkspaceIndexSet(index_set));
+                    Ok(WorkspaceIndex(v))
+                }
+                Ok(0) => {
+                    ctx.emit_error(DecodeError::unsupported(
+                        val,
+                        "workspace index must be between 1 and 255",
+                    ));
+                    Ok(WorkspaceIndex(0))
+                }
+                _ => {
+                    ctx.emit_error(DecodeError::unsupported(
+                        val,
+                        "workspace index must be between 1 and 255",
+                    ));
+                    Ok(WorkspaceIndex(0))
+                }
+            },
+            _ => {
+                ctx.emit_error(DecodeError::unsupported(
+                    val,
+                    "workspace index must be an integer",
+                ));
+                Ok(WorkspaceIndex(0))
             }
         }
     }

@@ -859,6 +859,7 @@ impl Op {
             } => {
                 layout.ensure_named_workspace(&WorkspaceConfig {
                     name: WorkspaceName(format!("ws{ws_name}")),
+                    index: None,
                     open_on_output: output_name.map(|name| format!("output{name}")),
                     layout: layout_config.map(|x| niri_config::WorkspaceLayoutPart(*x)),
                 });
@@ -2739,6 +2740,96 @@ fn named_workspace_to_output() {
         Op::FocusWorkspaceUp,
     ];
     check_ops(ops);
+}
+
+#[test]
+fn static_workspaces_keep_fixed_indices() {
+    use niri_config::{
+        Config, Layout as LayoutConfig, Workspace as WorkspaceConfig, WorkspaceIndex,
+    };
+
+    let config = Config {
+        layout: LayoutConfig {
+            static_workspaces: true,
+            ..Default::default()
+        },
+        workspaces: vec![
+            WorkspaceConfig {
+                name: WorkspaceName("browser".into()),
+                index: Some(WorkspaceIndex(2)),
+                open_on_output: None,
+                layout: None,
+            },
+            WorkspaceConfig {
+                name: WorkspaceName("terminal".into()),
+                index: Some(WorkspaceIndex(3)),
+                open_on_output: None,
+                layout: None,
+            },
+        ],
+        ..Default::default()
+    };
+
+    let mut layout = Layout::new(Clock::with_time(Duration::ZERO), &config);
+
+    let output = Output::new(
+        "output1".to_string(),
+        PhysicalProperties {
+            size: Size::from((1280, 720)),
+            subpixel: Subpixel::Unknown,
+            make: String::new(),
+            model: String::new(),
+            serial_number: String::new(),
+        },
+    );
+    output.change_current_state(
+        Some(Mode {
+            size: Size::from((1280, 720)),
+            refresh: 60000,
+        }),
+        None,
+        None,
+        None,
+    );
+    output.user_data().insert_if_missing(|| OutputName {
+        connector: "output1".to_string(),
+        make: None,
+        model: None,
+        serial: None,
+    });
+    layout.add_output(output, None);
+
+    let mon = layout.monitors().next().unwrap();
+    assert_eq!(mon.workspaces[1].name(), Some(&"browser".into()));
+    assert_eq!(mon.workspaces[2].name(), Some(&"terminal".into()));
+
+    let browser_id = mon.workspaces[1].id();
+    let terminal_id = mon.workspaces[2].id();
+
+    layout.add_window(
+        TestWindow::new(TestWindowParams::new(1)),
+        AddWindowTarget::Workspace(terminal_id),
+        None,
+        None,
+        false,
+        false,
+        ActivateWindow::No,
+    );
+    layout.add_window(
+        TestWindow::new(TestWindowParams::new(2)),
+        AddWindowTarget::Workspace(browser_id),
+        None,
+        None,
+        false,
+        false,
+        ActivateWindow::No,
+    );
+
+    let mon = layout.monitors().next().unwrap();
+    assert_eq!(mon.workspaces[1].name(), Some(&"browser".into()));
+    assert_eq!(mon.workspaces[2].name(), Some(&"terminal".into()));
+    assert!(mon.workspaces[1].has_window(&2));
+    assert!(mon.workspaces[2].has_window(&1));
 }
 
 #[test]

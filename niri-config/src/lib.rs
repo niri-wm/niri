@@ -62,7 +62,7 @@ use crate::utils::{Flag, MergeWith as _};
 pub use crate::window_rule::{
     FloatingPosition, PopupsRule, RelativeTo, ResolvedPopupsRules, WindowRule,
 };
-pub use crate::workspace::{Workspace, WorkspaceLayoutPart};
+pub use crate::workspace::{Workspace, WorkspaceIndex, WorkspaceLayoutPart};
 
 const RECURSION_LIMIT: u8 = 10;
 
@@ -1459,6 +1459,7 @@ mod tests {
                 center_focused_column: OnOverflow,
                 always_center_single_column: false,
                 empty_workspace_above_first: false,
+                static_workspaces: false,
                 default_column_display: Tabbed,
                 gaps: 8.0,
                 struts: Struts {

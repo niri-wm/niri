@@ -20,6 +20,7 @@ pub struct Layout {
     pub center_focused_column: CenterFocusedColumn,
     pub always_center_single_column: bool,
     pub empty_workspace_above_first: bool,
+    pub static_workspaces: bool,
     pub default_column_display: ColumnDisplay,
     pub gaps: f64,
     pub struts: Struts,
@@ -43,6 +44,7 @@ impl Default for Layout {
             center_focused_column: CenterFocusedColumn::Never,
             always_center_single_column: false,
             empty_workspace_above_first: false,
+            static_workspaces: false,
             default_column_display: ColumnDisplay::Normal,
             gaps: 16.,
             struts: Struts::default(),
@@ -67,6 +69,7 @@ impl MergeWith<LayoutPart> for Layout {
             insert_hint,
             always_center_single_column,
             empty_workspace_above_first,
+            static_workspaces,
             gaps,
         );
 
@@ -118,6 +121,8 @@ pub struct LayoutPart {
     pub always_center_single_column: Option<Flag>,
     #[knuffel(child)]
     pub empty_workspace_above_first: Option<Flag>,
+    #[knuffel(child)]
+    pub static_workspaces: Option<Flag>,
     #[knuffel(child, unwrap(argument, str))]
     pub default_column_display: Option<ColumnDisplay>,
     #[knuffel(child, unwrap(argument))]

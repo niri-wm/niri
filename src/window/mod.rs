@@ -4,7 +4,7 @@ use niri_config::utils::MergeWith as _;
 use niri_config::window_rule::{Match, WindowRule};
 use niri_config::{
     BackgroundEffect, BlockOutFrom, BorderRule, CornerRadius, FloatingPosition, PresetSize,
-    ResolvedPopupsRules, ShadowRule, TabIndicatorRule,
+    ResolvedPopupsRules, ShadowRule, TabIndicatorRule, WorkspaceReference,
 };
 use niri_ipc::ColumnDisplay;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
@@ -56,7 +56,7 @@ pub struct ResolvedWindowRules {
     pub open_on_output: Option<String>,
 
     /// Workspace to open this window on.
-    pub open_on_workspace: Option<String>,
+    pub open_on_workspace: Option<WorkspaceReference>,
 
     /// Whether the window should open full-width.
     pub open_maximized: Option<bool>,
@@ -233,7 +233,7 @@ impl ResolvedWindowRules {
                     open_on_output = Some(x);
                 }
 
-                if let Some(x) = rule.open_on_workspace.as_deref() {
+                if let Some(x) = rule.open_on_workspace.clone() {
                     open_on_workspace = Some(x);
                 }
 
