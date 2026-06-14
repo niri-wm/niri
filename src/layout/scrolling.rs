@@ -4082,6 +4082,16 @@ impl<W: LayoutElement> Column<W> {
     ) {
         let mut update_sizes = false;
 
+        // Animate the tile resize only when the available area changed on its own
+        // (e.g. a layer-shell exclusive zone like a bar toggling, or struts
+        // changing) while the output geometry stayed put. parent_area is the
+        // layer-zone-aware area handed down from the workspace, so it moves on a
+        // bar toggle too. Output resolution or scale changes still snap, since
+        // animating those looks wrong.
+        let area_changed =
+            self.working_area != working_area || self.parent_area != parent_area;
+        let size_or_scale_changed = self.view_size != view_size || self.scale != scale;
+
         if self.view_size != view_size
             || self.working_area != working_area
             || self.parent_area != parent_area
@@ -4128,7 +4138,7 @@ impl<W: LayoutElement> Column<W> {
         self.options = options;
 
         if update_sizes {
-            self.update_tile_sizes(false);
+            self.update_tile_sizes(area_changed && !size_or_scale_changed);
         }
     }
 
