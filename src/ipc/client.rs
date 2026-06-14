@@ -33,6 +33,7 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
         Msg::Version => Request::Version,
         Msg::Outputs => Request::Outputs,
         Msg::FocusedWindow => Request::FocusedWindow,
+        Msg::FocusedWindowFullscreen => Request::FocusedWindowFullscreen,
         Msg::FocusedOutput => Request::FocusedOutput,
         Msg::PickWindow => Request::PickWindow,
         Msg::PickColor => Request::PickColor,
@@ -179,6 +180,24 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
                 print_window(&window);
             } else {
                 println!("No window is focused.");
+            }
+        }
+        Msg::FocusedWindowFullscreen => {
+            let Response::FocusedWindowFullscreen(is_fullscreen) = response else {
+                bail!("unexpected response: expected FocusedWindowFullscreen, got {response:?}");
+            };
+
+            if json {
+                let is_fullscreen =
+                    serde_json::to_string(&is_fullscreen).context("error formatting response")?;
+                println!("{is_fullscreen}");
+                return Ok(());
+            }
+
+            if is_fullscreen {
+                println!("The focused window is fullscreen.");
+            } else {
+                println!("The focused window is not fullscreen.");
             }
         }
         Msg::Windows => {
@@ -694,6 +713,11 @@ fn print_window(window: &Window) {
     println!(
         "  Is floating: {}",
         if window.is_floating { "yes" } else { "no" }
+    );
+
+    println!(
+        "  Is fullscreen: {}",
+        if window.is_fullscreen { "yes" } else { "no" }
     );
 
     if let Some(pid) = window.pid {

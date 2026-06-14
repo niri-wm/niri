@@ -340,6 +340,15 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
             let window = windows.values().find(|win| win.is_focused).cloned();
             Response::FocusedWindow(window)
         }
+        Request::FocusedWindowFullscreen => {
+            let state = ctx.event_stream_state.borrow();
+            let windows = &state.windows.windows;
+            let is_fullscreen = windows
+                .values()
+                .find(|win| win.is_focused)
+                .is_some_and(|win| win.is_fullscreen);
+            Response::FocusedWindowFullscreen(is_fullscreen)
+        }
         Request::PickWindow => {
             let (tx, rx) = async_channel::bounded(1);
             ctx.event_loop.insert_idle(move |state| {
@@ -525,6 +534,7 @@ fn make_ipc_window(
         workspace_id: workspace_id.map(|id| id.get()),
         is_focused: mapped.is_focused(),
         is_floating: mapped.is_floating(),
+        is_fullscreen: mapped.is_fullscreen(),
         is_urgent: mapped.is_urgent(),
         layout,
         focus_timestamp: mapped.get_focus_timestamp().map(Timestamp::from),
@@ -718,8 +728,9 @@ impl State {
             };
 
             let workspace_id = ws_id.map(|id| id.get());
-            let mut changed =
-                ipc_win.workspace_id != workspace_id || ipc_win.is_floating != mapped.is_floating();
+            let mut changed = ipc_win.workspace_id != workspace_id
+                || ipc_win.is_floating != mapped.is_floating()
+                || ipc_win.is_fullscreen != mapped.is_fullscreen();
 
             changed |= with_toplevel_role(mapped.toplevel(), |role| {
                 ipc_win.title != role.title || ipc_win.app_id != role.app_id

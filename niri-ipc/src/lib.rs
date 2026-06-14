@@ -81,6 +81,10 @@ pub enum Request {
     FocusedOutput,
     /// Request information about the focused window.
     FocusedWindow,
+    /// Request whether the currently focused window is fullscreen.
+    ///
+    /// Responds with `false` when no window is focused.
+    FocusedWindowFullscreen,
     /// Request picking a window and get its information.
     PickWindow,
     /// Request picking a color from the screen.
@@ -155,6 +159,10 @@ pub enum Response {
     FocusedOutput(Option<Output>),
     /// Information about the focused window.
     FocusedWindow(Option<Window>),
+    /// Whether the currently focused window is fullscreen.
+    ///
+    /// Is `false` when no window is focused.
+    FocusedWindowFullscreen(bool),
     /// Information about the picked window.
     PickedWindow(Option<Window>),
     /// Information about the picked color.
@@ -1356,6 +1364,11 @@ pub struct Window {
     ///
     /// If the window isn't floating then it is in the tiling layout.
     pub is_floating: bool,
+    /// Whether this window is currently fullscreen.
+    ///
+    /// This refers to real fullscreen where the window fills its entire output. Windows in
+    /// "windowed fullscreen" mode (fullscreen confined to their tile) report `false` here.
+    pub is_fullscreen: bool,
     /// Whether this window requests your attention.
     pub is_urgent: bool,
     /// Position- and size-related properties of the window.

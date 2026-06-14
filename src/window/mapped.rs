@@ -598,6 +598,14 @@ impl Mapped {
         self.is_windowed_fullscreen
     }
 
+    /// Whether this window is in real (output-filling) fullscreen.
+    ///
+    /// This is `false` for windowed fullscreen, where the window is told it is fullscreen but is
+    /// kept as a regular tile.
+    pub fn is_fullscreen(&self) -> bool {
+        self.sizing_mode().is_fullscreen()
+    }
+
     pub fn set_urgent(&mut self, urgent: bool) {
         if self.is_focused && urgent {
             return;
