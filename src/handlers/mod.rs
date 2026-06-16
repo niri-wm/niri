@@ -614,7 +614,7 @@ impl ExtWorkspaceHandler for State {
             if let Some(output) = output {
                 self.niri.layout.focus_output(&output);
             }
-            self.niri.layout.switch_workspace(index);
+            self.niri.layout.switch_workspace(index, false);
             // No mouse warp: assuming the layer-shell bar workspaces use-case.
 
             // FIXME: granular
