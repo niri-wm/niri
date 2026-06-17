@@ -135,12 +135,12 @@
             ''
             + lib.optionalString withSystemd ''
               install -Dm755 resources/niri-session $out/bin/niri-session
-              install -Dm644 resources/niri{.service,-shutdown.target} -t $out/share/systemd/user
+              install -Dm644 resources/niri{.service,-shutdown.target} -t $out/lib/systemd/user
             '';
 
           env = {
-            # Force linking with libEGL and libwayland-client
-            # so they can be discovered by `dlopen()`
+            # Force linking with libEGL and libwayland-client so they end up in RPATH and
+            # can be discovered by `dlopen()`
             RUSTFLAGS = toString (
               map (arg: "-C link-arg=" + arg) [
                 "-Wl,--push-state,--no-as-needed"
@@ -225,8 +225,8 @@
               # It is required for `dlopen()` to work on some libraries; see the comment
               # in the package expression
               #
-              # This should only be set with `CARGO_BUILD_RUSTFLAGS="$CARGO_BUILD_RUSTFLAGS -C your-flags"`
-              CARGO_BUILD_RUSTFLAGS = niri.RUSTFLAGS;
+              # This should only be set with `RUSTFLAGS="$RUSTFLAGS -C your-flags"`
+              RUSTFLAGS = niri.RUSTFLAGS;
             };
           };
         }

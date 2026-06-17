@@ -14,7 +14,7 @@ use anyhow::{anyhow, bail, ensure, Context};
 use bytemuck::cast_slice_mut;
 use drm_ffi::drm_mode_modeinfo;
 use libc::dev_t;
-use niri_config::output::Modeline;
+use niri_config::output::{MaxBpc, Modeline};
 use niri_config::{Config, OutputName};
 use niri_ipc::{HSyncPolarity, VSyncPolarity};
 use smithay::backend::allocator::dmabuf::Dmabuf;
@@ -70,7 +70,11 @@ use crate::render_helpers::renderer::AsGlesRenderer;
 use crate::render_helpers::{resources, shaders, RenderCtx, RenderTarget};
 use crate::utils::{get_monotonic_time, is_laptop_panel, logical_output, PanelOrientation};
 
-const SUPPORTED_COLOR_FORMATS: [Fourcc; 4] = [
+const SUPPORTED_COLOR_FORMATS: [Fourcc; 8] = [
+    Fourcc::Xrgb2101010,
+    Fourcc::Xbgr2101010,
+    Fourcc::Argb2101010,
+    Fourcc::Abgr2101010,
     Fourcc::Xrgb8888,
     Fourcc::Xbgr8888,
     Fourcc::Argb8888,
@@ -405,6 +409,8 @@ struct ConnectorProperties<'a> {
     device: &'a DrmDevice,
     connector: connector::Handle,
     properties: Vec<(property::Info, property::RawValue)>,
+    has_change: bool,
+    requests: AtomicModeReq,
 }
 
 impl Tty {
@@ -676,16 +682,19 @@ impl Tty {
                     // Apply pending gamma changes and restore our existing gamma.
                     let device = self.devices.get_mut(&node).unwrap();
                     for (crtc, surface) in device.surfaces.iter_mut() {
-                        if let Ok(props) =
+                        if let Ok(mut props) =
                             ConnectorProperties::try_new(&device.drm, surface.connector)
                         {
-                            match reset_hdr(&props) {
-                                Ok(()) => (),
-                                Err(err) => debug!("couldn't reset HDR properties: {err:?}"),
-                            }
+                            let max_bpc = self
+                                .config
+                                .borrow()
+                                .outputs
+                                .find(&surface.name)
+                                .and_then(|o| o.max_bpc);
+                            set_connector_properties(&mut props, max_bpc, true);
                         } else {
                             warn!("failed to get connector properties");
-                        };
+                        }
 
                         if let Some(ramp) = surface.pending_gamma_change.take() {
                             let ramp = ramp.as_deref();
@@ -1302,13 +1311,10 @@ impl Tty {
         debug!("picking mode: {mode:?}");
 
         let mut orientation = None;
-        if let Ok(props) = ConnectorProperties::try_new(&device.drm, connector.handle()) {
-            match reset_hdr(&props) {
-                Ok(()) => (),
-                Err(err) => debug!("couldn't reset HDR properties: {err:?}"),
-            }
+        if let Ok(mut props) = ConnectorProperties::try_new(&device.drm, connector.handle()) {
+            set_connector_properties(&mut props, config.max_bpc, true);
 
-            match get_panel_orientation(&props) {
+            match props.get_panel_orientation() {
                 Ok(x) => orientation = Some(x),
                 Err(err) => {
                     trace!("couldn't get panel orientation: {err:?}");
@@ -1316,7 +1322,7 @@ impl Tty {
             }
         } else {
             warn!("failed to get connector properties");
-        };
+        }
 
         let mut gamma_props = GammaProps::new(&device.drm, crtc)
             .map_err(|err| debug!("couldn't get gamma properties: {err:?}"))
@@ -2194,6 +2200,15 @@ impl Tty {
                     OutputId::next()
                 });
 
+                let props = ConnectorProperties::try_new(&device.drm, connector.handle()).ok();
+                let max_bpc = props.as_ref().and_then(|p| p.find(c"max bpc").ok());
+                let max_bpc = max_bpc.and_then(|(info, value)| {
+                    info.value_type()
+                        .convert_value(*value)
+                        .as_unsigned_range()
+                        .map(|v| v as u8)
+                });
+
                 let ipc_output = niri_ipc::Output {
                     name: connector_name,
                     make: output_name.make.unwrap_or_else(|| "Unknown".into()),
@@ -2206,6 +2221,7 @@ impl Tty {
                     vrr_supported,
                     vrr_enabled,
                     logical,
+                    max_bpc,
                 };
 
                 ipc_outputs.insert(id, ipc_output);
@@ -2421,6 +2437,13 @@ impl Tty {
                         }
                     },
                 };
+
+                if let Ok(mut props) = ConnectorProperties::try_new(&device.drm, surface.connector)
+                {
+                    set_connector_properties(&mut props, config.max_bpc, false);
+                } else {
+                    warn!("failed to get connector properties");
+                }
 
                 let change_mode = surface.compositor.pending_mode() != mode;
 
@@ -3250,6 +3273,8 @@ impl<'a> ConnectorProperties<'a> {
             device,
             connector,
             properties,
+            has_change: false,
+            requests: AtomicModeReq::new(),
         })
     }
 
@@ -3262,58 +3287,120 @@ impl<'a> ConnectorProperties<'a> {
 
         Err(anyhow!("couldn't find property: {name:?}"))
     }
+
+    fn get_panel_orientation(&self) -> anyhow::Result<Transform> {
+        let (info, value) = self.find(c"panel orientation")?;
+        match info.value_type().convert_value(*value) {
+            property::Value::Enum(Some(val)) => match val.value() {
+                // "Normal"
+                0 => Ok(Transform::Normal),
+                // "Upside Down"
+                1 => Ok(Transform::_180),
+                // "Left Side Up"
+                2 => Ok(Transform::_90),
+                // "Right Side Up"
+                3 => Ok(Transform::_270),
+                _ => bail!("panel orientation has invalid value: {:?}", val),
+            },
+            _ => bail!("panel orientation has wrong value type"),
+        }
+    }
+
+    fn reset_hdr(&mut self) -> anyhow::Result<()> {
+        const DRM_MODE_COLORIMETRY_DEFAULT: u64 = 0;
+
+        let (info, value) = self.find(c"HDR_OUTPUT_METADATA")?;
+
+        let property::ValueType::Blob = info.value_type() else {
+            bail!("wrong property type")
+        };
+        if *value != 0 {
+            self.requests
+                .add_raw_property(self.connector.into(), info.handle(), 0);
+            self.has_change = true;
+        }
+
+        let (info, value) = self.find(c"Colorspace")?;
+        let property::ValueType::Enum(_) = info.value_type() else {
+            bail!("wrong property type")
+        };
+        if *value != DRM_MODE_COLORIMETRY_DEFAULT {
+            self.requests.add_raw_property(
+                self.connector.into(),
+                info.handle(),
+                DRM_MODE_COLORIMETRY_DEFAULT,
+            );
+            self.has_change = true;
+        }
+
+        Ok(())
+    }
+
+    fn set_max_bpc(&mut self, max_bpc: MaxBpc) -> anyhow::Result<u64> {
+        let (info, value) = self.find(c"max bpc")?;
+
+        let property::ValueType::UnsignedRange(min, max) = info.value_type() else {
+            bail!("wrong property type")
+        };
+
+        let max_bpc = max_bpc.0 as u64;
+        if !(min..=max).contains(&max_bpc) {
+            bail!("max-bpc {max_bpc} outside valid range of [{min}, {max}]");
+        }
+
+        let property::Value::UnsignedRange(value) = info.value_type().convert_value(*value) else {
+            bail!("wrong property type")
+        };
+
+        if value != max_bpc {
+            self.requests.add_raw_property(
+                self.connector.into(),
+                info.handle(),
+                property::Value::UnsignedRange(max_bpc).into(),
+            );
+            self.has_change = true;
+        }
+
+        Ok(max_bpc)
+    }
+
+    fn commit(&mut self) -> anyhow::Result<()> {
+        if self.has_change {
+            self.device.atomic_commit(
+                AtomicCommitFlags::ALLOW_MODESET,
+                std::mem::take(&mut self.requests),
+            )?;
+        }
+
+        Ok(())
+    }
 }
 
-const DRM_MODE_COLORIMETRY_DEFAULT: u64 = 0;
-
-fn reset_hdr(props: &ConnectorProperties) -> anyhow::Result<()> {
-    let (info, value) = props.find(c"HDR_OUTPUT_METADATA")?;
-    let property::ValueType::Blob = info.value_type() else {
-        bail!("wrong property type")
-    };
-
-    if *value != 0 {
-        props
-            .device
-            .set_property(props.connector, info.handle(), 0)
-            .context("error setting property")?;
+fn set_connector_properties(
+    props: &mut ConnectorProperties,
+    max_bpc: Option<MaxBpc>,
+    reset_hdr: bool,
+) {
+    if let Some(max_bpc) = max_bpc {
+        if let Err(err) = props.set_max_bpc(max_bpc) {
+            debug!("failed to set `max bpc` property: {err}");
+        }
     }
 
-    let (info, value) = props.find(c"Colorspace")?;
-    let property::ValueType::Enum(_) = info.value_type() else {
-        bail!("wrong property type")
-    };
-    if *value != DRM_MODE_COLORIMETRY_DEFAULT {
-        props
-            .device
-            .set_property(props.connector, info.handle(), DRM_MODE_COLORIMETRY_DEFAULT)
-            .context("error setting property")?;
+    if reset_hdr {
+        if let Err(err) = props.reset_hdr() {
+            debug!("failed to set HDR properties: {err}");
+        }
     }
 
-    Ok(())
+    if let Err(err) = props.commit() {
+        warn!("failed to atomically commit properties: {err}");
+    }
 }
 
 fn is_vrr_capable(device: &DrmDevice, connector: connector::Handle) -> Option<bool> {
     let (_, info, value) = find_drm_property(device, connector, "vrr_capable")?;
     info.value_type().convert_value(value).as_boolean()
-}
-
-fn get_panel_orientation(props: &ConnectorProperties) -> anyhow::Result<Transform> {
-    let (info, value) = props.find(c"panel orientation")?;
-    match info.value_type().convert_value(*value) {
-        property::Value::Enum(Some(val)) => match val.value() {
-            // "Normal"
-            0 => Ok(Transform::Normal),
-            // "Upside Down"
-            1 => Ok(Transform::_180),
-            // "Left Side Up"
-            2 => Ok(Transform::_90),
-            // "Right Side Up"
-            3 => Ok(Transform::_270),
-            _ => bail!("panel orientation has invalid value: {:?}", val),
-        },
-        _ => bail!("panel orientation has wrong value type"),
-    }
 }
 
 pub fn set_gamma_for_crtc(
