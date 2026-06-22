@@ -1501,6 +1501,14 @@ impl State {
 
             return;
         }
+        if config.zoom.zoom_filter_threshold <= 1.01 {
+            warn!(
+                "zoom.zoom_filter_threshold is very low ({0}); \
+                 Nearest-neighbour filtering will kick in at almost any zoom level above 1×. \
+                 Set zoom_filter_threshold to a higher value (default is 2.0) or 0 to disable.",
+                config.zoom.zoom_filter_threshold,
+            );
+        }
 
         // Find & orphan removed named workspaces.
         let mut removed_workspaces: Vec<String> = vec![];
@@ -3861,15 +3869,11 @@ impl Niri {
         let cursor_scale = output_scale_fractional.integer_scale();
         let render_cursor = self.cursor_manager.get_render_cursor(cursor_scale);
 
-        let pointer_pos = pointer_pos_logical.to_physical_precise_round(output_scale);
-
-        let cursor_hotspot = self.cursor_hotspot_physical(output, output_scale);
-
         match render_cursor {
             RenderCursor::Hidden => (),
-            RenderCursor::Surface { surface, .. } => {
-                let hotspot = cursor_hotspot.unwrap();
-                let final_pos = pointer_pos - hotspot;
+            RenderCursor::Surface { surface, hotspot, .. } => {
+                let final_pos: Point<i32, Physical> = (pointer_pos_logical - hotspot.to_f64())
+                    .to_physical_precise_round(output_scale);
 
                 push_elements_from_surface_tree(
                     ctx.renderer,
@@ -3886,9 +3890,10 @@ impl Niri {
                 scale,
                 cursor,
             } => {
-                let (idx, _frame) = cursor.frame(self.start_time.elapsed().as_millis() as u32);
-                let hotspot = cursor_hotspot.unwrap();
-                let final_pos = pointer_pos - hotspot;
+                let (idx, frame) = cursor.frame(self.start_time.elapsed().as_millis() as u32);
+                let hotspot = XCursor::hotspot(frame).to_logical(scale);
+                let final_pos: Point<i32, Physical> = (pointer_pos_logical - hotspot.to_f64())
+                    .to_physical_precise_round(output_scale);
 
                 let texture = self.cursor_texture_cache.get(icon, scale, &cursor, idx);
                 match MemoryRenderBufferRenderElement::from_buffer(
@@ -3909,7 +3914,8 @@ impl Niri {
         }
 
         if let Some(dnd_icon) = self.dnd_icon.as_ref() {
-            let dnd_pos = pointer_pos + dnd_icon.offset.to_physical_precise_round(output_scale);
+            let dnd_pos: Point<i32, Physical> = (pointer_pos_logical + dnd_icon.offset.to_f64())
+                .to_physical_precise_round(output_scale);
             push_elements_from_surface_tree(
                 ctx.renderer,
                 &dnd_icon.surface,
@@ -3956,19 +3962,8 @@ impl Niri {
         );
 
         if cursor_logical_pos.is_none() {
-            let cursor_on_this_output = self
-                .global_space
-                .output_geometry(output)
-                .map(|geom| geom.to_f64().contains(pointer_pos))
-                .unwrap_or(false);
-
-            if !cursor_on_this_output {
-                self.render_pointer(ctx, output, &mut |elem| push(elem.into()));
-                return;
-            }
-
-            // Cursor on this output but outside the zoom viewport: render at
-            // native size but still position at zoom-transformed coordinates.
+            self.render_pointer(ctx, output, &mut |elem| push(elem.into()));
+            return;
         }
 
         let display_cursor = cursor_logical_pos.unwrap_or(pointer_local);

@@ -15,6 +15,10 @@ use crate::render_helpers::renderer::AsGlesFrame;
 /// `frame.as_gles_frame().renderer()`). `$filter` is `self.filter` (or any
 /// `Option<TextureFilter>`). `$body` is the draw or capture_framebuffer call expression (which
 /// returns a `Result`).
+///
+/// The filter is always restored to `TextureFilter::Linear` after the body runs,
+/// even if the body returns an error. This prevents leaking a non-default filter
+/// state into subsequent draw calls on the same renderer.
 macro_rules! with_filter {
     ($get_guard:expr, $filter:expr, $body:expr $(,)?) => {{
         if let Some(filter) = $filter {
@@ -23,12 +27,14 @@ macro_rules! with_filter {
             guard.as_mut().downscale_filter(filter)?;
             drop(guard);
 
-            $body?;
+            // Capture result first so restoration always runs.
+            let result = $body;
 
             let mut guard = $get_guard;
             guard.as_mut().upscale_filter(TextureFilter::Linear)?;
             guard.as_mut().downscale_filter(TextureFilter::Linear)?;
-            Ok(())
+
+            result
         } else {
             $body
         }
@@ -36,7 +42,22 @@ macro_rules! with_filter {
 }
 
 /// Linear below threshold, nearest-neighbour at or above.
+///
+/// Returns `Some(Linear)` when `1.0 < zoom_factor < threshold`, `Some(Nearest)`
+/// when `zoom_factor >= threshold`, and `None` when `zoom_factor <= 1.0`.
+///
+/// Callers must ensure `zoom_factor > 1.0` before calling (the `None` return
+/// for `zoom_factor <= 1.0` exists for API consistency with `ZoomElement.filter`
+/// which is `Option<TextureFilter>`).
+///
+/// The switch at `threshold` is abrupt — there is no blending range. During an
+/// animation or gesture that crosses this boundary, the visual quality changes
+/// in a single frame.
 pub fn zoom_filter(zoom_factor: f64, threshold: f64) -> Option<TextureFilter> {
+    debug_assert!(
+        !zoom_factor.is_nan() && !threshold.is_nan(),
+        "zoom_filter called with NaN"
+    );
     (zoom_factor > 1.0).then_some(match zoom_factor < threshold {
         true => TextureFilter::Linear,
         false => TextureFilter::Nearest,
@@ -224,5 +245,65 @@ impl<'render, E: RenderElement<TtyRenderer<'render>>> RenderElement<TtyRenderer<
             self.filter,
             self.element.capture_framebuffer(frame, src, dst, cache),
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn zoom_filter_below_threshold() {
+        // zoom_factor between 1.0 (exclusive) and threshold (exclusive) → Linear
+        assert_eq!(zoom_filter(1.5, 2.0), Some(TextureFilter::Linear));
+        assert_eq!(zoom_filter(1.001, 2.0), Some(TextureFilter::Linear));
+        assert_eq!(zoom_filter(1.999, 2.0), Some(TextureFilter::Linear));
+    }
+
+    #[test]
+    fn zoom_filter_at_or_above_threshold() {
+        // zoom_factor >= threshold → Nearest
+        assert_eq!(zoom_filter(2.0, 2.0), Some(TextureFilter::Nearest));
+        assert_eq!(zoom_filter(3.0, 2.0), Some(TextureFilter::Nearest));
+        assert_eq!(zoom_filter(100.0, 2.0), Some(TextureFilter::Nearest));
+    }
+
+    #[test]
+    fn zoom_filter_at_or_below_one() {
+        // zoom_factor <= 1.0 → None
+        assert_eq!(zoom_filter(1.0, 2.0), None);
+        assert_eq!(zoom_filter(0.5, 2.0), None);
+        assert_eq!(zoom_filter(0.0, 2.0), None);
+    }
+
+    #[test]
+    fn zoom_filter_threshold_sensitivity() {
+        // Very low threshold makes Nearest kick in immediately above 1x
+        assert_eq!(zoom_filter(1.001, 1.001), Some(TextureFilter::Nearest));
+        // High threshold keeps Linear always
+        assert_eq!(zoom_filter(100.0, 1e9), Some(TextureFilter::Linear));
+    }
+
+    #[test]
+    fn zoom_filter_equality_exact() {
+        // At exactly threshold → Nearest (the "<" is strict on the Linear side)
+        assert_eq!(zoom_filter(2.0, 2.0), Some(TextureFilter::Nearest));
+        // Just below threshold → Linear
+        assert_eq!(
+            zoom_filter(2.0 - f64::EPSILON, 2.0),
+            Some(TextureFilter::Linear)
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "NaN")]
+    fn zoom_filter_nan_zoom_factor() {
+        zoom_filter(f64::NAN, 2.0);
+    }
+
+    #[test]
+    #[should_panic(expected = "NaN")]
+    fn zoom_filter_nan_threshold() {
+        zoom_filter(2.0, f64::NAN);
     }
 }
