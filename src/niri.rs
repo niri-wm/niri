@@ -1212,6 +1212,12 @@ impl State {
                 |layer| excl_focus_on_layer(layer).or_else(|| on_d_focus_on_layer(layer));
 
             let is_overview_open = self.niri.layout.is_overview_open();
+            let allow_keyboard_throughput = self
+                .niri
+                .config
+                .borrow()
+                .overview
+                .allow_overview_throughput_keyboard;
 
             let mut surface = grab_on_layer(Layer::Overlay);
             // FIXME: we shouldn't prioritize the top layer grabs over regular overlay input or a
@@ -1219,7 +1225,7 @@ impl State {
             // in the first place. Or a better way to structure this code.
             surface = surface.or_else(|| grab_on_layer(Layer::Top));
 
-            if !is_overview_open {
+            if !is_overview_open || allow_keyboard_throughput {
                 surface = surface.or_else(|| grab_on_layer(Layer::Bottom));
                 surface = surface.or_else(|| grab_on_layer(Layer::Background));
             }
@@ -1234,7 +1240,7 @@ impl State {
             } else {
                 surface = surface.or_else(|| focus_on_layer(Layer::Top));
 
-                if is_overview_open {
+                if is_overview_open && !allow_keyboard_throughput {
                     surface = Some(surface.unwrap_or(KeyboardFocus::Overview));
                 }
 

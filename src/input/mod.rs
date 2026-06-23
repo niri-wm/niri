@@ -556,7 +556,15 @@ impl State {
 
                 if matches!(res, FilterResult::Forward) {
                     // If we didn't find any bind, try other hardcoded keys.
-                    if this.niri.keyboard_focus.is_overview() && pressed {
+                    if this.niri.keyboard_focus.is_overview()
+                        && pressed
+                        && !this
+                            .niri
+                            .config
+                            .borrow()
+                            .overview
+                            .allow_overview_throughput_keyboard
+                    {
                         if let Some(bind) = raw.and_then(|raw| hardcoded_overview_bind(raw, *mods))
                         {
                             this.niri.suppressed_keys.insert(key_code);
