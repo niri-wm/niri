@@ -250,7 +250,7 @@ impl OutputManagementManagerState {
                 notify_new_head(self, output, conf);
             }
         }
-        for (old, _) in self.current_state.iter() {
+        for old in self.current_state.keys() {
             if !new_state.contains_key(old) {
                 changed = true;
                 notify_removed_head(&mut self.clients, old);

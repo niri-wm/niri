@@ -77,6 +77,9 @@ pub enum Trigger {
     TouchpadScrollUp,
     TouchpadScrollLeft,
     TouchpadScrollRight,
+    TabletStylusButton1,
+    TabletStylusButton2,
+    TabletStylusButton3,
 }
 
 bitflags! {
@@ -1145,6 +1148,12 @@ impl FromStr for Key {
             Trigger::TouchpadScrollLeft
         } else if key.eq_ignore_ascii_case("TouchpadScrollRight") {
             Trigger::TouchpadScrollRight
+        } else if key.eq_ignore_ascii_case("TabletStylusButton1") {
+            Trigger::TabletStylusButton1
+        } else if key.eq_ignore_ascii_case("TabletStylusButton2") {
+            Trigger::TabletStylusButton2
+        } else if key.eq_ignore_ascii_case("TabletStylusButton3") {
+            Trigger::TabletStylusButton3
         } else if key.eq_ignore_ascii_case("Mod") {
             Trigger::KeyCompositor
         } else {
