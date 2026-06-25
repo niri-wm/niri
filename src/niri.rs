@@ -331,6 +331,8 @@ pub struct Niri {
     pub valid_release_trigger: Option<Keycode>,
     /// Button code of the mouse button that can trigger a release action.
     pub valid_mouse_release_trigger: Option<u32>,
+    /// Button code of the tablet tool button that can trigger a release action.
+    pub valid_tablet_release_trigger: Option<u32>,
     pub bind_cooldown_timers: HashMap<Key, RegistrationToken>,
     pub bind_repeat_timer: Option<RegistrationToken>,
     pub keyboard_focus: KeyboardFocus,
@@ -2570,6 +2572,7 @@ impl Niri {
             suppressed_buttons: HashSet::new(),
             valid_release_trigger: None,
             valid_mouse_release_trigger: None,
+            valid_tablet_release_trigger: None,
             bind_cooldown_timers: HashMap::new(),
             bind_repeat_timer: Option::default(),
             presentation_state,

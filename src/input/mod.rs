@@ -2843,6 +2843,7 @@ impl State {
 
         if ButtonState::Pressed == button_state {
             self.niri.valid_release_trigger = None;
+            self.niri.valid_tablet_release_trigger = None;
 
             let mut is_mru_open = false;
             if let Some(mru_output) = self.niri.window_mru_ui.output() {
@@ -3881,10 +3882,15 @@ impl State {
 
         if let Some(tool) = tool {
             let button = event.button();
+            let button_state = event.button_state();
 
-            if self.niri.suppressed_buttons.remove(&button) {
-                return;
-            }
+            let mod_key = self.backend.mod_key(&self.niri.config.borrow());
+
+            let valid_tablet_release_trigger = if button_state == ButtonState::Pressed {
+                self.niri.valid_tablet_release_trigger.replace(button)
+            } else {
+                self.niri.valid_tablet_release_trigger.take()
+            };
 
             let trigger = match button {
                 BTN_STYLUS => Some(Trigger::TabletStylusButton1),
@@ -3893,9 +3899,43 @@ impl State {
                 _ => None,
             };
 
+            // Handle release binds.
             if let Some(trigger) = trigger {
-                if event.button_state() == ButtonState::Pressed {
-                    let mod_key = self.backend.mod_key(&self.niri.config.borrow());
+                if button_state == ButtonState::Released {
+                    let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
+
+                    if let Some(bind) = {
+                        let config = self.niri.config.borrow();
+                        let bindings = config.binds.0.iter();
+                        find_configured_bind(bindings, mod_key, trigger, mods, false)
+                    }
+                    .filter(|bind| {
+                        !self.niri.screenshot_ui.is_open()
+                            || allowed_during_screenshot(bind.release_action.as_ref())
+                    }) {
+                        if bind.has_release()
+                            && (valid_tablet_release_trigger == Some(button)
+                                || !bind.allow_invalidation)
+                        {
+                            self.niri.suppressed_buttons.remove(&button);
+                            self.handle_bind(bind.clone(), false);
+                            return;
+                        }
+                    };
+                }
+            }
+
+            if self.niri.suppressed_buttons.remove(&button) {
+                return;
+            }
+
+            // Handle press binds.
+            if let Some(trigger) = trigger {
+                if button_state == ButtonState::Pressed {
+                    // Cross-invalidation: clear other release triggers.
+                    self.niri.valid_release_trigger = None;
+                    self.niri.valid_mouse_release_trigger = None;
+
                     let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
                     let modifiers = modifiers_from_state(mods);
 
@@ -3920,7 +3960,7 @@ impl State {
 
             tool.button(
                 button,
-                event.button_state(),
+                button_state,
                 SERIAL_COUNTER.next_serial(),
                 event.time_msec(),
             );
