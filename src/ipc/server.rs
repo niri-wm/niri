@@ -612,10 +612,15 @@ impl State {
         self.ipc_refresh_workspaces();
         self.ipc_refresh_windows();
         self.ipc_refresh_overview();
+        self.ipc_refresh_zoom_state();
+    }
 
+    fn ipc_refresh_zoom_state(&mut self) {
         let Some(server) = &self.niri.ipc_server else {
             return;
         };
+
+        let _span = tracy_client::span!("State::ipc_refresh_zoom_state");
 
         // Emitted at commit granularity — see Event::ZoomChanged docs.
         let mut state = server.event_stream_state.borrow_mut();
@@ -635,18 +640,31 @@ impl State {
             // Epsilon comparison for f64 fields — animation sampling
             // can introduce tiny drift that shouldn't emit redundant events.
             const EPS: f64 = 1e-4;
-            if let Some(was) = was {
-                if (was.level - is.level).abs() < EPS
-                    && (was.focal_x - is.focal_x).abs() < EPS
-                    && (was.focal_y - is.focal_y).abs() < EPS
-                    && was.is_locked == is.is_locked
-                {
-                    continue;
-                }
+
+            // Previous snapshot-level flags (transient, not in IPC state).
+            let was_transitioning = state.was_transitioning.get(&name).copied().unwrap_or(false);
+            let was_gesturing = state.was_gesturing.get(&name).copied().unwrap_or(false);
+
+            // Level changed significantly.
+            let level_changed = was.is_none_or(|was| (was.level - is.level).abs() > EPS);
+            // Suppress level changes during an ongoing transition — those are
+            // animation frames, not meaningful discrete zoom events.
+            let meaningful_level_change =
+                level_changed && !(was_transitioning && snapshot.transitioning);
+
+            // Gesture lifecycle (continuous zoom start / end).
+            let gesture_started = !was_gesturing && snapshot.is_gesture;
+            let gesture_ended = was_gesturing && !snapshot.is_gesture;
+
+            // Lock toggle.
+            let lock_toggled = was.is_some_and(|was| was.is_locked != is.is_locked);
+
+            if !meaningful_level_change && !gesture_started && !gesture_ended && !lock_toggled {
+                continue;
             }
 
             let event = Event::ZoomChanged {
-                output: name,
+                output: name.clone(),
                 level: is.level,
                 focal_x: is.focal_x,
                 focal_y: is.focal_y,
@@ -654,6 +672,12 @@ impl State {
             };
             state.apply(event.clone());
             server.send_event(event);
+
+            // Record snapshot-level flags for the next commit.
+            state
+                .was_transitioning
+                .insert(name.clone(), snapshot.transitioning);
+            state.was_gesturing.insert(name, snapshot.is_gesture);
         }
     }
 

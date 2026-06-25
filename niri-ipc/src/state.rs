@@ -114,6 +114,10 @@ pub struct ZoomOutputState {
 pub struct ZoomChangedState {
     /// Map from output name to zoom state.
     pub outputs: HashMap<String, ZoomOutputState>,
+    /// Previous snapshot `transitioning` flag per output (transient, not IPC).
+    pub was_transitioning: HashMap<String, bool>,
+    /// Previous snapshot `is_gesture` flag per output (transient, not IPC).
+    pub was_gesturing: HashMap<String, bool>,
 }
 
 impl EventStreamStatePart for EventStreamState {

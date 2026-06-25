@@ -3871,7 +3871,9 @@ impl Niri {
 
         match render_cursor {
             RenderCursor::Hidden => (),
-            RenderCursor::Surface { surface, hotspot, .. } => {
+            RenderCursor::Surface {
+                surface, hotspot, ..
+            } => {
                 let final_pos: Point<i32, Physical> = (pointer_pos_logical - hotspot.to_f64())
                     .to_physical_precise_round(output_scale);
 

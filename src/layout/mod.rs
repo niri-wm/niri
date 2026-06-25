@@ -2876,6 +2876,8 @@ impl<W: LayoutElement> Layout<W> {
                 level: 1.0,
                 focal: Point::from((0.0, 0.0)),
                 locked: false,
+                transitioning: false,
+                is_gesture: false,
             },
             |state| state.snapshot_at(now),
         )

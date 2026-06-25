@@ -78,6 +78,8 @@ impl OutputZoomState {
             level,
             focal,
             locked: self.locked,
+            transitioning: self.transitioning() | self.is_animating(),
+            is_gesture: matches!(self.level_transition, ZoomLevelTransition::Gesturing(_)),
         }
     }
 
@@ -153,6 +155,8 @@ pub struct ZoomSnapshot {
     pub level: f64,
     pub focal: Point<f64, Logical>,
     pub locked: bool,
+    pub transitioning: bool,
+    pub is_gesture: bool,
 }
 
 #[derive(Debug, Clone, Default)]
