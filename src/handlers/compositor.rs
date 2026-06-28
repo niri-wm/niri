@@ -195,7 +195,10 @@ impl CompositorHandler for State {
                     // The mapped pre-commit hook deals with dma-bufs on its own.
                     self.remove_default_dmabuf_pre_commit_hook(surface);
                     let hook = add_mapped_toplevel_pre_commit_hook(toplevel);
-                    let mapped = Mapped::new(window, rules, hook);
+                    let mapped = {
+                        let config = self.niri.config.borrow();
+                        Mapped::new(window, rules, hook, &config)
+                    };
                     let window = mapped.window.clone();
 
                     let target = if let Some(p) = &parent {
@@ -486,11 +489,10 @@ impl CompositorHandler for State {
         // subsurface is destroyed; in the case of alacritty, this is the top CSD shadow. But, it
         // gets most of the job done.
         if let Some(root) = self.niri.root_surface.get(surface) {
-            if let Some((mapped, _)) = self.niri.layout.find_window_and_output(root) {
+            if let Some((mapped, output)) = self.niri.layout.find_window_and_output(root) {
                 let window = mapped.window.clone();
-                self.backend.with_primary_renderer(|renderer| {
-                    self.niri.layout.store_unmap_snapshot(renderer, &window);
-                });
+                let output = output.cloned();
+                self.store_unmap_snapshot(&window, output.as_ref());
             }
         }
 
@@ -506,7 +508,7 @@ impl CompositorHandler for State {
         // So, this may come out empty, and then the toplevel pre-commit hook will be removed in the
         // subsequent toplevel_destroyed() call.
         if let Some(hook) = self.niri.dmabuf_pre_commit_hook.remove(surface) {
-            remove_pre_commit_hook(surface, hook);
+            remove_pre_commit_hook(surface, &hook);
         }
     }
 }
@@ -570,13 +572,13 @@ impl State {
         let s = surface.clone();
         if let Some(prev) = self.niri.dmabuf_pre_commit_hook.insert(s, hook) {
             error!("tried to add dmabuf pre-commit hook when there was already one");
-            remove_pre_commit_hook(surface, prev);
+            remove_pre_commit_hook(surface, &prev);
         }
     }
 
     pub fn remove_default_dmabuf_pre_commit_hook(&mut self, surface: &WlSurface) {
         if let Some(hook) = self.niri.dmabuf_pre_commit_hook.remove(surface) {
-            remove_pre_commit_hook(surface, hook);
+            remove_pre_commit_hook(surface, &hook);
         } else {
             error!("tried to remove dmabuf pre-commit hook but there was none");
         }

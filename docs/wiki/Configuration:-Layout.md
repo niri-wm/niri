@@ -177,6 +177,7 @@ layout {
 ### `preset-column-widths`
 
 Set the widths that the `switch-preset-column-width` action (Mod+R) toggles between.
+<sup>Since: 25.08</sup> You can use the `switch-preset-column-width-back` action (Mod+Shift+R) to toggle in reverse.
 
 `proportion` sets the width as a fraction of the output width, taking gaps into account.
 For example, you can perfectly fit four windows sized `proportion 0.25` on an output, regardless of the gaps setting.
@@ -228,7 +229,8 @@ layout {
 
 <sup>Since: 0.1.9</sup>
 
-Set the heights that the `switch-preset-window-height` action (Mod+Shift+R) toggles between.
+Set the heights that the `switch-preset-window-height` action (Mod+Ctrl+Shift+R) toggles between.
+<sup>Since: 25.08</sup> You can use the `switch-preset-window-height-back` action (not bound by default) to toggle in reverse.
 
 `proportion` sets the height as a fraction of the output height, taking gaps into account.
 The default preset heights are <sup>1</sup>&frasl;<sub>3</sub>, <sup>1</sup>&frasl;<sub>2</sub> and <sup>2</sup>&frasl;<sub>3</sub> of the output.

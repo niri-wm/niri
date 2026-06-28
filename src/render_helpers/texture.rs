@@ -3,6 +3,7 @@ use smithay::backend::renderer::element::{Element, Id, Kind, RenderElement, Unde
 use smithay::backend::renderer::gles::GlesTexture;
 use smithay::backend::renderer::utils::{CommitCounter, OpaqueRegions};
 use smithay::backend::renderer::{ContextId, Frame as _, ImportMem, Renderer, Texture};
+use smithay::utils::user_data::UserDataMap;
 use smithay::utils::{Buffer, Logical, Physical, Point, Rectangle, Scale, Size, Transform};
 
 use super::memory::MemoryBuffer;
@@ -230,6 +231,7 @@ where
         dest: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
         opaque_regions: &[Rectangle<i32, Physical>],
+        _cache: Option<&UserDataMap>,
     ) -> Result<(), R::Error> {
         if frame.context_id() != self.buffer.renderer_context_id {
             warn!("trying to render texture from different renderer");

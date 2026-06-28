@@ -8,6 +8,7 @@ use smithay::backend::renderer::gles::{GlesError, GlesFrame, GlesRenderer, GlesT
 use smithay::backend::renderer::utils::{CommitCounter, DamageSet, OpaqueRegions};
 use smithay::backend::renderer::Texture as _;
 use smithay::gpu_span_location;
+use smithay::utils::user_data::UserDataMap;
 use smithay::utils::{Buffer, Logical, Physical, Rectangle, Scale, Size, Transform};
 
 use super::renderer::{AsGlesFrame, NiriRenderer};
@@ -171,10 +172,19 @@ impl RenderElement<GlesRenderer> for ResizeRenderElement {
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
         opaque_regions: &[Rectangle<i32, Physical>],
+        cache: Option<&UserDataMap>,
     ) -> Result<(), GlesError> {
         let _span = tracy_client::span!("ResizeRenderElement::draw");
         frame.with_gpu_span(gpu_span_location!("ResizeRenderElement::draw"), |frame| {
-            RenderElement::<GlesRenderer>::draw(&self.0, frame, src, dst, damage, opaque_regions)
+            RenderElement::<GlesRenderer>::draw(
+                &self.0,
+                frame,
+                src,
+                dst,
+                damage,
+                opaque_regions,
+                cache,
+            )
         })
     }
 
@@ -191,9 +201,10 @@ impl<'render> RenderElement<TtyRenderer<'render>> for ResizeRenderElement {
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
         opaque_regions: &[Rectangle<i32, Physical>],
+        cache: Option<&UserDataMap>,
     ) -> Result<(), TtyRendererError<'render>> {
         let frame = frame.as_gles_frame();
-        RenderElement::<GlesRenderer>::draw(self, frame, src, dst, damage, opaque_regions)?;
+        RenderElement::<GlesRenderer>::draw(self, frame, src, dst, damage, opaque_regions, cache)?;
         Ok(())
     }
 

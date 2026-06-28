@@ -59,12 +59,14 @@ use crate::animation::{Animation, Clock};
 use crate::input::swipe_tracker::SwipeTracker;
 use crate::layout::scrolling::ScrollDirection;
 use crate::niri_render_elements;
+use crate::render_helpers::background_effect::BackgroundEffectElement;
 use crate::render_helpers::offscreen::OffscreenData;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::snapshot::RenderSnapshot;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
 use crate::render_helpers::texture::TextureBuffer;
-use crate::render_helpers::{BakedBuffer, RenderTarget};
+use crate::render_helpers::xray::{Xray, XrayPos};
+use crate::render_helpers::{BakedBuffer, RenderCtx};
 use crate::rubber_band::RubberBand;
 use crate::utils::transaction::{Transaction, TransactionBlocker};
 use crate::utils::{
@@ -112,6 +114,7 @@ niri_render_elements! {
     LayoutElementRenderElement<R> => {
         Wayland = WaylandSurfaceRenderElement<R>,
         SolidColor = SolidColorRenderElement,
+        BackgroundEffect = BackgroundEffectElement,
     }
 }
 
@@ -131,6 +134,11 @@ pub trait LayoutElement {
 
     /// Unique ID of this element.
     fn id(&self) -> &Self::Id;
+
+    /// Updates the config for the element.
+    fn update_config(&mut self, blur_config: niri_config::Blur) {
+        let _ = blur_config;
+    }
 
     /// Visual size of the element.
     ///
@@ -154,41 +162,55 @@ pub trait LayoutElement {
     /// location.
     fn render<R: NiriRenderer>(
         &self,
-        renderer: &mut R,
+        mut ctx: RenderCtx<R>,
         location: Point<f64, Logical>,
         scale: Scale<f64>,
         alpha: f32,
-        target: RenderTarget,
+        xray_pos: XrayPos,
         push: &mut dyn FnMut(LayoutElementRenderElement<R>),
     ) {
-        self.render_popups(renderer, location, scale, alpha, target, push);
-        self.render_normal(renderer, location, scale, alpha, target, push);
+        self.render_popups(ctx.r(), location, scale, alpha, xray_pos, push);
+        self.render_normal(ctx.r(), location, scale, alpha, push);
     }
 
     /// Renders the non-popup parts of the element.
     fn render_normal<R: NiriRenderer>(
         &self,
-        renderer: &mut R,
+        ctx: RenderCtx<R>,
         location: Point<f64, Logical>,
         scale: Scale<f64>,
         alpha: f32,
-        target: RenderTarget,
         push: &mut dyn FnMut(LayoutElementRenderElement<R>),
     ) {
-        let _ = (renderer, location, scale, alpha, target, push);
+        let _ = (ctx, location, scale, alpha, push);
     }
 
     /// Renders the popups of the element.
     fn render_popups<R: NiriRenderer>(
         &self,
-        renderer: &mut R,
+        ctx: RenderCtx<R>,
         location: Point<f64, Logical>,
         scale: Scale<f64>,
         alpha: f32,
-        target: RenderTarget,
+        xray_pos: XrayPos,
         push: &mut dyn FnMut(LayoutElementRenderElement<R>),
     ) {
-        let _ = (renderer, location, scale, alpha, target, push);
+        let _ = (ctx, location, scale, alpha, xray_pos, push);
+    }
+
+    /// Renders the background effect behind the main surface of the element.
+    #[allow(clippy::too_many_arguments)]
+    fn render_background_effect(
+        &self,
+        _ctx: RenderCtx<GlesRenderer>,
+        _geometry: Rectangle<f64, Logical>,
+        _scale: f64,
+        _clip_to_geometry: bool,
+        _surface_anim_scale: Scale<f64>,
+        _radius: CornerRadius,
+        _xray_pos: XrayPos,
+        _push: &mut dyn FnMut(BackgroundEffectElement),
+    ) {
     }
 
     /// Requests the element to change its size.
@@ -268,11 +290,30 @@ pub trait LayoutElement {
         Some(requested)
     }
 
+    fn is_windowed_fullscreen(&self) -> bool {
+        false
+    }
     fn is_pending_windowed_fullscreen(&self) -> bool {
         false
     }
     fn request_windowed_fullscreen(&mut self, value: bool) {
         let _ = value;
+    }
+
+    /// The effective geometry corner radius for this element.
+    ///
+    /// Returns zero when the element is in windowed fullscreen, since fullscreen windows have
+    /// square corners.
+    ///
+    /// This method only handles windowed fullscreen and not maximized/real fullscreen. This is
+    /// because windowed fullscreen is handled by the element itself, whereas other sizing modes
+    /// are handled externally by the Tile, so the corner radius changes for those modes is also
+    /// handled externally.
+    fn geometry_corner_radius(&self) -> CornerRadius {
+        if self.is_windowed_fullscreen() {
+            return CornerRadius::default();
+        }
+        self.rules().geometry_corner_radius.unwrap_or_default()
     }
 
     fn is_child_of(&self, parent: &Self) -> bool;
@@ -351,6 +392,7 @@ pub struct Options {
     pub animations: niri_config::Animations,
     pub gestures: niri_config::Gestures,
     pub overview: niri_config::Overview,
+    pub blur: niri_config::Blur,
     // Debug flags.
     pub disable_resize_throttling: bool,
     pub disable_transactions: bool,
@@ -611,6 +653,7 @@ impl Options {
             animations: config.animations.clone(),
             gestures: config.gestures,
             overview: config.overview,
+            blur: config.blur,
             disable_resize_throttling: config.debug.disable_resize_throttling,
             disable_transactions: config.debug.disable_transactions,
             deactivate_unfocused_windows: config.debug.deactivate_unfocused_windows,
@@ -2732,8 +2775,18 @@ impl<W: LayoutElement> Layout<W> {
         if let Some(InteractiveMoveState::Moving(move_)) = &mut self.interactive_move {
             if output.is_none_or(|output| move_.output == *output) {
                 let pos_within_output = move_.tile_render_location(zoom);
+
+                // We're not on any specific workspace so we can't compute a "workspace view" rect.
+                // Let's instead compute a rect relative to the output.
+                //
+                // FIXME: we could make the colors match up better in the overview by figuring out
+                // where a centered workspace would currently be, and computing the view rect
+                // against that. Since most of the time the dragged window will be on a centered
+                // workspace.
                 let view_rect =
-                    Rectangle::new(pos_within_output.upscale(-1.), output_size(&move_.output));
+                    Rectangle::new(pos_within_output.upscale(-1.), output_size(&move_.output))
+                        .downscale(zoom);
+
                 move_.tile.update_render_elements(true, view_rect);
             }
         }
@@ -2746,7 +2799,9 @@ impl<W: LayoutElement> Layout<W> {
             ..
         } = &mut self.monitor_set
         else {
-            error!("update_render_elements called with no monitors");
+            if output.is_some() {
+                error!("update_render_elements called with no monitors but Some output");
+            }
             return;
         };
 
@@ -2818,13 +2873,12 @@ impl<W: LayoutElement> Layout<W> {
                         ws.scrolling_insert_position(pos_within_workspace)
                     };
 
-                    let rules = move_.tile.window().rules();
                     let border_width = move_.tile.effective_border_width().unwrap_or(0.);
-                    let corner_radius = rules
-                        .geometry_corner_radius
-                        .map_or(CornerRadius::default(), |radius| {
-                            radius.expanded_by(border_width as f32)
-                        });
+                    let corner_radius = move_
+                        .tile
+                        .window()
+                        .geometry_corner_radius()
+                        .expanded_by(border_width as f32);
                     mon.insert_hint = Some(InsertHint {
                         workspace: insert_ws,
                         position,
@@ -4596,12 +4650,33 @@ impl<W: LayoutElement> Layout<W> {
         }
     }
 
-    pub fn store_unmap_snapshot(&mut self, renderer: &mut GlesRenderer, window: &W::Id) {
+    pub fn store_unmap_snapshot(
+        &mut self,
+        renderer: &mut GlesRenderer,
+        xray: Option<&mut Xray>,
+        xray_has_blocked_out_layers: bool,
+        window: &W::Id,
+    ) {
         let _span = tracy_client::span!("Layout::store_unmap_snapshot");
+
+        let zoom = self.overview_zoom();
 
         if let Some(InteractiveMoveState::Moving(move_)) = &mut self.interactive_move {
             if move_.tile.window().id() == window {
-                move_.tile.store_unmap_snapshot_if_empty(renderer);
+                let pos_within_output = move_.tile_render_location(zoom);
+
+                // Computation matches update_render_elements().
+                let view_rect =
+                    Rectangle::new(pos_within_output.upscale(-1.), output_size(&move_.output))
+                        .downscale(zoom);
+                move_.tile.update_render_elements(false, view_rect);
+
+                move_.tile.store_unmap_snapshot_if_empty(
+                    renderer,
+                    xray,
+                    xray_has_blocked_out_layers,
+                    XrayPos::new(pos_within_output, zoom),
+                );
                 return;
             }
         }
@@ -4609,9 +4684,15 @@ impl<W: LayoutElement> Layout<W> {
         match &mut self.monitor_set {
             MonitorSet::Normal { monitors, .. } => {
                 for mon in monitors {
-                    for ws in &mut mon.workspaces {
+                    for (ws, geo) in mon.workspaces_with_render_geo_mut(false) {
                         if ws.has_window(window) {
-                            ws.store_unmap_snapshot_if_empty(renderer, window);
+                            ws.store_unmap_snapshot_if_empty(
+                                renderer,
+                                xray,
+                                xray_has_blocked_out_layers,
+                                XrayPos::new(geo.loc, zoom),
+                                window,
+                            );
                             return;
                         }
                     }
@@ -4620,7 +4701,13 @@ impl<W: LayoutElement> Layout<W> {
             MonitorSet::NoOutputs { workspaces, .. } => {
                 for ws in workspaces {
                     if ws.has_window(window) {
-                        ws.store_unmap_snapshot_if_empty(renderer, window);
+                        ws.store_unmap_snapshot_if_empty(
+                            renderer,
+                            xray,
+                            xray_has_blocked_out_layers,
+                            XrayPos::default(),
+                            window,
+                        );
                         return;
                     }
                 }
@@ -4721,9 +4808,8 @@ impl<W: LayoutElement> Layout<W> {
 
     pub fn render_interactive_move_for_output<R: NiriRenderer>(
         &self,
-        renderer: &mut R,
+        ctx: RenderCtx<R>,
         output: &Output,
-        target: RenderTarget,
         push: &mut dyn FnMut(RescaleRenderElement<TileRenderElement<R>>),
     ) {
         if self.update_render_elements_time != self.clock.now() {
@@ -4740,13 +4826,15 @@ impl<W: LayoutElement> Layout<W> {
 
         let scale = Scale::from(move_.output.current_scale().fractional_scale());
         let zoom = self.overview_zoom();
-        let location = move_.tile_render_location(zoom);
+        let pos_in_backdrop = move_.tile_render_location(zoom);
+        let xray_pos = XrayPos::new(pos_in_backdrop, zoom);
+
         move_
             .tile
-            .render(renderer, location, true, target, &mut |elem| {
+            .render(ctx, pos_in_backdrop, xray_pos, true, &mut |elem| {
                 push(RescaleRenderElement::from_element(
                     elem,
-                    location.to_physical_precise_round(scale),
+                    pos_in_backdrop.to_physical_precise_round(scale),
                     zoom,
                 ));
             });

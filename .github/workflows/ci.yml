@@ -20,19 +20,16 @@ jobs:
 
     name: test
     runs-on: ubuntu-24.04
-    # FIXME: remove once it's available in runs-on.
-    # This is necessary for libwayland-server v1.23.
-    container: ubuntu:26.04
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           show-progress: false
 
       - name: Install dependencies
         run: |
-          apt-get update -y
-          apt-get install -y ${{ env.DEPS_APT }}
+          sudo apt-get update -y
+          sudo apt-get install -y ${{ env.DEPS_APT }}
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -52,7 +49,7 @@ jobs:
     runs-on: ubuntu-24.04
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           show-progress: false
 
@@ -94,7 +91,7 @@ jobs:
     runs-on: ubuntu-24.04
     container: alpine:3
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           show-progress: false
 
@@ -114,9 +111,6 @@ jobs:
 
     name: randomized and slow tests
     runs-on: ubuntu-24.04
-    # FIXME: remove once it's available in runs-on.
-    # This is necessary for libwayland-server v1.23.
-    container: ubuntu:26.04
 
     env:
       RUST_BACKTRACE: 1
@@ -127,14 +121,14 @@ jobs:
       PROPTEST_MAX_SHRINK_ITERS: 200000
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           show-progress: false
 
       - name: Install dependencies
         run: |
-          apt-get update -y
-          apt-get install -y ${{ env.DEPS_APT }}
+          sudo apt-get update -y
+          sudo apt-get install -y ${{ env.DEPS_APT }}
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -154,7 +148,7 @@ jobs:
     runs-on: ubuntu-24.04
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           show-progress: false
 
@@ -178,7 +172,7 @@ jobs:
     runs-on: ubuntu-24.04
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           show-progress: false
 
@@ -201,7 +195,7 @@ jobs:
     runs-on: ubuntu-24.04
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           show-progress: false
 
@@ -223,7 +217,7 @@ jobs:
     runs-on: ubuntu-24.04
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           show-progress: false
 
@@ -236,10 +230,10 @@ jobs:
 
   fedora:
     runs-on: ubuntu-24.04
-    container: fedora:41
+    container: fedora:42
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           show-progress: false
 
@@ -257,7 +251,7 @@ jobs:
       CARGO_HOME: /home/runner/work/niri/niri/cargo-home
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           show-progress: false
 
@@ -295,7 +289,7 @@ jobs:
           dotnet: false
           large-packages: false
         
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           show-progress: false
 
@@ -314,7 +308,7 @@ jobs:
       contents: write
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           lfs: true
           show-progress: false
@@ -331,7 +325,7 @@ jobs:
       contents: write
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           lfs: true
           show-progress: false

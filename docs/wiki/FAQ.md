@@ -40,6 +40,20 @@ hotkey-overlay {
 }
 ```
 
+### How to fix lag on external monitors connected to a hybrid GPU laptop?
+
+Hybrid GPU laptops (which have both an integrated and a discrete GPU) generally connect the external monitor port to the discrete GPU.
+Meanwhile, the built-in monitor is connected to the integrated GPU, and the integrated GPU is used for rendering by default.
+
+This is good and expected because the integrated GPU uses significantly less battery compared to the discrete GPU.
+However, this means that niri has to render the external monitor contents on the integrated GPU, then copy them over to the discrete GPU for display.
+On some laptops this can cause lag and stuttering (it gets worse with monitor resolution and refresh rate).
+
+If your laptop has a MUX switch—usually a GPU toggle in the UEFI settings—then you can switch it to use the discrete GPU, then niri will render on the discrete GPU, and the external monitor won't lag.
+Otherwise, you can try configuring niri to render on the discrete GPU via the [`render-drm-device`](./Configuration:-Debug-Options.md#render-drm-device) debug option.
+
+Keep in mind that using the discrete GPU for rendering will make the laptop's battery deplete much faster.
+
 ### How to run X11 apps like Steam or Discord?
 
 To run X11 apps, you can use [xwayland-satellite](https://github.com/Supreeeme/xwayland-satellite).
@@ -66,10 +80,8 @@ I wouldn't be too surprised if, down the road, xwayland-satellite becomes the st
 
 ### Can I enable blur behind semitransparent windows?
 
-Not yet, follow/upvote [this issue](https://github.com/niri-wm/niri/issues/54).
-
-There's also [a PR](https://github.com/niri-wm/niri/pull/1634) adding blur to niri which you can build and run manually.
-Keep in mind that it's an experimental implementation that may have problems and performance concerns.
+<sup>Since: 26.04</sup> Yes.
+See the [window effects](./Window-Effects.md) wiki page.
 
 ### Can I make a window sticky / pinned / always on top / appear on all workspaces?
 

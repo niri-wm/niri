@@ -14,6 +14,7 @@ Here are all matchers and properties that a layer rule could have:
 layer-rule {
     match namespace="waybar"
     match at-startup=true
+    match layer="top"
 
     // Properties that apply continuously.
     opacity 0.5
@@ -34,6 +35,25 @@ layer-rule {
     geometry-corner-radius 12
     place-within-backdrop true
     baba-is-float true
+
+    background-effect {
+        xray true
+        blur true
+        noise 0.05
+        saturation 3
+    }
+
+    popups {
+        opacity 0.5
+        geometry-corner-radius 6
+
+        background-effect {
+            xray true
+            blur true
+            noise 0.05
+            saturation 3
+        }
+    }
 }
 ```
 
@@ -66,6 +86,22 @@ layer-rule {
     match at-startup=true
 
     opacity 0.5
+}
+```
+
+#### `layer`
+
+<sup>Since: 26.04</sup>
+
+Matches surfaces on this layer-shell layer.
+Can be `"background"`, `"bottom"`, `"top"`, or `"overlay"`.
+
+```kdl
+// Make all overlay-layer surfaces FLOAT.
+layer-rule {
+    match layer="overlay"
+
+    baba-is-float true
 }
 ```
 
@@ -191,3 +227,68 @@ layer-rule {
     baba-is-float true
 }
 ```
+
+#### `background-effect`
+
+<sup>Since: 26.04</sup>
+
+Override the background effect options for this surface.
+
+- `xray`: set to `true` to enable the xray effect, or `false` to disable it.
+- `blur`: set to `true` to enable blur behind this surface, or `false` to force-disable it.
+- `noise`: amount of pixel noise added to the background (helps with color banding from blur).
+- `saturation`: color saturation of the background (`0` is desaturated, `1` is normal, `2` is 200% saturation).
+
+See the [window effects page](./Window-Effects.md) for an overview of background effects.
+
+```kdl
+// Make top and overlay layers use the regular blur (if enabled),
+// while bottom and background layers keep using the efficient xray blur.
+layer-rule {
+    match layer="top"
+    match layer="overlay"
+
+    background-effect {
+        xray false
+    }
+}
+```
+
+#### `popups`
+
+<sup>Since: 26.04</sup>
+
+Override properties for this layer surface's pop-ups (e.g. a menu opened by clicking an item in Waybar).
+
+The properties work the same way as the corresponding layer-rule properties, except that they apply to the layer surface's pop-ups rather than to the layer surface itself.
+
+`opacity` is applied *on top* of the layer surface's own opacity rule, so setting both will make pop-ups more transparent than the surface.
+Other properties apply independently.
+
+> [!NOTE]
+> This block affects only pop-ups created by the app via Wayland's [xdg-popup](https://wayland.app/protocols/xdg-shell#xdg_popup) (which should be most of them).
+>
+> Some desktop shells will emulate pop-ups by drawing something that looks like a pop-up inside a regular layer surface.
+> As far as niri is concerned, those are just layer surfaces and not pop-ups, so this block won't apply to them.
+>
+> This block also does not affect input-method pop-ups, such as Fcitx.
+
+```kdl
+// Blur the background behind Waybar popup menus.
+layer-rule {
+    match namespace="^waybar$"
+
+    popups {
+        // Match the default GTK 3 popup corner radius.
+        geometry-corner-radius 6
+        opacity 0.85
+
+        background-effect {
+            blur true
+        }
+    }
+}
+```
+
+Keep in mind that the background effect will look right only if the pop-up is shaped like a (rounded) rectangle, and the layer surface correctly sets its Wayland geometry to exclude any shadows.
+Pop-ups with custom shapes will need the app to implement the [ext-background-effect protocol](https://wayland.app/protocols/ext-background-effect-v1) to work properly.

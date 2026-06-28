@@ -382,7 +382,7 @@ binds {
 }
 ```
 
-<sup>Since: next release</sup> You can show the mouse pointer on window screenshots with the `show-pointer=true` property.
+<sup>Since: 26.04</sup> You can show the mouse pointer on window screenshots with the `show-pointer=true` property.
 The pointer will be included only if the window is currently receiving pointer input (usually this means the pointer is on top of the window).
 
 ```kdl

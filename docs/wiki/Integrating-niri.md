@@ -13,7 +13,7 @@ Keep in mind that we update the default config in new releases, so if you have a
 
 The default configuration locations can be overridden with the `NIRI_CONFIG` environment variable.
 
-<sup>Since: next release</sup> You can also change the configuration path at runtime via the niri IPC or using the command `niri msg action load-config-file --path <path-to-config.kdl>`.
+<sup>Since: 26.04</sup> You can also change the configuration path at runtime via the niri IPC or using the command `niri msg action load-config-file --path <path-to-config.kdl>`.
 
 <sup>Since: 25.11</sup> You can split the niri config file into multiple files using [`include`](./Configuration:-Include.md).
 
@@ -63,3 +63,7 @@ Alternatively, some desktop environments and shells work with niri, and can give
 - Many [XFCE](https://www.xfce.org/) components work on Wayland, including niri. See [their wiki](https://wiki.xfce.org/releng/wayland_roadmap#component_specific_status) for details.
 - There are complete desktop shells based on Quickshell that support niri, for example [DankMaterialShell](https://github.com/AvengeMedia/DankMaterialShell) and [Noctalia](https://github.com/noctalia-dev/noctalia-shell).
 - You can run a [COSMIC](https://system76.com/cosmic/) session with niri using [cosmic-ext-extra-sessions](https://github.com/Drakulix/cosmic-ext-extra-sessions).
+
+### Security model
+
+See the [Security Model](./Security-Model.md) page for an overview of niri's security model.
