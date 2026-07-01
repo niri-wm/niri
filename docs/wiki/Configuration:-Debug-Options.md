@@ -107,6 +107,8 @@ debug {
 
 ### `force-disable-connectors-on-resume`
 
+<sup>Since: 26.04</sup>
+
 Force-disables all outputs upon resuming niri (TTY switch or waking up from suspend).
 This causes a modeset/screen blank on all outputs.
 
@@ -319,27 +321,6 @@ It will cause niri to drop the Activated state for all unfocused windows.
 ```kdl
 debug {
     deactivate-unfocused-windows
-}
-```
-
-### `keep-max-bpc-unchanged`
-
-<sup>Since: 25.08</sup>
-
-When connecting monitors, niri sets their max bpc to 8 in order to reduce display bandwidth and to potentially allow more monitors to be connected at once.
-Restricting bpc to 8 is not a problem since we don't support HDR or color management yet and can't really make use of higher bpc.
-
-Apparently, setting max bpc to 8 breaks some displays driven by AMDGPU.
-If this happens to you, set this debug flag, which will prevent niri from changing max bpc.
-AMDGPU bug report: https://gitlab.freedesktop.org/drm/amd/-/issues/4487.
-
-<sup>Since: 25.11</sup>
-This setting is deprecated and does nothing: niri no longer sets max bpc.
-The old niri behavior with this setting enabled matches the new behavior.
-
-```kdl
-debug {
-    keep-max-bpc-unchanged
 }
 ```
 

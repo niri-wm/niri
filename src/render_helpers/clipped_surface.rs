@@ -1,5 +1,6 @@
 use glam::{Mat3, Vec2};
 use niri_config::CornerRadius;
+use smithay::backend::renderer::buffer_y_inverted;
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::element::{Element, Id, Kind, RenderElement, UnderlyingStorage};
 use smithay::backend::renderer::gles::{
@@ -75,12 +76,18 @@ impl<R: NiriRenderer> ClippedSurfaceRenderElement<R> {
             * Mat3::from_cols_array(transform.matrix().as_ref())
             * Mat3::from_translation(-Vec2::new(0.5, 0.5));
 
-        // FIXME: y_inverted
+        let y_invert = if buffer_y_inverted(self.inner.buffer()).unwrap_or(false) {
+            Mat3::from_scale(Vec2::new(1., -1.))
+        } else {
+            Mat3::IDENTITY
+        };
+
         let input_to_geo = transform_matrix * Mat3::from_scale(elem_geo_size / geo_size)
             * Mat3::from_translation((elem_geo_loc - geo_loc) / elem_geo_size)
             // Apply viewporter src.
             * Mat3::from_scale(buf_size / src_size)
-            * Mat3::from_translation(-src_loc / buf_size);
+            * Mat3::from_translation(-src_loc / buf_size)
+            * y_invert;
 
         let geo_size = (self.geometry.size.w as f32, self.geometry.size.h as f32);
 

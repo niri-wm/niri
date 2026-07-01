@@ -91,7 +91,7 @@ layer-rule {
 
 #### `layer`
 
-<sup>Since: next release</sup>
+<sup>Since: 26.04</sup>
 
 Matches surfaces on this layer-shell layer.
 Can be `"background"`, `"bottom"`, `"top"`, or `"overlay"`.
@@ -230,7 +230,7 @@ layer-rule {
 
 #### `background-effect`
 
-<sup>Since: next release</sup>
+<sup>Since: 26.04</sup>
 
 Override the background effect options for this surface.
 
@@ -256,7 +256,7 @@ layer-rule {
 
 #### `popups`
 
-<sup>Since: next release</sup>
+<sup>Since: 26.04</sup>
 
 Override properties for this layer surface's pop-ups (e.g. a menu opened by clicking an item in Waybar).
 

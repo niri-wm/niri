@@ -612,7 +612,7 @@ impl XdgShellHandler for State {
         toplevel: ToplevelSurface,
         wl_output: Option<wl_output::WlOutput>,
     ) {
-        let requested_output = wl_output.as_ref().and_then(Output::from_resource);
+        let requested_output = wl_output.and_then(|o| self.niri.output_from_resource(&o));
 
         if let Some((mapped, current_output)) = self
             .niri

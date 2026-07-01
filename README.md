@@ -10,7 +10,7 @@
     <a href="https://niri-wm.github.io/niri/Getting-Started.html">Getting Started</a> | <a href="https://niri-wm.github.io/niri/Configuration%3A-Introduction.html">Configuration</a> | <a href="https://github.com/niri-wm/niri/discussions/325">Setup&nbsp;Showcase</a>
 </p>
 
-![niri with a few windows open](https://github.com/user-attachments/assets/535e6530-2f44-4b84-a883-1240a3eee6e9)
+<img width="1280" height="720" alt="niri with a few windows open" src="https://github.com/user-attachments/assets/dea5909e-1859-4aaa-9d88-d37f9663e00b" />
 
 ## About
 
@@ -39,6 +39,7 @@ When a monitor disconnects, its workspaces will move to another monitor, but upo
 - Group windows into [tabs](https://niri-wm.github.io/niri/Tabs.html)
 - Configurable layout: gaps, borders, struts, window sizes
 - [Gradient borders](https://niri-wm.github.io/niri/Configuration%3A-Layout.html#gradients) with Oklab and Oklch support
+- [Background blur](https://niri-wm.github.io/niri/Window-Effects.html) for windows and layer-shell surfaces
 - [Animations](https://github.com/niri-wm/niri/assets/1794388/ce178da2-af9e-4c51-876f-8709c241d95e) with support for [custom shaders](https://github.com/niri-wm/niri/assets/1794388/27a238d6-0a22-4692-b794-30dc7a626fad)
 - Live-reloading config
 - Works with [screen readers](https://niri-wm.github.io/niri/Accessibility.html)
@@ -47,7 +48,10 @@ When a monitor disconnects, its workspaces will move to another monitor, but upo
 
 https://github.com/niri-wm/niri/assets/1794388/bce834b0-f205-434e-a027-b373495f9729
 
-Also check out this video from Brodie Robertson that showcases a lot of the niri functionality: [Niri Is My New Favorite Wayland Compositor](https://youtu.be/DeYx2exm04M)
+Also check out these videos that showcase a lot of the niri functionality:
+
+- [Niri Is My New Favorite Wayland Compositor](https://www.youtube.com/watch?v=DeYx2exm04M) by Brodie Robertson
+- [How Is niri This Good? Live Demo + Config](https://www.youtube.com/watch?v=7XmD5UyyhZQ) by Nick Janetakis
 
 ## Status
 
@@ -56,7 +60,7 @@ Many people are daily-driving niri, and are happy to help in our [Matrix channel
 
 Give it a try!
 Follow the instructions on the [Getting Started](https://niri-wm.github.io/niri/Getting-Started.html) page.
-Have your [waybar]s and [fuzzel]s ready: niri is not a complete desktop environment.
+Grab a desktop shell like [DankMaterialShell] or [Noctalia] (or build a more traditional setup): niri by itself is not a complete desktop environment.
 Also check out [awesome-niri], a list of niri-related links and projects.
 
 Here are some points you may have questions about:
@@ -109,8 +113,8 @@ Here are some other projects which implement a similar workflow:
 - [PaperWM]: scrollable tiling on top of GNOME Shell.
 - [karousel]: scrollable tiling on top of KDE.
 - [scroll](https://github.com/dawsers/scroll) and [papersway]: scrollable tiling on top of sway/i3.
-- [hyprscrolling] and [hyprslidr]: scrollable tiling on top of Hyprland.
-- [PaperWM.spoon]: scrollable tiling on top of macOS.
+- Hyprland has a built-in [scrolling layout](https://wiki.hypr.land/Configuring/Layouts/Scrolling-Layout/).
+- [Paneru] and [PaperWM.spoon]: scrollable tiling on top of macOS.
 
 ## Contact
 
@@ -124,8 +128,9 @@ We also have a community Discord server: https://discord.gg/vT8Sfjy7sx
 [awesome-niri]: https://github.com/niri-wm/awesome-niri
 [karousel]: https://github.com/peterfajdiga/karousel
 [papersway]: https://spwhitton.name/tech/code/papersway/
-[hyprscrolling]: https://github.com/hyprwm/hyprland-plugins/tree/main/hyprscrolling
-[hyprslidr]: https://gitlab.com/magus/hyprslidr
+[Paneru]: https://github.com/karinushka/paneru
 [PaperWM.spoon]: https://github.com/mogenson/PaperWM.spoon
 [Matrix channel]: https://matrix.to/#/#niri:matrix.org
 [OpenTabletDriver]: https://opentabletdriver.net/
+[DankMaterialShell]: https://danklinux.com/
+[Noctalia]: https://noctalia.dev/

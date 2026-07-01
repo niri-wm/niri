@@ -14,6 +14,7 @@ use _server_decoration::server::org_kde_kwin_server_decoration_manager::Mode as 
 use anyhow::{bail, ensure, Context};
 use calloop::futures::Scheduler;
 use niri_config::debug::PreviewRender;
+use niri_config::output::MaxBpc;
 use niri_config::{
     Config, FloatOrInt, Key, Modifiers, OutputName, TrackLayout, WarpMouseToFocusMode,
     WorkspaceReference, Xkb,
@@ -110,6 +111,7 @@ use smithay::wayland::viewporter::ViewporterState;
 use smithay::wayland::virtual_keyboard::VirtualKeyboardManagerState;
 use smithay::wayland::xdg_activation::XdgActivationState;
 use smithay::wayland::xdg_foreign::XdgForeignState;
+use wayland_server::protocol::wl_output::WlOutput;
 
 #[cfg(feature = "dbus")]
 use crate::a11y::A11y;
@@ -132,7 +134,7 @@ use crate::input::scroll_swipe_gesture::ScrollSwipeGesture;
 use crate::input::scroll_tracker::ScrollTracker;
 use crate::input::{
     apply_libinput_settings, mods_with_finger_scroll_binds, mods_with_mouse_binds,
-    mods_with_wheel_binds, TabletData,
+    mods_with_tablet_stylus_binds, mods_with_wheel_binds, TabletData,
 };
 use crate::ipc::server::IpcServer;
 use crate::layer::mapped::LayerSurfaceRenderElement;
@@ -374,6 +376,7 @@ pub struct Niri {
     pub horizontal_wheel_tracker: ScrollTracker,
     pub mods_with_mouse_binds: HashSet<Modifiers>,
     pub mods_with_wheel_binds: HashSet<Modifiers>,
+    pub mods_with_tablet_stylus_binds: HashSet<Modifiers>,
     pub vertical_finger_scroll_tracker: ScrollTracker,
     pub horizontal_finger_scroll_tracker: ScrollTracker,
     pub mods_with_finger_scroll_binds: HashSet<Modifiers>,
@@ -933,7 +936,7 @@ impl State {
         let monitor = self.niri.layout.monitor_for_output(output).unwrap();
 
         let mut rv = false;
-        let rect = monitor.active_tile_visual_rectangle();
+        let rect = monitor.active_window_visual_rectangle();
 
         if let Some(rect) = rect {
             let output_geo = self.niri.global_space.output_geometry(output).unwrap();
@@ -990,6 +993,12 @@ impl State {
 
     pub fn confirm_mru(&mut self) {
         if let Some(window) = self.niri.close_mru(MruCloseRequest::Confirm) {
+            // focus_window() will warp the cursor to the window only when the keyboard focus is on
+            // the layout. However, right now the keyboard focus is still on the MRU (that we had
+            // just closed) since it's only updated at the end of the event loop cycle. Force-update
+            // the keyboard focus here to make cursor warping work.
+            self.update_keyboard_focus();
+
             self.focus_window(&window);
         }
     }
@@ -1320,7 +1329,6 @@ impl State {
                         get_monotonic_time().as_millis() as u32,
                     );
                     self.niri.popup_grab = None;
-                    self.niri.on_maybe_dnd_ended();
                 }
             }
 
@@ -1376,9 +1384,19 @@ impl State {
 
         let keymap = std::fs::read_to_string(xkb_file).context("failed to read xkb_file")?;
 
-        let xkb = self.niri.seat.get_keyboard().unwrap();
-        xkb.set_keymap_from_string(self, keymap)
+        let keyboard = self.niri.seat.get_keyboard().unwrap();
+        let num_lock = keyboard.modifier_state().num_lock;
+
+        keyboard
+            .set_keymap_from_string(self, keymap)
             .context("failed to set keymap")?;
+
+        // Restore num lock to its previous value.
+        let mut mods_state = keyboard.modifier_state();
+        if mods_state.num_lock != num_lock {
+            mods_state.num_lock = num_lock;
+            keyboard.set_modifier_state(mods_state);
+        }
 
         Ok(())
     }
@@ -1523,6 +1541,8 @@ impl State {
                 .on_hotkey_config_updated(new_mod_key);
             self.niri.mods_with_mouse_binds = mods_with_mouse_binds(new_mod_key, &config.binds);
             self.niri.mods_with_wheel_binds = mods_with_wheel_binds(new_mod_key, &config.binds);
+            self.niri.mods_with_tablet_stylus_binds =
+                mods_with_tablet_stylus_binds(new_mod_key, &config.binds);
             self.niri.mods_with_finger_scroll_binds =
                 mods_with_finger_scroll_binds(new_mod_key, &config.binds);
         }
@@ -1915,6 +1935,7 @@ impl State {
                     None
                 }
             }
+            niri_ipc::OutputAction::MaxBpc { max_bpc } => config.max_bpc = Some(MaxBpc(max_bpc)),
         });
 
         self.reload_output_config();
@@ -1976,7 +1997,6 @@ impl State {
         if let Some(touch) = self.niri.seat.get_touch() {
             touch.unset_grab(self);
         }
-        self.niri.on_maybe_dnd_ended();
 
         self.backend.with_primary_renderer(|renderer| {
             self.niri
@@ -2396,6 +2416,7 @@ impl Niri {
         let mods_with_mouse_binds = mods_with_mouse_binds(mod_key, &config_.binds);
         let mods_with_wheel_binds = mods_with_wheel_binds(mod_key, &config_.binds);
         let mods_with_finger_scroll_binds = mods_with_finger_scroll_binds(mod_key, &config_.binds);
+        let mods_with_tablet_stylus_binds = mods_with_tablet_stylus_binds(mod_key, &config_.binds);
 
         let screenshot_ui = ScreenshotUi::new(animation_clock.clone(), config.clone());
         let window_mru_ui = WindowMruUi::new(config.clone());
@@ -2577,6 +2598,7 @@ impl Niri {
             horizontal_wheel_tracker: ScrollTracker::new(120),
             mods_with_mouse_binds,
             mods_with_wheel_binds,
+            mods_with_tablet_stylus_binds,
 
             // 10 is copied from Clutter: DISCRETE_SCROLL_STEP.
             vertical_finger_scroll_tracker: ScrollTracker::new(10),
@@ -2872,6 +2894,20 @@ impl Niri {
 
         // Must be last since it will call queue_redraw(output) which needs things to be filled-in.
         self.reposition_outputs(Some(&output));
+    }
+
+    pub fn output_exists(&self, output: &Output) -> bool {
+        self.output_state.contains_key(output)
+    }
+
+    /// Converts a `WlOutput` to a corresponding `Output` if it exists.
+    ///
+    /// Compared to raw `Output::from_resource`, this method also verifies that the output still
+    /// exists in niri. Right after the output global is disabled, but before it is removed for
+    /// good, `Output::from_resource` will succeed, but since niri already forgot the output,
+    /// accessing it can cause logic bugs.
+    pub fn output_from_resource(&self, wl_output: &WlOutput) -> Option<Output> {
+        Output::from_resource(wl_output).filter(|output| self.output_exists(output))
     }
 
     pub fn remove_output(&mut self, output: &Output) {
@@ -3582,8 +3618,12 @@ impl Niri {
 
     pub fn output_for_tablet(&self) -> Option<&Output> {
         let config = self.config.borrow();
-        let map_to_output = config.input.tablet.map_to_output.as_ref();
-        map_to_output.and_then(|name| self.output_by_name_match(name))
+        if config.input.tablet.map_to_focused_output {
+            self.layout.active_output()
+        } else {
+            let map_to_output = config.input.tablet.map_to_output.as_ref();
+            map_to_output.and_then(|name| self.output_by_name_match(name))
+        }
     }
 
     pub fn output_for_touch(&self) -> Option<&Output> {
