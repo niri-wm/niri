@@ -434,6 +434,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         let view_pos = Point::from((self.view_pos(), 0.));
         let view_size = self.view_size;
         let active_idx = self.active_column_idx;
+        let is_view_locked = self.view_lock;
         for (col_idx, (col, col_x)) in self.columns_mut().enumerate() {
             // Skip columns belonging to a different render layer.
             if layer.is_normal() == col.is_moving_between_workspaces() {
@@ -444,7 +445,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             let col_off = Point::from((col_x, 0.));
             let col_pos = view_pos - col_off - col.render_offset();
             let view_rect = Rectangle::new(col_pos, view_size);
-            col.update_render_elements(is_active, view_rect);
+            col.update_render_elements(is_active, is_view_locked, view_rect);
         }
     }
 
@@ -1432,7 +1433,10 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
             // We might need to move the view to ensure the resized window is still visible. But
             // only do it when the view isn't frozen by an interactive resize or a view gesture.
-            if !self.view_lock && self.interactive_resize.is_none() && !self.view_offset.is_gesture() {
+            if !self.view_lock
+                && self.interactive_resize.is_none()
+                && !self.view_offset.is_gesture()
+            {
                 // Synchronize the horizontal view movement with the resize so that it looks nice.
                 // This is especially important for always-centered view.
                 let config = if ongoing_resize_anim {
@@ -3777,8 +3781,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         }
     }
 
-    pub fn toggle_view_lock(&mut self)
-    {
+    pub fn toggle_view_lock(&mut self) {
         self.view_lock = !self.view_lock;
     }
 
@@ -4225,14 +4228,19 @@ impl<W: LayoutElement> Column<W> {
                 .any(|tile| tile.is_moving_between_workspaces())
     }
 
-    pub fn update_render_elements(&mut self, is_active: bool, view_rect: Rectangle<f64, Logical>) {
+    pub fn update_render_elements(
+        &mut self,
+        is_active: bool,
+        is_view_locked: bool,
+        view_rect: Rectangle<f64, Logical>,
+    ) {
         let active_idx = self.active_tile_idx;
         for (tile_idx, (tile, tile_off)) in self.tiles_mut().enumerate() {
             let is_active = is_active && tile_idx == active_idx;
 
             let mut tile_view_rect = view_rect;
             tile_view_rect.loc -= tile_off + tile.render_offset();
-            tile.update_render_elements(is_active, tile_view_rect);
+            tile.update_render_elements(is_active, is_view_locked, tile_view_rect);
         }
 
         let config = self.tab_indicator.config();
