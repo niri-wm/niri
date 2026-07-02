@@ -2013,6 +2013,18 @@ impl<W: LayoutElement> Workspace<W> {
         self.layout_config.as_ref()
     }
 
+    pub fn toggle_view_lock(&mut self) {
+        self.scrolling.toggle_view_lock();
+    }
+
+    pub fn lock_view_lock(&mut self) -> bool {
+        self.scrolling.lock_view_lock()
+    }
+
+    pub fn unlock_view_lock(&mut self) -> bool {
+        self.scrolling.unlock_view_lock()
+    }
+
     pub fn scrolling(&self) -> &ScrollingSpace<W> {
         &self.scrolling
     }
