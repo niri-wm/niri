@@ -61,6 +61,7 @@ impl FocusRing {
         is_active: bool,
         is_border: bool,
         is_urgent: bool,
+        is_view_locked: bool,
         view_rect: Rectangle<f64, Logical>,
         radius: CornerRadius,
         scale: f64,
@@ -72,6 +73,8 @@ impl FocusRing {
 
         let color = if is_urgent {
             self.config.urgent_color
+        } else if is_view_locked && is_active {
+            self.config.view_lock_color
         } else if is_active {
             self.config.active_color
         } else {
@@ -86,6 +89,8 @@ impl FocusRing {
 
         let gradient = if is_urgent {
             self.config.urgent_gradient
+        } else if is_view_locked && is_active {
+            self.config.view_lock_gradient
         } else if is_active {
             self.config.active_gradient
         } else {
