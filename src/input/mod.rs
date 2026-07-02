@@ -2285,6 +2285,20 @@ impl State {
                     self.niri.queue_redraw_all();
                 }
             }
+            Action::ToggleViewLock => {
+                self.niri.layout.toggle_view_lock();
+                self.niri.queue_redraw_all();
+            }
+            Action::LockViewLock => {
+                if self.niri.layout.lock_view_lock() {
+                    self.niri.queue_redraw_all();
+                }
+            }
+            Action::UnlockViewLock => {
+                if self.niri.layout.unlock_view_lock() {
+                    self.niri.queue_redraw_all();
+                }
+            }
             Action::ToggleWindowUrgent(id) => {
                 let window = self
                     .niri
