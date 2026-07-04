@@ -72,6 +72,21 @@ pub struct ZoomElement<E> {
     location: Point<f64, Physical>,
     relocate: Relocate,
     filter: Option<TextureFilter>,
+    /// Own unique `Id` used when wrapping cursor elements.
+    ///
+    /// The DRM compositor's cursor plane assignment matches elements between frames
+    /// via `id()`. When `ZoomElement` delegates `id()` to a `WaylandSurfaceRenderElement`,
+    /// the stable Wayland ObjectId causes the compositor to see the same element every
+    /// frame, and its `SKIP_CURSOR_ONLY_UPDATES` optimization skips the frame because
+    /// the cursor buffer content hasn't changed — producing a display freeze.
+    ///
+    /// By returning our own `Id` for cursor elements (detected via `self.element.kind()`),
+    /// the DRM compositor always sees a fresh element on each frame, forces a new
+    /// cursor-plane buffer allocation, and never skips the frame.
+    ///
+    /// For non-cursor elements we keep delegating `id()` to the inner element so that
+    /// the `OutputDamageTracker` can track them efficiently across frames.
+    id: Id,
 }
 
 impl<E: Element> ZoomElement<E> {
@@ -89,7 +104,34 @@ impl<E: Element> ZoomElement<E> {
             location,
             relocate,
             filter: None,
+            id: Id::new(),
         }
+    }
+
+    /// Derive a [`CommitCounter`] from zoom parameters and the inner element's commit.
+    ///
+    /// Any change to `origin`, `scale`, `location`, or the inner element's content
+    /// produces a different counter value, ensuring damage is reported.
+    ///
+    /// This is computed lazily (not in `from_element`) because calling
+    /// `element.current_commit()` during construction can panic when the inner
+    /// element's internal `RefCell` is already mutably borrowed for rendering
+    /// (e.g. the XRay `EffectBuffer`).
+    fn compute_commit(&self) -> CommitCounter {
+        let inner_commit = self.element.current_commit();
+        let inner_val = inner_commit
+            .distance(Some(CommitCounter::default()))
+            .unwrap_or(usize::MAX);
+
+        let mut v: u64 = self.origin.x.to_bits();
+        v = v.wrapping_mul(31).wrapping_add(self.origin.y.to_bits());
+        v = v.wrapping_mul(31).wrapping_add(self.scale.x.to_bits());
+        v = v.wrapping_mul(31).wrapping_add(self.scale.y.to_bits());
+        v = v.wrapping_mul(31).wrapping_add(self.location.x.to_bits());
+        v = v.wrapping_mul(31).wrapping_add(self.location.y.to_bits());
+        v = v.wrapping_mul(31).wrapping_add(inner_val as u64);
+
+        CommitCounter::from(v as usize)
     }
 
     pub fn with_filter(mut self, filter: Option<TextureFilter>) -> Self {
@@ -100,11 +142,20 @@ impl<E: Element> ZoomElement<E> {
 
 impl<E: Element> Element for ZoomElement<E> {
     fn id(&self) -> &Id {
-        self.element.id()
+        // Return our own Id for cursor elements so that the DRM compositor's cursor
+        // plane always sees a fresh element each frame (preventing the freeze caused
+        // by SKIP_CURSOR_ONLY_UPDATES when the same Wayland surface Id is re-used).
+        // For non-cursor elements the inner element's Id is stable, allowing the
+        // OutputDamageTracker to track them efficiently across frames.
+        if self.element.kind() == Kind::Cursor {
+            &self.id
+        } else {
+            self.element.id()
+        }
     }
 
     fn current_commit(&self) -> CommitCounter {
-        self.element.current_commit()
+        self.compute_commit()
     }
 
     fn src(&self) -> Rectangle<f64, Buffer> {
@@ -138,14 +189,20 @@ impl<E: Element> Element for ZoomElement<E> {
         scale: Scale<f64>,
         commit: Option<CommitCounter>,
     ) -> DamageSet<i32, Physical> {
-        // Damage is relative to the element, so only the zoom scale applies
-        // here; focal-origin anchoring and relocation are reflected by the
-        // element geometry, not by its relative damage rectangles.
-        self.element
-            .damage_since(scale, commit)
-            .into_iter()
-            .map(|rect| rect.to_f64().upscale(self.scale).to_i32_round())
-            .collect()
+        // Check whether our fingerprint-based commit counter has advanced since the
+        // tracker last observed it.  A distance > 0 means either a zoom parameter
+        // (origin, scale, location) changed or the inner element committed new content.
+        // In that case we return full geometry damage so the DRM compositor submits
+        // a new frame — preventing the display freeze with XWayland cursor surfaces
+        // whose stable `Id` would otherwise be treated as unchanged.
+        let current = self.compute_commit();
+        match current.distance(commit) {
+            Some(0) => DamageSet::default(),
+            _ => {
+                let geometry = self.geometry(scale);
+                DamageSet::from_slice(&[geometry])
+            }
+        }
     }
 
     fn opaque_regions(&self, scale: Scale<f64>) -> OpaqueRegions<i32, Physical> {

@@ -5044,8 +5044,12 @@ impl Niri {
         let is_locked = self.is_locked();
         let state = self.output_state.get_mut(output).unwrap();
 
-        if res == RenderResult::Skipped {
-            // Update the redraw state on failed render.
+        if res == RenderResult::Skipped || res == RenderResult::NoDamage {
+            // Update the redraw state when no frame was submitted (skipped or
+            // no damage). Without this, `redraw_queued_outputs` can infinite
+            // loop: it finds a `Queued` output, calls `redraw()`, gets
+            // `NoDamage`, the state stays `Queued`, and it tries again
+            // forever — blocking the event loop.
             state.redraw_state = if let RedrawState::WaitingForEstimatedVBlank(token)
             | RedrawState::WaitingForEstimatedVBlankAndQueued(token) =
                 state.redraw_state
