@@ -70,10 +70,10 @@ use crate::render_helpers::renderer::AsGlesRenderer;
 use crate::render_helpers::{resources, shaders, RenderCtx, RenderTarget};
 use crate::utils::{get_monotonic_time, is_laptop_panel, logical_output, PanelOrientation};
 
-const SUPPORTED_COLOR_FORMATS: [Fourcc; 8] = [
-    Fourcc::Xrgb2101010,
+// specific 10-bit formats for multigpu setup,
+// i.e. copying from rendering Nvidia dGPU to target iGPU.
+const SUPPORTED_COLOR_FORMATS: [Fourcc; 6] = [
     Fourcc::Xbgr2101010,
-    Fourcc::Argb2101010,
     Fourcc::Abgr2101010,
     Fourcc::Xrgb8888,
     Fourcc::Xbgr8888,
