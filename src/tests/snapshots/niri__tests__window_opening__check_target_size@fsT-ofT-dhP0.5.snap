@@ -1,0 +1,13 @@
+---
+source: src/tests/window_opening.rs
+description: "config:\nwindow-rule {\n    open-fullscreen true\n    open-floating true\n    default-window-height { proportion 0.5; }\n}"
+expression: snapshot
+---
+initial configure:
+size: 1280 × 720, bounds: 1280 × 720, states: [Fullscreen]
+
+post-map configures:
+size: 1280 × 720, bounds: 1248 × 688, states: [Fullscreen, Activated]
+
+unfullscreen configure:
+size: 0 × 0, bounds: 1280 × 720, states: [Activated]

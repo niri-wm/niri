@@ -1,0 +1,13 @@
+---
+source: src/tests/window_opening.rs
+description: "want fullscreen: BN\nconfig:\nwindow-rule {\n    open-floating true\n    default-window-height { proportion 0.5; }\n    border { on; }\n    default-column-display \"tabbed\"\n}\n\nlayout {\n    tab-indicator {\n        place-within-column\n    }\n}"
+expression: snapshot
+---
+initial configure:
+size: 1280 × 720, bounds: 1272 × 712, states: [Fullscreen]
+
+post-map configures:
+size: 1280 × 720, bounds: 1231 × 680, states: [Fullscreen, Activated]
+
+unfullscreen configure:
+size: 0 × 0, bounds: 1272 × 712, states: [Activated]

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<protocol name="mutter_x11_interop">
+  <description summary="X11 interoperability helper">
+    This protocol is intended to be used by the portal backend to map Wayland
+    dialogs as modal dialogs on top of X11 windows.
+  </description>
+
+  <interface name="mutter_x11_interop" version="1">
+    <description summary="X11 interoperability helper"/>
+
+    <request name="destroy" type="destructor"/>
+
+    <request name="set_x11_parent">
+      <arg name="surface" type="object" interface="wl_surface"/>
+      <arg name="xwindow" type="uint"/>
+    </request>
+  </interface>
+</protocol>

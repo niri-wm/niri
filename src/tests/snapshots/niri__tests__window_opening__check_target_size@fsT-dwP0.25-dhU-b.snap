@@ -1,0 +1,13 @@
+---
+source: src/tests/window_opening.rs
+description: "config:\nwindow-rule {\n    open-fullscreen true\n    default-column-width { proportion 0.25; }\n    default-window-height {  }\n    border { on; }\n}"
+expression: snapshot
+---
+initial configure:
+size: 1280 × 720, bounds: 1240 × 680, states: [Fullscreen]
+
+post-map configures:
+size: 1280 × 720, bounds: 1240 × 680, states: [Fullscreen, Activated]
+
+unfullscreen configure:
+size: 292 × 680, bounds: 1240 × 680, states: [Activated]

@@ -1,0 +1,66 @@
+name: Prepare release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Public version'
+        required: true
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+env:
+  RUN_SLOW_TESTS: 1
+
+jobs:
+  prepare-release:
+    runs-on: ubuntu-24.04
+
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          show-progress: false
+
+      - name: Check for unreplaced "Since:" in the wiki
+        run: |
+          # Fail if a match is found (exit code 0)
+          grep --recursive 'Since: next release' docs/wiki && exit 1
+
+          # Fail if grep failed (exit code 2)
+          status=$?
+          if [ $status -ne 1 ]; then exit $status; fi
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y curl gcc clang libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev libpipewire-0.3-dev libpango1.0-dev libdisplay-info-dev libadwaita-1-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Create vendored dependencies archive
+        run: |
+          mkdir .cargo
+          cargo vendor --locked > .cargo/config.toml
+          tar cJf niri-${{ github.event.inputs.version }}-vendored-dependencies.tar.xz vendor/
+
+      - name: Build
+        run: cargo build --all --frozen --release
+
+      - name: Build tests
+        run: cargo test --no-run --all --frozen --release
+
+      - name: Test
+        run: cargo test --all --frozen --release -- --nocapture
+
+      - name: Draft release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          tag_name: v${{ github.event.inputs.version }}
+          files: niri-${{ github.event.inputs.version }}-vendored-dependencies.tar.xz
+          fail_on_unmatched_files: true

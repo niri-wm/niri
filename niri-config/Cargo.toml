@@ -1,0 +1,24 @@
+[package]
+name = "niri-config"
+version.workspace = true
+description.workspace = true
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+repository.workspace = true
+
+[dependencies]
+bitflags.workspace = true
+csscolorparser = "0.8.3"
+knuffel = "3.2.0"
+miette = { version = "5.10.0", features = ["fancy-no-backtrace"] }
+niri-ipc = { version = "26.4.0", path = "../niri-ipc" }
+regex = "1.12.3"
+smithay = { workspace = true, features = ["backend_libinput"] }
+tracing.workspace = true
+tracy-client.workspace = true
+
+[dev-dependencies]
+insta.workspace = true
+pretty_assertions = "1.4.1"
+diff = "0.1.13"

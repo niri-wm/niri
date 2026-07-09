@@ -1,0 +1,10 @@
+---
+source: src/tests/window_opening.rs
+description: "config:\nwindow-rule {\n    open-floating true\n    default-column-width { fixed 1000; }\n    default-window-height { proportion 0.5; }\n    default-column-display \"tabbed\"\n}\n\nlayout {\n    tab-indicator {\n        place-within-column\n    }\n}"
+expression: snapshot
+---
+initial configure:
+size: 1000 × 360, bounds: 1280 × 720, states: []
+
+post-map configures:
+size: 1 × 1, bounds: 1280 × 720, states: [Activated]

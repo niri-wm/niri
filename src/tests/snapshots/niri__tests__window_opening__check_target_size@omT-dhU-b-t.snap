@@ -1,0 +1,10 @@
+---
+source: src/tests/window_opening.rs
+description: "config:\nwindow-rule {\n    open-maximized true\n    default-window-height {  }\n    border { on; }\n    default-column-display \"tabbed\"\n}\n\nlayout {\n    tab-indicator {\n        place-within-column\n    }\n}"
+expression: snapshot
+---
+initial configure:
+size: 1231 × 680, bounds: 1231 × 680, states: []
+
+post-map configures:
+size: 1231 × 680, bounds: 1231 × 680, states: [Activated]

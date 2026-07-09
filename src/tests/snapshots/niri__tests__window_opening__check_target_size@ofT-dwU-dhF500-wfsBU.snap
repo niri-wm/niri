@@ -1,0 +1,10 @@
+---
+source: src/tests/window_opening.rs
+description: "want fullscreen: BU\nconfig:\nwindow-rule {\n    open-floating true\n    default-column-width {  }\n    default-window-height { fixed 500; }\n}"
+expression: snapshot
+---
+initial configure:
+size: 0 × 500, bounds: 1280 × 720, states: []
+
+post-map configures:
+size: 1 × 1, bounds: 1280 × 720, states: [Activated]

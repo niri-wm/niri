@@ -1,0 +1,361 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 1 * *' # Monthly
+
+env:
+  DEPS_APT: curl gcc clang libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev libpipewire-0.3-dev libpango1.0-dev libdisplay-info-dev
+  DEPS_DNF: cargo gcc clang libudev-devel libgbm-devel libxkbcommon-devel wayland-devel libinput-devel dbus-devel systemd-devel libseat-devel pipewire-devel pango-devel cairo-gobject-devel libdisplay-info-devel
+  DEPS_APK: cargo clang-libclang eudev-dev glib-dev libdisplay-info-dev libinput-dev libseat-dev libxkbcommon-dev mesa-dev pango-dev pipewire-dev tar
+  DEPS_PKG: git curl rust llvm pkgconf pixman libudev-devd libdisplay-info seatd libinput libxkbcommon pipewire mesa-libs cairo devel/glib20 gettext-runtime harfbuzz pango
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+
+    name: test
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          show-progress: false
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y ${{ env.DEPS_APT }}
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build tests
+        run: cargo test --no-run --all --exclude niri-visual-tests
+
+      - name: Test
+        run: cargo test --all --exclude niri-visual-tests -- --nocapture
+
+  build:
+    strategy:
+      fail-fast: false
+
+    name: check feature combinations
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          show-progress: false
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y ${{ env.DEPS_APT }}
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Check (no default features)
+        run: cargo check --no-default-features
+
+      - name: Check (just dbus)
+        run: cargo check --no-default-features --features dbus
+
+      - name: Check (just systemd)
+        run: cargo check --no-default-features --features systemd
+
+      - name: Check (just dinit)
+        run: cargo check --no-default-features --features dinit
+
+      - name: Check (just xdp-gnome-screencast)
+        run: cargo check --no-default-features --features xdp-gnome-screencast
+
+      - name: Check
+        run: cargo check
+
+      - name: Build (with profiling)
+        run: cargo build --features profile-with-tracy
+
+  build-musl:
+    strategy:
+      fail-fast: false
+
+    name: alpine musl
+    runs-on: ubuntu-24.04
+    container: alpine:3
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          show-progress: false
+
+      - name: Install Deps
+        run: apk add --no-cache ${{ env.DEPS_APK }}
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build
+        run: cargo build --no-default-features --features dbus,xdp-gnome-screencast
+
+  # Job that runs randomized tests for a longer period of time.
+  # Also runs normal slow tests.
+  randomized-tests:
+    strategy:
+      fail-fast: false
+
+    name: randomized and slow tests
+    runs-on: ubuntu-24.04
+
+    env:
+      RUST_BACKTRACE: 1
+      RUN_SLOW_TESTS: 1
+      PROPTEST_CASES: 200000
+      PROPTEST_MAX_LOCAL_REJECTS: 200000
+      PROPTEST_MAX_GLOBAL_REJECTS: 200000
+      PROPTEST_MAX_SHRINK_ITERS: 200000
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          show-progress: false
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y ${{ env.DEPS_APT }}
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build tests
+        run: cargo test --no-run --all --exclude niri-visual-tests --release
+
+      - name: Test
+        run: cargo test --all --exclude niri-visual-tests --release
+
+  visual-tests:
+    strategy:
+      fail-fast: false
+
+    name: visual tests
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          show-progress: false
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y ${{ env.DEPS_APT }} libadwaita-1-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build
+        run: cargo build --package niri-visual-tests
+
+  msrv:
+    strategy:
+      fail-fast: false
+
+    name: msrv
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          show-progress: false
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y ${{ env.DEPS_APT }} libadwaita-1-dev
+
+      - uses: dtolnay/rust-toolchain@1.85.0
+
+      - uses: Swatinem/rust-cache@v2
+
+      - run: cargo check --all-targets
+
+  clippy:
+    strategy:
+      fail-fast: false
+
+    name: clippy
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          show-progress: false
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y ${{ env.DEPS_APT }} libadwaita-1-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Run clippy
+        run: cargo clippy --all --all-targets
+
+  rustfmt:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          show-progress: false
+
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rustfmt
+
+      - name: Run rustfmt
+        run: cargo fmt --all -- --check
+
+  fedora:
+    runs-on: ubuntu-24.04
+    container: fedora:42
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          show-progress: false
+
+      - name: Install dependencies
+        run: |
+          sudo dnf update -y
+          sudo dnf install -y ${{ env.DEPS_DNF }} libadwaita-devel
+
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --all
+
+  freebsd:
+    runs-on: ubuntu-24.04
+    env:
+      CARGO_HOME: /home/runner/work/niri/niri/cargo-home
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          show-progress: false
+
+      # Remove man-db triggers to speed up Ubuntu upgrade by a minute or two during vmactions/freebsd-vm action run.
+      - run: |
+          sudo rm /var/lib/dpkg/info/man-db.*
+
+      - name: Build
+        uses: vmactions/freebsd-vm@v1
+        with:
+          release: "15.0"
+          copyback: false
+          prepare: |
+            pkg update -f
+            pkg install -y ${{ env.DEPS_PKG }}
+          run: |
+            curl -o patch-pipewire_init 'https://cgit.freebsd.org/ports/plain/x11-wm/niri/files/patch-pipewire_init?id=cadf6784d264cf780b6e0ad59bd15b831d36cf80'
+
+            export CARGO_HOME="$PWD/cargo-home"
+
+            cargo fetch
+
+            ( cd $CARGO_HOME/registry/src/index.crates.io-*/; patch -p1 < $CARGO_HOME/../patch-pipewire_init; )
+
+            cargo build \
+              --offline \
+              --no-default-features --features dbus,xdp-gnome-screencast
+
+  nix:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Free Disk Space (Ubuntu)
+        uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          dotnet: false
+          large-packages: false
+        
+      - uses: actions/checkout@v6
+        with:
+          show-progress: false
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+        continue-on-error: true
+
+      - run: nix flake check
+        continue-on-error: true
+
+  publish-wiki:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs:
+      - publish-docs
+    permissions:
+      contents: write
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          lfs: true
+          show-progress: false
+
+      - uses: Andrew-Chen-Wang/github-wiki-action@b7e552d7cb0fa7f83e459012ffc6840fd87bcb83
+        with:
+          path: docs/wiki/
+
+  publish-docs:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs:
+      - test
+    permissions:
+      contents: write
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          lfs: true
+          show-progress: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+            enable-cache: true
+
+      - name: Install the project
+        run: uv sync --locked --all-extras --dev
+        working-directory: docs/
+
+      - name: Generate niri documentation
+        run: uv run mkdocs build
+        working-directory: docs/
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Generate rustdoc documentation
+        run: cargo doc --no-deps -p niri-ipc
+
+      - run: mkdir -p publish/niri_ipc
+      - run: cp -r ./target/doc/* ./publish/
+      - run: cp -r ./docs/site/* ./publish/
+
+      - name: Deploy documentation
+        if: github.ref == 'refs/heads/main'
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./publish
+          force_orphan: true

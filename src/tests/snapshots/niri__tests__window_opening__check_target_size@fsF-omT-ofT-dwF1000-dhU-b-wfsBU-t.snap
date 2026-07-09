@@ -1,0 +1,10 @@
+---
+source: src/tests/window_opening.rs
+description: "want fullscreen: BU\nconfig:\nwindow-rule {\n    open-fullscreen false\n    open-maximized true\n    open-floating true\n    default-column-width { fixed 1000; }\n    default-window-height {  }\n    border { on; }\n    default-column-display \"tabbed\"\n}\n\nlayout {\n    tab-indicator {\n        place-within-column\n    }\n}"
+expression: snapshot
+---
+initial configure:
+size: 1000 × 0, bounds: 1272 × 712, states: []
+
+post-map configures:
+size: 1 × 1, bounds: 1272 × 712, states: [Activated]

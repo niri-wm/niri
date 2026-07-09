@@ -1,0 +1,13 @@
+---
+source: src/tests/window_opening.rs
+description: "config:\nwindow-rule {\n    open-fullscreen true\n    default-column-width { proportion 0.25; }\n    default-window-height { fixed 500; }\n    border { on; }\n    default-column-display \"tabbed\"\n}\n\nlayout {\n    tab-indicator {\n        place-within-column\n    }\n}"
+expression: snapshot
+---
+initial configure:
+size: 1280 × 720, bounds: 1231 × 680, states: [Fullscreen]
+
+post-map configures:
+size: 1280 × 720, bounds: 1231 × 680, states: [Fullscreen, Activated]
+
+unfullscreen configure:
+size: 283 × 500, bounds: 1231 × 680, states: [Activated]

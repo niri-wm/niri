@@ -1,0 +1,7 @@
+[Unit]
+Description=Shutdown running niri session
+DefaultDependencies=no
+StopWhenUnneeded=true
+
+Conflicts=graphical-session.target graphical-session-pre.target
+After=graphical-session.target graphical-session-pre.target

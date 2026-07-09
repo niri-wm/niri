@@ -1,0 +1,14 @@
+---
+source: src/tests/window_opening.rs
+description: "want fullscreen: AN\nconfig:\nwindow-rule {\n    open-fullscreen true\n    open-floating true\n    default-column-width { fixed 1000; }\n}"
+expression: snapshot
+---
+initial configure:
+size: 1280 × 720, bounds: 1280 × 720, states: [Fullscreen]
+
+post-map configures:
+size: 1280 × 720, bounds: 1248 × 688, states: [Fullscreen]
+size: 1280 × 720, bounds: 1248 × 688, states: [Fullscreen, Activated]
+
+unfullscreen configure:
+size: 0 × 0, bounds: 1280 × 720, states: [Activated]

@@ -1,0 +1,10 @@
+---
+source: src/tests/window_opening.rs
+description: "want fullscreen: BN\nconfig:\nwindow-rule {\n    open-fullscreen false\n    open-maximized true\n    default-column-width { proportion 0.25; }\n    border { on; }\n}"
+expression: snapshot
+---
+initial configure:
+size: 1240 × 680, bounds: 1240 × 680, states: []
+
+post-map configures:
+size: 1240 × 680, bounds: 1240 × 680, states: [Activated]

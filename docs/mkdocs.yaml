@@ -1,0 +1,118 @@
+site_name: niri
+docs_dir: wiki
+site_url: https://niri-wm.github.io/niri
+repo_url: https://github.com/niri-wm/niri
+edit_uri: edit/main/docs/wiki/
+use_directory_urls: false
+
+theme:
+  name: material
+  logo: _assets/icons/logo.svg
+  favicon: _assets/icons/logo.svg
+  features:
+    - navigation.instant
+    - search.suggest
+    - content.code.copy
+    - content.action.edit
+  palette:
+    - media: "(prefers-color-scheme)"
+      primary: custom
+      toggle:
+        icon: material/brightness-auto
+        name: Switch to light mode
+    - media: "(prefers-color-scheme: light)"
+      primary: custom
+      scheme: default
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      primary: custom
+      scheme: slate
+      toggle:
+        icon: material/brightness-4
+        name: Switch to system preference
+markdown_extensions:
+  - github-callouts
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.magiclink
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - pymdownx.keys
+  - toc:
+      permalink: '#'
+plugins:
+  - search
+hooks:
+  - hooks/shortcodes.py
+  - hooks/remove-must-fail.py
+extra_css:
+  - _assets/stylesheets/niri.css
+strict: true
+validation:
+  nav:
+    omitted_files: warn
+    not_found: warn
+    absolute_links: relative_to_docs
+  links:
+    not_found: warn
+    anchors: warn
+    absolute_links: relative_to_docs
+    unrecognized_links: warn
+not_in_nav: |
+  _Sidebar.md
+  Configuration:-Overview.md
+  README.md
+# ah, wouldn't it be nice if we could autogenerate this with wiki/_Sidebar.md
+nav:
+  - Usage:
+    - Getting Started: Getting-Started.md
+    - Example systemd Setup: Example-systemd-Setup.md
+    - Important Software: Important-Software.md
+    - Workspaces: Workspaces.md
+    - Floating Windows: Floating-Windows.md
+    - Tabs: Tabs.md
+    - Overview: Overview.md
+    - Screencasting: Screencasting.md
+    - Layer‐Shell Components: Layer‐Shell-Components.md
+    - IPC, niri msg: IPC.md
+    - Application-Specific Issues: Application-Issues.md
+    - Nvidia: Nvidia.md
+    - Xwayland: Xwayland.md
+    - Gestures: Gestures.md
+    - Fullscreen and Maximize: Fullscreen-and-Maximize.md
+    - Window Effects: Window-Effects.md
+    - Packaging niri: Packaging-niri.md
+    - Integrating niri: Integrating-niri.md
+    - Security Model: Security-Model.md
+    - Accessibility: Accessibility.md
+    - Name and Logo: Name-and-Logo.md
+    - FAQ: FAQ.md
+  - Configuration:
+    - Introduction: Configuration:-Introduction.md
+    - Input: Configuration:-Input.md
+    - Outputs: Configuration:-Outputs.md
+    - Key Bindings: Configuration:-Key-Bindings.md
+    - Switch Events: Configuration:-Switch-Events.md
+    - Layout: Configuration:-Layout.md
+    - Named Workspaces: Configuration:-Named-Workspaces.md
+    - Miscellaneous: Configuration:-Miscellaneous.md
+    - Window Rules: Configuration:-Window-Rules.md
+    - Layer Rules: Configuration:-Layer-Rules.md
+    - Animations: Configuration:-Animations.md
+    - Gestures: Configuration:-Gestures.md
+    - Recent Windows: Configuration:-Recent-Windows.md
+    - Debug Options: Configuration:-Debug-Options.md
+    - Include: Configuration:-Include.md
+  - Development:
+    - Design Principles: Development:-Design-Principles.md
+    - Developing niri: Development:-Developing-niri.md
+    - Documenting niri: Development:-Documenting-niri.md
+    - Releasing niri: Development:-Releasing-niri.md
+    - Fractional Layout: Development:-Fractional-Layout.md
+    - Redraw Loop: Development:-Redraw-Loop.md
+    - Animation Timing: Development:-Animation-Timing.md

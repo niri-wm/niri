@@ -1,0 +1,11 @@
+---
+source: src/tests/window_opening.rs
+description: "want fullscreen: AU\nconfig:\nwindow-rule {\n    open-maximized true\n    default-column-width { proportion 0.25; }\n    default-window-height { proportion 0.5; }\n}"
+expression: snapshot
+---
+initial configure:
+size: 1248 × 336, bounds: 1248 × 688, states: []
+
+post-map configures:
+size: 1248 × 336, bounds: 1248 × 688, states: []
+size: 1248 × 336, bounds: 1248 × 688, states: [Activated]

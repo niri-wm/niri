@@ -1,0 +1,15 @@
+---
+source: src/tests/window_opening.rs
+description: "want fullscreen: AN\nwant maximized: AU\nconfig:\nwindow-rule {\n    open-fullscreen false\n    open-maximized-to-edges false\n}"
+expression: snapshot
+---
+initial configure:
+size: 616 × 688, bounds: 1248 × 688, states: []
+
+post-map configures:
+size: 616 × 688, bounds: 1248 × 688, states: []
+size: 1280 × 720, bounds: 1248 × 688, states: [Fullscreen]
+size: 1280 × 720, bounds: 1248 × 688, states: [Fullscreen, Activated]
+
+unfullscreen configure:
+size: 616 × 688, bounds: 1248 × 688, states: [Activated]

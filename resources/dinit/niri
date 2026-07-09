@@ -1,0 +1,7 @@
+type               = process
+command            = niri --session
+restart            = false
+working-dir        = $HOME
+ready-notification = pipevar:NOTIFY_FD
+logfile            = $HOME/.local/share/niri/niri.log
+depends-on:        dbus

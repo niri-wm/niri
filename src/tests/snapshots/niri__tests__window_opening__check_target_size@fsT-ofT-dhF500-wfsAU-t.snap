@@ -1,0 +1,11 @@
+---
+source: src/tests/window_opening.rs
+description: "want fullscreen: AU\nconfig:\nwindow-rule {\n    open-fullscreen true\n    open-floating true\n    default-window-height { fixed 500; }\n    default-column-display \"tabbed\"\n}\n\nlayout {\n    tab-indicator {\n        place-within-column\n    }\n}"
+expression: snapshot
+---
+initial configure:
+size: 1280 × 720, bounds: 1280 × 720, states: [Fullscreen]
+
+post-map configures:
+size: 0 × 500, bounds: 1280 × 720, states: []
+size: 0 × 0, bounds: 1280 × 720, states: [Activated]

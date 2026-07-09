@@ -1,0 +1,11 @@
+---
+source: src/tests/window_opening.rs
+description: "want fullscreen: AU\nconfig:\nwindow-rule {\n    open-fullscreen false\n    open-floating true\n    default-column-width { fixed 1000; }\n    border { on; }\n}"
+expression: snapshot
+---
+initial configure:
+size: 1000 × 0, bounds: 1272 × 712, states: []
+
+post-map configures:
+size: 1000 × 0, bounds: 1272 × 712, states: []
+size: 1000 × 1, bounds: 1272 × 712, states: [Activated]

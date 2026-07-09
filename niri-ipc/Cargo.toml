@@ -1,0 +1,22 @@
+[package]
+name = "niri-ipc"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+repository.workspace = true
+
+description = "Types and helpers for interfacing with the niri Wayland compositor."
+keywords = ["wayland"]
+categories = ["api-bindings", "os"]
+readme = "README.md"
+
+[dependencies]
+clap = { workspace = true, optional = true }
+schemars = { version = "1.2.1", optional = true }
+serde.workspace = true
+serde_json.workspace = true
+
+[features]
+clap = ["dep:clap"]
+json-schema = ["dep:schemars"]

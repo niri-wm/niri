@@ -1,0 +1,11 @@
+---
+source: src/tests/window_opening.rs
+description: "want fullscreen: AU\nconfig:\nwindow-rule {\n    open-fullscreen true\n    open-floating true\n    default-column-width {  }\n    default-window-height {  }\n}"
+expression: snapshot
+---
+initial configure:
+size: 1280 × 720, bounds: 1280 × 720, states: [Fullscreen]
+
+post-map configures:
+size: 0 × 0, bounds: 1280 × 720, states: []
+size: 0 × 0, bounds: 1280 × 720, states: [Activated]

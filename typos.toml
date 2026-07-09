@@ -1,0 +1,10 @@
+[default]
+extend-ignore-re = [
+    "systemd-localed",
+]
+
+[default.extend-identifiers]
+WRONLY = "WRONLY"
+
+[default.extend-words]
+datas = "datas"

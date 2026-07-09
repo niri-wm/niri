@@ -1,0 +1,13 @@
+---
+source: src/tests/window_opening.rs
+description: "want fullscreen: BU\nconfig:\nwindow-rule {\n    open-fullscreen true\n    open-maximized true\n    default-column-width { fixed 1000; }\n    default-column-display \"tabbed\"\n}\n\nlayout {\n    tab-indicator {\n        place-within-column\n    }\n}"
+expression: snapshot
+---
+initial configure:
+size: 1280 × 720, bounds: 1239 × 688, states: [Fullscreen]
+
+post-map configures:
+size: 1280 × 720, bounds: 1239 × 688, states: [Fullscreen, Activated]
+
+unfullscreen configure:
+size: 1239 × 688, bounds: 1239 × 688, states: [Activated]
