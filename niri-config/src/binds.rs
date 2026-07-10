@@ -362,8 +362,8 @@ pub enum Action {
     ClearDynamicCastTarget,
     #[knuffel(skip)]
     StopCast(u64),
-    ToggleOverview,
-    OpenOverview,
+    ToggleOverview(#[knuffel(property(name = "all-outputs"), default = true)] bool),
+    OpenOverview(#[knuffel(property(name = "all-outputs"), default = true)] bool),
     CloseOverview,
     #[knuffel(skip)]
     ToggleWindowUrgent(u64),
@@ -697,8 +697,8 @@ impl From<niri_ipc::Action> for Action {
             }
             niri_ipc::Action::ClearDynamicCastTarget {} => Self::ClearDynamicCastTarget,
             niri_ipc::Action::StopCast { session_id } => Self::StopCast(session_id),
-            niri_ipc::Action::ToggleOverview {} => Self::ToggleOverview,
-            niri_ipc::Action::OpenOverview {} => Self::OpenOverview,
+            niri_ipc::Action::ToggleOverview { all_outputs } => Self::ToggleOverview(all_outputs),
+            niri_ipc::Action::OpenOverview { all_outputs } => Self::OpenOverview(all_outputs),
             niri_ipc::Action::CloseOverview {} => Self::CloseOverview,
             niri_ipc::Action::ToggleWindowUrgent { id } => Self::ToggleWindowUrgent(id),
             niri_ipc::Action::SetWindowUrgent { id } => Self::SetWindowUrgent(id),

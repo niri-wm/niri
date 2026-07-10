@@ -648,6 +648,23 @@ mod tests {
         assert_eq!(config.input.keyboard.repeat_rate, 25);
     }
 
+    #[test]
+    fn overview_action_scope() {
+        let config = Config::parse_mem(
+            "binds { Mod+O { toggle-overview all-outputs=false; }; Mod+Shift+O { toggle-overview; }; }",
+        )
+        .unwrap();
+
+        assert_eq!(
+            config.binds.0[0].action,
+            binds::Action::ToggleOverview(false)
+        );
+        assert_eq!(
+            config.binds.0[1].action,
+            binds::Action::ToggleOverview(true)
+        );
+    }
+
     #[track_caller]
     fn do_parse(text: &str) -> Config {
         Config::parse_mem(text)
