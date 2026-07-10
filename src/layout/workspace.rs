@@ -2063,7 +2063,33 @@ impl<W: LayoutElement> Workspace<W> {
 }
 
 pub(super) fn compute_working_area(output: &Output) -> Rectangle<f64, Logical> {
-    layer_map_for_output(output).non_exclusive_zone().to_f64()
+    let mut working_area = layer_map_for_output(output).non_exclusive_zone().to_f64();
+
+    // Smithay's `non_exclusive_zone` returns an integer amount of logical pixels, so it can miss
+    // sub-logical-pixel slivers at the boundary. If our working area is within 1 logical pixel of
+    // the output edge (which implies there's no layer surface reserving space there) we snap to
+    // it, so that we don't have unusable space.
+    let output = Rectangle::from_size(output_size(output));
+    let (l, t) = (output.loc.x, output.loc.y);
+    let (r, b) = (output.loc.x + output.size.w, output.loc.y + output.size.h);
+    let (wk_r, wk_b) = (working_area.loc.x + working_area.size.w, working_area.loc.y + working_area.size.h);
+
+    if working_area.loc.x - l < 1. {
+        working_area.size.w += working_area.loc.x - l;
+        working_area.loc.x = l;
+    }
+    if working_area.loc.y - t < 1. {
+        working_area.size.h += working_area.loc.y - t;
+        working_area.loc.y = t;
+    }
+    if r - wk_r < 1. {
+        working_area.size.w = r - working_area.loc.x;
+    }
+    if b - wk_b < 1. {
+        working_area.size.h = b - working_area.loc.y;
+    }
+
+    working_area
 }
 
 fn compute_workspace_shadow_config(
