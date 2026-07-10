@@ -2,22 +2,12 @@
 {
   description = "Niri: A scrollable-tiling Wayland compositor.";
 
-  inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
-
-    # NOTE: This is not necessary for end users
-    # You can omit it with `inputs.rust-overlay.follows = ""`
-    rust-overlay = {
-      url = "github:oxalica/rust-overlay";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-  };
+  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
 
   outputs =
     {
       self,
       nixpkgs,
-      rust-overlay,
     }:
     let
       revision = self.shortRev or self.dirtyShortRev or "unknown";
@@ -139,8 +129,8 @@
             '';
 
           env = {
-            # Force linking with libEGL and libwayland-client
-            # so they can be discovered by `dlopen()`
+            # Force linking with libEGL and libwayland-client so they end up in RPATH and
+            # can be discovered by `dlopen()`
             RUSTFLAGS = toString (
               map (arg: "-C link-arg=" + arg) [
                 "-Wl,--push-state,--no-as-needed"
@@ -182,33 +172,20 @@
         system:
         let
           pkgs = nixpkgsFor.${system};
-          rust-bin = rust-overlay.lib.mkRustBin { } pkgs;
+          rustfmt' = pkgs.rustfmt.override { asNightly = true; };
           inherit (self.packages.${system}) niri;
         in
         {
           default = pkgs.mkShell {
-            packages = [
-              # We don't use the toolchain from nixpkgs
-              # because we prefer a nightly toolchain
-              # and we *require* a nightly rustfmt
-              (rust-bin.selectLatestNightlyWith (
-                toolchain:
-                toolchain.default.override {
-                  extensions = [
-                    # includes already:
-                    # rustc
-                    # cargo
-                    # rust-std
-                    # rust-docs
-                    # rustfmt-preview
-                    # clippy-preview
-                    "rust-analyzer"
-                    "rust-src"
-                  ];
-                }
-              ))
-              pkgs.cargo-insta
-            ];
+            packages = builtins.attrValues {
+              inherit (pkgs)
+                rustc
+                cargo
+                clippy
+                cargo-insta
+                ;
+              inherit rustfmt';
+            };
 
             nativeBuildInputs = [
               pkgs.rustPlatform.bindgenHook
@@ -225,8 +202,8 @@
               # It is required for `dlopen()` to work on some libraries; see the comment
               # in the package expression
               #
-              # This should only be set with `CARGO_BUILD_RUSTFLAGS="$CARGO_BUILD_RUSTFLAGS -C your-flags"`
-              CARGO_BUILD_RUSTFLAGS = niri.RUSTFLAGS;
+              # This should only be set with `RUSTFLAGS="$RUSTFLAGS -C your-flags"`
+              RUSTFLAGS = niri.RUSTFLAGS;
             };
           };
         }
