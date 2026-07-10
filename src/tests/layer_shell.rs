@@ -397,7 +397,7 @@ fn focus_on_type_in_overview() {
     let id = f.add_client();
 
     // Open the overview.
-    f.niri().layout.toggle_overview();
+    f.niri().layout.toggle_overview(true);
 
     // Spawn a None->OnDemand layer surface (no automatic keyboard focus).
     let layer = f.client(id).create_layer(None, Layer::Overlay, "");

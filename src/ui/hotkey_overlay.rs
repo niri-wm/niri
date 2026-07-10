@@ -289,7 +289,7 @@ fn collect_actions(config: &Config) -> Vec<&Action> {
         &Action::ConsumeOrExpelWindowRight,
         &Action::ToggleWindowFloating,
         &Action::SwitchFocusBetweenFloatingAndTiling,
-        &Action::ToggleOverview,
+        &Action::ToggleOverview(true),
     ]);
 
     // Screenshot is not as important, can omit if not bound.
@@ -518,7 +518,7 @@ fn action_name(action: &Action) -> String {
         Action::SwitchFocusBetweenFloatingAndTiling => {
             String::from("Switch Focus Between Floating and Tiling")
         }
-        Action::ToggleOverview => String::from("Open the Overview"),
+        Action::ToggleOverview(_) => String::from("Open the Overview"),
         Action::Screenshot(_, _) => String::from("Take a Screenshot"),
         Action::Spawn(args) => format!(
             "Spawn <span face='monospace' bgcolor='#000000'>{}</span>",
@@ -760,7 +760,7 @@ mod tests {
                         release { toggle-overview; }
                     }
                 }"#,
-                Action::ToggleOverview,
+                Action::ToggleOverview(true),
             ),
             @" Super : Open the Overview"
         );
@@ -774,7 +774,7 @@ mod tests {
                         release { toggle-overview; }
                     }
                 }"#,
-                Action::ToggleOverview,
+                Action::ToggleOverview(true),
             ),
             @" Super + Shift + Q : Open the Overview"
         );
@@ -922,7 +922,7 @@ mod tests {
         )
         .unwrap();
 
-        assert!(collect_actions(&config).contains(&&Action::ToggleOverview));
+        assert!(collect_actions(&config).contains(&&Action::ToggleOverview(true)));
 
         // A release bind with a custom title adds its action to the list.
         let config = Config::parse_mem(
