@@ -1695,13 +1695,11 @@ unsafe fn mark_buffer_after_render(pw_buffer: NonNull<pw_buffer>, sequence: &mut
             // However, OBS checks for size != 0 as a workaround for old compositor versions,
             // so we set it to 1.
             (*chunk).size = 1;
-            // Clear the corrupted flag we may have set before.
+            // Clear the corrupted flag that return_unused_buffer() may have set.
             (*chunk).flags = SPA_CHUNK_FLAG_NONE as i32;
         }
         SharingBuf::SHM(shmbuf) => {
-            (*chunk).size = 1;
-            (*chunk).stride = shmbuf.layout.stride;
-            (*chunk).offset = 0;
+            mark_shm_chunk_rendered(&mut *chunk, shmbuf.layout);
         }
     }
 
@@ -1713,6 +1711,13 @@ unsafe fn mark_buffer_after_render(pw_buffer: NonNull<pw_buffer>, sequence: &mut
         (*header).flags = 0;
         (*header).seq = *sequence;
     }
+}
+
+fn mark_shm_chunk_rendered(chunk: &mut spa_chunk, layout: ShmLayout) {
+    chunk.offset = 0;
+    chunk.size = layout.size;
+    chunk.stride = layout.stride;
+    chunk.flags = SPA_CHUNK_FLAG_NONE as i32;
 }
 
 unsafe fn find_meta_header(buffer: *mut spa_buffer) -> Option<NonNull<spa_meta_header>> {
@@ -1940,5 +1945,23 @@ mod tests {
 
         assert!(ShmLayout::new(Size::from((536_870_912, 1))).is_err());
         assert!(ShmLayout::new(Size::from((500_000_000, 3))).is_err());
+    }
+
+    #[test]
+    fn rendered_shm_chunk_covers_the_full_buffer() {
+        let layout = ShmLayout::new(Size::from((3840, 2160))).unwrap();
+        let mut chunk = spa_chunk {
+            offset: 42,
+            size: 1,
+            stride: -1,
+            flags: SPA_CHUNK_FLAG_CORRUPTED as i32,
+        };
+
+        mark_shm_chunk_rendered(&mut chunk, layout);
+
+        assert_eq!(chunk.offset, 0);
+        assert_eq!(chunk.size, 33_177_600);
+        assert_eq!(chunk.stride, 15360);
+        assert_eq!(chunk.flags, SPA_CHUNK_FLAG_NONE as i32);
     }
 }
