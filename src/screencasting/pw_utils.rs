@@ -1255,7 +1255,7 @@ fn make_video_params(
     let format = if alpha {
         VideoFormat::BGRA
     } else {
-        VideoFormat::BGRx
+        VideoFormat::BGRA
     };
 
     let fourcc = if alpha {
