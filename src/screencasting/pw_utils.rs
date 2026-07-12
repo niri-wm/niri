@@ -226,8 +226,7 @@ fn make_video_params(
     let modifier_property = if modifiers.len() == 0 {
         None
     } else {
-        let dont_fixate = if (!fixated) && modifiers.len() == 1 && modifiers[0] == Modifier::Invalid
-        {
+        let dont_fixate = if modifier_choice_needs_fixation(fixated, modifiers) {
             PropertyFlags::DONT_FIXATE
         } else {
             PropertyFlags::empty()
@@ -299,6 +298,10 @@ fn make_video_params(
                     ]
                         .concat(),
     }
+}
+
+fn modifier_choice_needs_fixation(fixated: bool, modifiers: &[Modifier]) -> bool {
+    !fixated && (modifiers.len() > 1 || modifiers == [Modifier::Invalid])
 }
 
 /// this function return an extra Vec<u8> to avoid extra allocation when building Pod
@@ -1883,4 +1886,26 @@ fn clear_shmbuf(shmbuf: &Shmbuf) -> anyhow::Result<()> {
         let _ = rustix::mm::munmap(buf, shmbuf.size).unwrap();
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn modifier_choice_is_fixated_when_negotiation_requires_it() {
+        assert!(!modifier_choice_needs_fixation(false, &[]));
+        assert!(!modifier_choice_needs_fixation(false, &[Modifier::Linear]));
+        assert!(modifier_choice_needs_fixation(false, &[Modifier::Invalid]));
+        assert!(modifier_choice_needs_fixation(
+            false,
+            &[Modifier::Linear, Modifier::Invalid]
+        ));
+
+        assert!(!modifier_choice_needs_fixation(true, &[Modifier::Invalid]));
+        assert!(!modifier_choice_needs_fixation(
+            true,
+            &[Modifier::Linear, Modifier::Invalid]
+        ));
+    }
 }
