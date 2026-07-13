@@ -393,6 +393,17 @@ binds {
 }
 ```
 
+<sup>Since: next release</sup> You can keep the screenshot out of the clipboard with the `write-to-clipboard=false` property:
+
+```kdl
+binds {
+    Ctrl+Print { screenshot-screen write-to-clipboard=false; }
+    Alt+Print { screenshot-window write-to-clipboard=false; }
+}
+```
+
+This is also useful for scripted captures (`niri msg action screenshot-window --id … --path … --write-to-clipboard false`), for example generating window thumbnails without clobbering the clipboard.
+
 #### `toggle-keyboard-shortcuts-inhibit`
 
 <sup>Since: 25.02</sup>
