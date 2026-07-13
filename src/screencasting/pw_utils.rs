@@ -226,8 +226,7 @@ fn make_video_params(
     let modifier_property = if modifiers.len() == 0 {
         None
     } else {
-        let dont_fixate = if (!fixated) && modifiers.len() == 1 && modifiers[0] == Modifier::Invalid
-        {
+        let dont_fixate = if modifier_choice_needs_fixation(fixated, modifiers) {
             PropertyFlags::DONT_FIXATE
         } else {
             PropertyFlags::empty()
@@ -299,6 +298,10 @@ fn make_video_params(
                     ]
                         .concat(),
     }
+}
+
+fn modifier_choice_needs_fixation(fixated: bool, modifiers: &[Modifier]) -> bool {
+    !fixated && (modifiers.len() > 1 || modifiers == [Modifier::Invalid])
 }
 
 /// this function return an extra Vec<u8> to avoid extra allocation when building Pod
@@ -958,7 +961,7 @@ impl PipeWire {
                                         assert!((*spa_data).type_ & (1 << DataType::MemFd.as_raw()) > 0);
 
                                         (*spa_data).type_ = DataType::MemFd.as_raw();
-                                        (*spa_data).maxsize = shmbuf.size as u32;
+                                        (*spa_data).maxsize = shmbuf.layout.size;
                                         (*spa_data).fd = shmbuf.fd.as_raw_fd() as i64;
                                         (*spa_data).flags = SPA_DATA_FLAG_READWRITE;
 
@@ -1600,8 +1603,34 @@ fn allocate_dmabuf(
 #[derive(Debug, Clone)]
 pub struct Shmbuf {
     fd: Rc<rustix::fd::OwnedFd>,
-    stride: usize,
-    size: usize,
+    layout: ShmLayout,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ShmLayout {
+    stride: i32,
+    size: u32,
+}
+
+impl ShmLayout {
+    fn new(size: Size<u32, Physical>) -> anyhow::Result<Self> {
+        let stride = size
+            .w
+            .checked_mul(SHM_BYTES_PER_PIXEL as u32)
+            .context("SHM stride overflows u32")?;
+        let buffer_size = stride
+            .checked_mul(size.h)
+            .context("SHM buffer size overflows u32")?;
+
+        Ok(Self {
+            stride: stride.try_into().context("SHM stride exceeds i32")?,
+            size: buffer_size,
+        })
+    }
+
+    fn size_usize(self) -> usize {
+        self.size as usize
+    }
 }
 
 enum SharingBuf<'a> {
@@ -1610,16 +1639,14 @@ enum SharingBuf<'a> {
 }
 
 fn allocate_shmbuf(size: Size<u32, Physical>) -> anyhow::Result<Shmbuf> {
-    let (w, h) = (size.w as usize, size.h as usize);
-    let stride = w * SHM_BYTES_PER_PIXEL;
-    let size = stride * h;
+    let layout = ShmLayout::new(size)?;
     let fd = rustix::fs::memfd_create(
         "shm_buffer",
         rustix::fs::MemfdFlags::CLOEXEC
         | rustix::fs::MemfdFlags::ALLOW_SEALING,
     )
         .context("error creating memfd")?;
-    let _ = rustix::fs::ftruncate(&fd, size.try_into().unwrap())
+    let _ = rustix::fs::ftruncate(&fd, layout.size.into())
         .context("error set size of the fd")?;
     let _ = rustix::fs::fcntl_add_seals(
         &fd,
@@ -1630,8 +1657,7 @@ fn allocate_shmbuf(size: Size<u32, Physical>) -> anyhow::Result<Shmbuf> {
         .context("error sealing the fd")?;
     Ok(Shmbuf {
         fd: fd.into(),
-        size,
-        stride,
+        layout,
     })
 }
 
@@ -1669,13 +1695,11 @@ unsafe fn mark_buffer_after_render(pw_buffer: NonNull<pw_buffer>, sequence: &mut
             // However, OBS checks for size != 0 as a workaround for old compositor versions,
             // so we set it to 1.
             (*chunk).size = 1;
-            // Clear the corrupted flag we may have set before.
+            // Clear the corrupted flag that return_unused_buffer() may have set.
             (*chunk).flags = SPA_CHUNK_FLAG_NONE as i32;
         }
         SharingBuf::SHM(shmbuf) => {
-            (*chunk).size = 1;
-            (*chunk).stride = shmbuf.stride as i32;
-            (*chunk).offset = 0;
+            mark_shm_chunk_rendered(&mut *chunk, shmbuf.layout);
         }
     }
 
@@ -1687,6 +1711,13 @@ unsafe fn mark_buffer_after_render(pw_buffer: NonNull<pw_buffer>, sequence: &mut
         (*header).flags = 0;
         (*header).seq = *sequence;
     }
+}
+
+fn mark_shm_chunk_rendered(chunk: &mut spa_chunk, layout: ShmLayout) {
+    chunk.offset = 0;
+    chunk.size = layout.size;
+    chunk.stride = layout.stride;
+    chunk.flags = SPA_CHUNK_FLAG_NONE as i32;
 }
 
 unsafe fn find_meta_header(buffer: *mut spa_buffer) -> Option<NonNull<spa_meta_header>> {
@@ -1704,7 +1735,7 @@ fn render_to_shmbuf(
     elements: impl Iterator<Item = impl RenderElement<GlesRenderer>>,
 ) -> anyhow::Result<()> {
     let expected_size = size.w as usize * size.h as usize * SHM_BYTES_PER_PIXEL as usize;
-    ensure!(buffer.size == expected_size, "invalid buffer size");
+    ensure!(buffer.layout.size_usize() == expected_size, "invalid buffer size");
     let mapping = render_and_download(renderer, size, scale, transform, fourcc, elements)?;
     let bytes = renderer
         .map_texture(&mapping)
@@ -1713,14 +1744,14 @@ fn render_to_shmbuf(
     unsafe {
         let buf = rustix::mm::mmap(
             std::ptr::null_mut(),
-            buffer.size as usize,
+            buffer.layout.size_usize(),
             rustix::mm::ProtFlags::READ | rustix::mm::ProtFlags::WRITE,
             rustix::mm::MapFlags::SHARED,
             buffer.fd.clone(),
             0,
         )?;
-        ptr::copy_nonoverlapping(bytes.as_ptr(), buf.cast(), buffer.size);
-        let _ = rustix::mm::munmap(buf, buffer.size).unwrap();
+        ptr::copy_nonoverlapping(bytes.as_ptr(), buf.cast(), buffer.layout.size_usize());
+        let _ = rustix::mm::munmap(buf, buffer.layout.size_usize()).unwrap();
     }
     Ok(())
 }
@@ -1869,18 +1900,68 @@ unsafe fn add_cursor_metadata(
 }
 
 fn clear_shmbuf(shmbuf: &Shmbuf) -> anyhow::Result<()> {
-    let bytes: Vec<u8> = vec![0u8; shmbuf.size];            
+    let bytes: Vec<u8> = vec![0u8; shmbuf.layout.size_usize()];
     unsafe {
         let buf = rustix::mm::mmap(
             std::ptr::null_mut(),
-            shmbuf.size as usize,
+            shmbuf.layout.size_usize(),
             rustix::mm::ProtFlags::READ | rustix::mm::ProtFlags::WRITE,
             rustix::mm::MapFlags::SHARED,
             shmbuf.fd.clone(),
             0,
         )?;
-        ptr::copy_nonoverlapping(bytes.as_ptr(), buf.cast(), shmbuf.size);
-        let _ = rustix::mm::munmap(buf, shmbuf.size).unwrap();
+        ptr::copy_nonoverlapping(bytes.as_ptr(), buf.cast(), shmbuf.layout.size_usize());
+        let _ = rustix::mm::munmap(buf, shmbuf.layout.size_usize()).unwrap();
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn modifier_choice_is_fixated_when_negotiation_requires_it() {
+        assert!(!modifier_choice_needs_fixation(false, &[]));
+        assert!(!modifier_choice_needs_fixation(false, &[Modifier::Linear]));
+        assert!(modifier_choice_needs_fixation(false, &[Modifier::Invalid]));
+        assert!(modifier_choice_needs_fixation(
+            false,
+            &[Modifier::Linear, Modifier::Invalid]
+        ));
+
+        assert!(!modifier_choice_needs_fixation(true, &[Modifier::Invalid]));
+        assert!(!modifier_choice_needs_fixation(
+            true,
+            &[Modifier::Linear, Modifier::Invalid]
+        ));
+    }
+
+    #[test]
+    fn shm_layout_uses_spa_representable_dimensions() {
+        let layout = ShmLayout::new(Size::from((3840, 2160))).unwrap();
+        assert_eq!(layout.stride, 15360);
+        assert_eq!(layout.size, 33_177_600);
+
+        assert!(ShmLayout::new(Size::from((536_870_912, 1))).is_err());
+        assert!(ShmLayout::new(Size::from((500_000_000, 3))).is_err());
+    }
+
+    #[test]
+    fn rendered_shm_chunk_covers_the_full_buffer() {
+        let layout = ShmLayout::new(Size::from((3840, 2160))).unwrap();
+        let mut chunk = spa_chunk {
+            offset: 42,
+            size: 1,
+            stride: -1,
+            flags: SPA_CHUNK_FLAG_CORRUPTED as i32,
+        };
+
+        mark_shm_chunk_rendered(&mut chunk, layout);
+
+        assert_eq!(chunk.offset, 0);
+        assert_eq!(chunk.size, 33_177_600);
+        assert_eq!(chunk.stride, 15360);
+        assert_eq!(chunk.flags, SPA_CHUNK_FLAG_NONE as i32);
+    }
 }
