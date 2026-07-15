@@ -1,7 +1,7 @@
 use std::any::Any;
 use std::collections::hash_map::Entry;
 use std::collections::HashSet;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use calloop::timer::{TimeoutAction, Timer};
 use input::event::gesture::GestureEventCoordinates as _;
@@ -532,6 +532,19 @@ impl State {
 
                 if let Some(Keysym::space) = raw {
                     this.niri.screenshot_ui.set_space_down(pressed);
+                }
+
+                if pressed && modified.raw() == Keysym::XF86_PowerOff.raw() {
+                    if this
+                        .niri
+                        .ignore_power_key_until
+                        .is_some_and(|until| Instant::now() < until)
+                    {
+                        this.niri.suppressed_keys.insert(key_code);
+                        return FilterResult::Intercept(None);
+                    }
+
+                    this.niri.ignore_power_key_until = None;
                 }
 
                 let res = {

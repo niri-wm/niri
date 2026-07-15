@@ -191,6 +191,7 @@ const CLEAR_COLOR_LOCKED: [f32; 4] = [0.3, 0.1, 0.1, 1.];
 // second, so with the worst timing the maximum interval between two frame callbacks for a surface
 // should be ~1.995 seconds.
 const FRAME_CALLBACK_THROTTLE: Option<Duration> = Some(Duration::from_millis(995));
+const POST_RESUME_POWER_KEY_IGNORE: Duration = Duration::from_secs(2);
 
 pub struct Niri {
     pub config: Rc<RefCell<Config>>,
@@ -266,6 +267,9 @@ pub struct Niri {
     /// Libinput guarantees that the lid switch starts in open state, and if it was closed during
     /// startup, libinput will immediately send a closed event.
     pub is_lid_closed: bool,
+
+    /// Until this instant, ignore power-key presses that may be left over from waking up.
+    pub ignore_power_key_until: Option<Instant>,
 
     pub devices: HashSet<input::Device>,
     pub tablets: HashMap<input::Device, TabletData>,
@@ -2206,10 +2210,20 @@ impl State {
 
     #[cfg(feature = "dbus")]
     pub fn on_login1_msg(&mut self, msg: Login1ToNiri) {
-        let Login1ToNiri::LidClosedChanged(is_closed) = msg;
-
-        trace!("login1 lid {}", if is_closed { "closed" } else { "opened" });
-        self.set_lid_closed(is_closed);
+        match msg {
+            Login1ToNiri::LidClosedChanged(is_closed) => {
+                trace!("login1 lid {}", if is_closed { "closed" } else { "opened" });
+                self.set_lid_closed(is_closed);
+            }
+            Login1ToNiri::PrepareForSleep(true) => {
+                trace!("login1 preparing for sleep");
+            }
+            Login1ToNiri::PrepareForSleep(false) => {
+                trace!("login1 resumed from sleep");
+                self.niri.ignore_power_key_until =
+                    Some(Instant::now() + POST_RESUME_POWER_KEY_IGNORE);
+            }
+        }
     }
 
     #[cfg(feature = "dbus")]
@@ -2522,6 +2536,7 @@ impl Niri {
             blocker_cleared_rx,
             monitors_active: true,
             is_lid_closed: false,
+            ignore_power_key_until: None,
 
             devices: HashSet::new(),
             tablets: HashMap::new(),

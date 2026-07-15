@@ -4,6 +4,17 @@ use zbus::names::InterfaceName;
 
 pub enum Login1ToNiri {
     LidClosedChanged(bool),
+    PrepareForSleep(bool),
+}
+
+#[zbus::proxy(
+    interface = "org.freedesktop.login1.Manager",
+    default_service = "org.freedesktop.login1",
+    default_path = "/org/freedesktop/login1"
+)]
+trait Login1Manager {
+    #[zbus(signal)]
+    fn prepare_for_sleep(start: bool) -> zbus::Result<()>;
 }
 
 pub fn start(
@@ -35,6 +46,24 @@ pub fn start(
             }
         };
 
+        let login1 = Login1ManagerProxy::new(&async_conn).await;
+        let login1 = match login1 {
+            Ok(x) => x,
+            Err(err) => {
+                warn!("error creating login1 manager proxy: {err:?}");
+                return;
+            }
+        };
+
+        let prepare_for_sleep = login1.receive_prepare_for_sleep().await;
+        let mut prepare_for_sleep = match prepare_for_sleep {
+            Ok(x) => x,
+            Err(err) => {
+                warn!("error subscribing to PrepareForSleep: {err:?}");
+                return;
+            }
+        };
+
         let props = proxy
             .get_all(InterfaceName::try_from("org.freedesktop.login1.Manager").unwrap())
             .await;
@@ -58,40 +87,62 @@ pub fn start(
             return;
         };
 
-        while let Some(signal) = props_changed.next().await {
-            let args = match signal.args() {
-                Ok(args) => args,
-                Err(err) => {
-                    warn!("error parsing PropertiesChanged args: {err:?}");
-                    return;
+        loop {
+            futures_util::select! {
+                signal = props_changed.next() => {
+                    let Some(signal) = signal else {
+                        return;
+                    };
+
+                    let args = match signal.args() {
+                        Ok(args) => args,
+                        Err(err) => {
+                            warn!("error parsing PropertiesChanged args: {err:?}");
+                            return;
+                        }
+                    };
+
+                    let mut new_lid_closed = lid_closed;
+                    let mut changed = false;
+                    for (name, value) in args.changed_properties() {
+                        trace!("changed property: {name} => {value:?}");
+                        if *name != "LidClosed" {
+                            continue;
+                        }
+
+                        new_lid_closed = bool::try_from(value).unwrap_or(new_lid_closed);
+                        changed = true;
+                    }
+
+                    if !changed || new_lid_closed == lid_closed {
+                        continue;
+                    }
+
+                    lid_closed = new_lid_closed;
+                    if let Err(err) = to_niri.send(Login1ToNiri::LidClosedChanged(lid_closed)) {
+                        warn!("error sending message to niri: {err:?}");
+                        return;
+                    };
                 }
-            };
+                signal = prepare_for_sleep.next() => {
+                    let Some(signal) = signal else {
+                        return;
+                    };
 
-            let mut new_lid_closed = lid_closed;
-            let mut changed = false;
-            for (name, value) in args.changed_properties() {
-                trace!("changed property: {name} => {value:?}");
-                if *name != "LidClosed" {
-                    continue;
+                    let args = match signal.args() {
+                        Ok(args) => args,
+                        Err(err) => {
+                            warn!("error parsing PrepareForSleep args: {err:?}");
+                            return;
+                        }
+                    };
+
+                    if let Err(err) = to_niri.send(Login1ToNiri::PrepareForSleep(args.start)) {
+                        warn!("error sending message to niri: {err:?}");
+                        return;
+                    };
                 }
-
-                new_lid_closed = bool::try_from(value).unwrap_or(new_lid_closed);
-                changed = true;
             }
-
-            if !changed {
-                continue;
-            }
-
-            if new_lid_closed == lid_closed {
-                continue;
-            }
-
-            lid_closed = new_lid_closed;
-            if let Err(err) = to_niri.send(Login1ToNiri::LidClosedChanged(lid_closed)) {
-                warn!("error sending message to niri: {err:?}");
-                return;
-            };
         }
     };
 
