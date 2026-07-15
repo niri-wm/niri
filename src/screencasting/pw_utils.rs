@@ -14,6 +14,7 @@ use calloop::timer::{TimeoutAction, Timer};
 use calloop::RegistrationToken;
 use pipewire::context::ContextRc;
 use pipewire::core::{CoreRc, PW_ID_CORE};
+use pipewire::loop_::Timeout;
 use pipewire::main_loop::MainLoopRc;
 use pipewire::properties::PropertiesBox;
 use pipewire::spa::buffer::DataType;
@@ -260,7 +261,7 @@ impl PipeWire {
         let token = event_loop
             .insert_source(generic, move |_, wrapper, _| {
                 let _span = tracy_client::span!("pipewire iteration");
-                wrapper.0.loop_().iterate(Duration::ZERO);
+                wrapper.0.loop_().iterate(Timeout::None);
                 Ok(PostAction::Continue)
             })
             .unwrap();
