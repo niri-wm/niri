@@ -16,8 +16,8 @@ use calloop::futures::Scheduler;
 use niri_config::debug::PreviewRender;
 use niri_config::output::MaxBpc;
 use niri_config::{
-    Config, FloatOrInt, Key, Modifiers, OutputName, TrackLayout, WarpMouseToFocusMode,
-    WorkspaceReference, Xkb,
+    Align, Config, Direction, FloatOrInt, Key, Modifiers, OutputName, Position, TrackLayout,
+    WarpMouseToFocusMode, WorkspaceReference, Xkb,
 };
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::input::Keycode;
@@ -1920,10 +1920,12 @@ impl State {
             niri_ipc::OutputAction::Position { position } => {
                 config.position = match position {
                     niri_ipc::PositionToSet::Automatic => None,
-                    niri_ipc::PositionToSet::Specific(position) => Some(niri_config::Position::Fixed {
-                        x: position.x,
-                        y: position.y,
-                    }),
+                    niri_ipc::PositionToSet::Specific(position) => {
+                        Some(niri_config::Position::Fixed {
+                            x: position.x,
+                            y: position.y,
+                        })
+                    }
                 }
             }
             niri_ipc::OutputAction::Vrr { vrr } => {
@@ -2745,63 +2747,23 @@ impl Niri {
             .map(|Data { output, .. }| output.clone())
             .collect();
 
-        for data in outputs.into_iter() {
+        let to_place: Vec<OutputToPlace> = outputs
+            .iter()
+            .map(|d| OutputToPlace {
+                name: d.name.clone(),
+                size: output_size(&d.output).to_i32_round(),
+                config: d.config.clone(),
+            })
+            .collect();
+        let new_positions = resolve_output_positions(&to_place);
+
+        for (data, new_position) in outputs.into_iter().zip(new_positions) {
             let Data {
                 output,
                 name,
                 position,
-                config,
+                ..
             } = data;
-
-            let size = output_size(&output).to_i32_round();
-
-            let new_position = config
-                .and_then(|pos| match pos {
-                    niri_config::Position::Fixed { x, y } => Some(Point::from((x, y))),
-                    niri_config::Position::Relative { .. } => None,
-                })
-                .filter(|pos| {
-                    // Ensure that the requested position does not overlap any existing output.
-                    let target_geom = Rectangle::new(*pos, size);
-
-                    let overlap = self
-                        .global_space
-                        .outputs()
-                        .map(|output| self.global_space.output_geometry(output).unwrap())
-                        .find(|geom| geom.overlaps(target_geom));
-
-                    if let Some(overlap) = overlap {
-                        warn!(
-                            "output {} at x={} y={} sized {}x{} \
-                             overlaps an existing output at x={} y={} sized {}x{}, \
-                             falling back to automatic placement",
-                            name.connector,
-                            pos.x,
-                            pos.y,
-                            size.w,
-                            size.h,
-                            overlap.loc.x,
-                            overlap.loc.y,
-                            overlap.size.w,
-                            overlap.size.h,
-                        );
-
-                        false
-                    } else {
-                        true
-                    }
-                })
-                .unwrap_or_else(|| {
-                    let x = self
-                        .global_space
-                        .outputs()
-                        .map(|output| self.global_space.output_geometry(output).unwrap())
-                        .map(|geom| geom.loc.x + geom.size.w)
-                        .max()
-                        .unwrap_or(0);
-
-                    Point::from((x, 0))
-                });
 
             self.global_space.map_output(&output, new_position);
 
@@ -6542,5 +6504,324 @@ niri_render_elements! {
         Texture = PrimaryGpuTextureRenderElement,
         // Used for the CPU-rendered panels.
         RelocatedMemoryBuffer = RelocateRenderElement<MemoryRenderBufferRenderElement<R>>,
+    }
+}
+
+#[derive(Debug, Clone)]
+struct OutputToPlace {
+    name: OutputName,
+    size: Size<i32, Logical>,
+    config: Option<Position>,
+}
+
+/// Resolves the "absolute" position of every output, returned in the same order.
+///
+/// The caller is expected to pass `outputs` in a stable order (niri sorts by output name);
+/// the resolver needs to process outputs in the same order each time, so the result
+/// is deterministic.
+///
+/// Placement derived in phases, keeping the original behavior for the absolute and automatic
+/// cases and adding relative on top:
+///
+/// 1. Outputs with an absolute [`Position::Fixed`] are placed first. Same as before.
+/// 2. Outputs without explicit configuration are placed automatically. Same as before.
+/// 3. Outputs with a [`Position::Relative`] config are placed in dependency order using repeated
+///    passes: in each pass, any not-yet-placed relative output whose anchor is already placed is
+///    resolved. Repeats until nothing is placed, Thus resolving chains (`A <- B <- C`).
+/// 4. Any relative output that could not be resolved (unknown/missing anchor name, self-reference,
+///    or a cycle) falls back to automatic placement. On every hotplug, such outputs are resolved
+///    if their anchor is present.
+fn resolve_output_positions(outputs: &[OutputToPlace]) -> Vec<Point<i32, Logical>> {
+    let mut result: Vec<Option<Point<i32, Logical>>> = vec![None; outputs.len()];
+    let mut placed: Vec<Rectangle<i32, Logical>> = Vec::new();
+
+    let place = |result: &mut Vec<Option<Point<i32, Logical>>>,
+                 placed: &mut Vec<Rectangle<i32, Logical>>,
+                 index: usize,
+                 size: Size<i32, Logical>,
+                 pos: Point<i32, Logical>| {
+        result[index] = Some(pos);
+        placed.push(Rectangle::new(pos, size));
+    };
+
+    // Phase 1: absolute positions, preserving the far-right fallback on overlap.
+    for (i, output) in outputs.iter().enumerate() {
+        if let Some(Position::Fixed { x, y }) = output.config {
+            let requested = Point::from((x, y));
+            let overlap = placed
+                .iter()
+                .find(|p| p.overlaps(Rectangle::new(requested, output.size)));
+            let pos = if let Some(overlap) = overlap {
+                warn!(
+                    "output {} at x={} y={} sized {}x{} \
+                     overlaps an existing output at x={} y={} sized {}x{}, \
+                     falling back to automatic placement",
+                    output.name.connector,
+                    requested.x,
+                    requested.y,
+                    output.size.w,
+                    output.size.h,
+                    overlap.loc.x,
+                    overlap.loc.y,
+                    overlap.size.w,
+                    overlap.size.h,
+                );
+                auto_position(&placed)
+            } else {
+                requested
+            };
+            place(&mut result, &mut placed, i, output.size, pos);
+        }
+    }
+
+    // Phase 2: unconfigured outputs.
+    for (i, output) in outputs.iter().enumerate() {
+        if output.config.is_none() {
+            let pos = auto_position(&placed);
+            place(&mut result, &mut placed, i, output.size, pos);
+        }
+    }
+
+    // Phase 3: relative outputs.
+    // Probably not the most efficient way to do this, but it's simple and works.
+    // And famous last words: "I doubt someone will ever have 100s of outputs!"
+    loop {
+        let mut resolved_something = false;
+        for (i, output) in outputs.iter().enumerate() {
+            if result[i].is_some() {
+                continue;
+            }
+            let Some(Position::Relative {
+                relative_to,
+                direction,
+                align,
+            }) = &output.config
+            else {
+                continue;
+            };
+
+            let anchor = outputs
+                .iter()
+                .enumerate()
+                .find(|(j, cand)| result[*j].is_some() && cand.name.matches(relative_to));
+            let Some((j, _)) = anchor else {
+                continue;
+            };
+
+            let anchor_rect = Rectangle::new(result[j].unwrap(), outputs[j].size);
+            let requested = resolve_relative(anchor_rect, output.size, *direction, *align);
+            let pos = nudge_out(requested, output.size, *direction, &placed);
+            place(&mut result, &mut placed, i, output.size, pos);
+            resolved_something = true;
+        }
+        if !resolved_something {
+            break;
+        }
+    }
+
+    // Phase 4: unresolved relative outputs fall back to automatic placement.
+    for (i, output) in outputs.iter().enumerate() {
+        if result[i].is_none() {
+            if let Some(Position::Relative { relative_to, .. }) = &output.config {
+                warn!(
+                    "output {} could not be placed relative to `{}` \
+                     (missing, unknown, or cyclic reference), falling back to automatic placement",
+                    output.name.connector, relative_to,
+                );
+            }
+            let pos = auto_position(&placed);
+            place(&mut result, &mut placed, i, output.size, pos);
+        }
+    }
+
+    result.into_iter().map(Option::unwrap).collect()
+}
+
+fn auto_position(placed: &[Rectangle<i32, Logical>]) -> Point<i32, Logical> {
+    let x = placed
+        .iter()
+        .map(|geom| geom.loc.x + geom.size.w)
+        .max()
+        .unwrap_or(0);
+    Point::from((x, 0))
+}
+
+fn resolve_relative(
+    anchor: Rectangle<i32, Logical>,
+    size: Size<i32, Logical>,
+    direction: Direction,
+    align: Align,
+) -> Point<i32, Logical> {
+    let (ox, oy) = (anchor.loc.x, anchor.loc.y);
+    let (ow, oh) = (anchor.size.w, anchor.size.h);
+    let (mw, mh) = (size.w, size.h);
+
+    match direction {
+        // Horizontal neighbors: fixed x, aligned along y.
+        Direction::LeftOf => Point::from((ox - mw, align_along(oy, oh, mh, align))),
+        Direction::RightOf => Point::from((ox + ow, align_along(oy, oh, mh, align))),
+        // Vertical neighbors: fixed y, aligned along x.
+        Direction::Above => Point::from((align_along(ox, ow, mw, align), oy - mh)),
+        Direction::Below => Point::from((align_along(ox, ow, mw, align), oy + oh)),
+    }
+}
+
+fn align_along(anchor_start: i32, anchor_len: i32, our_len: i32, align: Align) -> i32 {
+    match align {
+        Align::Beginning => anchor_start,
+        Align::Center => anchor_start + (anchor_len - our_len) / 2,
+        Align::End => anchor_start + anchor_len - our_len,
+    }
+}
+
+/// Shifts `pos` outward along the direction axis by the minimal amount needed to clear every
+/// already-placed output, without moving any of them. Only true overlaps trigger a shift.
+/// Touching edges are allowed
+fn nudge_out(
+    mut pos: Point<i32, Logical>,
+    size: Size<i32, Logical>,
+    direction: Direction,
+    placed: &[Rectangle<i32, Logical>],
+) -> Point<i32, Logical> {
+    while let Some(obstacle) = placed
+        .iter()
+        .find(|p| p.overlaps(Rectangle::new(pos, size)))
+    {
+        match direction {
+            Direction::LeftOf => pos.x = obstacle.loc.x - size.w,
+            Direction::RightOf => pos.x = obstacle.loc.x + obstacle.size.w,
+            Direction::Above => pos.y = obstacle.loc.y - size.h,
+            Direction::Below => pos.y = obstacle.loc.y + obstacle.size.h,
+        }
+    }
+    pos
+}
+
+#[cfg(test)]
+mod output_positioning_tests {
+    use super::*;
+
+    fn name(connector: &str) -> OutputName {
+        OutputName {
+            connector: connector.to_owned(),
+            make: None,
+            model: None,
+            serial: None,
+        }
+    }
+
+    fn out(connector: &str, size: (i32, i32), config: Option<Position>) -> OutputToPlace {
+        OutputToPlace {
+            name: name(connector),
+            size: Size::from(size),
+            config,
+        }
+    }
+
+    fn relative(to: &str, direction: Direction, align: Align) -> Option<Position> {
+        Some(Position::Relative {
+            relative_to: to.to_owned(),
+            direction,
+            align,
+        })
+    }
+
+    fn resolve(outputs: &[OutputToPlace]) -> Vec<(i32, i32)> {
+        resolve_output_positions(outputs)
+            .into_iter()
+            .map(|p| (p.x, p.y))
+            .collect()
+    }
+
+    #[test]
+    fn absolute_and_auto() {
+        let outputs = [
+            out("A", (1000, 1000), Some(Position::Fixed { x: 0, y: 0 })),
+            out("B", (1000, 1000), None),
+            out("C", (500, 500), Some(Position::Fixed { x: 3000, y: 100 })),
+        ];
+        assert_eq!(resolve(&outputs), vec![(0, 0), (3500, 0), (3000, 100)]);
+    }
+
+    #[test]
+    fn absolute_overlap_falls_back_to_auto() {
+        let outputs = [
+            out("A", (1000, 1000), Some(Position::Fixed { x: 0, y: 0 })),
+            out("B", (1000, 1000), Some(Position::Fixed { x: 500, y: 0 })),
+        ];
+        assert_eq!(resolve(&outputs), vec![(0, 0), (1000, 0)]);
+    }
+
+    #[test]
+    fn all_directions_and_alignments() {
+        let anchor = || out("A", (1000, 1000), Some(Position::Fixed { x: 0, y: 0 }));
+        let check = |direction, align, expected| {
+            let outputs = [anchor(), out("B", (200, 400), relative("A", direction, align))];
+            assert_eq!(resolve(&outputs)[1], expected, "{direction:?} {align:?}");
+        };
+
+        use Align::*;
+        use Direction::*;
+        // left-of: x = -200; y aligned within [0, 1000] for height 400.
+        check(LeftOf, Beginning, (-200, 0));
+        check(LeftOf, Center, (-200, 300));
+        check(LeftOf, End, (-200, 600));
+        // right-of: x = 1000.
+        check(RightOf, Beginning, (1000, 0));
+        check(RightOf, Center, (1000, 300));
+        check(RightOf, End, (1000, 600));
+        // above: y = -400; x aligned within [0, 1000] for width 200.
+        check(Above, Beginning, (0, -400));
+        check(Above, Center, (400, -400));
+        check(Above, End, (800, -400));
+        // below: y = 1000.
+        check(Below, Beginning, (0, 1000));
+        check(Below, Center, (400, 1000));
+        check(Below, End, (800, 1000));
+    }
+
+    #[test]
+    fn relative_chain_resolves_across_passes() {
+        let outputs = [
+            out("C", (200, 200), relative("B", Direction::Above, Align::Beginning)),
+            out("B", (200, 1000), relative("A", Direction::LeftOf, Align::Beginning)),
+            out("A", (1000, 1000), None),
+        ];
+        // A -> (0,0); B left of A -> (-200, 0); C above B -> (-200, -200).
+        assert_eq!(resolve(&outputs), vec![(-200, -200), (-200, 0), (0, 0)]);
+    }
+
+    #[test]
+    fn cycle_falls_back_to_auto() {
+        // B and C reference each other; neither can be resolved -> both auto-placed.
+        let outputs = [
+            out("B", (100, 100), relative("C", Direction::LeftOf, Align::Beginning)),
+            out("C", (100, 100), relative("B", Direction::RightOf, Align::Beginning)),
+        ];
+        // No panic / no hang; both fall back to automatic side-by-side placement.
+        assert_eq!(resolve(&outputs), vec![(0, 0), (100, 0)]);
+    }
+
+    #[test]
+    fn missing_anchor_falls_back_to_auto() {
+        let outputs = [
+            out("A", (1000, 1000), None),
+            out("B", (500, 500), relative("DOES-NOT-EXIST", Direction::Above, Align::Beginning)),
+        ];
+        // A auto at origin; B's anchor is unknown -> auto to the right of A.
+        assert_eq!(resolve(&outputs), vec![(0, 0), (1000, 0)]);
+    }
+
+    #[test]
+    fn relative_overlap_nudges_outward() {
+        // A and D sit side by side, both fixed. E wants to be left-of D, but the requested spot
+        // overlaps A, so it is nudged further left until it clears A (touching A's left edge).
+        let outputs = [
+            out("A", (1000, 1000), Some(Position::Fixed { x: 0, y: 0 })),
+            out("D", (1000, 1000), Some(Position::Fixed { x: 1000, y: 0 })),
+            out("E", (500, 1000), relative("D", Direction::LeftOf, Align::Beginning)),
+        ];
+        // Requested E.x = 1000 - 500 = 500 overlaps A [0,1000); nudged to x = -500 (right edge at 0).
+        assert_eq!(resolve(&outputs)[2], (-500, 0));
     }
 }
