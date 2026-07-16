@@ -173,6 +173,9 @@ Set the position of the output in the global coordinate space.
 This affects directional monitor actions like `focus-monitor-left`, and cursor movement.
 The cursor can only move between directly adjacent outputs.
 
+
+#### Absolute Positioning
+
 > [!NOTE]
 > Output scale and rotation has to be taken into account for positioning: outputs are sized in logical, or scaled, pixels.
 > For example, a 3840×2160 output with scale 2.0 will have a logical size of 1920×1080, so to put another output directly adjacent to it on the right, set its x to 1920.
@@ -184,6 +187,41 @@ output "HDMI-A-1" {
 }
 ```
 
+#### Relative Positioning
+
+<sup>Since: TODO ADD VERSION HERE</sup>
+
+Instead of absolute coordinates, you can position an output relative to another output.
+Niri resolves this into absolute coordinates, so the layout keeps working when resolutions or scales change.
+
+Use exactly one direction property — `left-of`, `right-of`, `above`, or `below` — set to the name of the anchor output (matched the same way as the `output` name itself: by connector, or by `"make model serial"`).
+The absolute (`x`/`y`) and relative forms are mutually exclusive on a single output.
+
+```kdl
+output "eDP-1" {}
+
+output "HDMI-A-1" {
+    position left-of="eDP-1"
+}
+
+output "HDMI-A-2" {
+    position above="HDMI-A-1" align="center"
+}
+```
+
+The direction sets which edges touch: `left-of` puts this output's right edge against the anchor's left edge, `above` puts this output's bottom edge against the anchor's top edge, and so on.
+The optional `align` property — one of `beginning`, `center`, or `end` — controls how the output slides along that shared edge. It defaults to `beginning`.
+
+- `beginning` aligns the start of the shared edge: the top edges for `left-of`/`right-of`, or the left edges for `above`/`below`.
+- `center` aligns the midpoints of the shared edge.
+- `end` aligns the far end of the shared edge: the bottom edges for `left-of`/`right-of`, or the right edges for `above`/`below`.
+
+Relative positioning is best-effort:
+
+- Outputs can be chained — an output may be positioned relative to another output that is itself positioned relatively.
+- If the anchor is not connected, is unknown, or the references form a cycle, the output falls back to automatic placement (and niri prints a warning). Because outputs are repositioned on every hotplug, it will attach as soon as its anchor appears.
+- If the resolved position would overlap an already-placed output, the output is nudged outward along its direction until it no longer overlaps, without moving any already-placed output.
+
 #### Automatic Positioning
 
 Niri repositions outputs from scratch every time the output configuration changes (which includes monitors disconnecting and connecting).
@@ -191,8 +229,9 @@ The following algorithm is used for positioning outputs.
 
 1. Collect all connected monitors and their logical sizes.
 1. Sort them by their name. This makes it so the automatic positioning does not depend on the order the monitors are connected. This is important because the connection order is non-deterministic at compositor startup.
-1. Try to place every output with explicitly configured `position`, in order. If the output overlaps previously placed outputs, place it to the right of all previously placed outputs. In this case, niri will also print a warning.
-1. Place every output without explicitly configured `position` by putting it to the right of all previously placed outputs.
+1. Try to place every output with an absolute (`x`/`y`) `position`, in order. If the output overlaps previously placed outputs, place it to the right of all previously placed outputs. In this case, niri will also print a warning.
+1. Place every output without a configured `position` by putting it to the right of all previously placed outputs.
+1. Place every output with a relative `position` whose anchor is already placed, resolving it against the anchor's position. Repeat until no more can be placed (this resolves chains). Any output whose anchor is missing, unknown, or part of a cycle is placed to the right of all previously placed outputs, with a warning.
 
 ### `variable-refresh-rate`
 
