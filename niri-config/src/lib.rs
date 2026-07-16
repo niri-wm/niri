@@ -54,7 +54,7 @@ pub use crate::input::{Input, ModKey, ScrollMethod, TrackLayout, WarpMouseToFocu
 pub use crate::layer_rule::LayerRule;
 pub use crate::layout::*;
 pub use crate::misc::*;
-pub use crate::output::{Output, OutputName, Outputs, Position, Vrr};
+pub use crate::output::{Align, Direction, Output, OutputName, Outputs, Position, Vrr};
 use crate::recent_windows::RecentWindowsPart;
 pub use crate::recent_windows::{MruDirection, MruFilter, MruPreviews, MruScope, RecentWindows};
 pub use crate::utils::FloatOrInt;
@@ -656,6 +656,65 @@ mod tests {
     }
 
     #[test]
+    fn parse_output_position() {
+        #[track_caller]
+        fn pos(node: &str) -> Position {
+            let text = format!("output \"X\" {{\n{node}\n}}");
+            do_parse(&text)
+                .outputs
+                .0
+                .into_iter()
+                .next()
+                .unwrap()
+                .position
+                .unwrap()
+        }
+        #[track_caller]
+        fn is_err(node: &str) -> bool {
+            let text = format!("output \"X\" {{\n{node}\n}}");
+            Config::parse_mem(&text).is_err()
+        }
+
+        // Absolute form still parses.
+        assert_eq!(pos("position x=10 y=20"), Position::Fixed { x: 10, y: 20 });
+
+        // Relative form; align defaults to Beginning.
+        assert_eq!(
+            pos(r#"position left-of="eDP-1""#),
+            Position::Relative {
+                relative_to: "eDP-1".to_owned(),
+                direction: Direction::LeftOf,
+                align: Align::Beginning,
+            }
+        );
+        assert_eq!(
+            pos(r#"position above="HDMI-A-1" align="center""#),
+            Position::Relative {
+                relative_to: "HDMI-A-1".to_owned(),
+                direction: Direction::Above,
+                align: Align::Center,
+            }
+        );
+        assert_eq!(
+            pos(r#"position below="DP-2" align="end""#),
+            Position::Relative {
+                relative_to: "DP-2".to_owned(),
+                direction: Direction::Below,
+                align: Align::End,
+            }
+        );
+
+        assert!(is_err(r#"position x=1 y=2 left-of="X""#)); // mixed absolute + relative
+        assert!(is_err("position x=1")); // missing y
+        assert!(is_err("position y=1")); // missing x
+        assert!(is_err(r#"position left-of="a" right-of="b""#)); // two directions
+        assert!(is_err(r#"position above="X" align="middle""#)); // bad align value
+        assert!(is_err(r#"position x=1 y=2 align="center""#)); // align on absolute
+        assert!(is_err("position")); // neither form
+        assert!(is_err(r#"position "left-of" "X""#)); // arguments not allowed
+    }
+
+    #[test]
     fn parse() {
         let parsed = do_parse(
             r##"
@@ -759,6 +818,7 @@ mod tests {
 
             output "eDP-2" {
                 mode custom=true "1920x1080@144"
+                position above="eDP-1" align="center"
             }
 
             output "eDP-3" {
@@ -1156,7 +1216,7 @@ mod tests {
                         ),
                         transform: Flipped90,
                         position: Some(
-                            Position {
+                            Fixed {
                                 x: 10,
                                 y: 20,
                             },
@@ -1210,7 +1270,13 @@ mod tests {
                         name: "eDP-2",
                         scale: None,
                         transform: Normal,
-                        position: None,
+                        position: Some(
+                            Relative {
+                                relative_to: "eDP-1",
+                                direction: Above,
+                                align: Center,
+                            },
+                        ),
                         max_bpc: None,
                         mode: Some(
                             Mode {

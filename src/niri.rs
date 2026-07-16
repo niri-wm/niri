@@ -1920,7 +1920,7 @@ impl State {
             niri_ipc::OutputAction::Position { position } => {
                 config.position = match position {
                     niri_ipc::PositionToSet::Automatic => None,
-                    niri_ipc::PositionToSet::Specific(position) => Some(niri_config::Position {
+                    niri_ipc::PositionToSet::Specific(position) => Some(niri_config::Position::Fixed {
                         x: position.x,
                         y: position.y,
                     }),
@@ -2709,7 +2709,7 @@ impl Niri {
         for output in self.global_space.outputs().chain(new_output) {
             let name = output.user_data().get::<OutputName>().unwrap();
             let position = self.global_space.output_geometry(output).map(|geo| geo.loc);
-            let config = config.outputs.find(name).and_then(|c| c.position);
+            let config = config.outputs.find(name).and_then(|c| c.position.clone());
 
             outputs.push(Data {
                 output: output.clone(),
@@ -2756,7 +2756,10 @@ impl Niri {
             let size = output_size(&output).to_i32_round();
 
             let new_position = config
-                .map(|pos| Point::from((pos.x, pos.y)))
+                .and_then(|pos| match pos {
+                    niri_config::Position::Fixed { x, y } => Some(Point::from((x, y))),
+                    niri_config::Position::Relative { .. } => None,
+                })
                 .filter(|pos| {
                     // Ensure that the requested position does not overlap any existing output.
                     let target_geom = Rectangle::new(*pos, size);

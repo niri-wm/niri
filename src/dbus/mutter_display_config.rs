@@ -213,7 +213,7 @@ impl DisplayConfig {
                                 )))
                             }
                         },
-                        position: Some(niri_config::Position {
+                        position: Some(niri_config::Position::Fixed {
                             x: requested_config.x,
                             y: requested_config.y,
                         }),
