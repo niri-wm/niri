@@ -131,7 +131,10 @@ pub struct OutputName {
 /// The two forms are mutually exclusive.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Position {
-    Fixed { x: i32, y: i32 },
+    Fixed {
+        x: i32,
+        y: i32,
+    },
     Relative {
         /// Name of the anchor output.
         relative_to: String,
