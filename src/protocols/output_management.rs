@@ -668,7 +668,7 @@ where
                 new_config.modeline = None;
             }
             zwlr_output_configuration_head_v1::Request::SetPosition { x, y } => {
-                new_config.position = Some(niri_config::Position { x, y });
+                new_config.position = Some(niri_config::Position::Fixed { x, y });
             }
             zwlr_output_configuration_head_v1::Request::SetTransform { transform } => {
                 let transform = match transform {
