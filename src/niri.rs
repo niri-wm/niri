@@ -7131,8 +7131,8 @@ struct OutputToPlace {
 ///    passes: in each pass, any not-yet-placed relative output whose anchor is already placed is
 ///    resolved. Repeats until nothing is placed, Thus resolving chains (`A <- B <- C`).
 /// 4. Any relative output that could not be resolved (unknown/missing anchor name, self-reference,
-///    or a cycle) falls back to automatic placement. On every hotplug, such outputs are resolved
-///    if their anchor is present.
+///    or a cycle) falls back to automatic placement. On every hotplug, such outputs are resolved if
+///    their anchor is present.
 fn resolve_output_positions(outputs: &[OutputToPlace]) -> Vec<Point<i32, Logical>> {
     let mut result: Vec<Option<Point<i32, Logical>>> = vec![None; outputs.len()];
     let mut placed: Vec<Rectangle<i32, Logical>> = Vec::new();
@@ -7358,7 +7358,10 @@ mod output_positioning_tests {
     fn all_directions_and_alignments() {
         let anchor = || out("A", (1000, 1000), Some(Position::Fixed { x: 0, y: 0 }));
         let check = |direction, align, expected| {
-            let outputs = [anchor(), out("B", (200, 400), relative("A", direction, align))];
+            let outputs = [
+                anchor(),
+                out("B", (200, 400), relative("A", direction, align)),
+            ];
             assert_eq!(resolve(&outputs)[1], expected, "{direction:?} {align:?}");
         };
 
@@ -7385,8 +7388,16 @@ mod output_positioning_tests {
     #[test]
     fn relative_chain_resolves_across_passes() {
         let outputs = [
-            out("C", (200, 200), relative("B", Direction::Above, Align::Beginning)),
-            out("B", (200, 1000), relative("A", Direction::LeftOf, Align::Beginning)),
+            out(
+                "C",
+                (200, 200),
+                relative("B", Direction::Above, Align::Beginning),
+            ),
+            out(
+                "B",
+                (200, 1000),
+                relative("A", Direction::LeftOf, Align::Beginning),
+            ),
             out("A", (1000, 1000), None),
         ];
         // A -> (0,0); B left of A -> (-200, 0); C above B -> (-200, -200).
@@ -7397,8 +7408,16 @@ mod output_positioning_tests {
     fn cycle_falls_back_to_auto() {
         // B and C reference each other; neither can be resolved -> both auto-placed.
         let outputs = [
-            out("B", (100, 100), relative("C", Direction::LeftOf, Align::Beginning)),
-            out("C", (100, 100), relative("B", Direction::RightOf, Align::Beginning)),
+            out(
+                "B",
+                (100, 100),
+                relative("C", Direction::LeftOf, Align::Beginning),
+            ),
+            out(
+                "C",
+                (100, 100),
+                relative("B", Direction::RightOf, Align::Beginning),
+            ),
         ];
         // No panic / no hang; both fall back to automatic side-by-side placement.
         assert_eq!(resolve(&outputs), vec![(0, 0), (100, 0)]);
@@ -7408,7 +7427,11 @@ mod output_positioning_tests {
     fn missing_anchor_falls_back_to_auto() {
         let outputs = [
             out("A", (1000, 1000), None),
-            out("B", (500, 500), relative("DOES-NOT-EXIST", Direction::Above, Align::Beginning)),
+            out(
+                "B",
+                (500, 500),
+                relative("DOES-NOT-EXIST", Direction::Above, Align::Beginning),
+            ),
         ];
         // A auto at origin; B's anchor is unknown -> auto to the right of A.
         assert_eq!(resolve(&outputs), vec![(0, 0), (1000, 0)]);
@@ -7421,9 +7444,14 @@ mod output_positioning_tests {
         let outputs = [
             out("A", (1000, 1000), Some(Position::Fixed { x: 0, y: 0 })),
             out("D", (1000, 1000), Some(Position::Fixed { x: 1000, y: 0 })),
-            out("E", (500, 1000), relative("D", Direction::LeftOf, Align::Beginning)),
+            out(
+                "E",
+                (500, 1000),
+                relative("D", Direction::LeftOf, Align::Beginning),
+            ),
         ];
-        // Requested E.x = 1000 - 500 = 500 overlaps A [0,1000); nudged to x = -500 (right edge at 0).
+        // Requested E.x = 1000 - 500 = 500 overlaps A [0,1000); nudged to x = -500 (right edge at
+        // 0).
         assert_eq!(resolve(&outputs)[2], (-500, 0));
     }
 }
