@@ -4957,6 +4957,7 @@ impl<W: LayoutElement> Column<W> {
                 tile.window_height_for_tile_height(tile_height)
             }
         };
+        let is_resizing_up = window_height > current_window_px;
 
         // Clamp the height according to other windows' min sizes, or simply to working area height.
         let min_height_taken = if self.display_mode == ColumnDisplay::Tabbed {
@@ -4985,7 +4986,18 @@ impl<W: LayoutElement> Column<W> {
             window_height = f64::max(window_height, f64::from(min_h));
         }
 
-        self.data[tile_idx].height = WindowHeight::Fixed(window_height.clamp(1., MAX_PX));
+        // Window sizes are ultimately rounded to integer logical pixels, so compare rounded
+        // values to avoid missing the limit due to floating-point imprecision.
+        let height = if self.tiles.len() == 1
+            && is_resizing_up
+            && window_height.round() == height_left.round()
+        {
+            WindowHeight::auto_1()
+        } else {
+            WindowHeight::Fixed(window_height.clamp(1., MAX_PX))
+        };
+
+        self.data[tile_idx].height = height;
         self.is_pending_maximized = false;
         self.update_tile_sizes(animate);
     }
