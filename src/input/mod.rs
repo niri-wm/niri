@@ -6,7 +6,8 @@ use std::time::Duration;
 use calloop::timer::{TimeoutAction, Timer};
 use input::event::gesture::GestureEventCoordinates as _;
 use niri_config::{
-    Action, Bind, Binds, Config, Key, ModKey, Modifiers, MruDirection, SwitchBinds, Trigger,
+    Action, Bind, Binds, Config, Key, ModKey, Modifiers, MruDirection, MruScope, SwitchBinds,
+    Trigger,
 };
 use niri_ipc::LayoutSwitchTarget;
 use smithay::backend::input::{
@@ -883,17 +884,32 @@ impl State {
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
-            Action::FocusWindowPrevious => {
+            Action::FocusWindowPrevious(scope) => {
                 let current = self.niri.layout.focus().map(|win| win.id());
-                if let Some(window) = self
+                let active_output = self.niri.layout.active_output();
+
+                // Restrict the candidate windows to the requested scope. `Workspace` and `Output`
+                // only make sense relative to an active output; without one, fall back to nothing.
+                let window = self
                     .niri
                     .layout
-                    .windows()
-                    .map(|(_, win)| win)
+                    .workspaces()
+                    .filter(|(mon, ws_idx, _)| match scope {
+                        MruScope::All => true,
+                        MruScope::Output => {
+                            mon.is_some_and(|mon| Some(mon.output()) == active_output)
+                        }
+                        MruScope::Workspace => mon.is_some_and(|mon| {
+                            Some(mon.output()) == active_output
+                                && mon.active_workspace_idx() == *ws_idx
+                        }),
+                    })
+                    .flat_map(|(_, _, ws)| ws.windows())
                     .filter(|win| Some(win.id()) != current)
                     .max_by_key(|win| win.get_focus_timestamp())
-                    .map(|win| win.window.clone())
-                {
+                    .map(|win| win.window.clone());
+
+                if let Some(window) = window {
                     // Commit current focus so repeated focus-window-previous works as expected.
                     self.niri.mru_apply_keyboard_commit();
 
