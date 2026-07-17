@@ -577,6 +577,15 @@ impl<W: LayoutElement> Tile<W> {
         self.animate_move_y_from(from.y);
     }
 
+    pub fn animate_move_from_with_config(
+        &mut self,
+        from: Point<f64, Logical>,
+        config: niri_config::Animation,
+    ) {
+        self.animate_move_x_from_with_config(from.x, config);
+        self.animate_move_y_from_with_config(from.y, config);
+    }
+
     pub fn animate_move_x_from(&mut self, from: f64) {
         self.animate_move_x_from_with_config(from, self.options.animations.window_movement.0);
     }

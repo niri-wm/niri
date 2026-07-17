@@ -9,6 +9,7 @@ use niri_ipc::{ColumnDisplay, SizeChange, WindowLayout};
 use ordered_float::NotNan;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Serial, Size};
+use wayland_backend::smallvec::SmallVec;
 
 use super::closing_window::{ClosingWindow, ClosingWindowRenderElement};
 use super::monitor::InsertPosition;
@@ -5062,8 +5063,30 @@ impl<W: LayoutElement> Column<W> {
             return;
         }
 
-        self.is_pending_fullscreen = is_fullscreen;
-        self.update_tile_sizes(true);
+        let from_sizing_mode = self.sizing_mode();
+        let to_sizing_mode = match from_sizing_mode {
+            SizingMode::Normal => SizingMode::Fullscreen,
+            SizingMode::Maximized => SizingMode::Fullscreen,
+            SizingMode::Fullscreen => {
+                if self.is_pending_maximized() {
+                    SizingMode::Maximized
+                } else {
+                    SizingMode::Normal
+                }
+            }
+        };
+
+        if from_sizing_mode == SizingMode::Normal {
+            self.is_pending_fullscreen = is_fullscreen;
+            self.update_tile_sizes(true);
+
+            self.animate_fullscreen_or_maximize(from_sizing_mode, to_sizing_mode);
+        } else {
+            self.animate_fullscreen_or_maximize(from_sizing_mode, to_sizing_mode);
+
+            self.is_pending_fullscreen = is_fullscreen;
+            self.update_tile_sizes(true);
+        }
     }
 
     fn set_maximized(&mut self, maximize: bool) {
@@ -5071,8 +5094,62 @@ impl<W: LayoutElement> Column<W> {
             return;
         }
 
-        self.is_pending_maximized = maximize;
-        self.update_tile_sizes(true);
+        let from_sizing_mode = self.sizing_mode();
+        let to_sizing_mode = match from_sizing_mode {
+            SizingMode::Normal => SizingMode::Maximized,
+            SizingMode::Maximized => SizingMode::Normal,
+            SizingMode::Fullscreen => SizingMode::Fullscreen,
+        };
+
+        if from_sizing_mode == SizingMode::Normal {
+            self.is_pending_maximized = maximize;
+            self.update_tile_sizes(true);
+
+            self.animate_fullscreen_or_maximize(from_sizing_mode, to_sizing_mode);
+        } else {
+            self.animate_fullscreen_or_maximize(from_sizing_mode, to_sizing_mode);
+
+            self.is_pending_maximized = maximize;
+            self.update_tile_sizes(true);
+        }
+    }
+
+    fn animate_fullscreen_or_maximize(
+        &mut self,
+        from_sizing_mode: SizingMode,
+        to_sizing_mode: SizingMode,
+    ) {
+        let from_offset = self
+            .tile_offsets_ext(self.display_mode, from_sizing_mode)
+            .nth(self.active_tile_idx)
+            .unwrap();
+        let to_offset = self
+            .tile_offsets_ext(self.display_mode, to_sizing_mode)
+            .nth(self.active_tile_idx)
+            .unwrap();
+        let to_top_offset = self
+            .tile_offsets_ext(self.display_mode, to_sizing_mode)
+            .nth(0)
+            .unwrap();
+        warn!(
+            "diff = {:?} - {:?} \t= {:?}",
+            from_offset,
+            to_offset,
+            from_offset - to_offset
+        );
+        for tile in self.tiles.iter_mut() {
+            if from_sizing_mode == SizingMode::Normal {
+                tile.animate_move_from_with_config(
+                    from_offset + from_offset - to_offset - to_top_offset,
+                    self.options.animations.window_movement.0,
+                );
+            } else {
+                tile.animate_move_from_with_config(
+                    from_offset - to_offset,
+                    self.options.animations.window_movement.0,
+                );
+            }
+        }
     }
 
     fn set_column_display(&mut self, display: ColumnDisplay) {
@@ -5156,10 +5233,10 @@ impl<W: LayoutElement> Column<W> {
         origin
     }
 
-    // HACK: pass a self.data iterator in manually as a workaround for the lack of method partial
-    // borrowing. Note that this method's return value does not borrow the entire &Self!
-    fn tile_offsets_iter(
+    fn tile_offsets_iter_ext(
         &self,
+        display_mode: ColumnDisplay,
+        pending_sizing_mode: SizingMode,
         data: impl Iterator<Item = TileData>,
     ) -> impl Iterator<Item = Point<f64, Logical>> {
         // FIXME: this should take into account always-center-single-column, which means that
@@ -5167,8 +5244,8 @@ impl<W: LayoutElement> Column<W> {
         // the workspace or some other reason.
         let center = self.options.layout.center_focused_column == CenterFocusedColumn::Always;
         let gaps = self.options.layout.gaps;
-        let is_stacked = self.display_mode == ColumnDisplay::Normal
-            && self.pending_sizing_mode() == SizingMode::Normal;
+        let is_stacked =
+            display_mode == ColumnDisplay::Normal && pending_sizing_mode == SizingMode::Normal;
 
         // Does not include extra size from the tab indicator.
         let tiles_width = self
@@ -5189,25 +5266,56 @@ impl<W: LayoutElement> Column<W> {
         };
         let data = data.chain(iter::once(dummy));
 
-        data.map(move |data| {
-            let mut pos = origin;
+        // FIXME: allocates if the column contains more than 16 (arbitrarily chosen number) tiles
+        let positions: SmallVec<[Point<f64, Logical>; 16]> = data
+            .map(move |data| {
+                let mut pos = origin;
 
-            if center {
-                pos.x += (tiles_width - data.size.w) / 2.;
-            } else if data.interactively_resizing_by_left_edge {
-                pos.x += tiles_width - data.size.w;
-            }
+                if center {
+                    pos.x += (tiles_width - data.size.w) / 2.;
+                } else if data.interactively_resizing_by_left_edge {
+                    pos.x += tiles_width - data.size.w;
+                }
 
+                if display_mode == ColumnDisplay::Normal {
+                    origin.y += data.size.h + gaps;
+                }
+
+                pos
+            })
+            .collect();
+
+        let active_position = positions[self.active_tile_idx];
+
+        let origin = self.tiles_origin();
+        positions.into_iter().map(move |pos| {
             if is_stacked {
-                origin.y += data.size.h + gaps;
+                pos
+            } else {
+                origin + pos - active_position
             }
-
-            pos
         })
+    }
+
+    // HACK: pass a self.data iterator in manually as a workaround for the lack of method partial
+    // borrowing. Note that this method's return value does not borrow the entire &Self!
+    fn tile_offsets_iter(
+        &self,
+        data: impl Iterator<Item = TileData>,
+    ) -> impl Iterator<Item = Point<f64, Logical>> {
+        self.tile_offsets_iter_ext(self.display_mode, self.pending_sizing_mode(), data)
     }
 
     fn tile_offsets(&self) -> impl Iterator<Item = Point<f64, Logical>> + '_ {
         self.tile_offsets_iter(self.data.iter().copied())
+    }
+
+    fn tile_offsets_ext(
+        &self,
+        display_mode: ColumnDisplay,
+        pending_sizing_mode: SizingMode,
+    ) -> impl Iterator<Item = Point<f64, Logical>> + '_ {
+        self.tile_offsets_iter_ext(display_mode, pending_sizing_mode, self.data.iter().copied())
     }
 
     fn tile_offset(&self, tile_idx: usize) -> Point<f64, Logical> {
