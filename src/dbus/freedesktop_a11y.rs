@@ -12,14 +12,27 @@ use smithay::backend::input::{KeyState, Keycode};
 use smithay::input::keyboard::{xkb, Keysym};
 use zbus::blocking::object_server::InterfaceRef;
 use zbus::fdo::{self, RequestNameFlags};
-use zbus::interface;
 use zbus::message::Header;
 use zbus::names::{BusName, OwnedUniqueName, UniqueName};
 use zbus::object_server::SignalEmitter;
-use zbus::zvariant::NoneValue;
+use zbus::zvariant::{NoneValue, OwnedObjectPath, SerializeDict, Type, Value};
+use zbus::{interface, DBusError};
 
-use super::Start;
-use crate::niri::State;
+use crate::niri::{PointContents, State};
+use crate::utils::get_credentials_for_surface;
+
+pub struct Manager {
+    pub keyboard_monitor: KeyboardMonitor,
+    pub pointer_locator: PointerLocator,
+}
+
+pub enum A11yManagerToNiri {
+    QueryPointer,
+}
+
+pub enum NiriToA11yManager {
+    PointerContents(Option<(PointerAppData, f64, f64)>),
+}
 
 #[derive(Debug, Default)]
 struct Data {
@@ -38,7 +51,7 @@ struct Client {
     keystrokes: Vec<(Keysym, u32)>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct KeyboardMonitor {
     data: Arc<Mutex<Data>>,
     iface: Arc<OnceLock<InterfaceRef<Self>>>,
@@ -53,6 +66,39 @@ pub enum KbMonBlock {
     ModifierFirstPress,
     /// Blocked, and this is not the a11y modifier.
     Block,
+}
+
+#[derive(Debug, Default)]
+struct PointerData {
+    /// Clients to be notified of pointer position change.
+    clients: HashSet<OwnedUniqueName>,
+}
+
+#[derive(Debug, Default, SerializeDict, Type, Value)]
+#[zvariant(signature = "dict")]
+pub struct PointerAppData {
+    // For the future: other impls send either pid or the two other properties, not both.
+    pid: Option<i32>,
+    app_dbus_name: Option<String>,
+    toplevel_object_path: Option<OwnedObjectPath>,
+}
+
+#[derive(Clone)]
+pub struct PointerLocator {
+    data: Arc<Mutex<PointerData>>,
+    iface: Arc<OnceLock<InterfaceRef<Self>>>,
+    to_niri: calloop::channel::Sender<A11yManagerToNiri>,
+    from_niri: async_channel::Receiver<NiriToA11yManager>,
+}
+
+#[derive(DBusError, Debug)]
+#[zbus(prefix = "org.freedesktop.a11y")]
+enum A11yError {
+    #[zbus(error)]
+    ZBus(zbus::Error),
+    UnknownToplevel,
+    // Catch-all.
+    Failed(String),
 }
 
 /// Interface for monitoring of keyboard input by assistive technologies.
@@ -204,14 +250,6 @@ impl KeyboardMonitor {
 }
 
 impl KeyboardMonitor {
-    #[allow(clippy::new_without_default)]
-    pub fn new() -> Self {
-        Self {
-            data: Arc::new(Mutex::new(Data::default())),
-            iface: Arc::new(OnceLock::new()),
-        }
-    }
-
     #[allow(clippy::too_many_arguments)]
     pub fn process_key(
         &self,
@@ -366,9 +404,109 @@ impl Client {
     }
 }
 
+/// Interface for locating the pointer position in the accessibility tree.
+///
+/// This interface is used by assistive technologies to query the pointer position in the
+/// accessibility tree. The compositor is expected to listen on the well-known bus name
+/// "org.freedesktop.a11y.Manager" at the object path "/org/freedesktop/a11y/Manager".
+#[interface(name = "org.freedesktop.a11y.PointerLocator")]
+impl PointerLocator {
+    // Queries the a11y details about the toplevel beneath the mouse pointer, together with the
+    // relative position of the mouse pointer on the surface. The most up-to-date coordinates as
+    // known to the compositor are returned by this method call.
+    //
+    // Screen readers may use the given information to further query the accessibility tree of the
+    // specific application, in order to identify the application-side accessible elements directly
+    // underneath the mouse pointer.
+    //
+    // This request will also schedule the emission of a following "PointerPositionChanged" signal,
+    // whenever mouse pointer motion would happen.
+    //
+    // The "data" argument is a generic container, so far the only handled keys are relevant to
+    // AT-SPI:
+    //
+    // - "app-dbus-name" (type: s): Application D-Bus name in the a11y D-Bus
+    // - "toplevel-object-path" (type: o): Object path to the toplevel, in the given D-Bus name.
+    //
+    // If this data is not provided, the focused client will be considered to be the desktop
+    // environment itself, and the provided coordinates will be relative to its origin point.
+    //
+    // A org.freedesktop.a11y.UnknownToplevel error will be returned if the client under the pointer
+    // is non-introspectable.
+    async fn query_pointer(
+        &self,
+        #[zbus(header)] hdr: Header<'_>,
+    ) -> Result<(PointerAppData, f64, f64), A11yError> {
+        let Some(sender) = hdr.sender() else {
+            return Err(A11yError::Failed("no sender".to_owned()));
+        };
+        let sender = OwnedUniqueName::from(sender.to_owned());
+
+        if let Err(err) = self.to_niri.send(A11yManagerToNiri::QueryPointer) {
+            warn!("error sending message to niri: {err:?}");
+            return Err(A11yError::Failed("internal error".to_owned()));
+        }
+
+        let rv = match self.from_niri.recv().await {
+            Ok(NiriToA11yManager::PointerContents(Some((data, x, y)))) => Ok((data, x, y)),
+            Ok(NiriToA11yManager::PointerContents(None)) => Err(A11yError::UnknownToplevel),
+            Err(err) => {
+                warn!("error receiving message from niri: {err:?}");
+                Err(A11yError::Failed("internal error".to_owned()))
+            }
+        };
+
+        // Subscribe the client after all asynchronous operations. Otherwise it's possible for the
+        // pointer to move and the signal to be emitted before returning from this first
+        // QueryPointer request.
+        let mut data = self.data.lock().unwrap();
+        if !data.clients.contains(&sender) {
+            trace!("enabling pointer position notifications for {sender}");
+            data.clients.insert(sender);
+        }
+
+        rv
+    }
+
+    // This signal is emitted once when two conditions meet:
+    // 1. A "QueryPointer" method call happened before
+    // 2. Pointer motion happened after replying to that method call
+    //
+    // The purpose of the signal is being used as a throttling mechanism, so that a11y pointer
+    // handling is independent of device specifics like frequency rate at which input is handled.
+    //
+    // The expected response for a screen reader to this signal is scheduling a following
+    // "QueryPointer" method call.
+    #[zbus(signal)]
+    pub async fn pointer_position_changed(ctxt: &SignalEmitter<'_>) -> zbus::Result<()>;
+}
+
+impl PointerLocator {
+    fn notify_pointer_position_changed(&self) {
+        let mut ctxt = self.iface.get().unwrap().signal_emitter().clone();
+
+        let mut data = self.data.lock().unwrap();
+        for name in &data.clients {
+            let _span = tracy_client::span!("emitting pointer_position_changed");
+
+            ctxt = ctxt.set_destination(BusName::Unique(name.as_ref()));
+            let ctxt = &ctxt;
+            async_io::block_on(async move {
+                if let Err(err) = PointerLocator::pointer_position_changed(ctxt).await {
+                    warn!("error emitting pointer_position_changed: {err:?}");
+                }
+            });
+        }
+
+        // They will need to QueryPointer again to subscribe for the next signal.
+        data.clients.clear();
+    }
+}
+
 async fn monitor_disappeared_clients(
     conn: &zbus::Connection,
     data: Arc<Mutex<Data>>,
+    pointer_data: Arc<Mutex<PointerData>>,
 ) -> anyhow::Result<()> {
     let proxy = fdo::DBusProxy::new(conn)
         .await
@@ -392,9 +530,15 @@ async fn monitor_disappeared_clients(
             trace!("keyboard monitor client disconnected: {name}");
 
             let name = OwnedUniqueName::from(name.to_owned());
-            let mut data = data.lock().unwrap();
-            data.clients.remove(&name);
-            data.rebuild_grabbed_mods();
+            {
+                let mut data = data.lock().unwrap();
+                data.clients.remove(&name);
+                data.rebuild_grabbed_mods();
+            }
+            {
+                let mut data = pointer_data.lock().unwrap();
+                data.clients.remove(&name);
+            }
         } else {
             error!("non-null new_owner should've been filtered out");
         }
@@ -403,27 +547,56 @@ async fn monitor_disappeared_clients(
     Ok(())
 }
 
-impl Start for KeyboardMonitor {
-    fn start(self) -> anyhow::Result<zbus::blocking::Connection> {
-        let data = self.data.clone();
+impl Manager {
+    pub fn new(
+        to_niri: calloop::channel::Sender<A11yManagerToNiri>,
+        from_niri: async_channel::Receiver<NiriToA11yManager>,
+    ) -> Self {
+        Self {
+            keyboard_monitor: KeyboardMonitor::default(),
+            pointer_locator: PointerLocator {
+                data: Default::default(),
+                iface: Default::default(),
+                to_niri,
+                from_niri,
+            },
+        }
+    }
 
+    pub fn start(&self) -> anyhow::Result<zbus::blocking::Connection> {
         let conn = zbus::blocking::Connection::session()?;
         let flags = RequestNameFlags::AllowReplacement
             | RequestNameFlags::ReplaceExisting
             | RequestNameFlags::DoNotQueue;
 
-        conn.object_server()
-            .at("/org/freedesktop/a11y/Manager", self.clone())?;
+        conn.object_server().at(
+            "/org/freedesktop/a11y/Manager",
+            self.keyboard_monitor.clone(),
+        )?;
+        conn.object_server().at(
+            "/org/freedesktop/a11y/Manager",
+            self.pointer_locator.clone(),
+        )?;
         conn.request_name_with_flags("org.freedesktop.a11y.Manager", flags)?;
 
         let iface = conn
             .object_server()
             .interface("/org/freedesktop/a11y/Manager")?;
-        let _ = self.iface.set(iface);
+        let _ = self.keyboard_monitor.iface.set(iface);
+
+        let iface = conn
+            .object_server()
+            .interface("/org/freedesktop/a11y/Manager")?;
+        let _ = self.pointer_locator.iface.set(iface);
+
+        let data = self.keyboard_monitor.data.clone();
+        let pointer_data = self.pointer_locator.data.clone();
 
         let async_conn = conn.inner().clone();
         let future = async move {
-            if let Err(err) = monitor_disappeared_clients(&async_conn, data.clone()).await {
+            if let Err(err) =
+                monitor_disappeared_clients(&async_conn, data.clone(), pointer_data.clone()).await
+            {
                 warn!("error monitoring keyboard monitor clients: {err:?}");
 
                 // Since the monitor is now broken, prevent any further communication.
@@ -431,9 +604,15 @@ impl Start for KeyboardMonitor {
                     warn!("error closing connection: {err:?}");
                 }
 
-                let mut data = data.lock().unwrap();
-                data.clients.clear();
-                data.rebuild_grabbed_mods();
+                {
+                    let mut data = data.lock().unwrap();
+                    data.clients.clear();
+                    data.rebuild_grabbed_mods();
+                }
+                {
+                    let mut data = pointer_data.lock().unwrap();
+                    data.clients.clear();
+                }
             }
         };
         let task = conn
@@ -453,7 +632,7 @@ impl State {
         keycode: Keycode,
         state: KeyState,
     ) -> KbMonBlock {
-        if self.niri.a11y_keyboard_monitor.is_none() {
+        if self.niri.a11y_manager.is_none() {
             return KbMonBlock::Pass;
         }
 
@@ -475,9 +654,68 @@ impl State {
         let repeat_delay = Duration::from_millis(u64::from(config.input.keyboard.repeat_delay));
         let released = state == KeyState::Released;
 
-        let Some(monitor) = &self.niri.a11y_keyboard_monitor else {
+        let Some(manager) = &self.niri.a11y_manager else {
             return KbMonBlock::Pass;
         };
+        let monitor = &manager.keyboard_monitor;
         monitor.process_key(repeat_delay, time, keycode, released, mods, keysym, unichar)
+    }
+
+    pub fn a11y_notify_pointer_motion(&mut self) {
+        let Some(manager) = &self.niri.a11y_manager else {
+            return;
+        };
+
+        manager.pointer_locator.notify_pointer_position_changed();
+    }
+
+    pub fn on_a11y_manager_msg(
+        &mut self,
+        to_a11y: &async_channel::Sender<NiriToA11yManager>,
+        msg: A11yManagerToNiri,
+    ) {
+        let A11yManagerToNiri::QueryPointer = msg;
+        let _span = tracy_client::span!("QueryPointer");
+
+        let pointer = &self.niri.seat.get_pointer().unwrap();
+        let pointer_pos = pointer.current_location();
+
+        // Grabs can modify pointer focus, but here let's ignore them. I'm not entirely sure what's
+        // expected by a11y users though.
+        let contents = match &self.niri.pointer_contents {
+            PointContents {
+                surface: Some((surface, surface_pos)),
+                ..
+            } => {
+                if let Some(credentials) = get_credentials_for_surface(surface) {
+                    // The current definition of the protocol expects buffer-relative pointer
+                    // coordinates. I don't think this is correct, I opened a discussion here:
+                    // https://gitlab.gnome.org/GNOME/mutter/-/work_items/4919
+                    let pos_within_surface = pointer_pos - *surface_pos;
+
+                    let data = PointerAppData {
+                        pid: Some(credentials.pid),
+                        // FIXME: fill these in from xdg_dbus_annotation when it's merged.
+                        // https://gitlab.freedesktop.org/wayland/wayland-protocols/-/merge_requests/493
+                        app_dbus_name: None,
+                        toplevel_object_path: None,
+                    };
+
+                    Some((data, pos_within_surface.x, pos_within_surface.y))
+                } else {
+                    // Client is not introspectable.
+                    None
+                }
+            }
+            _ => {
+                // The focused client is niri itself.
+                Some((PointerAppData::default(), pointer_pos.x, pointer_pos.y))
+            }
+        };
+
+        let msg = NiriToA11yManager::PointerContents(contents);
+        if let Err(err) = to_a11y.send_blocking(msg) {
+            warn!("error sending pointer contents to a11y manager: {err:?}");
+        }
     }
 }
