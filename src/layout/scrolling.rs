@@ -2187,13 +2187,6 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         // With place_within_column, the tab indicator changes the column size immediately.
         self.data[self.active_column_idx].update(col);
         col.update_tile_sizes(true);
-
-        // Disable fullscreen if needed.
-        if col.display_mode != ColumnDisplay::Tabbed && col.tiles.len() > 1 {
-            let window = col.tiles[col.active_tile_idx].window().id().clone();
-            self.set_fullscreen(&window, false);
-            self.set_maximized(&window, false);
-        }
     }
 
     pub fn center_column(&mut self) {
@@ -2822,7 +2815,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     }
 
     pub fn set_fullscreen(&mut self, window: &W::Id, is_fullscreen: bool) -> bool {
-        let mut col_idx = self
+        let col_idx = self
             .columns
             .iter()
             .position(|col| col.contains(window))
@@ -2832,17 +2825,9 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             return false;
         }
 
-        let mut col = &mut self.columns[col_idx];
-        let is_tabbed = col.display_mode == ColumnDisplay::Tabbed;
+        let col = &mut self.columns[col_idx];
 
         cancel_resize_for_column(&mut self.interactive_resize, col);
-
-        if is_fullscreen && (col.tiles.len() > 1 && !is_tabbed) {
-            // This wasn't the only window in its column; extract it into a separate column.
-            self.consume_or_expel_window_right(Some(window));
-            col_idx += 1;
-            col = &mut self.columns[col_idx];
-        }
 
         col.set_fullscreen(is_fullscreen);
 
@@ -2853,7 +2838,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     }
 
     pub fn set_maximized(&mut self, window: &W::Id, maximize: bool) -> bool {
-        let mut col_idx = self
+        let col_idx = self
             .columns
             .iter()
             .position(|col| col.contains(window))
@@ -2863,18 +2848,8 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             return false;
         }
 
-        let mut col = &mut self.columns[col_idx];
-        let is_tabbed = col.display_mode == ColumnDisplay::Tabbed;
-
+        let col = &mut self.columns[col_idx];
         cancel_resize_for_column(&mut self.interactive_resize, col);
-
-        if maximize && (col.tiles.len() > 1 && !is_tabbed) {
-            // This wasn't the only window in its column; extract it into a separate column.
-            self.consume_or_expel_window_right(Some(window));
-            col_idx += 1;
-            col = &mut self.columns[col_idx];
-        }
-
         col.set_maximized(maximize);
 
         // With place_within_column, the tab indicator changes the column size immediately.
@@ -5087,10 +5062,6 @@ impl<W: LayoutElement> Column<W> {
             return;
         }
 
-        if is_fullscreen {
-            assert!(self.tiles.len() == 1 || self.display_mode == ColumnDisplay::Tabbed);
-        }
-
         self.is_pending_fullscreen = is_fullscreen;
         self.update_tile_sizes(true);
     }
@@ -5098,10 +5069,6 @@ impl<W: LayoutElement> Column<W> {
     fn set_maximized(&mut self, maximize: bool) {
         if self.is_pending_maximized == maximize {
             return;
-        }
-
-        if maximize {
-            assert!(self.tiles.len() == 1 || self.display_mode == ColumnDisplay::Tabbed);
         }
 
         self.is_pending_maximized = maximize;
@@ -5200,7 +5167,8 @@ impl<W: LayoutElement> Column<W> {
         // the workspace or some other reason.
         let center = self.options.layout.center_focused_column == CenterFocusedColumn::Always;
         let gaps = self.options.layout.gaps;
-        let tabbed = self.display_mode == ColumnDisplay::Tabbed;
+        let is_stacked = self.display_mode == ColumnDisplay::Normal
+            && self.pending_sizing_mode() == SizingMode::Normal;
 
         // Does not include extra size from the tab indicator.
         let tiles_width = self
@@ -5230,7 +5198,7 @@ impl<W: LayoutElement> Column<W> {
                 pos.x += tiles_width - data.size.w;
             }
 
-            if !tabbed {
+            if is_stacked {
                 origin.y += data.size.h + gaps;
             }
 
@@ -5279,7 +5247,11 @@ impl<W: LayoutElement> Column<W> {
 
         let active = active.iter().map(|tile| (tile, true));
 
-        let rest_visible = self.display_mode != ColumnDisplay::Tabbed;
+        let rest_visible = self.display_mode != ColumnDisplay::Tabbed
+            || matches!(
+                self.pending_sizing_mode(),
+                SizingMode::Fullscreen | SizingMode::Maximized
+            );
         let rest = first.iter().chain(rest);
         let rest = rest.map(move |tile| (tile, rest_visible));
 
