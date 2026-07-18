@@ -33,6 +33,7 @@ debug {
     honor-xdg-activation-with-invalid-serial
     skip-cursor-only-updates-during-vrr
     deactivate-unfocused-windows
+    disable-idle-drm-device-suspend
 }
 
 binds {
@@ -323,6 +324,21 @@ debug {
     deactivate-unfocused-windows
 }
 ```
+
+### `disable-idle-drm-device-suspend`
+
+Turns off automatic suspend of idle secondary GPUs.
+
+By default, niri suspends secondary GPUs (dGPUs, eGPUs) that aren't driving any outputs or leases. Saves power, and on some systems gets the device into ACPI `D3cold`.
+
+Use this flag if suspend breaks hotplug, wakeup, or rendering for you.
+
+```kdl
+debug {
+    disable-idle-drm-device-suspend
+}
+```
+
 
 ### Key Bindings
 
