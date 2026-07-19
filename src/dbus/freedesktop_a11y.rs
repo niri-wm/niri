@@ -35,8 +35,8 @@ pub enum NiriToA11yManager {
 }
 
 #[derive(Debug, Default)]
-struct Data {
-    clients: HashMap<OwnedUniqueName, Client>,
+struct KeyboardData {
+    clients: HashMap<OwnedUniqueName, KeyboardClient>,
 
     grabbed_mods: HashSet<Keysym>,
     grabbed_mod_last_press_time: HashMap<Keysym, Duration>,
@@ -44,7 +44,7 @@ struct Data {
 }
 
 #[derive(Debug, Default)]
-struct Client {
+struct KeyboardClient {
     watched: bool,
     grabbed: bool,
     modifiers: HashSet<Keysym>,
@@ -53,7 +53,7 @@ struct Client {
 
 #[derive(Clone, Default)]
 pub struct KeyboardMonitor {
-    data: Arc<Mutex<Data>>,
+    data: Arc<Mutex<KeyboardData>>,
     iface: Arc<OnceLock<InterfaceRef<Self>>>,
 }
 
@@ -352,7 +352,7 @@ impl KeyboardMonitor {
     }
 }
 
-impl Data {
+impl KeyboardData {
     fn rebuild_grabbed_mods(&mut self) {
         self.grabbed_mods.clear();
         for client in self.clients.values() {
@@ -361,7 +361,7 @@ impl Data {
     }
 }
 
-impl Client {
+impl KeyboardClient {
     fn should_grab_keypress(
         &self,
         suppressed_keys: &HashSet<Keysym>,
@@ -505,7 +505,7 @@ impl PointerLocator {
 
 async fn monitor_disappeared_clients(
     conn: &zbus::Connection,
-    data: Arc<Mutex<Data>>,
+    kb_data: Arc<Mutex<KeyboardData>>,
     pointer_data: Arc<Mutex<PointerData>>,
 ) -> anyhow::Result<()> {
     let proxy = fdo::DBusProxy::new(conn)
@@ -531,7 +531,7 @@ async fn monitor_disappeared_clients(
 
             let name = OwnedUniqueName::from(name.to_owned());
             {
-                let mut data = data.lock().unwrap();
+                let mut data = kb_data.lock().unwrap();
                 data.clients.remove(&name);
                 data.rebuild_grabbed_mods();
             }
@@ -589,13 +589,14 @@ impl Manager {
             .interface("/org/freedesktop/a11y/Manager")?;
         let _ = self.pointer_locator.iface.set(iface);
 
-        let data = self.keyboard_monitor.data.clone();
+        let kb_data = self.keyboard_monitor.data.clone();
         let pointer_data = self.pointer_locator.data.clone();
 
         let async_conn = conn.inner().clone();
         let future = async move {
             if let Err(err) =
-                monitor_disappeared_clients(&async_conn, data.clone(), pointer_data.clone()).await
+                monitor_disappeared_clients(&async_conn, kb_data.clone(), pointer_data.clone())
+                    .await
             {
                 warn!("error monitoring keyboard monitor clients: {err:?}");
 
@@ -605,7 +606,7 @@ impl Manager {
                 }
 
                 {
-                    let mut data = data.lock().unwrap();
+                    let mut data = kb_data.lock().unwrap();
                     data.clients.clear();
                     data.rebuild_grabbed_mods();
                 }
