@@ -4,7 +4,7 @@ use std::time::Duration;
 const HISTORY_LIMIT: Duration = Duration::from_millis(150);
 const DECELERATION_TOUCHPAD: f64 = 0.997;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SwipeTracker {
     history: VecDeque<Event>,
     pos: f64,

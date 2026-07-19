@@ -1393,6 +1393,7 @@ impl Tty {
             .user_data()
             .insert_if_missing(|| TtyOutputState { node, crtc });
         output.user_data().insert_if_missing(|| output_name.clone());
+
         if let Some(x) = orientation {
             output.user_data().insert_if_missing(|| PanelOrientation(x));
         }
@@ -1893,7 +1894,7 @@ impl Tty {
             target: RenderTarget::Output,
             xray: None,
         };
-        let mut elements = niri.render_to_vec(ctx, output, true);
+        let mut elements = niri.render_to_vec(ctx, output, true, true);
 
         // Visualize the damage, if enabled.
         if niri.debug_draw_damage {

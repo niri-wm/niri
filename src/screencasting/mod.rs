@@ -20,6 +20,7 @@ use crate::dbus::mutter_screen_cast::{self, CursorMode, ScreenCastToNiri, Stream
 use crate::niri::{CastTarget, Niri, OutputRenderElements, PointerRenderElements, State};
 use crate::niri_render_elements;
 use crate::render_helpers::{RenderCtx, RenderTarget};
+use crate::utils::zoom::zoom_transform_physical_point_f64;
 use crate::utils::{get_monotonic_time, CastSessionId, CastStreamId};
 use crate::window::mapped::{MappedId, WindowCastRenderElements};
 
@@ -204,6 +205,7 @@ impl State {
                 let mut pointer_location = Point::default();
 
                 if self.niri.pointer_visibility.is_visible() {
+                    // Window casts intentionally render the pointer without applying global zoom.
                     if let Some((pointer_pos, win_pos)) =
                         self.niri.pointer_pos_for_window_cast(mapped)
                     {
@@ -217,7 +219,15 @@ impl State {
                         pointer_location = pointer_pos - output_pos.to_f64() - buf_pos;
 
                         let pos = buf_pos.to_physical_precise_round(scale).upscale(-1);
-                        self.niri.render_pointer(renderer, output, &mut |elem| {
+                        // Do not apply output zoom to the pointer for window casts.
+                        // This keeps the pointer rendering aligned with the unzoomed
+                        // window-cast seam, rather than following the output's zoom state.
+                        let ctx = RenderCtx {
+                            renderer,
+                            target: RenderTarget::Screencast,
+                            xray: None,
+                        };
+                        self.niri.render_pointer(ctx, output, &mut |elem| {
                             let elem =
                                 RelocateRenderElement::from_element(elem, pos, Relocate::Relative);
                             elements.push(CastRenderElement::from(elem));
@@ -575,22 +585,55 @@ impl Niri {
                 continue;
             }
 
+            // Prepare pointer rendering for screencasts. Mirrors the rendering path in Niri
+            // so screencast viewport and zoom behavior match the user's visible output.
             if cursor_data.is_none() {
-                let mut pointer_pos = Point::default();
-                if self.pointer_visibility.is_visible() {
+                // Compute pointer visibility/location using the same viewport rules as
+                // the visible output viewport (with possible zoom).
+                let pointer_pos = if self.pointer_visibility.is_visible() {
+                    // Cursor is rendered only if its display position falls inside the output
+                    // viewport.
                     let output_geo = self.global_space.output_geometry(output).unwrap().to_f64();
                     let pointer_loc = self
                         .tablet_cursor_location
                         .unwrap_or_else(|| self.seat.get_pointer().unwrap().current_location());
-                    // Only render when the pointer is within the output. Otherwise, it will
-                    // happily appear anywhere outside the output video source in OBS.
-                    if output_geo.contains(pointer_loc) {
-                        pointer_pos = pointer_loc - output_geo.loc;
-                        self.render_pointer(renderer, output, &mut |elem| {
+                    let display_pointer_loc = self.effective_cursor_pos(pointer_loc);
+                    if output_geo.contains(display_pointer_loc) {
+                        // Position relative to the screencast buffer
+                        Some(display_pointer_loc - output_geo.loc)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+
+                // Render pointer with output zoom, then compute the
+                // zoom-transformed cursor position for PipeWire metadata.
+                let pointer_pos = match pointer_pos {
+                    Some(display_cursor) => {
+                        let ctx = RenderCtx {
+                            renderer,
+                            target: RenderTarget::Screencast,
+                            xray: None,
+                        };
+                        self.render_pointer_for_output(ctx, output, &mut |elem| {
                             elements.push(elem.into())
                         });
+
+                        // Compute zoom-transformed cursor hotspot position.
+                        let cursor_phys = display_cursor.to_physical(scale);
+                        let zoom = self.layout.zoom_snapshot_for_output(output);
+                        let target = zoom_transform_physical_point_f64(
+                            cursor_phys,
+                            zoom.level,
+                            zoom.focal,
+                            scale,
+                        );
+                        Some(target.to_i32_round::<i32>().to_f64().to_logical(scale))
                     }
-                }
+                    None => None,
+                };
 
                 let main_start = elements.len();
                 let ctx = RenderCtx {
@@ -598,12 +641,14 @@ impl Niri {
                     target: RenderTarget::Screencast,
                     xray: None,
                 };
-                self.render(ctx, output, false, &mut |elem| elements.push(elem.into()));
+                self.render(ctx, output, false, true, &mut |elem| {
+                    elements.push(elem.into())
+                });
 
                 cursor_data = Some(CursorData::compute(
                     &elements,
                     main_start,
-                    pointer_pos,
+                    pointer_pos.unwrap_or_default(),
                     scale,
                 ));
             }
@@ -668,6 +713,8 @@ impl Niri {
             let mut elements = Vec::new();
             let mut pointer_location = Point::default();
 
+            // Pointer rendering for window casts in the same output path remains
+            // unzoomed; window-cast does not participate in output-zoom semantics.
             if self.pointer_visibility.is_visible() {
                 if let Some((pointer_pos, win_pos)) = self.pointer_pos_for_window_cast(mapped) {
                     // Pointer location must be relative to the screencast buffer.
@@ -679,7 +726,14 @@ impl Niri {
                     pointer_location = pointer_pos - output_pos.to_f64() - buf_pos;
 
                     let pos = buf_pos.to_physical_precise_round(scale).upscale(-1);
-                    self.render_pointer(renderer, output, &mut |elem| {
+
+                    let ctx = RenderCtx {
+                        renderer,
+                        target: RenderTarget::Screencast,
+                        xray: None,
+                    };
+
+                    self.render_pointer(ctx, output, &mut |elem| {
                         let elem =
                             RelocateRenderElement::from_element(elem, pos, Relocate::Relative);
                         elements.push(CastRenderElement::from(elem));

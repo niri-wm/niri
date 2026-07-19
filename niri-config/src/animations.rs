@@ -19,6 +19,8 @@ pub struct Animations {
     pub screenshot_ui_open: ScreenshotUiOpenAnim,
     pub overview_open_close: OverviewOpenCloseAnim,
     pub recent_windows_close: RecentWindowsCloseAnim,
+    pub zoom_level_change: ZoomLevelChangeAnim,
+    pub zoom_focal_pan: ZoomFocalPanAnim,
 }
 
 impl Default for Animations {
@@ -37,6 +39,8 @@ impl Default for Animations {
             screenshot_ui_open: Default::default(),
             overview_open_close: Default::default(),
             recent_windows_close: Default::default(),
+            zoom_level_change: Default::default(),
+            zoom_focal_pan: Default::default(),
         }
     }
 }
@@ -71,6 +75,10 @@ pub struct AnimationsPart {
     pub overview_open_close: Option<OverviewOpenCloseAnim>,
     #[knuffel(child)]
     pub recent_windows_close: Option<RecentWindowsCloseAnim>,
+    #[knuffel(child)]
+    pub zoom_level_change: Option<ZoomLevelChangeAnim>,
+    #[knuffel(child)]
+    pub zoom_focal_pan: Option<ZoomFocalPanAnim>,
 }
 
 impl MergeWith<AnimationsPart> for Animations {
@@ -97,6 +105,8 @@ impl MergeWith<AnimationsPart> for Animations {
             screenshot_ui_open,
             overview_open_close,
             recent_windows_close,
+            zoom_level_change,
+            zoom_focal_pan,
         );
     }
 }
@@ -326,6 +336,36 @@ impl Default for RecentWindowsCloseAnim {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ZoomLevelChangeAnim(pub Animation);
+
+impl Default for ZoomLevelChangeAnim {
+    fn default() -> Self {
+        Self(Animation {
+            off: false,
+            kind: Kind::Easing(EasingParams {
+                duration_ms: 250,
+                curve: Curve::EaseOutExpo,
+            }),
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ZoomFocalPanAnim(pub Animation);
+
+impl Default for ZoomFocalPanAnim {
+    fn default() -> Self {
+        Self(Animation {
+            off: false,
+            kind: Kind::Easing(EasingParams {
+                duration_ms: 250,
+                curve: Curve::CubicBezier(0.05, 0.7, 0.1, 1.0),
+            }),
+        })
+    }
+}
+
 impl<S> knuffel::Decode<S> for WorkspaceSwitchAnim
 where
     S: knuffel::traits::ErrorSpan,
@@ -524,17 +564,130 @@ where
     }
 }
 
-impl Animation {
-    pub fn new_off() -> Self {
-        Self {
+impl<S> knuffel::Decode<S> for ZoomLevelChangeAnim
+where
+    S: knuffel::traits::ErrorSpan,
+{
+    fn decode_node(
+        node: &knuffel::ast::SpannedNode<S>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) -> Result<Self, DecodeError<S>> {
+        let default = Self::default().0;
+        Ok(Self(Animation::decode_node(node, ctx, default, |_, _| {
+            Ok(false)
+        })?))
+    }
+}
+
+impl<S> knuffel::Decode<S> for ZoomFocalPanAnim
+where
+    S: knuffel::traits::ErrorSpan,
+{
+    fn decode_node(
+        node: &knuffel::ast::SpannedNode<S>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) -> Result<Self, DecodeError<S>> {
+        let default = Self::default().0;
+        Ok(Self(Animation::decode_node(node, ctx, default, |_, _| {
+            Ok(false)
+        })?))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::utils::MergeWith;
+
+    /// Config merge propagates `off` to the top-level `Animations` flag.
+    ///
+    /// When `AnimationsPart { off: true }` is merged into `Animations`, the
+    /// top-level `off` flag should be set to true.  This flag is then used by
+    /// the runtime clock to make all animations complete instantly.
+    #[test]
+    fn animations_off_merge_propagates_to_flag() {
+        let mut animations = Animations::default();
+        assert!(!animations.off, "default off should be false");
+
+        let part = AnimationsPart {
             off: true,
-            kind: Kind::Easing(EasingParams {
-                duration_ms: 0,
-                curve: Curve::Linear,
-            }),
-        }
+            on: false,
+            slowdown: None,
+            workspace_switch: None,
+            window_open: None,
+            window_close: None,
+            horizontal_view_movement: None,
+            window_movement: None,
+            window_resize: None,
+            config_notification_open_close: None,
+            exit_confirmation_open_close: None,
+            screenshot_ui_open: None,
+            overview_open_close: None,
+            recent_windows_close: None,
+            zoom_level_change: None,
+            zoom_focal_pan: None,
+        };
+
+        animations.merge_with(&part);
+        assert!(animations.off, "merge with off=true should set off flag");
+
+        // Individual zoom animation configs should retain their defaults
+        // since the part didn't specify them explicitly.
+        assert!(
+            !animations.zoom_level_change.0.off,
+            "zoom_level_change off should remain default (false) when not explicitly set"
+        );
+        assert!(
+            !animations.zoom_focal_pan.0.off,
+            "zoom_focal_pan off should remain default (false) when not explicitly set"
+        );
     }
 
+    /// When `AnimationsPart { zoom_level_change: Some(ZoomLevelChangeAnim(Animation { off: true, ..
+    /// })) }` is merged, the per-animation off flag should be set on zoom_level_change.
+    #[test]
+    fn zoom_level_change_off_explicitly_set_via_merge() {
+        let mut animations = Animations::default();
+        assert!(!animations.zoom_level_change.0.off);
+
+        let part = AnimationsPart {
+            off: false,
+            on: false,
+            slowdown: None,
+            workspace_switch: None,
+            window_open: None,
+            window_close: None,
+            horizontal_view_movement: None,
+            window_movement: None,
+            window_resize: None,
+            config_notification_open_close: None,
+            exit_confirmation_open_close: None,
+            screenshot_ui_open: None,
+            overview_open_close: None,
+            recent_windows_close: None,
+            zoom_level_change: Some(ZoomLevelChangeAnim(Animation {
+                off: true,
+                kind: Kind::Easing(EasingParams {
+                    duration_ms: 250,
+                    curve: Curve::EaseOutExpo,
+                }),
+            })),
+            zoom_focal_pan: None,
+        };
+
+        animations.merge_with(&part);
+        assert!(
+            animations.zoom_level_change.0.off,
+            "zoom_level_change off should be true after merge"
+        );
+        assert!(
+            !animations.zoom_focal_pan.0.off,
+            "zoom_focal_pan should be unchanged"
+        );
+    }
+}
+
+impl Animation {
     fn decode_node<S: knuffel::traits::ErrorSpan>(
         node: &knuffel::ast::SpannedNode<S>,
         ctx: &mut knuffel::decode::Context<S>,

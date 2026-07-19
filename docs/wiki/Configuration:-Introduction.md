@@ -12,6 +12,7 @@ You can find documentation for various sections of the config on these wiki page
 * [`layer-rule {}`](./Configuration:-Layer-Rules.md)
 * [`animations {}`](./Configuration:-Animations.md)
 * [`gestures {}`](./Configuration:-Gestures.md)
+* [`zoom {}`](./Configuration:-Zoom.md)
 * [`recent-windows {}`](./Configuration:-Recent-Windows.md)
 * [`debug {}`](./Configuration:-Debug-Options.md)
 * [`include "other.kdl"`](./Configuration:-Include.md)

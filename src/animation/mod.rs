@@ -63,6 +63,8 @@ impl Animation {
         let mut rv = Self::ease(clock, from, to, initial_velocity, 0, Curve::EaseOutCubic);
         if config.off {
             rv.is_off = true;
+            // Force from == to so value_at() returns the target even at start_time.
+            rv.from = rv.to;
             return rv;
         }
 
@@ -238,6 +240,14 @@ impl Animation {
         self.clock.now() >= self.start_time + self.duration
     }
 
+    pub fn is_done_at(&self, at: Duration) -> bool {
+        if self.clock.should_complete_instantly() {
+            return true;
+        }
+
+        at >= self.start_time + self.duration
+    }
+
     pub fn is_clamped_done(&self) -> bool {
         if self.clock.should_complete_instantly() {
             return true;
@@ -247,6 +257,13 @@ impl Animation {
     }
 
     pub fn value_at(&self, at: Duration) -> f64 {
+        // Global animation-off flag: return target immediately to avoid the
+        // at==start_time early-return below returning `from` while
+        // is_done_at() already says we're done.
+        if self.clock.should_complete_instantly() || self.duration.is_zero() {
+            return self.to;
+        }
+
         if at <= self.start_time {
             // Return from when at == start_time so that when the animations are off, the behavior
             // within a single event loop cycle (i.e. no time had passed since the start of an
@@ -256,10 +273,8 @@ impl Animation {
             return self.to;
         }
 
-        if self.clock.should_complete_instantly() {
-            return self.to;
-        }
-
+        // Note: `should_complete_instantly()` is checked at the top of the
+        // function.  By this point we know the animation is running.
         let passed = at.saturating_sub(self.start_time);
 
         match self.kind {
@@ -295,6 +310,10 @@ impl Animation {
 
     pub fn value(&self) -> f64 {
         self.value_at(self.clock.now())
+    }
+
+    pub fn clock_now(&self) -> Duration {
+        self.clock.now()
     }
 
     /// Returns a value that stops at the target value after first reaching it.

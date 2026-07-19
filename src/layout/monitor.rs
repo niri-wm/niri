@@ -366,7 +366,6 @@ impl<W: LayoutElement> Monitor<W> {
     pub fn output_name(&self) -> &String {
         &self.output_name
     }
-
     pub fn active_workspace_idx(&self) -> usize {
         self.active_workspace_idx
     }
