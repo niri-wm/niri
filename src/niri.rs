@@ -253,6 +253,9 @@ pub struct Niri {
     // Dmabuf readiness pre-commit hook for a surface.
     pub dmabuf_pre_commit_hook: HashMap<WlSurface, HookId>,
 
+    // Set on any surface commit, taken in refresh_layout() to gate the per-window output_update.
+    pub surface_committed: bool,
+
     /// Clients to notify about their blockers being cleared.
     pub blocker_cleared_tx: Sender<Client>,
     pub blocker_cleared_rx: Receiver<Client>,
@@ -2538,6 +2541,7 @@ impl Niri {
             mapped_layer_surfaces: HashMap::new(),
             root_surface: HashMap::new(),
             dmabuf_pre_commit_hook: HashMap::new(),
+            surface_committed: false,
             blocker_cleared_tx,
             blocker_cleared_rx,
             monitors_active: true,
@@ -4022,6 +4026,10 @@ impl Niri {
         };
 
         self.layout.refresh(layout_is_active);
+
+        if mem::take(&mut self.surface_committed) {
+            self.layout.with_windows_mut(|mapped, _| mapped.refresh());
+        }
     }
 
     pub fn refresh_idle_inhibit(&mut self) {
