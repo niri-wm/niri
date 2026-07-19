@@ -16,6 +16,7 @@ use smithay::backend::input::{InputEvent, TabletToolDescriptor};
 use smithay::desktop::{PopupKind, PopupManager};
 use smithay::input::dnd::{self, DnDGrab, DndGrabHandler, DndTarget};
 use smithay::input::pointer::{CursorIcon, CursorImageStatus, Focus, PointerHandle};
+use smithay::input::tablet::TabletSeatHandler;
 use smithay::input::{keyboard, Seat, SeatHandler, SeatState};
 use smithay::output::Output;
 use smithay::reexports::rustix::fs::{fcntl_setfl, OFlags};
@@ -37,7 +38,9 @@ use smithay::wayland::keyboard_shortcuts_inhibit::{
     KeyboardShortcutsInhibitHandler, KeyboardShortcutsInhibitState, KeyboardShortcutsInhibitor,
 };
 use smithay::wayland::output::OutputHandler;
-use smithay::wayland::pointer_constraints::{with_pointer_constraint, PointerConstraintsHandler};
+use smithay::wayland::pointer_constraints::{
+    with_pointer_constraint, PointerConstraint, PointerConstraintsHandler,
+};
 use smithay::wayland::security_context::{
     SecurityContext, SecurityContextHandler, SecurityContextListenerSource,
 };
@@ -57,7 +60,6 @@ use smithay::wayland::selection::{SelectionHandler, SelectionTarget};
 use smithay::wayland::session_lock::{
     LockSurface, SessionLockHandler, SessionLockManagerState, SessionLocker,
 };
-use smithay::wayland::tablet_manager::TabletSeatHandler;
 use smithay::wayland::xdg_activation::{
     XdgActivationHandler, XdgActivationState, XdgActivationToken, XdgActivationTokenData,
 };
@@ -125,6 +127,8 @@ impl SeatHandler for State {
 }
 
 impl TabletSeatHandler for State {
+    type ToolFocus = WlSurface;
+
     fn tablet_tool_image(&mut self, _tool: &TabletToolDescriptor, image: CursorImageStatus) {
         // FIXME: tablet tools should have their own cursors.
         self.niri.cursor_manager.set_cursor_image(image);
@@ -187,6 +191,24 @@ impl PointerConstraintsHandler for State {
                 output_geometry.size -= (1, 1).into();
                 (origin + location).constrain(output_geometry.to_f64())
             });
+        self.niri.pointer_constraint_position_hint = Some(target);
+    }
+
+    fn remove_constraint(
+        &mut self,
+        _surface: &WlSurface,
+        pointer: &PointerHandle<Self>,
+        _constraint: Option<&PointerConstraint>,
+    ) {
+        // Since a pointer constraint is broken when a surface loses pointer focus, and one surface
+        // can only have a single pointer constraint at once, assume there can be only one
+        // constraint active at once, and therefore the global position hint should come from that
+        // one constraint that just got removed.
+        let Some(target) = self.niri.pointer_constraint_position_hint.take() else {
+            // The client never sent a position hint.
+            return;
+        };
+
         pointer.set_location(target);
 
         // Redraw to update the cursor position if it's visible.

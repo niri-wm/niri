@@ -7,7 +7,7 @@ use smithay::input::touch::{
 };
 use smithay::input::SeatHandler;
 use smithay::output::Output;
-use smithay::utils::{IsAlive, Logical, Point, Serial};
+use smithay::utils::{IsAlive, Logical, Point};
 
 use crate::layout::workspace::{Workspace, WorkspaceId};
 use crate::niri::State;
@@ -120,9 +120,8 @@ impl TouchGrab<State> for TouchOverviewGrab {
         handle: &mut TouchInnerHandle<'_, State>,
         _focus: Option<(<State as SeatHandler>::TouchFocus, Point<f64, Logical>)>,
         event: &DownEvent,
-        seq: Serial,
     ) {
-        handle.down(data, None, event, seq);
+        handle.down(data, None, event);
 
         if event.slot == self.start_data.slot {
             return;
@@ -136,14 +135,8 @@ impl TouchGrab<State> for TouchOverviewGrab {
         }
     }
 
-    fn up(
-        &mut self,
-        data: &mut State,
-        handle: &mut TouchInnerHandle<'_, State>,
-        event: &UpEvent,
-        seq: Serial,
-    ) {
-        handle.up(data, event, seq);
+    fn up(&mut self, data: &mut State, handle: &mut TouchInnerHandle<'_, State>, event: &UpEvent) {
+        handle.up(data, event);
 
         if event.slot != self.start_data.slot {
             return;
@@ -158,9 +151,8 @@ impl TouchGrab<State> for TouchOverviewGrab {
         handle: &mut TouchInnerHandle<'_, State>,
         _focus: Option<(<State as SeatHandler>::TouchFocus, Point<f64, Logical>)>,
         event: &MotionEvent,
-        seq: Serial,
     ) {
-        handle.motion(data, None, event, seq);
+        handle.motion(data, None, event);
 
         if event.slot != self.start_data.slot {
             return;
@@ -246,12 +238,12 @@ impl TouchGrab<State> for TouchOverviewGrab {
         }
     }
 
-    fn frame(&mut self, data: &mut State, handle: &mut TouchInnerHandle<'_, State>, seq: Serial) {
-        handle.frame(data, seq);
+    fn frame(&mut self, data: &mut State, handle: &mut TouchInnerHandle<'_, State>) {
+        handle.frame(data);
     }
 
-    fn cancel(&mut self, data: &mut State, handle: &mut TouchInnerHandle<'_, State>, seq: Serial) {
-        handle.cancel(data, seq);
+    fn cancel(&mut self, data: &mut State, handle: &mut TouchInnerHandle<'_, State>) {
+        handle.cancel(data);
         handle.unset_grab(self, data);
     }
 
@@ -260,9 +252,8 @@ impl TouchGrab<State> for TouchOverviewGrab {
         data: &mut State,
         handle: &mut TouchInnerHandle<'_, State>,
         event: &ShapeEvent,
-        seq: Serial,
     ) {
-        handle.shape(data, event, seq);
+        handle.shape(data, event);
     }
 
     fn orientation(
@@ -270,9 +261,8 @@ impl TouchGrab<State> for TouchOverviewGrab {
         data: &mut State,
         handle: &mut TouchInnerHandle<'_, State>,
         event: &OrientationEvent,
-        seq: Serial,
     ) {
-        handle.orientation(data, event, seq);
+        handle.orientation(data, event);
     }
 
     fn start_data(&self) -> &TouchGrabStartData<State> {

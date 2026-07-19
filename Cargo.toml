@@ -12,7 +12,7 @@ authors = ["Ivan Molodetskikh <yalterz@gmail.com>"]
 license = "GPL-3.0-or-later"
 edition = "2021"
 repository = "https://github.com/niri-wm/niri"
-rust-version = "1.85"
+rust-version = "1.87"
 
 [workspace.dependencies]
 anyhow = "1.0.102"
@@ -28,13 +28,13 @@ tracy-client = { version = "0.18.4", default-features = false }
 [workspace.dependencies.smithay]
 # version = "0.4.1"
 git = "https://github.com/Smithay/smithay.git"
-rev = "0d14cd655f6e905ad5110ff0384400da223f2cab"
+rev = "7609ab82f002436188ebd4df1d8f7e1905f90c4a"
 default-features = false
 
 [workspace.dependencies.smithay-drm-extras]
 # version = "0.1.0"
 git = "https://github.com/Smithay/smithay.git"
-rev = "0d14cd655f6e905ad5110ff0384400da223f2cab"
+rev = "7609ab82f002436188ebd4df1d8f7e1905f90c4a"
 # path = "../smithay/smithay-drm-extras"
 
 [package]
@@ -69,7 +69,7 @@ drm-ffi = "0.9.1"
 fastrand = "2.4.1"
 futures-util = { version = "0.3.32", default-features = false, features = ["std", "io"] }
 git-version = "0.3.9"
-glam = "0.32.1"
+glam = "0.33"
 input = { version = "0.10.0", features = ["libinput_1_21"] }
 keyframe = { version = "1.1.1", default-features = false }
 libc = "0.2.185"
@@ -91,9 +91,9 @@ smithay-drm-extras.workspace = true
 tracing-subscriber.workspace = true
 tracing.workspace = true
 tracy-client.workspace = true
-wayland-backend = "0.3.15"
-wayland-scanner = "0.31.10"
-wayland-server = "0.31.13"
+wayland-backend = "0.3.16"
+wayland-scanner = "0.31.11"
+wayland-server = "0.31.14"
 xcursor = "0.3.10"
 zbus = { version = "5.13.2", optional = true }
 
@@ -122,7 +122,7 @@ insta.workspace = true
 proptest = "1.11.0"
 proptest-derive = { version = "0.8.0", features = ["boxed_union"] }
 rayon = "1.12.0"
-wayland-client = "0.31.14"
+wayland-client = "0.31.15"
 xshell = "0.2.7"
 
 [build-dependencies]
