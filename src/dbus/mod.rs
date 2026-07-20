@@ -17,7 +17,6 @@ pub mod mutter_screen_cast;
 #[cfg(feature = "xdp-gnome-screencast")]
 use mutter_screen_cast::ScreenCast;
 
-use self::freedesktop_a11y::KeyboardMonitor;
 use self::freedesktop_screensaver::ScreenSaver;
 use self::gnome_shell_introspect::Introspect;
 use self::mutter_display_config::DisplayConfig;
@@ -38,7 +37,7 @@ pub struct DBusServers {
     pub conn_screen_cast: Option<Connection>,
     pub conn_login1: Option<Connection>,
     pub conn_locale1: Option<Connection>,
-    pub conn_keyboard_monitor: Option<Connection>,
+    pub conn_a11y_manager: Option<Connection>,
 }
 
 impl DBusServers {
@@ -131,10 +130,23 @@ impl DBusServers {
                 dbus.conn_screen_cast = try_start(screen_cast);
             }
 
-            let keyboard_monitor = KeyboardMonitor::new();
-            if let Some(x) = try_start(keyboard_monitor.clone()) {
-                dbus.conn_keyboard_monitor = Some(x);
-                niri.a11y_keyboard_monitor = Some(keyboard_monitor);
+            let (to_niri, from_a11y) = calloop::channel::channel();
+            let (to_a11y, from_niri) = async_channel::unbounded();
+            niri.event_loop
+                .insert_source(from_a11y, move |event, _, state| match event {
+                    calloop::channel::Event::Msg(msg) => state.on_a11y_manager_msg(&to_a11y, msg),
+                    calloop::channel::Event::Closed => (),
+                })
+                .unwrap();
+            let a11y_manager = freedesktop_a11y::Manager::new(to_niri, from_niri);
+            match a11y_manager.start() {
+                Ok(conn) => {
+                    dbus.conn_a11y_manager = Some(conn);
+                    niri.a11y_manager = Some(a11y_manager);
+                }
+                Err(err) => {
+                    warn!("error starting a11y manager: {err:?}");
+                }
             }
         }
 
