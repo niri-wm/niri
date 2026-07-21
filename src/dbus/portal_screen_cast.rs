@@ -16,6 +16,7 @@ use crate::utils::{CastSessionId, CastStreamId};
 pub struct PortalScreenCast {
     ipc_outputs: std::sync::Arc<std::sync::Mutex<IpcOutputMap>>,
     to_niri: calloop::channel::Sender<ScreenCastToNiri>,
+    selected_output: std::sync::Arc<std::sync::Mutex<Option<String>>>,
 }
 
 #[interface(name = "org.freedesktop.impl.portal.ScreenCast")]
@@ -38,6 +39,30 @@ impl PortalScreenCast {
         _app_id: &str,
         _options: HashMap<&str, Value<'_>>,
     ) -> fdo::Result<(u32, HashMap<String, Value<'static>>)> {
+        tracing::info!("portal: SelectSources");
+
+        // Build list of available outputs for the picker
+        let outputs = {
+            let guard = self.ipc_outputs.lock().unwrap();
+            guard
+                .iter()
+                .filter(|(_, o)| o.logical.is_some())
+                .map(|(_, o)| {
+                    let log = o.logical.as_ref().unwrap();
+                    (o.name.clone(), format!("{}x{}", log.width, log.height))
+                })
+                .collect::<Vec<_>>()
+        };
+
+        if outputs.len() <= 1 {
+            // only one output, no need for picker
+            if let Some((name, _)) = outputs.first() {
+                *self.selected_output.lock().unwrap() = Some(name.clone());
+            }
+        } else if let Some(name) = show_monitor_picker(&outputs) {
+            *self.selected_output.lock().unwrap() = Some(name);
+        }
+
         let mut r: HashMap<String, Value<'static>> = HashMap::new();
         r.insert("available_source_types".into(), Value::U32(1));
         r.insert("available_cursor_modes".into(), Value::U32(7));
@@ -52,9 +77,14 @@ impl PortalScreenCast {
         _parent_window: &str,
         _options: HashMap<&str, Value<'_>>,
     ) -> fdo::Result<(u32, HashMap<String, Value<'static>>)> {
+        let selected = self.selected_output.lock().unwrap().clone();
         let output = {
             let outputs = self.ipc_outputs.lock().unwrap();
-            outputs.values().find(|o| o.logical.is_some()).cloned()
+            if let Some(ref name) = selected {
+                outputs.values().find(|o| o.name == *name).cloned()
+            } else {
+                outputs.values().find(|o| o.logical.is_some()).cloned()
+            }
         };
         let Some(output) = output else {
             return Err(fdo::Error::Failed("no output available".into()));
@@ -145,6 +175,32 @@ impl PortalScreenCast {
         ipc_outputs: std::sync::Arc<std::sync::Mutex<IpcOutputMap>>,
         to_niri: calloop::channel::Sender<ScreenCastToNiri>,
     ) -> Self {
-        Self { ipc_outputs, to_niri }
+        Self {
+            ipc_outputs,
+            to_niri,
+            selected_output: std::sync::Arc::new(std::sync::Mutex::new(None)),
+        }
     }
+}
+
+fn show_monitor_picker(outputs: &[(String, String)]) -> Option<String> {
+    let mut cmd = std::process::Command::new("zenity");
+    cmd.arg("--list");
+    cmd.arg("--title=Screen Sharing");
+    cmd.arg("--text=Select which monitor to share:");
+    cmd.arg("--column=Monitor");
+    cmd.arg("--column=Resolution");
+    for (name, size) in outputs {
+        cmd.arg(name);
+        cmd.arg(size);
+    }
+    cmd.arg("--width=400");
+    cmd.arg("--height=300");
+
+    let out = cmd.output().ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if s.is_empty() { None } else { Some(s) }
 }
