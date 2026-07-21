@@ -286,8 +286,9 @@ impl PipeWire {
         size: Size<i32, Physical>,
         refresh: u32,
         alpha: bool,
-        mut cursor_mode: CursorMode,
-        signal_ctx: SignalEmitter<'static>,
+        mut         cursor_mode: CursorMode,
+        signal_ctx: Option<SignalEmitter<'static>>,
+        node_tx: Option<std::sync::mpsc::Sender<u32>>,
     ) -> anyhow::Result<Cast> {
         let _span = tracy_client::span!("PipeWire::start_cast");
 
@@ -338,6 +339,8 @@ impl PipeWire {
             .state_changed({
                 let inner = inner.clone();
                 let stop_cast = stop_cast.clone();
+                let signal_ctx = signal_ctx;
+                let node_tx = std::cell::RefCell::new(node_tx);
                 move |stream, (), old, new| {
                     let _span = debug_span!("state_changed", %stream_id).entered();
                     debug!("{old:?} -> {new:?}");
@@ -350,19 +353,23 @@ impl PipeWire {
                                 inner.node_id = Some(id);
                                 debug!("sending signal with {id}");
 
-                                let _span = tracy_client::span!("sending PipeWireStreamAdded");
-                                async_io::block_on(async {
-                                    let res = mutter_screen_cast::Stream::pipe_wire_stream_added(
-                                        &signal_ctx,
-                                        id,
-                                    )
-                                    .await;
+                                if let Some(tx) = node_tx.borrow_mut().take() {
+                                    let _ = tx.send(id);
+                                }
 
-                                    if let Err(err) = res {
-                                        warn!("error sending PipeWireStreamAdded: {err:?}");
-                                        stop_cast();
-                                    }
-                                });
+                                if let Some(ref ctx) = signal_ctx {
+                                    let _span = tracy_client::span!("sending PipeWireStreamAdded");
+                                    async_io::block_on(async {
+                                        let res = mutter_screen_cast::Stream::pipe_wire_stream_added(
+                                            ctx, id,
+                                        )
+                                        .await;
+                                        if let Err(err) = res {
+                                            warn!("error sending PipeWireStreamAdded: {err:?}");
+                                            stop_cast();
+                                        }
+                                    });
+                                }
                             }
 
                             inner.is_active = false;

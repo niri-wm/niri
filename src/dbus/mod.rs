@@ -15,7 +15,11 @@ pub mod mutter_service_channel;
 #[cfg(feature = "xdp-gnome-screencast")]
 pub mod mutter_screen_cast;
 #[cfg(feature = "xdp-gnome-screencast")]
+pub mod portal_screen_cast;
+#[cfg(feature = "xdp-gnome-screencast")]
 use mutter_screen_cast::ScreenCast;
+#[cfg(feature = "xdp-gnome-screencast")]
+use portal_screen_cast::PortalScreenCast;
 
 use self::freedesktop_screensaver::ScreenSaver;
 use self::gnome_shell_introspect::Introspect;
@@ -35,6 +39,8 @@ pub struct DBusServers {
     pub conn_introspect: Option<Connection>,
     #[cfg(feature = "xdp-gnome-screencast")]
     pub conn_screen_cast: Option<Connection>,
+    #[cfg(feature = "xdp-gnome-screencast")]
+    pub conn_portal_screen_cast: Option<Connection>,
     pub conn_login1: Option<Connection>,
     pub conn_locale1: Option<Connection>,
     pub conn_a11y_manager: Option<Connection>,
@@ -126,8 +132,12 @@ impl DBusServers {
                         }
                     })
                     .unwrap();
+                let portal_to_niri = to_niri.clone();
                 let screen_cast = ScreenCast::new(backend.ipc_outputs(), to_niri);
                 dbus.conn_screen_cast = try_start(screen_cast);
+
+                let portal = PortalScreenCast::new(backend.ipc_outputs(), portal_to_niri);
+                dbus.conn_portal_screen_cast = try_start(portal);
             }
 
             let (to_niri, from_a11y) = calloop::channel::channel();

@@ -4,6 +4,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use serde::Deserialize;
+use std::sync::mpsc;
 use zbus::fdo::RequestNameFlags;
 use zbus::object_server::{InterfaceRef, SignalEmitter};
 use zbus::zvariant::{DeserializeDict, OwnedObjectPath, SerializeDict, Type, Value};
@@ -97,7 +98,8 @@ pub enum ScreenCastToNiri {
         stream_id: CastStreamId,
         target: StreamTargetId,
         cursor_mode: CursorMode,
-        signal_ctx: SignalEmitter<'static>,
+        signal_ctx: Option<SignalEmitter<'static>>,
+        node_tx: Option<mpsc::Sender<u32>>,
     },
     StopCast {
         session_id: CastSessionId,
@@ -385,7 +387,8 @@ impl Stream {
             stream_id: self.id,
             target: self.target.make_id(),
             cursor_mode: self.cursor_mode,
-            signal_ctx: ctxt,
+            signal_ctx: Some(ctxt),
+            node_tx: None,
         };
 
         if let Err(err) = self.to_niri.send(msg) {

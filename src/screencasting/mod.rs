@@ -1,6 +1,7 @@
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::mem;
+use std::sync::mpsc;
 use std::time::Duration;
 
 use anyhow::Context as _;
@@ -50,6 +51,7 @@ pub struct PendingCast {
     pub stream_id: CastStreamId,
     pub cursor_mode: CursorMode,
     pub signal_ctx: SignalEmitter<'static>,
+    pub node_tx: Option<mpsc::Sender<u32>>,
 }
 
 impl Screencasting {
@@ -364,7 +366,8 @@ impl State {
                 refresh,
                 alpha,
                 pending.cursor_mode,
-                pending.signal_ctx,
+                Some(pending.signal_ctx),
+                pending.node_tx,
             );
             match res {
                 Ok(mut cast) => {
@@ -391,7 +394,9 @@ impl State {
                 target,
                 cursor_mode,
                 signal_ctx,
+                node_tx,
             } => {
+                let signal_ctx = signal_ctx;
                 let _span = tracy_client::span!("StartCast");
                 let _span = debug_span!("StartCast", %session_id, %stream_id).entered();
 
@@ -416,7 +421,8 @@ impl State {
                             session_id,
                             stream_id,
                             cursor_mode,
-                            signal_ctx,
+                            signal_ctx: signal_ctx.expect("dynamic cast needs signal emitter"),
+                            node_tx,
                         });
                         return;
                     }
@@ -451,6 +457,7 @@ impl State {
                     alpha,
                     cursor_mode,
                     signal_ctx,
+                    node_tx,
                 );
                 match res {
                     Ok(cast) => {
