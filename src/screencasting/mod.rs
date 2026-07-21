@@ -16,7 +16,9 @@ use smithay::reexports::gbm::Modifier;
 use smithay::utils::{Physical, Point, Scale, Size};
 use zbus::object_server::SignalEmitter;
 
-use crate::dbus::mutter_screen_cast::{self, CursorMode, ScreenCastToNiri, StreamTargetId};
+use crate::dbus::mutter_screen_cast::{
+    self, CursorMode, ScreenCastToNiri, StreamParameters, StreamTargetId,
+};
 use crate::niri::{CastTarget, Niri, OutputRenderElements, PointerRenderElements, State};
 use crate::niri_render_elements;
 use crate::render_helpers::{RenderCtx, RenderTarget};
@@ -385,6 +387,24 @@ impl State {
 
     pub fn on_screen_cast_msg(&mut self, msg: ScreenCastToNiri) {
         match msg {
+            ScreenCastToNiri::GetWindowParameters { window_id, reply } => {
+                let parameters = if window_id == self.niri.casting.dynamic_cast_id_for_portal.get()
+                {
+                    // The dynamic target has no fixed geometry until it is assigned.
+                    Some(StreamParameters {
+                        position: (0, 0),
+                        size: (1, 1),
+                    })
+                } else {
+                    self.niri
+                        .cast_params_for_window(window_id)
+                        .map(|(size, _)| StreamParameters {
+                            position: (0, 0),
+                            size: (size.w, size.h),
+                        })
+                };
+                let _ = reply.send_blocking(parameters);
+            }
             ScreenCastToNiri::StartCast {
                 session_id,
                 stream_id,

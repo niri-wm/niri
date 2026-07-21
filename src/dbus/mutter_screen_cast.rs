@@ -73,7 +73,10 @@ pub struct Stream {
 enum StreamTarget {
     // FIXME: update on scale changes and whatnot.
     Output(niri_ipc::Output),
-    Window { id: u64 },
+    Window {
+        id: u64,
+        parameters: StreamParameters,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -82,16 +85,18 @@ pub enum StreamTargetId {
     Window { id: u64 },
 }
 
-#[derive(Debug, SerializeDict, Type, Value)]
+#[derive(Debug, Clone, SerializeDict, Type, Value)]
 #[zvariant(signature = "dict")]
-struct StreamParameters {
-    /// Position of the stream in logical coordinates.
-    position: (i32, i32),
-    /// Size of the stream in logical coordinates.
-    size: (i32, i32),
+pub struct StreamParameters {
+    pub(crate) position: (i32, i32),
+    pub(crate) size: (i32, i32),
 }
 
 pub enum ScreenCastToNiri {
+    GetWindowParameters {
+        window_id: u64,
+        reply: async_channel::Sender<Option<StreamParameters>>,
+    },
     StartCast {
         session_id: CastSessionId,
         stream_id: CastStreamId,
@@ -246,10 +251,32 @@ impl Session {
         let path = format!("/org/gnome/Mutter/ScreenCast/Stream/u{}", stream_id.get());
         let path = OwnedObjectPath::try_from(path).unwrap();
 
+        let (tx, rx) = async_channel::bounded(1);
+        if let Err(err) = self.to_niri.send(ScreenCastToNiri::GetWindowParameters {
+            window_id: properties.window_id,
+            reply: tx,
+        }) {
+            warn!("error querying window geometry: {err:?}");
+            return Err(fdo::Error::Failed("internal error".to_owned()));
+        }
+        let parameters = match rx.recv().await {
+            Ok(Some(parameters)) => parameters,
+            Ok(None) => {
+                return Err(fdo::Error::Failed(
+                    "could not resolve window geometry".to_owned(),
+                ));
+            }
+            Err(err) => {
+                warn!("error receiving window geometry: {err:?}");
+                return Err(fdo::Error::Failed("internal error".to_owned()));
+            }
+        };
+
         let cursor_mode = properties.cursor_mode.unwrap_or_default();
 
         let target = StreamTarget::Window {
             id: properties.window_id,
+            parameters,
         };
         let stream = Stream::new(
             stream_id,
@@ -294,13 +321,7 @@ impl Stream {
                     size: (logical.width as i32, logical.height as i32),
                 }
             }
-            StreamTarget::Window { .. } => {
-                // Does any consumer need this?
-                StreamParameters {
-                    position: (0, 0),
-                    size: (1, 1),
-                }
-            }
+            StreamTarget::Window { parameters, .. } => parameters.clone(),
         }
     }
 }
@@ -400,7 +421,7 @@ impl StreamTarget {
             StreamTarget::Output(output) => StreamTargetId::Output {
                 name: output.name.clone(),
             },
-            StreamTarget::Window { id } => StreamTargetId::Window { id: *id },
+            StreamTarget::Window { id, .. } => StreamTargetId::Window { id: *id },
         }
     }
 }
