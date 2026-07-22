@@ -1,8 +1,12 @@
-> **🍴 Personal fork** — this is [cillianpower](https://github.com/cillianpower)'s hobby fork of niri.
-> I am a Rust novice vibe-coding features that interest me. If you want the real thing,
-> go to [niri-wm/niri](https://github.com/niri-wm/niri).
-> See [FOCUS_RING_AND_SHADOW_ANIM_PLAN.md](./FOCUS_RING_AND_SHADOW_ANIM_PLAN.md) for the
-> current work-in-progress: configurable focus-ring alpha fade (off by default).
+> **🍴 Experimental personal fork** — this is [cillianpower](https://github.com/cillianpower)'s
+> attempt to learn Rust and contribute features to [niri](https://github.com/niri-wm/niri),
+> a scrollable-tiling Wayland compositor. I am a Rails developer and Rust novice, vibe-coding
+> my way through the codebase with heavy AI assistance. This is not production quality — it's
+> a learning project. If you want the real thing, go to [niri-wm/niri](https://github.com/niri-wm/niri).
+>
+> **Current work-in-progress:** configurable focus-ring alpha fade on focus change (off by default).
+> See [FOCUS_RING_AND_SHADOW_ANIM_PLAN.md](./FOCUS_RING_AND_SHADOW_ANIM_PLAN.md) for design
+> decisions and upstream PR strategy.
 
 <h1 align="center"><img alt="niri" src="https://github.com/user-attachments/assets/07d05cd0-d5dc-4a28-9a35-51bae8f119a0"></h1>
 <p align="center">A scrollable-tiling Wayland compositor.</p>
