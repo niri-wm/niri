@@ -238,6 +238,8 @@ pub struct FocusRing {
     pub active_gradient: Option<Gradient>,
     pub inactive_gradient: Option<Gradient>,
     pub urgent_gradient: Option<Gradient>,
+    /// Maximum opacity (0-100, as a percentage) the focus ring fades up to when focused.
+    pub max_opacity: f64,
 }
 
 impl Default for FocusRing {
@@ -251,6 +253,7 @@ impl Default for FocusRing {
             active_gradient: None,
             inactive_gradient: None,
             urgent_gradient: None,
+            max_opacity: 100.,
         }
     }
 }
@@ -265,6 +268,8 @@ pub struct Border {
     pub active_gradient: Option<Gradient>,
     pub inactive_gradient: Option<Gradient>,
     pub urgent_gradient: Option<Gradient>,
+    /// Maximum opacity (0-100, as a percentage) the border/focus ring fades up to when focused.
+    pub max_opacity: f64,
 }
 
 impl Default for Border {
@@ -278,6 +283,7 @@ impl Default for Border {
             active_gradient: None,
             inactive_gradient: None,
             urgent_gradient: None,
+            max_opacity: 100.,
         }
     }
 }
@@ -293,6 +299,7 @@ impl From<Border> for FocusRing {
             active_gradient: value.active_gradient,
             inactive_gradient: value.inactive_gradient,
             urgent_gradient: value.urgent_gradient,
+            max_opacity: value.max_opacity,
         }
     }
 }
@@ -308,6 +315,7 @@ impl From<FocusRing> for Border {
             active_gradient: value.active_gradient,
             inactive_gradient: value.inactive_gradient,
             urgent_gradient: value.urgent_gradient,
+            max_opacity: value.max_opacity,
         }
     }
 }
@@ -320,8 +328,9 @@ impl MergeWith<BorderRule> for Border {
         }
 
         merge!((self, part), width);
+        merge!((self, part), max_opacity);
 
-        merge_color_gradient!(
+        merge_color_gradient!(             
             (self, part),
             (active_color, active_gradient),
             (inactive_color, inactive_gradient),
@@ -630,6 +639,8 @@ pub struct BorderRule {
     pub on: bool,
     #[knuffel(child, unwrap(argument))]
     pub width: Option<FloatOrInt<0, 65535>>,
+    #[knuffel(child, unwrap(argument))]
+    pub max_opacity: Option<FloatOrInt<0, 100>>,
     #[knuffel(child)]
     pub active_color: Option<Color>,
     #[knuffel(child)]

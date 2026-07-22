@@ -27,6 +27,7 @@ impl GradientArea {
             active_gradient: None,
             inactive_gradient: None,
             urgent_gradient: None,
+            max_opacity: 100.,
         });
 
         Self {

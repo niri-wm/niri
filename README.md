@@ -1,3 +1,9 @@
+> **🍴 Personal fork** — this is [cillianpower](https://github.com/cillianpower)'s hobby fork of niri.
+> I am a Rust novice vibe-coding features that interest me. If you want the real thing,
+> go to [niri-wm/niri](https://github.com/niri-wm/niri).
+> See [FOCUS_RING_AND_SHADOW_ANIM_PLAN.md](./FOCUS_RING_AND_SHADOW_ANIM_PLAN.md) for the
+> current work-in-progress: configurable focus-ring alpha fade (off by default).
+
 <h1 align="center"><img alt="niri" src="https://github.com/user-attachments/assets/07d05cd0-d5dc-4a28-9a35-51bae8f119a0"></h1>
 <p align="center">A scrollable-tiling Wayland compositor.</p>
 <p align="center">
@@ -33,8 +39,8 @@ When a monitor disconnects, its workspaces will move to another monitor, but upo
 - An [Overview](https://github.com/user-attachments/assets/379a5d1f-acdb-4c11-b36c-e85fd91f0995) that zooms out workspaces and windows
 - Built-in screenshot UI
 - Monitor and window screencasting through xdg-desktop-portal-gnome
-    - You can [block out](https://niri-wm.github.io/niri/Configuration%3A-Window-Rules.html#block-out-from) sensitive windows from screencasts
-    - [Dynamic cast target](https://niri-wm.github.io/niri/Screencasting.html#dynamic-screencast-target) that can change what it shows on the go
+  - You can [block out](https://niri-wm.github.io/niri/Configuration%3A-Window-Rules.html#block-out-from) sensitive windows from screencasts
+  - [Dynamic cast target](https://niri-wm.github.io/niri/Screencasting.html#dynamic-screencast-target) that can change what it shows on the go
 - [Touchpad](https://github.com/niri-wm/niri/assets/1794388/946a910e-9bec-4cd1-a923-4a9421707515) and [mouse](https://github.com/niri-wm/niri/assets/1794388/8464e65d-4bf2-44fa-8c8e-5883355bd000) gestures
 - Group windows into [tabs](https://niri-wm.github.io/niri/Tabs.html)
 - Configurable layout: gaps, borders, struts, window sizes
@@ -46,7 +52,7 @@ When a monitor disconnects, its workspaces will move to another monitor, but upo
 
 ## Video Demo
 
-https://github.com/niri-wm/niri/assets/1794388/bce834b0-f205-434e-a027-b373495f9729
+<https://github.com/niri-wm/niri/assets/1794388/bce834b0-f205-434e-a027-b373495f9729>
 
 Also check out these videos that showcase a lot of the niri functionality:
 
@@ -118,13 +124,11 @@ Here are some other projects which implement a similar workflow:
 
 ## Contact
 
-Our main communication channel is a Matrix chat, feel free to join and ask a question: https://matrix.to/#/#niri:matrix.org
+Our main communication channel is a Matrix chat, feel free to join and ask a question: <https://matrix.to/#/#niri:matrix.org>
 
-We also have a community Discord server: https://discord.gg/vT8Sfjy7sx
+We also have a community Discord server: <https://discord.gg/vT8Sfjy7sx>
 
 [PaperWM]: https://github.com/paperwm/PaperWM
-[waybar]: https://github.com/Alexays/Waybar
-[fuzzel]: https://codeberg.org/dnkl/fuzzel
 [awesome-niri]: https://github.com/niri-wm/awesome-niri
 [karousel]: https://github.com/peterfajdiga/karousel
 [papersway]: https://spwhitton.name/tech/code/papersway/

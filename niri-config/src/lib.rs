@@ -1324,6 +1324,7 @@ mod tests {
                     ),
                     inactive_gradient: None,
                     urgent_gradient: None,
+                    max_opacity: 100.0,
                 },
                 border: Border {
                     off: false,
@@ -1349,6 +1350,7 @@ mod tests {
                     active_gradient: None,
                     inactive_gradient: None,
                     urgent_gradient: None,
+                    max_opacity: 100.0,
                 },
                 shadow: Shadow {
                     on: false,
@@ -1645,6 +1647,17 @@ mod tests {
                         ),
                     },
                 ),
+                focus_ring: FocusRingAnim(
+                    Animation {
+                        off: true,
+                        kind: Easing(
+                            EasingParams {
+                                duration_ms: 0,
+                                curve: Linear,
+                            },
+                        ),
+                    },
+                ),
             },
             blur: Blur {
                 off: false,
@@ -1812,6 +1825,7 @@ mod tests {
                                 3.0,
                             ),
                         ),
+                        max_opacity: None,
                         active_color: None,
                         inactive_color: None,
                         urgent_color: None,
@@ -1827,6 +1841,7 @@ mod tests {
                                 8.5,
                             ),
                         ),
+                        max_opacity: None,
                         active_color: None,
                         inactive_color: None,
                         urgent_color: None,

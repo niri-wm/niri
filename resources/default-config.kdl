@@ -302,6 +302,11 @@ animations {
 
     // Slow down all animations by this factor. Values below 1 speed them up instead.
     // slowdown 3.0
+
+    // focus-ring {
+    //     duration-ms 150
+    //     curve "ease-out-expo"
+    // }
 }
 
 // Window rules let you adjust behavior for individual windows.

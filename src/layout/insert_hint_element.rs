@@ -23,6 +23,7 @@ impl InsertHintElement {
                 active_gradient: config.gradient,
                 inactive_gradient: config.gradient,
                 urgent_gradient: config.gradient,
+                max_opacity: 100.,
             }),
         }
     }
@@ -37,6 +38,7 @@ impl InsertHintElement {
             active_gradient: config.gradient,
             inactive_gradient: config.gradient,
             urgent_gradient: config.gradient,
+            max_opacity: 100.,
         });
     }
 

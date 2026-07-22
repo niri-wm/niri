@@ -66,6 +66,7 @@ impl Layout {
                     active_gradient: None,
                     inactive_gradient: None,
                     urgent_gradient: None,
+                    max_opacity: 100.,
                 },
                 ..Default::default()
             },

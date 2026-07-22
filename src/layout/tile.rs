@@ -96,6 +96,20 @@ pub struct Tile<W: LayoutElement> {
     /// The animation of the tile's opacity.
     pub(super) alpha_animation: Option<AlphaAnimation>,
 
+    /// Animation of the focus ring alpha on focus change.
+    focus_ring_alpha_anim: Option<Animation>,
+
+    /// Previous `is_active` state for detecting focus ring transitions.
+    prev_focus_ring_is_active: bool,
+
+    /// Whether the focus ring alpha animation has been initialized.
+    ///
+    /// Until the first `update_render_elements` call, we don't know the window's initial
+    /// `is_active`, so we set `prev_focus_ring_is_active` from it without animating. This
+    /// avoids a spurious fade-in from 0 on a window that was already focused at creation
+    /// (e.g. the first window you open).
+    focus_ring_initialized: bool,
+
     /// Offset during the initial interactive move rubberband.
     pub(super) interactive_move_offset: Point<f64, Logical>,
 
@@ -205,6 +219,9 @@ impl<W: LayoutElement> Tile<W> {
             move_x_animation: None,
             move_y_animation: None,
             alpha_animation: None,
+            focus_ring_alpha_anim: None,
+            prev_focus_ring_is_active: false,
+            focus_ring_initialized: false,
             interactive_move_offset: Point::from((0., 0.)),
             unmap_snapshot: None,
             rounded_corner_damage: Default::default(),
@@ -439,6 +456,12 @@ impl<W: LayoutElement> Tile<W> {
                 self.alpha_animation = None;
             }
         }
+
+        if let Some(anim) = &mut self.focus_ring_alpha_anim {
+            if anim.is_done() {
+                self.focus_ring_alpha_anim = None;
+            }
+        }
     }
 
     pub fn are_animations_ongoing(&self) -> bool {
@@ -524,6 +547,49 @@ impl<W: LayoutElement> Tile<W> {
         } else {
             false
         };
+
+        // The focus ring fades between 0 and its configured max-opacity on focus change.
+        //
+        // When the animation is disabled (`off`) we skip all animation state and use the
+        // steady-state alpha directly, so the default-off path does no per-frame work.
+        let ring_max_opacity = (self.focus_ring.config().max_opacity / 100.).clamp(0., 1.);
+        let focus_ring_anim_off = self.options.animations.focus_ring.0.off;
+
+        if !focus_ring_anim_off {
+            if !self.focus_ring_initialized {
+                // First sight of this tile: record the current state without animating.
+                self.prev_focus_ring_is_active = is_active;
+                self.focus_ring_initialized = true;
+            } else if is_active != self.prev_focus_ring_is_active {
+                // Focus changed: start the fade from the current alpha so interrupted
+                // transitions (rapid Alt+Tab) continue smoothly instead of jumping.
+                let target = if is_active { ring_max_opacity } else { 0. };
+                let current = self
+                    .focus_ring_alpha_anim
+                    .as_ref()
+                    .map(|a| a.clamped_value())
+                    .unwrap_or(if is_active { 0. } else { ring_max_opacity });
+                self.focus_ring_alpha_anim = Some(Animation::new(
+                    self.clock.clone(),
+                    current,
+                    target,
+                    0.,
+                    self.options.animations.focus_ring.0,
+                ));
+            }
+            self.prev_focus_ring_is_active = is_active;
+        }
+
+        let ring_alpha = if focus_ring_anim_off {
+            // Animation off: steady-state alpha, no animation state.
+            if is_active { ring_max_opacity as f32 } else { 0. }
+        } else {
+            self.focus_ring_alpha_anim
+                .as_ref()
+                .map(|a| a.clamped_value() as f32)
+                .unwrap_or(if is_active { ring_max_opacity as f32 } else { 0. })
+        };
+
         let radius = radius.expanded_by(self.focus_ring.width() as f32);
         self.focus_ring.update_render_elements(
             animated_tile_size,
@@ -533,7 +599,7 @@ impl<W: LayoutElement> Tile<W> {
             view_rect,
             radius,
             self.scale,
-            1. - expanded_progress as f32,
+            ring_alpha * (1. - expanded_progress as f32),
         );
 
         self.fullscreen_backdrop.resize(animated_tile_size);
