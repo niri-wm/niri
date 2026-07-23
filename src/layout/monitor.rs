@@ -850,55 +850,13 @@ impl<W: LayoutElement> Monitor<W> {
     }
 
     pub fn move_column_to_workspace_up(&mut self, activate: bool) {
-        let source_workspace_idx = self.active_workspace_idx;
-
-        let new_idx = source_workspace_idx.saturating_sub(1);
-        if new_idx == source_workspace_idx {
-            return;
-        }
-
-        let workspace = &mut self.workspaces[source_workspace_idx];
-        if workspace.floating_is_active() {
-            let activate = if activate {
-                ActivateWindow::Smart
-            } else {
-                ActivateWindow::No
-            };
-            self.move_to_workspace_up(activate);
-            return;
-        }
-
-        let Some(column) = workspace.remove_active_column() else {
-            return;
-        };
-
-        self.add_column(new_idx, column, activate);
+        let new_idx = self.active_workspace_idx.saturating_sub(1);
+        self.move_column_to_workspace(new_idx, activate);
     }
 
     pub fn move_column_to_workspace_down(&mut self, activate: bool) {
-        let source_workspace_idx = self.active_workspace_idx;
-
-        let new_idx = min(source_workspace_idx + 1, self.workspaces.len() - 1);
-        if new_idx == source_workspace_idx {
-            return;
-        }
-
-        let workspace = &mut self.workspaces[source_workspace_idx];
-        if workspace.floating_is_active() {
-            let activate = if activate {
-                ActivateWindow::Smart
-            } else {
-                ActivateWindow::No
-            };
-            self.move_to_workspace_down(activate);
-            return;
-        }
-
-        let Some(column) = workspace.remove_active_column() else {
-            return;
-        };
-
-        self.add_column(new_idx, column, activate);
+        let new_idx = min(self.active_workspace_idx + 1, self.workspaces.len() - 1);
+        self.move_column_to_workspace(new_idx, activate);
     }
 
     pub fn move_column_to_workspace(&mut self, idx: usize, activate: bool) {
