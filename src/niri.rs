@@ -2039,6 +2039,13 @@ impl State {
             }
             niri_ipc::OutputAction::Transform { transform } => config.transform = transform,
             niri_ipc::OutputAction::Position { position } => {
+                let relative = |direction, to: niri_ipc::RelativeTo| {
+                    Some(niri_config::Position::Relative {
+                        relative_to: to.output,
+                        direction,
+                        align: to.align,
+                    })
+                };
                 config.position = match position {
                     niri_ipc::PositionToSet::Automatic => None,
                     niri_ipc::PositionToSet::Specific(position) => {
@@ -2047,6 +2054,10 @@ impl State {
                             y: position.y,
                         })
                     }
+                    niri_ipc::PositionToSet::LeftOf(to) => relative(Direction::LeftOf, to),
+                    niri_ipc::PositionToSet::RightOf(to) => relative(Direction::RightOf, to),
+                    niri_ipc::PositionToSet::Above(to) => relative(Direction::Above, to),
+                    niri_ipc::PositionToSet::Below(to) => relative(Direction::Below, to),
                 }
             }
             niri_ipc::OutputAction::Vrr { vrr } => {

@@ -6,6 +6,7 @@ use knuffel::errors::DecodeError;
 use knuffel::traits::ErrorSpan;
 use knuffel::Decode;
 use niri_ipc::{ConfiguredMode, HSyncPolarity, Transform, VSyncPolarity};
+pub use niri_ipc::Align;
 
 use crate::gestures::HotCorners;
 use crate::{Color, FloatOrInt, LayoutPart};
@@ -151,21 +152,6 @@ pub enum Direction {
     RightOf,
     Above,
     Below,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum Align {
-    /// Align to:
-    /// - top for a vertical edge
-    /// - left for a horizontal one.
-    #[default]
-    Beginning,
-    /// Align the midpoints of the shared edge.
-    Center,
-    /// Align to:
-    ///  - bottom for a vertical edge
-    ///  - right for a horizontal one.
-    End,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
