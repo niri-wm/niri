@@ -15,7 +15,7 @@ use serde_json::json;
 use crate::cli::Msg;
 use crate::utils::version;
 
-pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
+pub fn handle_msg(mut msg: Msg, json: bool, print_request: bool) -> anyhow::Result<()> {
     // For actions taking paths, prepend the niri CLI's working directory.
     if let Msg::Action {
         action:
@@ -50,6 +50,10 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
         Msg::OverviewState => Request::OverviewState,
         Msg::Casts => Request::Casts,
     };
+    if print_request {
+        println!("{}", serde_json::to_string(&request)?);
+        return Ok(());
+    }
 
     let mut socket = Socket::connect().context("error connecting to the niri socket")?;
 

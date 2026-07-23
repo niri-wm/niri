@@ -43,6 +43,10 @@ pub enum Sub {
         /// Format output as JSON.
         #[arg(short, long)]
         json: bool,
+
+        /// Print the request as JSON instead of sending it.
+        #[arg(long)]
+        print_request: bool,
     },
     /// Validate the config file.
     Validate {
