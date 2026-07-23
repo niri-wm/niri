@@ -751,23 +751,6 @@ impl<W: LayoutElement> Workspace<W> {
         removed
     }
 
-    pub fn remove_active_tile(&mut self, transaction: Transaction) -> Option<RemovedTile<W>> {
-        let from_floating = self.floating_is_active.get();
-        let removed = if from_floating {
-            self.floating.remove_active_tile()?
-        } else {
-            self.scrolling.remove_active_tile(transaction)?
-        };
-
-        if let Some(output) = &self.output {
-            removed.tile.window().output_leave(output);
-        }
-
-        self.update_focus_floating_tiling_after_removing(from_floating);
-
-        Some(removed)
-    }
-
     pub fn remove_active_column(&mut self) -> Option<Column<W>> {
         let from_floating = self.floating_is_active.get();
         if from_floating {

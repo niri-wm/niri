@@ -818,14 +818,13 @@ impl<W: LayoutElement> Monitor<W> {
         });
 
         let workspace = &mut self.workspaces[source_workspace_idx];
-        let transaction = Transaction::new();
-        let removed = if let Some(window) = window {
-            workspace.remove_tile(window, transaction)
-        } else if let Some(removed) = workspace.remove_active_tile(transaction) {
-            removed
-        } else {
+        let Some(window) = window.or_else(|| workspace.active_window().map(|win| win.id())) else {
             return;
         };
+        let window = window.clone();
+
+        let transaction = Transaction::new();
+        let removed = workspace.remove_tile(&window, transaction);
 
         self.add_tile(
             removed.tile,

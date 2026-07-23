@@ -498,11 +498,6 @@ impl<W: LayoutElement> FloatingSpace<W> {
         }
     }
 
-    pub fn remove_active_tile(&mut self) -> Option<RemovedTile<W>> {
-        let id = self.active_window_id.clone()?;
-        Some(self.remove_tile(&id))
-    }
-
     pub fn remove_tile(&mut self, id: &W::Id) -> RemovedTile<W> {
         let idx = self.idx_of(id).unwrap();
         self.remove_tile_by_idx(idx)

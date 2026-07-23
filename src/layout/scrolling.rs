@@ -1026,20 +1026,6 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         }
     }
 
-    pub fn remove_active_tile(&mut self, transaction: Transaction) -> Option<RemovedTile<W>> {
-        if self.columns.is_empty() {
-            return None;
-        }
-
-        let column = &self.columns[self.active_column_idx];
-        Some(self.remove_tile_by_idx(
-            self.active_column_idx,
-            column.active_tile_idx,
-            transaction,
-            None,
-        ))
-    }
-
     pub fn remove_tile(&mut self, window: &W::Id, transaction: Transaction) -> RemovedTile<W> {
         let column_idx = self
             .columns

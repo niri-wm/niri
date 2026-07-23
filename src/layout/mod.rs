@@ -3357,14 +3357,13 @@ impl<W: LayoutElement> Layout<W> {
             };
 
             let ws = &mut mon.workspaces[ws_idx];
-            let transaction = Transaction::new();
-            let mut removed = if let Some(window) = window {
-                ws.remove_tile(window, transaction)
-            } else if let Some(removed) = ws.remove_active_tile(transaction) {
-                removed
-            } else {
+            let Some(window) = window.or_else(|| ws.active_window().map(|win| win.id())) else {
                 return;
             };
+            let window = window.clone();
+
+            let transaction = Transaction::new();
+            let mut removed = ws.remove_tile(&window, transaction);
 
             removed.tile.stop_move_animations();
 
