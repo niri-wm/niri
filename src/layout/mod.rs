@@ -2107,14 +2107,24 @@ impl<W: LayoutElement> Layout<W> {
         let Some(monitor) = self.active_monitor() else {
             return;
         };
-        monitor.move_to_workspace_up(focus);
+        let activate = if focus {
+            ActivateWindow::Smart
+        } else {
+            ActivateWindow::No
+        };
+        monitor.move_to_workspace_up(activate);
     }
 
     pub fn move_to_workspace_down(&mut self, focus: bool) {
         let Some(monitor) = self.active_monitor() else {
             return;
         };
-        monitor.move_to_workspace_down(focus);
+        let activate = if focus {
+            ActivateWindow::Smart
+        } else {
+            ActivateWindow::No
+        };
+        monitor.move_to_workspace_down(activate);
     }
 
     pub fn move_to_workspace(

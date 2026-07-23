@@ -760,13 +760,13 @@ impl<W: LayoutElement> Monitor<W> {
 
     pub fn move_down_or_to_workspace_down(&mut self) {
         if !self.active_workspace().move_down() {
-            self.move_to_workspace_down(true);
+            self.move_to_workspace_down(ActivateWindow::Smart);
         }
     }
 
     pub fn move_up_or_to_workspace_up(&mut self) {
         if !self.active_workspace().move_up() {
-            self.move_to_workspace_up(true);
+            self.move_to_workspace_up(ActivateWindow::Smart);
         }
     }
 
@@ -782,72 +782,14 @@ impl<W: LayoutElement> Monitor<W> {
         }
     }
 
-    pub fn move_to_workspace_up(&mut self, focus: bool) {
-        let source_workspace_idx = self.active_workspace_idx;
-
-        let new_idx = source_workspace_idx.saturating_sub(1);
-        if new_idx == source_workspace_idx {
-            return;
-        }
-        let new_id = self.workspaces[new_idx].id();
-
-        let workspace = &mut self.workspaces[source_workspace_idx];
-        let Some(removed) = workspace.remove_active_tile(Transaction::new()) else {
-            return;
-        };
-
-        let activate = if focus {
-            ActivateWindow::Yes
-        } else {
-            ActivateWindow::Smart
-        };
-
-        self.add_tile(
-            removed.tile,
-            MonitorAddWindowTarget::Workspace {
-                id: new_id,
-                column_idx: None,
-            },
-            activate,
-            true,
-            removed.width,
-            removed.is_full_width,
-            removed.is_floating,
-        );
+    pub fn move_to_workspace_up(&mut self, activate: ActivateWindow) {
+        let new_idx = self.active_workspace_idx.saturating_sub(1);
+        self.move_to_workspace(None, new_idx, activate);
     }
 
-    pub fn move_to_workspace_down(&mut self, focus: bool) {
-        let source_workspace_idx = self.active_workspace_idx;
-
-        let new_idx = min(source_workspace_idx + 1, self.workspaces.len() - 1);
-        if new_idx == source_workspace_idx {
-            return;
-        }
-        let new_id = self.workspaces[new_idx].id();
-
-        let workspace = &mut self.workspaces[source_workspace_idx];
-        let Some(removed) = workspace.remove_active_tile(Transaction::new()) else {
-            return;
-        };
-
-        let activate = if focus {
-            ActivateWindow::Yes
-        } else {
-            ActivateWindow::Smart
-        };
-
-        self.add_tile(
-            removed.tile,
-            MonitorAddWindowTarget::Workspace {
-                id: new_id,
-                column_idx: None,
-            },
-            activate,
-            true,
-            removed.width,
-            removed.is_full_width,
-            removed.is_floating,
-        );
+    pub fn move_to_workspace_down(&mut self, activate: ActivateWindow) {
+        let new_idx = min(self.active_workspace_idx + 1, self.workspaces.len() - 1);
+        self.move_to_workspace(None, new_idx, activate);
     }
 
     pub fn move_to_workspace(
@@ -917,6 +859,11 @@ impl<W: LayoutElement> Monitor<W> {
 
         let workspace = &mut self.workspaces[source_workspace_idx];
         if workspace.floating_is_active() {
+            let activate = if activate {
+                ActivateWindow::Smart
+            } else {
+                ActivateWindow::No
+            };
             self.move_to_workspace_up(activate);
             return;
         }
@@ -938,6 +885,11 @@ impl<W: LayoutElement> Monitor<W> {
 
         let workspace = &mut self.workspaces[source_workspace_idx];
         if workspace.floating_is_active() {
+            let activate = if activate {
+                ActivateWindow::Smart
+            } else {
+                ActivateWindow::No
+            };
             self.move_to_workspace_down(activate);
             return;
         }
