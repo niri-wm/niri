@@ -195,6 +195,9 @@ pub struct Column<W: LayoutElement> {
     /// Animation of the render offset during window swapping.
     move_animation: Option<MoveAnimation>,
 
+    /// Animation of a column visually moving vertically.
+    move_y_animation: Option<MoveAnimation>,
+
     /// Latest known view size for this column's workspace.
     view_size: Size<f64, Logical>,
 
@@ -3971,6 +3974,7 @@ impl<W: LayoutElement> Column<W> {
             display_mode,
             tab_indicator: TabIndicator::new(options.layout.tab_indicator),
             move_animation: None,
+            move_y_animation: None,
             view_size,
             working_area,
             parent_area,
@@ -4077,6 +4081,11 @@ impl<W: LayoutElement> Column<W> {
                 self.move_animation = None;
             }
         }
+        if let Some(move_) = &mut self.move_y_animation {
+            if move_.anim.is_done() {
+                self.move_y_animation = None;
+            }
+        }
 
         for tile in &mut self.tiles {
             tile.advance_animations();
@@ -4087,12 +4096,14 @@ impl<W: LayoutElement> Column<W> {
 
     pub fn are_animations_ongoing(&self) -> bool {
         self.move_animation.is_some()
+            || self.move_y_animation.is_some()
             || self.tab_indicator.are_animations_ongoing()
             || self.tiles.iter().any(Tile::are_animations_ongoing)
     }
 
     pub fn are_transitions_ongoing(&self) -> bool {
         self.move_animation.is_some()
+            || self.move_y_animation.is_some()
             || self.tab_indicator.are_animations_ongoing()
             || self.tiles.iter().any(Tile::are_transitions_ongoing)
     }
@@ -4159,6 +4170,9 @@ impl<W: LayoutElement> Column<W> {
         if let Some(move_) = &self.move_animation {
             offset.x += move_.from * move_.anim.value();
         }
+        if let Some(move_) = &self.move_y_animation {
+            offset.y += move_.from * move_.anim.value();
+        }
 
         offset
     }
@@ -4184,6 +4198,30 @@ impl<W: LayoutElement> Column<W> {
         self.move_animation = Some(MoveAnimation {
             anim,
             from: from_x_offset + current_offset,
+        });
+    }
+
+    pub fn animate_move_y_from(&mut self, from_y_offset: f64) {
+        self.animate_move_y_from_with_config(
+            from_y_offset,
+            self.options.animations.window_movement.0,
+        );
+    }
+
+    pub fn animate_move_y_from_with_config(
+        &mut self,
+        from_y_offset: f64,
+        config: niri_config::Animation,
+    ) {
+        let current_offset = self
+            .move_y_animation
+            .as_ref()
+            .map_or(0., |move_| move_.from * move_.anim.value());
+
+        let anim = Animation::new(self.clock.clone(), 1., 0., 0., config);
+        self.move_y_animation = Some(MoveAnimation {
+            anim,
+            from: from_y_offset + current_offset,
         });
     }
 
