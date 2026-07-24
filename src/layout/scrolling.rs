@@ -1429,7 +1429,15 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         let new_col_x = self.column_x(column_idx);
         let from_view_offset = target_x - new_col_x;
 
-        (from_view_offset - new_view_offset).abs() / self.working_area.size.w
+        let amount = (from_view_offset - new_view_offset).abs();
+
+        // Column activation treats changes smaller than one physical pixel as no movement.
+        // Mirror that tolerance here so rounding noise does not prevent focus-follows-mouse.
+        if amount < 1. / self.scale {
+            return 0.;
+        }
+
+        amount / self.working_area.size.w
     }
 
     pub fn activate_window(&mut self, window: &W::Id) -> bool {
