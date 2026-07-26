@@ -416,3 +416,7 @@ binds {
     Super+Alt+L allow-inhibiting=false { spawn "swaylock"; }
 }
 ```
+
+### Azerty/Non-Qwerty bindings
+
+The default niri config file has numeric row bindings (Mod+1 etc.) that may not work on your keyboard layout. If so, you can use [this website](https://xkb.denperidge.com/recipes/niri/) to convert those bindings to your keyboard layout.
