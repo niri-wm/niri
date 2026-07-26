@@ -2104,8 +2104,27 @@ impl<W: LayoutElement> Workspace<W> {
     }
 }
 
-pub(super) fn compute_working_area(output: &Output) -> Rectangle<f64, Logical> {
-    layer_map_for_output(output).non_exclusive_zone().to_f64()
+pub(crate) fn compute_working_area(output: &Output) -> Rectangle<f64, Logical> {
+    let zone = layer_map_for_output(output).non_exclusive_zone();
+    let mut working_area = zone.to_f64();
+    let output_size = output_size(output);
+
+    // Smithay rounds the unconstrained output rect to integer logical pixels:
+    // mode.size.to_f64().to_logical(scale).to_i32_round().
+    // If no exclusive zones touch the right or bottom edges, their outer bounds
+    // match the rounded output dimensions. Snap them to the exact fractional
+    // output size to eliminate background slivers without encroaching on bars.
+    let expected_unzoned_w = output_size.w.round() as i32;
+    if zone.loc.x + zone.size.w == expected_unzoned_w {
+        working_area.size.w = output_size.w - working_area.loc.x;
+    }
+
+    let expected_unzoned_h = output_size.h.round() as i32;
+    if zone.loc.y + zone.size.h == expected_unzoned_h {
+        working_area.size.h = output_size.h - working_area.loc.y;
+    }
+
+    working_area
 }
 
 fn compute_workspace_shadow_config(
