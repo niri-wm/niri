@@ -523,6 +523,8 @@ pub enum AddWindowTarget<'a, W: LayoutElement> {
     Workspace(WorkspaceId),
     /// Next to this existing window.
     NextTo(&'a W::Id),
+    /// At the bottom of this existing window's column.
+    InColumn(&'a W::Id),
 }
 
 /// Type of the window hit from `window_under()`.
@@ -999,6 +1001,15 @@ impl<W: LayoutElement> Layout<W> {
                             (mon_idx, MonitorAddWindowTarget::NextTo(next_to))
                         }
                     }
+                    AddWindowTarget::InColumn(in_column) => {
+                        let mon_idx = monitors
+                            .iter()
+                            .position(|mon| {
+                                mon.workspaces.iter().any(|ws| ws.has_window(in_column))
+                            })
+                            .unwrap();
+                        (mon_idx, MonitorAddWindowTarget::InColumn(in_column))
+                    }
                 };
                 let mon = &mut monitors[mon_idx];
 
@@ -1081,6 +1092,13 @@ impl<W: LayoutElement> Layout<W> {
                                 .unwrap();
                             (ws_idx, WorkspaceAddWindowTarget::NextTo(next_to))
                         }
+                    }
+                    AddWindowTarget::InColumn(in_column) => {
+                        let ws_idx = workspaces
+                            .iter()
+                            .position(|ws| ws.has_window(in_column))
+                            .unwrap();
+                        (ws_idx, WorkspaceAddWindowTarget::InColumn(in_column))
                     }
                 };
                 let ws = &mut workspaces[ws_idx];
@@ -4994,6 +5012,18 @@ impl<W: LayoutElement> Layout<W> {
             .flat_map(|(mon, _, ws)| ws.windows().map(move |win| (mon, win)));
 
         moving_window.chain(rest)
+    }
+
+    /// Finds a tiled window carrying this column-group name on the target workspace.
+    pub fn window_in_column_group(&self, workspace_id: WorkspaceId, group: &str) -> Option<&W> {
+        let (_, _, workspace) = self
+            .workspaces()
+            .find(|(_, _, workspace)| workspace.id() == workspace_id)?;
+
+        workspace.windows().find(|window| {
+            !workspace.is_floating(window.id())
+                && window.rules().open_in_column.as_deref() == Some(group)
+        })
     }
 
     pub fn has_window(&self, window: &W::Id) -> bool {

@@ -190,6 +190,8 @@ pub enum WorkspaceAddWindowTarget<'a, W: LayoutElement> {
     NewColumnAt(usize),
     /// Next to this existing window.
     NextTo(&'a W::Id),
+    /// At the bottom of this existing window's column.
+    InColumn(&'a W::Id),
 }
 
 impl OutputId {
@@ -687,6 +689,19 @@ impl<W: LayoutElement> Workspace<W> {
                     if activate {
                         self.floating_is_active = FloatingActive::No;
                     }
+                }
+            }
+            WorkspaceAddWindowTarget::InColumn(in_column) => {
+                let activate = activate.map_smart(|| {
+                    self.active_window()
+                        .is_some_and(|window| window.id() == in_column)
+                });
+
+                self.scrolling
+                    .add_tile_to_window_column(in_column, tile, activate);
+
+                if activate {
+                    self.floating_is_active = FloatingActive::No;
                 }
             }
         }

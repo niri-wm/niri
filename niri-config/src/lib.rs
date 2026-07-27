@@ -648,6 +648,24 @@ mod tests {
         assert_eq!(config.input.keyboard.repeat_rate, 25);
     }
 
+    #[test]
+    fn parse_open_in_column_window_rule() {
+        let config = Config::parse_mem(
+            r#"
+window-rule {
+    match app-id="org.telegram.desktop"
+    open-in-column "communications"
+}
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            config.window_rules[0].open_in_column.as_deref(),
+            Some("communications")
+        );
+    }
+
     #[track_caller]
     fn do_parse(text: &str) -> Config {
         Config::parse_mem(text)
@@ -1787,6 +1805,7 @@ mod tests {
                         "eDP-1",
                     ),
                     open_on_workspace: None,
+                    open_in_column: None,
                     open_maximized: Some(
                         true,
                     ),

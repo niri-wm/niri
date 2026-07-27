@@ -66,6 +66,44 @@ fn simple() {
 }
 
 #[test]
+fn open_in_named_column_group() {
+    let config = Config::parse_mem(
+        r#"
+window-rule {
+    match title="Telegram"
+    match title="ZapZap"
+    open-in-column "communications"
+}
+"#,
+    )
+    .unwrap();
+    let mut f = Fixture::with_config(config);
+    f.add_output(1, (1920, 1080));
+
+    let id = f.add_client();
+    for title in ["Telegram", "Unrelated", "ZapZap"] {
+        let window = f.client(id).create_window();
+        let surface = window.surface.clone();
+        window.set_title(title);
+        window.commit();
+        f.roundtrip(id);
+
+        let window = f.client(id).window(&surface);
+        window.attach_new_buffer();
+        window.ack_last_and_commit();
+        f.double_roundtrip(id);
+    }
+
+    let mut positions = Vec::new();
+    f.niri().layout.with_windows(|_, _, _, layout| {
+        positions.push(layout.pos_in_scrolling_layout.unwrap());
+    });
+    positions.sort_unstable();
+
+    assert_eq!(positions, [(1, 1), (1, 2), (2, 1)]);
+}
+
+#[test]
 #[should_panic(expected = "Protocol error 3 on object xdg_surface")]
 fn dont_ack_initial_configure() {
     let mut f = Fixture::new();

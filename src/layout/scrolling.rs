@@ -942,6 +942,15 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         }
     }
 
+    pub fn add_tile_to_window_column(&mut self, window: &W::Id, tile: Tile<W>, activate: bool) {
+        let col_idx = self
+            .columns
+            .iter()
+            .position(|col| col.contains(window))
+            .unwrap();
+        self.add_tile_to_column(col_idx, None, tile, activate);
+    }
+
     pub fn add_tile_right_of(
         &mut self,
         right_of: &W::Id,

@@ -58,6 +58,9 @@ pub struct ResolvedWindowRules {
     /// Workspace to open this window on.
     pub open_on_workspace: Option<String>,
 
+    /// Named column group to join when the window opens.
+    pub open_in_column: Option<String>,
+
     /// Whether the window should open full-width.
     pub open_maximized: Option<bool>,
 
@@ -193,6 +196,7 @@ impl ResolvedWindowRules {
 
             let mut open_on_output = None;
             let mut open_on_workspace = None;
+            let mut open_in_column = None;
 
             for rule in rules {
                 let matches = |m: &Match| {
@@ -235,6 +239,10 @@ impl ResolvedWindowRules {
 
                 if let Some(x) = rule.open_on_workspace.as_deref() {
                     open_on_workspace = Some(x);
+                }
+
+                if let Some(x) = rule.open_in_column.as_deref() {
+                    open_in_column = Some(x);
                 }
 
                 if let Some(x) = rule.open_maximized {
@@ -312,6 +320,7 @@ impl ResolvedWindowRules {
 
             resolved.open_on_output = open_on_output.map(|x| x.to_owned());
             resolved.open_on_workspace = open_on_workspace.map(|x| x.to_owned());
+            resolved.open_in_column = open_in_column.map(|x| x.to_owned());
         });
 
         resolved

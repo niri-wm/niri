@@ -173,6 +173,8 @@ pub enum MonitorAddWindowTarget<'a, W: LayoutElement> {
     },
     /// Next to this existing window.
     NextTo(&'a W::Id),
+    /// At the bottom of this existing window's column.
+    InColumn(&'a W::Id),
 }
 
 impl<'a, W: LayoutElement> Copy for MonitorAddWindowTarget<'a, W> {}
@@ -506,6 +508,14 @@ impl<W: LayoutElement> Monitor<W> {
                     .position(|ws| ws.has_window(win_id))
                     .unwrap();
                 (idx, WorkspaceAddWindowTarget::NextTo(win_id))
+            }
+            MonitorAddWindowTarget::InColumn(win_id) => {
+                let idx = self
+                    .workspaces
+                    .iter()
+                    .position(|ws| ws.has_window(win_id))
+                    .unwrap();
+                (idx, WorkspaceAddWindowTarget::InColumn(win_id))
             }
         }
     }
