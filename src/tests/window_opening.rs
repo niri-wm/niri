@@ -71,8 +71,14 @@ fn open_in_named_column_group() {
         r#"
 window-rule {
     match title="Telegram"
+    open-in-column "communications"
+    open-in-column-order 10
+}
+
+window-rule {
     match title="ZapZap"
     open-in-column "communications"
+    open-in-column-order 20
 }
 "#,
     )
@@ -81,7 +87,8 @@ window-rule {
     f.add_output(1, (1920, 1080));
 
     let id = f.add_client();
-    for title in ["Telegram", "Unrelated", "ZapZap"] {
+    // Launch in the opposite order to prove that rule order, not map order, wins.
+    for title in ["ZapZap", "Unrelated", "Telegram"] {
         let window = f.client(id).create_window();
         let surface = window.surface.clone();
         window.set_title(title);
@@ -95,12 +102,20 @@ window-rule {
     }
 
     let mut positions = Vec::new();
-    f.niri().layout.with_windows(|_, _, _, layout| {
-        positions.push(layout.pos_in_scrolling_layout.unwrap());
+    f.niri().layout.with_windows(|window, _, _, layout| {
+        let title = with_toplevel_role(window.toplevel(), |role| role.title.clone().unwrap());
+        positions.push((title, layout.pos_in_scrolling_layout.unwrap()));
     });
-    positions.sort_unstable();
+    positions.sort_unstable_by(|a, b| a.0.cmp(&b.0));
 
-    assert_eq!(positions, [(1, 1), (1, 2), (2, 1)]);
+    assert_eq!(
+        positions,
+        [
+            (String::from("Telegram"), (1, 1)),
+            (String::from("Unrelated"), (2, 1)),
+            (String::from("ZapZap"), (1, 2)),
+        ]
+    );
 }
 
 #[test]

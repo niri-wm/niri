@@ -27,6 +27,8 @@ pub struct WindowRule {
     #[knuffel(child, unwrap(argument))]
     pub open_in_column: Option<String>,
     #[knuffel(child, unwrap(argument))]
+    pub open_in_column_order: Option<i32>,
+    #[knuffel(child, unwrap(argument))]
     pub open_maximized: Option<bool>,
     #[knuffel(child, unwrap(argument))]
     pub open_maximized_to_edges: Option<bool>,

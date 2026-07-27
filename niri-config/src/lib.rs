@@ -655,6 +655,7 @@ mod tests {
 window-rule {
     match app-id="org.telegram.desktop"
     open-in-column "communications"
+    open-in-column-order 10
 }
 "#,
         )
@@ -664,6 +665,7 @@ window-rule {
             config.window_rules[0].open_in_column.as_deref(),
             Some("communications")
         );
+        assert_eq!(config.window_rules[0].open_in_column_order, Some(10));
     }
 
     #[track_caller]
@@ -1806,6 +1808,7 @@ window-rule {
                     ),
                     open_on_workspace: None,
                     open_in_column: None,
+                    open_in_column_order: None,
                     open_maximized: Some(
                         true,
                     ),

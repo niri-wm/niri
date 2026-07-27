@@ -948,7 +948,20 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             .iter()
             .position(|col| col.contains(window))
             .unwrap();
-        self.add_tile_to_column(col_idx, None, tile, activate);
+
+        let tile_idx = {
+            let rules = tile.window().rules();
+            rules.open_in_column_order.and_then(|new_order| {
+                let group = rules.open_in_column.as_deref();
+                self.columns[col_idx].tiles().position(|(existing, _)| {
+                    let existing_rules = existing.window().rules();
+                    existing_rules.open_in_column.as_deref() == group
+                        && existing_rules.open_in_column_order.unwrap_or(i32::MAX) > new_order
+                })
+            })
+        };
+
+        self.add_tile_to_column(col_idx, tile_idx, tile, activate);
     }
 
     pub fn add_tile_right_of(
