@@ -14,6 +14,7 @@ use calloop::timer::{TimeoutAction, Timer};
 use calloop::RegistrationToken;
 use pipewire::context::ContextRc;
 use pipewire::core::{CoreRc, PW_ID_CORE};
+use pipewire::loop_::Timeout;
 use pipewire::main_loop::MainLoopRc;
 use pipewire::properties::PropertiesBox;
 use pipewire::spa::buffer::DataType;
@@ -260,7 +261,7 @@ impl PipeWire {
         let token = event_loop
             .insert_source(generic, move |_, wrapper, _| {
                 let _span = tracy_client::span!("pipewire iteration");
-                wrapper.0.loop_().iterate(Duration::ZERO);
+                wrapper.0.loop_().iterate(Timeout::None);
                 Ok(PostAction::Continue)
             })
             .unwrap();
@@ -1434,6 +1435,13 @@ unsafe fn mark_buffer_as_good(pw_buffer: NonNull<pw_buffer>, sequence: &mut u64)
         // Clear the corrupted flag we may have set before.
         (*header).flags = 0;
         (*header).seq = *sequence;
+
+        // Set buffer timestamp as unknown.
+        //
+        // FIXME: we could try passing real presentation timestamps for rendered frames here.
+        // However, then we must also ensure that the time base never jumps (e.g. when switching a
+        // dynamic cast between outputs) as this would mess up the timing downstream.
+        (*header).pts = -1;
     }
 }
 
