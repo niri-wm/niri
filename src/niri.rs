@@ -403,7 +403,7 @@ pub struct Niri {
     #[cfg(feature = "dbus")]
     pub dbus: Option<crate::dbus::DBusServers>,
     #[cfg(feature = "dbus")]
-    pub a11y_keyboard_monitor: Option<crate::dbus::freedesktop_a11y::KeyboardMonitor>,
+    pub a11y_manager: Option<crate::dbus::freedesktop_a11y::Manager>,
     #[cfg(feature = "dbus")]
     pub a11y: A11y,
     #[cfg(feature = "dbus")]
@@ -2625,7 +2625,7 @@ impl Niri {
             #[cfg(feature = "dbus")]
             dbus: None,
             #[cfg(feature = "dbus")]
-            a11y_keyboard_monitor: None,
+            a11y_manager: None,
             #[cfg(feature = "dbus")]
             a11y,
             #[cfg(feature = "dbus")]
