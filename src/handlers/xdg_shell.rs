@@ -1257,6 +1257,13 @@ impl State {
         let mut target = self.niri.layout.popup_target_rect(window);
         target.loc -= get_popup_toplevel_coords(popup).to_f64();
 
+        // IME text_input_rectangle is surface-local, while popup_target_rect is relative to the
+        // window geometry. With CSD, geometry.loc is often non-zero (e.g. Alacritty title bar),
+        // so convert the target into surface space before positioning.
+        if matches!(popup, PopupKind::InputMethod(_)) {
+            target.loc += window.geometry().loc.to_f64();
+        }
+
         self.position_popup_within_rect(popup, target, true);
     }
 
