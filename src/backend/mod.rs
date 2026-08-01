@@ -201,6 +201,12 @@ impl Backend {
         }
     }
 
+    pub fn on_prepare_for_sleep(&mut self, niri: &mut Niri, start: bool) {
+        if let Backend::Tty(tty) = self {
+            tty.on_prepare_for_sleep(niri, start);
+        }
+    }
+
     pub fn tty_checked(&mut self) -> Option<&mut Tty> {
         if let Self::Tty(v) = self {
             Some(v)

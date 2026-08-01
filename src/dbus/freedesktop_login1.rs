@@ -2,8 +2,41 @@ use futures_util::StreamExt;
 use zbus::fdo;
 use zbus::names::InterfaceName;
 
+#[zbus::proxy(
+    interface = "org.freedesktop.login1.Manager",
+    default_service = "org.freedesktop.login1",
+    default_path = "/org/freedesktop/login1"
+)]
+trait Login1Manager {
+    #[zbus(signal)]
+    fn prepare_for_sleep(&self, start: bool) -> zbus::Result<()>;
+}
+
 pub enum Login1ToNiri {
     LidClosedChanged(bool),
+    PrepareForSleep(bool),
+}
+
+pub fn take_sleep_inhibitor(conn: &zbus::blocking::Connection) -> Option<std::os::fd::OwnedFd> {
+    let proxy = zbus::blocking::Proxy::new(
+        conn,
+        "org.freedesktop.login1",
+        "/org/freedesktop/login1",
+        "org.freedesktop.login1.Manager",
+    )
+    .ok()?;
+    let fd: zbus::zvariant::OwnedFd = proxy
+        .call(
+            "Inhibit",
+            &("sleep", "niri", "Preparing GPU for sleep", "delay"),
+        )
+        .ok()?;
+    Some(fd.into())
+}
+
+pub fn take_sleep_inhibitor_system() -> Option<std::os::fd::OwnedFd> {
+    let conn = zbus::blocking::Connection::system().ok()?;
+    take_sleep_inhibitor(&conn)
 }
 
 pub fn start(
@@ -12,6 +45,31 @@ pub fn start(
     let conn = zbus::blocking::Connection::system()?;
 
     let async_conn = conn.inner().clone();
+
+    // Listen for system PrepareForSleep signals.
+    let manager_proxy = Login1ManagerProxy::builder(&async_conn).build();
+    let to_niri_sleep = to_niri.clone();
+    async_conn
+        .executor()
+        .spawn(
+            async move {
+                let Ok(proxy) = manager_proxy.await else {
+                    return;
+                };
+                let Ok(mut stream) = proxy.receive_prepare_for_sleep().await else {
+                    return;
+                };
+                while let Some(signal) = stream.next().await {
+                    if let Ok(args) = signal.args() {
+                        debug!("login1 PrepareForSleep signal: start={}", args.start);
+                        let _ = to_niri_sleep.send(Login1ToNiri::PrepareForSleep(args.start));
+                    }
+                }
+            },
+            "monitor login1 PrepareForSleep",
+        )
+        .detach();
+
     let future = async move {
         let proxy = fdo::PropertiesProxy::new(
             &async_conn,
