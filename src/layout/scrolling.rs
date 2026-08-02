@@ -4523,46 +4523,74 @@ impl<W: LayoutElement> Column<W> {
         tile.update_window();
         self.data[tile_idx].update(tile);
 
-        let offset = prev_height - self.data[tile_idx].size.h;
+        match self.display_mode {
+            ColumnDisplay::Normal => {
+                let new_height = self.data[tile_idx].size.h;
+                let offset = prev_height - new_height;
 
-        let is_tabbed = self.display_mode == ColumnDisplay::Tabbed;
-
-        // Move windows below in tandem with resizing.
-        //
-        // FIXME: in always-centering mode, window resizing will affect the offsets of all other
-        // windows in the column, so they should all be animated. How should this interact with
-        // animated vs. non-animated resizes? For example, an animated +20 resize followed by two
-        // non-animated -10 resizes.
-        if !is_tabbed && offset != 0. {
-            if tile.resize_animation().is_some() {
-                // If there's a resize animation (that may have just started in
-                // tile.update_window()), then the apparent size change is smooth with no sudden
-                // jumps. This corresponds to adding an Y animation to tiles below.
-                for tile in &mut self.tiles[tile_idx + 1..] {
-                    tile.animate_move_y_from_with_config(
-                        offset,
-                        self.options.animations.window_resize.anim,
-                    );
-                }
-            } else {
-                // There's no resize animation, but the offset is nonzero. This could happen for
-                // example:
-                // - if the window resized on its own, which we don't animate
-                // - if the window resized by less than 10 px (the resize threshold)
+                // Move windows below in tandem with resizing.
                 //
-                // The latter case could also cancel an ongoing resize animation.
-                //
-                // Now, stationary tiles below shouldn't react to this offset change in any way,
-                // i.e. their apparent Y position should jump together with the resize. However,
-                // tiles below that are already animating an Y movement should offset their
-                // animations to avoid the jump.
-                //
-                // Notably, this is necessary to fix the animation jump when resizing height back
-                // and forth in quick succession (in a way that cancels the resize animation).
-                for tile in &mut self.tiles[tile_idx + 1..] {
-                    tile.offset_move_y_anim_current(offset);
+                // FIXME: in always-centering mode, window resizing will affect the offsets of all
+                // other windows in the column, so they should all be animated. How
+                // should this interact with animated vs. non-animated resizes? For
+                // example, an animated +20 resize followed by two non-animated -10
+                // resizes.
+                if offset != 0. {
+                    let tile = &mut &self.tiles[tile_idx];
+                    if tile.resize_animation().is_some() {
+                        // If there's a resize animation (that may have just started in
+                        // tile.update_window()), then the apparent size change is smooth with no
+                        // sudden jumps. This corresponds to adding an Y
+                        // animation to tiles below.
+                        for tile_below in &mut self.tiles[tile_idx + 1..] {
+                            tile_below.animate_move_y_from_with_config(
+                                offset,
+                                self.options.animations.window_resize.anim,
+                            );
+                        }
+                        if self.pending_sizing_mode().is_fullscreen_or_maximized() {
+                            // Adjust offset as to not shift the origin of the active tile
+                            if tile_idx < self.active_tile_idx {
+                                for tile in &mut self.tiles {
+                                    tile.animate_move_y_from_with_config(
+                                        -offset,
+                                        self.options.animations.window_resize.anim,
+                                    );
+                                }
+                            }
+                        }
+                    } else {
+                        // There's no resize animation, but the offset is nonzero. This could happen
+                        // for example:
+                        // - if the window resized on its own, which we don't animate
+                        // - if the window resized by less than 10 px (the resize threshold)
+                        //
+                        // The latter case could also cancel an ongoing resize animation.
+                        //
+                        // Now, stationary tiles below shouldn't react to this offset change in any
+                        // way, i.e. their apparent Y position should jump
+                        // together with the resize. However, tiles below
+                        // that are already animating an Y movement should offset their
+                        // animations to avoid the jump.
+                        //
+                        // Notably, this is necessary to fix the animation jump when resizing height
+                        // back and forth in quick succession (in a way that
+                        // cancels the resize animation).
+                        for tile_below in &mut self.tiles[tile_idx + 1..] {
+                            tile_below.offset_move_y_anim_current(offset);
+                        }
+                        if self.pending_sizing_mode().is_fullscreen_or_maximized() {
+                            // Adjust offset as to not shift the origin of the active tile
+                            if tile_idx < self.active_tile_idx {
+                                for tile in &mut self.tiles {
+                                    tile.offset_move_y_anim_current(-offset);
+                                }
+                            }
+                        }
+                    }
                 }
             }
+            ColumnDisplay::Tabbed => {}
         }
     }
 
@@ -5274,8 +5302,9 @@ impl<W: LayoutElement> Column<W> {
             return;
         }
 
-        self.is_pending_fullscreen = is_fullscreen;
-        self.update_tile_sizes(true);
+        animate_sizing_mode_change(self, |column| {
+            column.is_pending_fullscreen = is_fullscreen;
+        });
     }
 
     fn set_maximized(&mut self, maximize: bool) {
@@ -5283,8 +5312,9 @@ impl<W: LayoutElement> Column<W> {
             return;
         }
 
-        self.is_pending_maximized = maximize;
-        self.update_tile_sizes(true);
+        animate_sizing_mode_change(self, |column| {
+            column.is_pending_maximized = maximize;
+        });
     }
 
     fn set_column_display(&mut self, display: ColumnDisplay) {
@@ -5749,6 +5779,47 @@ fn resolve_preset_size(
             (view_size - options.layout.gaps) * proportion - options.layout.gaps - extra_size,
         ),
         PresetSize::Fixed(width) => ResolvedSize::Window(f64::from(width)),
+    }
+}
+
+fn animate_sizing_mode_change<CHANGE, W>(column: &mut Column<W>, change: CHANGE)
+where
+    W: LayoutElement,
+    CHANGE: FnOnce(&mut Column<W>),
+{
+    let prev_sizing_mode = column.pending_sizing_mode();
+    let prev_active_tile_offset = column.tile_offset(column.active_tile_idx);
+
+    change(column);
+    column.update_tile_sizes(true);
+
+    let new_sizing_mode = column.pending_sizing_mode();
+    let new_active_tile_offset = column.tile_offset(column.active_tile_idx);
+
+    let active_tile_offset_y_delta = (prev_active_tile_offset - new_active_tile_offset).y;
+
+    for (tile_idx, tile) in column.tiles.iter_mut().enumerate() {
+        tile.animate_move_y_from_with_config(
+            active_tile_offset_y_delta,
+            column.options.animations.window_movement.0,
+        );
+
+        // fade out other tiles in the column while maximizing
+        if tile_idx != column.active_tile_idx {
+            let alpha_from = match prev_sizing_mode {
+                SizingMode::Normal => 1.,
+                SizingMode::Fullscreen | SizingMode::Maximized => 0.,
+            };
+            let alpha_to = match new_sizing_mode {
+                SizingMode::Normal => 1.,
+                SizingMode::Fullscreen | SizingMode::Maximized => 0.,
+            };
+            tile.animate_alpha(
+                alpha_from,
+                alpha_to,
+                column.options.animations.window_movement.0,
+            );
+        }
     }
 }
 
