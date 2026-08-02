@@ -889,6 +889,14 @@ impl<W: LayoutElement> Tile<W> {
             let win_pos = self.buf_loc() + offset;
             Some(HitType::Input { win_pos })
         } else if self.is_in_activation_region(point) {
+            // If the point lies within the window's own geometry, the client explicitly
+            // excluded it from its input region (e.g. a click-through transparent overlay
+            // window). Let the hit fall through to windows below instead of activating
+            // this one. Points outside the window geometry (borders etc.) still activate.
+            let window_rect = Rectangle::new(self.window_loc(), self.window_size());
+            if window_rect.contains(point) {
+                return None;
+            }
             Some(HitType::Activate {
                 is_tab_indicator: false,
             })
