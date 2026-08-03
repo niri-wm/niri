@@ -16,6 +16,7 @@ use super::{
     ConfigureIntent, InteractiveResizeData, LayoutElement, Options, RemovedTile, SizeFrac,
 };
 use crate::animation::{Animation, Clock};
+use crate::layout::RenderLayer;
 use crate::niri_render_elements;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::xray::XrayPos;
@@ -265,9 +266,19 @@ impl<W: LayoutElement> FloatingSpace<W> {
         self.tiles.iter().any(Tile::are_transitions_ongoing) || !self.closing_windows.is_empty()
     }
 
-    pub fn update_render_elements(&mut self, is_active: bool, view_rect: Rectangle<f64, Logical>) {
+    pub fn update_render_elements(
+        &mut self,
+        is_active: bool,
+        view_rect: Rectangle<f64, Logical>,
+        layer: RenderLayer,
+    ) {
         let active = self.active_window_id.clone();
         for (tile, offset) in self.tiles_with_offsets_mut() {
+            // Skip tiles belonging to a different render layer.
+            if layer.is_normal() == tile.is_moving_between_workspaces() {
+                continue;
+            }
+
             let id = tile.window().id();
             let is_active = is_active && Some(id) == active.as_ref();
 
@@ -1057,6 +1068,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
         xray_pos: XrayPos,
         view_rect: Rectangle<f64, Logical>,
         focus_ring: bool,
+        layer: RenderLayer,
         push: &mut dyn FnMut(FloatingSpaceRenderElement<R>),
     ) {
         let scale = Scale::from(self.scale);
@@ -1064,13 +1076,20 @@ impl<W: LayoutElement> FloatingSpace<W> {
         // Draw the closing windows on top of the other windows.
         //
         // FIXME: I guess this should rather preserve the stacking order when the window is closed.
-        for closing in self.closing_windows.iter().rev() {
-            let elem = closing.render(ctx.as_gles(), view_rect, scale);
-            push(elem.into());
+        if layer.is_normal() {
+            for closing in self.closing_windows.iter().rev() {
+                let elem = closing.render(ctx.as_gles(), view_rect, scale);
+                push(elem.into());
+            }
         }
 
         let active = self.active_window_id.clone();
         for (tile, tile_pos) in self.tiles_with_render_positions() {
+            // Skip tiles belonging to a different render layer.
+            if layer.is_normal() == tile.is_moving_between_workspaces() {
+                continue;
+            }
+
             // For the active tile, draw the focus ring.
             let focus_ring = focus_ring && Some(tile.window().id()) == active.as_ref();
 

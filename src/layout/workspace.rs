@@ -28,6 +28,7 @@ use super::{
     RemovedTile, SizeFrac,
 };
 use crate::animation::Clock;
+use crate::layout::RenderLayer;
 use crate::niri_render_elements;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::shadow::ShadowRenderElement;
@@ -375,21 +376,26 @@ impl<W: LayoutElement> Workspace<W> {
         self.scrolling.are_transitions_ongoing() || self.floating.are_transitions_ongoing()
     }
 
-    pub fn update_render_elements(&mut self, is_active: bool) {
+    pub fn update_render_elements(&mut self, is_active: bool, layer: RenderLayer) {
         self.scrolling
-            .update_render_elements(is_active && !self.floating_is_active.get());
+            .update_render_elements(is_active && !self.floating_is_active.get(), layer);
 
         let view_rect = Rectangle::from_size(self.view_size);
-        self.floating
-            .update_render_elements(is_active && self.floating_is_active.get(), view_rect);
-
-        self.shadow.update_render_elements(
-            self.view_size,
-            true,
-            CornerRadius::default(),
-            self.scale.fractional_scale(),
-            1.,
+        self.floating.update_render_elements(
+            is_active && self.floating_is_active.get(),
+            view_rect,
+            layer,
         );
+
+        if layer.is_normal() {
+            self.shadow.update_render_elements(
+                self.view_size,
+                true,
+                CornerRadius::default(),
+                self.scale.fractional_scale(),
+                1.,
+            );
+        }
     }
 
     pub fn update_config(&mut self, base_options: Rc<Options>) {
@@ -1613,11 +1619,12 @@ impl<W: LayoutElement> Workspace<W> {
         ctx: RenderCtx<R>,
         xray_pos: XrayPos,
         focus_ring: bool,
+        layer: RenderLayer,
         push: &mut dyn FnMut(WorkspaceRenderElement<R>),
     ) {
         let scrolling_focus_ring = focus_ring && !self.floating_is_active();
         self.scrolling
-            .render(ctx, xray_pos, scrolling_focus_ring, &mut |elem| {
+            .render(ctx, xray_pos, scrolling_focus_ring, layer, &mut |elem| {
                 push(elem.into())
             });
     }
@@ -1627,18 +1634,23 @@ impl<W: LayoutElement> Workspace<W> {
         ctx: RenderCtx<R>,
         xray_pos: XrayPos,
         focus_ring: bool,
+        layer: RenderLayer,
         push: &mut dyn FnMut(WorkspaceRenderElement<R>),
     ) {
-        if !self.is_floating_visible() {
+        if !self.is_floating_visible() && layer.is_normal() {
             return;
         }
 
         let view_rect = Rectangle::from_size(self.view_size);
         let floating_focus_ring = focus_ring && self.floating_is_active();
-        self.floating
-            .render(ctx, xray_pos, view_rect, floating_focus_ring, &mut |elem| {
-                push(elem.into())
-            });
+        self.floating.render(
+            ctx,
+            xray_pos,
+            view_rect,
+            floating_focus_ring,
+            layer,
+            &mut |elem| push(elem.into()),
+        );
     }
 
     pub fn render_shadow<R: NiriRenderer>(
@@ -1962,6 +1974,10 @@ impl<W: LayoutElement> Workspace<W> {
 
     pub fn scrolling(&self) -> &ScrollingSpace<W> {
         &self.scrolling
+    }
+
+    pub fn scrolling_mut(&mut self) -> &mut ScrollingSpace<W> {
+        &mut self.scrolling
     }
 
     pub fn floating(&self) -> &FloatingSpace<W> {

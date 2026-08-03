@@ -18,7 +18,7 @@ use super::workspace::{InteractiveResize, ResolvedSize};
 use super::{ConfigureIntent, HitType, InteractiveResizeData, LayoutElement, Options, RemovedTile};
 use crate::animation::{Animation, Clock};
 use crate::input::swipe_tracker::SwipeTracker;
-use crate::layout::SizingMode;
+use crate::layout::{RenderLayer, SizingMode};
 use crate::niri_render_elements;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::xray::XrayPos;
@@ -306,6 +306,10 @@ pub enum ScrollDirection {
 struct MoveAnimation {
     anim: Animation,
     from: f64,
+    /// Whether this animation is for moving the tile between workspaces.
+    ///
+    /// Controls whether the tile is rendered uncropped and above others.
+    is_between_workspaces: bool,
 }
 
 impl<W: LayoutElement> ScrollingSpace<W> {
@@ -422,11 +426,16 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             || !self.closing_windows.is_empty()
     }
 
-    pub fn update_render_elements(&mut self, is_active: bool) {
+    pub fn update_render_elements(&mut self, is_active: bool, layer: RenderLayer) {
         let view_pos = Point::from((self.view_pos(), 0.));
         let view_size = self.view_size;
         let active_idx = self.active_column_idx;
         for (col_idx, (col, col_x)) in self.columns_mut().enumerate() {
+            // Skip columns belonging to a different render layer.
+            if layer.is_normal() == col.is_moving_between_workspaces() {
+                continue;
+            }
+
             let is_active = is_active && col_idx == active_idx;
             let col_off = Point::from((col_x, 0.));
             let col_pos = view_pos - col_off - col.render_offset();
@@ -2938,15 +2947,18 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         mut ctx: RenderCtx<R>,
         xray_pos: XrayPos,
         focus_ring: bool,
+        layer: RenderLayer,
         push: &mut dyn FnMut(ScrollingSpaceRenderElement<R>),
     ) {
         let scale = Scale::from(self.scale);
 
         // Draw the closing windows on top of the other windows.
-        let view_rect = Rectangle::new(Point::from((self.view_pos(), 0.)), self.view_size);
-        for closing in self.closing_windows.iter().rev() {
-            let elem = closing.render(ctx.as_gles(), view_rect, scale);
-            push(elem.into());
+        if layer.is_normal() {
+            let view_rect = Rectangle::new(Point::from((self.view_pos(), 0.)), self.view_size);
+            for closing in self.closing_windows.iter().rev() {
+                let elem = closing.render(ctx.as_gles(), view_rect, scale);
+                push(elem.into());
+            }
         }
 
         if self.columns.is_empty() {
@@ -2957,6 +2969,12 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
         // This matches self.tiles_with_render_positions().
         for (col, col_pos) in self.columns_with_render_positions() {
+            // Skip columns belonging to a different render layer.
+            if layer.is_normal() == col.is_moving_between_workspaces() {
+                first = false;
+                continue;
+            }
+
             // Draw the tab indicator on top.
             {
                 let pos = col_pos.to_physical_precise_round(scale).to_logical(scale);
@@ -4133,6 +4151,34 @@ impl<W: LayoutElement> Column<W> {
             || self.tiles.iter().any(Tile::are_transitions_ongoing)
     }
 
+    pub fn is_moving_between_workspaces(&self) -> bool {
+        self.move_y_animation
+            .as_ref()
+            .is_some_and(|anim| anim.is_between_workspaces)
+            || self
+                .move_x_animation
+                .as_ref()
+                .is_some_and(|anim| anim.is_between_workspaces)
+            // When moving a window between workspaces into the scrolling layout, it will be
+            // immediately put into a new column, however the Y move animation and the
+            // moving-between-workspaces flag will be set on the tile rather than on that new
+            // column. Since the scrolling layout rendering checks moving between workspaces
+            // per-column rather than per-tile, we need to include the tiles here.
+            //
+            // This is not always visually correct: for example, interactive-moving a tile into an
+            // otherwise stationary column will now cause that entire column to draw unculled. I'm
+            // not sure there's a good solution overall for all edge cases here. Consider that the
+            // column tab indicator needs to draw on top of the tiles, but in this counterexample
+            // above, the column is stationary, so the single moving tile would instead need to draw
+            // on top of the tab indicator.
+            //
+            // I'm going with this simple check for now that should look ok in most cases.
+            || self
+                .tiles
+                .iter()
+                .any(|tile| tile.is_moving_between_workspaces())
+    }
+
     pub fn update_render_elements(&mut self, is_active: bool, view_rect: Rectangle<f64, Logical>) {
         let active_idx = self.active_tile_idx;
         for (tile_idx, (tile, tile_off)) in self.tiles_mut().enumerate() {
@@ -4227,15 +4273,16 @@ impl<W: LayoutElement> Column<W> {
         from_x_offset: f64,
         config: niri_config::Animation,
     ) {
-        let current_offset = self
-            .move_x_animation
-            .as_ref()
-            .map_or(0., |move_| move_.from * move_.anim.value());
+        let (current_offset, current_between) =
+            self.move_x_animation.as_ref().map_or((0., false), |move_| {
+                (move_.from * move_.anim.value(), move_.is_between_workspaces)
+            });
 
         let anim = Animation::new(self.clock.clone(), 1., 0., 0., config);
         self.move_x_animation = Some(MoveAnimation {
             anim,
             from: from_x_offset + current_offset,
+            is_between_workspaces: current_between,
         });
     }
 
@@ -4251,15 +4298,16 @@ impl<W: LayoutElement> Column<W> {
         from_y_offset: f64,
         config: niri_config::Animation,
     ) {
-        let current_offset = self
-            .move_y_animation
-            .as_ref()
-            .map_or(0., |move_| move_.from * move_.anim.value());
+        let (current_offset, current_between) =
+            self.move_y_animation.as_ref().map_or((0., false), |move_| {
+                (move_.from * move_.anim.value(), move_.is_between_workspaces)
+            });
 
         let anim = Animation::new(self.clock.clone(), 1., 0., 0., config);
         self.move_y_animation = Some(MoveAnimation {
             anim,
             from: from_y_offset + current_offset,
+            is_between_workspaces: current_between,
         });
     }
 
@@ -4271,6 +4319,12 @@ impl<W: LayoutElement> Column<W> {
             if value > 0.001 {
                 move_.from += offset / value;
             }
+        }
+    }
+
+    pub fn set_anim_y_between_workspaces(&mut self) {
+        if let Some(anim) = &mut self.move_y_animation {
+            anim.is_between_workspaces = true;
         }
     }
 

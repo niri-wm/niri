@@ -558,6 +558,14 @@ struct OverviewGesture {
     value: f64,
 }
 
+/// Layer of windows to render.
+#[derive(Clone, Copy)]
+pub enum RenderLayer {
+    Normal,
+    /// Windows currently moving between workspaces.
+    MovingBetweenWorkspaces,
+}
+
 impl SizingMode {
     #[must_use]
     pub fn is_normal(&self) -> bool {
@@ -684,6 +692,16 @@ impl OverviewProgress {
 
     fn is_animation(&self) -> bool {
         matches!(self, OverviewProgress::Animation(_))
+    }
+}
+
+impl RenderLayer {
+    /// Returns `true` if the render layer is [`Normal`].
+    ///
+    /// [`Normal`]: RenderLayer::Normal
+    #[must_use]
+    pub fn is_normal(&self) -> bool {
+        matches!(self, Self::Normal)
     }
 }
 
@@ -4304,6 +4322,13 @@ impl<W: LayoutElement> Layout<W> {
                 let new_tile_render_loc = ws_geo.loc + tile_offset.upscale(zoom);
 
                 tile.animate_move_from((tile_render_loc - new_tile_render_loc).downscale(zoom));
+
+                // Interactive move into floating barely animates (it doesn't really move after
+                // being dropped), so setting it as moving between workspaces would just cause it to
+                // awkwardly sit unclipped for a moment before the animation runs out.
+                if !matches!(position, InsertPosition::Floating) {
+                    tile.set_anim_y_between_workspaces();
+                }
             }
             MonitorSet::NoOutputs { workspaces, .. } => {
                 if workspaces.is_empty() {
