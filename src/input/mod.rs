@@ -3488,6 +3488,26 @@ impl State {
                     }
 
                     return;
+                } else {
+                    let mut redraw = false;
+                    if self.niri.trackpoint_swipe_gesture.reset() {
+                        if self.niri.trackpoint_swipe_gesture.is_vertical() {
+                            redraw |= self
+                                .niri
+                                .layout
+                                .workspace_switch_gesture_end(Some(true))
+                                .is_some();
+                        } else {
+                            redraw |= self
+                                .niri
+                                .layout
+                                .view_offset_gesture_end(Some(true))
+                                .is_some();
+                        }
+                    }
+                    if redraw {
+                        self.niri.queue_redraw_all();
+                    }
                 }
             } else if is_mru_open || self.niri.mods_with_finger_scroll_binds.contains(&modifiers) {
                 let ticks = self
