@@ -2317,7 +2317,8 @@ dependencies = [
  "pangocairo",
  "pipewire",
  "pkg-config",
- "png 0.18.1",
+ "png",
+ "portable-atomic",
  "profiling",
  "proptest",
  "proptest-derive",
@@ -2960,6 +2961,12 @@ dependencies = [
  "rustix 1.1.4",
  "windows-sys 0.61.2",
 ]
+
+[[package]]
+name = "portable-atomic"
+version = "1.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3d20d5497ef88037a52ff98267d066e7f11fcc5e99bbfbd58a42336193aacec3"
 
 [[package]]
 name = "ppv-lite86"
