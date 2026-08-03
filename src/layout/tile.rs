@@ -881,6 +881,21 @@ impl<W: LayoutElement> Tile<W> {
         activation_region.contains(point)
     }
 
+    /// Whether the border or the focus ring can draw a solid background behind the window.
+    ///
+    /// When they do, input-region holes within the window geometry are visually covered by
+    /// the background, so clicks there should activate the window rather than fall through.
+    fn draws_background_behind_window(&self) -> bool {
+        if self.border.is_off() && self.focus_ring.is_off() {
+            return false;
+        }
+
+        self.window
+            .rules()
+            .draw_border_with_background
+            .unwrap_or_else(|| !self.window.has_ssd())
+    }
+
     pub fn hit(&self, point: Point<f64, Logical>) -> Option<HitType> {
         let offset = self.bob_offset();
         let point = point - offset;
@@ -892,9 +907,11 @@ impl<W: LayoutElement> Tile<W> {
             // If the point lies within the window's own geometry, the client explicitly
             // excluded it from its input region (e.g. a click-through transparent overlay
             // window). Let the hit fall through to windows below instead of activating
-            // this one. Points outside the window geometry (borders etc.) still activate.
+            // this one, unless the border or the focus ring draw a solid background
+            // behind the window there. Points outside the window geometry (the border
+            // ring, etc.) still activate.
             let window_rect = Rectangle::new(self.window_loc(), self.window_size());
-            if window_rect.contains(point) {
+            if window_rect.contains(point) && !self.draws_background_behind_window() {
                 return None;
             }
             Some(HitType::Activate {
