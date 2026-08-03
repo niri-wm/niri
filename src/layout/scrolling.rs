@@ -2362,19 +2362,39 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         zip(columns, offsets)
     }
 
+    pub fn columns_with_render_positions(
+        &self,
+    ) -> impl Iterator<Item = (&Column<W>, Point<f64, Logical>)> {
+        let view_off = Point::from((-self.view_pos(), 0.));
+        self.columns_in_render_order().map(move |(col, col_x)| {
+            let col_off = Point::from((col_x, 0.));
+            let col_render_off = col.render_offset();
+            let pos = view_off + col_off + col_render_off;
+            (col, pos)
+        })
+    }
+
+    pub fn columns_with_render_positions_mut(
+        &mut self,
+    ) -> impl Iterator<Item = (&mut Column<W>, Point<f64, Logical>)> {
+        let view_off = Point::from((-self.view_pos(), 0.));
+        self.columns_in_render_order_mut().map(move |(col, col_x)| {
+            let col_off = Point::from((col_x, 0.));
+            let col_render_off = col.render_offset();
+            let pos = view_off + col_off + col_render_off;
+            (col, pos)
+        })
+    }
+
     pub fn tiles_with_render_positions(
         &self,
     ) -> impl Iterator<Item = (&Tile<W>, Point<f64, Logical>, bool)> {
         let scale = self.scale;
-        let view_off = Point::from((-self.view_pos(), 0.));
-        self.columns_in_render_order()
-            .flat_map(move |(col, col_x)| {
-                let col_off = Point::from((col_x, 0.));
-                let col_render_off = col.render_offset();
+        self.columns_with_render_positions()
+            .flat_map(move |(col, col_pos)| {
                 col.tiles_in_render_order()
                     .map(move |(tile, tile_off, visible)| {
-                        let pos =
-                            view_off + col_off + col_render_off + tile_off + tile.render_offset();
+                        let pos = col_pos + tile_off + tile.render_offset();
                         // Round to physical pixels.
                         let pos = pos.to_physical_precise_round(scale).to_logical(scale);
                         (tile, pos, visible)
@@ -2387,15 +2407,11 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         round: bool,
     ) -> impl Iterator<Item = (&mut Tile<W>, Point<f64, Logical>)> {
         let scale = self.scale;
-        let view_off = Point::from((-self.view_pos(), 0.));
-        self.columns_in_render_order_mut()
-            .flat_map(move |(col, col_x)| {
-                let col_off = Point::from((col_x, 0.));
-                let col_render_off = col.render_offset();
+        self.columns_with_render_positions_mut()
+            .flat_map(move |(col, col_pos)| {
                 col.tiles_in_render_order_mut()
                     .map(move |(tile, tile_off)| {
-                        let mut pos =
-                            view_off + col_off + col_render_off + tile_off + tile.render_offset();
+                        let mut pos = col_pos + tile_off + tile.render_offset();
                         // Round to physical pixels.
                         if round {
                             pos = pos.to_physical_precise_round(scale).to_logical(scale);
@@ -2908,23 +2924,17 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
         let mut first = true;
 
-        // This matches self.tiles_in_render_order().
-        let view_off = Point::from((-self.view_pos(), 0.));
-        for (col, col_x) in self.columns_in_render_order() {
-            let col_off = Point::from((col_x, 0.));
-            let col_render_off = col.render_offset();
-
+        // This matches self.tiles_with_render_positions().
+        for (col, col_pos) in self.columns_with_render_positions() {
             // Draw the tab indicator on top.
             {
-                let pos = view_off + col_off + col_render_off;
-                let pos = pos.to_physical_precise_round(scale).to_logical(scale);
+                let pos = col_pos.to_physical_precise_round(scale).to_logical(scale);
                 col.tab_indicator
                     .render(ctx.renderer, pos, &mut |elem| push(elem.into()));
             }
 
             for (tile, tile_off, visible) in col.tiles_in_render_order() {
-                let tile_pos =
-                    view_off + col_off + col_render_off + tile_off + tile.render_offset();
+                let tile_pos = col_pos + tile_off + tile.render_offset();
                 // Round to physical pixels.
                 let tile_pos = tile_pos.to_physical_precise_round(scale).to_logical(scale);
 
@@ -2955,14 +2965,9 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     pub fn window_under(&self, pos: Point<f64, Logical>) -> Option<(&W, HitType)> {
         // This matches self.tiles_with_render_positions().
         let scale = self.scale;
-        let view_off = Point::from((-self.view_pos(), 0.));
-        for (col, col_x) in self.columns_in_render_order() {
-            let col_off = Point::from((col_x, 0.));
-            let col_render_off = col.render_offset();
-
+        for (col, col_pos) in self.columns_with_render_positions() {
             // Hit the tab indicator.
             if col.display_mode == ColumnDisplay::Tabbed && col.sizing_mode().is_normal() {
-                let col_pos = view_off + col_off + col_render_off;
                 let col_pos = col_pos.to_physical_precise_round(scale).to_logical(scale);
 
                 if let Some(idx) = col.tab_indicator.hit(
@@ -2983,8 +2988,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                     continue;
                 }
 
-                let tile_pos =
-                    view_off + col_off + col_render_off + tile_off + tile.render_offset();
+                let tile_pos = col_pos + tile_off + tile.render_offset();
                 // Round to physical pixels.
                 let tile_pos = tile_pos.to_physical_precise_round(scale).to_logical(scale);
 
