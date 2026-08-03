@@ -23,6 +23,7 @@ use crate::niri_render_elements;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::xray::XrayPos;
 use crate::render_helpers::RenderCtx;
+use crate::utils::id::IdCounter;
 use crate::utils::transaction::{Transaction, TransactionBlocker};
 use crate::utils::ResizeEdge;
 use crate::window::ResolvedWindowRules;
@@ -142,6 +143,25 @@ pub(super) struct ViewGesture {
     dnd_nonzero_start_time: Option<Duration>,
 }
 
+static COLUMN_ID_COUNTER: IdCounter = IdCounter::new();
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ColumnId(u64);
+
+impl ColumnId {
+    fn next() -> ColumnId {
+        ColumnId(COLUMN_ID_COUNTER.next())
+    }
+
+    pub fn get(self) -> u64 {
+        self.0
+    }
+
+    pub fn specific(id: u64) -> Self {
+        Self(id)
+    }
+}
+
 #[derive(Debug)]
 pub struct Column<W: LayoutElement> {
     /// Tiles in this column.
@@ -217,6 +237,9 @@ pub struct Column<W: LayoutElement> {
 
     /// Configurable properties of the layout.
     options: Rc<Options>,
+
+    /// Unique ID of this column.
+    id: ColumnId,
 }
 
 /// Extra per-tile data.
@@ -3970,6 +3993,7 @@ impl<W: LayoutElement> Column<W> {
             scale,
             clock: tile.clock.clone(),
             options,
+            id: ColumnId::next(),
         };
 
         let pending_sizing_mode = tile.window().pending_sizing_mode();
@@ -3994,6 +4018,10 @@ impl<W: LayoutElement> Column<W> {
         }
 
         rv
+    }
+
+    pub fn id(&self) -> ColumnId {
+        self.id
     }
 
     fn update_config(
