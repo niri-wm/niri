@@ -164,7 +164,9 @@ impl State {
             }
         } else {
             // Power on monitors if they were off.
-            if should_activate_monitors(&event) {
+            if !self.niri.config.borrow().input.disable_monitor_wake
+                && should_activate_monitors(&event)
+            {
                 self.niri.activate_monitors(&mut self.backend);
 
                 // Notify the idle-notifier of activity only if we're also powering on the
