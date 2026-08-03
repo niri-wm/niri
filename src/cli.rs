@@ -76,7 +76,11 @@ pub enum Msg {
     /// Print information about the focused window.
     FocusedWindow,
     /// Pick a window with the mouse and print information about it.
-    PickWindow,
+    PickWindow {
+        /// Immediately picking the window under the cursor.
+        #[arg(long, short)]
+        now: bool,
+    },
     /// Pick a color from the screen with the mouse.
     PickColor,
     /// Perform an action.
