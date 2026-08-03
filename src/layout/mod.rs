@@ -593,16 +593,27 @@ impl<W: LayoutElement> InteractiveMoveState<W> {
 
 impl<W: LayoutElement> InteractiveMoveData<W> {
     fn tile_render_location(&self, zoom: f64) -> Point<f64, Logical> {
-        let scale = Scale::from(self.output.current_scale().fractional_scale());
+        self.tile_render_location_for_output(&self.output, zoom)
+    }
+
+    fn tile_render_location_for_output(
+        &self,
+        target_output: &Output,
+        zoom: f64,
+    ) -> Point<f64, Logical> {
+        let scale = Scale::from(target_output.current_scale().fractional_scale());
+        let global_offset =
+            self.output.current_location().to_f64() - target_output.current_location().to_f64();
+
         let window_size = self.tile.window_size();
         let pointer_offset_within_window = Point::from((
             window_size.w * self.pointer_ratio_within_window.0,
             window_size.h * self.pointer_ratio_within_window.1,
         ));
-        let pos = self.pointer_pos_within_output
+        let pos = self.pointer_pos_within_output + global_offset
             - (pointer_offset_within_window + self.tile.window_loc() - self.tile.render_offset())
                 .upscale(zoom);
-        // Round to physical pixels.
+        // Round to physical pixels of the target output.
         pos.to_physical_precise_round(scale).to_logical(scale)
     }
 }
@@ -2300,10 +2311,10 @@ impl<W: LayoutElement> Layout<W> {
         pos_within_output: Point<f64, Logical>,
     ) -> Option<(&W, HitType)> {
         if let Some(InteractiveMoveState::Moving(move_)) = &self.interactive_move {
-            if move_.output == *output {
+            if self.interactive_move_rect_on_output(output).is_some() {
+                let zoom = self.overview_zoom();
+                let tile_pos = move_.tile_render_location_for_output(output, zoom);
                 if self.overview_progress.is_some() {
-                    let zoom = self.overview_zoom();
-                    let tile_pos = move_.tile_render_location(zoom);
                     let pos_within_tile = (pos_within_output - tile_pos).downscale(zoom);
                     // During the overview animation, we cannot do input hits because we cannot
                     // really represent scaled windows properly.
@@ -2311,7 +2322,6 @@ impl<W: LayoutElement> Layout<W> {
                         HitType::hit_tile(&move_.tile, Point::from((0., 0.)), pos_within_tile)?;
                     Some((win, hit.to_activate()))
                 } else {
-                    let tile_pos = move_.tile_render_location(1.);
                     HitType::hit_tile(&move_.tile, tile_pos, pos_within_output)
                 }
             } else {
@@ -2733,7 +2743,7 @@ impl<W: LayoutElement> Layout<W> {
         }
 
         if let Some(InteractiveMoveState::Moving(move_)) = &self.interactive_move {
-            if output.is_none_or(|output| *output == move_.output) {
+            if output.is_none_or(|output| self.interactive_move_rect_on_output(output).is_some()) {
                 if move_.tile.are_animations_ongoing() {
                     return true;
                 }
@@ -2772,9 +2782,13 @@ impl<W: LayoutElement> Layout<W> {
         self.update_render_elements_time = self.clock.now();
 
         let zoom = self.overview_zoom();
-        if let Some(InteractiveMoveState::Moving(move_)) = &mut self.interactive_move {
-            if output.is_none_or(|output| move_.output == *output) {
-                let pos_within_output = move_.tile_render_location(zoom);
+        let is_overlapping =
+            output.is_none_or(|output| self.interactive_move_rect_on_output(output).is_some());
+
+        if is_overlapping {
+            if let Some(InteractiveMoveState::Moving(move_)) = &mut self.interactive_move {
+                let target_output = output.unwrap_or(&move_.output);
+                let pos_within_output = move_.tile_render_location_for_output(target_output, zoom);
 
                 // We're not on any specific workspace so we can't compute a "workspace view" rect.
                 // Let's instead compute a rect relative to the output.
@@ -2784,7 +2798,7 @@ impl<W: LayoutElement> Layout<W> {
                 // against that. Since most of the time the dragged window will be on a centered
                 // workspace.
                 let view_rect =
-                    Rectangle::new(pos_within_output.upscale(-1.), output_size(&move_.output))
+                    Rectangle::new(pos_within_output.upscale(-1.), output_size(target_output))
                         .downscale(zoom);
 
                 move_.tile.update_render_elements(true, view_rect);
@@ -3538,6 +3552,11 @@ impl<W: LayoutElement> Layout<W> {
     }
 
     pub fn toggle_windowed_fullscreen(&mut self, id: &W::Id) {
+        if matches!(&self.interactive_move, Some(InteractiveMoveState::Moving(m)) if m.tile.window().id() == id)
+        {
+            return;
+        }
+
         let (_, window) = self.windows().find(|(_, win)| win.id() == id).unwrap();
         if window.pending_sizing_mode().is_fullscreen() {
             // Remove the real fullscreen.
@@ -4344,6 +4363,35 @@ impl<W: LayoutElement> Layout<W> {
         }
     }
 
+    fn interactive_move_rect_on_output(
+        &self,
+        output: &Output,
+    ) -> Option<(Point<f64, Logical>, Scale<f64>)> {
+        let Some(InteractiveMoveState::Moving(move_)) = &self.interactive_move else {
+            return None;
+        };
+
+        let zoom = self.overview_zoom();
+        let pos_in_backdrop = move_.tile_render_location_for_output(output, zoom);
+
+        // Include padding so shadows still count as overlap to prevent abrupt edge pop-in.
+        const SHADOW_PAD: f64 = 60.0;
+        let padding = Point::from((SHADOW_PAD, SHADOW_PAD)).upscale(zoom);
+        let window_rect = Rectangle::new(
+            pos_in_backdrop - padding,
+            (move_.tile.tile_size() + Size::from((SHADOW_PAD * 2.0, SHADOW_PAD * 2.0)))
+                .upscale(zoom),
+        );
+        let output_rect = Rectangle::from_size(output_size(output));
+
+        if window_rect.overlaps(output_rect) {
+            let scale = Scale::from(output.current_scale().fractional_scale());
+            Some((pos_in_backdrop, scale))
+        } else {
+            None
+        }
+    }
+
     pub fn interactive_move_is_moving_above_output(&self, output: &Output) -> bool {
         let Some(InteractiveMoveState::Moving(move_)) = &self.interactive_move else {
             return false;
@@ -4820,13 +4868,11 @@ impl<W: LayoutElement> Layout<W> {
             return;
         };
 
-        if &move_.output != output {
+        let Some((pos_in_backdrop, scale)) = self.interactive_move_rect_on_output(output) else {
             return;
-        }
+        };
 
-        let scale = Scale::from(move_.output.current_scale().fractional_scale());
         let zoom = self.overview_zoom();
-        let pos_in_backdrop = move_.tile_render_location(zoom);
         let xray_pos = XrayPos::new(pos_in_backdrop, zoom);
 
         move_
