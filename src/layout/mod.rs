@@ -4271,8 +4271,6 @@ impl<W: LayoutElement> Layout<W> {
                         );
                     }
                     InsertPosition::Floating => {
-                        let tile_render_loc = move_.tile_render_location(zoom);
-
                         let mut tile = move_.tile;
                         tile.floating_pos = None;
 
