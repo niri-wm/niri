@@ -4166,6 +4166,11 @@ impl<W: LayoutElement> Column<W> {
         offset
     }
 
+    pub fn animate_move_from(&mut self, from: Point<f64, Logical>) {
+        self.animate_move_x_from(from.x);
+        self.animate_move_y_from(from.y);
+    }
+
     pub fn animate_move_x_from(&mut self, from_x_offset: f64) {
         self.animate_move_x_from_with_config(
             from_x_offset,
