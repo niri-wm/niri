@@ -193,7 +193,7 @@ pub struct Column<W: LayoutElement> {
     tab_indicator: TabIndicator,
 
     /// Animation of the render offset during window swapping.
-    move_animation: Option<MoveAnimation>,
+    move_x_animation: Option<MoveAnimation>,
 
     /// Animation of a column visually moving vertically.
     move_y_animation: Option<MoveAnimation>,
@@ -936,11 +936,11 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         let offset = self.column_x(col_idx + 1) - prev_next_x;
         if self.active_column_idx <= col_idx {
             for col in &mut self.columns[col_idx + 1..] {
-                col.animate_move_from(-offset);
+                col.animate_move_x_from(-offset);
             }
         } else {
             for col in &mut self.columns[..=col_idx] {
-                col.animate_move_from(offset);
+                col.animate_move_x_from(offset);
             }
         }
     }
@@ -999,11 +999,11 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         let config = anim_config.unwrap_or(self.options.animations.window_movement.0);
         if self.active_column_idx <= idx {
             for col in &mut self.columns[idx + 1..] {
-                col.animate_move_from_with_config(-offset, config);
+                col.animate_move_x_from_with_config(-offset, config);
             }
         } else {
             for col in &mut self.columns[..idx] {
-                col.animate_move_from_with_config(offset, config);
+                col.animate_move_x_from_with_config(offset, config);
             }
         }
 
@@ -1143,11 +1143,11 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         // Animate movement of the other columns.
         if self.active_column_idx <= column_idx {
             for col in &mut self.columns[column_idx + 1..] {
-                col.animate_move_from_with_config(offset, movement_config);
+                col.animate_move_x_from_with_config(offset, movement_config);
             }
         } else {
             for col in &mut self.columns[..=column_idx] {
-                col.animate_move_from_with_config(-offset, movement_config);
+                col.animate_move_x_from_with_config(-offset, movement_config);
             }
         }
 
@@ -1172,11 +1172,11 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         let offset = self.column_x(column_idx + 1) - self.column_x(column_idx);
         if self.active_column_idx <= column_idx {
             for col in &mut self.columns[column_idx + 1..] {
-                col.animate_move_from_with_config(offset, movement_config);
+                col.animate_move_x_from_with_config(offset, movement_config);
             }
         } else {
             for col in &mut self.columns[..column_idx] {
-                col.animate_move_from_with_config(-offset, movement_config);
+                col.animate_move_x_from_with_config(-offset, movement_config);
             }
         }
 
@@ -1304,7 +1304,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                     // Notably, this is necessary to fix the animation jump when resizing width back
                     // and forth in quick succession (in a way that cancels the resize animation).
                     if ongoing_resize_anim {
-                        col.animate_move_from_with_config(
+                        col.animate_move_x_from_with_config(
                             offset,
                             self.options.animations.window_resize.anim,
                         );
@@ -1315,7 +1315,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             } else {
                 for col in &mut self.columns[..=col_idx] {
                     if ongoing_resize_anim {
-                        col.animate_move_from_with_config(
+                        col.animate_move_x_from_with_config(
                             -offset,
                             self.options.animations.window_resize.anim,
                         );
@@ -1700,17 +1700,17 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
         // The column we just moved is offset by the difference between its new and old position.
         let new_col_x = self.column_x(new_idx);
-        self.columns[new_idx].animate_move_from(current_col_x - new_col_x);
+        self.columns[new_idx].animate_move_x_from(current_col_x - new_col_x);
 
         // All columns in between moved by the width of the column that we just moved.
         let others_x_offset = next_col_x - current_col_x;
         if self.active_column_idx < new_idx {
             for col in &mut self.columns[self.active_column_idx..new_idx] {
-                col.animate_move_from(others_x_offset);
+                col.animate_move_x_from(others_x_offset);
             }
         } else {
             for col in &mut self.columns[new_idx + 1..=self.active_column_idx] {
-                col.animate_move_from(-others_x_offset);
+                col.animate_move_x_from(-others_x_offset);
             }
         }
 
@@ -3973,7 +3973,7 @@ impl<W: LayoutElement> Column<W> {
             is_pending_fullscreen: false,
             display_mode,
             tab_indicator: TabIndicator::new(options.layout.tab_indicator),
-            move_animation: None,
+            move_x_animation: None,
             move_y_animation: None,
             view_size,
             working_area,
@@ -4076,9 +4076,9 @@ impl<W: LayoutElement> Column<W> {
     }
 
     pub fn advance_animations(&mut self) {
-        if let Some(move_) = &mut self.move_animation {
+        if let Some(move_) = &mut self.move_x_animation {
             if move_.anim.is_done() {
-                self.move_animation = None;
+                self.move_x_animation = None;
             }
         }
         if let Some(move_) = &mut self.move_y_animation {
@@ -4095,14 +4095,14 @@ impl<W: LayoutElement> Column<W> {
     }
 
     pub fn are_animations_ongoing(&self) -> bool {
-        self.move_animation.is_some()
+        self.move_x_animation.is_some()
             || self.move_y_animation.is_some()
             || self.tab_indicator.are_animations_ongoing()
             || self.tiles.iter().any(Tile::are_animations_ongoing)
     }
 
     pub fn are_transitions_ongoing(&self) -> bool {
-        self.move_animation.is_some()
+        self.move_x_animation.is_some()
             || self.move_y_animation.is_some()
             || self.tab_indicator.are_animations_ongoing()
             || self.tiles.iter().any(Tile::are_transitions_ongoing)
@@ -4167,7 +4167,7 @@ impl<W: LayoutElement> Column<W> {
     pub fn render_offset(&self) -> Point<f64, Logical> {
         let mut offset = Point::from((0., 0.));
 
-        if let Some(move_) = &self.move_animation {
+        if let Some(move_) = &self.move_x_animation {
             offset.x += move_.from * move_.anim.value();
         }
         if let Some(move_) = &self.move_y_animation {
@@ -4177,25 +4177,25 @@ impl<W: LayoutElement> Column<W> {
         offset
     }
 
-    pub fn animate_move_from(&mut self, from_x_offset: f64) {
-        self.animate_move_from_with_config(
+    pub fn animate_move_x_from(&mut self, from_x_offset: f64) {
+        self.animate_move_x_from_with_config(
             from_x_offset,
             self.options.animations.window_movement.0,
         );
     }
 
-    pub fn animate_move_from_with_config(
+    pub fn animate_move_x_from_with_config(
         &mut self,
         from_x_offset: f64,
         config: niri_config::Animation,
     ) {
         let current_offset = self
-            .move_animation
+            .move_x_animation
             .as_ref()
             .map_or(0., |move_| move_.from * move_.anim.value());
 
         let anim = Animation::new(self.clock.clone(), 1., 0., 0., config);
-        self.move_animation = Some(MoveAnimation {
+        self.move_x_animation = Some(MoveAnimation {
             anim,
             from: from_x_offset + current_offset,
         });
@@ -4226,7 +4226,7 @@ impl<W: LayoutElement> Column<W> {
     }
 
     pub fn offset_move_anim_current(&mut self, offset: f64) {
-        if let Some(move_) = self.move_animation.as_mut() {
+        if let Some(move_) = self.move_x_animation.as_mut() {
             // If the anim is almost done, there's little point trying to offset it; we can let
             // things jump. If it turns out like a bad idea, we could restart the anim instead.
             let value = move_.anim.value();
