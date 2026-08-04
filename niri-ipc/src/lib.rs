@@ -85,6 +85,8 @@ pub enum Request {
     PickWindow,
     /// Request picking a color from the screen.
     PickColor,
+    /// Capture a screenshot synchronously.
+    Screenshot(ScreenshotRequest),
     /// Perform an action.
     Action(Action),
     /// Change output configuration temporarily.
@@ -159,6 +161,8 @@ pub enum Response {
     PickedWindow(Option<Window>),
     /// Information about the picked color.
     PickedColor(Option<PickedColor>),
+    /// Captured screenshot, or `None` if cancelled.
+    Screenshot(Option<Screenshot>),
     /// Output configuration change result.
     OutputConfigChanged(OutputConfigChanged),
     /// Information about the overview.
@@ -181,6 +185,39 @@ pub struct Overview {
 pub struct PickedColor {
     /// Color values as red, green, blue, each ranging from 0.0 to 1.0.
     pub rgb: [f64; 3],
+}
+
+/// Screenshot request.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct ScreenshotRequest {
+    /// Target to capture.
+    pub target: ScreenshotTarget,
+    /// Whether to include the mouse pointer.
+    pub show_pointer: bool,
+}
+
+/// Screenshot target.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum ScreenshotTarget {
+    /// Interactive region selection.
+    Selection,
+    /// Capture the focused screen.
+    Screen,
+    /// Window capture.
+    Window {
+        /// Window id, or the focused window if omitted.
+        id: Option<u64>,
+    },
+}
+
+/// Successful screenshot result.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct Screenshot {
+    /// Length of the returned PNG data.
+    pub data_length: u64,
 }
 
 /// Actions that niri can perform.
