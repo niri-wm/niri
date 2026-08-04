@@ -1163,6 +1163,14 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         tile
     }
 
+    pub fn active_column(&self) -> Option<&Column<W>> {
+        if self.columns.is_empty() {
+            return None;
+        }
+
+        Some(&self.columns[self.active_column_idx])
+    }
+
     pub fn remove_active_column(&mut self) -> Option<Column<W>> {
         if self.columns.is_empty() {
             return None;
