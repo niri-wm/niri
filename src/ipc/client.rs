@@ -1,4 +1,4 @@
-use std::io::{BufRead as _, ErrorKind};
+use std::io::{self, BufRead as _, ErrorKind};
 use std::iter::Peekable;
 use std::path::Path;
 use std::{env, slice};
@@ -8,11 +8,12 @@ use niri_config::OutputName;
 use niri_ipc::socket::Socket;
 use niri_ipc::{
     Action, Cast, CastKind, CastTarget, Event, KeyboardLayouts, LogicalOutput, Mode, Output,
-    OutputConfigChanged, Overview, Request, Response, Transform, Window, WindowLayout,
+    OutputConfigChanged, Overview, Request, Response, ScreenshotRequest, Transform, Window,
+    WindowLayout,
 };
 use serde_json::json;
 
-use crate::cli::Msg;
+use crate::cli::{Msg, ScreenshotTarget};
 use crate::utils::version;
 
 pub fn handle_msg(mut msg: Msg, json: bool, print_request: bool) -> anyhow::Result<()> {
@@ -36,6 +37,24 @@ pub fn handle_msg(mut msg: Msg, json: bool, print_request: bool) -> anyhow::Resu
         Msg::FocusedOutput => Request::FocusedOutput,
         Msg::PickWindow => Request::PickWindow,
         Msg::PickColor => Request::PickColor,
+        Msg::Screenshot {
+            target,
+            id,
+            show_pointer,
+            ..
+        } => {
+            let show_pointer = show_pointer.unwrap_or(*target != ScreenshotTarget::Window);
+            let target = match (target, id) {
+                (ScreenshotTarget::Selection, None) => niri_ipc::ScreenshotTarget::Selection,
+                (ScreenshotTarget::Screen, None) => niri_ipc::ScreenshotTarget::Screen,
+                (ScreenshotTarget::Window, id) => niri_ipc::ScreenshotTarget::Window { id: *id },
+                _ => bail!("--id is only valid with --target window"),
+            };
+            Request::Screenshot(ScreenshotRequest {
+                target,
+                show_pointer,
+            })
+        }
         Msg::Action { action } => Request::Action(action.clone()),
         Msg::Output { output, action } => Request::Output {
             output: output.clone(),
@@ -66,10 +85,23 @@ pub fn handle_msg(mut msg: Msg, json: bool, print_request: bool) -> anyhow::Resu
         return Ok(());
     }
 
+    let is_screenshot = matches!(request, Request::Screenshot(_));
+    if is_screenshot && json {
+        bail!("--json cannot be used with screenshot output");
+    }
+
     let is_event_stream = matches!(request, Request::EventStream);
     let mut socket = Socket::connect().context("error connecting to the niri socket")?;
 
-    let result = socket.send(request);
+    // Default SIGPIPE so that our prints don't panic on stdout closing.
+    unsafe {
+        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+    }
+
+    let result = match request {
+        Request::Screenshot(request) => socket.send_screenshot(request, io::stdout().lock()),
+        request => socket.send(request),
+    };
 
     // For errors that can be caused by a version mismatch between the running niri instance and
     // the niri msg CLI, we will try to fetch and compare the versions.
@@ -94,11 +126,6 @@ pub fn handle_msg(mut msg: Msg, json: bool, print_request: bool) -> anyhow::Resu
     } else {
         None
     };
-
-    // Default SIGPIPE so that our prints don't panic on stdout closing.
-    unsafe {
-        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
-    }
 
     // Check for CLI-server version mismatch to add helpful context.
     match compositor_version {
@@ -125,6 +152,16 @@ pub fn handle_msg(mut msg: Msg, json: bool, print_request: bool) -> anyhow::Resu
 
     let reply = result.context("error communicating with niri")?;
     let response = reply.map_err(|err_msg| anyhow!(err_msg).context("niri returned an error"))?;
+
+    if is_screenshot {
+        let Response::Screenshot(screenshot) = response else {
+            bail!("unexpected response: expected Screenshot, got {response:?}");
+        };
+        if screenshot.is_none() {
+            bail!("screenshot was cancelled");
+        }
+        return Ok(());
+    }
 
     match msg {
         Msg::RequestError => {
@@ -333,6 +370,7 @@ pub fn handle_msg(mut msg: Msg, json: bool, print_request: bool) -> anyhow::Resu
                 println!("No color was picked.");
             }
         }
+        Msg::Screenshot { .. } => unreachable!("screenshot requests are handled separately"),
         Msg::Action { .. } => {
             let Response::Handled = response else {
                 bail!("unexpected response: expected Handled, got {response:?}");
