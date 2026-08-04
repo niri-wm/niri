@@ -254,7 +254,20 @@ impl RenderElement<GlesRenderer> for FramebufferEffectElement {
                 while gl.GetError() != ffi::NO_ERROR {}
 
                 let mut current_fbo = 0i32;
+                let mut current_read_buffer = 0i32;
                 gl.GetIntegerv(ffi::DRAW_FRAMEBUFFER_BINDING, &mut current_fbo as *mut _);
+                gl.GetIntegerv(ffi::READ_BUFFER, &mut current_read_buffer as *mut _);
+
+                // Render targets may be configured as render-only.
+                let temporary_read_buffer =
+                    (current_read_buffer == ffi::NONE as i32).then_some(if current_fbo == 0 {
+                        ffi::BACK
+                    } else {
+                        ffi::COLOR_ATTACHMENT0
+                    });
+                if let Some(read_buffer) = temporary_read_buffer {
+                    gl.ReadBuffer(read_buffer);
+                }
 
                 // BlitFramebuffer is affected by the scissor test, we don't want that.
                 gl.Disable(ffi::SCISSOR_TEST);
@@ -286,6 +299,9 @@ impl RenderElement<GlesRenderer> for FramebufferEffectElement {
 
                 // Restore state set by GlesFrame that we just modified.
                 gl.BindFramebuffer(ffi::DRAW_FRAMEBUFFER, current_fbo as u32);
+                if temporary_read_buffer.is_some() {
+                    gl.ReadBuffer(current_read_buffer as u32);
+                }
                 gl.Enable(ffi::SCISSOR_TEST);
 
                 gl.DeleteFramebuffers(1, &mut fbo as *mut _);
