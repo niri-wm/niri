@@ -1960,12 +1960,10 @@ impl<W: LayoutElement> Workspace<W> {
         self.layout_config.as_ref()
     }
 
-    #[cfg(test)]
     pub fn scrolling(&self) -> &ScrollingSpace<W> {
         &self.scrolling
     }
 
-    #[cfg(test)]
     pub fn floating(&self) -> &FloatingSpace<W> {
         &self.floating
     }
