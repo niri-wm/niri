@@ -955,10 +955,7 @@ impl<W: LayoutElement> Layout<W> {
                         (mon_idx, MonitorAddWindowTarget::Auto)
                     }
                     AddWindowTarget::Workspace(ws_id) => {
-                        let mon_idx = monitors
-                            .iter()
-                            .position(|mon| mon.workspaces.iter().any(|ws| ws.id() == ws_id))
-                            .unwrap();
+                        let mon_idx = monitors.iter().position(|mon| mon.has_ws(ws_id)).unwrap();
 
                         (
                             mon_idx,
@@ -1253,12 +1250,8 @@ impl<W: LayoutElement> Layout<W> {
         match &self.monitor_set {
             MonitorSet::Normal { ref monitors, .. } => {
                 for mon in monitors {
-                    if let Some((index, workspace)) = mon
-                        .workspaces
-                        .iter()
-                        .enumerate()
-                        .find(|(_, w)| w.id() == id)
-                    {
+                    if let Some(index) = mon.idx_of_ws(id) {
+                        let workspace = &mon.workspaces[index];
                         return Some((index, workspace));
                     }
                 }
@@ -2624,12 +2617,8 @@ impl<W: LayoutElement> Layout<W> {
 
                 if is_scrolling {
                     if let Some((ws, geo)) = mon.workspace_under(pos_within_output) {
-                        let ws_id = ws.id();
-                        let ws = mon
-                            .workspaces
-                            .iter_mut()
-                            .find(|ws| ws.id() == ws_id)
-                            .unwrap();
+                        let idx = mon.idx_of_ws(ws.id()).unwrap();
+                        let ws = &mut mon.workspaces[idx];
                         // As far as the DnD scroll gesture is concerned, the workspace spans across
                         // the whole monitor horizontally.
                         let ws_pos = Point::from((0., geo.loc.y));
@@ -2687,9 +2676,7 @@ impl<W: LayoutElement> Layout<W> {
                                     .iter_mut()
                                     .position(|ws| ws.activate_window(&id))
                                     .unwrap(),
-                                DndHoldTarget::Workspace(id) => {
-                                    mon.workspaces.iter().position(|ws| ws.id() == id).unwrap()
-                                }
+                                DndHoldTarget::Workspace(id) => mon.idx_of_ws(id).unwrap(),
                             };
 
                             mon.dnd_scroll_gesture_end();
@@ -2870,11 +2857,8 @@ impl<W: LayoutElement> Layout<W> {
             let (insert_ws, geo) = mon.insert_position(move_.pointer_pos_within_output);
             match insert_ws {
                 InsertWorkspace::Existing(ws_id) => {
-                    let ws = mon
-                        .workspaces
-                        .iter_mut()
-                        .find(|ws| ws.id() == ws_id)
-                        .unwrap();
+                    let idx = mon.idx_of_ws(ws_id).unwrap();
+                    let ws = &mut mon.workspaces[idx];
                     let pos_within_workspace =
                         (move_.pointer_pos_within_output - geo.loc).downscale(zoom);
                     let position = if move_.is_floating {
@@ -4175,11 +4159,7 @@ impl<W: LayoutElement> Layout<W> {
                         let (insert_ws, geo) = mon.insert_position(move_.pointer_pos_within_output);
                         let (position, offset) = match insert_ws {
                             InsertWorkspace::Existing(ws_id) => {
-                                let ws_idx = mon
-                                    .workspaces
-                                    .iter_mut()
-                                    .position(|ws| ws.id() == ws_id)
-                                    .unwrap();
+                                let ws_idx = mon.idx_of_ws(ws_id).unwrap();
 
                                 let position = if move_.is_floating {
                                     InsertPosition::Floating
@@ -4225,11 +4205,7 @@ impl<W: LayoutElement> Layout<W> {
                 let tile_render_loc = move_.tile_render_location(zoom);
 
                 let ws_idx = match insert_ws {
-                    InsertWorkspace::Existing(ws_id) => mon
-                        .workspaces
-                        .iter()
-                        .position(|ws| ws.id() == ws_id)
-                        .unwrap(),
+                    InsertWorkspace::Existing(ws_id) => mon.idx_of_ws(ws_id).unwrap(),
                     InsertWorkspace::NewAt(ws_idx) => {
                         if mon.options.layout.empty_workspace_above_first && ws_idx == 0 {
                             // Reuse the top empty workspace.
@@ -4778,12 +4754,8 @@ impl<W: LayoutElement> Layout<W> {
                 let Some((ws, ws_geo)) = mon.workspace_under(pointer_pos_within_output) else {
                     return;
                 };
-                let ws_id = ws.id();
-                let ws = mon
-                    .workspaces
-                    .iter_mut()
-                    .find(|ws| ws.id() == ws_id)
-                    .unwrap();
+                let idx = mon.idx_of_ws(ws.id()).unwrap();
+                let ws = &mut mon.workspaces[idx];
 
                 let tile_pos = tile_pos - ws_geo.loc;
                 ws.start_close_animation_for_tile(renderer, snapshot, tile_size, tile_pos, blocker);
