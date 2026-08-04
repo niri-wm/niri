@@ -1,12 +1,12 @@
 //! Helper for blocking communication over the niri socket.
 
 use std::env;
-use std::io::{self, BufRead, BufReader, Write};
+use std::io::{self, BufRead, BufReader, Read, Write};
 use std::net::Shutdown;
 use std::os::unix::net::UnixStream;
 use std::path::Path;
 
-use crate::{Event, Reply, Request};
+use crate::{Event, Reply, Request, Response, ScreenshotRequest};
 
 /// Name of the environment variable containing the niri IPC socket path.
 pub const SOCKET_PATH_ENV: &str = "NIRI_SOCKET";
@@ -57,6 +57,30 @@ impl Socket {
         self.stream.read_line(&mut buf)?;
 
         let reply = serde_json::from_str(&buf)?;
+        Ok(reply)
+    }
+
+    /// Sends a screenshot request and writes returned PNG data to `output`.
+    pub fn send_screenshot(
+        &mut self,
+        request: ScreenshotRequest,
+        mut output: impl Write,
+    ) -> io::Result<Reply> {
+        let reply = self.send(Request::Screenshot(request))?;
+
+        if let Ok(Response::Screenshot(Some(screenshot))) = &reply {
+            let copied = io::copy(
+                &mut self.stream.by_ref().take(screenshot.data_length),
+                &mut output,
+            )?;
+            if copied != screenshot.data_length {
+                return Err(io::Error::new(
+                    io::ErrorKind::UnexpectedEof,
+                    "screenshot data ended early",
+                ));
+            }
+        }
+
         Ok(reply)
     }
 
