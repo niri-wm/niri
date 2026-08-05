@@ -560,9 +560,16 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         };
 
         let target_x = target_x.unwrap_or_else(|| self.target_view_pos());
-
-        let new_offset =
-            compute_new_view_offset(target_x + area.loc.x, area.size.w, col_x, width, padding);
+        let content_right = self.column_x(self.columns.len()) - self.options.layout.gaps;
+        let new_offset = compute_new_view_offset(
+            target_x + area.loc.x,
+            area.size.w,
+            col_x,
+            width,
+            padding,
+            content_right,
+            self.options.layout.fill_empty_space,
+        );
 
         // Non-fullscreen windows are always offset at least by the working area position.
         new_offset - area.loc.x
@@ -1207,6 +1214,8 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
         let view_config = anim_config.unwrap_or(self.options.animations.horizontal_view_movement.0);
 
+        let mut move_view = self.options.layout.fill_empty_space;
+
         if column_idx < self.active_column_idx {
             // A column to the left was removed; preserve the current position.
             // FIXME: preserve activate_prev_column_on_removal.
@@ -1228,16 +1237,21 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                     prev_offset,
                     view_config,
                 );
-                self.animate_view_offset_to_column_with_config(
-                    None,
-                    self.active_column_idx,
-                    None,
-                    view_config,
-                );
+
+                move_view = true;
             }
         } else {
             self.activate_column_with_anim_config(
                 min(self.active_column_idx, self.columns.len() - 1),
+                view_config,
+            );
+        }
+
+        if move_view {
+            self.animate_view_offset_to_column_with_config(
+                None,
+                self.active_column_idx,
+                None,
                 view_config,
             );
         }
@@ -1335,6 +1349,9 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             }
         }
 
+        let mut move_view = false;
+        let mut unfullscreen_offset = None;
+
         if col_idx == self.active_column_idx {
             // If offset == 0, then don't mess with the view or the gesture. Some clients (Firefox,
             // Chromium, Electron) currently don't commit after the ack of a configure that drops
@@ -1375,35 +1392,43 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             // will unfullscreen one by one, and the column width will shrink only when the
             // last tile unfullscreens. This is when we want to restore the view offset,
             // otherwise it will immediately reset back by the animate_view_offset below.
-            let unfullscreen_offset = if !was_normal && is_normal {
+            if !was_normal && is_normal {
                 // Take the value unconditionally, even if the view is currently frozen by
                 // a view gesture. It shouldn't linger around because it's only valid for this
                 // particular unfullscreen.
-                self.view_offset_to_restore.take()
+                unfullscreen_offset = self.view_offset_to_restore.take();
+            }
+            move_view = true;
+        } else if self.options.layout.fill_empty_space && offset != 0. {
+            // Remove empty space when a non-active column changes width. This covers both
+            // resizes and fullscreen transitions.
+            move_view = true;
+        }
+
+        // We might need to move the view to ensure the resized window is still visible. But
+        // only do it when the view isn't frozen by an interactive resize or a view gesture.
+        if move_view && self.interactive_resize.is_none() && !self.view_offset.is_gesture() {
+            // Synchronize the horizontal view movement with the resize so that it looks nice.
+            // This is especially important for always-centered view.
+            let config = if ongoing_resize_anim {
+                self.options.animations.window_resize.anim
             } else {
-                None
+                self.options.animations.horizontal_view_movement.0
             };
 
-            // We might need to move the view to ensure the resized window is still visible. But
-            // only do it when the view isn't frozen by an interactive resize or a view gesture.
-            if self.interactive_resize.is_none() && !self.view_offset.is_gesture() {
-                // Synchronize the horizontal view movement with the resize so that it looks nice.
-                // This is especially important for always-centered view.
-                let config = if ongoing_resize_anim {
-                    self.options.animations.window_resize.anim
-                } else {
-                    self.options.animations.horizontal_view_movement.0
-                };
-
-                // Restore the view offset upon unfullscreening if needed.
-                if let Some(prev_offset) = unfullscreen_offset {
-                    self.animate_view_offset_with_config(col_idx, prev_offset, config);
-                }
-
-                // FIXME: we will want to skip the animation in some cases here to make continuously
-                // resizing windows not look janky.
-                self.animate_view_offset_to_column_with_config(None, col_idx, None, config);
+            // Restore the view offset upon unfullscreening if needed.
+            if let Some(prev_offset) = unfullscreen_offset {
+                self.animate_view_offset_with_config(self.active_column_idx, prev_offset, config);
             }
+
+            // FIXME: we will want to skip the animation in some cases here to make continuously
+            // resizing windows not look janky.
+            self.animate_view_offset_to_column_with_config(
+                None,
+                self.active_column_idx,
+                None,
+                config,
+            );
         }
     }
 
@@ -5460,6 +5485,8 @@ fn compute_new_view_offset(
     new_col_x: f64,
     new_col_width: f64,
     gaps: f64,
+    content_right: f64,
+    fill_empty_space: bool,
 ) -> f64 {
     // If the column is wider than the view, always left-align it.
     if view_width <= new_col_width {
@@ -5473,19 +5500,37 @@ fn compute_new_view_offset(
     let new_x = new_col_x - padding;
     let new_right_x = new_col_x + new_col_width + padding;
 
-    // If the column is already fully visible, leave the view as is.
-    if cur_x <= new_x && new_right_x <= cur_x + view_width {
-        return -(new_col_x - cur_x);
+    let mut offset = if cur_x <= new_x && new_right_x <= cur_x + view_width {
+        // If the column is already fully visible, leave the view as is.
+        -(new_col_x - cur_x)
+    } else {
+        // Otherwise, prefer the alignment that results in less motion from the current position.
+        let dist_to_left = (cur_x - new_x).abs();
+        let dist_to_right = ((cur_x + view_width) - new_right_x).abs();
+        if dist_to_left <= dist_to_right {
+            -padding
+        } else {
+            -(view_width - padding - new_col_width)
+        }
+    };
+
+    // Don't leave empty space past the ends of the view: keep the view within the content, pulling
+    // off-screen columns in rather than showing a blank gap at either edge.
+    if fill_empty_space {
+        let view_left = new_col_x + offset;
+        let clips_left = 0. < view_left;
+        let clips_right = view_left + view_width < content_right;
+
+        // Only act when some content is actually off screen.
+        if clips_left || clips_right {
+            let min_view_left = -padding;
+            let max_view_left = f64::max(content_right - view_width + padding, min_view_left);
+            let clamped = view_left.clamp(min_view_left, max_view_left);
+            offset += clamped - view_left;
+        }
     }
 
-    // Otherwise, prefer the alignment that results in less motion from the current position.
-    let dist_to_left = (cur_x - new_x).abs();
-    let dist_to_right = ((cur_x + view_width) - new_right_x).abs();
-    if dist_to_left <= dist_to_right {
-        -padding
-    } else {
-        -(view_width - padding - new_col_width)
-    }
+    offset
 }
 
 fn compute_working_area(
