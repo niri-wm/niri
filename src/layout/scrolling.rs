@@ -1823,7 +1823,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                     .get_or_insert(self.view_offset.stationary() + offset.x);
             }
 
-            offset.x += self.columns[source_col_idx].render_offset().x;
+            offset += self.columns[source_col_idx].render_offset();
             let RemovedTile { tile, .. } = self.remove_tile_by_idx(
                 source_col_idx,
                 0,
@@ -1833,14 +1833,14 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             self.add_tile_to_column(target_column_idx, None, tile, source_tile_was_active);
 
             let target_column = &mut self.columns[target_column_idx];
-            offset.x -= target_column.render_offset().x;
+            offset -= target_column.render_offset();
             offset += prev_off - target_column.tile_offset(target_column.tiles.len() - 1);
 
             let new_tile = target_column.tiles.last_mut().unwrap();
             new_tile.animate_move_from(offset);
         } else {
             // Move out of column.
-            let mut offset = Point::from((source_column.render_offset().x, 0.));
+            let mut offset = source_column.render_offset();
 
             let removed =
                 self.remove_tile_by_idx(source_col_idx, source_tile_idx, Transaction::new(), None);
@@ -1898,7 +1898,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         let cur_x = self.column_x(source_col_idx);
 
         let source_column = &self.columns[source_col_idx];
-        let mut offset = Point::from((source_column.render_offset().x, 0.));
+        let mut offset = source_column.render_offset();
         let prev_off = source_column.tile_offset(source_tile_idx);
 
         let source_tile_was_active = self.active_column_idx == source_col_idx
@@ -1913,7 +1913,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             let target_column_idx = source_col_idx;
 
             offset.x += cur_x - self.column_x(source_col_idx + 1);
-            offset.x -= self.columns[source_col_idx + 1].render_offset().x;
+            offset -= self.columns[source_col_idx + 1].render_offset();
 
             if source_tile_was_active {
                 // Make sure the target column gets activated.
@@ -1977,10 +1977,9 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         let target_column_idx = self.active_column_idx;
         let source_column_idx = self.active_column_idx + 1;
 
-        let offset = self.column_x(source_column_idx)
-            + self.columns[source_column_idx].render_offset().x
-            - self.column_x(target_column_idx);
-        let mut offset = Point::from((offset, 0.));
+        let mut offset = self.columns[source_column_idx].render_offset();
+        offset.x += self.column_x(source_column_idx);
+        offset.x -= self.column_x(target_column_idx);
         let prev_off = self.columns[source_column_idx].tile_offset(0);
 
         let removed = self.remove_tile_by_idx(source_column_idx, 0, Transaction::new(), None);
@@ -1988,7 +1987,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
         let target_column = &mut self.columns[target_column_idx];
         offset += prev_off - target_column.tile_offset(target_column.tiles.len() - 1);
-        offset.x -= target_column.render_offset().x;
+        offset -= target_column.render_offset();
 
         let new_tile = target_column.tiles.last_mut().unwrap();
         new_tile.animate_move_from(offset);
@@ -2010,7 +2009,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
         let source_tile_idx = source_column.tiles.len() - 1;
 
-        let mut offset = Point::from((source_column.render_offset().x, 0.));
+        let mut offset = source_column.render_offset();
         let prev_off = source_column.tile_offset(source_tile_idx);
 
         let removed =
