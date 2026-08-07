@@ -107,6 +107,7 @@ impl MergeWith<MruHighlightPart> for MruHighlight {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct MruPreviews {
+    pub off: bool,
     pub max_height: f64,
     pub max_scale: f64,
 }
@@ -114,6 +115,7 @@ pub struct MruPreviews {
 impl Default for MruPreviews {
     fn default() -> Self {
         Self {
+            off: false,
             max_height: 480.,
             max_scale: 0.5,
         }
@@ -122,6 +124,10 @@ impl Default for MruPreviews {
 
 #[derive(knuffel::Decode, Debug, Default, PartialEq)]
 pub struct MruPreviewsPart {
+    #[knuffel(child)]
+    pub on: bool,
+    #[knuffel(child)]
+    pub off: bool,
     #[knuffel(child, unwrap(argument))]
     pub max_height: Option<FloatOrInt<1, 65535>>,
     #[knuffel(child, unwrap(argument))]
@@ -130,6 +136,10 @@ pub struct MruPreviewsPart {
 
 impl MergeWith<MruPreviewsPart> for MruPreviews {
     fn merge_with(&mut self, part: &MruPreviewsPart) {
+        self.off |= part.off;
+        if part.on {
+            self.off = false;
+        }
         merge!((self, part), max_height, max_scale);
     }
 }
