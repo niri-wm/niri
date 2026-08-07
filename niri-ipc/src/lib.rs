@@ -119,6 +119,8 @@ pub enum Request {
     OverviewState,
     /// Request information about screencasts.
     Casts,
+    /// Request information about client-bound global shortcuts (vicinae-hotkey-v1).
+    GlobalShortcuts,
 }
 
 /// Reply from niri to client.
@@ -165,6 +167,8 @@ pub enum Response {
     OverviewState(Overview),
     /// Information about screencasts.
     Casts(Vec<Cast>),
+    /// Information about client-bound global shortcuts.
+    GlobalShortcuts(Vec<GlobalShortcut>),
 }
 
 /// Overview information.
@@ -1485,6 +1489,18 @@ pub struct KeyboardLayouts {
     pub names: Vec<String>,
     /// Index of the currently active layout in `names`.
     pub current_idx: u8,
+}
+
+/// A global shortcut bound by a client through vicinae-hotkey-v1.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct GlobalShortcut {
+    /// Advisory application id supplied at bind time; may be empty or spoofed.
+    pub app_id: String,
+    /// Human-readable description of what the shortcut does.
+    pub description: String,
+    /// Human-readable trigger, e.g. "Super + Ctrl + k".
+    pub trigger: String,
 }
 
 /// A layer-shell layer.

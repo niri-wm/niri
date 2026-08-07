@@ -4,6 +4,7 @@ pub mod gamma_control;
 pub mod mutter_x11_interop;
 pub mod output_management;
 pub mod screencopy;
+pub mod vicinae_hotkey;
 pub mod virtual_pointer;
 
 pub mod raw;

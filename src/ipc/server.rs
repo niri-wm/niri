@@ -14,13 +14,15 @@ use calloop::io::Async;
 use directories::BaseDirs;
 use futures_util::io::{AsyncReadExt, BufReader};
 use futures_util::{select_biased, AsyncBufReadExt, AsyncWrite, AsyncWriteExt, FutureExt as _};
-use niri_config::OutputName;
+use niri_config::{Modifiers, OutputName};
 use niri_ipc::state::{EventStreamState, EventStreamStatePart as _};
 use niri_ipc::{
-    Action, Event, KeyboardLayouts, OutputConfigChanged, Overview, Reply, Request, Response,
-    Timestamp, WindowLayout, Workspace,
+    Action, Event, GlobalShortcut, KeyboardLayouts, OutputConfigChanged, Overview, Reply, Request,
+    Response, Timestamp, WindowLayout, Workspace,
 };
 use smithay::desktop::layer_map_for_output;
+use smithay::input::keyboard::xkb::keysym_get_name;
+use smithay::input::keyboard::Keysym;
 use smithay::input::pointer::{
     CursorIcon, CursorImageStatus, Focus, GrabStartData as PointerGrabStartData,
 };
@@ -333,6 +335,26 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
             let layout = state.keyboard_layouts.keyboard_layouts.clone();
             let layout = layout.expect("keyboard layouts should be set at startup");
             Response::KeyboardLayouts(layout)
+        }
+        Request::GlobalShortcuts => {
+            let (tx, rx) = async_channel::bounded(1);
+            ctx.event_loop.insert_idle(move |state| {
+                let shortcuts: Vec<GlobalShortcut> = state
+                    .niri
+                    .vicinae_hotkey_state
+                    .shortcuts()
+                    .into_iter()
+                    .map(|s| GlobalShortcut {
+                        trigger: hotkey_trigger_name(s.keysym, s.modifiers),
+                        app_id: s.app_id,
+                        description: s.description,
+                    })
+                    .collect();
+                let _ = tx.send_blocking(shortcuts);
+            });
+            let result = rx.recv().await;
+            let shortcuts = result.map_err(|_| String::from("error getting global shortcuts"))?;
+            Response::GlobalShortcuts(shortcuts)
         }
         Request::FocusedWindow => {
             let state = ctx.event_stream_state.borrow();
@@ -942,4 +964,22 @@ impl State {
         state.apply(event.clone());
         server.send_event(event);
     }
+}
+
+fn hotkey_trigger_name(keysym: Keysym, modifiers: Modifiers) -> String {
+    let mut out = String::new();
+    if modifiers.contains(Modifiers::SUPER) {
+        out.push_str("Super + ");
+    }
+    if modifiers.contains(Modifiers::CTRL) {
+        out.push_str("Ctrl + ");
+    }
+    if modifiers.contains(Modifiers::ALT) {
+        out.push_str("Alt + ");
+    }
+    if modifiers.contains(Modifiers::SHIFT) {
+        out.push_str("Shift + ");
+    }
+    out.push_str(&keysym_get_name(keysym));
+    out
 }

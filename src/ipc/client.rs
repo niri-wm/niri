@@ -45,6 +45,7 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
         Msg::Windows => Request::Windows,
         Msg::Layers => Request::Layers,
         Msg::KeyboardLayouts => Request::KeyboardLayouts,
+        Msg::GlobalShortcuts => Request::GlobalShortcuts,
         Msg::EventStream => Request::EventStream,
         Msg::RequestError => Request::ReturnError,
         Msg::OverviewState => Request::OverviewState,
@@ -406,6 +407,31 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
             for (idx, name) in names.iter().enumerate() {
                 let is_active = if idx == current_idx { " * " } else { "   " };
                 println!("{is_active}{idx} {name}");
+            }
+        }
+        Msg::GlobalShortcuts => {
+            let Response::GlobalShortcuts(shortcuts) = response else {
+                bail!("unexpected response: expected GlobalShortcuts, got {response:?}");
+            };
+
+            if json {
+                let shortcuts =
+                    serde_json::to_string(&shortcuts).context("error formatting response")?;
+                println!("{shortcuts}");
+                return Ok(());
+            }
+
+            if shortcuts.is_empty() {
+                println!("No global shortcuts are bound.");
+            }
+
+            for shortcut in shortcuts {
+                let app_id = if shortcut.app_id.is_empty() {
+                    "<unknown>"
+                } else {
+                    &shortcut.app_id
+                };
+                println!("{app_id}: {} -> {}", shortcut.trigger, shortcut.description);
             }
         }
         Msg::EventStream => {

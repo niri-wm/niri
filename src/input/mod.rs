@@ -49,6 +49,7 @@ use crate::dbus::freedesktop_a11y::KbMonBlock;
 use crate::layout::scrolling::ScrollDirection;
 use crate::layout::{ActivateWindow, LayoutElement as _};
 use crate::niri::{CastTarget, PointerVisibility, State};
+use crate::protocols::vicinae_hotkey::DenyReason;
 use crate::ui::mru::{WindowMru, WindowMruUi};
 use crate::ui::screenshot_ui::ScreenshotUi;
 use crate::utils::spawning::{spawn, spawn_sh};
@@ -554,7 +555,33 @@ impl State {
                     )
                 };
 
+                // Client-managed global hotkeys (vicinae_hotkey_v1). Not exclusive: configured
+                // binds and every matching hotkey all fire, only delivery to the focused client
+                // is suppressed.
+                let semantic = modifiers
+                    & (Modifiers::CTRL | Modifiers::SHIFT | Modifiers::ALT | Modifiers::SUPER);
+                let hotkeys = &mut this.niri.vicinae_hotkey_state;
+                let hotkey_fired = if !pressed {
+                    hotkeys.on_key_release(key_code.raw(), u32::from(serial), time)
+                } else if !is_inhibiting_shortcuts {
+                    raw.is_some_and(|raw| {
+                        hotkeys.on_key_press(
+                            key_code.raw(),
+                            raw.raw(),
+                            semantic,
+                            u32::from(serial),
+                            time,
+                        )
+                    })
+                } else {
+                    false
+                };
+
                 if matches!(res, FilterResult::Forward) {
+                    if hotkey_fired {
+                        return FilterResult::Intercept(None);
+                    }
+
                     // If we didn't find any bind, try other hardcoded keys.
                     if this.niri.keyboard_focus.is_overview() && pressed {
                         if let Some(bind) = raw.and_then(|raw| hardcoded_overview_bind(raw, *mods))
@@ -4570,6 +4597,45 @@ fn find_configured_bind<'a>(
     None
 }
 
+// the vicinae-hotkey bind policy; see the suggested acceptance policy in the protocol's
+// security considerations.
+pub(crate) fn decide_hotkey(
+    keysym: Keysym,
+    modifiers: Modifiers,
+) -> Result<(), (DenyReason, String)> {
+    if keysym.raw() == 0 {
+        return Err((
+            DenyReason::Invalid,
+            String::from("Not a valid key combination"),
+        ));
+    }
+
+    if modifiers.intersects(Modifiers::CTRL | Modifiers::ALT | Modifiers::SUPER) {
+        return Ok(());
+    }
+
+    if is_keypad_key(keysym) {
+        return Ok(());
+    }
+
+    if is_dead_key(keysym) || keysym.key_char().is_some() {
+        return Err((
+            DenyReason::NotPermitted,
+            String::from("Ctrl, Alt or Super is required when the trigger key carries text entry"),
+        ));
+    }
+
+    Ok(())
+}
+
+fn is_keypad_key(keysym: Keysym) -> bool {
+    (keysyms::KEY_KP_Space..=keysyms::KEY_KP_Equal).contains(&keysym.raw())
+}
+
+fn is_dead_key(keysym: Keysym) -> bool {
+    (keysyms::KEY_dead_grave..=keysyms::KEY_dead_longsolidusoverlay).contains(&keysym.raw())
+}
+
 fn find_configured_switch_action(
     bindings: &SwitchBinds,
     switch: Switch,
@@ -5555,5 +5621,43 @@ mod tests {
             ),
             None,
         );
+    }
+
+    #[test]
+    fn vicinae_hotkey_decide_policy() {
+        let decide = decide_hotkey;
+
+        // Modified combinations are always acceptable, even over configured binds.
+        assert!(decide(Keysym::space, Modifiers::CTRL).is_ok());
+        assert!(decide(Keysym::t, Modifiers::SUPER).is_ok());
+
+        assert!(matches!(
+            decide(Keysym::new(0), Modifiers::CTRL),
+            Err((DenyReason::Invalid, _))
+        ));
+
+        // Text-carrying keys require a modifier; Shift alone doesn't count.
+        assert!(matches!(
+            decide(Keysym::k, Modifiers::empty()),
+            Err((DenyReason::NotPermitted, _))
+        ));
+        assert!(matches!(
+            decide(Keysym::k, Modifiers::SHIFT),
+            Err((DenyReason::NotPermitted, _))
+        ));
+        assert!(matches!(
+            decide(Keysym::Return, Modifiers::empty()),
+            Err((DenyReason::NotPermitted, _))
+        ));
+        assert!(matches!(
+            decide(Keysym::new(keysyms::KEY_dead_grave), Modifiers::empty()),
+            Err((DenyReason::NotPermitted, _))
+        ));
+
+        // Purely functional keys and the keypad bind bare.
+        assert!(decide(Keysym::new(keysyms::KEY_F5), Modifiers::empty()).is_ok());
+        assert!(decide(Keysym::new(keysyms::KEY_XF86AudioPlay), Modifiers::empty()).is_ok());
+        assert!(decide(Keysym::new(keysyms::KEY_KP_1), Modifiers::empty()).is_ok());
+        assert!(decide(Keysym::new(keysyms::KEY_KP_End), Modifiers::empty()).is_ok());
     }
 }
