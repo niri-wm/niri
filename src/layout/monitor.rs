@@ -1353,6 +1353,19 @@ impl<W: LayoutElement> Monitor<W> {
         self.active_workspace_ref().active_window_visual_rectangle()
     }
 
+    /// Returns the geometry of the window matching id relative to and clamped to the view.
+    ///
+    /// During animations, assumes the final view position.
+    pub fn window_visual_rectangle(&self, id: &W::Id) -> Option<Rectangle<f64, Logical>> {
+        if self.overview_open {
+            return None;
+        }
+
+        self.workspaces
+            .iter()
+            .find_map(|ws| ws.window_visual_rectangle(id))
+    }
+
     fn workspace_size(&self, zoom: f64) -> Size<f64, Logical> {
         let ws_size = self.view_size.upscale(zoom);
         let scale = self.scale.fractional_scale();
