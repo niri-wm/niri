@@ -128,7 +128,7 @@ use crate::dbus::gnome_shell_introspect::{self, IntrospectToNiri, NiriToIntrospe
 #[cfg(feature = "dbus")]
 use crate::dbus::gnome_shell_screenshot::{NiriToScreenshot, ScreenshotToNiri};
 use crate::frame_clock::FrameClock;
-use crate::handlers::{configure_lock_surface, XDG_ACTIVATION_TOKEN_TIMEOUT};
+use crate::handlers::{configure_lock_surface, SelectionData, XDG_ACTIVATION_TOKEN_TIMEOUT};
 use crate::input::pick_color_grab::PickColorGrab;
 use crate::input::scroll_swipe_gesture::ScrollSwipeGesture;
 use crate::input::scroll_tracker::ScrollTracker;
@@ -5685,7 +5685,7 @@ impl Niri {
                         &state.niri.display_handle,
                         &state.niri.seat,
                         vec![String::from("image/png")],
-                        buf.clone(),
+                        SelectionData::bytes(vec![String::from("image/png")], buf.clone()),
                     );
                 }
                 calloop::channel::Event::Closed => (),

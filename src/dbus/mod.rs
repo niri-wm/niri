@@ -13,7 +13,11 @@ pub mod mutter_display_config;
 pub mod mutter_service_channel;
 
 #[cfg(feature = "xdp-gnome-screencast")]
+pub mod mutter_remote_desktop;
+#[cfg(feature = "xdp-gnome-screencast")]
 pub mod mutter_screen_cast;
+#[cfg(feature = "xdp-gnome-screencast")]
+use mutter_remote_desktop::{RemoteDesktop, RemoteDesktopSessionRegistry};
 #[cfg(feature = "xdp-gnome-screencast")]
 use mutter_screen_cast::ScreenCast;
 
@@ -33,6 +37,10 @@ pub struct DBusServers {
     pub conn_screen_saver: Option<Connection>,
     pub conn_screen_shot: Option<Connection>,
     pub conn_introspect: Option<Connection>,
+    #[cfg(feature = "xdp-gnome-screencast")]
+    pub conn_remote_desktop: Option<Connection>,
+    #[cfg(feature = "xdp-gnome-screencast")]
+    pub remote_desktop_sessions: Option<RemoteDesktopSessionRegistry>,
     #[cfg(feature = "xdp-gnome-screencast")]
     pub conn_screen_cast: Option<Connection>,
     pub conn_login1: Option<Connection>,
@@ -117,6 +125,21 @@ impl DBusServers {
 
             #[cfg(feature = "xdp-gnome-screencast")]
             {
+                let remote_desktop_sessions = RemoteDesktopSessionRegistry::default();
+                let (to_remote_desktop_niri, from_remote_desktop) = calloop::channel::channel();
+                niri.event_loop
+                    .insert_source(from_remote_desktop, move |event, _, state| match event {
+                        calloop::channel::Event::Msg(msg) => {
+                            mutter_remote_desktop::dispatch_to_niri(state, msg)
+                        }
+                        calloop::channel::Event::Closed => (),
+                    })
+                    .unwrap();
+                let remote_desktop =
+                    RemoteDesktop::new(to_remote_desktop_niri, remote_desktop_sessions.clone());
+                dbus.conn_remote_desktop = try_start(remote_desktop);
+                dbus.remote_desktop_sessions = Some(remote_desktop_sessions.clone());
+
                 let (to_niri, from_screen_cast) = calloop::channel::channel();
                 niri.event_loop
                     .insert_source(from_screen_cast, {
@@ -126,7 +149,8 @@ impl DBusServers {
                         }
                     })
                     .unwrap();
-                let screen_cast = ScreenCast::new(backend.ipc_outputs(), to_niri);
+                let screen_cast =
+                    ScreenCast::new(backend.ipc_outputs(), to_niri, remote_desktop_sessions);
                 dbus.conn_screen_cast = try_start(screen_cast);
             }
 

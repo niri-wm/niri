@@ -53,7 +53,7 @@ use smithay::wayland::selection::primary_selection::{
 use smithay::wayland::selection::wlr_data_control::{
     DataControlHandler as WlrDataControlHandler, DataControlState as WlrDataControlState,
 };
-use smithay::wayland::selection::{SelectionHandler, SelectionTarget};
+use smithay::wayland::selection::{SelectionHandler, SelectionSource, SelectionTarget};
 use smithay::wayland::session_lock::{
     LockSurface, SessionLockHandler, SessionLockManagerState, SessionLocker,
 };
@@ -283,29 +283,102 @@ delegate_keyboard_shortcuts_inhibit!(State);
 delegate_virtual_keyboard_manager!(State);
 
 impl SelectionHandler for State {
-    type SelectionUserData = Arc<[u8]>;
+    type SelectionUserData = SelectionData;
+
+    fn new_selection(
+        &mut self,
+        ty: SelectionTarget,
+        source: Option<SelectionSource>,
+        _seat: Seat<Self>,
+    ) {
+        if ty != SelectionTarget::Clipboard {
+            return;
+        }
+
+        #[cfg(feature = "xdp-gnome-screencast")]
+        if let Some(registry) = self
+            .niri
+            .dbus
+            .as_ref()
+            .and_then(|dbus| dbus.remote_desktop_sessions.as_ref())
+        {
+            registry.notify_clipboard_owner_changed(
+                None,
+                source.map(|source| source.mime_types()).unwrap_or_default(),
+            );
+        }
+    }
 
     fn send_selection(
         &mut self,
-        _ty: SelectionTarget,
-        _mime_type: String,
+        ty: SelectionTarget,
+        mime_type: String,
         fd: OwnedFd,
         _seat: Seat<Self>,
         user_data: &Self::SelectionUserData,
     ) {
         let _span = tracy_client::span!("send_selection");
 
-        let buf = user_data.clone();
-        thread::spawn(move || {
-            // Clear O_NONBLOCK, otherwise File::write_all() will stop halfway.
-            if let Err(err) = fcntl_setfl(&fd, OFlags::empty()) {
-                warn!("error clearing flags on selection target fd: {err:?}");
+        if ty != SelectionTarget::Clipboard {
+            return;
+        }
+
+        match user_data {
+            SelectionData::Bytes { data, .. } => {
+                if let Err(err) = write_selection_bytes(fd, data.clone()) {
+                    warn!("error sending selection: {err}");
+                }
             }
-            if let Err(err) = File::from(fd).write_all(&buf) {
-                warn!("error writing selection: {err:?}");
+            #[cfg(feature = "xdp-gnome-screencast")]
+            SelectionData::RemoteDesktop(selection) => {
+                if let Err(err) = selection.request_transfer(mime_type, fd) {
+                    warn!("error requesting remote desktop clipboard transfer: {err}");
+                }
             }
-        });
+        }
     }
+}
+
+#[derive(Clone, Debug)]
+pub enum SelectionData {
+    Bytes {
+        mime_types: Arc<[String]>,
+        data: Arc<[u8]>,
+    },
+    #[cfg(feature = "xdp-gnome-screencast")]
+    RemoteDesktop(crate::dbus::mutter_remote_desktop::RemoteDesktopClipboardSelection),
+}
+
+impl SelectionData {
+    pub fn bytes(mime_types: Vec<String>, data: Arc<[u8]>) -> Self {
+        Self::Bytes {
+            mime_types: mime_types.into(),
+            data,
+        }
+    }
+
+    pub fn contains_mime_type(&self, mime_type: &str) -> bool {
+        match self {
+            Self::Bytes { mime_types, .. } => {
+                mime_types.iter().any(|candidate| candidate == mime_type)
+            }
+            #[cfg(feature = "xdp-gnome-screencast")]
+            Self::RemoteDesktop(selection) => selection.contains_mime_type(mime_type),
+        }
+    }
+}
+
+pub fn write_selection_bytes(fd: OwnedFd, data: Arc<[u8]>) -> Result<(), String> {
+    thread::spawn(move || {
+        // Clear O_NONBLOCK, otherwise File::write_all() will stop halfway.
+        if let Err(err) = fcntl_setfl(&fd, OFlags::empty()) {
+            warn!("error clearing flags on selection target fd: {err:?}");
+        }
+        if let Err(err) = File::from(fd).write_all(&data) {
+            warn!("error writing selection: {err:?}");
+        }
+    });
+    Ok(())
 }
 
 impl DataDeviceHandler for State {

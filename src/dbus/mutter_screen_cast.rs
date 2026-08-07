@@ -1,4 +1,5 @@
-use std::collections::HashMap;
+// allow: SIZE_OK — Mutter ScreenCast's zbus object tree is kept together here; splitting the
+// existing interface file would be unrelated churn for the RemoteDesktop linkage patch.
 use std::mem;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -9,6 +10,9 @@ use zbus::object_server::{InterfaceRef, SignalEmitter};
 use zbus::zvariant::{DeserializeDict, OwnedObjectPath, SerializeDict, Type, Value};
 use zbus::{fdo, interface, ObjectServer};
 
+use super::mutter_remote_desktop::{
+    RemoteDesktopOutputStream, RemoteDesktopSessionRegistry, RemoteDesktopStream,
+};
 use super::Start;
 use crate::backend::IpcOutputMap;
 use crate::utils::{CastSessionId, CastStreamId};
@@ -17,6 +21,7 @@ use crate::utils::{CastSessionId, CastStreamId};
 pub struct ScreenCast {
     ipc_outputs: Arc<Mutex<IpcOutputMap>>,
     to_niri: calloop::channel::Sender<ScreenCastToNiri>,
+    remote_desktop_sessions: RemoteDesktopSessionRegistry,
     #[allow(clippy::type_complexity)]
     sessions: Arc<Mutex<Vec<(Session, InterfaceRef<Session>)>>>,
 }
@@ -26,6 +31,8 @@ pub struct Session {
     id: CastSessionId,
     ipc_outputs: Arc<Mutex<IpcOutputMap>>,
     to_niri: calloop::channel::Sender<ScreenCastToNiri>,
+    remote_desktop_session_id: Option<String>,
+    remote_desktop_sessions: RemoteDesktopSessionRegistry,
     #[allow(clippy::type_complexity)]
     streams: Arc<Mutex<Vec<(Stream, InterfaceRef<Stream>)>>>,
     stopped: Arc<AtomicBool>,
@@ -76,6 +83,15 @@ enum StreamTarget {
     Window { id: u64 },
 }
 
+#[derive(Debug, Default, DeserializeDict, Type)]
+#[zvariant(signature = "dict")]
+struct CreateSessionProperties {
+    #[zvariant(rename = "remote-desktop-session-id")]
+    remote_desktop_session_id: Option<String>,
+    #[zvariant(rename = "disable-animations")]
+    _disable_animations: Option<bool>,
+}
+
 #[derive(Debug, Clone)]
 pub enum StreamTargetId {
     Output { name: String },
@@ -109,29 +125,56 @@ impl ScreenCast {
     async fn create_session(
         &self,
         #[zbus(object_server)] server: &ObjectServer,
-        properties: HashMap<&str, Value<'_>>,
+        properties: CreateSessionProperties,
     ) -> fdo::Result<OwnedObjectPath> {
-        if properties.contains_key("remote-desktop-session-id") {
-            return Err(fdo::Error::Failed(
-                "there are no remote desktop sessions".to_owned(),
-            ));
-        }
-
         let session_id = CastSessionId::next();
         let path = format!("/org/gnome/Mutter/ScreenCast/Session/u{}", session_id.get());
-        let path = OwnedObjectPath::try_from(path).unwrap();
+        let path = object_path(path)?;
+        let remote_desktop_session_id = properties.remote_desktop_session_id;
 
-        let session = Session::new(session_id, self.ipc_outputs.clone(), self.to_niri.clone());
+        if let Some(remote_desktop_session_id) = &remote_desktop_session_id {
+            self.remote_desktop_sessions
+                .associate_screen_cast(remote_desktop_session_id, session_id)?;
+        }
+
+        let session = Session::new(
+            session_id,
+            self.ipc_outputs.clone(),
+            self.to_niri.clone(),
+            remote_desktop_session_id.clone(),
+            self.remote_desktop_sessions.clone(),
+        );
         match server.at(&path, session.clone()).await {
             Ok(true) => {
-                let iface = server.interface(&path).await.unwrap();
-                self.sessions.lock().unwrap().push((session, iface));
+                let iface = match server.interface(&path).await {
+                    Ok(iface) => iface,
+                    Err(err) => {
+                        self.remote_desktop_sessions.clear_screen_cast(session_id)?;
+                        return Err(fdo::Error::Failed(format!(
+                            "error retrieving session interface: {err:?}"
+                        )));
+                    }
+                };
+                let mut sessions = match self.sessions.lock() {
+                    Ok(sessions) => sessions,
+                    Err(_) => {
+                        self.remote_desktop_sessions.clear_screen_cast(session_id)?;
+                        return Err(fdo::Error::Failed(
+                            "screen cast session list is poisoned".to_owned(),
+                        ));
+                    }
+                };
+                sessions.push((session, iface));
             }
-            Ok(false) => return Err(fdo::Error::Failed("session path already exists".to_owned())),
+            Ok(false) => {
+                self.remote_desktop_sessions.clear_screen_cast(session_id)?;
+                return Err(fdo::Error::Failed("session path already exists".to_owned()));
+            }
             Err(err) => {
+                self.remote_desktop_sessions.clear_screen_cast(session_id)?;
                 return Err(fdo::Error::Failed(format!(
                     "error creating session object: {err:?}"
-                )))
+                )));
             }
         }
 
@@ -149,7 +192,15 @@ impl Session {
     async fn start(&self) {
         debug!("start");
 
-        for (stream, iface) in &*self.streams.lock().unwrap() {
+        let streams = match self.streams.lock() {
+            Ok(streams) => streams,
+            Err(_) => {
+                warn!("screen cast stream list is poisoned");
+                return;
+            }
+        };
+
+        for (stream, iface) in &*streams {
             stream.start(iface.signal_emitter().clone());
         }
     }
@@ -166,7 +217,13 @@ impl Session {
             return;
         }
 
-        Session::closed(&ctxt).await.unwrap();
+        if let Err(err) = self.remote_desktop_sessions.clear_screen_cast(self.id) {
+            warn!("error clearing remote desktop screen cast association: {err:?}");
+        }
+
+        if let Err(err) = Session::closed(&ctxt).await {
+            warn!("error emitting ScreenCast Closed signal: {err:?}");
+        }
 
         if let Err(err) = self.to_niri.send(ScreenCastToNiri::StopCast {
             session_id: self.id,
@@ -174,15 +231,26 @@ impl Session {
             warn!("error sending StopCast to niri: {err:?}");
         }
 
-        let streams = mem::take(&mut *self.streams.lock().unwrap());
+        let streams = match self.streams.lock() {
+            Ok(mut streams) => mem::take(&mut *streams),
+            Err(_) => {
+                warn!("screen cast stream list is poisoned");
+                Vec::new()
+            }
+        };
+
         for (_, iface) in streams.iter() {
-            server
+            if let Err(err) = server
                 .remove::<Stream, _>(iface.signal_emitter().path())
                 .await
-                .unwrap();
+            {
+                warn!("error removing stream object: {err:?}");
+            }
         }
 
-        server.remove::<Session, _>(ctxt.path()).await.unwrap();
+        if let Err(err) = server.remove::<Session, _>(ctxt.path()).await {
+            warn!("error removing screen cast session object: {err:?}");
+        }
     }
 
     async fn record_monitor(
@@ -194,20 +262,20 @@ impl Session {
         debug!(connector, ?properties, "record_monitor");
 
         let output = {
-            let ipc_outputs = self.ipc_outputs.lock().unwrap();
+            let ipc_outputs = self
+                .ipc_outputs
+                .lock()
+                .map_err(|_| fdo::Error::Failed("screen cast output map is poisoned".to_owned()))?;
             ipc_outputs.values().find(|o| o.name == connector).cloned()
         };
         let Some(output) = output else {
             return Err(fdo::Error::Failed("no such monitor".to_owned()));
         };
 
-        if output.logical.is_none() {
-            return Err(fdo::Error::Failed("monitor is disabled".to_owned()));
-        }
-
         let stream_id = CastStreamId::next();
+        let remote_stream = remote_desktop_output_stream(stream_id, &output)?;
         let path = format!("/org/gnome/Mutter/ScreenCast/Stream/u{}", stream_id.get());
-        let path = OwnedObjectPath::try_from(path).unwrap();
+        let path = object_path(path)?;
 
         let cursor_mode = properties.cursor_mode.unwrap_or_default();
 
@@ -221,8 +289,16 @@ impl Session {
         );
         match server.at(&path, stream.clone()).await {
             Ok(true) => {
-                let iface = server.interface(&path).await.unwrap();
-                self.streams.lock().unwrap().push((stream, iface));
+                let iface = server.interface(&path).await.map_err(|err| {
+                    fdo::Error::Failed(format!("error retrieving stream interface: {err:?}"))
+                })?;
+                self.register_remote_desktop_stream(&path, remote_stream)?;
+                self.streams
+                    .lock()
+                    .map_err(|_| {
+                        fdo::Error::Failed("screen cast stream list is poisoned".to_owned())
+                    })?
+                    .push((stream, iface));
             }
             Ok(false) => return Err(fdo::Error::Failed("stream path already exists".to_owned())),
             Err(err) => {
@@ -244,7 +320,7 @@ impl Session {
 
         let stream_id = CastStreamId::next();
         let path = format!("/org/gnome/Mutter/ScreenCast/Stream/u{}", stream_id.get());
-        let path = OwnedObjectPath::try_from(path).unwrap();
+        let path = object_path(path)?;
 
         let cursor_mode = properties.cursor_mode.unwrap_or_default();
 
@@ -260,8 +336,16 @@ impl Session {
         );
         match server.at(&path, stream.clone()).await {
             Ok(true) => {
-                let iface = server.interface(&path).await.unwrap();
-                self.streams.lock().unwrap().push((stream, iface));
+                let iface = server.interface(&path).await.map_err(|err| {
+                    fdo::Error::Failed(format!("error retrieving stream interface: {err:?}"))
+                })?;
+                self.register_remote_desktop_stream(&path, RemoteDesktopStream::window(stream_id))?;
+                self.streams
+                    .lock()
+                    .map_err(|_| {
+                        fdo::Error::Failed("screen cast stream list is poisoned".to_owned())
+                    })?
+                    .push((stream, iface));
             }
             Ok(false) => return Err(fdo::Error::Failed("stream path already exists".to_owned())),
             Err(err) => {
@@ -285,22 +369,16 @@ impl Stream {
         -> zbus::Result<()>;
 
     #[zbus(property)]
-    async fn parameters(&self) -> StreamParameters {
+    async fn parameters(&self) -> fdo::Result<StreamParameters> {
         match &self.target {
-            StreamTarget::Output(output) => {
-                let logical = output.logical.as_ref().unwrap();
-                StreamParameters {
-                    position: (logical.x, logical.y),
-                    size: (logical.width as i32, logical.height as i32),
-                }
-            }
-            StreamTarget::Window { .. } => {
+            StreamTarget::Output(output) => output_stream_parameters(output),
+            StreamTarget::Window { .. } => Ok(
                 // Does any consumer need this?
                 StreamParameters {
                     position: (0, 0),
                     size: (1, 1),
-                }
-            }
+                },
+            ),
         }
     }
 }
@@ -309,10 +387,12 @@ impl ScreenCast {
     pub fn new(
         ipc_outputs: Arc<Mutex<IpcOutputMap>>,
         to_niri: calloop::channel::Sender<ScreenCastToNiri>,
+        remote_desktop_sessions: RemoteDesktopSessionRegistry,
     ) -> Self {
         Self {
             ipc_outputs,
             to_niri,
+            remote_desktop_sessions,
             sessions: Arc::new(Mutex::new(vec![])),
         }
     }
@@ -338,19 +418,37 @@ impl Session {
         id: CastSessionId,
         ipc_outputs: Arc<Mutex<IpcOutputMap>>,
         to_niri: calloop::channel::Sender<ScreenCastToNiri>,
+        remote_desktop_session_id: Option<String>,
+        remote_desktop_sessions: RemoteDesktopSessionRegistry,
     ) -> Self {
         Self {
             id,
             ipc_outputs,
+            remote_desktop_session_id,
+            remote_desktop_sessions,
             streams: Arc::new(Mutex::new(vec![])),
             to_niri,
             stopped: Arc::new(AtomicBool::new(false)),
         }
     }
+
+    fn register_remote_desktop_stream(
+        &self,
+        path: &OwnedObjectPath,
+        stream: RemoteDesktopStream,
+    ) -> fdo::Result<()> {
+        if self.remote_desktop_session_id.is_none() {
+            return Ok(());
+        }
+
+        self.remote_desktop_sessions
+            .register_stream(self.id, path.as_str().to_owned(), stream)
+    }
 }
 
 impl Drop for Session {
     fn drop(&mut self) {
+        let _ = self.remote_desktop_sessions.clear_screen_cast(self.id);
         let _ = self.to_niri.send(ScreenCastToNiri::StopCast {
             session_id: self.id,
         });
@@ -403,4 +501,55 @@ impl StreamTarget {
             StreamTarget::Window { id } => StreamTargetId::Window { id: *id },
         }
     }
+}
+
+fn object_path(path: String) -> fdo::Result<OwnedObjectPath> {
+    OwnedObjectPath::try_from(path)
+        .map_err(|err| fdo::Error::Failed(format!("invalid object path: {err}")))
+}
+
+fn remote_desktop_output_stream(
+    stream_id: CastStreamId,
+    output: &niri_ipc::Output,
+) -> fdo::Result<RemoteDesktopStream> {
+    let logical = output
+        .logical
+        .as_ref()
+        .ok_or_else(|| fdo::Error::Failed("monitor is disabled".to_owned()))?;
+    let (width, height) = logical_size(logical)?;
+    Ok(RemoteDesktopStream::output(
+        stream_id,
+        RemoteDesktopOutputStream {
+            name: output.name.clone(),
+            x: logical.x,
+            y: logical.y,
+            width,
+            height,
+        },
+    ))
+}
+
+fn output_stream_parameters(output: &niri_ipc::Output) -> fdo::Result<StreamParameters> {
+    let logical = output
+        .logical
+        .as_ref()
+        .ok_or_else(|| fdo::Error::Failed("monitor is disabled".to_owned()))?;
+    Ok(StreamParameters {
+        position: (logical.x, logical.y),
+        size: logical_size(logical)?,
+    })
+}
+
+fn logical_size(logical: &niri_ipc::LogicalOutput) -> fdo::Result<(i32, i32)> {
+    if logical.width == 0 || logical.height == 0 {
+        return Err(fdo::Error::Failed(
+            "logical output size must be non-zero".to_owned(),
+        ));
+    }
+
+    let width = i32::try_from(logical.width)
+        .map_err(|_| fdo::Error::Failed("logical output width is too large".to_owned()))?;
+    let height = i32::try_from(logical.height)
+        .map_err(|_| fdo::Error::Failed("logical output height is too large".to_owned()))?;
+    Ok((width, height))
 }
