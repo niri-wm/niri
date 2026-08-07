@@ -82,6 +82,7 @@ pango = { version = "0.21.5", features = ["v1_44"] }
 pangocairo = "0.21.5"
 pipewire = { version = "0.10.0", optional = true, features = ["v0_3_33"] }
 png = "0.18.1"
+portable-atomic = "1"
 profiling = "1.0.17"
 sd-notify = "0.5.0"
 serde.workspace = true
