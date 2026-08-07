@@ -456,7 +456,7 @@ impl<W: LayoutElement> Tile<W> {
                 .is_some_and(|alpha| !alpha.anim.is_done())
     }
 
-    pub fn update_render_elements(&mut self, is_active: bool, view_rect: Rectangle<f64, Logical>) {
+    pub fn update_render_elements(&mut self, is_active: bool, is_view_locked: bool, view_rect: Rectangle<f64, Logical>) {
         let rules = self.window.rules();
         let animated_tile_size = self.animated_tile_size();
         let expanded_progress = self.expanded_progress();
@@ -495,6 +495,7 @@ impl<W: LayoutElement> Tile<W> {
             is_active,
             !draw_border_with_background,
             self.window.is_urgent(),
+            is_view_locked,
             Rectangle::new(
                 view_rect.loc - Point::from((border_width, border_width)),
                 view_rect.size,
@@ -530,6 +531,7 @@ impl<W: LayoutElement> Tile<W> {
             is_active,
             !draw_focus_ring_with_background,
             self.window.is_urgent(),
+            is_view_locked,
             view_rect,
             radius,
             self.scale,

@@ -66,6 +66,8 @@ impl Layout {
                     active_gradient: None,
                     inactive_gradient: None,
                     urgent_gradient: None,
+                    view_lock_color: Color::from_rgba8_unpremul(255, 255, 127, 255),
+                    view_lock_gradient: None,
                 },
                 ..Default::default()
             },

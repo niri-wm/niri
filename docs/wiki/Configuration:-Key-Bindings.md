@@ -416,3 +416,10 @@ binds {
     Super+Alt+L allow-inhibiting=false { spawn "swaylock"; }
 }
 ```
+
+#### `toggle-view-lock`, `lock-view-lock` and `unlock-view-lock`
+
+Toggles, locks and unlocks the view lock.
+
+The view lock locks the view and disables automatic focus for new windows. When the view lock is on, the only way to move the view is by using actions that start with `center`.
+Whether the view lock is locked or not is indicated by a change of color in the focus ring and the border. This is controlled by `view-lock-color` in the appropriate section (either `focus-ring` or `border`)

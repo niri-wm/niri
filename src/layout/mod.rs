@@ -2787,7 +2787,7 @@ impl<W: LayoutElement> Layout<W> {
                     Rectangle::new(pos_within_output.upscale(-1.), output_size(&move_.output))
                         .downscale(zoom);
 
-                move_.tile.update_render_elements(true, view_rect);
+                move_.tile.update_render_elements(true, false, view_rect);
             }
         }
 
@@ -4636,6 +4636,27 @@ impl<W: LayoutElement> Layout<W> {
         self.toggle_overview();
     }
 
+    pub fn toggle_view_lock(&mut self) {
+        let Some(workspace) = self.active_workspace_mut() else {
+            return;
+        };
+        workspace.toggle_view_lock();
+    }
+
+    pub fn lock_view_lock(&mut self) -> bool {
+        let Some(workspace) = self.active_workspace_mut() else {
+            return false;
+        };
+        workspace.lock_view_lock()
+    }
+
+    pub fn unlock_view_lock(&mut self) -> bool {
+        let Some(workspace) = self.active_workspace_mut() else {
+            return false;
+        };
+        workspace.unlock_view_lock()
+    }
+
     pub fn start_open_animation_for_window(&mut self, window: &W::Id) {
         if let Some(InteractiveMoveState::Moving(move_)) = &self.interactive_move {
             if move_.tile.window().id() == window {
@@ -4669,7 +4690,7 @@ impl<W: LayoutElement> Layout<W> {
                 let view_rect =
                     Rectangle::new(pos_within_output.upscale(-1.), output_size(&move_.output))
                         .downscale(zoom);
-                move_.tile.update_render_elements(false, view_rect);
+                move_.tile.update_render_elements(false, false, view_rect);
 
                 move_.tile.store_unmap_snapshot_if_empty(
                     renderer,

@@ -1700,7 +1700,7 @@ impl<W: LayoutElement> Workspace<W> {
             if tile.window().id() == window {
                 let view_pos = Point::from((-tile_pos.x, -tile_pos.y));
                 let view_rect = Rectangle::new(view_pos, view_size);
-                tile.update_render_elements(false, view_rect);
+                tile.update_render_elements(false, false, view_rect);
                 let xray_pos = xray_pos.offset(tile_pos);
                 tile.store_unmap_snapshot_if_empty(
                     renderer,
@@ -1976,6 +1976,19 @@ impl<W: LayoutElement> Workspace<W> {
     pub fn layout_config(&self) -> Option<&niri_config::LayoutPart> {
         self.layout_config.as_ref()
     }
+
+    pub fn toggle_view_lock(&mut self) {
+        self.scrolling.toggle_view_lock();
+    }
+
+    pub fn lock_view_lock(&mut self) -> bool {
+        self.scrolling.lock_view_lock()
+    }
+
+    pub fn unlock_view_lock(&mut self) -> bool {
+        self.scrolling.unlock_view_lock()
+    }
+
 
     #[cfg(test)]
     pub fn scrolling(&self) -> &ScrollingSpace<W> {

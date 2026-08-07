@@ -20,9 +20,11 @@ impl InsertHintElement {
                 active_color: config.color,
                 inactive_color: config.color,
                 urgent_color: config.color,
+                view_lock_color: config.color,
                 active_gradient: config.gradient,
                 inactive_gradient: config.gradient,
                 urgent_gradient: config.gradient,
+                view_lock_gradient: config.gradient,
             }),
         }
     }
@@ -34,9 +36,11 @@ impl InsertHintElement {
             active_color: config.color,
             inactive_color: config.color,
             urgent_color: config.color,
+            view_lock_color: config.color,
             active_gradient: config.gradient,
             inactive_gradient: config.gradient,
             urgent_gradient: config.gradient,
+            view_lock_gradient: config.gradient,
         });
     }
 
@@ -52,7 +56,7 @@ impl InsertHintElement {
         scale: f64,
     ) {
         self.inner
-            .update_render_elements(size, true, false, false, view_rect, radius, scale, 1.);
+            .update_render_elements(size, true, false, false, false, view_rect, radius, scale, 1.);
     }
 
     pub fn render(

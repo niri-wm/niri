@@ -73,6 +73,9 @@ pub struct ScrollingSpace<W: LayoutElement> {
     /// View size for this space.
     view_size: Size<f64, Logical>,
 
+    /// Whether the view is locked
+    view_lock: bool,
+
     /// Working area for this space.
     ///
     /// Takes into account layer-shell exclusive zones and niri struts.
@@ -302,6 +305,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             view_offset_to_restore: None,
             closing_windows: Vec::new(),
             view_size,
+            view_lock: false,
             working_area,
             parent_area,
             scale,
@@ -400,12 +404,13 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         let view_pos = Point::from((self.view_pos(), 0.));
         let view_size = self.view_size;
         let active_idx = self.active_column_idx;
+        let is_view_locked = self.view_lock;
         for (col_idx, (col, col_x)) in self.columns_mut().enumerate() {
             let is_active = is_active && col_idx == active_idx;
             let col_off = Point::from((col_x, 0.));
             let col_pos = view_pos - col_off - col.render_offset();
             let view_rect = Rectangle::new(col_pos, view_size);
-            col.update_render_elements(is_active, view_rect);
+            col.update_render_elements(is_active, is_view_locked, view_rect);
         }
     }
 
@@ -780,13 +785,17 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         {
             return;
         }
-
-        self.animate_view_offset_to_column_with_config(
-            None,
-            idx,
-            Some(self.active_column_idx),
-            config,
-        );
+        // Don't play horizonal moving animation when we are view locked. Other animations are fine.
+        if config == self.options.animations.horizontal_view_movement.0 && self.view_lock {
+            self.activate_column_without_moving_view(idx);
+        } else {
+            self.animate_view_offset_to_column_with_config(
+                None,
+                idx,
+                Some(self.active_column_idx),
+                config,
+            );
+        }
 
         if self.active_column_idx != idx {
             self.active_column_idx = idx;
@@ -796,6 +805,12 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             self.view_offset_to_restore = None;
             self.interactive_resize = None;
         }
+    }
+
+    fn activate_column_without_moving_view(&mut self, idx: usize) {
+        let new_col_x = self.column_x(idx);
+        let cur_x = self.target_view_pos() + self.working_area.loc.x;
+        self.view_offset = ViewOffset::Static(-(new_col_x - cur_x) - self.working_area.loc.x);
     }
 
     pub(super) fn insert_position(&self, pos: Point<f64, Logical>) -> InsertPosition {
@@ -1004,7 +1019,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             }
         }
 
-        if activate {
+        if activate && !self.view_lock {
             // If this is the first window on an empty workspace, remove the effect of whatever
             // view_offset was left over and skip the animation.
             if was_empty {
@@ -1223,17 +1238,19 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
                 // Restore the view offset but make sure to scroll the view in case the
                 // previous window had resized.
-                self.animate_view_offset_with_config(
-                    self.active_column_idx,
-                    prev_offset,
-                    view_config,
-                );
-                self.animate_view_offset_to_column_with_config(
-                    None,
-                    self.active_column_idx,
-                    None,
-                    view_config,
-                );
+                if !self.view_lock {
+                    self.animate_view_offset_with_config(
+                        self.active_column_idx,
+                        prev_offset,
+                        view_config,
+                    );
+                    self.animate_view_offset_to_column_with_config(
+                        None,
+                        self.active_column_idx,
+                        None,
+                        view_config,
+                    );
+                }
             }
         } else {
             self.activate_column_with_anim_config(
@@ -1386,7 +1403,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
             // We might need to move the view to ensure the resized window is still visible. But
             // only do it when the view isn't frozen by an interactive resize or a view gesture.
-            if self.interactive_resize.is_none() && !self.view_offset.is_gesture() {
+            if !self.view_lock && self.interactive_resize.is_none() && !self.view_offset.is_gesture() {
                 // Synchronize the horizontal view movement with the resize so that it looks nice.
                 // This is especially important for always-centered view.
                 let config = if ongoing_resize_anim {
@@ -3051,7 +3068,9 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             dnd_last_event_time: Some(self.clock.now_unadjusted()),
             dnd_nonzero_start_time: None,
         };
-        self.view_offset = ViewOffset::Gesture(gesture);
+        if !self.view_lock {
+            self.view_offset = ViewOffset::Gesture(gesture);
+        };
 
         self.interactive_resize = None;
     }
@@ -3093,6 +3112,10 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             // Not a DnD scroll.
             return false;
         };
+
+        if self.view_lock {
+            return false;
+        }
 
         let config = &self.options.gestures.dnd_edge_view_scroll;
 
@@ -3713,6 +3736,29 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         }
     }
 
+    pub fn toggle_view_lock(&mut self)
+    {
+        self.view_lock = !self.view_lock;
+    }
+
+    pub fn lock_view_lock(&mut self) -> bool {
+        if self.view_lock {
+            return false;
+        }
+
+        self.toggle_view_lock();
+        true
+    }
+
+    pub fn unlock_view_lock(&mut self) -> bool {
+        if !self.view_lock {
+            return false;
+        }
+
+        self.toggle_view_lock();
+        true
+    }
+
     #[cfg(test)]
     pub fn view_size(&self) -> Size<f64, Logical> {
         self.view_size
@@ -4097,14 +4143,14 @@ impl<W: LayoutElement> Column<W> {
             || self.tiles.iter().any(Tile::are_transitions_ongoing)
     }
 
-    pub fn update_render_elements(&mut self, is_active: bool, view_rect: Rectangle<f64, Logical>) {
+    pub fn update_render_elements(&mut self, is_active: bool, is_view_locked: bool, view_rect: Rectangle<f64, Logical>) {
         let active_idx = self.active_tile_idx;
         for (tile_idx, (tile, tile_off)) in self.tiles_mut().enumerate() {
             let is_active = is_active && tile_idx == active_idx;
 
             let mut tile_view_rect = view_rect;
             tile_view_rect.loc -= tile_off + tile.render_offset();
-            tile.update_render_elements(is_active, tile_view_rect);
+            tile.update_render_elements(is_active, is_view_locked, tile_view_rect);
         }
 
         let config = self.tab_indicator.config();
