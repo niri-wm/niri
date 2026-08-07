@@ -905,6 +905,8 @@ mod tests {
                 tab-indicator {
                     active-color "#f00"
                 }
+
+                float-above-fullscreen true
             }
 
             layer-rule {
@@ -1864,6 +1866,9 @@ mod tests {
                     geometry_corner_radius: None,
                     clip_to_geometry: None,
                     baba_is_float: None,
+                    float_above_fullscreen: Some(
+                        true,
+                    ),
                     block_out_from: None,
                     variable_refresh_rate: None,
                     default_column_display: Some(

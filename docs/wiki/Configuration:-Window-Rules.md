@@ -99,6 +99,7 @@ window-rule {
     clip-to-geometry true
     tiled-state true
     baba-is-float true
+    float-above-fullscreen true
 
     background-effect {
         xray true
@@ -927,6 +928,18 @@ window-rule {
 https://github.com/user-attachments/assets/3f4cb1a4-40b2-4766-98b7-eec014c19509
 
 </video>
+
+#### `float-above-fullscreen`
+
+<sup>Since: next release</sup>
+
+Make a floating window always visible when the current workspace is occupied by a fullscreen window.
+
+```kdl
+window-rule {
+    float-above-fullscreen false
+}
+```
 
 #### `background-effect`
 
