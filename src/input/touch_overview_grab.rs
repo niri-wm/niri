@@ -26,6 +26,10 @@ pub struct TouchOverviewGrab {
     workspace_matched_narrow: bool,
     window: Option<Window>,
     gesture: GestureState,
+
+    // Accumulated and applied in frame().
+    new_location: Point<f64, Logical>,
+    event_timestamp: Option<Duration>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -46,8 +50,10 @@ impl TouchOverviewGrab {
         workspace_matched_narrow: bool,
         window: Option<Window>,
     ) -> Self {
+        let location = start_data.location;
+
         Self {
-            last_location: start_data.location,
+            last_location: location,
             start_timestamp,
             start_data,
             output,
@@ -56,7 +62,94 @@ impl TouchOverviewGrab {
             workspace_matched_narrow,
             window,
             gesture: GestureState::Recognizing,
+            new_location: location,
+            event_timestamp: None,
         }
+    }
+
+    fn on_frame(&mut self, data: &mut State) -> bool {
+        let Some(timestamp) = self.event_timestamp.take() else {
+            return true;
+        };
+
+        let layout = &mut data.niri.layout;
+
+        // Check if we should become interactive move.
+        if matches!(self.gesture, GestureState::Recognizing) {
+            if let Some(window) = self.window.as_ref().filter(|win| win.alive()) {
+                let passed = timestamp.saturating_sub(self.start_timestamp);
+                if INTERACTIVE_MOVE_THRESHOLD <= passed
+                    && layout.interactive_move_begin(
+                        window.clone(),
+                        &self.output,
+                        self.start_pos_within_output,
+                    )
+                {
+                    self.gesture = GestureState::InteractiveMove;
+                }
+            }
+        }
+
+        // Check if we should become a spatial scroll.
+        if matches!(self.gesture, GestureState::Recognizing) {
+            let c = self.new_location - self.start_data.location;
+
+            // Check if the gesture moved far enough to decide. Threshold copied from libadwaita.
+            if c.x * c.x + c.y * c.y >= 16. * 16. {
+                if let Some(ws_id) = self.workspace_id.filter(|_| c.x.abs() > c.y.abs()) {
+                    if let Some((ws_idx, ws)) = layout.find_workspace_by_id(ws_id) {
+                        if ws.current_output() == Some(&self.output) {
+                            layout.view_offset_gesture_begin(&self.output, Some(ws_idx), false);
+                            self.gesture = GestureState::ViewOffset;
+                        }
+                    }
+                }
+
+                if matches!(self.gesture, GestureState::Recognizing) {
+                    layout.workspace_switch_gesture_begin(&self.output, false);
+                    self.gesture = GestureState::WorkspaceSwitch;
+                }
+            }
+        }
+
+        // Do nothing if still recognizing.
+        if matches!(self.gesture, GestureState::Recognizing) {
+            return true;
+        }
+
+        let delta = self.new_location - self.last_location;
+        self.last_location = self.new_location;
+
+        let ongoing = match self.gesture {
+            GestureState::Recognizing => unreachable!(),
+            GestureState::ViewOffset => layout
+                .view_offset_gesture_update(-delta.x, timestamp, false)
+                .is_some(),
+            GestureState::WorkspaceSwitch => layout
+                .workspace_switch_gesture_update(-delta.y, timestamp, false)
+                .is_some(),
+            GestureState::InteractiveMove => {
+                let window = self.window.as_ref().unwrap();
+                if let Some((output, pos_within_output)) = data.niri.output_under(self.new_location)
+                {
+                    let output = output.clone();
+                    data.niri.layout.interactive_move_update(
+                        window,
+                        delta,
+                        output,
+                        pos_within_output,
+                    )
+                } else {
+                    false
+                }
+            }
+        };
+
+        if ongoing {
+            data.niri.queue_redraw_all();
+        }
+
+        ongoing
     }
 
     fn on_ungrab(&mut self, state: &mut State) {
@@ -158,88 +251,17 @@ impl TouchGrab<State> for TouchOverviewGrab {
             return;
         }
 
-        let timestamp = Duration::from_millis(u64::from(event.time));
-        let layout = &mut data.niri.layout;
-
-        // Check if we should become interactive move.
-        if matches!(self.gesture, GestureState::Recognizing) {
-            if let Some(window) = self.window.as_ref().filter(|win| win.alive()) {
-                let passed = timestamp.saturating_sub(self.start_timestamp);
-                if INTERACTIVE_MOVE_THRESHOLD <= passed
-                    && layout.interactive_move_begin(
-                        window.clone(),
-                        &self.output,
-                        self.start_pos_within_output,
-                    )
-                {
-                    self.gesture = GestureState::InteractiveMove;
-                }
-            }
-        }
-
-        // Check if we should become a spatial scroll.
-        if matches!(self.gesture, GestureState::Recognizing) {
-            let c = event.location - self.start_data.location;
-
-            // Check if the gesture moved far enough to decide. Threshold copied from libadwaita.
-            if c.x * c.x + c.y * c.y >= 16. * 16. {
-                if let Some(ws_id) = self.workspace_id.filter(|_| c.x.abs() > c.y.abs()) {
-                    if let Some((ws_idx, ws)) = layout.find_workspace_by_id(ws_id) {
-                        if ws.current_output() == Some(&self.output) {
-                            layout.view_offset_gesture_begin(&self.output, Some(ws_idx), false);
-                            self.gesture = GestureState::ViewOffset;
-                        }
-                    }
-                }
-
-                if matches!(self.gesture, GestureState::Recognizing) {
-                    layout.workspace_switch_gesture_begin(&self.output, false);
-                    self.gesture = GestureState::WorkspaceSwitch;
-                }
-            }
-        }
-
-        // Do nothing if still recognizing.
-        if matches!(self.gesture, GestureState::Recognizing) {
-            return;
-        }
-
-        let delta = event.location - self.last_location;
-        self.last_location = event.location;
-
-        let ongoing = match self.gesture {
-            GestureState::Recognizing => unreachable!(),
-            GestureState::ViewOffset => layout
-                .view_offset_gesture_update(-delta.x, timestamp, false)
-                .is_some(),
-            GestureState::WorkspaceSwitch => layout
-                .workspace_switch_gesture_update(-delta.y, timestamp, false)
-                .is_some(),
-            GestureState::InteractiveMove => {
-                let window = self.window.as_ref().unwrap();
-                if let Some((output, pos_within_output)) = data.niri.output_under(event.location) {
-                    let output = output.clone();
-                    data.niri.layout.interactive_move_update(
-                        window,
-                        delta,
-                        output,
-                        pos_within_output,
-                    )
-                } else {
-                    false
-                }
-            }
-        };
-
-        if ongoing {
-            data.niri.queue_redraw_all();
-        } else {
-            handle.unset_grab(self, data);
-        }
+        self.new_location = event.location;
+        self.event_timestamp = Some(Duration::from_millis(u64::from(event.time)));
     }
 
     fn frame(&mut self, data: &mut State, handle: &mut TouchInnerHandle<'_, State>) {
         handle.frame(data);
+
+        if !self.on_frame(data) {
+            // The gesture is no longer ongoing.
+            handle.unset_grab(self, data);
+        }
     }
 
     fn cancel(&mut self, data: &mut State, handle: &mut TouchInnerHandle<'_, State>) {
