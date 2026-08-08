@@ -36,7 +36,6 @@ use tracing::field::Empty;
 
 use crate::input::move_grab::MoveGrab;
 use crate::input::resize_grab::ResizeGrab;
-use crate::input::touch_resize_grab::TouchResizeGrab;
 use crate::input::{PointerOrTouchStartData, DOUBLE_CLICK_TIME};
 use crate::layout::ActivateWindow;
 use crate::niri::{CastTarget, PopupGrabState, State};
@@ -236,13 +235,13 @@ impl XdgShellHandler for State {
         }
 
         match start_data {
-            PointerOrTouchStartData::Pointer(start_data) => {
+            PointerOrTouchStartData::Pointer(_) => {
                 let grab = ResizeGrab::new(start_data, window);
                 pointer.set_grab(self, grab, serial, Focus::Clear);
             }
-            PointerOrTouchStartData::Touch(start_data) => {
+            PointerOrTouchStartData::Touch(_) => {
                 let touch = self.niri.seat.get_touch().unwrap();
-                let grab = TouchResizeGrab::new(start_data, window);
+                let grab = ResizeGrab::new(start_data, window);
                 touch.set_grab(self, grab, serial);
             }
         }
