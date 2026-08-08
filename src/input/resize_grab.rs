@@ -5,18 +5,20 @@ use smithay::input::pointer::{
     GestureSwipeEndEvent, GestureSwipeUpdateEvent, GrabStartData as PointerGrabStartData,
     MotionEvent, PointerGrab, PointerInnerHandle, RelativeMotionEvent,
 };
+use smithay::input::tablet::tool::{TabletToolGrab, TabletToolInnerHandle};
+use smithay::input::tablet::TabletSeatHandler;
 use smithay::input::touch::{
     self, GrabStartData as TouchGrabStartData, TouchGrab, TouchInnerHandle,
 };
-use smithay::input::SeatHandler;
+use smithay::input::{tablet, SeatHandler};
 use smithay::utils::{IsAlive, Logical, Point, SERIAL_COUNTER};
 
-use crate::input::PointerOrTouchStartData;
+use crate::input::AnyStartData;
 use crate::niri::State;
 use crate::utils::get_monotonic_time;
 
 pub struct ResizeGrab {
-    start_data: PointerOrTouchStartData<State>,
+    start_data: AnyStartData<State>,
     window: Window,
 
     // Accumulated and applied in frame().
@@ -24,7 +26,7 @@ pub struct ResizeGrab {
 }
 
 impl ResizeGrab {
-    pub fn new(start_data: PointerOrTouchStartData<State>, window: Window) -> Self {
+    pub fn new(start_data: AnyStartData<State>, window: Window) -> Self {
         let location = start_data.location();
 
         Self {
@@ -277,6 +279,95 @@ impl TouchGrab<State> for ResizeGrab {
 
     fn start_data(&self) -> &TouchGrabStartData<State> {
         self.start_data.unwrap_touch()
+    }
+
+    fn unset(&mut self, data: &mut State) {
+        self.on_ungrab(data);
+    }
+}
+
+impl TabletToolGrab<State> for ResizeGrab {
+    fn start_data(&self) -> &tablet::tool::GrabStartData<State> {
+        self.start_data.unwrap_tablet_tool()
+    }
+
+    fn proximity_out(
+        &mut self,
+        data: &mut State,
+        handle: &mut TabletToolInnerHandle<'_, State>,
+        event: &tablet::tool::ProximityOutEvent,
+    ) {
+        handle.proximity_out(data, event);
+        handle.unset_grab(self, data, event.serial, event.time, false);
+    }
+
+    fn motion(
+        &mut self,
+        data: &mut State,
+        handle: &mut TabletToolInnerHandle<'_, State>,
+        _focus: Option<(<State as TabletSeatHandler>::ToolFocus, Point<f64, Logical>)>,
+        event: &tablet::tool::MotionEvent,
+    ) {
+        handle.motion(data, None, event);
+
+        self.new_location = event.location;
+    }
+
+    fn down(
+        &mut self,
+        data: &mut State,
+        handle: &mut TabletToolInnerHandle<'_, State>,
+        event: &tablet::tool::DownEvent,
+    ) {
+        handle.down(data, event);
+    }
+
+    fn up(
+        &mut self,
+        data: &mut State,
+        handle: &mut TabletToolInnerHandle<'_, State>,
+        event: &tablet::tool::UpEvent,
+    ) {
+        handle.up(data, event);
+        handle.unset_grab(self, data, event.serial, event.time, true);
+    }
+
+    fn button(
+        &mut self,
+        data: &mut State,
+        handle: &mut TabletToolInnerHandle<'_, State>,
+        event: &tablet::tool::ButtonEvent,
+    ) {
+        handle.button(data, event);
+    }
+
+    fn axis(
+        &mut self,
+        data: &mut State,
+        handle: &mut TabletToolInnerHandle<'_, State>,
+        frame: tablet::tool::AxisFrame,
+    ) {
+        handle.axis(data, frame);
+    }
+
+    fn frame(
+        &mut self,
+        data: &mut State,
+        handle: &mut TabletToolInnerHandle<'_, State>,
+        time: u32,
+    ) {
+        handle.frame(data, time);
+
+        if !self.on_frame(data) {
+            // The gesture is no longer ongoing.
+            handle.unset_grab(
+                self,
+                data,
+                SERIAL_COUNTER.next_serial(),
+                get_monotonic_time().as_millis() as u32,
+                true,
+            );
+        }
     }
 
     fn unset(&mut self, data: &mut State) {
