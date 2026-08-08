@@ -346,6 +346,61 @@ window-rule {
     clip-to-geometry true
 }
 
+// Layer rules let you adjust behavior for layer shell windows, like quickshell.
+// Find more information on the wiki:
+// https://niri-wm.github.io/niri/Configuration:-Layer-Rules
+
+// Bar animations
+layer-rule {
+    match anchors="left,right"
+    match anchor-sides=3
+    match exclusive-zone="exclusive"
+
+    animations {
+        layer-open {
+            spring damping-ratio=0.80 stiffness=523 epsilon=0.0001
+        }
+        layer-close {
+            spring damping-ratio=0.80 stiffness=523 epsilon=0.0001
+        }
+    }
+}
+
+// Wallpaper animations
+layer-rule {
+    match anchor-sides=4
+    match keyboard-interactivity="none"
+    match layer="background"
+
+    animations {
+        layer-open {
+            spring damping-ratio=0.80 stiffness=523 epsilon=0.0001
+        }
+        layer-close {
+            spring damping-ratio=0.80 stiffness=523 epsilon=0.0001
+        }
+    }
+}
+
+// Launcher animations
+layer-rule {
+    match keyboard-interactivity="exclusive"
+    match layer="top"
+    match layer="overlay"
+    match anchor-sides=1
+    match anchor-sides=2
+
+    animations {
+        layer-open {
+            spring damping-ratio=0.80 stiffness=523 epsilon=0.0001
+        }
+        layer-close {
+            spring damping-ratio=0.80 stiffness=523 epsilon=0.0001
+        }
+    }
+}
+
+
 binds {
     // Keys consist of modifiers separated by + signs, followed by an XKB key name
     // in the end. To find an XKB name for a particular key, you may use a program
