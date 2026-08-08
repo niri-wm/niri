@@ -623,9 +623,10 @@ binds {
     // which ensures niri always processes them, even when an inhibitor is active.
     Mod+Escape allow-inhibiting=false { toggle-keyboard-shortcuts-inhibit; }
 
-    // The quit action will show a confirmation dialog to avoid accidental exits.
-    Mod+Shift+E { quit; }
-    Ctrl+Alt+Delete { quit; }
+    // The quit action will be unavailable when the session is locked,
+    // and show a confirmation dialog to avoid accidental exits.
+    Mod+Shift+E allow-when-locked=false { spawn-sh "niri msg action quit"; }
+    Ctrl+Alt+Delete allow-when-locked=false { spawn-sh "niri msg action quit"; }
 
     // Powers off the monitors. To turn them back on, do any input like
     // moving the mouse or pressing any other key.
