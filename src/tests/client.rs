@@ -11,6 +11,10 @@ use calloop::EventLoop;
 use calloop_wayland_source::WaylandSource;
 use single_pixel_buffer::v1::client::wp_single_pixel_buffer_manager_v1::WpSinglePixelBufferManagerV1;
 use smithay::reexports::wayland_protocols::wp::single_pixel_buffer;
+use smithay::reexports::wayland_protocols::wp::pointer_constraints::zv1::client::{
+    zwp_locked_pointer_v1::{self, ZwpLockedPointerV1},
+    zwp_pointer_constraints_v1::{self, ZwpPointerConstraintsV1},
+};
 use smithay::reexports::wayland_protocols::wp::viewporter::client::wp_viewport::WpViewport;
 use smithay::reexports::wayland_protocols::wp::viewporter::client::wp_viewporter::WpViewporter;
 use smithay::reexports::wayland_protocols::xdg::shell::client::xdg_surface::{self, XdgSurface};
@@ -29,7 +33,9 @@ use wayland_client::protocol::wl_callback::{self, WlCallback};
 use wayland_client::protocol::wl_compositor::WlCompositor;
 use wayland_client::protocol::wl_display::WlDisplay;
 use wayland_client::protocol::wl_output::{self, WlOutput};
+use wayland_client::protocol::wl_pointer::{self, WlPointer};
 use wayland_client::protocol::wl_registry::{self, WlRegistry};
+use wayland_client::protocol::wl_seat::WlSeat;
 use wayland_client::protocol::wl_surface::{self, WlSurface};
 use wayland_client::{Connection, Dispatch, Proxy as _, QueueHandle};
 
@@ -55,6 +61,10 @@ pub struct State {
     pub layer_shell: Option<ZwlrLayerShellV1>,
     pub spbm: Option<WpSinglePixelBufferManagerV1>,
     pub viewporter: Option<WpViewporter>,
+    pub seat: Option<WlSeat>,
+    pub pointer: Option<WlPointer>,
+    pub pointer_constraints: Option<ZwpPointerConstraintsV1>,
+    pub pointer_focus: Option<WlSurface>,
 
     pub windows: Vec<Window>,
     pub layers: Vec<LayerSurface>,
@@ -124,6 +134,12 @@ pub struct SyncData {
     pub done: AtomicBool,
 }
 
+#[derive(Default)]
+pub struct PointerLockStatus {
+    pub locked: AtomicBool,
+    pub unlocked: AtomicBool,
+}
+
 static CLIENT_ID_COUNTER: IdCounter = IdCounter::new();
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -181,6 +197,10 @@ impl Client {
             layer_shell: None,
             spbm: None,
             viewporter: None,
+            seat: None,
+            pointer: None,
+            pointer_constraints: None,
+            pointer_focus: None,
             windows: Vec::new(),
             layers: Vec::new(),
         };
@@ -241,6 +261,31 @@ impl Client {
             .unwrap()
             .0
             .clone()
+    }
+    pub fn lock_pointer(
+        &self,
+        surface: &WlSurface,
+    ) -> (ZwpLockedPointerV1, Arc<PointerLockStatus>) {
+        let data = Arc::new(PointerLockStatus::default());
+        let locked_pointer = self
+            .state
+            .pointer_constraints
+            .as_ref()
+            .unwrap()
+            .lock_pointer(
+                surface,
+                self.state.pointer.as_ref().unwrap(),
+                None,
+                zwp_pointer_constraints_v1::Lifetime::Persistent,
+                &self.qh,
+                data.clone(),
+            );
+        self.connection.flush().unwrap();
+        (locked_pointer, data)
+    }
+
+    pub fn pointer_focus(&self) -> Option<&WlSurface> {
+        self.state.pointer_focus.as_ref()
     }
 }
 
@@ -518,6 +563,14 @@ impl Dispatch<WlRegistry, ()> for State {
                 } else if interface == WpViewporter::interface().name {
                     let version = min(version, WpViewporter::interface().version);
                     state.viewporter = Some(registry.bind(name, version, qh, ()));
+                } else if interface == WlSeat::interface().name {
+                    let version = min(version, WlSeat::interface().version);
+                    let seat: WlSeat = registry.bind(name, version, qh, ());
+                    state.pointer = Some(seat.get_pointer(qh, ()));
+                    state.seat = Some(seat);
+                } else if interface == ZwpPointerConstraintsV1::interface().name {
+                    let version = min(version, ZwpPointerConstraintsV1::interface().version);
+                    state.pointer_constraints = Some(registry.bind(name, version, qh, ()));
                 } else if interface == WlOutput::interface().name {
                     let version = min(version, WlOutput::interface().version);
                     let output = registry.bind(name, version, qh, ());
@@ -532,6 +585,76 @@ impl Dispatch<WlRegistry, ()> for State {
                 state.globals.push(global);
             }
             wl_registry::Event::GlobalRemove { .. } => (),
+            _ => unreachable!(),
+        }
+    }
+}
+
+impl Dispatch<WlSeat, ()> for State {
+    fn event(
+        _state: &mut Self,
+        _proxy: &WlSeat,
+        _event: <WlSeat as wayland_client::Proxy>::Event,
+        _data: &(),
+        _conn: &Connection,
+        _qhandle: &QueueHandle<Self>,
+    ) {
+    }
+}
+
+impl Dispatch<WlPointer, ()> for State {
+    fn event(
+        state: &mut Self,
+        _proxy: &WlPointer,
+        event: <WlPointer as wayland_client::Proxy>::Event,
+        _data: &(),
+        _conn: &Connection,
+        _qhandle: &QueueHandle<Self>,
+    ) {
+        match event {
+            wl_pointer::Event::Enter { surface, .. } => {
+                state.pointer_focus = Some(surface);
+            }
+            wl_pointer::Event::Leave { surface, .. }
+                if state.pointer_focus.as_ref() == Some(&surface) =>
+            {
+                state.pointer_focus = None;
+            }
+            _ => (),
+        }
+    }
+}
+
+impl Dispatch<ZwpPointerConstraintsV1, ()> for State {
+    fn event(
+        _state: &mut Self,
+        _proxy: &ZwpPointerConstraintsV1,
+        _event: <ZwpPointerConstraintsV1 as wayland_client::Proxy>::Event,
+        _data: &(),
+        _conn: &Connection,
+        _qhandle: &QueueHandle<Self>,
+    ) {
+        unreachable!()
+    }
+}
+
+impl Dispatch<ZwpLockedPointerV1, Arc<PointerLockStatus>> for State {
+    fn event(
+        _state: &mut Self,
+        _proxy: &ZwpLockedPointerV1,
+        event: <ZwpLockedPointerV1 as wayland_client::Proxy>::Event,
+        data: &Arc<PointerLockStatus>,
+        _conn: &Connection,
+        _qhandle: &QueueHandle<Self>,
+    ) {
+        match event {
+            zwp_locked_pointer_v1::Event::Locked => {
+                data.locked.store(true, Ordering::Relaxed);
+            }
+            zwp_locked_pointer_v1::Event::Unlocked => {
+                data.locked.store(false, Ordering::Relaxed);
+                data.unlocked.store(true, Ordering::Relaxed);
+            }
             _ => unreachable!(),
         }
     }

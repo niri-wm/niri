@@ -88,7 +88,9 @@ use smithay::wayland::keyboard_shortcuts_inhibit::{
     KeyboardShortcutsInhibitState, KeyboardShortcutsInhibitor,
 };
 use smithay::wayland::output::OutputManagerState;
-use smithay::wayland::pointer_constraints::{with_pointer_constraint, PointerConstraintsState};
+use smithay::wayland::pointer_constraints::{
+    with_pointer_constraint, PointerConstraint, PointerConstraintsState,
+};
 use smithay::wayland::pointer_gestures::PointerGesturesState;
 use smithay::wayland::presentation::PresentationState;
 use smithay::wayland::relative_pointer::RelativePointerManagerState;
@@ -1071,6 +1073,14 @@ impl State {
 
     pub fn update_pointer_contents(&mut self) -> bool {
         let _span = tracy_client::span!("Niri::update_pointer_contents");
+
+        // A cursor position hint describes where the pointer should appear after a lock is
+        // deactivated. Applying it must not change pointer focus while the lock is still active.
+        // Otherwise a hint outside the focused surface makes pointer.motion() send a leave,
+        // which deactivates the lock before the client destroys it.
+        if self.niri.has_active_pointer_lock() {
+            return false;
+        }
 
         let pointer = &self.niri.seat.get_pointer().unwrap();
         let location = pointer.current_location();
@@ -6121,6 +6131,19 @@ impl Niri {
 
             constraint.activate();
         });
+    }
+
+    pub(crate) fn has_active_pointer_lock(&self) -> bool {
+        let pointer = self.seat.get_pointer().unwrap();
+        let Some(surface) = pointer.current_focus() else {
+            return false;
+        };
+
+        with_pointer_constraint(&surface, &pointer, |constraint| {
+            constraint.is_some_and(|constraint| {
+                constraint.is_active() && matches!(&*constraint, PointerConstraint::Locked(_))
+            })
+        })
     }
 
     pub fn focus_layer_surface_if_on_demand(&mut self, surface: Option<LayerSurface>) {

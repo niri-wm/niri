@@ -2699,6 +2699,12 @@ impl State {
 
         let pointer = self.niri.seat.get_pointer().unwrap();
 
+        // Absolute pointer input must not move focus away from an active pointer lock. Unlike
+        // relative motion, it has no meaningful delta to forward to the locked client.
+        if self.niri.has_active_pointer_lock() {
+            return;
+        }
+
         if let Some(output) = self.niri.screenshot_ui.selection_output() {
             let geom = self.niri.global_space.output_geometry(output).unwrap();
             let point = (pos - geom.loc.to_f64())
@@ -2916,7 +2922,13 @@ impl State {
                 }
             }
 
-            if let Some(mapped) = self.niri.window_under_cursor() {
+            // A locked pointer keeps delivering button events to the locked surface. Do not use
+            // its stored global location to focus or manipulate a different window behind it.
+            let allow_pointer_focus_change = !self.niri.has_active_pointer_lock();
+            if let Some(mapped) = allow_pointer_focus_change
+                .then(|| self.niri.window_under_cursor())
+                .flatten()
+            {
                 let window = mapped.window.clone();
 
                 // Check if we need to start an interactive move.
@@ -3028,7 +3040,7 @@ impl State {
 
                 // FIXME: granular.
                 self.niri.queue_redraw_all();
-            } else if let Some((output, ws)) = is_overview_open
+            } else if let Some((output, ws)) = (allow_pointer_focus_change && is_overview_open)
                 .then(|| self.niri.workspace_under_cursor(false))
                 .flatten()
             {
@@ -3039,7 +3051,10 @@ impl State {
 
                 // FIXME: granular.
                 self.niri.queue_redraw_all();
-            } else if let Some(output) = self.niri.output_under_cursor() {
+            } else if let Some(output) = allow_pointer_focus_change
+                .then(|| self.niri.output_under_cursor())
+                .flatten()
+            {
                 self.niri.layout.focus_output(&output);
 
                 // FIXME: granular.
@@ -3049,7 +3064,7 @@ impl State {
 
         self.update_pointer_contents();
 
-        if ButtonState::Pressed == button_state {
+        if ButtonState::Pressed == button_state && !self.niri.has_active_pointer_lock() {
             let layer_under = self.niri.pointer_contents.layer.clone();
             self.niri.focus_layer_surface_if_on_demand(layer_under);
         }
