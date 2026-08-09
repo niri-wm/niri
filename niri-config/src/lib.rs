@@ -995,7 +995,7 @@ mod tests {
                     drag: Some(
                         true,
                     ),
-                    drag_lock: false,
+                    drag_lock: None,
                     natural_scroll: false,
                     click_method: Some(
                         Clickfinger,

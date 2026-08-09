@@ -195,8 +195,8 @@ pub struct Touchpad {
     pub dwtp: bool,
     #[knuffel(child, unwrap(argument))]
     pub drag: Option<bool>,
-    #[knuffel(child)]
-    pub drag_lock: bool,
+    #[knuffel(child, unwrap(argument, str, default))]
+    pub drag_lock: Option<DragLock>,
     #[knuffel(child)]
     pub natural_scroll: bool,
     #[knuffel(child, unwrap(argument, str))]
@@ -289,6 +289,26 @@ pub struct Trackball {
     pub left_handed: bool,
     #[knuffel(child)]
     pub middle_emulation: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum DragLock {
+    #[default]
+    Timeout,
+    Sticky,
+}
+
+impl FromStr for DragLock {
+    type Err = miette::Error;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "timeout" => Ok(DragLock::Timeout),
+            "sticky" => Ok(DragLock::Sticky),
+            _ => Err(miette!(
+                r#"invalid drag-lock value, expected \"timeout\" or \"sticky\""#
+            )),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

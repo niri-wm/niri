@@ -34,7 +34,8 @@ input {
         // dwt
         // dwtp
         // drag false
-        // drag-lock
+        // drag-lock           // timeout mode
+        // drag-lock "sticky"  // sticky mode
         natural-scroll
         // accel-speed 0.2
         // accel-profile "flat"
