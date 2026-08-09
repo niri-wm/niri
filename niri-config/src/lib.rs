@@ -76,6 +76,7 @@ pub struct Config {
     pub prefer_no_csd: bool,
     pub cursor: Cursor,
     pub screenshot_path: ScreenshotPath,
+    pub screenshot_notification: ScreenshotNotification,
     pub clipboard: Clipboard,
     pub hotkey_overlay: HotkeyOverlay,
     pub config_notification: ConfigNotification,
@@ -242,6 +243,7 @@ where
                     let part = knuffel::Decode::decode_node(node, ctx)?;
                     config.borrow_mut().screenshot_path = part;
                 }
+                "screenshot-notification" => m_merge!(screenshot_notification),
 
                 "layout" => {
                     let mut part = LayoutPart::decode_node(node, ctx)?;
@@ -1496,6 +1498,9 @@ mod tests {
                     "~/Screenshots/screenshot.png",
                 ),
             ),
+            screenshot_notification: ScreenshotNotification {
+                disable: false,
+            },
             clipboard: Clipboard {
                 disable_primary: true,
             },
