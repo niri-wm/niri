@@ -238,6 +238,9 @@ pub struct Column<W: LayoutElement> {
     /// Configurable properties of the layout.
     options: Rc<Options>,
 
+    /// Preferred alignment. None -> left as default
+    alignment: Option<HorizontalAlignment>,
+
     /// Unique ID of this column.
     id: ColumnId,
 }
@@ -699,6 +702,10 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         idx: usize,
         prev_idx: Option<usize>,
     ) -> f64 {
+        if let Some(horizontal) = self.columns[idx].alignment {
+            return self.compute_new_view_offset_for_column_aligned(target_x, idx, horizontal);
+        }
+
         if self.is_centering_focused_column() {
             return self.compute_new_view_offset_for_column_centered(target_x, idx);
         }
@@ -2319,7 +2326,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         if self.columns.is_empty() {
             return;
         }
-
+        self.columns[self.active_column_idx].alignment = alignment;
         if let Some(alignment) = alignment {
             self.animate_view_offset_to_column_aligned(
                 None,
@@ -3690,6 +3697,14 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             original_window_size,
             data: InteractiveResizeData { edges },
         };
+
+        let col_idx = self
+            .columns
+            .iter()
+            .position(|col| col.contains(&resize.window))
+            .unwrap();
+        self.columns[col_idx].alignment = None;
+
         self.interactive_resize = Some(resize);
 
         self.view_offset.stop_anim_and_gesture();
@@ -4126,6 +4141,7 @@ impl<W: LayoutElement> Column<W> {
             scale,
             clock: tile.clock.clone(),
             options,
+            alignment: None,
             id: ColumnId::next(),
         };
 
