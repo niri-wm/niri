@@ -53,7 +53,7 @@ impl MergeWith<CursorPart> for Cursor {
     }
 }
 
-#[derive(knuffel::Decode, Debug, Clone, PartialEq)]
+#[derive(knuffel::Decode, Debug, Clone, PartialEq, Eq)]
 pub struct ScreenshotPath(#[knuffel(argument)] pub Option<String>);
 
 impl Default for ScreenshotPath {
@@ -62,6 +62,63 @@ impl Default for ScreenshotPath {
             "~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png",
         )))
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Screenshot {
+    pub path: ScreenshotPath,
+    pub notification: ScreenshotNotification,
+}
+
+impl Default for Screenshot {
+    fn default() -> Self {
+        Self {
+            path: ScreenshotPath::default(),
+            notification: ScreenshotNotification::default(),
+        }
+    }
+}
+
+#[derive(knuffel::Decode, Debug, Default, Clone, PartialEq, Eq)]
+pub struct ScreenshotPart {
+    #[knuffel(child)]
+    pub path: Option<ScreenshotPath>,
+    #[knuffel(child)]
+    pub notification: Option<ScreenshotNotificationPart>,
+}
+
+impl MergeWith<ScreenshotPart> for Screenshot {
+    fn merge_with(&mut self, part: &ScreenshotPart) {
+        merge_clone!((self, part), path);
+        if let Some(notification) = &part.notification {
+            self.notification.merge_with(notification);
+        }
+    }
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct ScreenshotNotification {
+    pub actions: Vec<ScreenshotNotificationAction>,
+}
+
+#[derive(knuffel::Decode, Debug, Default, Clone, PartialEq, Eq)]
+pub struct ScreenshotNotificationPart {
+    #[knuffel(children(name = "action"))]
+    pub actions: Vec<ScreenshotNotificationAction>,
+}
+
+impl MergeWith<ScreenshotNotificationPart> for ScreenshotNotification {
+    fn merge_with(&mut self, part: &ScreenshotNotificationPart) {
+        self.actions.clone_from(&part.actions);
+    }
+}
+
+#[derive(knuffel::Decode, Debug, Clone, PartialEq, Eq)]
+pub struct ScreenshotNotificationAction {
+    #[knuffel(argument)]
+    pub label: String,
+    #[knuffel(arguments)]
+    pub command: Vec<String>,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]

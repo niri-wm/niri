@@ -98,7 +98,7 @@ The default input settings like touchpad tap and natural-scroll are how I believ
 
 Shadows default to off because they are a fairly performance-intensive shader, and because many clientside-decorated windows already draw their own shadows.
 
-The default screenshot-path matches GNOME Shell.
+The default screenshot path matches GNOME Shell.
 
 Default window rules are limited to fixing known severe issues (WezTerm) and doing something the absolute majority likely wants (make Firefox Picture-in-Picture player floating—it can't do that on its own currently, maybe the pip protocol will change that).
 

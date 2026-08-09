@@ -9,7 +9,13 @@ spawn-sh-at-startup "qs -c ~/source/qs/MyAwesomeShell"
 
 prefer-no-csd
 
-screenshot-path "~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png"
+screenshot {
+    path "~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png"
+    notification {
+        action "Open" "xdg-open" "{path}"
+        action "Edit" "swappy" "-f" "{path}"
+    }
+}
 
 environment {
     QT_QPA_PLATFORM "wayland"
@@ -116,7 +122,13 @@ With `prefer-no-csd` set, applications that negotiate server-side decorations th
 prefer-no-csd
 ```
 
-### `screenshot-path`
+### `screenshot`
+
+<sup>Since: next release</sup>
+
+Settings for screenshots taken with the built-in niri screenshot tool.
+
+#### `path`
 
 Set the path where screenshots are saved.
 A `~` at the front will be expanded to the home directory.
@@ -126,14 +138,48 @@ The path is formatted with `strftime(3)` to give you the screenshot date and tim
 Niri will create the last folder of the path if it doesn't exist.
 
 ```kdl
-screenshot-path "~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png"
+screenshot {
+    path "~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png"
+}
 ```
 
 You can also set this option to `null` to disable saving screenshots to disk.
 
 ```kdl
-screenshot-path null
+screenshot {
+    path null
+}
 ```
+
+<sup>Until: 26.04</sup> For backwards compatibility, the old top-level `screenshot-path` option is still supported. It is used if `screenshot { path ""; }` is not set.
+
+```kdl
+// Deprecated
+screenshot-path "~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png"
+```
+
+
+#### `notification`
+
+<sup>Since: next release</sup>
+
+Add action buttons to the screenshot notification. Actions are shown only for screenshots that were saved to disk.
+
+The `{path}` placeholder in command arguments is replaced with the saved screenshot path.
+
+```kdl
+screenshot {
+    notification {
+        action "Open" "xdg-open" "{path}"
+        action "Edit" "swappy" "-f" "{path}"
+    }
+}
+```
+
+The notification block accepts any number of `action` entries, which have the following format:
+
+`action <name> <command...>`.
+
 
 ### `environment`
 
