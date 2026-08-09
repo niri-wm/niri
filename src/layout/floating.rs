@@ -16,6 +16,7 @@ use super::{
     ConfigureIntent, InteractiveResizeData, LayoutElement, Options, RemovedTile, SizeFrac,
 };
 use crate::animation::{Animation, Clock};
+use crate::layout::next_preset_idx;
 use crate::niri_render_elements;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::xray::XrayPos;
@@ -628,7 +629,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
         }
     }
 
-    pub fn toggle_window_width(&mut self, id: Option<&W::Id>, forwards: bool) {
+    pub fn toggle_window_width(&mut self, id: Option<&W::Id>, forwards: bool, wrap: bool) {
         let Some(id) = id.or(self.active_window_id.as_ref()).cloned() else {
             return;
         };
@@ -639,7 +640,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
         let len = self.options.layout.preset_column_widths.len();
         let tile = &mut self.tiles[idx];
         let preset_idx = if let Some(idx) = tile.floating_preset_width_idx {
-            (idx + if forwards { 1 } else { len - 1 }) % len
+            next_preset_idx(idx, len, forwards, wrap)
         } else {
             let current_window = tile.window_expected_or_current_size().w;
             let current_tile = tile.tile_expected_or_current_size().w;
@@ -689,7 +690,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
         true
     }
 
-    pub fn toggle_window_height(&mut self, id: Option<&W::Id>, forwards: bool) {
+    pub fn toggle_window_height(&mut self, id: Option<&W::Id>, forwards: bool, wrap: bool) {
         let Some(id) = id.or(self.active_window_id.as_ref()).cloned() else {
             return;
         };
@@ -700,7 +701,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
         let len = self.options.layout.preset_window_heights.len();
         let tile = &mut self.tiles[idx];
         let preset_idx = if let Some(idx) = tile.floating_preset_height_idx {
-            (idx + if forwards { 1 } else { len - 1 }) % len
+            next_preset_idx(idx, len, forwards, wrap)
         } else {
             let current_window = tile.window_expected_or_current_size().h;
             let current_tile = tile.tile_expected_or_current_size().h;
