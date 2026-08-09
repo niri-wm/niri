@@ -506,6 +506,17 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::CenterColumn {} => Self::CenterColumn,
             niri_ipc::Action::CenterWindow { id: None } => Self::CenterWindow,
             niri_ipc::Action::CenterWindow { id: Some(id) } => Self::CenterWindowById(id),
+            niri_ipc::Action::AlignWindow {
+                id: None,
+                horizontal: _,
+                vertical: _,
+            } => todo!(),
+            niri_ipc::Action::AlignWindow {
+                id: Some(_id),
+                horizontal: _,
+                vertical: _,
+            } => todo!(),
+            niri_ipc::Action::AlignColumn { horizontal: _ } => todo!(),
             niri_ipc::Action::CenterVisibleColumns {} => Self::CenterVisibleColumns,
             niri_ipc::Action::FocusWorkspaceDown {} => Self::FocusWorkspaceDown,
             niri_ipc::Action::FocusWorkspaceUp {} => Self::FocusWorkspaceUp,

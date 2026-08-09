@@ -468,6 +468,37 @@ pub enum Action {
         #[cfg_attr(feature = "clap", arg(long))]
         id: Option<u64>,
     },
+    /// Align a window to an edge of the screen, or center it.
+    ///
+    /// If neither `horizontal` nor `vertical` is given, resets the column's alignment to
+    /// the default behavior.
+    #[cfg_attr(
+        feature = "clap",
+        clap(about = "Set the desired alignment for the focussed window")
+    )]
+    AlignWindow {
+        /// Id of the window to align.
+        ///
+        /// If `None`, uses the focused window.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: Option<u64>,
+        /// Desired horizontal alignment
+        #[cfg_attr(feature = "clap", arg(long))]
+        horizontal: Option<HorizontalAlignment>,
+        /// Desired vertical alignment
+        #[cfg_attr(feature = "clap", arg(long))]
+        vertical: Option<VerticalAlignment>,
+    },
+    /// Align a column to either edge of the screen, or center. `None` resets alignment.
+    #[cfg_attr(
+        feature = "clap",
+        clap(about = "Set the desired alignment for the focussed column")
+    )]
+    AlignColumn {
+        /// Desired horizontal alignment.
+        #[cfg_attr(feature = "clap", arg(long))]
+        horizontal: Option<HorizontalAlignment>,
+    },
     /// Center all fully visible columns on the screen.
     CenterVisibleColumns {},
     /// Focus the workspace below.
@@ -995,6 +1026,28 @@ pub enum LayoutSwitchTarget {
     Prev,
     /// The specific layout by index.
     Index(u8),
+}
+
+/// How to horizontally align a window or column
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HorizontalAlignment {
+    /// Align center of the window to center of the working area
+    Center,
+    /// Align left edge of the window to left edge of the working area
+    Left,
+    /// Align right edge of the window to right edge of the working area
+    Right,
+}
+
+/// How to vertically align a window or column
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VerticalAlignment {
+    /// Align center of the window to center of the working area
+    Center,
+    /// Align top edge of the window to top edge of the working area
+    Top,
+    /// Align bottom edge of the window to bottom edge of the working area
+    Bottom,
 }
 
 /// How windows display in a column.
@@ -1865,6 +1918,32 @@ impl FromStr for LayoutSwitchTarget {
                 Ok(layout) => Ok(Self::Index(layout)),
                 _ => Err(r#"invalid layout action, can be "next", "prev" or a layout index"#),
             },
+        }
+    }
+}
+
+impl FromStr for HorizontalAlignment {
+    type Err = &'static str;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "left" => Ok(Self::Left),
+            "center" => Ok(Self::Center),
+            "right" => Ok(Self::Right),
+            _ => Err(r#"invalid Horizontal Alignment, can be "left", "right" or "center""#),
+        }
+    }
+}
+
+impl FromStr for VerticalAlignment {
+    type Err = &'static str;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "top" => Ok(Self::Top),
+            "center" => Ok(Self::Center),
+            "bottom" => Ok(Self::Bottom),
+            _ => Err(r#"invalid Horizontal Alignment, can be "top", "center" or "bottom""#),
         }
     }
 }
