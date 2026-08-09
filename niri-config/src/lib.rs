@@ -50,7 +50,9 @@ pub use crate::binds::*;
 pub use crate::debug::Debug;
 pub use crate::error::{ConfigIncludeError, ConfigParseResult};
 pub use crate::gestures::Gestures;
-pub use crate::input::{Input, ModKey, ScrollMethod, TrackLayout, WarpMouseToFocusMode, Xkb};
+pub use crate::input::{
+    AccelCurve, AccelProfile, Input, ModKey, ScrollMethod, TrackLayout, WarpMouseToFocusMode, Xkb,
+};
 pub use crate::layer_rule::LayerRule;
 pub use crate::layout::*;
 pub use crate::misc::*;
@@ -678,6 +680,7 @@ mod tests {
                     click-method "clickfinger"
                     accel-speed 0.2
                     accel-profile "flat"
+                    accel-custom-motion step=0.1 0.0 1.0 2.1
                     scroll-method "two-finger"
                     scroll-button 272
                     scroll-button-lock
@@ -1006,6 +1009,18 @@ mod tests {
                     accel_profile: Some(
                         Flat,
                     ),
+                    accel_custom_fallback: None,
+                    accel_custom_motion: Some(
+                        AccelCurve {
+                            step: 0.1,
+                            points: [
+                                0.0,
+                                1.0,
+                                2.1,
+                            ],
+                        },
+                    ),
+                    accel_custom_scroll: None,
                     scroll_method: Some(
                         TwoFinger,
                     ),
@@ -1040,6 +1055,9 @@ mod tests {
                     accel_profile: Some(
                         Flat,
                     ),
+                    accel_custom_fallback: None,
+                    accel_custom_motion: None,
+                    accel_custom_scroll: None,
                     scroll_method: Some(
                         NoScroll,
                     ),
@@ -1070,6 +1088,9 @@ mod tests {
                     accel_profile: Some(
                         Flat,
                     ),
+                    accel_custom_fallback: None,
+                    accel_custom_motion: None,
+                    accel_custom_scroll: None,
                     scroll_method: Some(
                         OnButtonDown,
                     ),
@@ -1089,6 +1110,9 @@ mod tests {
                     accel_profile: Some(
                         Flat,
                     ),
+                    accel_custom_fallback: None,
+                    accel_custom_motion: None,
+                    accel_custom_scroll: None,
                     scroll_method: Some(
                         Edge,
                     ),

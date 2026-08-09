@@ -18,6 +18,7 @@ rust-version = "1.85"
 anyhow = "1.0.102"
 bitflags = "2.11.1"
 clap = { version = "4.6.1", features = ["derive"] }
+input = { version = "0.10.0", features = ["libinput_1_23"] }
 insta = "1.47.2"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
@@ -70,7 +71,7 @@ fastrand = "2.4.1"
 futures-util = { version = "0.3.32", default-features = false, features = ["std", "io"] }
 git-version = "0.3.9"
 glam = "0.32.1"
-input = { version = "0.10.0", features = ["libinput_1_21"] }
+input.workspace = true
 keyframe = { version = "1.1.1", default-features = false }
 libc = "0.2.185"
 libdisplay-info = "0.3.0"
