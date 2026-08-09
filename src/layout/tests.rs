@@ -404,6 +404,22 @@ fn arbitrary_column_display() -> impl Strategy<Value = ColumnDisplay> {
     prop_oneof![Just(ColumnDisplay::Normal), Just(ColumnDisplay::Tabbed)]
 }
 
+fn arbitrary_horizontal_alignment() -> impl Strategy<Value = HorizontalAlignment> {
+    prop_oneof![
+        Just(HorizontalAlignment::Left),
+        Just(HorizontalAlignment::Center),
+        Just(HorizontalAlignment::Right)
+    ]
+}
+
+fn arbitrary_vertical_alignment() -> impl Strategy<Value = VerticalAlignment> {
+    prop_oneof![
+        Just(VerticalAlignment::Top),
+        Just(VerticalAlignment::Center),
+        Just(VerticalAlignment::Bottom)
+    ]
+}
+
 #[derive(Debug, Clone, Arbitrary)]
 enum Op {
     AddOutput(#[proptest(strategy = "1..=5usize")] usize),
@@ -517,6 +533,18 @@ enum Op {
         id: Option<usize>,
     },
     CenterVisibleColumns,
+    AlignWindow {
+        #[proptest(strategy = "proptest::option::of(1..=5usize)")]
+        id: Option<usize>,
+        #[proptest(strategy = "proptest::option::of(arbitrary_horizontal_alignment())")]
+        horizontal: Option<HorizontalAlignment>,
+        #[proptest(strategy = "proptest::option::of(arbitrary_vertical_alignment())")]
+        vertical: Option<VerticalAlignment>,
+    },
+    AlignColumn(
+        #[proptest(strategy = "proptest::option::of(arbitrary_horizontal_alignment())")]
+        Option<HorizontalAlignment>,
+    ),
     FocusWorkspaceDown,
     FocusWorkspaceUp,
     FocusWorkspace(#[proptest(strategy = "0..=4usize")] usize),
@@ -1179,6 +1207,15 @@ impl Op {
                 layout.center_window(id.as_ref());
             }
             Op::CenterVisibleColumns => layout.center_visible_columns(),
+            Op::AlignWindow {
+                id,
+                horizontal,
+                vertical,
+            } => {
+                let id = id.filter(|id| layout.has_window(id));
+                layout.align_window(id.as_ref(), horizontal, vertical);
+            }
+            Op::AlignColumn(alignment) => layout.align_column(alignment),
             Op::FocusWorkspaceDown => layout.switch_workspace_down(),
             Op::FocusWorkspaceUp => layout.switch_workspace_up(),
             Op::FocusWorkspace(idx) => layout.switch_workspace(idx),
