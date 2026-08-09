@@ -4203,8 +4203,16 @@ impl<W: LayoutElement> Column<W> {
     }
 
     pub fn animate_move_from(&mut self, from: Point<f64, Logical>) {
-        self.animate_move_x_from(from.x);
-        self.animate_move_y_from(from.y);
+        self.animate_move_from_with_config(from, self.options.animations.window_movement.0);
+    }
+
+    pub fn animate_move_from_with_config(
+        &mut self,
+        from: Point<f64, Logical>,
+        config: niri_config::Animation,
+    ) {
+        self.animate_move_x_from_with_config(from.x, config);
+        self.animate_move_y_from_with_config(from.y, config);
     }
 
     pub fn animate_move_x_from(&mut self, from_x_offset: f64) {
