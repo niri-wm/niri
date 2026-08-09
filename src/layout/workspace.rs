@@ -1753,6 +1753,11 @@ impl<W: LayoutElement> Workspace<W> {
         self.scrolling.start_open_animation(id) || self.floating.start_open_animation(id)
     }
 
+    #[cfg(test)]
+    pub fn active_column_tab_switch_animation(&self) -> Option<(usize, usize)> {
+        self.scrolling.active_column_tab_switch_animation()
+    }
+
     pub fn window_under(&self, pos: Point<f64, Logical>) -> Option<(&W, HitType)> {
         // This logic is consistent with tiles_with_render_positions().
         if self.is_floating_visible() {

@@ -13,6 +13,7 @@ pub struct Animations {
     pub window_close: WindowCloseAnim,
     pub horizontal_view_movement: HorizontalViewMovementAnim,
     pub window_movement: WindowMovementAnim,
+    pub column_tab_switch: ColumnTabSwitchAnim,
     pub window_resize: WindowResizeAnim,
     pub config_notification_open_close: ConfigNotificationOpenCloseAnim,
     pub exit_confirmation_open_close: ExitConfirmationOpenCloseAnim,
@@ -29,6 +30,7 @@ impl Default for Animations {
             workspace_switch: Default::default(),
             horizontal_view_movement: Default::default(),
             window_movement: Default::default(),
+            column_tab_switch: Default::default(),
             window_open: Default::default(),
             window_close: Default::default(),
             window_resize: Default::default(),
@@ -59,6 +61,8 @@ pub struct AnimationsPart {
     pub horizontal_view_movement: Option<HorizontalViewMovementAnim>,
     #[knuffel(child)]
     pub window_movement: Option<WindowMovementAnim>,
+    #[knuffel(child)]
+    pub column_tab_switch: Option<ColumnTabSwitchAnim>,
     #[knuffel(child)]
     pub window_resize: Option<WindowResizeAnim>,
     #[knuffel(child)]
@@ -91,6 +95,7 @@ impl MergeWith<AnimationsPart> for Animations {
             window_close,
             horizontal_view_movement,
             window_movement,
+            column_tab_switch,
             window_resize,
             config_notification_open_close,
             exit_confirmation_open_close,
@@ -223,6 +228,33 @@ impl Default for WindowMovementAnim {
             }),
         })
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ColumnTabSwitchAnim {
+    pub anim: Animation,
+    pub direction: ColumnTabSwitchDirection,
+}
+
+impl Default for ColumnTabSwitchAnim {
+    fn default() -> Self {
+        Self {
+            anim: Animation {
+                off: false,
+                kind: Kind::Easing(EasingParams {
+                    duration_ms: 150,
+                    curve: Curve::EaseOutExpo,
+                }),
+            },
+            direction: ColumnTabSwitchDirection::Vertical,
+        }
+    }
+}
+
+#[derive(knuffel::DecodeScalar, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ColumnTabSwitchDirection {
+    Horizontal,
+    Vertical,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -368,6 +400,29 @@ where
         Ok(Self(Animation::decode_node(node, ctx, default, |_, _| {
             Ok(false)
         })?))
+    }
+}
+
+impl<S> knuffel::Decode<S> for ColumnTabSwitchAnim
+where
+    S: knuffel::traits::ErrorSpan,
+{
+    fn decode_node(
+        node: &knuffel::ast::SpannedNode<S>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) -> Result<Self, DecodeError<S>> {
+        let default = Self::default();
+        let mut direction = default.direction;
+        let anim = Animation::decode_node(node, ctx, default.anim, |child, ctx| {
+            if &**child.node_name != "direction" {
+                return Ok(false);
+            }
+
+            direction = parse_arg_node("direction", child, ctx)?;
+            Ok(true)
+        })?;
+
+        Ok(Self { anim, direction })
     }
 }
 
