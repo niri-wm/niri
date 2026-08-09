@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use niri_config::utils::MergeWith as _;
 use niri_config::{CenterFocusedColumn, PresetSize, Struts};
-use niri_ipc::{ColumnDisplay, SizeChange, WindowLayout};
+use niri_ipc::{ColumnDisplay, HorizontalAlignment, SizeChange, VerticalAlignment, WindowLayout};
 use ordered_float::NotNan;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Serial, Size};
@@ -628,6 +628,31 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         -(area.size.w - width) / 2. - area.loc.x
     }
 
+    fn compute_new_view_offset_aligned(
+        &self,
+        target_x: Option<f64>,
+        col_x: f64,
+        width: f64,
+        mode: SizingMode,
+        alignment: HorizontalAlignment,
+    ) -> f64 {
+        if mode.is_fullscreen() {
+            return self.compute_new_view_offset_fit(target_x, col_x, width, mode);
+        }
+
+        let (area, padding) = if mode.is_maximized() {
+            (self.parent_area, 0.)
+        } else {
+            (self.working_area, self.options.layout.gaps)
+        };
+
+        match alignment {
+            HorizontalAlignment::Left => -area.loc.x - padding,
+            HorizontalAlignment::Center => -(area.size.w - width) / 2. - area.loc.x,
+            HorizontalAlignment::Right => -(area.size.w - width) - area.loc.x + padding,
+        }
+    }
+
     fn compute_new_view_offset_for_column_fit(&self, target_x: Option<f64>, idx: usize) -> f64 {
         let col = &self.columns[idx];
         self.compute_new_view_offset_fit(
@@ -649,6 +674,22 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             self.column_x(idx),
             col.width(),
             col.sizing_mode(),
+        )
+    }
+
+    fn compute_new_view_offset_for_column_aligned(
+        &self,
+        target_x: Option<f64>,
+        idx: usize,
+        alignment: HorizontalAlignment,
+    ) -> f64 {
+        let col = &self.columns[idx];
+        self.compute_new_view_offset_aligned(
+            target_x,
+            self.column_x(idx),
+            col.width(),
+            col.sizing_mode(),
+            alignment,
         )
     }
 
@@ -773,6 +814,18 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         config: niri_config::Animation,
     ) {
         let new_view_offset = self.compute_new_view_offset_for_column_centered(target_x, idx);
+        self.animate_view_offset_with_config(idx, new_view_offset, config);
+    }
+
+    fn animate_view_offset_to_column_aligned(
+        &mut self,
+        target_x: Option<f64>,
+        idx: usize,
+        config: niri_config::Animation,
+        alignment: HorizontalAlignment,
+    ) {
+        let new_view_offset =
+            self.compute_new_view_offset_for_column_aligned(target_x, idx, alignment);
         self.animate_view_offset_with_config(idx, new_view_offset, config);
     }
 
@@ -2260,6 +2313,59 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         }
 
         self.center_column();
+    }
+
+    pub fn align_column(&mut self, alignment: Option<HorizontalAlignment>) {
+        if self.columns.is_empty() {
+            return;
+        }
+
+        if let Some(alignment) = alignment {
+            self.animate_view_offset_to_column_aligned(
+                None,
+                self.active_column_idx,
+                self.options.animations.horizontal_view_movement.0,
+                alignment,
+            );
+        } else {
+            self.animate_view_offset_to_column(None, self.active_column_idx, None)
+        }
+
+        let col = &mut self.columns[self.active_column_idx];
+        cancel_resize_for_column(&mut self.interactive_resize, col);
+    }
+
+    pub fn align_window(
+        &mut self,
+        window: Option<&W::Id>,
+        horizontal: Option<HorizontalAlignment>,
+        vertical: Option<VerticalAlignment>,
+    ) {
+        if self.columns.is_empty() {
+            return;
+        }
+
+        if vertical.is_some() && horizontal.is_none() {
+            // The user seems to be trying to change the vertical alignment without resetting
+            // horizontal
+            return;
+        }
+
+        let col_idx = if let Some(window) = window {
+            self.columns
+                .iter()
+                .position(|col| col.contains(window))
+                .unwrap()
+        } else {
+            self.active_column_idx
+        };
+
+        // only align the active column
+        if col_idx != self.active_column_idx {
+            return;
+        }
+
+        self.align_column(horizontal);
     }
 
     pub fn center_visible_columns(&mut self) {

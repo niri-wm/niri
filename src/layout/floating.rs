@@ -4,7 +4,7 @@ use std::rc::Rc;
 
 use niri_config::utils::MergeWith as _;
 use niri_config::{PresetSize, RelativeTo};
-use niri_ipc::{PositionChange, SizeChange, WindowLayout};
+use niri_ipc::{HorizontalAlignment, PositionChange, SizeChange, VerticalAlignment, WindowLayout};
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Serial, Size};
 
@@ -1019,6 +1019,41 @@ impl<W: LayoutElement> FloatingSpace<W> {
 
         let new_pos = center_preferring_top_left_in_area(self.working_area, self.data[idx].size);
         self.move_to(idx, new_pos, true);
+    }
+
+    /// Aligns a window.
+    ///
+    /// If a direction's alignment is not provided, the position in the relevant axis is untouched
+    pub fn align_window(
+        &mut self,
+        id: Option<&W::Id>,
+        horizontal: Option<HorizontalAlignment>,
+        vertical: Option<VerticalAlignment>,
+    ) {
+        let Some(id) = id.or(self.active_window_id.as_ref()).cloned() else {
+            return;
+        };
+        let idx = self.idx_of(&id).unwrap();
+
+        let area = self.working_area;
+        let gaps = self.options.layout.gaps;
+        let width = self.data[idx].size.w;
+        let height = self.data[idx].size.h;
+
+        let x = match horizontal {
+            Some(HorizontalAlignment::Left) => area.loc.x + gaps,
+            Some(HorizontalAlignment::Center) => area.loc.x + (area.size.w - width) / 2.,
+            Some(HorizontalAlignment::Right) => area.loc.x + area.size.w - gaps - width,
+            None => self.data[idx].logical_pos.x,
+        };
+        let y = match vertical {
+            Some(VerticalAlignment::Top) => area.loc.y + gaps,
+            Some(VerticalAlignment::Center) => area.loc.y + (area.size.h - height) / 2.,
+            Some(VerticalAlignment::Bottom) => area.loc.y + area.size.h - gaps - height,
+            None => self.data[idx].logical_pos.y,
+        };
+
+        self.move_to(idx, Point::new(x, y), true);
     }
 
     pub fn descendants_added(&mut self, id: &W::Id) -> bool {
