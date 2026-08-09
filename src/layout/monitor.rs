@@ -540,13 +540,20 @@ impl<W: LayoutElement> Monitor<W> {
             width,
             is_full_width,
             is_floating,
+            None,
         );
     }
 
-    pub fn add_column(&mut self, mut workspace_idx: usize, column: Column<W>, activate: bool) {
+    pub fn add_column(
+        &mut self,
+        mut workspace_idx: usize,
+        column: Column<W>,
+        activate: bool,
+        anim: Option<niri_config::Animation>,
+    ) {
         let workspace = &mut self.workspaces[workspace_idx];
 
-        workspace.add_column(column, activate);
+        workspace.add_column(column, activate, anim);
 
         // After adding a new window, workspace becomes this output's own.
         if workspace.name().is_none() {
@@ -577,12 +584,21 @@ impl<W: LayoutElement> Monitor<W> {
         width: ColumnWidth,
         is_full_width: bool,
         is_floating: bool,
+        anim: Option<niri_config::Animation>,
     ) {
         let (mut workspace_idx, target) = self.resolve_add_window_target(target);
 
         let workspace = &mut self.workspaces[workspace_idx];
 
-        workspace.add_tile(tile, target, activate, width, is_full_width, is_floating);
+        workspace.add_tile(
+            tile,
+            target,
+            activate,
+            width,
+            is_full_width,
+            is_floating,
+            anim,
+        );
 
         // After adding a new window, workspace becomes this output's own.
         if workspace.name().is_none() {
@@ -842,6 +858,13 @@ impl<W: LayoutElement> Monitor<W> {
         let transaction = Transaction::new();
         let removed = workspace.remove_tile(&window, transaction);
 
+        // If the view is following the tile, match the animation.
+        let config = if activate {
+            self.options.animations.workspace_switch.0
+        } else {
+            self.options.animations.window_movement.0
+        };
+
         self.add_tile(
             removed.tile,
             MonitorAddWindowTarget::Workspace {
@@ -857,6 +880,7 @@ impl<W: LayoutElement> Monitor<W> {
             removed.width,
             removed.is_full_width,
             removed.is_floating,
+            Some(config),
         );
 
         if self.workspace_switch.is_none() {
@@ -879,12 +903,6 @@ impl<W: LayoutElement> Monitor<W> {
             .tiles_with_render_positions_mut(false)
             .find(|(tile, _)| tile.window().id() == &window)
             .unwrap();
-        // If the view is following the tile, match the animation.
-        let config = if activate {
-            self.options.animations.workspace_switch.0
-        } else {
-            self.options.animations.window_movement.0
-        };
         tile.animate_move_from_with_config(old_render_pos - new_render_pos, config);
         tile.set_anim_y_between_workspaces();
     }
@@ -933,8 +951,15 @@ impl<W: LayoutElement> Monitor<W> {
         old_render_pos.y +=
             self.workspace_size_with_gap(1.).h * (source_workspace_idx as f64 - new_idx as f64);
 
+        // If the view is following the column, match the animation.
+        let config = if activate {
+            self.options.animations.workspace_switch.0
+        } else {
+            self.options.animations.window_movement.0
+        };
+
         let new_id = self.workspaces[new_idx].id();
-        self.add_column(new_idx, column, activate);
+        self.add_column(new_idx, column, activate, Some(config));
 
         let new_idx = self.idx_of_ws(new_id).unwrap();
         let (column, new_render_pos) = self.workspaces[new_idx]
@@ -942,12 +967,6 @@ impl<W: LayoutElement> Monitor<W> {
             .columns_with_render_positions_mut()
             .find(|(col, _pos)| col.id() == id)
             .unwrap();
-        // If the view is following the tile, match the animation.
-        let config = if activate {
-            self.options.animations.workspace_switch.0
-        } else {
-            self.options.animations.window_movement.0
-        };
         column.animate_move_from_with_config(old_render_pos - new_render_pos, config);
         column.set_anim_y_between_workspaces();
     }

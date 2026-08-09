@@ -604,6 +604,7 @@ impl<W: LayoutElement> Workspace<W> {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn add_tile(
         &mut self,
         mut tile: Tile<W>,
@@ -612,6 +613,7 @@ impl<W: LayoutElement> Workspace<W> {
         width: ColumnWidth,
         is_full_width: bool,
         is_floating: bool,
+        anim: Option<niri_config::Animation>,
     ) {
         self.enter_output_for_window(tile.window());
         tile.restore_to_floating = is_floating;
@@ -631,7 +633,7 @@ impl<W: LayoutElement> Workspace<W> {
                     }
                 } else {
                     self.scrolling
-                        .add_tile(None, tile, activate, width, is_full_width, None);
+                        .add_tile(None, tile, activate, width, is_full_width, anim);
 
                     if activate {
                         self.floating_is_active = FloatingActive::No;
@@ -641,7 +643,7 @@ impl<W: LayoutElement> Workspace<W> {
             WorkspaceAddWindowTarget::NewColumnAt(col_idx) => {
                 let activate = activate.map_smart(|| false);
                 self.scrolling
-                    .add_tile(Some(col_idx), tile, activate, width, is_full_width, None);
+                    .add_tile(Some(col_idx), tile, activate, width, is_full_width, anim);
 
                 if activate {
                     self.floating_is_active = FloatingActive::No;
@@ -681,14 +683,20 @@ impl<W: LayoutElement> Workspace<W> {
                     }
                 } else if floating_has_window {
                     self.scrolling
-                        .add_tile(None, tile, activate, width, is_full_width, None);
+                        .add_tile(None, tile, activate, width, is_full_width, anim);
 
                     if activate {
                         self.floating_is_active = FloatingActive::No;
                     }
                 } else {
-                    self.scrolling
-                        .add_tile_right_of(next_to, tile, activate, width, is_full_width);
+                    self.scrolling.add_tile_right_of(
+                        next_to,
+                        tile,
+                        activate,
+                        width,
+                        is_full_width,
+                        anim,
+                    );
 
                     if activate {
                         self.floating_is_active = FloatingActive::No;
@@ -714,12 +722,17 @@ impl<W: LayoutElement> Workspace<W> {
         }
     }
 
-    pub fn add_column(&mut self, column: Column<W>, activate: bool) {
+    pub fn add_column(
+        &mut self,
+        column: Column<W>,
+        activate: bool,
+        anim: Option<niri_config::Animation>,
+    ) {
         for (tile, _) in column.tiles() {
             self.enter_output_for_window(tile.window());
         }
 
-        self.scrolling.add_column(None, column, activate, None);
+        self.scrolling.add_column(None, column, activate, anim);
 
         if activate {
             self.floating_is_active = FloatingActive::No;

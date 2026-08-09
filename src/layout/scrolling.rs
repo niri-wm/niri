@@ -907,7 +907,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         activate: bool,
         width: ColumnWidth,
         is_full_width: bool,
-        anim_config: Option<niri_config::Animation>,
+        anim: Option<niri_config::Animation>,
     ) {
         let column = Column::new_with_tile(
             tile,
@@ -919,7 +919,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             is_full_width,
         );
 
-        self.add_column(col_idx, column, activate, anim_config);
+        self.add_column(col_idx, column, activate, anim);
     }
 
     pub fn add_tile_to_column(
@@ -984,6 +984,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         activate: bool,
         width: ColumnWidth,
         is_full_width: bool,
+        anim: Option<niri_config::Animation>,
     ) {
         let right_of_idx = self
             .columns
@@ -992,7 +993,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             .unwrap();
         let col_idx = right_of_idx + 1;
 
-        self.add_tile(Some(col_idx), tile, activate, width, is_full_width, None);
+        self.add_tile(Some(col_idx), tile, activate, width, is_full_width, anim);
     }
 
     pub fn add_column(

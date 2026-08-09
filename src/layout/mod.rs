@@ -932,7 +932,7 @@ impl<W: LayoutElement> Layout<W> {
             panic!()
         };
 
-        monitors[monitor_idx].add_column(workspace_idx, column, activate);
+        monitors[monitor_idx].add_column(workspace_idx, column, activate, None);
 
         if activate {
             *active_monitor_idx = monitor_idx;
@@ -1110,6 +1110,7 @@ impl<W: LayoutElement> Layout<W> {
                     scrolling_width,
                     is_full_width,
                     is_floating,
+                    None,
                 );
 
                 // Set the default height for scrolling windows.
@@ -3381,6 +3382,7 @@ impl<W: LayoutElement> Layout<W> {
                 removed.width,
                 removed.is_full_width,
                 removed.is_floating,
+                None,
             );
             if activate.map_smart(|| false) {
                 *active_monitor_idx = new_idx;
@@ -4252,6 +4254,7 @@ impl<W: LayoutElement> Layout<W> {
                             move_.width,
                             move_.is_full_width,
                             false,
+                            None,
                         );
                     }
                     InsertPosition::InColumn(column_idx, tile_idx) => {
@@ -4306,6 +4309,7 @@ impl<W: LayoutElement> Layout<W> {
                             move_.width,
                             move_.is_full_width,
                             true,
+                            None,
                         );
                     }
                 }
@@ -4347,6 +4351,7 @@ impl<W: LayoutElement> Layout<W> {
                     move_.width,
                     move_.is_full_width,
                     move_.is_floating,
+                    None,
                 );
             }
         }
