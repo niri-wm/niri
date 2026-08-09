@@ -1,5 +1,6 @@
 use std::str::FromStr;
 
+use knuffel::errors::DecodeError;
 use miette::miette;
 use smithay::input::keyboard::XkbConfig;
 use smithay::reexports::input;
@@ -205,6 +206,12 @@ pub struct Touchpad {
     pub accel_speed: FloatOrInt<-1, 1>,
     #[knuffel(child, unwrap(argument, str))]
     pub accel_profile: Option<AccelProfile>,
+    #[knuffel(child)]
+    pub accel_custom_fallback: Option<AccelCurve>,
+    #[knuffel(child)]
+    pub accel_custom_motion: Option<AccelCurve>,
+    #[knuffel(child)]
+    pub accel_custom_scroll: Option<AccelCurve>,
     #[knuffel(child, unwrap(argument, str))]
     pub scroll_method: Option<ScrollMethod>,
     #[knuffel(child, unwrap(argument))]
@@ -233,6 +240,12 @@ pub struct Mouse {
     pub accel_speed: FloatOrInt<-1, 1>,
     #[knuffel(child, unwrap(argument, str))]
     pub accel_profile: Option<AccelProfile>,
+    #[knuffel(child)]
+    pub accel_custom_fallback: Option<AccelCurve>,
+    #[knuffel(child)]
+    pub accel_custom_motion: Option<AccelCurve>,
+    #[knuffel(child)]
+    pub accel_custom_scroll: Option<AccelCurve>,
     #[knuffel(child, unwrap(argument, str))]
     pub scroll_method: Option<ScrollMethod>,
     #[knuffel(child, unwrap(argument))]
@@ -257,6 +270,12 @@ pub struct Trackpoint {
     pub accel_speed: FloatOrInt<-1, 1>,
     #[knuffel(child, unwrap(argument, str))]
     pub accel_profile: Option<AccelProfile>,
+    #[knuffel(child)]
+    pub accel_custom_fallback: Option<AccelCurve>,
+    #[knuffel(child)]
+    pub accel_custom_motion: Option<AccelCurve>,
+    #[knuffel(child)]
+    pub accel_custom_scroll: Option<AccelCurve>,
     #[knuffel(child, unwrap(argument, str))]
     pub scroll_method: Option<ScrollMethod>,
     #[knuffel(child, unwrap(argument))]
@@ -279,6 +298,12 @@ pub struct Trackball {
     pub accel_speed: FloatOrInt<-1, 1>,
     #[knuffel(child, unwrap(argument, str))]
     pub accel_profile: Option<AccelProfile>,
+    #[knuffel(child)]
+    pub accel_custom_fallback: Option<AccelCurve>,
+    #[knuffel(child)]
+    pub accel_custom_motion: Option<AccelCurve>,
+    #[knuffel(child)]
+    pub accel_custom_scroll: Option<AccelCurve>,
     #[knuffel(child, unwrap(argument, str))]
     pub scroll_method: Option<ScrollMethod>,
     #[knuffel(child, unwrap(argument))]
@@ -310,6 +335,7 @@ impl From<ClickMethod> for input::ClickMethod {
 pub enum AccelProfile {
     Adaptive,
     Flat,
+    Custom,
 }
 
 impl From<AccelProfile> for input::AccelProfile {
@@ -317,7 +343,72 @@ impl From<AccelProfile> for input::AccelProfile {
         match value {
             AccelProfile::Adaptive => Self::Adaptive,
             AccelProfile::Flat => Self::Flat,
+            AccelProfile::Custom => Self::Custom,
         }
+    }
+}
+
+/// A user-defined pointer acceleration function for the `custom` accel profile.
+///
+/// libinput samples the function at `0 * step, 1 * step, ..., (n - 1) * step`, where the
+/// samples are the `points`. It interpolates between them, and extrapolates past the last
+/// one.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AccelCurve {
+    pub step: f64,
+    pub points: Vec<f64>,
+}
+
+#[derive(knuffel::Decode)]
+struct AccelCurvePart {
+    #[knuffel(property)]
+    step: FloatOrInt<0, 100>,
+    #[knuffel(arguments)]
+    points: Vec<FloatOrInt<0, 1000>>,
+}
+
+// Manual impl to check the requirements that libinput places on the curve, so that the
+// user gets an error pointing at the offending node rather than a silently ignored
+// setting.
+impl<S> knuffel::Decode<S> for AccelCurve
+where
+    S: knuffel::traits::ErrorSpan,
+{
+    fn decode_node(
+        node: &knuffel::ast::SpannedNode<S>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) -> Result<Self, DecodeError<S>> {
+        let part = AccelCurvePart::decode_node(node, ctx)?;
+
+        // FloatOrInt already rejects negative and non-finite values; these are the checks
+        // it can't express.
+        if part.step.0 <= 0. {
+            // Point at the property value rather than the whole node.
+            let mut literal = None;
+            for (name, value) in &node.properties {
+                if &***name == "step" {
+                    literal = Some(&value.literal);
+                }
+            }
+
+            let err = "step must be greater than 0";
+            match literal {
+                Some(literal) => ctx.emit_error(DecodeError::conversion(literal, err)),
+                None => ctx.emit_error(DecodeError::conversion(node, err)),
+            }
+        }
+
+        if part.points.len() < 2 {
+            ctx.emit_error(DecodeError::missing(
+                node,
+                "at least two points are required",
+            ));
+        }
+
+        Ok(Self {
+            step: part.step.0,
+            points: part.points.iter().map(|p| p.0).collect(),
+        })
     }
 }
 
@@ -473,8 +564,9 @@ impl FromStr for AccelProfile {
         match s {
             "adaptive" => Ok(Self::Adaptive),
             "flat" => Ok(Self::Flat),
+            "custom" => Ok(Self::Custom),
             _ => Err(miette!(
-                r#"invalid accel profile, can be "adaptive" or "flat""#
+                r#"invalid accel profile, can be "adaptive", "flat" or "custom""#
             )),
         }
     }
@@ -745,5 +837,147 @@ mod tests {
             2.0,
         )
         ");
+    }
+
+    #[track_caller]
+    fn parse_fails(text: &str) {
+        let result = knuffel::parse::<InputPart>("test.kdl", text);
+        assert!(result.is_err(), "expected a parse error, got {result:#?}");
+    }
+
+    #[test]
+    fn parse_accel_custom() {
+        let parsed = do_parse(
+            r#"
+            touchpad {
+                accel-profile "custom"
+                accel-custom-fallback step=0.1 0.0 1.0 2.1 3.4
+                accel-custom-motion step=0.5 0.0 1.0 2.0 3.0 4.0
+                accel-custom-scroll step=0.1 0.0 1.0 2.0
+            }
+            "#,
+        );
+
+        assert_eq!(parsed.touchpad.accel_profile, Some(AccelProfile::Custom));
+        assert_eq!(
+            parsed.touchpad.accel_custom_fallback,
+            Some(AccelCurve {
+                step: 0.1,
+                points: vec![0.0, 1.0, 2.1, 3.4],
+            })
+        );
+        // Deliberately distinct from the other two, so that a mixed-up accel type shows up
+        // here rather than silently applying the wrong curve.
+        assert_eq!(
+            parsed.touchpad.accel_custom_motion,
+            Some(AccelCurve {
+                step: 0.5,
+                points: vec![0.0, 1.0, 2.0, 3.0, 4.0],
+            })
+        );
+        assert_eq!(
+            parsed.touchpad.accel_custom_scroll,
+            Some(AccelCurve {
+                step: 0.1,
+                points: vec![0.0, 1.0, 2.0],
+            })
+        );
+    }
+
+    #[test]
+    fn parse_accel_custom_all_devices() {
+        // Guards against forgetting one of the four device structs.
+        let parsed = do_parse(
+            r#"
+            touchpad {
+                accel-custom-motion step=1 0 1 2
+            }
+            mouse {
+                accel-custom-motion step=1 0 1 2
+            }
+            trackpoint {
+                accel-custom-motion step=1 0 1 2
+            }
+            trackball {
+                accel-custom-motion step=1 0 1 2
+            }
+            "#,
+        );
+
+        // Integer literals must work too, not just decimals.
+        let expected = Some(AccelCurve {
+            step: 1.0,
+            points: vec![0.0, 1.0, 2.0],
+        });
+        assert_eq!(parsed.touchpad.accel_custom_motion, expected);
+        assert_eq!(parsed.mouse.accel_custom_motion, expected);
+        assert_eq!(parsed.trackpoint.accel_custom_motion, expected);
+        assert_eq!(parsed.trackball.accel_custom_motion, expected);
+    }
+
+    #[test]
+    fn parse_accel_custom_rejects_invalid() {
+        // Fewer than two points.
+        parse_fails(
+            r#"
+            touchpad {
+                accel-custom-motion step=0.1 1.0
+            }
+            "#,
+        );
+        parse_fails(
+            r#"
+            touchpad {
+                accel-custom-motion step=0.1
+            }
+            "#,
+        );
+
+        // Non-positive step.
+        parse_fails(
+            r#"
+            touchpad {
+                accel-custom-motion step=0 0.0 1.0
+            }
+            "#,
+        );
+
+        // Missing step.
+        parse_fails(
+            r#"
+            touchpad {
+                accel-custom-motion 0.0 1.0
+            }
+            "#,
+        );
+
+        // Negative point.
+        parse_fails(
+            r#"
+            touchpad {
+                accel-custom-motion step=0.1 0.0 -1.0
+            }
+            "#,
+        );
+
+        // Unknown property.
+        parse_fails(
+            r#"
+            touchpad {
+                accel-custom-motion stp=0.1 0.0 1.0
+            }
+            "#,
+        );
+    }
+
+    #[test]
+    fn parse_accel_profile_rejects_unknown() {
+        parse_fails(
+            r#"
+            touchpad {
+                accel-profile "nonsense"
+            }
+            "#,
+        );
     }
 }

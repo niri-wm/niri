@@ -10,6 +10,9 @@ repository.workspace = true
 [dependencies]
 bitflags.workspace = true
 csscolorparser = "0.8.3"
+# Used via `smithay::reexports::input`; declared directly so that the `libinput_1_23`
+# feature is enabled when this crate is built without the `niri` package in the graph.
+input.workspace = true
 knuffel = "3.2.0"
 miette = { version = "5.10.0", features = ["fancy-no-backtrace"] }
 niri-ipc = { version = "26.4.0", path = "../niri-ipc" }

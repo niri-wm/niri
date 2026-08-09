@@ -4770,6 +4770,87 @@ fn hardcoded_overview_bind(raw: Keysym, mods: ModifiersState) -> Option<Bind> {
     })
 }
 
+/// Applies the pointer acceleration settings shared by all pointing device types.
+///
+/// Unlike the rest of `apply_libinput_settings()`, the custom-profile calls log their
+/// errors. Values that pass the config validation can still be rejected by libinput (for
+/// example on a device that doesn't support the custom profile at all), and silently
+/// ignoring the whole setting is hard to debug.
+fn apply_accel_settings(
+    device: &mut input::Device,
+    kind: &str,
+    accel_speed: f64,
+    accel_profile: Option<niri_config::AccelProfile>,
+    fallback: Option<&niri_config::AccelCurve>,
+    motion: Option<&niri_config::AccelCurve>,
+    scroll: Option<&niri_config::AccelCurve>,
+) {
+    if accel_profile == Some(niri_config::AccelProfile::Custom) {
+        let device_name = device.name().into_owned();
+
+        // libinput ignores the speed setting while the custom profile is active.
+        if accel_speed != 0. {
+            warn!(
+                r#"{kind} "{device_name}": accel-speed is ignored with the "custom" accel profile"#
+            );
+        }
+
+        let applied = if let Some(cfg) = input::AccelConfig::new(input::AccelProfile::Custom) {
+            let curves = [
+                (
+                    input::AccelType::Fallback,
+                    "accel-custom-fallback",
+                    fallback,
+                ),
+                (input::AccelType::Motion, "accel-custom-motion", motion),
+                (input::AccelType::Scroll, "accel-custom-scroll", scroll),
+            ];
+            for (accel_type, name, curve) in curves {
+                let Some(curve) = curve else { continue };
+
+                if let Err(err) = cfg.set_points(accel_type, curve.step, &curve.points) {
+                    warn!("{kind} \"{device_name}\": error setting {name}: {err:?}");
+                }
+            }
+
+            // This switches the profile and installs the points in one go; calling
+            // config_accel_set_profile() separately would overwrite the points with
+            // libinput's defaults.
+            if let Err(err) = device.config_accel_apply(cfg) {
+                warn!("{kind} \"{device_name}\": error applying the custom accel profile: {err:?}");
+                false
+            } else {
+                true
+            }
+        } else {
+            warn!("{kind} \"{device_name}\": error creating the custom accel profile config");
+            false
+        };
+
+        if !applied {
+            // Fall back to the device default, so that a config reload doesn't leave the
+            // device on a custom profile from a previous config generation.
+            if let Some(default) = device.config_accel_default_profile() {
+                let _ = device.config_accel_set_profile(default);
+            }
+        }
+
+        return;
+    }
+
+    if fallback.is_some() || motion.is_some() || scroll.is_some() {
+        warn!(r#"{kind}: accel-custom-* is ignored unless accel-profile is "custom""#);
+    }
+
+    let _ = device.config_accel_set_speed(accel_speed);
+
+    if let Some(accel_profile) = accel_profile {
+        let _ = device.config_accel_set_profile(accel_profile.into());
+    } else if let Some(default) = device.config_accel_default_profile() {
+        let _ = device.config_accel_set_profile(default);
+    }
+}
+
 pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::Device) {
     // According to Mutter code, this setting is specific to touchpads.
     let is_touchpad = device.config_tap_finger_count() > 0;
@@ -4791,7 +4872,6 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
             input::DragLockState::Disabled
         });
         let _ = device.config_scroll_set_natural_scroll_enabled(c.natural_scroll);
-        let _ = device.config_accel_set_speed(c.accel_speed.0);
         let _ = device.config_left_handed_set(c.left_handed);
         let _ = device.config_middle_emulation_set_enabled(c.middle_emulation);
 
@@ -4802,11 +4882,15 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
             let _ = device.config_tap_set_drag_enabled(default);
         }
 
-        if let Some(accel_profile) = c.accel_profile {
-            let _ = device.config_accel_set_profile(accel_profile.into());
-        } else if let Some(default) = device.config_accel_default_profile() {
-            let _ = device.config_accel_set_profile(default);
-        }
+        apply_accel_settings(
+            device,
+            "touchpad",
+            c.accel_speed.0,
+            c.accel_profile,
+            c.accel_custom_fallback.as_ref(),
+            c.accel_custom_motion.as_ref(),
+            c.accel_custom_scroll.as_ref(),
+        );
 
         if let Some(method) = c.scroll_method {
             let _ = device.config_scroll_set_method(method.into());
@@ -4876,15 +4960,18 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
             input::SendEventsMode::ENABLED
         });
         let _ = device.config_scroll_set_natural_scroll_enabled(c.natural_scroll);
-        let _ = device.config_accel_set_speed(c.accel_speed.0);
         let _ = device.config_left_handed_set(c.left_handed);
         let _ = device.config_middle_emulation_set_enabled(c.middle_emulation);
 
-        if let Some(accel_profile) = c.accel_profile {
-            let _ = device.config_accel_set_profile(accel_profile.into());
-        } else if let Some(default) = device.config_accel_default_profile() {
-            let _ = device.config_accel_set_profile(default);
-        }
+        apply_accel_settings(
+            device,
+            "mouse",
+            c.accel_speed.0,
+            c.accel_profile,
+            c.accel_custom_fallback.as_ref(),
+            c.accel_custom_motion.as_ref(),
+            c.accel_custom_scroll.as_ref(),
+        );
 
         if let Some(method) = c.scroll_method {
             let _ = device.config_scroll_set_method(method.into());
@@ -4923,15 +5010,18 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
             input::SendEventsMode::ENABLED
         });
         let _ = device.config_scroll_set_natural_scroll_enabled(c.natural_scroll);
-        let _ = device.config_accel_set_speed(c.accel_speed.0);
         let _ = device.config_middle_emulation_set_enabled(c.middle_emulation);
         let _ = device.config_left_handed_set(c.left_handed);
 
-        if let Some(accel_profile) = c.accel_profile {
-            let _ = device.config_accel_set_profile(accel_profile.into());
-        } else if let Some(default) = device.config_accel_default_profile() {
-            let _ = device.config_accel_set_profile(default);
-        }
+        apply_accel_settings(
+            device,
+            "trackball",
+            c.accel_speed.0,
+            c.accel_profile,
+            c.accel_custom_fallback.as_ref(),
+            c.accel_custom_motion.as_ref(),
+            c.accel_custom_scroll.as_ref(),
+        );
 
         if let Some(method) = c.scroll_method {
             let _ = device.config_scroll_set_method(method.into());
@@ -4970,15 +5060,18 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
             input::SendEventsMode::ENABLED
         });
         let _ = device.config_scroll_set_natural_scroll_enabled(c.natural_scroll);
-        let _ = device.config_accel_set_speed(c.accel_speed.0);
         let _ = device.config_left_handed_set(c.left_handed);
         let _ = device.config_middle_emulation_set_enabled(c.middle_emulation);
 
-        if let Some(accel_profile) = c.accel_profile {
-            let _ = device.config_accel_set_profile(accel_profile.into());
-        } else if let Some(default) = device.config_accel_default_profile() {
-            let _ = device.config_accel_set_profile(default);
-        }
+        apply_accel_settings(
+            device,
+            "trackpoint",
+            c.accel_speed.0,
+            c.accel_profile,
+            c.accel_custom_fallback.as_ref(),
+            c.accel_custom_motion.as_ref(),
+            c.accel_custom_scroll.as_ref(),
+        );
 
         if let Some(method) = c.scroll_method {
             let _ = device.config_scroll_set_method(method.into());

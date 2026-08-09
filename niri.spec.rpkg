@@ -67,7 +67,7 @@ BuildRequires:  pkgconfig(udev)
 BuildRequires:  pkgconfig(gbm)
 BuildRequires:  pkgconfig(xkbcommon)
 BuildRequires:  wayland-devel
-BuildRequires:  pkgconfig(libinput)
+BuildRequires:  pkgconfig(libinput) >= 1.23
 BuildRequires:  pkgconfig(dbus-1)
 BuildRequires:  pkgconfig(systemd)
 BuildRequires:  pkgconfig(libseat)
