@@ -28,6 +28,7 @@ use super::{
     RemovedTile, SizeFrac,
 };
 use crate::animation::Clock;
+use crate::layout::RenderLayer;
 use crate::niri_render_elements;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::shadow::ShadowRenderElement;
@@ -375,21 +376,26 @@ impl<W: LayoutElement> Workspace<W> {
         self.scrolling.are_transitions_ongoing() || self.floating.are_transitions_ongoing()
     }
 
-    pub fn update_render_elements(&mut self, is_active: bool) {
+    pub fn update_render_elements(&mut self, is_active: bool, layer: RenderLayer) {
         self.scrolling
-            .update_render_elements(is_active && !self.floating_is_active.get());
+            .update_render_elements(is_active && !self.floating_is_active.get(), layer);
 
         let view_rect = Rectangle::from_size(self.view_size);
-        self.floating
-            .update_render_elements(is_active && self.floating_is_active.get(), view_rect);
-
-        self.shadow.update_render_elements(
-            self.view_size,
-            true,
-            CornerRadius::default(),
-            self.scale.fractional_scale(),
-            1.,
+        self.floating.update_render_elements(
+            is_active && self.floating_is_active.get(),
+            view_rect,
+            layer,
         );
+
+        if layer.is_normal() {
+            self.shadow.update_render_elements(
+                self.view_size,
+                true,
+                CornerRadius::default(),
+                self.scale.fractional_scale(),
+                1.,
+            );
+        }
     }
 
     pub fn update_config(&mut self, base_options: Rc<Options>) {
@@ -598,6 +604,7 @@ impl<W: LayoutElement> Workspace<W> {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn add_tile(
         &mut self,
         mut tile: Tile<W>,
@@ -606,6 +613,7 @@ impl<W: LayoutElement> Workspace<W> {
         width: ColumnWidth,
         is_full_width: bool,
         is_floating: bool,
+        anim: Option<niri_config::Animation>,
     ) {
         self.enter_output_for_window(tile.window());
         tile.restore_to_floating = is_floating;
@@ -625,7 +633,7 @@ impl<W: LayoutElement> Workspace<W> {
                     }
                 } else {
                     self.scrolling
-                        .add_tile(None, tile, activate, width, is_full_width, None);
+                        .add_tile(None, tile, activate, width, is_full_width, anim);
 
                     if activate {
                         self.floating_is_active = FloatingActive::No;
@@ -635,7 +643,7 @@ impl<W: LayoutElement> Workspace<W> {
             WorkspaceAddWindowTarget::NewColumnAt(col_idx) => {
                 let activate = activate.map_smart(|| false);
                 self.scrolling
-                    .add_tile(Some(col_idx), tile, activate, width, is_full_width, None);
+                    .add_tile(Some(col_idx), tile, activate, width, is_full_width, anim);
 
                 if activate {
                     self.floating_is_active = FloatingActive::No;
@@ -675,14 +683,20 @@ impl<W: LayoutElement> Workspace<W> {
                     }
                 } else if floating_has_window {
                     self.scrolling
-                        .add_tile(None, tile, activate, width, is_full_width, None);
+                        .add_tile(None, tile, activate, width, is_full_width, anim);
 
                     if activate {
                         self.floating_is_active = FloatingActive::No;
                     }
                 } else {
-                    self.scrolling
-                        .add_tile_right_of(next_to, tile, activate, width, is_full_width);
+                    self.scrolling.add_tile_right_of(
+                        next_to,
+                        tile,
+                        activate,
+                        width,
+                        is_full_width,
+                        anim,
+                    );
 
                     if activate {
                         self.floating_is_active = FloatingActive::No;
@@ -708,12 +722,17 @@ impl<W: LayoutElement> Workspace<W> {
         }
     }
 
-    pub fn add_column(&mut self, column: Column<W>, activate: bool) {
+    pub fn add_column(
+        &mut self,
+        column: Column<W>,
+        activate: bool,
+        anim: Option<niri_config::Animation>,
+    ) {
         for (tile, _) in column.tiles() {
             self.enter_output_for_window(tile.window());
         }
 
-        self.scrolling.add_column(None, column, activate, None);
+        self.scrolling.add_column(None, column, activate, anim);
 
         if activate {
             self.floating_is_active = FloatingActive::No;
@@ -749,23 +768,6 @@ impl<W: LayoutElement> Workspace<W> {
         self.update_focus_floating_tiling_after_removing(from_floating);
 
         removed
-    }
-
-    pub fn remove_active_tile(&mut self, transaction: Transaction) -> Option<RemovedTile<W>> {
-        let from_floating = self.floating_is_active.get();
-        let removed = if from_floating {
-            self.floating.remove_active_tile()?
-        } else {
-            self.scrolling.remove_active_tile(transaction)?
-        };
-
-        if let Some(output) = &self.output {
-            removed.tile.window().output_leave(output);
-        }
-
-        self.update_focus_floating_tiling_after_removing(from_floating);
-
-        Some(removed)
     }
 
     pub fn remove_active_column(&mut self) -> Option<Column<W>> {
@@ -1630,11 +1632,12 @@ impl<W: LayoutElement> Workspace<W> {
         ctx: RenderCtx<R>,
         xray_pos: XrayPos,
         focus_ring: bool,
+        layer: RenderLayer,
         push: &mut dyn FnMut(WorkspaceRenderElement<R>),
     ) {
         let scrolling_focus_ring = focus_ring && !self.floating_is_active();
         self.scrolling
-            .render(ctx, xray_pos, scrolling_focus_ring, &mut |elem| {
+            .render(ctx, xray_pos, scrolling_focus_ring, layer, &mut |elem| {
                 push(elem.into())
             });
     }
@@ -1644,18 +1647,23 @@ impl<W: LayoutElement> Workspace<W> {
         ctx: RenderCtx<R>,
         xray_pos: XrayPos,
         focus_ring: bool,
+        layer: RenderLayer,
         push: &mut dyn FnMut(WorkspaceRenderElement<R>),
     ) {
-        if !self.is_floating_visible() {
+        if !self.is_floating_visible() && layer.is_normal() {
             return;
         }
 
         let view_rect = Rectangle::from_size(self.view_size);
         let floating_focus_ring = focus_ring && self.floating_is_active();
-        self.floating
-            .render(ctx, xray_pos, view_rect, floating_focus_ring, &mut |elem| {
-                push(elem.into())
-            });
+        self.floating.render(
+            ctx,
+            xray_pos,
+            view_rect,
+            floating_focus_ring,
+            layer,
+            &mut |elem| push(elem.into()),
+        );
     }
 
     pub fn render_shadow<R: NiriRenderer>(
@@ -1977,12 +1985,14 @@ impl<W: LayoutElement> Workspace<W> {
         self.layout_config.as_ref()
     }
 
-    #[cfg(test)]
     pub fn scrolling(&self) -> &ScrollingSpace<W> {
         &self.scrolling
     }
 
-    #[cfg(test)]
+    pub fn scrolling_mut(&mut self) -> &mut ScrollingSpace<W> {
+        &mut self.scrolling
+    }
+
     pub fn floating(&self) -> &FloatingSpace<W> {
         &self.floating
     }

@@ -2047,7 +2047,9 @@ impl Tty {
 
         match renderer.import_dmabuf(dmabuf, None) {
             Ok(_texture) => {
-                dmabuf.set_node(Some(self.primary_render_node));
+                if dmabuf.node().is_none() {
+                    dmabuf.set_node(Some(self.primary_render_node));
+                }
                 true
             }
             Err(err) => {
@@ -2853,13 +2855,15 @@ fn surface_dmabuf_feedback(
         .clone()
         .add_preference_tranche(
             surface_scanout_node.dev_id(),
-            Some(TrancheFlags::Scanout),
+            TrancheFlags::Scanout,
             primary_scanout_formats,
+            4..=6,
         )
         .add_preference_tranche(
             surface_scanout_node.dev_id(),
-            Some(TrancheFlags::Scanout),
+            TrancheFlags::Scanout,
             primary_or_overlay_scanout_formats,
+            4..=6,
         )
         .build()?;
 
