@@ -539,8 +539,9 @@ impl ForeignToplevelHandler for State {
     fn activate(&mut self, wl_surface: WlSurface) {
         if let Some((mapped, _)) = self.niri.layout.find_window_and_output(&wl_surface) {
             let window = mapped.window.clone();
-            self.niri.layout.activate_window(&window);
             self.niri.layer_shell_on_demand_focus = None;
+            self.update_keyboard_focus();
+            self.focus_window(&window);
             self.niri.queue_redraw_all();
         }
     }
@@ -721,11 +722,15 @@ impl DrmLeaseHandler for State {
 
     fn lease_destroyed(&mut self, node: DrmNode, lease_id: u32) {
         debug!("Destroyed lease");
+        let Some(device) = self.backend.tty().get_device_from_node(node) else {
+            warn!("lease destroyed for unknown DRM device {node:?}");
+            return;
+        };
+        device.remove_lease(lease_id);
+        // kick off the suspend debounce now that a lease is gone
         self.backend
             .tty()
-            .get_device_from_node(node)
-            .unwrap()
-            .remove_lease(lease_id);
+            .check_suspend_device(&mut self.niri, node);
     }
 }
 

@@ -2222,10 +2222,16 @@ impl State {
 
     #[cfg(feature = "dbus")]
     pub fn on_login1_msg(&mut self, msg: Login1ToNiri) {
-        let Login1ToNiri::LidClosedChanged(is_closed) = msg;
-
-        trace!("login1 lid {}", if is_closed { "closed" } else { "opened" });
-        self.set_lid_closed(is_closed);
+        match msg {
+            Login1ToNiri::LidClosedChanged(is_closed) => {
+                trace!("login1 lid {}", if is_closed { "closed" } else { "opened" });
+                self.set_lid_closed(is_closed);
+            }
+            Login1ToNiri::PrepareForSleep(start) => {
+                debug!("login1 prepare for sleep: start={start}");
+                self.backend.on_prepare_for_sleep(&mut self.niri, start);
+            }
+        }
     }
 
     #[cfg(feature = "dbus")]
