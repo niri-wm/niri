@@ -49,7 +49,7 @@ use smithay::desktop::{
 use smithay::input::keyboard::{Layout as KeyboardLayout, XkbConfig};
 use smithay::input::pointer::{
     CursorIcon, CursorImageStatus, CursorImageSurfaceData, Focus,
-    GrabStartData as PointerGrabStartData, MotionEvent,
+    GrabStartData as PointerGrabStartData, MotionEvent, PointerHandle,
 };
 use smithay::input::tablet::TabletSeatTrait;
 use smithay::input::{Seat, SeatState};
@@ -60,15 +60,16 @@ use smithay::reexports::calloop::{
     Interest, LoopHandle, LoopSignal, Mode, PostAction, RegistrationToken,
 };
 use smithay::reexports::wayland_protocols::ext::session_lock::v1::server::ext_session_lock_v1::ExtSessionLockV1;
+use smithay::reexports::wayland_protocols::wp::pointer_constraints::zv1::server::zwp_pointer_constraints_v1::Lifetime;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::WmCapabilities;
 use smithay::reexports::wayland_protocols_misc::server_decoration as _server_decoration;
 use smithay::reexports::wayland_protocols_wlr::screencopy::v1::server::zwlr_screencopy_manager_v1::ZwlrScreencopyManagerV1;
 use smithay::reexports::wayland_server::backend::{
-    ClientData, ClientId, DisconnectReason, GlobalId,
+    ClientData, ClientId, DisconnectReason, GlobalId, ObjectId,
 };
 use smithay::reexports::wayland_server::protocol::wl_shm;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::reexports::wayland_server::{Client, Display, DisplayHandle, Resource};
+use smithay::reexports::wayland_server::{Client, Display, DisplayHandle, Resource, WEnum};
 use smithay::utils::{
     ClockSource, IsAlive as _, Logical, Monotonic, Physical, Point, Rectangle, Scale, Size,
     Transform, SERIAL_COUNTER,
@@ -76,7 +77,7 @@ use smithay::utils::{
 use smithay::wayland::background_effect::BackgroundEffectState;
 use smithay::wayland::compositor::{
     with_states, with_surface_tree_downward, CompositorClientState, CompositorHandler,
-    CompositorState, HookId, SurfaceData, TraversalAction,
+    CompositorState, HookId, SurfaceAttributes, SurfaceData, TraversalAction,
 };
 use smithay::wayland::cursor_shape::CursorShapeManagerState;
 use smithay::wayland::dmabuf::DmabufState;
@@ -183,7 +184,7 @@ use crate::utils::xwayland::satellite::Satellite;
 use crate::utils::{
     center, center_f64, expand_home, get_monotonic_time, ipc_transform_to_smithay, is_mapped,
     logical_output, make_screenshot_path, output_matches_name, output_size, panel_orientation,
-    send_scale_transform, write_png_rgba8, xwayland,
+    send_scale_transform, surface_geo, write_png_rgba8, xwayland,
 };
 use crate::window::mapped::MappedId;
 use crate::window::{InitialConfigureState, Mapped, ResolvedWindowRules, Unmapped, WindowRef};
@@ -372,7 +373,11 @@ pub struct Niri {
     /// resolution mice.
     pub notified_activity_this_iteration: bool,
     pub pointer_inside_hot_corner: bool,
-    pub pointer_constraint_position_hint: Option<Point<f64, Logical>>,
+    pub(crate) pointer_constraint_placements: HashMap<ObjectId, PointerConstraintSurfacePlacement>,
+    pub suspended_pointer_constraints:
+        HashMap<(PointerHandle<State>, ObjectId), SuspendedPointerConstraint>,
+    pub pending_pointer_constraint_warps:
+        HashMap<PointerHandle<State>, PendingPointerConstraintWarp>,
     pub tablet_cursor_location: Option<Point<f64, Logical>>,
     pub gesture_swipe_3f_cumulative: Option<(f64, f64)>,
     pub overview_scroll_swipe_gesture: ScrollSwipeGesture,
@@ -547,6 +552,36 @@ pub struct PointContents {
     pub hot_corner: bool,
 }
 
+#[derive(Clone)]
+pub struct SuspendedPointerConstraint {
+    pub id: ObjectId,
+    pub surface: WlSurface,
+    pub position_within_surface: Option<Point<f64, Logical>>,
+    fallback_placement: Option<PointerConstraintSurfacePlacement>,
+}
+
+#[derive(Clone)]
+pub struct PendingPointerConstraintWarp {
+    pub id: ObjectId,
+    pub hint: Option<PointerConstraintPositionHint>,
+    fallback_placement: Option<PointerConstraintSurfacePlacement>,
+}
+
+#[derive(Clone)]
+pub struct PointerConstraintPositionHint {
+    pub surface: WlSurface,
+    pub location: Point<f64, Logical>,
+}
+
+#[derive(Clone)]
+pub(crate) struct PointerConstraintSurfacePlacement {
+    output: Output,
+    window: Option<(Window, Point<f64, Logical>)>,
+    layer: Option<LayerSurface>,
+    surface_origin: Point<f64, Logical>,
+    scale: f64,
+}
+
 #[derive(Debug, Default)]
 pub enum LockState {
     #[default]
@@ -707,6 +742,214 @@ pub struct State {
 }
 
 impl State {
+    pub(crate) fn finish_pointer_constraint_change_later(
+        &mut self,
+        pointer: &PointerHandle<Self>,
+        id: ObjectId,
+        hint: Option<PointerConstraintPositionHint>,
+        fallback_placement: Option<PointerConstraintSurfacePlacement>,
+    ) {
+        self.niri.pending_pointer_constraint_warps.insert(
+            pointer.clone(),
+            PendingPointerConstraintWarp {
+                id: id.clone(),
+                hint,
+                fallback_placement,
+            },
+        );
+
+        let pointer = pointer.clone();
+        self.niri.event_loop.insert_idle(move |state| {
+            let is_current = state
+                .niri
+                .pending_pointer_constraint_warps
+                .get(&pointer)
+                .is_some_and(|pending| pending.id == id);
+            if !is_current {
+                return;
+            }
+            let pending = state
+                .niri
+                .pending_pointer_constraint_warps
+                .remove(&pointer)
+                .unwrap();
+
+            let target = pending.hint.and_then(|hint| {
+                state.niri.pointer_constraint_hint_target(
+                    &hint.surface,
+                    hint.location,
+                    pending.fallback_placement.as_ref(),
+                )
+            });
+            if let Some(target) = target {
+                pointer.set_location(target);
+            }
+
+            // A cursor-position hint is part of the constraint lifecycle, not an ordinary
+            // geometry refresh. Reconcile pointer focus even while a layout transition is
+            // running; otherwise the location changes but focus remains on the unlocked surface.
+            if state.update_pointer_contents() {
+                pointer.frame(state);
+            }
+
+            if state.niri.pointer_visibility.is_visible() {
+                // FIXME: redraw only outputs overlapping the cursor.
+                state.niri.queue_redraw_all();
+            }
+        });
+    }
+
+    fn deactivate_pointer_constraint_for_keyboard_focus(&mut self, focus: &KeyboardFocus) {
+        let pointer = self.niri.seat.get_pointer().unwrap();
+        let Some(surface) = pointer.current_focus() else {
+            return;
+        };
+
+        let constraint_root = self.niri.find_root_shell_surface(&surface);
+        let focus_root = focus
+            .surface()
+            .map(|surface| self.niri.find_root_shell_surface(surface));
+        if focus_root.as_ref() == Some(&constraint_root) {
+            return;
+        }
+
+        let fallback_placement = self
+            .niri
+            .pointer_constraint_surface_placement(&surface)
+            .or_else(|| {
+                self.niri
+                    .pointer_constraint_surface_placement_from_contents(&surface)
+            });
+
+        with_pointer_constraint(&surface, &pointer, |constraint| {
+            if let Some(constraint) = constraint.filter(|constraint| constraint.is_active()) {
+                if let Some(placement) = fallback_placement.clone() {
+                    self.niri
+                        .pointer_constraint_placements
+                        .insert(constraint.id(), placement);
+                }
+                if constraint.lifetime() == WEnum::Value(Lifetime::Persistent) {
+                    let position_within_surface = self
+                        .niri
+                        .pointer_contents
+                        .surface
+                        .as_ref()
+                        .filter(|(focused_surface, _)| focused_surface == &surface)
+                        .map(|(_, origin)| pointer.current_location() - *origin);
+                    self.niri.suspended_pointer_constraints.insert(
+                        (pointer.clone(), constraint.id()),
+                        SuspendedPointerConstraint {
+                            id: constraint.id(),
+                            surface: surface.clone(),
+                            position_within_surface,
+                            fallback_placement: fallback_placement.clone(),
+                        },
+                    );
+                }
+                constraint.deactivate(self);
+            }
+        });
+    }
+
+    fn reactivate_pointer_constraint_for_keyboard_focus(&mut self, focus: &KeyboardFocus) {
+        let Some(focus_surface) = focus.surface() else {
+            return;
+        };
+        let focus_root = self.niri.find_root_shell_surface(focus_surface);
+
+        let Some((key, suspended)) = self
+            .niri
+            .suspended_pointer_constraints
+            .iter()
+            .find(|(_, suspended)| {
+                suspended.surface.alive()
+                    && self.niri.find_root_shell_surface(&suspended.surface) == focus_root
+            })
+            .map(|((pointer, id), suspended)| ((pointer.clone(), id.clone()), suspended.clone()))
+        else {
+            return;
+        };
+        let pointer = &key.0;
+        // Overview and other layout animations can render a surface at a non-unit scale. Smithay
+        // pointer focus only carries an origin, so it cannot represent the inverse scale needed to
+        // keep protocol coordinates surface-local. Leave the persistent constraint suspended
+        // until normal hit-testing resumes at unit scale.
+        if self
+            .niri
+            .pointer_constraint_surface_placement(&suspended.surface)
+            .is_some_and(|placement| placement.scale != 1.)
+        {
+            return;
+        }
+        let current_position = self.niri.pointer_constraint_local_position(
+            &suspended.surface,
+            pointer.current_location(),
+            suspended.fallback_placement.as_ref(),
+        );
+        let position_within_surface = current_position.or(suspended.position_within_surface);
+        let Some(position_within_surface) = position_within_surface else {
+            self.niri.suspended_pointer_constraints.remove(&key);
+            return;
+        };
+        let Some((pointer_location, pointer_contents)) = self.niri.pointer_constraint_contents_at(
+            &suspended.surface,
+            position_within_surface,
+            suspended.fallback_placement.as_ref(),
+        ) else {
+            self.niri.suspended_pointer_constraints.remove(&key);
+            return;
+        };
+
+        let can_reactivate = with_pointer_constraint(&suspended.surface, pointer, |constraint| {
+            constraint.is_some_and(|constraint| {
+                constraint.id() == suspended.id
+                    && !constraint.is_active()
+                    && constraint.lifetime() == WEnum::Value(Lifetime::Persistent)
+                    && constraint.region().is_none_or(|region| {
+                        region.contains(position_within_surface.to_i32_round())
+                    })
+            })
+        });
+        if !can_reactivate {
+            self.niri.suspended_pointer_constraints.remove(&key);
+            return;
+        }
+
+        self.niri.pending_pointer_constraint_warps.remove(pointer);
+        self.niri.pointer_contents.clone_from(&pointer_contents);
+        pointer.motion(
+            self,
+            pointer_contents.surface,
+            &MotionEvent {
+                location: pointer_location,
+                serial: SERIAL_COUNTER.next_serial(),
+                time: get_monotonic_time().as_millis() as u32,
+            },
+        );
+        pointer.frame(self);
+
+        with_pointer_constraint(&suspended.surface, pointer, |constraint| {
+            if let Some(constraint) =
+                constraint.filter(|constraint| constraint.id() == suspended.id)
+            {
+                constraint.activate();
+            }
+        });
+        if let Some(placement) = self
+            .niri
+            .pointer_constraint_surface_placement(&suspended.surface)
+            .or_else(|| {
+                self.niri
+                    .pointer_constraint_surface_placement_from_contents(&suspended.surface)
+            })
+        {
+            self.niri
+                .pointer_constraint_placements
+                .insert(suspended.id.clone(), placement);
+        }
+        self.niri.suspended_pointer_constraints.remove(&key);
+    }
+
     pub fn new(
         config: Config,
         event_loop: LoopHandle<'static, State>,
@@ -822,6 +1065,11 @@ impl State {
         self.niri.global_space.refresh();
         self.niri.refresh_idle_inhibit();
         self.refresh_pointer_contents();
+        // A persistent constraint can remain suspended while its surface has animated, non-unit
+        // geometry. Retry after layout and pointer refresh so animation completion can restore it
+        // even when cursor visibility disables ordinary hit-testing.
+        let keyboard_focus = self.niri.keyboard_focus.clone();
+        self.reactivate_pointer_constraint_for_keyboard_focus(&keyboard_focus);
         foreign_toplevel::refresh(self);
         ext_workspace::refresh(self);
 
@@ -858,6 +1106,24 @@ impl State {
             _ => self.niri.contents_under(location),
         };
 
+        let pointer = self.niri.seat.get_pointer().unwrap();
+        let current_focus = pointer.current_focus();
+        let new_focus = under.surface.as_ref().map(|(surface, _)| surface);
+        if current_focus.as_ref() != new_focus {
+            if let Some(surface) = current_focus {
+                with_pointer_constraint(&surface, &pointer, |constraint| {
+                    if let Some(constraint) = constraint.filter(|constraint| constraint.is_active())
+                    {
+                        constraint.deactivate(self);
+                    }
+                });
+            }
+        }
+
+        // Any compositor-selected destination takes precedence over a cursor-position hint,
+        // including a newer warp within the same focused surface.
+        self.niri.pending_pointer_constraint_warps.remove(&pointer);
+
         // Disable the hidden pointer if the contents underneath have changed.
         if !self.niri.pointer_visibility.is_visible() && self.niri.pointer_contents != under {
             self.niri.pointer_visibility = PointerVisibility::Disabled;
@@ -870,7 +1136,6 @@ impl State {
 
         self.niri.pointer_contents.clone_from(&under);
 
-        let pointer = &self.niri.seat.get_pointer().unwrap();
         pointer.motion(
             self,
             under.surface,
@@ -1139,6 +1404,23 @@ impl State {
     }
 
     pub fn update_keyboard_focus(&mut self) {
+        let mut dead_constraint_ids = Vec::new();
+        self.niri
+            .suspended_pointer_constraints
+            .retain(|_, suspended| {
+                let alive = suspended.surface.alive();
+                if !alive {
+                    dead_constraint_ids.push(suspended.id.clone());
+                }
+                alive
+            });
+        for id in dead_constraint_ids {
+            self.niri.pointer_constraint_placements.remove(&id);
+            self.niri
+                .pending_pointer_constraint_warps
+                .retain(|_, pending| pending.id != id);
+        }
+
         // Clean up on-demand layer surface focus if necessary.
         if let Some(surface) = &self.niri.layer_shell_on_demand_focus {
             // Still alive and has on-demand interactivity.
@@ -1387,8 +1669,15 @@ impl State {
                 }
             }
 
+            self.deactivate_pointer_constraint_for_keyboard_focus(&focus);
+
             self.niri.keyboard_focus.clone_from(&focus);
-            keyboard.set_focus(self, focus.into_surface(), SERIAL_COUNTER.next_serial());
+            keyboard.set_focus(
+                self,
+                focus.clone().into_surface(),
+                SERIAL_COUNTER.next_serial(),
+            );
+            self.reactivate_pointer_constraint_for_keyboard_focus(&focus);
 
             // FIXME: can be more granular.
             self.niri.queue_redraw_all();
@@ -2617,7 +2906,9 @@ impl Niri {
             pointer_inactivity_timer_got_reset: false,
             notified_activity_this_iteration: false,
             pointer_inside_hot_corner: false,
-            pointer_constraint_position_hint: None,
+            pointer_constraint_placements: HashMap::new(),
+            suspended_pointer_constraints: HashMap::new(),
+            pending_pointer_constraint_warps: HashMap::new(),
             tablet_cursor_location: None,
             gesture_swipe_3f_cumulative: None,
             overview_scroll_swipe_gesture: ScrollSwipeGesture::new(),
@@ -6103,34 +6394,60 @@ impl Niri {
     /// Activates the pointer constraint if necessary according to the current pointer contents.
     ///
     /// Make sure the pointer location and contents are up to date before calling this.
-    pub fn maybe_activate_pointer_constraint(&self) {
-        let Some((surface, surface_loc)) = &self.pointer_contents.surface else {
+    pub fn maybe_activate_pointer_constraint(&mut self) {
+        let Some((surface, surface_loc)) = self.pointer_contents.surface.clone() else {
             return;
         };
 
-        let pointer = self.seat.get_pointer().unwrap();
-        if Some(surface) != pointer.current_focus().as_ref() {
+        let constraint_root = self.find_root_shell_surface(&surface);
+        let keyboard_root = self
+            .keyboard_focus
+            .surface()
+            .map(|surface| self.find_root_shell_surface(surface));
+        if keyboard_root.as_ref() != Some(&constraint_root) {
             return;
         }
 
-        with_pointer_constraint(surface, &pointer, |constraint| {
-            let Some(constraint) = constraint else { return };
+        let pointer = self.seat.get_pointer().unwrap();
+        if Some(&surface) != pointer.current_focus().as_ref() {
+            return;
+        }
+
+        let activated = with_pointer_constraint(&surface, &pointer, |constraint| {
+            let constraint = constraint?;
 
             if constraint.is_active() {
-                return;
+                return None;
             }
 
             // Constraint does not apply if not within region.
             if let Some(region) = constraint.region() {
                 let pointer_pos = pointer.current_location();
-                let pos_within_surface = pointer_pos - *surface_loc;
+                let pos_within_surface = pointer_pos - surface_loc;
                 if !region.contains(pos_within_surface.to_i32_round()) {
-                    return;
+                    return None;
                 }
             }
 
+            let id = constraint.id();
             constraint.activate();
+            Some(id)
         });
+
+        if let Some(id) = activated {
+            if let Some(placement) = self
+                .pointer_constraint_surface_placement(&surface)
+                .or_else(|| self.pointer_constraint_surface_placement_from_contents(&surface))
+            {
+                self.pointer_constraint_placements
+                    .insert(id.clone(), placement);
+            }
+            // Once any constraint owns this pointer, an older unlock hint must not move its global
+            // location or focus. Remove only the matching suspended entry; other persistent
+            // constraints remain available for later keyboard-focus returns.
+            self.pending_pointer_constraint_warps.remove(&pointer);
+            self.suspended_pointer_constraints.remove(&(pointer, id));
+        }
     }
 
     pub(crate) fn has_active_pointer_lock(&self) -> bool {
@@ -6144,6 +6461,256 @@ impl Niri {
                 constraint.is_active() && matches!(&*constraint, PointerConstraint::Locked(_))
             })
         })
+    }
+
+    fn surface_offset_from_root(
+        &self,
+        root: &WlSurface,
+        surface: &WlSurface,
+    ) -> Option<Point<f64, Logical>> {
+        let offset = Cell::new(None);
+        with_surface_tree_downward(
+            root,
+            Point::from((0, 0)),
+            |_, states, parent_offset| {
+                let Some(geometry) = surface_geo(states) else {
+                    return TraversalAction::SkipChildren;
+                };
+                TraversalAction::DoChildren(*parent_offset + geometry.loc)
+            },
+            |candidate, states, parent_offset| {
+                if candidate != surface {
+                    return;
+                }
+                if let Some(geometry) = surface_geo(states) {
+                    offset.set(Some((*parent_offset + geometry.loc).to_f64()));
+                }
+            },
+            |_, _, _| offset.get().is_none(),
+        );
+        offset.get()
+    }
+
+    fn surface_offset_from_shell_root(
+        &self,
+        root: &WlSurface,
+        surface: &WlSurface,
+        popup_root_offset: Point<i32, Logical>,
+    ) -> Option<Point<f64, Logical>> {
+        if let Some(offset) = self.surface_offset_from_root(root, surface) {
+            return Some(offset);
+        }
+
+        PopupManager::popups_for_surface(root).find_map(|(popup, popup_offset)| {
+            let surface_offset = self.surface_offset_from_root(popup.wl_surface(), surface)?;
+            let popup_origin = popup_root_offset + popup_offset - popup.geometry().loc;
+            Some(popup_origin.to_f64() + surface_offset)
+        })
+    }
+
+    pub(crate) fn pointer_constraint_surface_placement(
+        &self,
+        surface: &WlSurface,
+    ) -> Option<PointerConstraintSurfacePlacement> {
+        let root = self.find_root_shell_surface(surface);
+
+        if let Some((mapped, _)) = self.layout.find_window_and_output(&root) {
+            let window = mapped.window.clone();
+            let (output, window_origin, scale) = self.layout.window_render_location(&window)?;
+            let surface_offset =
+                self.surface_offset_from_shell_root(&root, surface, mapped.window.geometry().loc)?;
+            return Some(PointerConstraintSurfacePlacement {
+                output,
+                window: Some((window, window_origin)),
+                layer: None,
+                surface_origin: window_origin + surface_offset.upscale(scale),
+                scale,
+            });
+        }
+
+        for output in self.global_space.outputs() {
+            let layers = layer_map_for_output(output);
+            let Some(layer) = layers
+                .layer_for_surface(&root, WindowSurfaceType::TOPLEVEL)
+                .cloned()
+            else {
+                continue;
+            };
+            let mapped = self.mapped_layer_surfaces.get(&layer)?;
+
+            // Background and bottom layers move with the workspace stack. Their last exact input
+            // placement is retained when the constraint activates; unlike top and overlay layers,
+            // there is no single current workspace offset when the surface is off-screen.
+            if matches!(layer.layer(), Layer::Background | Layer::Bottom) {
+                return None;
+            }
+
+            let layer_origin = layers.layer_geometry(&layer)?.loc.to_f64() + mapped.bob_offset();
+            let surface_offset =
+                self.surface_offset_from_shell_root(&root, surface, Point::from((0, 0)))?;
+            return Some(PointerConstraintSurfacePlacement {
+                output: output.clone(),
+                window: None,
+                layer: Some(layer),
+                surface_origin: layer_origin + surface_offset,
+                scale: 1.,
+            });
+        }
+
+        for (output, state) in &self.output_state {
+            let Some(lock_surface) = state
+                .lock_surface
+                .as_ref()
+                .filter(|lock_surface| lock_surface.wl_surface() == &root)
+            else {
+                continue;
+            };
+            let surface_offset =
+                self.surface_offset_from_root(lock_surface.wl_surface(), surface)?;
+            return Some(PointerConstraintSurfacePlacement {
+                output: output.clone(),
+                window: None,
+                layer: None,
+                surface_origin: surface_offset,
+                scale: 1.,
+            });
+        }
+
+        None
+    }
+
+    pub(crate) fn pointer_constraint_surface_placement_from_contents(
+        &self,
+        surface: &WlSurface,
+    ) -> Option<PointerConstraintSurfacePlacement> {
+        let output = self.pointer_contents.output.clone()?;
+        let (focused_surface, global_surface_origin) = self.pointer_contents.surface.as_ref()?;
+        if focused_surface != surface {
+            return None;
+        }
+
+        let output_origin = self.global_space.output_geometry(&output)?.loc.to_f64();
+        let window = self
+            .pointer_contents
+            .window
+            .as_ref()
+            .and_then(|(window, hit)| match hit {
+                HitType::Input { win_pos } => Some((window.clone(), *win_pos - output_origin)),
+                _ => None,
+            });
+
+        Some(PointerConstraintSurfacePlacement {
+            output,
+            window,
+            layer: self.pointer_contents.layer.clone(),
+            surface_origin: *global_surface_origin - output_origin,
+            scale: 1.,
+        })
+    }
+
+    fn surface_accepts_input_at(&self, surface: &WlSurface, location: Point<f64, Logical>) -> bool {
+        with_states(surface, |states| {
+            let Some(size) = surface_geo(states).map(|geo| geo.size) else {
+                return false;
+            };
+            if !Rectangle::from_size(size.to_f64()).contains(location) {
+                return false;
+            }
+
+            states
+                .cached_state
+                .get::<SurfaceAttributes>()
+                .current()
+                .input_region
+                .as_ref()
+                .is_none_or(|region| region.contains(location.to_i32_floor()))
+        })
+    }
+
+    fn pointer_constraint_contents_at(
+        &self,
+        surface: &WlSurface,
+        location: Point<f64, Logical>,
+        fallback_placement: Option<&PointerConstraintSurfacePlacement>,
+    ) -> Option<(Point<f64, Logical>, PointContents)> {
+        if !self.surface_accepts_input_at(surface, location) {
+            return None;
+        }
+        let placement = self
+            .pointer_constraint_surface_placement(surface)
+            .or_else(|| fallback_placement.cloned())?;
+        let output_geometry = self.global_space.output_geometry(&placement.output)?;
+        let output_origin = output_geometry.loc.to_f64();
+        let target = output_origin + placement.surface_origin + location.upscale(placement.scale);
+        if !output_geometry.to_f64().contains(target) {
+            return None;
+        }
+
+        Some((
+            target,
+            PointContents {
+                output: Some(placement.output),
+                surface: Some((surface.clone(), output_origin + placement.surface_origin)),
+                window: placement.window.map(|(window, window_origin)| {
+                    (
+                        window,
+                        HitType::Input {
+                            win_pos: output_origin + window_origin,
+                        },
+                    )
+                }),
+                layer: placement.layer,
+                hot_corner: false,
+            },
+        ))
+    }
+
+    fn pointer_constraint_local_position(
+        &self,
+        surface: &WlSurface,
+        global_location: Point<f64, Logical>,
+        fallback_placement: Option<&PointerConstraintSurfacePlacement>,
+    ) -> Option<Point<f64, Logical>> {
+        let placement = self
+            .pointer_constraint_surface_placement(surface)
+            .or_else(|| fallback_placement.cloned())?;
+        let output_origin = self
+            .global_space
+            .output_geometry(&placement.output)?
+            .loc
+            .to_f64();
+        let local =
+            (global_location - output_origin - placement.surface_origin).downscale(placement.scale);
+        let size = with_states(surface, |states| surface_geo(states).map(|geo| geo.size))?;
+        Rectangle::from_size(size.to_f64())
+            .contains(local)
+            .then_some(local)
+    }
+
+    pub(crate) fn pointer_constraint_surface_target(
+        &self,
+        surface: &WlSurface,
+        location: Point<f64, Logical>,
+        fallback_placement: Option<&PointerConstraintSurfacePlacement>,
+    ) -> Option<Point<f64, Logical>> {
+        let placement = self
+            .pointer_constraint_surface_placement(surface)
+            .or_else(|| fallback_placement.cloned())?;
+        let mut output_geometry = self.global_space.output_geometry(&placement.output)?;
+        // i32 sizes are exclusive, but f64 sizes are inclusive.
+        output_geometry.size -= (1, 1).into();
+        let output_origin = output_geometry.loc.to_f64();
+        let target = output_origin + placement.surface_origin + location.upscale(placement.scale);
+        Some(target.constrain(output_geometry.to_f64()))
+    }
+
+    pub(crate) fn pointer_constraint_hint_target(
+        &self,
+        surface: &WlSurface,
+        location: Point<f64, Logical>,
+        fallback_placement: Option<&PointerConstraintSurfacePlacement>,
+    ) -> Option<Point<f64, Logical>> {
+        self.pointer_constraint_surface_target(surface, location, fallback_placement)
     }
 
     pub fn focus_layer_surface_if_on_demand(&mut self, surface: Option<LayerSurface>) {

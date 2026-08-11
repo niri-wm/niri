@@ -3,18 +3,18 @@ use std::collections::HashMap;
 use std::fmt;
 use std::fmt::Write as _;
 use std::os::unix::net::UnixStream;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
 use calloop::EventLoop;
 use calloop_wayland_source::WaylandSource;
 use single_pixel_buffer::v1::client::wp_single_pixel_buffer_manager_v1::WpSinglePixelBufferManagerV1;
-use smithay::reexports::wayland_protocols::wp::single_pixel_buffer;
 use smithay::reexports::wayland_protocols::wp::pointer_constraints::zv1::client::{
     zwp_locked_pointer_v1::{self, ZwpLockedPointerV1},
     zwp_pointer_constraints_v1::{self, ZwpPointerConstraintsV1},
 };
+use smithay::reexports::wayland_protocols::wp::single_pixel_buffer;
 use smithay::reexports::wayland_protocols::wp::viewporter::client::wp_viewport::WpViewport;
 use smithay::reexports::wayland_protocols::wp::viewporter::client::wp_viewporter::WpViewporter;
 use smithay::reexports::wayland_protocols::xdg::shell::client::xdg_surface::{self, XdgSurface};
@@ -32,8 +32,10 @@ use wayland_client::protocol::wl_buffer::{self, WlBuffer};
 use wayland_client::protocol::wl_callback::{self, WlCallback};
 use wayland_client::protocol::wl_compositor::WlCompositor;
 use wayland_client::protocol::wl_display::WlDisplay;
+use wayland_client::protocol::wl_keyboard::{self, WlKeyboard};
 use wayland_client::protocol::wl_output::{self, WlOutput};
 use wayland_client::protocol::wl_pointer::{self, WlPointer};
+use wayland_client::protocol::wl_region::WlRegion;
 use wayland_client::protocol::wl_registry::{self, WlRegistry};
 use wayland_client::protocol::wl_seat::WlSeat;
 use wayland_client::protocol::wl_surface::{self, WlSurface};
@@ -62,9 +64,12 @@ pub struct State {
     pub spbm: Option<WpSinglePixelBufferManagerV1>,
     pub viewporter: Option<WpViewporter>,
     pub seat: Option<WlSeat>,
+    pub keyboard: Option<WlKeyboard>,
     pub pointer: Option<WlPointer>,
     pub pointer_constraints: Option<ZwpPointerConstraintsV1>,
     pub pointer_focus: Option<WlSurface>,
+    pub keyboard_focus: Option<WlSurface>,
+    pub events: Vec<ClientEvent>,
 
     pub windows: Vec<Window>,
     pub layers: Vec<LayerSurface>,
@@ -138,6 +143,16 @@ pub struct SyncData {
 pub struct PointerLockStatus {
     pub locked: AtomicBool,
     pub unlocked: AtomicBool,
+    pub locked_count: AtomicUsize,
+    pub unlocked_count: AtomicUsize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClientEvent {
+    KeyboardEnter(u32),
+    KeyboardLeave(u32),
+    PointerLocked,
+    PointerUnlocked,
 }
 
 static CLIENT_ID_COUNTER: IdCounter = IdCounter::new();
@@ -198,9 +213,12 @@ impl Client {
             spbm: None,
             viewporter: None,
             seat: None,
+            keyboard: None,
             pointer: None,
             pointer_constraints: None,
             pointer_focus: None,
+            keyboard_focus: None,
+            events: Vec::new(),
             windows: Vec::new(),
             layers: Vec::new(),
         };
@@ -266,6 +284,23 @@ impl Client {
         &self,
         surface: &WlSurface,
     ) -> (ZwpLockedPointerV1, Arc<PointerLockStatus>) {
+        self.lock_pointer_with_lifetime(surface, zwp_pointer_constraints_v1::Lifetime::Persistent)
+    }
+
+    pub fn lock_pointer_with_lifetime(
+        &self,
+        surface: &WlSurface,
+        lifetime: zwp_pointer_constraints_v1::Lifetime,
+    ) -> (ZwpLockedPointerV1, Arc<PointerLockStatus>) {
+        self.lock_pointer_with_region(surface, None, lifetime)
+    }
+
+    pub fn lock_pointer_with_region(
+        &self,
+        surface: &WlSurface,
+        region: Option<&WlRegion>,
+        lifetime: zwp_pointer_constraints_v1::Lifetime,
+    ) -> (ZwpLockedPointerV1, Arc<PointerLockStatus>) {
         let data = Arc::new(PointerLockStatus::default());
         let locked_pointer = self
             .state
@@ -275,8 +310,8 @@ impl Client {
             .lock_pointer(
                 surface,
                 self.state.pointer.as_ref().unwrap(),
-                None,
-                zwp_pointer_constraints_v1::Lifetime::Persistent,
+                region,
+                lifetime,
                 &self.qh,
                 data.clone(),
             );
@@ -284,8 +319,27 @@ impl Client {
         (locked_pointer, data)
     }
 
+    pub fn create_region(&self, x: i32, y: i32, width: i32, height: i32) -> WlRegion {
+        let region = self
+            .state
+            .compositor
+            .as_ref()
+            .unwrap()
+            .create_region(&self.qh, ());
+        region.add(x, y, width, height);
+        region
+    }
+
     pub fn pointer_focus(&self) -> Option<&WlSurface> {
         self.state.pointer_focus.as_ref()
+    }
+
+    pub fn keyboard_focus(&self) -> Option<&WlSurface> {
+        self.state.keyboard_focus.as_ref()
+    }
+
+    pub fn take_events(&mut self) -> Vec<ClientEvent> {
+        std::mem::take(&mut self.state.events)
     }
 }
 
@@ -324,6 +378,19 @@ impl State {
             .iter_mut()
             .find(|w| w.surface == *surface)
             .unwrap()
+    }
+
+    pub fn destroy_window(&mut self, surface: &WlSurface) {
+        let index = self
+            .windows
+            .iter()
+            .position(|window| window.surface == *surface)
+            .unwrap();
+        let window = self.windows.remove(index);
+        window.viewport.destroy();
+        window.xdg_toplevel.destroy();
+        window.xdg_surface.destroy();
+        window.surface.destroy();
     }
 
     pub fn create_layer(
@@ -567,6 +634,7 @@ impl Dispatch<WlRegistry, ()> for State {
                     let version = min(version, WlSeat::interface().version);
                     let seat: WlSeat = registry.bind(name, version, qh, ());
                     state.pointer = Some(seat.get_pointer(qh, ()));
+                    state.keyboard = Some(seat.get_keyboard(qh, ()));
                     state.seat = Some(seat);
                 } else if interface == ZwpPointerConstraintsV1::interface().name {
                     let version = min(version, ZwpPointerConstraintsV1::interface().version);
@@ -625,6 +693,48 @@ impl Dispatch<WlPointer, ()> for State {
     }
 }
 
+impl Dispatch<WlRegion, ()> for State {
+    fn event(
+        _state: &mut Self,
+        _proxy: &WlRegion,
+        _event: <WlRegion as wayland_client::Proxy>::Event,
+        _data: &(),
+        _conn: &Connection,
+        _qhandle: &QueueHandle<Self>,
+    ) {
+        unreachable!()
+    }
+}
+
+impl Dispatch<WlKeyboard, ()> for State {
+    fn event(
+        state: &mut Self,
+        _proxy: &WlKeyboard,
+        event: <WlKeyboard as wayland_client::Proxy>::Event,
+        _data: &(),
+        _conn: &Connection,
+        _qhandle: &QueueHandle<Self>,
+    ) {
+        match event {
+            wl_keyboard::Event::Enter { surface, .. } => {
+                state
+                    .events
+                    .push(ClientEvent::KeyboardEnter(surface.id().protocol_id()));
+                state.keyboard_focus = Some(surface);
+            }
+            wl_keyboard::Event::Leave { surface, .. } => {
+                state
+                    .events
+                    .push(ClientEvent::KeyboardLeave(surface.id().protocol_id()));
+                if state.keyboard_focus.as_ref() == Some(&surface) {
+                    state.keyboard_focus = None;
+                }
+            }
+            _ => (),
+        }
+    }
+}
+
 impl Dispatch<ZwpPointerConstraintsV1, ()> for State {
     fn event(
         _state: &mut Self,
@@ -640,7 +750,7 @@ impl Dispatch<ZwpPointerConstraintsV1, ()> for State {
 
 impl Dispatch<ZwpLockedPointerV1, Arc<PointerLockStatus>> for State {
     fn event(
-        _state: &mut Self,
+        state: &mut Self,
         _proxy: &ZwpLockedPointerV1,
         event: <ZwpLockedPointerV1 as wayland_client::Proxy>::Event,
         data: &Arc<PointerLockStatus>,
@@ -649,11 +759,15 @@ impl Dispatch<ZwpLockedPointerV1, Arc<PointerLockStatus>> for State {
     ) {
         match event {
             zwp_locked_pointer_v1::Event::Locked => {
+                state.events.push(ClientEvent::PointerLocked);
                 data.locked.store(true, Ordering::Relaxed);
+                data.locked_count.fetch_add(1, Ordering::Relaxed);
             }
             zwp_locked_pointer_v1::Event::Unlocked => {
+                state.events.push(ClientEvent::PointerUnlocked);
                 data.locked.store(false, Ordering::Relaxed);
                 data.unlocked.store(true, Ordering::Relaxed);
+                data.unlocked_count.fetch_add(1, Ordering::Relaxed);
             }
             _ => unreachable!(),
         }
