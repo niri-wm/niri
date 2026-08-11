@@ -21,11 +21,12 @@ use smithay::input::{keyboard, Seat, SeatHandler, SeatState};
 use smithay::output::Output;
 use smithay::reexports::rustix::fs::{fcntl_setfl, OFlags};
 use smithay::reexports::wayland_protocols_wlr::screencopy::v1::server::zwlr_screencopy_manager_v1::ZwlrScreencopyManagerV1;
+use smithay::reexports::wayland_protocols::wp::pointer_constraints::zv1::server::zwp_pointer_constraints_v1::Lifetime;
 use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::reexports::wayland_server::Resource;
+use smithay::reexports::wayland_server::{Resource, WEnum};
 use smithay::utils::{Logical, Point, Rectangle, Serial};
-use smithay::wayland::compositor::{get_parent, with_states};
+use smithay::wayland::compositor::with_states;
 use smithay::wayland::dmabuf::{DmabufGlobal, DmabufHandler, DmabufState, ImportNotifier};
 use smithay::wayland::drm_lease::{
     DrmLease, DrmLeaseBuilder, DrmLeaseHandler, DrmLeaseRequest, DrmLeaseState, LeaseRejected,
@@ -68,7 +69,7 @@ pub use crate::handlers::xdg_shell::KdeDecorationsModeState;
 use crate::input::click_grab::ClickGrab;
 use crate::layout::workspace::WorkspaceId;
 use crate::layout::ActivateWindow;
-use crate::niri::{DndIcon, NewClient, State};
+use crate::niri::{DndIcon, NewClient, PointerConstraintPositionHint, State};
 use crate::protocols::ext_workspace::{self, ExtWorkspaceHandler, ExtWorkspaceManagerState};
 use crate::protocols::foreign_toplevel::{
     self, ForeignToplevelHandler, ForeignToplevelManagerState,
@@ -85,6 +86,21 @@ use crate::protocols::virtual_pointer::{
 use crate::utils::{output_size, send_scale_transform};
 
 pub const XDG_ACTIVATION_TOKEN_TIMEOUT: Duration = Duration::from_secs(10);
+
+fn committed_pointer_constraint_hint(
+    surface: &WlSurface,
+    constraint: &PointerConstraint,
+) -> Option<PointerConstraintPositionHint> {
+    let PointerConstraint::Locked(locked) = constraint else {
+        return None;
+    };
+    locked
+        .cursor_position_hint()
+        .map(|location| PointerConstraintPositionHint {
+            surface: surface.clone(),
+            location,
+        })
+}
 
 impl SeatHandler for State {
     type KeyboardFocus = WlSurface;
@@ -158,82 +174,79 @@ impl PointerConstraintsHandler for State {
         &mut self,
         surface: &WlSurface,
         pointer: &PointerHandle<Self>,
-        location: Point<f64, Logical>,
+        _location: Point<f64, Logical>,
     ) {
-        let is_constraint_active = with_pointer_constraint(surface, pointer, |constraint| {
-            constraint.is_some_and(|c| c.is_active())
+        let constraint_id = with_pointer_constraint(surface, pointer, |constraint| {
+            constraint.map(|constraint| constraint.id())
         });
 
-        if !is_constraint_active {
-            return;
-        }
-
-        // Note: this is surface under pointer, not pointer focus. So if you start, say, a
-        // middle-drag in Blender, then touchpad-swipe the window away, the surface under pointer
-        // will change, even though the real pointer focus remains on the Blender surface due to
-        // the click grab.
-        //
-        // Ideally we would just use the constraint surface, but we need its origin. So this is
-        // more of a hack because pointer contents has the surface origin available.
-        //
-        // FIXME: use the constraint surface somehow, don't use pointer contents.
-        let Some((ref surface_under_pointer, origin)) = self.niri.pointer_contents.surface else {
+        let Some(constraint_id) = constraint_id else {
             return;
         };
 
-        if surface_under_pointer != surface {
-            return;
-        }
-
-        let mut root = surface.clone();
-        while let Some(parent) = get_parent(&root) {
-            root = parent;
-        }
-
-        let target = self
+        if let Some(placement) = self
             .niri
-            .output_for_root(&root)
-            .and_then(|output| self.niri.global_space.output_geometry(output))
-            .map_or(origin + location, |mut output_geometry| {
-                // i32 sizes are exclusive, but f64 sizes are inclusive.
-                output_geometry.size -= (1, 1).into();
-                (origin + location).constrain(output_geometry.to_f64())
-            });
-        self.niri.pointer_constraint_position_hint = Some(target);
+            .pointer_constraint_surface_placement(surface)
+            .or_else(|| {
+                self.niri
+                    .pointer_constraint_surface_placement_from_contents(surface)
+            })
+        {
+            self.niri
+                .pointer_constraint_placements
+                .insert(constraint_id.clone(), placement);
+        }
     }
 
     fn remove_constraint(
         &mut self,
-        _surface: &WlSurface,
+        surface: &WlSurface,
         pointer: &PointerHandle<Self>,
-        _constraint: Option<&PointerConstraint>,
+        constraint: &PointerConstraint,
     ) {
-        // Since a pointer constraint is broken when a surface loses pointer focus, and one surface
-        // can only have a single pointer constraint at once, assume there can be only one
-        // constraint active at once, and therefore the global position hint should come from that
-        // one constraint that just got removed.
-        let Some(target) = self.niri.pointer_constraint_position_hint.take() else {
-            // The client never sent a position hint.
-            return;
-        };
+        let id = constraint.id();
+        let hint = committed_pointer_constraint_hint(surface, constraint);
+        let fallback_placement = self.niri.pointer_constraint_placements.remove(&id);
+        self.niri
+            .suspended_pointer_constraints
+            .retain(|_, suspended| suspended.id != id);
 
-        // If the constraint was broken by the pointer forcibly leaving the surface (e.g. the user
-        // opened the overview), then it doesn't make much sense to warp it.
+        // An inactive persistent constraint has already gone through
+        // constraint_deactivated(), which queued its one permitted hint warp. Do not replace that
+        // pending work with an empty terminal-removal update.
         //
-        // Furthermore, when the constraint is removed as part of the pointer leaving the surface,
-        // this call happens with locked pointer data, and calling set_location() will try to lock
-        // it again and deadlock.
+        // If the pointer already left the surface (for example, when opening the overview), the
+        // upstream behavior is to skip the hint warp. The split Smithay callback makes this path
+        // safe from the old re-entrant pointer lock, while retaining that policy.
+        if constraint.is_active() && pointer.last_enter().is_some() {
+            self.finish_pointer_constraint_change_later(pointer, id, hint, fallback_placement);
+        }
+    }
+
+    fn constraint_deactivated(
+        &mut self,
+        surface: &WlSurface,
+        pointer: &PointerHandle<Self>,
+        constraint: &PointerConstraint,
+    ) {
+        let id = constraint.id();
+        let hint = committed_pointer_constraint_hint(surface, constraint);
+        let fallback_placement = if constraint.lifetime() == WEnum::Value(Lifetime::Oneshot) {
+            self.niri.pointer_constraint_placements.remove(&id)
+        } else {
+            self.niri.pointer_constraint_placements.get(&id).cloned()
+        };
+        // A pointer-focus leave already establishes the new pointer position. Do not override it
+        // with the old surface's hint; explicit keyboard-focus deactivation still has an enter.
         if pointer.last_enter().is_none() {
             return;
         }
-
-        pointer.set_location(target);
-
-        // Redraw to update the cursor position if it's visible.
-        if self.niri.pointer_visibility.is_visible() {
-            // FIXME: redraw only outputs overlapping the cursor.
-            self.niri.queue_redraw_all();
-        }
+        self.finish_pointer_constraint_change_later(
+            pointer,
+            constraint.id(),
+            hint,
+            fallback_placement,
+        );
     }
 }
 

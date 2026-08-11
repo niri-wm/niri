@@ -1410,6 +1410,49 @@ impl<W: LayoutElement> Layout<W> {
         None
     }
 
+    /// Returns the current output-local buffer origin and render scale for a visible window.
+    ///
+    /// Unlike IPC layout positions, this includes workspace, tile, and interactive-move render
+    /// offsets. Input protocols that use surface-local coordinates need this current placement
+    /// rather than a location cached by an earlier pointer hit.
+    pub fn window_render_location(
+        &self,
+        window: &W::Id,
+    ) -> Option<(Output, Point<f64, Logical>, f64)> {
+        if let Some(InteractiveMoveState::Moving(move_)) = &self.interactive_move {
+            if move_.tile.window().id() == window {
+                let zoom = self
+                    .monitor_for_output(&move_.output)
+                    .map(Monitor::overview_zoom)
+                    .unwrap_or(1.);
+                let location = move_.tile_render_location(zoom)
+                    + (move_.tile.buf_loc() + move_.tile.bob_offset()).upscale(zoom);
+                return Some((move_.output.clone(), location, zoom));
+            }
+        }
+
+        let MonitorSet::Normal { monitors, .. } = &self.monitor_set else {
+            return None;
+        };
+        for mon in monitors {
+            let zoom = mon.overview_zoom();
+            for (workspace, workspace_geometry) in mon.workspaces_with_render_geo() {
+                let Some((tile, tile_location, _visible)) = workspace
+                    .tiles_with_render_positions()
+                    .find(|(tile, _, _)| tile.window().id() == window)
+                else {
+                    continue;
+                };
+
+                let location = workspace_geometry.loc
+                    + (tile_location + tile.buf_loc() + tile.bob_offset()).upscale(zoom);
+                return Some((mon.output.clone(), location, zoom));
+            }
+        }
+
+        None
+    }
+
     pub fn find_window_and_output_mut(
         &mut self,
         wl_surface: &WlSurface,
