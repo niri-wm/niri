@@ -11,6 +11,7 @@ use calloop::EventLoop;
 use calloop_wayland_source::WaylandSource;
 use single_pixel_buffer::v1::client::wp_single_pixel_buffer_manager_v1::WpSinglePixelBufferManagerV1;
 use smithay::reexports::wayland_protocols::wp::pointer_constraints::zv1::client::{
+    zwp_confined_pointer_v1::{self, ZwpConfinedPointerV1},
     zwp_locked_pointer_v1::{self, ZwpLockedPointerV1},
     zwp_pointer_constraints_v1::{self, ZwpPointerConstraintsV1},
 };
@@ -153,6 +154,8 @@ pub enum ClientEvent {
     KeyboardLeave(u32),
     PointerLocked,
     PointerUnlocked,
+    PointerConfined,
+    PointerUnconfined,
 }
 
 static CLIENT_ID_COUNTER: IdCounter = IdCounter::new();
@@ -317,6 +320,28 @@ impl Client {
             );
         self.connection.flush().unwrap();
         (locked_pointer, data)
+    }
+
+    pub fn confine_pointer(
+        &self,
+        surface: &WlSurface,
+    ) -> (ZwpConfinedPointerV1, Arc<PointerLockStatus>) {
+        let data = Arc::new(PointerLockStatus::default());
+        let confined_pointer = self
+            .state
+            .pointer_constraints
+            .as_ref()
+            .unwrap()
+            .confine_pointer(
+                surface,
+                self.state.pointer.as_ref().unwrap(),
+                None,
+                zwp_pointer_constraints_v1::Lifetime::Persistent,
+                &self.qh,
+                data.clone(),
+            );
+        self.connection.flush().unwrap();
+        (confined_pointer, data)
     }
 
     pub fn create_region(&self, x: i32, y: i32, width: i32, height: i32) -> WlRegion {
@@ -765,6 +790,32 @@ impl Dispatch<ZwpLockedPointerV1, Arc<PointerLockStatus>> for State {
             }
             zwp_locked_pointer_v1::Event::Unlocked => {
                 state.events.push(ClientEvent::PointerUnlocked);
+                data.locked.store(false, Ordering::Relaxed);
+                data.unlocked.store(true, Ordering::Relaxed);
+                data.unlocked_count.fetch_add(1, Ordering::Relaxed);
+            }
+            _ => unreachable!(),
+        }
+    }
+}
+
+impl Dispatch<ZwpConfinedPointerV1, Arc<PointerLockStatus>> for State {
+    fn event(
+        state: &mut Self,
+        _proxy: &ZwpConfinedPointerV1,
+        event: <ZwpConfinedPointerV1 as wayland_client::Proxy>::Event,
+        data: &Arc<PointerLockStatus>,
+        _conn: &Connection,
+        _qhandle: &QueueHandle<Self>,
+    ) {
+        match event {
+            zwp_confined_pointer_v1::Event::Confined => {
+                state.events.push(ClientEvent::PointerConfined);
+                data.locked.store(true, Ordering::Relaxed);
+                data.locked_count.fetch_add(1, Ordering::Relaxed);
+            }
+            zwp_confined_pointer_v1::Event::Unconfined => {
+                state.events.push(ClientEvent::PointerUnconfined);
                 data.locked.store(false, Ordering::Relaxed);
                 data.unlocked.store(true, Ordering::Relaxed);
                 data.unlocked_count.fetch_add(1, Ordering::Relaxed);

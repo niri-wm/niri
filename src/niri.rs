@@ -1357,6 +1357,9 @@ impl State {
         // We're not changing the global cursor location here, so if the contents did not change,
         // then nothing changed.
         if self.niri.pointer_contents == under {
+            // Keyboard focus may have changed since these pointer contents were last computed.
+            // Reconsider an inactive constraint now, after hit-testing the current geometry.
+            self.niri.maybe_activate_pointer_constraint();
             return false;
         }
 

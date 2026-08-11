@@ -278,6 +278,41 @@ fn add_overlay_layer(f: &mut Fixture, id: ClientId, left: i32, top: i32) -> WlSu
     surface
 }
 
+fn add_pointer_focused_layer(
+    f: &mut Fixture,
+    id: ClientId,
+    kb_interactivity: KeyboardInteractivity,
+) -> WlSurface {
+    let layer = f.client(id).create_layer(None, Layer::Overlay, "");
+    let surface = layer.surface.clone();
+    layer.set_configure_props(LayerConfigureProps {
+        anchor: Some(Anchor::Top | Anchor::Left),
+        size: Some((100, 100)),
+        margin: Some(LayerMargin {
+            top: 100,
+            left: 100,
+            ..Default::default()
+        }),
+        kb_interactivity: Some(kb_interactivity),
+        ..Default::default()
+    });
+    layer.commit();
+    f.roundtrip(id);
+
+    let layer = f.client(id).layer(&surface);
+    layer.attach_new_buffer();
+    layer.set_size(100, 100);
+    layer.ack_last_and_commit();
+    f.double_roundtrip(id);
+
+    f.niri_state()
+        .move_cursor(Point::from((150.0_f64, 150.0_f64)));
+    f.double_roundtrip(id);
+    assert_eq!(f.client(id).pointer_focus(), Some(&surface));
+
+    surface
+}
+
 fn add_floating_overlay_window(f: &mut Fixture, id: ClientId) -> (WlSurface, DesktopWindow) {
     let overlay = f.client(id).create_window();
     let surface = overlay.surface.clone();
@@ -579,6 +614,71 @@ window-rule {
             ClientEvent::KeyboardLeave(overlay_surface.id().protocol_id()),
             ClientEvent::KeyboardEnter(window_surface.id().protocol_id()),
             ClientEvent::PointerLocked,
+        ]
+    );
+}
+
+#[test]
+fn keyboard_focus_leave_deactivates_and_reactivates_persistent_confine() {
+    let config = Config::parse_mem(
+        r#"
+window-rule {
+    match title="^overlay$"
+    open-floating true
+    open-focused false
+    default-column-width { fixed 200; }
+    default-window-height { fixed 200; }
+}
+"#,
+    )
+    .unwrap();
+    let (mut f, id, game_surface) = fixture_with_window(config);
+    let game_window = {
+        let protocol_id = game_surface.id().protocol_id();
+        f.niri()
+            .layout
+            .windows()
+            .find(|(_, mapped)| mapped.toplevel().wl_surface().id().protocol_id() == protocol_id)
+            .unwrap()
+            .1
+            .window
+            .clone()
+    };
+
+    let (_confined_pointer, status) = f.client(id).confine_pointer(&game_surface);
+    f.double_roundtrip(id);
+    assert_eq!(status.locked_count.load(Ordering::Relaxed), 1);
+    assert!(status.locked.load(Ordering::Relaxed));
+
+    let (overlay_surface, overlay_window) = add_floating_overlay_window(&mut f, id);
+    f.client(id).take_events();
+    f.niri().layout.activate_window(&overlay_window);
+    f.double_roundtrip(id);
+
+    assert_eq!(status.unlocked_count.load(Ordering::Relaxed), 1);
+    assert!(!status.locked.load(Ordering::Relaxed));
+    assert_eq!(f.client(id).keyboard_focus(), Some(&overlay_surface));
+    assert_eq!(
+        f.client(id).take_events(),
+        vec![
+            ClientEvent::PointerUnconfined,
+            ClientEvent::KeyboardLeave(game_surface.id().protocol_id()),
+            ClientEvent::KeyboardEnter(overlay_surface.id().protocol_id()),
+        ]
+    );
+
+    f.niri().layout.activate_window(&game_window);
+    f.double_roundtrip(id);
+
+    assert_eq!(status.locked_count.load(Ordering::Relaxed), 2);
+    assert!(status.locked.load(Ordering::Relaxed));
+    assert_eq!(f.client(id).keyboard_focus(), Some(&game_surface));
+    assert_eq!(
+        f.client(id).take_events(),
+        vec![
+            ClientEvent::KeyboardLeave(overlay_surface.id().protocol_id()),
+            ClientEvent::KeyboardEnter(game_surface.id().protocol_id()),
+            ClientEvent::PointerConfined,
         ]
     );
 }
@@ -1069,6 +1169,101 @@ fn layer_surface_cursor_position_hint_is_applied_after_unlock() {
         f.niri().seat.get_pointer().unwrap().current_location(),
         Point::from((120.0_f64, 120.0_f64))
     );
+}
+
+#[test]
+fn exclusive_layer_surface_can_lock_pointer_with_keyboard_focus() {
+    let (mut f, id, _window_surface) = fixture_with_window(Config::default());
+    let surface = add_pointer_focused_layer(&mut f, id, KeyboardInteractivity::Exclusive);
+
+    assert_eq!(f.client(id).keyboard_focus(), Some(&surface));
+    let (_lock, status) = f.client(id).lock_pointer(&surface);
+    f.double_roundtrip(id);
+
+    assert_eq!(status.locked_count.load(Ordering::Relaxed), 1);
+    assert!(status.locked.load(Ordering::Relaxed));
+}
+
+#[test]
+fn on_demand_layer_surface_locks_pointer_after_click_focus() {
+    let (mut f, id, window_surface) = fixture_with_window(Config::default());
+    let surface = add_pointer_focused_layer(&mut f, id, KeyboardInteractivity::OnDemand);
+
+    // Niri intentionally focuses newly mapped on-demand layers. Click the regular window first,
+    // then return the pointer to the layer without clicking to model an already-running desktop.
+    f.niri_state()
+        .move_cursor(Point::from((500.0_f64, 500.0_f64)));
+    send_button(&mut f, ButtonState::Pressed);
+    send_button(&mut f, ButtonState::Released);
+    f.double_roundtrip(id);
+    assert_eq!(f.client(id).keyboard_focus(), Some(&window_surface));
+
+    f.niri_state()
+        .move_cursor(Point::from((150.0_f64, 150.0_f64)));
+    f.double_roundtrip(id);
+    assert_eq!(f.client(id).pointer_focus(), Some(&surface));
+    assert_eq!(f.client(id).keyboard_focus(), Some(&window_surface));
+
+    let (_lock, status) = f.client(id).lock_pointer(&surface);
+    f.double_roundtrip(id);
+    assert_eq!(status.locked_count.load(Ordering::Relaxed), 0);
+
+    send_button(&mut f, ButtonState::Pressed);
+    send_button(&mut f, ButtonState::Released);
+    f.double_roundtrip(id);
+
+    assert_eq!(f.client(id).keyboard_focus(), Some(&surface));
+    assert_eq!(status.locked_count.load(Ordering::Relaxed), 1);
+    assert!(status.locked.load(Ordering::Relaxed));
+}
+
+#[test]
+fn noninteractive_layer_surface_cannot_lock_pointer_after_click() {
+    let (mut f, id, window_surface) = fixture_with_window(Config::default());
+    let surface = add_pointer_focused_layer(&mut f, id, KeyboardInteractivity::None);
+
+    assert_eq!(f.client(id).keyboard_focus(), Some(&window_surface));
+    let (_lock, status) = f.client(id).lock_pointer(&surface);
+    f.double_roundtrip(id);
+
+    send_button(&mut f, ButtonState::Pressed);
+    send_button(&mut f, ButtonState::Released);
+    f.double_roundtrip(id);
+
+    assert_eq!(f.client(id).keyboard_focus(), Some(&window_surface));
+    assert_eq!(status.locked_count.load(Ordering::Relaxed), 0);
+    assert!(!status.locked.load(Ordering::Relaxed));
+}
+
+#[test]
+fn layer_constraint_does_not_activate_from_stale_geometry_after_focus_change() {
+    let (mut f, id, _window_surface) = fixture_with_window(Config::default());
+    let surface = add_pointer_focused_layer(&mut f, id, KeyboardInteractivity::None);
+
+    let (_lock, status) = f.client(id).lock_pointer(&surface);
+    f.double_roundtrip(id);
+    assert_eq!(status.locked_count.load(Ordering::Relaxed), 0);
+
+    // Move the layer away from the pointer and make it keyboard-focusable in the same commit.
+    // Pointer-constraint eligibility must use the new placement, not the cached focus/origin from
+    // before this commit.
+    let layer = f.client(id).layer(&surface);
+    layer.set_configure_props(LayerConfigureProps {
+        margin: Some(LayerMargin {
+            top: 400,
+            left: 400,
+            ..Default::default()
+        }),
+        kb_interactivity: Some(KeyboardInteractivity::Exclusive),
+        ..Default::default()
+    });
+    layer.commit();
+    f.double_roundtrip(id);
+
+    assert_eq!(f.client(id).keyboard_focus(), Some(&surface));
+    assert_ne!(f.client(id).pointer_focus(), Some(&surface));
+    assert_eq!(status.locked_count.load(Ordering::Relaxed), 0);
+    assert!(!status.locked.load(Ordering::Relaxed));
 }
 
 #[test]
