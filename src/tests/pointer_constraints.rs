@@ -15,6 +15,7 @@ use smithay::reexports::wayland_protocols_wlr::layer_shell::v1::client::zwlr_lay
 };
 use smithay::reexports::wayland_server::Resource as _;
 use smithay::utils::Point;
+use smithay::wayland::pointer_constraints::with_pointer_constraint;
 use smithay::reexports::wayland_protocols::wp::pointer_constraints::zv1::client::zwp_pointer_constraints_v1::Lifetime as ClientConstraintLifetime;
 use wayland_client::protocol::wl_surface::WlSurface;
 use wayland_client::Proxy as _;
@@ -899,6 +900,67 @@ window-rule {
     assert_eq!(status.locked_count.load(Ordering::Relaxed), 1);
     assert!(!status.locked.load(Ordering::Relaxed));
     assert!(f.niri().pointer_constraint_placements.is_empty());
+}
+
+#[test]
+fn destroying_defunct_oneshot_constraint_keeps_replacement_constraint() {
+    let config = Config::parse_mem(
+        r#"
+window-rule {
+    match title="^overlay$"
+    open-floating true
+    open-focused false
+    default-column-width { fixed 200; }
+    default-window-height { fixed 200; }
+}
+"#,
+    )
+    .unwrap();
+    let (mut f, id, game_surface) = fixture_with_window(config);
+    let game_window = {
+        let protocol_id = game_surface.id().protocol_id();
+        f.niri()
+            .layout
+            .windows()
+            .find(|(_, mapped)| mapped.toplevel().wl_surface().id().protocol_id() == protocol_id)
+            .unwrap()
+            .1
+            .window
+            .clone()
+    };
+    let server_game_surface = game_window.toplevel().unwrap().wl_surface().clone();
+    let (old_lock, old_status) = f
+        .client(id)
+        .lock_pointer_with_lifetime(&game_surface, ClientConstraintLifetime::Oneshot);
+    f.double_roundtrip(id);
+    assert_eq!(old_status.locked_count.load(Ordering::Relaxed), 1);
+
+    let (_overlay_surface, overlay_window) = add_floating_overlay_window(&mut f, id);
+    f.niri().layout.activate_window(&overlay_window);
+    f.double_roundtrip(id);
+    assert_eq!(old_status.unlocked_count.load(Ordering::Relaxed), 1);
+
+    f.niri().layout.activate_window(&game_window);
+    f.double_roundtrip(id);
+    let (replacement_lock, _replacement_status) = f.client(id).lock_pointer(&game_surface);
+    let replacement_id = replacement_lock.id().protocol_id();
+    f.double_roundtrip(id);
+
+    let pointer = f.niri().seat.get_pointer().unwrap();
+    let current_id = with_pointer_constraint(&server_game_surface, &pointer, |constraint| {
+        constraint.map(|constraint| constraint.id().protocol_id())
+    });
+    assert_eq!(current_id, Some(replacement_id));
+
+    // The defunct one-shot protocol object can outlive its server-side constraint. Destroying it
+    // must not remove the newer constraint created for the same surface and pointer.
+    old_lock.destroy();
+    f.double_roundtrip(id);
+
+    let current_id = with_pointer_constraint(&server_game_surface, &pointer, |constraint| {
+        constraint.map(|constraint| constraint.id().protocol_id())
+    });
+    assert_eq!(current_id, Some(replacement_id));
 }
 
 #[test]
