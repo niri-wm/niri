@@ -302,10 +302,10 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
                         let id = tile.window().id().get();
                         let geometry = niri_ipc::WindowGeometry {
                             id,
-                            x: pos.x.round() as i32,
-                            y: pos.y.round() as i32,
-                            width: size.w.round() as i32,
-                            height: size.h.round() as i32,
+                            x: pos.x,
+                            y: pos.y,
+                            width: size.w,
+                            height: size.h,
                         };
                         geometries.push(geometry);
                     }

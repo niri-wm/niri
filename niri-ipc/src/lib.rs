@@ -178,13 +178,13 @@ pub struct WindowGeometry {
     /// Id of the window.
     pub id: u64,
     /// X coordinate of the tile relative to the active output's top-left corner.
-    pub x: i32,
+    pub x: f64,
     /// Y coordinate of the tile relative to the active output's top-left corner.
-    pub y: i32,
+    pub y: f64,
     /// Width of the tile.
-    pub width: i32,
+    pub width: f64,
     /// Height of the tile.
-    pub height: i32,
+    pub height: f64,
 }
 
 /// Overview information.
