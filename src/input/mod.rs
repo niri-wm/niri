@@ -2617,6 +2617,11 @@ impl State {
 
         self.niri.pointer_contents.clone_from(&under);
 
+        let hot_corner_allowed = under.hot_corner
+            && pointer
+                .with_grab(|_, grab| grab_allows_hot_corner(grab))
+                .unwrap_or(true);
+
         pointer.motion(
             self,
             under.surface.clone(),
@@ -2641,16 +2646,14 @@ impl State {
 
         pointer.frame(self);
 
-        // contents_under() will return no surface when the hot corner should trigger, so
-        // pointer.motion() will set the current focus to None.
-        if under.hot_corner && motion_reached_target && pointer.current_focus().is_none() {
-            if !self.niri.is_inside_hot_corner_at(pos)
-                && pointer
-                    .with_grab(|_, grab| grab_allows_hot_corner(grab))
-                    .unwrap_or(true)
-            {
-                self.niri.layout.toggle_overview();
-            }
+        // contents_under() returns no surface for an active hot corner, so pointer.motion() will
+        // clear the current focus.
+        if hot_corner_allowed
+            && motion_reached_target
+            && pointer.current_focus().is_none()
+            && !self.niri.is_inside_hot_corner_at(pos)
+        {
+            self.niri.layout.toggle_overview();
         }
 
         // Activate a new confinement if necessary.
@@ -2716,6 +2719,11 @@ impl State {
 
         self.niri.pointer_contents.clone_from(&under);
 
+        let hot_corner_allowed = under.hot_corner
+            && pointer
+                .with_grab(|_, grab| grab_allows_hot_corner(grab))
+                .unwrap_or(true);
+
         pointer.motion(
             self,
             under.surface,
@@ -2730,16 +2738,14 @@ impl State {
 
         pointer.frame(self);
 
-        // contents_under() will return no surface when the hot corner should trigger, so
-        // pointer.motion() will set the current focus to None.
-        if under.hot_corner && motion_reached_target && pointer.current_focus().is_none() {
-            if !self.niri.is_inside_hot_corner_at(old_pos)
-                && pointer
-                    .with_grab(|_, grab| grab_allows_hot_corner(grab))
-                    .unwrap_or(true)
-            {
-                self.niri.layout.toggle_overview();
-            }
+        // contents_under() returns no surface for an active hot corner, so pointer.motion() will
+        // clear the current focus.
+        if hot_corner_allowed
+            && motion_reached_target
+            && pointer.current_focus().is_none()
+            && !self.niri.is_inside_hot_corner_at(old_pos)
+        {
+            self.niri.layout.toggle_overview();
         }
 
         self.niri.maybe_activate_pointer_constraint();
