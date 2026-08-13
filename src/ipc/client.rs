@@ -202,7 +202,7 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
             }
         }
         Msg::WindowGeometries => {
-            let Response::WindowGeometries(mut geometries) = response else {
+            let Response::WindowGeometries(geometries) = response else {
                 bail!("unexpected response: expected WindowGeometries, got {response:?}");
             };
 
@@ -213,12 +213,15 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
                 return Ok(());
             }
 
-            geometries.sort_unstable_by(|a, b| a.id.cmp(&b.id));
-
-            for geom in geometries {
+            for geometry in geometries {
                 println!(
-                    "Window ID {}: x={}, y={}, width={}, height={}",
-                    geom.id, geom.x, geom.y, geom.width, geom.height
+                    "Window ID {} on {}: x={}, y={}, width={}, height={}",
+                    geometry.id,
+                    geometry.output,
+                    fmt_rounded(geometry.x),
+                    fmt_rounded(geometry.y),
+                    fmt_rounded(geometry.width),
+                    fmt_rounded(geometry.height),
                 );
             }
         }

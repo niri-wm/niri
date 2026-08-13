@@ -73,6 +73,8 @@ pub enum Request {
     Workspaces,
     /// Request information about open windows.
     Windows,
+    /// Request window geometries.
+    WindowGeometries,
     /// Request information about layer-shell surfaces.
     Layers,
     /// Request information about the configured keyboard layouts.
@@ -117,8 +119,6 @@ pub enum Request {
     ReturnError,
     /// Request information about the overview.
     OverviewState,
-    /// Request the geometry of all windows.
-    WindowGeometries,
     /// Request information about screencasts.
     Casts,
 }
@@ -149,7 +149,7 @@ pub enum Response {
     Workspaces(Vec<Workspace>),
     /// Information about open windows.
     Windows(Vec<Window>),
-    /// Information about open windows with their geometry.
+    /// Information about window geometries.
     WindowGeometries(Vec<WindowGeometry>),
     /// Information about layer-shell surfaces.
     Layers(Vec<LayerSurface>),
@@ -171,19 +171,21 @@ pub enum Response {
     Casts(Vec<Cast>),
 }
 
-/// Geometry of a window.
+/// Information about a window's geometry.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct WindowGeometry {
     /// Id of the window.
     pub id: u64,
-    /// X coordinate of the tile relative to the active output's top-left corner.
+    /// Name of the output.
+    pub output: String,
+    /// X position.
     pub x: f64,
-    /// Y coordinate of the tile relative to the active output's top-left corner.
+    /// Y position.
     pub y: f64,
-    /// Width of the tile.
+    /// Width.
     pub width: f64,
-    /// Height of the tile.
+    /// Height.
     pub height: f64,
 }
 
