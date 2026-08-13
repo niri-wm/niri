@@ -51,6 +51,7 @@ use smithay::input::pointer::{
     CursorIcon, CursorImageStatus, CursorImageSurfaceData, Focus,
     GrabStartData as PointerGrabStartData, MotionEvent,
 };
+use smithay::input::tablet::TabletSeatTrait;
 use smithay::input::{Seat, SeatState};
 use smithay::output::{self, Output, OutputModeSource, PhysicalProperties, Subpixel, WeakOutput};
 use smithay::reexports::calloop::generic::Generic;
@@ -369,6 +370,7 @@ pub struct Niri {
     /// resolution mice.
     pub notified_activity_this_iteration: bool,
     pub pointer_inside_hot_corner: bool,
+    pub pointer_constraint_position_hint: Option<Point<f64, Logical>>,
     pub tablet_cursor_location: Option<Point<f64, Logical>>,
     pub gesture_swipe_3f_cumulative: Option<(f64, f64)>,
     pub overview_scroll_swipe_gesture: ScrollSwipeGesture,
@@ -417,6 +419,8 @@ pub struct Niri {
     #[cfg(feature = "xdp-gnome-screencast")]
     pub casting: Screencasting,
 }
+
+smithay::delegate_dispatch2!(State);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PointerVisibility {
@@ -1028,6 +1032,12 @@ impl State {
     }
 
     pub fn refresh_pointer_contents(&mut self) {
+        // Don't move the mouse pointer while the user is interacting with the tablet, as it causes
+        // unwanted jumps for the client.
+        if self.niri.tablet_cursor_location.is_some() {
+            return;
+        }
+
         let _span = tracy_client::span!("Niri::refresh_pointer_contents");
 
         let pointer = &self.niri.seat.get_pointer().unwrap();
@@ -1989,13 +1999,23 @@ impl State {
         };
 
         // Now that we captured the screenshots, clear grabs like drag-and-drop, etc.
-        self.niri.seat.get_pointer().unwrap().unset_grab(
-            self,
-            SERIAL_COUNTER.next_serial(),
-            get_monotonic_time().as_millis() as u32,
-        );
+        let time = get_monotonic_time().as_millis() as u32;
+        self.niri
+            .seat
+            .get_pointer()
+            .unwrap()
+            .unset_grab(self, SERIAL_COUNTER.next_serial(), time);
         if let Some(touch) = self.niri.seat.get_touch() {
             touch.unset_grab(self);
+        }
+
+        // Can't unset_grab() from with_tools(), will deadlock on tablet seat mutex...
+        let mut tools = Vec::new();
+        self.niri.seat.tablet_seat().with_tools(|map| {
+            tools = Vec::from_iter(map.values().cloned());
+        });
+        for tool in tools {
+            tool.unset_grab(self, SERIAL_COUNTER.next_serial(), time);
         }
 
         self.backend.with_primary_renderer(|renderer| {
@@ -2591,6 +2611,7 @@ impl Niri {
             pointer_inactivity_timer_got_reset: false,
             notified_activity_this_iteration: false,
             pointer_inside_hot_corner: false,
+            pointer_constraint_position_hint: None,
             tablet_cursor_location: None,
             gesture_swipe_3f_cumulative: None,
             overview_scroll_swipe_gesture: ScrollSwipeGesture::new(),
@@ -6062,6 +6083,11 @@ impl Niri {
 
         if lock.client() != surface.wl_surface().client() {
             debug!("ignoring lock surface from an unrelated client");
+            return;
+        }
+
+        if lock != surface.ext_session_lock() {
+            debug!("ignoring lock surface from an unrelated lock instance");
             return;
         }
 

@@ -33,6 +33,7 @@ debug {
     honor-xdg-activation-with-invalid-serial
     skip-cursor-only-updates-during-vrr
     deactivate-unfocused-windows
+    disable-10bit-output
 }
 
 binds {
@@ -321,6 +322,21 @@ It will cause niri to drop the Activated state for all unfocused windows.
 ```kdl
 debug {
     deactivate-unfocused-windows
+}
+```
+
+### `disable-10bit-output`
+
+<sup>Since: next release</sup>
+
+By default, niri will try to output a 10-bit color format to the monitor (before falling back to 8-bit).
+However, this can currently cause problems on some Intel + NVIDIA mixed-GPU setups: the screen doesn't light up, or displays only white, etc.
+
+Until this is fixed in Smithay, you can disable 10-bit color formats by setting this debug flag.
+
+```kdl
+debug {
+    disable-10bit-output
 }
 ```
 

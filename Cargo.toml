@@ -12,15 +12,15 @@ authors = ["Ivan Molodetskikh <yalterz@gmail.com>"]
 license = "GPL-3.0-or-later"
 edition = "2021"
 repository = "https://github.com/niri-wm/niri"
-rust-version = "1.85"
+rust-version = "1.87"
 
 [workspace.dependencies]
-anyhow = "1.0.102"
-bitflags = "2.11.1"
-clap = { version = "4.6.1", features = ["derive"] }
-insta = "1.47.2"
-serde = { version = "1.0.228", features = ["derive"] }
-serde_json = "1.0.149"
+anyhow = "1.0.104"
+bitflags = "2.13.1"
+clap = { version = "4.6.6", features = ["derive"] }
+insta = "1.48.0"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
 tracing = { version = "0.1.44", features = ["max_level_trace", "release_max_level_debug"] }
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 tracy-client = { version = "0.18.4", default-features = false }
@@ -28,13 +28,13 @@ tracy-client = { version = "0.18.4", default-features = false }
 [workspace.dependencies.smithay]
 # version = "0.4.1"
 git = "https://github.com/Smithay/smithay.git"
-rev = "ff5fa7df392cecfba049ffed55cdaa4e98a8e7ef"
+rev = "4cf0b62028039661477d482ec4758b687d8f4392"
 default-features = false
 
 [workspace.dependencies.smithay-drm-extras]
 # version = "0.1.0"
 git = "https://github.com/Smithay/smithay.git"
-rev = "ff5fa7df392cecfba049ffed55cdaa4e98a8e7ef"
+rev = "4cf0b62028039661477d482ec4758b687d8f4392"
 # path = "../smithay/smithay-drm-extras"
 
 [package]
@@ -54,27 +54,27 @@ keywords = ["wayland", "compositor", "tiling", "smithay", "wm"]
 accesskit = { version = "0.24", optional = true }
 accesskit_unix = { version = "0.22", optional = true }
 anyhow.workspace = true
-arrayvec = "0.7.6"
+arrayvec = "0.7.8"
 async-channel = "2.5.0"
 async-io = { version = "2.6.0", optional = true }
 atomic = "0.6.1"
 bitflags.workspace = true
-bytemuck = { version = "1.25.0", features = ["derive"] }
+bytemuck = { version = "1.25.2", features = ["derive"] }
 calloop = { version = "0.14.4", features = ["executor", "futures-io", "signals"] }
 clap = { workspace = true, features = ["string"] }
-clap_complete = "4.6.2"
-clap_complete_nushell = "4.6.0"
+clap_complete = "4.6.9"
+clap_complete_nushell = "4.6.1"
 directories = "6.0.0"
 drm-ffi = "0.9.1"
-fastrand = "2.4.1"
-futures-util = { version = "0.3.32", default-features = false, features = ["std", "io"] }
+fastrand = "2.5.0"
+futures-util = { version = "0.3.33", default-features = false, features = ["std", "io"] }
 git-version = "0.3.9"
-glam = "0.32.1"
+glam = "0.33"
 input = { version = "0.10.0", features = ["libinput_1_21"] }
 keyframe = { version = "1.1.1", default-features = false }
-libc = "0.2.185"
+libc = "0.2.189"
 libdisplay-info = "0.3.0"
-log = { version = "0.4.29", features = ["max_level_trace", "release_max_level_debug"] }
+log = { version = "0.4.33", features = ["max_level_trace", "release_max_level_debug"] }
 niri-config = { version = "26.4.0", path = "niri-config" }
 niri-ipc = { version = "26.4.0", path = "niri-ipc", features = ["clap"] }
 ordered-float = "5.3.0"
@@ -83,7 +83,7 @@ pangocairo = "0.21.5"
 pipewire = { version = "0.10.0", optional = true, features = ["v0_3_33"] }
 png = "0.18.1"
 portable-atomic = "1"
-profiling = "1.0.17"
+profiling = "1.0.18"
 sd-notify = "0.5.0"
 serde.workspace = true
 serde_json.workspace = true
@@ -91,11 +91,11 @@ smithay-drm-extras.workspace = true
 tracing-subscriber.workspace = true
 tracing.workspace = true
 tracy-client.workspace = true
-wayland-backend = "0.3.15"
-wayland-scanner = "0.31.10"
-wayland-server = "0.31.13"
-xcursor = "0.3.10"
-zbus = { version = "5.13.2", optional = true }
+wayland-backend = "0.3.16"
+wayland-scanner = "0.31.11"
+wayland-server = "0.31.14"
+xcursor = "0.3.11"
+zbus = { version = "5.18.0", optional = true }
 
 [dependencies.smithay]
 workspace = true
@@ -122,7 +122,7 @@ insta.workspace = true
 proptest = "1.11.0"
 proptest-derive = { version = "0.8.0", features = ["boxed_union"] }
 rayon = "1.12.0"
-wayland-client = "0.31.14"
+wayland-client = "0.31.15"
 xshell = "0.2.7"
 
 [build-dependencies]
