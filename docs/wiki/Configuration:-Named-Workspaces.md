@@ -12,6 +12,19 @@ workspace "chat" {
 }
 ```
 
+Pass several outputs to define ordered fallbacks:
+
+```kdl
+workspace "browser" {
+    open-on-output "DP-9" "DP-4"
+}
+```
+
+The workspace uses the first listed output that is currently connected. Niri reevaluates this
+order whenever outputs connect or disconnect, regardless of connection order. If none match, the
+workspace uses the normal default monitor. Explicitly moving the workspace to another monitor
+replaces this configured affinity for the running session.
+
 Contrary to normal dynamic workspaces, named workspaces always exist, even when they have no windows.
 Otherwise, they behave like any other workspace: you can move them around, move to a different monitor, and so on.
 
