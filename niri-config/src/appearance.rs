@@ -228,10 +228,70 @@ impl CornerRadius {
     }
 }
 
+/// Width of a [`Border`], extending either out of or into its contents.
+///
+/// If you are writing layout code which calculates the size of some content
+/// with a border:
+/// - [`BorderWidth::Inset`] should be treated as no border, keeping content
+///   size the same
+/// - [`BorderWidth::Outset`] should be treated as a border which decreases the
+///   content size
+///   - use [`BorderWidth::outset`] to get the outset width, or 0 if it's an inset
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum BorderWidth {
+    /// Border extends into the content, and draws over it.
+    Inset(f64),
+    /// Border extends out of the content.
+    Outset(f64),
+}
+
+impl BorderWidth {
+    pub fn outset(self) -> f64 {
+        match self {
+            Self::Inset(_) => 0.,
+            Self::Outset(width) => width,
+        }
+    }
+
+    pub fn is_inset(self) -> bool {
+        matches!(self, Self::Inset(_))
+    }
+
+    pub fn is_outset(self) -> bool {
+        matches!(self, Self::Outset(_))
+    }
+
+    fn with_value(self, width: f64) -> Self {
+        match self {
+            Self::Inset(_) => Self::Inset(width),
+            Self::Outset(_) => Self::Outset(width),
+        }
+    }
+
+    fn with_is_inset(self, is_inset: bool) -> Self {
+        let width = match self {
+            Self::Inset(width) | Self::Outset(width) => width,
+        };
+
+        if is_inset {
+            Self::Inset(width)
+        } else {
+            Self::Outset(width)
+        }
+    }
+
+    pub fn map(self, f: impl FnOnce(f64) -> f64) -> Self {
+        match self {
+            Self::Inset(width) => Self::Inset(f(width)),
+            Self::Outset(width) => Self::Outset(f(width)),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FocusRing {
     pub off: bool,
-    pub width: f64,
+    pub width: BorderWidth,
     pub active_color: Color,
     pub inactive_color: Color,
     pub urgent_color: Color,
@@ -244,7 +304,7 @@ impl Default for FocusRing {
     fn default() -> Self {
         Self {
             off: false,
-            width: 4.,
+            width: BorderWidth::Outset(4.),
             active_color: Color::from_rgba8_unpremul(127, 200, 255, 255),
             inactive_color: Color::from_rgba8_unpremul(80, 80, 80, 255),
             urgent_color: Color::from_rgba8_unpremul(155, 0, 0, 255),
@@ -258,7 +318,7 @@ impl Default for FocusRing {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Border {
     pub off: bool,
-    pub width: f64,
+    pub width: BorderWidth,
     pub active_color: Color,
     pub inactive_color: Color,
     pub urgent_color: Color,
@@ -271,7 +331,7 @@ impl Default for Border {
     fn default() -> Self {
         Self {
             off: true,
-            width: 4.,
+            width: BorderWidth::Outset(4.),
             active_color: Color::from_rgba8_unpremul(255, 200, 127, 255),
             inactive_color: Color::from_rgba8_unpremul(80, 80, 80, 255),
             urgent_color: Color::from_rgba8_unpremul(155, 0, 0, 255),
@@ -319,7 +379,12 @@ impl MergeWith<BorderRule> for Border {
             self.off = false;
         }
 
-        merge!((self, part), width);
+        if let Some(width) = part.width {
+            self.width = self.width.with_value(width.0);
+        }
+        if let Some(is_inset) = part.is_inset {
+            self.width = self.width.with_is_inset(is_inset);
+        }
 
         merge_color_gradient!(
             (self, part),
@@ -630,6 +695,8 @@ pub struct BorderRule {
     pub on: bool,
     #[knuffel(child, unwrap(argument))]
     pub width: Option<FloatOrInt<0, 65535>>,
+    #[knuffel(child, unwrap(argument))]
+    pub is_inset: Option<bool>,
     #[knuffel(child)]
     pub active_color: Option<Color>,
     #[knuffel(child)]
@@ -684,7 +751,7 @@ impl MergeWith<Self> for BorderRule {
     fn merge_with(&mut self, part: &Self) {
         merge_on_off!((self, part));
 
-        merge_clone_opt!((self, part), width);
+        merge_clone_opt!((self, part), width, is_inset);
 
         merge_color_gradient_opt!(
             (self, part),

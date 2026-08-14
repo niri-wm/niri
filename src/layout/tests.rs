@@ -3,8 +3,8 @@ use std::cell::{Cell, OnceCell, RefCell};
 use niri_config::utils::{Flag, MergeWith as _};
 use niri_config::workspace::WorkspaceName;
 use niri_config::{
-    CenterFocusedColumn, FloatOrInt, OutputName, Struts, TabIndicatorLength, TabIndicatorPosition,
-    WorkspaceReference,
+    BorderWidth, CenterFocusedColumn, FloatOrInt, OutputName, Struts, TabIndicatorLength,
+    TabIndicatorPosition, WorkspaceReference,
 };
 use proptest::prelude::*;
 use proptest_derive::Arbitrary;
@@ -2156,7 +2156,7 @@ fn large_negative_height_change() {
 
     let mut options = Options::default();
     options.layout.border.off = false;
-    options.layout.border.width = 1.;
+    options.layout.border.width = BorderWidth::Outset(1.);
 
     check_ops_with_options(options, ops);
 }
@@ -2175,7 +2175,7 @@ fn large_max_size() {
 
     let mut options = Options::default();
     options.layout.border.off = false;
-    options.layout.border.width = 1.;
+    options.layout.border.width = BorderWidth::Outset(1.);
 
     check_ops_with_options(options, ops);
 }
@@ -2388,7 +2388,7 @@ fn config_change_updates_cached_sizes() {
     let mut config = Config::default();
     let border = &mut config.layout.border;
     border.off = false;
-    border.width = 2.;
+    border.width = BorderWidth::Outset(2.);
 
     let mut layout = Layout::new(Clock::default(), &config);
 
@@ -2400,7 +2400,7 @@ fn config_change_updates_cached_sizes() {
     }
     .apply(&mut layout);
 
-    config.layout.border.width = 4.;
+    config.layout.border.width = BorderWidth::Outset(4.);
     layout.update_config(&config);
 
     layout.verify_invariants();
@@ -2520,7 +2520,7 @@ fn fixed_height_takes_max_non_auto_into_account() {
         layout: niri_config::Layout {
             border: niri_config::Border {
                 off: false,
-                width: 4.,
+                width: BorderWidth::Outset(4.),
                 ..Default::default()
             },
             gaps: 0.,
@@ -3366,7 +3366,7 @@ fn preset_column_width_fixed_correct_with_border() {
             preset_column_widths: vec![PresetSize::Fixed(500)],
             border: niri_config::Border {
                 off: false,
-                width: 5.,
+                width: BorderWidth::Outset(5.),
                 ..Default::default()
             },
             ..Default::default()

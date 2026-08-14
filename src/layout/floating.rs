@@ -1265,13 +1265,14 @@ impl<W: LayoutElement> FloatingSpace<W> {
         rules: &ResolvedWindowRules,
     ) -> Size<i32, Logical> {
         let border = self.options.layout.border.merged_with(&rules.border);
+        let border_width = border.width.outset();
 
         let resolve = |size: Option<PresetSize>, working_area_size: f64| {
             if let Some(size) = size {
                 let size = match resolve_preset_size(size, working_area_size) {
                     ResolvedSize::Tile(mut size) => {
                         if !border.off {
-                            size -= border.width * 2.;
+                            size -= border_width * 2.;
                         }
                         size
                     }
@@ -1412,7 +1413,7 @@ fn compute_toplevel_bounds(
 ) -> Size<i32, Logical> {
     let mut border = 0.;
     if !border_config.off {
-        border = border_config.width * 2.;
+        border = border_config.width.outset() * 2.;
     }
 
     Size::from((

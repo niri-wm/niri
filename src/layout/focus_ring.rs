@@ -1,6 +1,6 @@
 use std::iter::zip;
 
-use niri_config::{CornerRadius, Gradient, GradientRelativeTo};
+use niri_config::{BorderWidth, CornerRadius, Gradient, GradientRelativeTo};
 use smithay::backend::renderer::element::{Element as _, Kind};
 use smithay::utils::{Logical, Point, Rectangle, Size};
 
@@ -16,7 +16,7 @@ pub struct FocusRing {
     sizes: [Size<f64, Logical>; 8],
     borders: [BorderRenderElement; 8],
     full_size: Size<f64, Logical>,
-    is_border: bool,
+    draw_as_border: bool,
     use_border_shader: bool,
     config: niri_config::FocusRing,
     thicken_corners: bool,
@@ -37,7 +37,7 @@ impl FocusRing {
             sizes: Default::default(),
             borders: Default::default(),
             full_size: Default::default(),
-            is_border: false,
+            draw_as_border: false,
             use_border_shader: false,
             config,
             thicken_corners: true,
@@ -66,9 +66,31 @@ impl FocusRing {
         scale: f64,
         alpha: f32,
     ) {
-        let width = self.config.width;
-        self.full_size = win_size + Size::from((width, width)).upscale(2.);
-        self.is_border = is_border;
+        // `width`: the actual pixel width of the border, not counting
+        //     inset/outset - always >= 0
+        // `inset`: how far inwards into the window content we move the border
+        //     drawing algorithm
+        // `inner_size`: size of content completely uncovered by the border;
+        //     may be smaller than `win_size` if we draw the border *over* some of
+        //     the content
+        let (width, inset, is_inset) = match self.config.width {
+            BorderWidth::Inset(width) => {
+                // border exists inside the window content;
+                // it must not be bigger than the window size
+                let width = width.min(win_size.w / 2.).min(win_size.h / 2.);
+                (width, width, true)
+            }
+            BorderWidth::Outset(width) => {
+                // border exists outside the window content
+                (width, 0., false)
+            }
+        };
+        let inner_size = win_size - Size::from((inset, inset)).upscale(2.);
+        let offset = Point::from((inset, inset));
+
+        self.full_size = inner_size + Size::from((width, width)).upscale(2.);
+        let draw_as_border = is_border || is_inset;
+        self.draw_as_border = draw_as_border;
 
         let color = if is_urgent {
             self.config.urgent_color
@@ -97,13 +119,13 @@ impl FocusRing {
         // Set the defaults for solid color + rounded corners.
         let gradient = gradient.unwrap_or_else(|| Gradient::from(color));
 
-        let full_rect = Rectangle::new(Point::from((-width, -width)), self.full_size);
+        let full_rect = Rectangle::new(Point::from((-width, -width)) + offset, self.full_size);
         let gradient_area = match gradient.relative_to {
             GradientRelativeTo::Window => full_rect,
             GradientRelativeTo::WorkspaceView => view_rect,
         };
 
-        let rounded_corner_border_width = if is_border {
+        let rounded_corner_border_width = if draw_as_border {
             // HACK: increase the border width used for the inner rounded corners a tiny bit to
             // reduce background bleed.
             let extra = if self.thicken_corners { 0.5 } else { 0. };
@@ -121,7 +143,7 @@ impl FocusRing {
         // * We do not divide anything, only add, subtract and multiply by integers.
         // * At rendering time, tile positions are rounded to physical pixels.
 
-        if is_border {
+        if draw_as_border {
             let top_left = f64::max(width, ceil(f64::from(radius.top_left)));
             let top_right = f64::min(
                 self.full_size.w - top_left,
@@ -140,40 +162,44 @@ impl FocusRing {
             );
 
             // Top edge.
-            self.sizes[0] = Size::from((win_size.w + width * 2. - top_left - top_right, width));
-            self.locations[0] = Point::from((-width + top_left, -width));
+            self.sizes[0] = Size::from((inner_size.w + width * 2. - top_left - top_right, width));
+            self.locations[0] = offset + Point::from((-width + top_left, -width));
 
             // Bottom edge.
-            self.sizes[1] =
-                Size::from((win_size.w + width * 2. - bottom_left - bottom_right, width));
-            self.locations[1] = Point::from((-width + bottom_left, win_size.h));
+            self.sizes[1] = Size::from((
+                inner_size.w + width * 2. - bottom_left - bottom_right,
+                width,
+            ));
+            self.locations[1] = offset + Point::from((-width + bottom_left, inner_size.h));
 
             // Left edge.
-            self.sizes[2] = Size::from((width, win_size.h + width * 2. - top_left - bottom_left));
-            self.locations[2] = Point::from((-width, -width + top_left));
+            self.sizes[2] = Size::from((width, inner_size.h + width * 2. - top_left - bottom_left));
+            self.locations[2] = offset + Point::from((-width, -width + top_left));
 
             // Right edge.
-            self.sizes[3] = Size::from((width, win_size.h + width * 2. - top_right - bottom_right));
-            self.locations[3] = Point::from((win_size.w, -width + top_right));
+            self.sizes[3] =
+                Size::from((width, inner_size.h + width * 2. - top_right - bottom_right));
+            self.locations[3] = offset + Point::from((inner_size.w, -width + top_right));
 
             // Top-left corner.
             self.sizes[4] = Size::from((top_left, top_left));
-            self.locations[4] = Point::from((-width, -width));
+            self.locations[4] = offset + Point::from((-width, -width));
 
             // Top-right corner.
             self.sizes[5] = Size::from((top_right, top_right));
-            self.locations[5] = Point::from((win_size.w + width - top_right, -width));
+            self.locations[5] = offset + Point::from((inner_size.w + width - top_right, -width));
 
             // Bottom-right corner.
             self.sizes[6] = Size::from((bottom_right, bottom_right));
-            self.locations[6] = Point::from((
-                win_size.w + width - bottom_right,
-                win_size.h + width - bottom_right,
-            ));
+            self.locations[6] = offset
+                + Point::from((
+                    inner_size.w + width - bottom_right,
+                    inner_size.h + width - bottom_right,
+                ));
 
             // Bottom-left corner.
             self.sizes[7] = Size::from((bottom_left, bottom_left));
-            self.locations[7] = Point::from((-width, win_size.h + width - bottom_left));
+            self.locations[7] = offset + Point::from((-width, inner_size.h + width - bottom_left));
 
             for (buf, size) in zip(&mut self.buffers, self.sizes) {
                 buf.resize(size);
@@ -197,7 +223,7 @@ impl FocusRing {
         } else {
             self.sizes[0] = self.full_size;
             self.buffers[0].resize(self.sizes[0]);
-            self.locations[0] = Point::from((-width, -width));
+            self.locations[0] = Point::from((-width, -width)) + offset;
 
             self.borders[0].update(
                 self.sizes[0],
@@ -225,10 +251,11 @@ impl FocusRing {
             return;
         }
 
-        let border_width = -self.locations[0].y;
-
         // If drawing as a border with width = 0, then there's nothing to draw.
-        if self.is_border && border_width == 0. {
+        let width = match self.config.width {
+            BorderWidth::Inset(width) | BorderWidth::Outset(width) => width,
+        };
+        if self.draw_as_border && width == 0. {
             return;
         }
 
@@ -245,7 +272,7 @@ impl FocusRing {
             push(elem);
         };
 
-        if self.is_border {
+        if self.draw_as_border {
             for ((buf, border), loc) in zip(zip(&self.buffers, &self.borders), self.locations) {
                 push(buf, border, location + loc);
             }
@@ -258,7 +285,7 @@ impl FocusRing {
         }
     }
 
-    pub fn width(&self) -> f64 {
+    pub fn width(&self) -> BorderWidth {
         self.config.width
     }
 
