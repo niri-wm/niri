@@ -360,7 +360,10 @@ impl<W: LayoutElement> FloatingSpace<W> {
     ///
     /// During animations, assumes the final tile position.
     pub fn active_window_visual_rectangle(&self) -> Option<Rectangle<f64, Logical>> {
-        let (tile, offset) = self.tiles_with_offsets().next()?;
+        let active_id = self.active_window_id.as_ref()?;
+        let (tile, offset) = self
+            .tiles_with_offsets()
+            .find(|(tile, _)| tile.window().id() == active_id)?;
 
         let window_pos = offset + tile.window_loc();
         let window_size = tile.window_size();

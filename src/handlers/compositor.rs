@@ -368,6 +368,9 @@ impl CompositorHandler for State {
             }
 
             // This is a commit of a non-toplevel root.
+
+            // This might be a popup.
+            self.popups_handle_commit(surface);
         }
 
         // This is a commit of a non-root or a non-toplevel root.
@@ -387,9 +390,8 @@ impl CompositorHandler for State {
             return;
         }
 
-        // This might be a popup.
-        self.popups_handle_commit(surface);
-        if let Some(popup) = self.niri.popups.find_popup(surface) {
+        // This might be a popup unsync subsurface.
+        if let Some(popup) = self.niri.popups.find_popup(&root_surface) {
             if let Some(output) = self.output_for_popup(&popup) {
                 self.niri.queue_redraw(&output.clone());
             }

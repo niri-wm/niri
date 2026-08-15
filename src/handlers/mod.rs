@@ -67,7 +67,7 @@ use smithay::wayland::xdg_activation::{
 pub use crate::handlers::xdg_shell::KdeDecorationsModeState;
 use crate::input::click_grab::ClickGrab;
 use crate::layout::workspace::WorkspaceId;
-use crate::layout::ActivateWindow;
+use crate::layout::{ActivateWindow, LayoutElement};
 use crate::niri::{DndIcon, NewClient, State};
 use crate::protocols::ext_workspace::{self, ExtWorkspaceHandler, ExtWorkspaceManagerState};
 use crate::protocols::foreign_toplevel::{
@@ -216,6 +216,16 @@ impl PointerConstraintsHandler for State {
             // The client never sent a position hint.
             return;
         };
+
+        // If the constraint was broken by the pointer forcibly leaving the surface (e.g. the user
+        // opened the overview), then it doesn't make much sense to warp it.
+        //
+        // Furthermore, when the constraint is removed as part of the pointer leaving the surface,
+        // this call happens with locked pointer data, and calling set_location() will try to lock
+        // it again and deadlock.
+        if pointer.last_enter().is_none() {
+            return;
+        }
 
         pointer.set_location(target);
 
@@ -805,7 +815,9 @@ impl XdgActivationHandler for State {
         if token_data.timestamp.elapsed() < XDG_ACTIVATION_TOKEN_TIMEOUT {
             if let Some((mapped, _)) = self.niri.layout.find_window_and_output_mut(&surface) {
                 let window = mapped.window.clone();
-                if token_data.user_data.get::<UrgentOnlyMarker>().is_some() {
+                if token_data.user_data.get::<UrgentOnlyMarker>().is_some()
+                    || mapped.rules().focus_on_xdg_activate == Some(false)
+                {
                     mapped.set_urgent(true);
                     self.niri.queue_redraw_all();
                 } else {
