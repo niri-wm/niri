@@ -1,7 +1,6 @@
 #[macro_use]
 extern crate tracing;
 
-use std::fmt::Write as _;
 use std::fs::File;
 use std::io::{self, Write};
 use std::os::fd::FromRawFd;
@@ -10,6 +9,7 @@ use std::process::Command;
 use std::sync::atomic::Ordering;
 use std::{env, mem};
 
+use anyhow::{bail, Context as _};
 use calloop::EventLoop;
 use clap::{CommandFactory, Parser};
 use clap_complete::Shell;
@@ -24,10 +24,11 @@ use niri::utils::spawning::{
     spawn, spawn_sh, store_and_increase_nofile_rlimit, CHILD_DISPLAY, CHILD_ENV,
     REMOVE_ENV_RUST_BACKTRACE, REMOVE_ENV_RUST_LIB_BACKTRACE,
 };
-use niri::utils::{cause_panic, version, watcher, xwayland, IS_SYSTEMD_SERVICE};
-use niri_config::{Config, ConfigPath};
+use niri::utils::{cause_panic, expand_home, version, watcher, xwayland, IS_SYSTEMD_SERVICE};
+use niri_config::{Config, ConfigPath, Xkb};
 use niri_ipc::socket::SOCKET_PATH_ENV;
 use sd_notify::NotifyState;
+use smithay::input::keyboard::xkb;
 use smithay::reexports::wayland_server::Display;
 use tracing_subscriber::EnvFilter;
 
@@ -102,7 +103,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Sub::Validate { config } => {
                 tracy_client::Client::start();
 
-                config_path(config).load().config?;
+                let config = config_path(config).load().config?;
+                validate_config(&config)?;
                 info!("config is valid");
                 return Ok(());
             }
@@ -274,37 +276,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn import_environment() {
-    let variables = [
-        "WAYLAND_DISPLAY",
-        "DISPLAY",
-        "XDG_CURRENT_DESKTOP",
-        "XDG_SESSION_TYPE",
-        SOCKET_PATH_ENV,
-    ]
-    .join(" ");
+    let variables = import_environment_variables().join(" ");
+    let shell_command = import_environment_shell_command(&variables);
 
-    let mut init_system_import = String::new();
-    if cfg!(feature = "systemd") {
-        write!(
-            init_system_import,
-            "systemctl --user import-environment {variables};"
-        )
-        .unwrap();
-    }
-    if cfg!(feature = "dinit") {
-        write!(init_system_import, "dinitctl setenv {variables};").unwrap();
-    }
-
-    let rv = Command::new("/bin/sh")
-        .args([
-            "-c",
-            &format!(
-                "{init_system_import}\
-                 hash dbus-update-activation-environment 2>/dev/null && \
-                 dbus-update-activation-environment {variables}"
-            ),
-        ])
-        .spawn();
+    let rv = Command::new("/bin/sh").args(["-c", &shell_command]).spawn();
     // Wait for the import process to complete, otherwise services will start too fast without
     // environment variables available.
     match rv {
@@ -322,6 +297,34 @@ fn import_environment() {
             warn!("error spawning shell to import environment: {err:?}");
         }
     }
+}
+
+fn import_environment_variables() -> [&'static str; 5] {
+    [
+        "WAYLAND_DISPLAY",
+        "DISPLAY",
+        "XDG_CURRENT_DESKTOP",
+        "XDG_SESSION_TYPE",
+        SOCKET_PATH_ENV,
+    ]
+}
+
+fn import_environment_shell_command(variables: &str) -> String {
+    let mut commands = Vec::new();
+    if cfg!(feature = "systemd") {
+        commands.push(format!(
+            "if hash systemctl 2>/dev/null; then systemctl --user import-environment {variables}; fi"
+        ));
+    }
+    if cfg!(feature = "dinit") {
+        commands.push(format!(
+            "if hash dinitctl 2>/dev/null; then dinitctl setenv {variables}; fi"
+        ));
+    }
+    commands.push(format!(
+        "if hash dbus-update-activation-environment 2>/dev/null; then dbus-update-activation-environment {variables}; fi"
+    ));
+    commands.join("; ")
 }
 
 fn env_config_path() -> Option<PathBuf> {
@@ -361,6 +364,81 @@ fn config_path(cli_path: Option<PathBuf>) -> ConfigPath {
         // Couldn't find the home directory, or whatever.
         ConfigPath::Explicit(system_path)
     }
+}
+
+fn validate_config(config: &Config) -> anyhow::Result<()> {
+    validate_xkb_config(&config.input.keyboard.xkb)
+}
+
+fn validate_xkb_config(xkb_config: &Xkb) -> anyhow::Result<()> {
+    let context = xkb::Context::new(xkb::CONTEXT_NO_FLAGS);
+
+    if let Some(file) = &xkb_config.file {
+        validate_xkb_file(file, &context)?;
+        return Ok(());
+    }
+
+    validate_xkb_name("rules", &xkb_config.rules)?;
+    validate_xkb_name("model", &xkb_config.model)?;
+    validate_xkb_name("layout", &xkb_config.layout)?;
+    validate_xkb_name("variant", &xkb_config.variant)?;
+    if let Some(options) = &xkb_config.options {
+        validate_xkb_name("options", options)?;
+    }
+
+    let keymap = xkb::Keymap::new_from_names(
+        &context,
+        &xkb_config.rules,
+        &xkb_config.model,
+        &xkb_config.layout,
+        &xkb_config.variant,
+        xkb_config.options.clone(),
+        xkb::KEYMAP_COMPILE_NO_FLAGS,
+    );
+
+    if keymap.is_none() {
+        bail!(
+            "invalid xkb config: rules {:?}, model {:?}, layout {:?}, variant {:?}, options {:?}",
+            xkb_config.rules,
+            xkb_config.model,
+            xkb_config.layout,
+            xkb_config.variant,
+            xkb_config.options
+        );
+    }
+
+    Ok(())
+}
+
+fn validate_xkb_name(name: &str, value: &str) -> anyhow::Result<()> {
+    if value.contains('\0') {
+        bail!("invalid xkb config: {name} contains a NUL byte");
+    }
+
+    Ok(())
+}
+
+fn validate_xkb_file(xkb_file: &str, context: &xkb::Context) -> anyhow::Result<()> {
+    let path = PathBuf::from(xkb_file);
+    let path = expand_home(&path)
+        .context("failed to expand ~ in xkb_file")?
+        .unwrap_or(path);
+
+    let keymap = std::fs::read_to_string(&path)
+        .with_context(|| format!("failed to read xkb_file {:?}", path))?;
+
+    if xkb::Keymap::new_from_string(
+        context,
+        keymap,
+        xkb::KEYMAP_FORMAT_TEXT_V1,
+        xkb::KEYMAP_COMPILE_NO_FLAGS,
+    )
+    .is_none()
+    {
+        bail!("invalid xkb_file {:?}", path);
+    }
+
+    Ok(())
 }
 
 fn notify_fd() -> anyhow::Result<()> {
@@ -406,5 +484,79 @@ fn set_default_max_buffer_size(display: &Display<State>, size: usize) {
         }
 
         libc::dlclose(lib);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn valid_test_keymap() -> anyhow::Result<String> {
+        let context = xkb::Context::new(xkb::CONTEXT_NO_FLAGS);
+        let Some(keymap) = xkb::Keymap::new_from_names(
+            &context,
+            "",
+            "",
+            "us",
+            "",
+            None,
+            xkb::KEYMAP_COMPILE_NO_FLAGS,
+        ) else {
+            bail!("failed to compile valid test keymap");
+        };
+
+        Ok(keymap.get_as_string(xkb::KEYMAP_FORMAT_TEXT_V1))
+    }
+
+    #[test]
+    fn import_environment_shell_guards_systemctl_when_systemd_feature_enabled() {
+        let command = import_environment_shell_command("WAYLAND_DISPLAY NIRI_SOCKET");
+
+        if cfg!(feature = "systemd") {
+            assert!(command.contains("if hash systemctl 2>/dev/null; then"));
+            assert!(command.contains("systemctl --user import-environment"));
+        }
+        assert!(command.contains("if hash dbus-update-activation-environment 2>/dev/null; then"));
+    }
+
+    #[test]
+    fn import_environment_variables_include_ipc_socket_when_importing_session() {
+        let variables = import_environment_variables();
+
+        assert_eq!(variables[0], "WAYLAND_DISPLAY");
+        assert!(variables.contains(&SOCKET_PATH_ENV));
+    }
+
+    #[test]
+    fn validate_config_rejects_invalid_xkb_layout() {
+        let mut config = Config::default();
+        config.input.keyboard.xkb.layout = "en".to_owned();
+
+        let Err(err) = validate_config(&config) else {
+            panic!("invalid xkb layout should fail validation");
+        };
+        let err = err.to_string();
+
+        assert!(err.contains("invalid xkb config"));
+        assert!(err.contains("layout \"en\""));
+    }
+
+    #[test]
+    fn validate_config_uses_xkb_file_instead_of_rules_config() -> anyhow::Result<()> {
+        let path = env::temp_dir().join(format!(
+            "niri-test-keymap-{}-{}.xkb",
+            std::process::id(),
+            std::thread::current().name().unwrap_or("unnamed")
+        ));
+        std::fs::write(&path, valid_test_keymap()?)?;
+
+        let mut config = Config::default();
+        config.input.keyboard.xkb.layout = "en".to_owned();
+        config.input.keyboard.xkb.file = Some(path.to_string_lossy().into_owned());
+
+        let result = validate_config(&config);
+        std::fs::remove_file(&path)?;
+
+        result
     }
 }

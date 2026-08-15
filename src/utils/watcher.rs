@@ -10,6 +10,7 @@ use niri_config::{Config, ConfigParseResult, ConfigPath};
 use smithay::reexports::calloop::channel::SyncSender;
 
 use crate::niri::State;
+use crate::utils::expand_home;
 
 const POLLING_INTERVAL: Duration = Duration::from_millis(500);
 
@@ -90,9 +91,13 @@ impl Watcher {
                     }
 
                     if should_load {
-                        let res = process(&inner.path);
+                        let ConfigParseResult { config, includes } = process(&inner.path);
+                        let includes = match &config {
+                            Ok(config) => watched_paths(config, includes),
+                            Err(()) => includes,
+                        };
 
-                        if let Err(err) = changed.send(res.config) {
+                        if let Err(err) = changed.send(config) {
                             warn!("error sending change notification: {err:?}");
                             break;
                         }
@@ -102,7 +107,7 @@ impl Watcher {
                         // remain unnoticed by the watcher. Not sure there's any good way around it
                         // though since we don't know the final set of includes until the config is
                         // parsed.
-                        inner.set_includes(res.includes);
+                        inner.set_includes(includes);
                     }
                 }
 
@@ -115,6 +120,26 @@ impl Watcher {
 
     pub fn load_config(&self, path: Option<String>) {
         let _ = self.load_config.send(path);
+    }
+}
+
+fn watched_paths(config: &Config, mut includes: Vec<PathBuf>) -> Vec<PathBuf> {
+    if let Some(path) = watched_xkb_file(config) {
+        includes.push(path);
+    }
+
+    includes
+}
+
+fn watched_xkb_file(config: &Config) -> Option<PathBuf> {
+    let path = PathBuf::from(config.input.keyboard.xkb.file.as_ref()?);
+    match expand_home(&path) {
+        Ok(Some(path)) => Some(path),
+        Ok(None) => Some(path),
+        Err(err) => {
+            warn!("error expanding xkb_file path for watcher: {err:?}");
+            None
+        }
     }
 }
 
@@ -211,6 +236,11 @@ pub fn setup(state: &mut State, config_path: &ConfigPath, includes: Vec<PathBuf>
         )
         .unwrap();
 
+    let includes = {
+        let config = state.niri.config.borrow();
+        watched_paths(&config, includes)
+    };
+
     let watcher = Watcher::new(config_path.clone(), includes, process, tx);
     state.niri.config_file_watcher = Some(watcher);
 }
@@ -226,6 +256,20 @@ mod tests {
     use super::*;
 
     type Result<T = (), E = Box<dyn Error>> = std::result::Result<T, E>;
+    fn config_with_xkb_file(path: &Path) -> String {
+        format!(
+            r#"
+input {{
+    keyboard {{
+        xkb {{
+            file "{}"
+        }}
+    }}
+}}
+"#,
+            path.display()
+        )
+    }
 
     fn canon(config_path: &ConfigPath) -> &PathBuf {
         match config_path {
@@ -316,7 +360,11 @@ mod tests {
                 sh, config_path, ..
             } = self;
 
-            let includes = config_path.load().includes;
+            let ConfigParseResult { config, includes } = config_path.load();
+            let includes = match &config {
+                Ok(config) => watched_paths(config, includes),
+                Err(_) => includes,
+            };
             let mut test = TestUtil {
                 watcher: WatcherInner::new(config_path, includes),
             };
@@ -370,7 +418,12 @@ mod tests {
             let actual = fs::read_to_string(new_path).unwrap();
             assert_eq!(actual, expected, "wrong file contents");
 
-            self.watcher.set_includes(Config::load(new_path).includes);
+            let ConfigParseResult { config, includes } = Config::load(new_path);
+            let includes = match &config {
+                Ok(config) => watched_paths(config, includes),
+                Err(_) => includes,
+            };
+            self.watcher.set_includes(includes);
 
             self.pass_time();
         }
@@ -622,6 +675,39 @@ mod tests {
             .run(|sh, test| {
                 sh.write_file("niri/colors.kdl", "// Fixed")?;
                 test.assert_changed_to("include \"colors.kdl\"");
+
+                Ok(())
+            })
+    }
+
+    #[test]
+    fn change_xkb_file() -> Result {
+        TestPath::Explicit("niri/config.kdl")
+            .setup(|sh| {
+                let keymap = sh.current_dir().join("niri/keymap.xkb");
+                sh.write_file("niri/config.kdl", config_with_xkb_file(&keymap))?;
+                sh.write_file("niri/keymap.xkb", "xkb keymap one")
+            })
+            .run(|sh, test| {
+                let config = config_with_xkb_file(&sh.current_dir().join("niri/keymap.xkb"));
+                sh.write_file("niri/keymap.xkb", "xkb keymap two")?;
+                test.assert_changed_to(&config);
+
+                Ok(())
+            })
+    }
+
+    #[test]
+    fn missing_xkb_file_still_gets_watched() -> Result {
+        TestPath::Explicit("niri/config.kdl")
+            .setup(|sh| {
+                let keymap = sh.current_dir().join("niri/keymap.xkb");
+                sh.write_file("niri/config.kdl", config_with_xkb_file(&keymap))
+            })
+            .run(|sh, test| {
+                let config = config_with_xkb_file(&sh.current_dir().join("niri/keymap.xkb"));
+                sh.write_file("niri/keymap.xkb", "xkb keymap")?;
+                test.assert_changed_to(&config);
 
                 Ok(())
             })

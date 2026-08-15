@@ -193,6 +193,23 @@ const CLEAR_COLOR_LOCKED: [f32; 4] = [0.3, 0.1, 0.1, 1.];
 // should be ~1.995 seconds.
 const FRAME_CALLBACK_THROTTLE: Option<Duration> = Some(Duration::from_millis(995));
 
+#[derive(Debug, PartialEq, Eq)]
+enum XkbReloadSource<'a> {
+    File(&'a str),
+    Config(&'a Xkb),
+}
+
+fn should_reload_xkb(new_xkb: &Xkb, old_xkb: &Xkb) -> bool {
+    new_xkb != old_xkb || new_xkb.file.is_some()
+}
+
+fn xkb_reload_source(xkb: &Xkb) -> XkbReloadSource<'_> {
+    match xkb.file.as_deref() {
+        Some(file) => XkbReloadSource::File(file),
+        None => XkbReloadSource::Config(xkb),
+    }
+}
+
 pub struct Niri {
     pub config: Rc<RefCell<Config>>,
 
@@ -1386,7 +1403,7 @@ impl State {
     }
 
     /// Loads the xkb keymap from a file config setting.
-    fn set_xkb_file(&mut self, xkb_file: String) -> anyhow::Result<()> {
+    fn set_xkb_file(&mut self, xkb_file: &str) -> anyhow::Result<()> {
         let xkb_file = PathBuf::from(xkb_file);
         let xkb_file = expand_home(&xkb_file)
             .context("failed to expand ~")?
@@ -1414,7 +1431,7 @@ impl State {
     fn load_xkb_file(&mut self) {
         let xkb_file = self.niri.config.borrow().input.keyboard.xkb.file.clone();
         if let Some(xkb_file) = xkb_file {
-            if let Err(err) = self.set_xkb_file(xkb_file) {
+            if let Err(err) = self.set_xkb_file(&xkb_file) {
                 warn!("error loading xkb_file: {err:?}");
             }
         }
@@ -1504,7 +1521,7 @@ impl State {
         }
 
         // We need &mut self to reload the xkb config, so just store it here.
-        if config.input.keyboard.xkb != old_config.input.keyboard.xkb {
+        if should_reload_xkb(&config.input.keyboard.xkb, &old_config.input.keyboard.xkb) {
             reload_xkb = Some(config.input.keyboard.xkb.clone());
         }
 
@@ -1635,31 +1652,32 @@ impl State {
         drop(old_config);
 
         // Now with a &mut self we can reload the xkb config.
-        if let Some(mut xkb) = reload_xkb {
-            let mut set_xkb_config = true;
-
-            // It's fine to .take() the xkb file, as this is a
-            // clone and the file field is not used in the XkbConfig.
-            if let Some(xkb_file) = xkb.file.take() {
-                if let Err(err) = self.set_xkb_file(xkb_file) {
-                    warn!("error reloading xkb_file: {err:?}");
-                } else {
-                    // We successfully set xkb file so we don't need to fallback to XkbConfig.
-                    set_xkb_config = false;
+        if let Some(xkb) = reload_xkb {
+            let reloaded = match xkb_reload_source(&xkb) {
+                XkbReloadSource::File(xkb_file) => {
+                    if let Err(err) = self.set_xkb_file(xkb_file) {
+                        warn!("error reloading xkb_file: {err:?}");
+                        false
+                    } else {
+                        true
+                    }
                 }
-            }
+                XkbReloadSource::Config(xkb) => {
+                    let mut xkb = xkb.clone();
+                    // If xkb is unset in the niri config, use settings from locale1.
+                    if xkb == Xkb::default() {
+                        trace!("using xkb from locale1");
+                        xkb = self.niri.xkb_from_locale1.clone().unwrap_or_default();
+                    }
 
-            if set_xkb_config {
-                // If xkb is unset in the niri config, use settings from locale1.
-                if xkb == Xkb::default() {
-                    trace!("using xkb from locale1");
-                    xkb = self.niri.xkb_from_locale1.clone().unwrap_or_default();
+                    self.set_xkb_config(xkb.to_xkb_config());
+                    true
                 }
+            };
 
-                self.set_xkb_config(xkb.to_xkb_config());
+            if reloaded {
+                self.ipc_keyboard_layouts_changed();
             }
-
-            self.ipc_keyboard_layouts_changed();
         }
 
         if libinput_config_changed {
@@ -6565,5 +6583,73 @@ niri_render_elements! {
         Texture = PrimaryGpuTextureRenderElement,
         // Used for the CPU-rendered panels.
         RelocatedMemoryBuffer = RelocateRenderElement<MemoryRenderBufferRenderElement<R>>,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use niri_config::Xkb;
+
+    use super::{should_reload_xkb, xkb_reload_source, XkbReloadSource};
+
+    #[test]
+    fn reloads_xkb_when_config_changed() {
+        // Given: old and new rule-based XKB configs differ.
+        let old_xkb = Xkb::default();
+        let new_xkb = Xkb {
+            layout: "de".to_owned(),
+            ..Default::default()
+        };
+
+        // When: deciding whether a reload is needed.
+        let should_reload = should_reload_xkb(&new_xkb, &old_xkb);
+
+        // Then: a changed rule-based config is reloaded.
+        assert!(should_reload);
+    }
+
+    #[test]
+    fn reloads_xkb_file_even_when_config_is_unchanged() {
+        // Given: the parsed config still points at the same custom keymap file.
+        let old_xkb = Xkb {
+            file: Some("keymap.xkb".to_owned()),
+            ..Default::default()
+        };
+        let new_xkb = old_xkb.clone();
+
+        // When: deciding whether a reload is needed after a watched file change.
+        let should_reload = should_reload_xkb(&new_xkb, &old_xkb);
+
+        // Then: the custom keymap file is retried.
+        assert!(should_reload);
+    }
+
+    #[test]
+    fn skips_xkb_reload_when_rules_config_is_unchanged() {
+        // Given: old and new rule-based XKB configs are identical.
+        let old_xkb = Xkb::default();
+        let new_xkb = Xkb::default();
+
+        // When: deciding whether a reload is needed.
+        let should_reload = should_reload_xkb(&new_xkb, &old_xkb);
+
+        // Then: no reload is needed.
+        assert!(!should_reload);
+    }
+
+    #[test]
+    fn xkb_file_is_authoritative_over_rules_config() {
+        // Given: an XKB config with both a file and rules fields.
+        let xkb = Xkb {
+            layout: "de".to_owned(),
+            file: Some("keymap.xkb".to_owned()),
+            ..Default::default()
+        };
+
+        // When: choosing how to reload it.
+        let source = xkb_reload_source(&xkb);
+
+        // Then: the file is used instead of falling through to rules.
+        assert_eq!(source, XkbReloadSource::File("keymap.xkb"));
     }
 }
