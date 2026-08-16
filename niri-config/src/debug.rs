@@ -10,7 +10,6 @@ pub struct Debug {
     pub enable_overlay_planes: bool,
     pub disable_cursor_plane: bool,
     pub disable_direct_scanout: bool,
-    pub keep_max_bpc_unchanged: bool,
     pub restrict_primary_scanout_to_matching_format: bool,
     pub force_disable_connectors_on_resume: bool,
     pub render_drm_device: Option<PathBuf>,
@@ -25,6 +24,7 @@ pub struct Debug {
     pub honor_xdg_activation_with_invalid_serial: bool,
     pub deactivate_unfocused_windows: bool,
     pub skip_cursor_only_updates_during_vrr: bool,
+    pub disable_10bit_output: bool,
 }
 
 #[derive(knuffel::Decode, Debug, Default, PartialEq)]
@@ -41,8 +41,6 @@ pub struct DebugPart {
     pub disable_cursor_plane: Option<Flag>,
     #[knuffel(child)]
     pub disable_direct_scanout: Option<Flag>,
-    #[knuffel(child)]
-    pub keep_max_bpc_unchanged: Option<Flag>,
     #[knuffel(child)]
     pub restrict_primary_scanout_to_matching_format: Option<Flag>,
     #[knuffel(child)]
@@ -71,6 +69,8 @@ pub struct DebugPart {
     pub deactivate_unfocused_windows: Option<Flag>,
     #[knuffel(child)]
     pub skip_cursor_only_updates_during_vrr: Option<Flag>,
+    #[knuffel(child)]
+    pub disable_10bit_output: Option<Flag>,
 }
 
 impl MergeWith<DebugPart> for Debug {
@@ -82,7 +82,6 @@ impl MergeWith<DebugPart> for Debug {
             enable_overlay_planes,
             disable_cursor_plane,
             disable_direct_scanout,
-            keep_max_bpc_unchanged,
             restrict_primary_scanout_to_matching_format,
             force_disable_connectors_on_resume,
             force_pipewire_invalid_modifier,
@@ -95,6 +94,7 @@ impl MergeWith<DebugPart> for Debug {
             honor_xdg_activation_with_invalid_serial,
             deactivate_unfocused_windows,
             skip_cursor_only_updates_during_vrr,
+            disable_10bit_output,
         );
 
         merge_clone_opt!((self, part), preview_render, render_drm_device);

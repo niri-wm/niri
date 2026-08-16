@@ -128,3 +128,19 @@ copr-cli build niri niri.spec
 ## Announce the release
 
 Chat rooms, social media, etc.
+
+## Update wayland.app protocol data
+
+- Install [wlprobe](https://github.com/PolyMeilex/wlprobe).
+- Clone https://github.com/vially/wayland-explorer.
+- Generate data:
+
+    ```
+    wlprobe > ./src/data/compositors/niri.json
+    ```
+
+- Manually add `"version": "26.04"`, then clean up the diff from unrelated changes, for example:
+    - The number of `wl_output`s will change depending on how many monitors you have connected.
+    - The number of `wp_drm_lease_device_v1` will change depending on your number of GPUs.
+    - `org_kde_kwin_server_decoration_manager` and `zxdg_decoration_manager_v1` will only appear with `prefer-no-csd`.
+- Create a pull request.

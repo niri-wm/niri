@@ -15,7 +15,7 @@ if [ -n "$SHELL" ] &&
    ! (echo "$SHELL" | grep -q "false") &&
    ! (echo "$SHELL" | grep -q "nologin"); then
   if [ "$1" != '-l' ]; then
-    exec bash -c "exec -l '$SHELL' -c '$0 -l $*'"
+    exec bash -c "exec -l '$SHELL' -c 'exec $0 -l $*'"
   else
     shift
   fi
@@ -77,15 +77,15 @@ elif hash dinitctl >/dev/null 2>&1; then
     fi
 
     # Create the directory for the logfile, if doesn't exist
-    mkdir --parents $HOME/.local/share/niri
+    mkdir --parents "$HOME/.local/share/niri"
     # Start niri
     dinitctl --quiet --user start niri.target 2>&1
 
     # Wait for termination
-    dinit-monitor --user --initial -c $'sh -c " 
+    dinit-monitor --user --initial -c 'sh -c "
         if [ "%s" = "stopped" ] || [ "%s" = "failed" ]; then
             ppid=$(ps -o ppid= -p $$)
-            kill $ppid
+            kill "$ppid"
         fi"' niri >/dev/null 2>&1
 
     # Unset environment that we've set.

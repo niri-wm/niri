@@ -33,6 +33,7 @@ debug {
     honor-xdg-activation-with-invalid-serial
     skip-cursor-only-updates-during-vrr
     deactivate-unfocused-windows
+    disable-10bit-output
 }
 
 binds {
@@ -283,6 +284,8 @@ Most of the time, these fresh tokens will have invalid serials, because the app 
 By default, niri ignores xdg-activation tokens with invalid serials, to prevent windows from randomly stealing focus.
 This debug flag makes niri honor such tokens, making the aforementioned widely-used apps get focus when clicking on their tray icon or notification.
 
+Use the [`focus-on-xdg-activate` window rule](./Configuration:-Window-Rules.md#focus-on-xdg-activate) to control whether individual windows receive focus for accepted xdg-activation requests.
+
 Amusingly, clicking on a notification sends the app a perfectly valid activation token from the notification daemon, but these apps seem to simply ignore it.
 Maybe in the future these apps/toolkits (Electron, Qt) are fixed, making this debug flag unnecessary.
 
@@ -324,24 +327,18 @@ debug {
 }
 ```
 
-### `keep-max-bpc-unchanged`
+### `disable-10bit-output`
 
-<sup>Since: 25.08</sup>
+<sup>Since: next release</sup>
 
-When connecting monitors, niri sets their max bpc to 8 in order to reduce display bandwidth and to potentially allow more monitors to be connected at once.
-Restricting bpc to 8 is not a problem since we don't support HDR or color management yet and can't really make use of higher bpc.
+By default, niri will try to output a 10-bit color format to the monitor (before falling back to 8-bit).
+However, this can currently cause problems on some Intel + NVIDIA mixed-GPU setups: the screen doesn't light up, or displays only white, etc.
 
-Apparently, setting max bpc to 8 breaks some displays driven by AMDGPU.
-If this happens to you, set this debug flag, which will prevent niri from changing max bpc.
-AMDGPU bug report: https://gitlab.freedesktop.org/drm/amd/-/issues/4487.
-
-<sup>Since: 25.11</sup>
-This setting is deprecated and does nothing: niri no longer sets max bpc.
-The old niri behavior with this setting enabled matches the new behavior.
+Until this is fixed in Smithay, you can disable 10-bit color formats by setting this debug flag.
 
 ```kdl
 debug {
-    keep-max-bpc-unchanged
+    disable-10bit-output
 }
 ```
 
