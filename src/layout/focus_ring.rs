@@ -223,7 +223,7 @@ impl FocusRing {
         } else {
             self.sizes[0] = self.full_size;
             self.buffers[0].resize(self.sizes[0]);
-            self.locations[0] = Point::from((-width, -width)) + offset;
+            self.locations[0] = offset + Point::from((-width, -width));
 
             self.borders[0].update(
                 self.sizes[0],
@@ -252,9 +252,7 @@ impl FocusRing {
         }
 
         // If drawing as a border with width = 0, then there's nothing to draw.
-        let width = match self.config.width {
-            BorderWidth::Inset(width) | BorderWidth::Outset(width) => width,
-        };
+        let width = self.config.width.pixels();
         if self.draw_as_border && width == 0. {
             return;
         }

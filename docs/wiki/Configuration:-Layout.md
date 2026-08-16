@@ -300,7 +300,7 @@ layout {
 
 Set the thickness of the border in logical pixels.
 
-You can use `is-inset` to have the border draw into and over the window content instead of outwards. The window and content size remains the same, but the border is drawn over the edge of the window content. This can be used to, for example, draw a transparent trim over the edges of the window content, as Adwaita apps do.
+You can use `is-inset` to have the border draw into and over the window content instead of outwards. The window and content size remains the same, but the border is composited over the window content. This can be used to, for example, draw a transparent trim around the edge of a window as Adwaita apps do.
 
 <sup>Since: 0.1.7</sup> You can use fractional values.
 The value will be rounded to physical pixels according to the scale factor of every output.

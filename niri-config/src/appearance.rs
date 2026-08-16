@@ -234,8 +234,8 @@ impl CornerRadius {
 /// with a border:
 /// - [`BorderWidth::Inset`] should be treated as no border, keeping content
 ///   size the same
-/// - [`BorderWidth::Outset`] should be treated as a border which decreases the
-///   content size
+/// - [`BorderWidth::Outset`] should be treated as extra padding which shrinks
+///   the actual content size
 ///   - use [`BorderWidth::outset`] to get the outset width, or 0 if it's an inset
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum BorderWidth {
@@ -246,6 +246,12 @@ pub enum BorderWidth {
 }
 
 impl BorderWidth {
+    pub fn pixels(self) -> f64 {
+        match self {
+            Self::Inset(width) | Self::Outset(width) => width,
+        }
+    }
+
     pub fn outset(self) -> f64 {
         match self {
             Self::Inset(_) => 0.,
@@ -269,9 +275,7 @@ impl BorderWidth {
     }
 
     fn with_is_inset(self, is_inset: bool) -> Self {
-        let width = match self {
-            Self::Inset(width) | Self::Outset(width) => width,
-        };
+        let width = self.pixels();
 
         if is_inset {
             Self::Inset(width)
