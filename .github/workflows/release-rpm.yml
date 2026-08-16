@@ -1,0 +1,86 @@
+name: Build RPM
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version override (e.g. 25.11.0). Defaults to Cargo.toml version.'
+        required: false
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-rpm:
+    runs-on: ubuntu-24.04
+    container: fedora:44
+
+    permissions:
+      contents: write
+
+    env:
+      DEPS_DNF: cargo gcc clang libudev-devel libgbm-devel libxkbcommon-devel wayland-devel libinput-devel dbus-devel systemd-devel libseat-devel pipewire-devel pango-devel cairo-gobject-devel libdisplay-info-devel
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          show-progress: false
+
+      - name: Install build dependencies
+        run: |
+          dnf install -y ${{ env.DEPS_DNF }}
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-generate-rpm
+        run: cargo install cargo-generate-rpm --locked
+
+      - name: Determine version
+        id: version
+        run: |
+          if [[ -n "${{ github.event.inputs.version }}" ]]; then
+            VERSION="${{ github.event.inputs.version }}"
+          elif [[ "${{ github.ref_type }}" == "tag" ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION=$(cargo metadata --no-deps --format-version=1 | python3 -c "import sys,json; print(json.load(sys.stdin)['packages'][0]['version'])")
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Building version: $VERSION"
+
+      - name: Build release binary
+        run: cargo build --release --locked
+
+      - name: Generate shell completions
+        run: |
+          ./target/release/niri completions bash > niri.bash
+          ./target/release/niri completions fish > niri.fish
+          ./target/release/niri completions zsh > _niri
+
+      - name: Build RPM
+        run: cargo generate-rpm --set-metadata='version="${{ steps.version.outputs.VERSION }}"'
+
+      - name: Identify RPM
+        id: rpm
+        run: |
+          RPM_FILE=$(ls target/generate-rpm/*.rpm)
+          RPM_NAME=$(basename "$RPM_FILE")
+          echo "RPM_FILE=$RPM_FILE" >> "$GITHUB_OUTPUT"
+          echo "RPM_NAME=$RPM_NAME" >> "$GITHUB_OUTPUT"
+          echo "Built: $RPM_NAME"
+
+      - name: Upload RPM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.rpm.outputs.RPM_NAME }}
+          path: ${{ steps.rpm.outputs.RPM_FILE }}
+
+      - name: Attach RPM to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.VERSION }}
+          files: ${{ steps.rpm.outputs.RPM_FILE }}

@@ -167,16 +167,24 @@ similar.opt-level = 3
 [package.metadata.generate-rpm]
 version = "26.04"
 assets = [
-    { source = "target/release/niri", dest = "/usr/bin/", mode = "755" },
-    { source = "resources/niri-session", dest = "/usr/bin/", mode = "755" },
-    { source = "resources/niri.desktop", dest = "/usr/share/wayland-sessions/", mode = "644" },
-    { source = "resources/niri-portals.conf", dest = "/usr/share/xdg-desktop-portal/", mode = "644" },
-    { source = "resources/niri.service", dest = "/usr/lib/systemd/user/", mode = "644" },
-    { source = "resources/niri-shutdown.target", dest = "/usr/lib/systemd/user/", mode = "644" },
+    { source = "target/release/niri", dest = "/usr/bin/niri", mode = "755" },
+    { source = "resources/niri-session", dest = "/usr/bin/niri-session", mode = "755" },
+    { source = "resources/niri.desktop", dest = "/usr/share/wayland-sessions/niri.desktop", mode = "644" },
+    { source = "resources/niri-portals.conf", dest = "/usr/share/xdg-desktop-portal/niri-portals.conf", mode = "644" },
+    { source = "resources/niri.service", dest = "/usr/lib/systemd/user/niri.service", mode = "644" },
+    { source = "resources/niri-shutdown.target", dest = "/usr/lib/systemd/user/niri-shutdown.target", mode = "644" },
+    { source = "resources/default-config.kdl", dest = "/usr/share/doc/niri/default-config.kdl", mode = "644", doc = true },
+    { source = "niri.bash", dest = "/usr/share/bash-completion/completions/niri", mode = "644" },
+    { source = "niri.fish", dest = "/usr/share/fish/vendor_completions.d/niri.fish", mode = "644" },
+    { source = "_niri", dest = "/usr/share/zsh/site-functions/_niri", mode = "644" },
+    { source = "LICENSE", dest = "/usr/share/licenses/niri/LICENSE", mode = "644", doc = true },
+    { source = "README.md", dest = "/usr/share/doc/niri/README.md", mode = "644", doc = true },
 ]
+
 [package.metadata.generate-rpm.requires]
-alacritty = "*"
-fuzzel = "*"
+mesa-dri-drivers = "*"
+mesa-libEGL = "*"
+libwayland-server = "*"
 
 [package.metadata.deb]
 depends = "alacritty, fuzzel"
