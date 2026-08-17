@@ -272,6 +272,12 @@ pub struct Niri {
     pub tablets: HashMap<input::Device, TabletData>,
     pub touch: HashSet<input::Device>,
 
+    // The resolved per-keyboard-device config currently applied to the seat's single keyboard,
+    // and a cache of resolved configs by device so we don't need to re-match by name on every
+    // keystroke. Cleared whenever the keyboard configs change on reload.
+    pub current_keyboard: niri_config::Keyboard,
+    pub keyboard_device_cache: HashMap<input::Device, niri_config::Keyboard>,
+
     // Smithay state.
     pub compositor_state: CompositorState,
     pub xdg_shell_state: XdgShellState,
@@ -1342,7 +1348,7 @@ impl State {
                 }
             }
 
-            if self.niri.config.borrow().input.keyboard.track_layout == TrackLayout::Window {
+            if self.niri.current_keyboard.track_layout == TrackLayout::Window {
                 let current_layout = keyboard.with_xkb_state(self, |context| {
                     let xkb = context.xkb().lock().unwrap();
                     xkb.active_layout()
@@ -1386,7 +1392,7 @@ impl State {
     }
 
     /// Loads the xkb keymap from a file config setting.
-    fn set_xkb_file(&mut self, xkb_file: String) -> anyhow::Result<()> {
+    pub(crate) fn set_xkb_file(&mut self, xkb_file: String) -> anyhow::Result<()> {
         let xkb_file = PathBuf::from(xkb_file);
         let xkb_file = expand_home(&xkb_file)
             .context("failed to expand ~")?
@@ -1412,7 +1418,15 @@ impl State {
     }
 
     fn load_xkb_file(&mut self) {
-        let xkb_file = self.niri.config.borrow().input.keyboard.xkb.file.clone();
+        let xkb_file = self
+            .niri
+            .config
+            .borrow()
+            .input
+            .fallback_keyboard()
+            .xkb
+            .file
+            .clone();
         if let Some(xkb_file) = xkb_file {
             if let Err(err) = self.set_xkb_file(xkb_file) {
                 warn!("error loading xkb_file: {err:?}");
@@ -1504,19 +1518,30 @@ impl State {
         }
 
         // We need &mut self to reload the xkb config, so just store it here.
-        if config.input.keyboard.xkb != old_config.input.keyboard.xkb {
-            reload_xkb = Some(config.input.keyboard.xkb.clone());
+        let default_keyboard = config.input.fallback_keyboard();
+        let old_default_keyboard = old_config.input.fallback_keyboard();
+        if default_keyboard.xkb != old_default_keyboard.xkb {
+            reload_xkb = Some(default_keyboard.xkb.clone());
         }
 
         // Reload the repeat info.
-        if config.input.keyboard.repeat_rate != old_config.input.keyboard.repeat_rate
-            || config.input.keyboard.repeat_delay != old_config.input.keyboard.repeat_delay
+        if default_keyboard.repeat_rate != old_default_keyboard.repeat_rate
+            || default_keyboard.repeat_delay != old_default_keyboard.repeat_delay
         {
             let keyboard = self.niri.seat.get_keyboard().unwrap();
             keyboard.change_repeat_info(
-                config.input.keyboard.repeat_rate.into(),
-                config.input.keyboard.repeat_delay.into(),
+                default_keyboard.repeat_rate.into(),
+                default_keyboard.repeat_delay.into(),
             );
+        }
+
+        // Per-device keyboard configs changed: drop the resolved-config cache (it was built
+        // against the old config) and reset the tracked active keyboard to the fallback so the
+        // next keystroke from any device re-resolves its config from scratch, picking up
+        // new/changed/removed `keyboard "name" { }` blocks right away.
+        if config.input.keyboards != old_config.input.keyboards {
+            self.niri.keyboard_device_cache.clear();
+            self.niri.current_keyboard = default_keyboard;
         }
 
         if config.input.touchpad != old_config.input.touchpad
@@ -2241,7 +2266,7 @@ impl State {
 
         {
             let config = self.niri.config.borrow();
-            if config.input.keyboard.xkb != Xkb::default() {
+            if config.input.fallback_keyboard().xkb != Xkb::default() {
                 trace!("ignoring locale1 xkb change because niri config has xkb settings");
                 return;
             }
@@ -2401,10 +2426,11 @@ impl Niri {
         let single_pixel_buffer_state = SinglePixelBufferState::new::<State>(&display_handle);
 
         let mut seat: Seat<State> = seat_state.new_wl_seat(&display_handle, backend.seat_name());
+        let default_keyboard = config_.input.fallback_keyboard();
         let keyboard = match seat.add_keyboard(
-            config_.input.keyboard.xkb.to_xkb_config(),
-            config_.input.keyboard.repeat_delay.into(),
-            config_.input.keyboard.repeat_rate.into(),
+            default_keyboard.xkb.to_xkb_config(),
+            default_keyboard.repeat_delay.into(),
+            default_keyboard.repeat_rate.into(),
         ) {
             Err(err) => {
                 if let smithay::input::keyboard::Error::BadKeymap = err {
@@ -2414,14 +2440,14 @@ impl Niri {
                 }
                 seat.add_keyboard(
                     Default::default(),
-                    config_.input.keyboard.repeat_delay.into(),
-                    config_.input.keyboard.repeat_rate.into(),
+                    default_keyboard.repeat_delay.into(),
+                    default_keyboard.repeat_rate.into(),
                 )
                 .unwrap()
             }
             Ok(keyboard) => keyboard,
         };
-        if config_.input.keyboard.numlock {
+        if default_keyboard.numlock {
             let mut modifier_state = keyboard.modifier_state();
             modifier_state.num_lock = true;
             keyboard.set_modifier_state(modifier_state);
@@ -2546,6 +2572,8 @@ impl Niri {
             devices: HashSet::new(),
             tablets: HashMap::new(),
             touch: HashSet::new(),
+            current_keyboard: default_keyboard,
+            keyboard_device_cache: HashMap::new(),
 
             compositor_state,
             xdg_shell_state,
