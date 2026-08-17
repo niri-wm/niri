@@ -88,35 +88,36 @@ impl Transaction {
         if let Deadline::NotRegistered(deadline) = *cell {
             let timer = Timer::from_deadline(deadline);
             let inner = Arc::downgrade(&self.inner);
-            let token = event_loop
-                .insert_source(timer, move |_, _, _| {
-                    let _span = trace_span!("deadline timer", transaction = ?Weak::as_ptr(&inner))
-                        .entered();
 
-                    // FIXME: come up with some way to control the deadline timer from tests.
-                    #[cfg(not(test))]
-                    if let Some(inner) = inner.upgrade() {
-                        trace!("deadline reached, completing transaction");
-                        inner.complete();
-                    } else {
-                        // We should remove the timer automatically. But this callback can still
-                        // just happen to run while the ping callback is scheduled, leading to this
-                        // branch being legitimately taken.
-                        trace!("transaction completed without removing the timer");
-                    }
+            let token = match event_loop.insert_source(timer, move |_, _, _| {
+                let _span = trace_span!("deadline timer", transaction = ?Weak::as_ptr(&inner))
+                    .entered();
+                #[cfg(not(test))]
+                if let Some(inner) = inner.upgrade() {
+                    trace!("deadline reached, completing transaction");
+                    inner.complete();
+                } else {
+                    trace!("transaction completed without removing the timer");
+                }
+                TimeoutAction::Drop
+            }) {
+                Ok(token) => token,
+                Err(err) => {
+                    error!("failed to register transaction deadline timer: {err}");
+                    return;
+                }
+            };
 
-                    TimeoutAction::Drop
-                })
-                .unwrap();
-
-            // Add a ping source that will be used to remove the timer automatically.
             let (ping, source) = make_ping().unwrap();
             let loop_handle = event_loop.clone();
-            event_loop
-                .insert_source(source, move |_, _, _| {
-                    loop_handle.remove(token);
-                })
-                .unwrap();
+            if let Err(err) = event_loop.insert_source(source, move |_, _, _| {
+                loop_handle.remove(token);
+            }) {
+                // Rollback: Remove timer to prevent a leak
+                event_loop.remove(token);
+                error!("failed to register transaction ping source: {err}");
+                return;
+            }
 
             *cell = Deadline::Registered { remove: ping };
         }
