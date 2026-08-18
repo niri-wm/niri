@@ -1663,6 +1663,11 @@ impl State {
                     self.niri.layout.toggle_window_height(Some(&window), false);
                 }
             }
+            Action::ToggleCenterColumn => {
+                self.niri.layout.toggle_center_column();
+                // FIXME: granular
+                self.niri.queue_redraw_all();
+            }
             Action::CenterColumn => {
                 self.niri.layout.center_column();
                 // FIXME: granular

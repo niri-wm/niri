@@ -211,6 +211,7 @@ pub enum Action {
     SwapWindowRight,
     ToggleColumnTabbedDisplay,
     SetColumnDisplay(#[knuffel(argument, str)] ColumnDisplay),
+    ToggleCenterColumn,
     CenterColumn,
     CenterWindow,
     #[knuffel(skip)]
@@ -504,6 +505,7 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::ToggleColumnTabbedDisplay {} => Self::ToggleColumnTabbedDisplay,
             niri_ipc::Action::SetColumnDisplay { display } => Self::SetColumnDisplay(display),
             niri_ipc::Action::CenterColumn {} => Self::CenterColumn,
+            niri_ipc::Action::ToggleCenterColumn {} => Self::ToggleCenterColumn,
             niri_ipc::Action::CenterWindow { id: None } => Self::CenterWindow,
             niri_ipc::Action::CenterWindow { id: Some(id) } => Self::CenterWindowById(id),
             niri_ipc::Action::CenterVisibleColumns {} => Self::CenterVisibleColumns,

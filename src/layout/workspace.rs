@@ -1144,6 +1144,30 @@ impl<W: LayoutElement> Workspace<W> {
         self.scrolling.toggle_column_tabbed_display();
     }
 
+    pub fn toggle_center_column(&mut self) {
+        let config = self.layout_config().cloned();
+
+        let mut config = config.unwrap_or_default();
+
+        if let Some(existing) = &mut config.center_focused_column {
+            match *existing {
+                CenterFocusedColumn::Never => *existing = CenterFocusedColumn::Always,
+                CenterFocusedColumn::Always => *existing = CenterFocusedColumn::Never,
+                CenterFocusedColumn::OnOverflow => *existing = CenterFocusedColumn::Always,
+            }
+        } else {
+            let result = match self.base_options.layout.center_focused_column {
+                CenterFocusedColumn::Never => CenterFocusedColumn::Always,
+                CenterFocusedColumn::Always => CenterFocusedColumn::Never,
+                CenterFocusedColumn::OnOverflow => CenterFocusedColumn::Always,
+            };
+
+            config.center_focused_column = Some(result);
+        }
+
+        self.update_layout_config(Some(config));
+    }
+
     pub fn set_column_display(&mut self, display: ColumnDisplay) {
         if self.floating_is_active.get() {
             return;
