@@ -58,7 +58,7 @@ window-rule {
     default-column-display "tabbed"
     default-floating-position x=100 y=200 relative-to="bottom-left"
     scroll-factor 0.75
-    focus-on-xdg-activate true
+    on-xdg-activate "focus"
 
     focus-ring {
         // off
@@ -595,14 +595,24 @@ window-rule {
 > This is because window title (and app ID) are not double-buffered in the Wayland protocol, so they are not tied to specific window contents.
 > There's no robust way for Firefox to synchronize visibly showing a different tab and changing the window title.
 
-#### `focus-on-xdg-activate`
+#### `on-xdg-activate`
 
 <sup>Since: next release</sup>
 
-Set this to `false` to prevent the window from receiving focus when it requests activation.
-This is useful for apps that steal focus on incoming messages or when opening popup windows like Picture-in-Picture.
+Set what niri does when a window requests activation through [xdg-activation](https://wayland.app/protocols/xdg-activation-v1).
 
-When set to `false`, the window will instead be marked as urgent.
+Values:
+
+- `"ignore"`: do nothing: neither focus the window nor mark it urgent.
+- `"set-urgent"`: always mark the window urgent instead of focusing it.
+- `"focus"`: always focus the window, even for activation requests without a serial.
+
+The default behavior, when this rule is unset, picks between focusing and marking the window urgent based on the serial that the application provides when creating the activation token.
+Requests with a valid serial focus the target window, and requests without a serial mark it urgent.
+
+Requests with a set, but invalid, serial, are always ignored, which you can change with the [`honor-xdg-activation-with-invalid-serial`](https://niri-wm.github.io/niri/Configuration%3A-Debug-Options.html#honor-xdg-activation-with-invalid-serial) debug flag.
+
+This is useful for apps that steal focus on incoming messages or when opening popup windows like Picture-in-Picture.
 
 ```kdl
 // Don't let Firefox PiP steal focus.
@@ -610,7 +620,7 @@ window-rule {
     match title="^Picture-in-Picture$"
 
     open-floating true
-    focus-on-xdg-activate false
+    on-xdg-activate "set-urgent"
 }
 ```
 

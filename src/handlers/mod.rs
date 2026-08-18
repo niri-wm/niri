@@ -815,15 +815,27 @@ impl XdgActivationHandler for State {
         if token_data.timestamp.elapsed() < XDG_ACTIVATION_TOKEN_TIMEOUT {
             if let Some((mapped, _)) = self.niri.layout.find_window_and_output_mut(&surface) {
                 let window = mapped.window.clone();
-                if token_data.user_data.get::<UrgentOnlyMarker>().is_some()
-                    || mapped.rules().focus_on_xdg_activate == Some(false)
-                {
-                    mapped.set_urgent(true);
-                    self.niri.queue_redraw_all();
-                } else {
-                    self.niri.layout.activate_window(&window);
-                    self.niri.layer_shell_on_demand_focus = None;
-                    self.niri.queue_redraw_all();
+                match mapped.rules().on_xdg_activate {
+                    Some(niri_config::OnXdgActivate::Ignore) => {}
+                    Some(niri_config::OnXdgActivate::SetUrgent) => {
+                        mapped.set_urgent(true);
+                        self.niri.queue_redraw_all();
+                    }
+                    Some(niri_config::OnXdgActivate::Focus) => {
+                        self.niri.layout.activate_window(&window);
+                        self.niri.layer_shell_on_demand_focus = None;
+                        self.niri.queue_redraw_all();
+                    }
+                    None => {
+                        if token_data.user_data.get::<UrgentOnlyMarker>().is_some() {
+                            mapped.set_urgent(true);
+                            self.niri.queue_redraw_all();
+                        } else {
+                            self.niri.layout.activate_window(&window);
+                            self.niri.layer_shell_on_demand_focus = None;
+                            self.niri.queue_redraw_all();
+                        }
+                    }
                 }
             } else if let Some(unmapped) = self.niri.unmapped_windows.get_mut(&surface) {
                 unmapped.activation_token_data = Some(token_data);
