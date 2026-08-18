@@ -379,6 +379,9 @@ layout {
 }
 ```
 
+You can animate gradient borders with the `border-fade` and `border-angle` animations.
+See the [Animations](./Configuration:-Animations.md#border-fade) documentation for details.
+
 ### `shadow`
 
 <sup>Since: 25.02</sup>
