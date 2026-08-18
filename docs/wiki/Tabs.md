@@ -23,6 +23,7 @@ Unlike regular columns, tabbed columns can go full-screen with multiple windows.
 
 Tabbed columns show a tab indicator on the side.
 You can click on the indicator to switch tabs.
+You can also enable `scroll-to-switch-tabs` to switch tabs by scrolling over the indicator.
 
 See the [`tab-indicator` section in the layout section](./Configuration:-Layout.md#tab-indicator) to configure it.
 
