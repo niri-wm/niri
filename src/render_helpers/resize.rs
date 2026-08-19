@@ -31,6 +31,7 @@ impl ResizeRenderElement {
         progress: f32,
         clamped_progress: f32,
         corner_radius: CornerRadius,
+        corner_exponent: f32,
         clip_to_geometry: bool,
         result_alpha: f32,
     ) -> Self {
@@ -103,6 +104,7 @@ impl ResizeRenderElement {
                     Uniform::new("niri_progress", progress),
                     Uniform::new("niri_clamped_progress", clamped_progress),
                     Uniform::new("niri_corner_radius", <[f32; 4]>::from(corner_radius)),
+                    Uniform::new("niri_corner_exponent", corner_exponent),
                     Uniform::new("niri_clip_to_geometry", clip_to_geometry),
                 ]),
                 HashMap::from([

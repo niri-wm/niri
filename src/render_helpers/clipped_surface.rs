@@ -20,6 +20,7 @@ pub struct ClippedSurfaceRenderElement<R: NiriRenderer> {
     inner: WaylandSurfaceRenderElement<R>,
     program: GlesTexProgram,
     corner_radius: CornerRadius,
+    corner_exponent: f32,
     geometry: Rectangle<f64, Logical>,
     scale: f32,
 }
@@ -28,6 +29,7 @@ pub struct ClippedSurfaceRenderElement<R: NiriRenderer> {
 pub struct RoundedCornerDamage {
     damage: ExtraDamage,
     corner_radius: CornerRadius,
+    corner_exponent: f32,
 }
 
 impl<R: NiriRenderer> ClippedSurfaceRenderElement<R> {
@@ -37,11 +39,13 @@ impl<R: NiriRenderer> ClippedSurfaceRenderElement<R> {
         geometry: Rectangle<f64, Logical>,
         program: GlesTexProgram,
         corner_radius: CornerRadius,
+        corner_exponent: f32,
     ) -> Self {
         Self {
             inner: elem,
             program,
             corner_radius,
+            corner_exponent,
             geometry,
             scale: scale.x as f32,
         }
@@ -95,6 +99,7 @@ impl<R: NiriRenderer> ClippedSurfaceRenderElement<R> {
             Uniform::new("niri_scale", self.scale),
             Uniform::new("geo_size", geo_size),
             Uniform::new("corner_radius", <[f32; 4]>::from(self.corner_radius)),
+            Uniform::new("corner_exponent", self.corner_exponent),
             mat3_uniform("input_to_geo", input_to_geo),
         ]
     }
@@ -297,6 +302,15 @@ impl RoundedCornerDamage {
 
         // FIXME: make the damage granular.
         self.corner_radius = corner_radius;
+        self.damage.damage_all();
+    }
+
+    pub fn set_corner_exponent(&mut self, corner_exponent: f32) {
+        if self.corner_exponent == corner_exponent {
+            return;
+        }
+
+        self.corner_exponent = corner_exponent;
         self.damage.damage_all();
     }
 
