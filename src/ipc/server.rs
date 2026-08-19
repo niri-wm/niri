@@ -464,6 +464,7 @@ fn validate_action(action: &Action) -> Result<(), String> {
     if let Action::Screenshot { path, .. }
     | Action::ScreenshotScreen { path, .. }
     | Action::ScreenshotWindow { path, .. }
+    | Action::ScreenshotTile { path, .. }
     | Action::LoadConfigFile { path } = action
     {
         if let Some(path) = path {
