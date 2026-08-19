@@ -460,6 +460,25 @@ impl ScreenshotUi {
         self.update_buffers();
     }
 
+    pub fn select_entire_output(&mut self) {
+        let Self::Open {
+            selection,
+            output_data,
+            ..
+        } = self
+        else {
+            return;
+        };
+
+        let current_data = &output_data[&selection.0];
+        let size = current_data.size;
+
+        selection.1 = Point::new(0, 0);
+        selection.2 = Point::new(size.w - 1, size.h - 1);
+
+        self.update_buffers();
+    }
+
     pub fn set_width(&mut self, change: SizeChange) {
         let Self::Open {
             selection: (output, a, b),
