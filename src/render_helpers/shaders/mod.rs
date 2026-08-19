@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::collections::HashMap;
 
 use glam::Mat3;
 use smithay::backend::renderer::gles::{
@@ -21,6 +22,8 @@ pub struct Shaders {
     pub custom_resize: RefCell<Option<ShaderProgram>>,
     pub custom_close: RefCell<Option<ShaderProgram>>,
     pub custom_open: RefCell<Option<ShaderProgram>>,
+    custom_close_cache: RefCell<HashMap<String, ShaderProgram>>,
+    custom_open_cache: RefCell<HashMap<String, ShaderProgram>>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -159,6 +162,8 @@ impl Shaders {
             custom_resize: RefCell::new(None),
             custom_close: RefCell::new(None),
             custom_open: RefCell::new(None),
+            custom_close_cache: RefCell::new(HashMap::new()),
+            custom_open_cache: RefCell::new(HashMap::new()),
         }
     }
 
@@ -351,6 +356,68 @@ pub fn set_custom_open_program(renderer: &mut GlesRenderer, src: Option<&str>) {
             warn!("error destroying previous custom open shader: {err:?}");
         }
     }
+}
+
+pub fn window_open_program_for_source(
+    renderer: &mut GlesRenderer,
+    src: &str,
+) -> Option<ShaderProgram> {
+    let cached = {
+        let shaders = Shaders::get(renderer);
+        shaders.custom_open_cache.borrow().get(src).cloned()
+    };
+    if cached.is_some() {
+        return cached;
+    }
+
+    let compiled = match compile_open_program(renderer, src) {
+        Ok(program) => program,
+        Err(err) => {
+            warn!("error compiling custom window open shader: {err:?}");
+            return None;
+        }
+    };
+
+    {
+        let shaders = Shaders::get(renderer);
+        shaders
+            .custom_open_cache
+            .borrow_mut()
+            .insert(src.to_owned(), compiled.clone());
+    }
+
+    Some(compiled)
+}
+
+pub fn window_close_program_for_source(
+    renderer: &mut GlesRenderer,
+    src: &str,
+) -> Option<ShaderProgram> {
+    let cached = {
+        let shaders = Shaders::get(renderer);
+        shaders.custom_close_cache.borrow().get(src).cloned()
+    };
+    if cached.is_some() {
+        return cached;
+    }
+
+    let compiled = match compile_close_program(renderer, src) {
+        Ok(program) => program,
+        Err(err) => {
+            warn!("error compiling custom window close shader: {err:?}");
+            return None;
+        }
+    };
+
+    {
+        let shaders = Shaders::get(renderer);
+        shaders
+            .custom_close_cache
+            .borrow_mut()
+            .insert(src.to_owned(), compiled.clone());
+    }
+
+    Some(compiled)
 }
 
 pub fn mat3_uniform(name: &str, mat: Mat3) -> Uniform<'_> {

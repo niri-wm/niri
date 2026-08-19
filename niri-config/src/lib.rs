@@ -1926,6 +1926,7 @@ mod tests {
                             saturation: None,
                         },
                     },
+                    animations: None,
                 },
             ],
             layer_rules: [
