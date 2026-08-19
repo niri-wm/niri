@@ -1062,6 +1062,8 @@ pub struct BackgroundEffectRule {
     #[knuffel(child, unwrap(argument))]
     pub blur: Option<bool>,
     #[knuffel(child, unwrap(argument))]
+    pub ignore_opacity: Option<crate::utils::BoolOrFloat>,
+    #[knuffel(child, unwrap(argument))]
     pub noise: Option<FloatOrInt<0, 1000>>,
     #[knuffel(child, unwrap(argument))]
     pub saturation: Option<FloatOrInt<0, 1000>>,
@@ -1085,6 +1087,11 @@ pub struct BackgroundEffect {
     /// - `Some(true)`: always blur
     pub blur: Option<bool>,
 
+    /// Alpha threshold for blur. When set, pixels of the surface with alpha `<=` this value
+    /// do not get a blurred backdrop. `None` disables alpha-masking. `Some(0.0)` matches the
+    /// historical `ignore-opacity true` behavior (only fully-transparent pixels excluded).
+    pub ignore_opacity: Option<f64>,
+
     pub noise: Option<f64>,
     pub saturation: Option<f64>,
 }
@@ -1092,6 +1099,10 @@ pub struct BackgroundEffect {
 impl MergeWith<BackgroundEffectRule> for BackgroundEffect {
     fn merge_with(&mut self, part: &BackgroundEffectRule) {
         merge_clone_opt!((self, part), xray, blur);
+
+        if let Some(x) = part.ignore_opacity {
+            self.ignore_opacity = x.threshold();
+        }
 
         if let Some(x) = part.noise {
             self.noise = Some(x.0);

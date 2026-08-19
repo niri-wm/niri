@@ -2,6 +2,11 @@ uniform float noise;
 uniform float saturation;
 uniform vec4 bg_color;
 
+uniform sampler2D surface_tex;
+uniform int alpha_mask_enabled;
+uniform float alpha_threshold;
+uniform mat3 surface_to_geo;
+
 // Sin-less white noise by David Hoskins (MIT License).
 // https://www.shadertoy.com/view/4djSRW
 float hash12(vec2 p) {
@@ -16,6 +21,20 @@ vec3 saturate(vec3 color, float sat) {
 }
 
 vec4 postprocess(vec4 color) {
+    // Alpha-mask the blurred backdrop by the layer surface's own alpha. Fragments where the
+    // surface is fully transparent get zeroed so the unblurred backdrop shows through.
+    if (alpha_mask_enabled == 1) {
+        vec3 surface_coords = surface_to_geo * vec3(v_coords, 1.0);
+        if (surface_coords.x < 0.0 || surface_coords.x > 1.0
+            || surface_coords.y < 0.0 || surface_coords.y > 1.0) {
+            return vec4(0.0);
+        }
+        float surface_a = texture2D(surface_tex, surface_coords.xy).a;
+        if (surface_a <= alpha_threshold) {
+            return vec4(0.0);
+        }
+    }
+
     if (saturation != 1.0) {
         color.rgb = saturate(color.rgb, saturation);
     }
