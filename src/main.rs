@@ -143,6 +143,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // slow.
     tracy_client::Client::start();
 
+    // In on-demand mode, we must shut down Tracy manually to terminate the connection cleanly.
+    // Do it from a Drop impl here, so that it runs after the Drop code for all of the state created
+    // below, because some of those Drop impls themselves create Tracy spans.
+    let _shutdown_tracy = ShutdownTracy;
+
     info!("starting version {}", &version());
 
     // Load the config.
@@ -406,5 +411,15 @@ fn set_default_max_buffer_size(display: &Display<State>, size: usize) {
         }
 
         libc::dlclose(lib);
+    }
+}
+
+struct ShutdownTracy;
+impl Drop for ShutdownTracy {
+    fn drop(&mut self) {
+        #[cfg(feature = "profile-with-tracy-ondemand")]
+        unsafe {
+            tracy_client::sys::___tracy_shutdown_profiler();
+        }
     }
 }

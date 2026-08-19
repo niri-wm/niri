@@ -8,6 +8,7 @@ use smithay::desktop::{
     WindowSurfaceType,
 };
 use smithay::input::pointer::Focus;
+use smithay::input::tablet::TabletSeatTrait;
 use smithay::output::Output;
 use smithay::reexports::wayland_protocols::xdg::decoration::zv1::server::zxdg_toplevel_decoration_v1;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_positioner::ConstraintAdjustment;
@@ -32,15 +33,11 @@ use smithay::wayland::shell::xdg::{
     XdgToplevelSurfaceData,
 };
 use smithay::wayland::xdg_foreign::{XdgForeignHandler, XdgForeignState};
-use smithay::{
-    delegate_kde_decoration, delegate_xdg_decoration, delegate_xdg_foreign, delegate_xdg_shell,
-};
 use tracing::field::Empty;
 
 use crate::input::move_grab::MoveGrab;
 use crate::input::resize_grab::ResizeGrab;
-use crate::input::touch_resize_grab::TouchResizeGrab;
-use crate::input::{PointerOrTouchStartData, DOUBLE_CLICK_TIME};
+use crate::input::{AnyStartData, DOUBLE_CLICK_TIME};
 use crate::layout::ActivateWindow;
 use crate::niri::{CastTarget, PopupGrabState, State};
 use crate::utils::transaction::Transaction;
@@ -87,8 +84,7 @@ impl XdgShellHandler for State {
                         let is_dnd_grab = Self::is_dnd_grab(grab.as_any());
 
                         if !is_dnd_grab {
-                            grab_start_data =
-                                Some(PointerOrTouchStartData::Pointer(start_data.clone()));
+                            grab_start_data = Some(AnyStartData::Pointer(start_data.clone()));
                         }
                     }
                 }
@@ -107,14 +103,43 @@ impl XdgShellHandler for State {
                             let is_dnd_grab = Self::is_dnd_grab(grab.as_any());
 
                             if !is_dnd_grab {
-                                grab_start_data =
-                                    Some(PointerOrTouchStartData::Touch(start_data.clone()));
+                                grab_start_data = Some(AnyStartData::Touch(start_data.clone()));
                             }
                         }
                     }
                 }
             });
         }
+
+        // See if this comes from a tablet tool grab.
+        let mut tablet_tool = None;
+        self.niri.seat.tablet_seat().with_tools(|tools| {
+            for tool in tools.values() {
+                let found = tool.with_grab(|grab_serial, grab| {
+                    if grab_serial == serial {
+                        let start_data = grab.start_data();
+                        if let Some((focus, _)) = &start_data.focus {
+                            if focus.id().same_client_as(&wl_surface.id()) {
+                                // Deny move requests from DnD grabs to work around
+                                // https://gitlab.gnome.org/GNOME/gtk/-/issues/7113
+                                let is_dnd_grab = Self::is_dnd_grab(grab.as_any());
+
+                                if !is_dnd_grab {
+                                    grab_start_data =
+                                        Some(AnyStartData::TabletTool(start_data.clone()));
+                                    tablet_tool = Some(tool.clone());
+                                    return true;
+                                }
+                            }
+                        }
+                    }
+                    false
+                });
+                if found == Some(true) {
+                    break;
+                }
+            }
+        });
 
         let Some(start_data) = grab_start_data else {
             return;
@@ -132,15 +157,23 @@ impl XdgShellHandler for State {
         let output = output.clone();
 
         match &start_data {
-            PointerOrTouchStartData::Pointer(_) => {
+            AnyStartData::Pointer(_) => {
                 if let Some(grab) = MoveGrab::new(self, start_data, window.clone(), true, None) {
                     pointer.set_grab(self, grab, serial, Focus::Clear);
                 }
             }
-            PointerOrTouchStartData::Touch(_) => {
+            AnyStartData::Touch(_) => {
                 let touch = self.niri.seat.get_touch().unwrap();
                 if let Some(grab) = MoveGrab::new(self, start_data, window.clone(), true, None) {
                     touch.set_grab(self, grab, serial);
+                }
+            }
+            AnyStartData::TabletTool(_) => {
+                if let Some(grab) = MoveGrab::new(self, start_data, window.clone(), true, None) {
+                    let time = get_monotonic_time().as_millis() as u32;
+                    tablet_tool
+                        .unwrap()
+                        .set_grab(self, grab, time, serial, Focus::Clear);
                 }
             }
         }
@@ -165,7 +198,7 @@ impl XdgShellHandler for State {
             if let Some(start_data) = pointer.grab_start_data() {
                 if let Some((focus, _)) = &start_data.focus {
                     if focus.id().same_client_as(&wl_surface.id()) {
-                        grab_start_data = Some(PointerOrTouchStartData::Pointer(start_data));
+                        grab_start_data = Some(AnyStartData::Pointer(start_data));
                     }
                 }
             }
@@ -177,12 +210,30 @@ impl XdgShellHandler for State {
                 if let Some(start_data) = touch.grab_start_data() {
                     if let Some((focus, _)) = &start_data.focus {
                         if focus.id().same_client_as(&wl_surface.id()) {
-                            grab_start_data = Some(PointerOrTouchStartData::Touch(start_data));
+                            grab_start_data = Some(AnyStartData::Touch(start_data));
                         }
                     }
                 }
             }
         }
+
+        // See if this comes from a tablet tool grab.
+        let mut tablet_tool = None;
+        self.niri.seat.tablet_seat().with_tools(|tools| {
+            'outer: for tool in tools.values() {
+                if tool.has_grab(serial) {
+                    if let Some(start_data) = tool.grab_start_data() {
+                        if let Some((focus, _)) = &start_data.focus {
+                            if focus.id().same_client_as(&wl_surface.id()) {
+                                grab_start_data = Some(AnyStartData::TabletTool(start_data));
+                                tablet_tool = Some(tool.clone());
+                                break 'outer;
+                            }
+                        }
+                    }
+                }
+            }
+        });
 
         let Some(start_data) = grab_start_data else {
             return;
@@ -239,14 +290,21 @@ impl XdgShellHandler for State {
         }
 
         match start_data {
-            PointerOrTouchStartData::Pointer(start_data) => {
+            AnyStartData::Pointer(_) => {
                 let grab = ResizeGrab::new(start_data, window);
                 pointer.set_grab(self, grab, serial, Focus::Clear);
             }
-            PointerOrTouchStartData::Touch(start_data) => {
+            AnyStartData::Touch(_) => {
                 let touch = self.niri.seat.get_touch().unwrap();
-                let grab = TouchResizeGrab::new(start_data, window);
+                let grab = ResizeGrab::new(start_data, window);
                 touch.set_grab(self, grab, serial);
+            }
+            AnyStartData::TabletTool(_) => {
+                let grab = ResizeGrab::new(start_data, window);
+                let time = get_monotonic_time().as_millis() as u32;
+                tablet_tool
+                    .unwrap()
+                    .set_grab(self, grab, time, serial, Focus::Clear);
             }
         }
     }
@@ -918,8 +976,6 @@ impl XdgShellHandler for State {
     }
 }
 
-delegate_xdg_shell!(State);
-
 impl XdgDecorationHandler for State {
     fn new_decoration(&mut self, toplevel: ToplevelSurface) {
         // If we want CSD, we hide this global altogether.
@@ -973,7 +1029,6 @@ impl XdgDecorationHandler for State {
         }
     }
 }
-delegate_xdg_decoration!(State);
 
 /// Whether KDE server decorations are in use.
 #[derive(Default, Clone)]
@@ -1014,14 +1069,12 @@ impl KdeDecorationHandler for State {
         });
     }
 }
-delegate_kde_decoration!(State);
 
 impl XdgForeignHandler for State {
     fn xdg_foreign_state(&mut self) -> &mut XdgForeignState {
         &mut self.niri.xdg_foreign_state
     }
 }
-delegate_xdg_foreign!(State);
 
 impl State {
     pub fn send_initial_configure(&mut self, toplevel: &ToplevelSurface) {

@@ -53,12 +53,12 @@ It shows up as "niri Dynamic Cast Target" in the screencast window dialog.
 
 ![Screencast dialog showing niri Dynamic Cast Target.](https://github.com/user-attachments/assets/e236ce74-98ec-4f3a-a99b-29ac1ff324dd)
 
-When you select it, it will start as an empty, transparent video stream.
-Then, you can use the following binds to change what it shows:
+Choose it, then use the following binds to change what it shows.
+The stream won't start until you make your first target selection.
 
 - `set-dynamic-cast-window` to cast the focused window.
 - `set-dynamic-cast-monitor` to cast the focused monitor.
-- `clear-dynamic-cast-target` to go back to an empty stream.
+- `clear-dynamic-cast-target` to reset to an empty video stream.
 
 You can also use these actions from the command line, for example to interactively pick which window to cast:
 
