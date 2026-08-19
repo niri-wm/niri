@@ -3887,6 +3887,7 @@ prop_compose! {
         tab_indicator in prop::option::of(arbitrary_tab_indicator()),
         center_focused_column in prop::option::of(arbitrary_center_focused_column()),
         always_center_single_column in prop::option::of(any::<bool>().prop_map(Flag)),
+        center_single_window in prop::option::of(any::<bool>().prop_map(Flag)),
         empty_workspace_above_first in prop::option::of(any::<bool>().prop_map(Flag)),
     ) -> niri_config::LayoutPart {
         niri_config::LayoutPart {
@@ -3894,6 +3895,7 @@ prop_compose! {
             struts,
             center_focused_column,
             always_center_single_column,
+            center_single_window,
             empty_workspace_above_first,
             focus_ring,
             border,
