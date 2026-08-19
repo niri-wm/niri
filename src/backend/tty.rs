@@ -70,16 +70,13 @@ use crate::render_helpers::renderer::AsGlesRenderer;
 use crate::render_helpers::{resources, shaders, RenderCtx, RenderTarget};
 use crate::utils::{get_monotonic_time, is_laptop_panel, logical_output, PanelOrientation};
 
-// specific 10-bit formats for multigpu setup,
-// i.e. copying from rendering Nvidia dGPU to target iGPU.
-const SUPPORTED_COLOR_FORMATS: [Fourcc; 6] = [
-    Fourcc::Xbgr2101010,
-    Fourcc::Abgr2101010,
-    Fourcc::Xrgb8888,
-    Fourcc::Xbgr8888,
-    Fourcc::Argb8888,
-    Fourcc::Abgr8888,
-];
+// When copying from rendering Nvidia dGPU to target iGPU,
+// it only understands X/Abgr and not X/Argb.
+const SUPPORTED_COLOR_FORMATS_10BIT: [Fourcc; 3] =
+    [Fourcc::Abgr2101010, Fourcc::Argb8888, Fourcc::Abgr8888];
+
+// Smithay should fall back to Xrgb/Xbgr automatically if needed.
+const SUPPORTED_COLOR_FORMATS: [Fourcc; 2] = [Fourcc::Argb8888, Fourcc::Abgr8888];
 
 pub struct Tty {
     config: Rc<RefCell<Config>>,
@@ -1440,6 +1437,14 @@ impl Tty {
             })
             .collect::<FormatSet>();
 
+        let color_formats = if self.config.borrow().debug.disable_10bit_output {
+            &SUPPORTED_COLOR_FORMATS[..]
+        } else {
+            &SUPPORTED_COLOR_FORMATS_10BIT[..]
+        }
+        .iter()
+        .copied();
+
         // Create the compositor.
         let res = DrmCompositor::new(
             OutputModeSource::Auto(output.downgrade()),
@@ -1447,7 +1452,7 @@ impl Tty {
             None,
             device.allocator.clone(),
             GbmFramebufferExporter::new(device.gbm.clone(), device.render_node.into()),
-            SUPPORTED_COLOR_FORMATS,
+            color_formats.clone(),
             // This is only used to pick a good internal format, so it can use the surface's render
             // formats, even though we only ever render on the primary GPU.
             render_formats.clone(),
@@ -1477,7 +1482,7 @@ impl Tty {
                     None,
                     device.allocator.clone(),
                     GbmFramebufferExporter::new(device.gbm.clone(), device.render_node.into()),
-                    SUPPORTED_COLOR_FORMATS,
+                    color_formats,
                     render_formats,
                     device.drm.cursor_size(),
                     Some(device.gbm.clone()),
@@ -2047,7 +2052,9 @@ impl Tty {
 
         match renderer.import_dmabuf(dmabuf, None) {
             Ok(_texture) => {
-                dmabuf.set_node(Some(self.primary_render_node));
+                if dmabuf.node().is_none() {
+                    dmabuf.set_node(Some(self.primary_render_node));
+                }
                 true
             }
             Err(err) => {
@@ -2853,13 +2860,15 @@ fn surface_dmabuf_feedback(
         .clone()
         .add_preference_tranche(
             surface_scanout_node.dev_id(),
-            Some(TrancheFlags::Scanout),
+            TrancheFlags::Scanout,
             primary_scanout_formats,
+            4..=6,
         )
         .add_preference_tranche(
             surface_scanout_node.dev_id(),
-            Some(TrancheFlags::Scanout),
+            TrancheFlags::Scanout,
             primary_or_overlay_scanout_formats,
+            4..=6,
         )
         .build()?;
 

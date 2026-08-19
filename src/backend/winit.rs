@@ -16,8 +16,8 @@ use smithay::output::{Mode, Output, PhysicalProperties, Subpixel};
 use smithay::reexports::calloop::LoopHandle;
 use smithay::reexports::wayland_protocols::wp::presentation_time::server::wp_presentation_feedback;
 use smithay::reexports::winit::dpi::LogicalSize;
-use smithay::reexports::winit::platform::wayland::WindowAttributesExtWayland;
-use smithay::reexports::winit::window::Window;
+use smithay::reexports::winit::platform::wayland::WindowAttributesWayland;
+use smithay::reexports::winit::window::WindowAttributes;
 use smithay::wayland::dmabuf::{DmabufFeedbackBuilder, DmabufGlobal};
 use smithay::wayland::presentation::Refresh;
 
@@ -43,11 +43,13 @@ impl Winit {
     ) -> Result<Self, winit::Error> {
         let _span = tracy_client::span!("Winit::new");
 
-        let builder = Window::default_attributes()
-            .with_inner_size(LogicalSize::new(1280.0, 800.0))
+        let builder = WindowAttributes::default()
+            .with_surface_size(LogicalSize::new(1280.0, 800.0))
             // .with_resizable(false)
             .with_title("niri")
-            .with_name("niri", "");
+            .with_platform_attributes(Box::new(
+                WindowAttributesWayland::default().with_name("niri", ""),
+            ));
         let (backend, winit) = winit::init_from_attributes(builder)?;
 
         let output = Output::new(

@@ -33,6 +33,7 @@ debug {
     honor-xdg-activation-with-invalid-serial
     skip-cursor-only-updates-during-vrr
     deactivate-unfocused-windows
+    disable-10bit-output
 }
 
 binds {
@@ -283,6 +284,8 @@ Most of the time, these fresh tokens will have invalid serials, because the app 
 By default, niri ignores xdg-activation tokens with invalid serials, to prevent windows from randomly stealing focus.
 This debug flag makes niri honor such tokens, making the aforementioned widely-used apps get focus when clicking on their tray icon or notification.
 
+Use the [`on-xdg-activate` window rule](./Configuration:-Window-Rules.md#on-xdg-activate) to control what niri does for individual windows when it accepts an xdg-activation request.
+
 Amusingly, clicking on a notification sends the app a perfectly valid activation token from the notification daemon, but these apps seem to simply ignore it.
 Maybe in the future these apps/toolkits (Electron, Qt) are fixed, making this debug flag unnecessary.
 
@@ -321,6 +324,21 @@ It will cause niri to drop the Activated state for all unfocused windows.
 ```kdl
 debug {
     deactivate-unfocused-windows
+}
+```
+
+### `disable-10bit-output`
+
+<sup>Since: next release</sup>
+
+By default, niri will try to output a 10-bit color format to the monitor (before falling back to 8-bit).
+However, this can currently cause problems on some Intel + NVIDIA mixed-GPU setups: the screen doesn't light up, or displays only white, etc.
+
+Until this is fixed in Smithay, you can disable 10-bit color formats by setting this debug flag.
+
+```kdl
+debug {
+    disable-10bit-output
 }
 ```
 

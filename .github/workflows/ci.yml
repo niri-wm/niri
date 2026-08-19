@@ -181,7 +181,7 @@ jobs:
           sudo apt-get update -y
           sudo apt-get install -y ${{ env.DEPS_APT }} libadwaita-1-dev
 
-      - uses: dtolnay/rust-toolchain@1.85.0
+      - uses: dtolnay/rust-toolchain@1.87.0
 
       - uses: Swatinem/rust-cache@v2
 
@@ -270,12 +270,13 @@ jobs:
           run: |
             wcurl 'https://raw.githubusercontent.com/freebsd/freebsd-ports/268f8513e0b5f26e87b296f861059048196cbf8f/audio/songrec/files/patch-cargo-crates_pipewire-sys-0.10.0_build.rs'
             wcurl 'https://raw.githubusercontent.com/freebsd/freebsd-ports/268f8513e0b5f26e87b296f861059048196cbf8f/audio/songrec/files/patch-cargo-crates_pipewire-sys-0.10.0_src_lib.rs'
+            wcurl 'https://raw.githubusercontent.com/freebsd/freebsd-ports/bc722672141332346c78fd4eed7cab079b4165cc/x11-wm/niri/files/patch-libdisplay-info-0.3'
 
             export CARGO_HOME="$PWD/cargo-home"
 
             cargo fetch
 
-            ( cd $CARGO_HOME/registry/src/index.crates.io-*/; patch -p1 < $CARGO_HOME/../patch-cargo-crates_pipewire-sys-0.10.0_build.rs; patch -p1 < $CARGO_HOME/../patch-cargo-crates_pipewire-sys-0.10.0_src_lib.rs; )
+            ( cd $CARGO_HOME/registry/src/index.crates.io-*/; patch -p1 < $CARGO_HOME/../patch-cargo-crates_pipewire-sys-0.10.0_build.rs; patch -p1 < $CARGO_HOME/../patch-cargo-crates_pipewire-sys-0.10.0_src_lib.rs; patch -p1 < $CARGO_HOME/../patch-libdisplay-info-0.3; )
 
             cargo build \
               --offline \
