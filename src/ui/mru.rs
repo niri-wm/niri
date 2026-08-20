@@ -59,9 +59,6 @@ const TITLE_GAP: f64 = 14.;
 /// Gap between thumbnails.
 const GAP: f64 = 16.;
 
-/// How much of the next window will always peek from the side of the screen.
-const STRUT: f64 = 192.;
-
 /// Padding in the scope indication panel.
 const PANEL_PADDING: i32 = 12;
 
@@ -1236,25 +1233,6 @@ impl WindowMruUi {
     }
 }
 
-fn compute_view_offset(cur_x: f64, working_width: f64, new_col_x: f64, new_col_width: f64) -> f64 {
-    let new_x = new_col_x;
-    let new_right_x = new_col_x + new_col_width;
-
-    // If the column is already fully visible, leave the view as is.
-    if cur_x <= new_x && new_right_x <= cur_x + working_width {
-        return -(new_col_x - cur_x);
-    }
-
-    // Otherwise, prefer the alignment that results in less motion from the current position.
-    let dist_to_left = (cur_x - new_x).abs();
-    let dist_to_right = ((cur_x + working_width) - new_right_x).abs();
-    if dist_to_left <= dist_to_right {
-        0.
-    } else {
-        -(working_width - new_col_width)
-    }
-}
-
 impl Inner {
     fn update_config(&mut self) {
         self.freeze_view = false;
@@ -1303,36 +1281,20 @@ impl Inner {
 
         let output_size = output_size(&self.output);
 
-        let working_x = STRUT + GAP;
-        let working_width = (output_size.w - working_x * 2.).max(0.);
+        let current_geo = self
+            .thumbnails()
+            .filter_map(|(thumbnail, geo)| {
+                if thumbnail.id == current_id {
+                    Some(geo)
+                } else {
+                    None
+                }
+            })
+            .next();
+        let location = current_geo.map(|the| the.loc.x).unwrap_or_default();
+        let width = current_geo.map(|the| the.size.w).unwrap_or_default();
 
-        let mut current_geo = Rectangle::default();
-        let mut strip_width = 0.;
-        for (thumbnail, geo) in self.thumbnails() {
-            if thumbnail.id == current_id {
-                current_geo = geo;
-            }
-            strip_width = geo.loc.x + geo.size.w;
-
-            // If we found current_geo, and the strip width is already bigger than the working
-            // width, no need to compute further.
-            if current_geo.size.w != 0. && strip_width > working_width {
-                break;
-            }
-        }
-
-        // If the whole strip fits on screen, center it.
-        if strip_width <= working_width {
-            return -(output_size.w - strip_width) / 2.;
-        }
-
-        compute_view_offset(
-            self.view_pos.target() + working_x,
-            working_width,
-            current_geo.loc.x,
-            current_geo.size.w,
-        ) + current_geo.loc.x
-            - working_x
+        location + width / 2. - output_size.w / 2.
     }
 
     fn update_window(&mut self, layout: &Layout<Mapped>, id: MappedId) {
