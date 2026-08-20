@@ -1654,6 +1654,57 @@ fn check_ops_with_options(
     layout
 }
 
+fn three_wide_columns() -> Layout<TestWindow> {
+    let wide_window = |id| {
+        let mut params = TestWindowParams::new(id);
+        params.bbox = Rectangle::from_size(Size::from((625, 200)));
+        params
+    };
+
+    check_ops([
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: wide_window(1),
+        },
+        Op::Communicate(1),
+        Op::AddWindow {
+            params: wide_window(2),
+        },
+        Op::Communicate(2),
+        Op::AddWindow {
+            params: wide_window(3),
+        },
+        Op::Communicate(3),
+    ])
+}
+
+#[test]
+fn removing_active_column_focuses_refill_side() {
+    let mut layout = three_wide_columns();
+    check_ops_on_layout(
+        &mut layout,
+        [
+            Op::FocusWindow(2),
+            Op::CompleteAnimations,
+            Op::CloseWindow(2),
+        ],
+    );
+    assert_eq!(layout.focus().map(|window| *window.id()), Some(1));
+
+    let mut layout = three_wide_columns();
+    check_ops_on_layout(
+        &mut layout,
+        [
+            Op::FocusWindow(1),
+            Op::CompleteAnimations,
+            Op::FocusWindow(2),
+            Op::CompleteAnimations,
+            Op::CloseWindow(2),
+        ],
+    );
+    assert_eq!(layout.focus().map(|window| *window.id()), Some(3));
+}
+
 #[test]
 fn operations_dont_panic() {
     if std::env::var_os("RUN_SLOW_TESTS").is_none() {
