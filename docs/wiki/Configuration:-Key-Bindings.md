@@ -416,3 +416,15 @@ binds {
     Super+Alt+L allow-inhibiting=false { spawn "swaylock"; }
 }
 ```
+
+#### `move-column-to-workspace` (or up/down) focus parameter
+
+<sup>Since: v25.05</sup>
+
+It's possible to move a column without following it with the focus parameter:
+
+```kdl
+binds {
+   Alt+Shift+1 { move-column-to-workspace focus=false 1; }
+}
+```
