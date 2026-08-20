@@ -202,6 +202,8 @@ pub enum Action {
     PowerOffMonitors {},
     /// Power on all monitors via DPMS.
     PowerOnMonitors {},
+    /// Toggle on/off on all monitors via DPMS.
+    ToggleMonitorsPower {},
     /// Spawn a command.
     Spawn {
         /// Command to spawn.

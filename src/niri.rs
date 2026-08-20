@@ -3075,6 +3075,15 @@ impl Niri {
         self.queue_redraw_all();
     }
 
+    pub fn toggle_monitors(&mut self, backend: &mut Backend) {
+        self.monitors_active = !self.monitors_active;
+        backend.set_monitors_active(self.monitors_active);
+
+        if self.monitors_active {
+            self.queue_redraw_all();
+        }
+    }
+
     pub fn output_under(&self, pos: Point<f64, Logical>) -> Option<(&Output, Point<f64, Logical>)> {
         let output = self.global_space.output_under(pos).next()?;
         let pos_within_output = pos
