@@ -1,4 +1,5 @@
 use std::cell::{Cell, Ref, RefCell};
+use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use niri_config::{Color, Config, CornerRadius, GradientInterpolation, WindowRule};
@@ -27,6 +28,7 @@ use crate::layout::{
     ConfigureIntent, InteractiveResizeData, LayoutElement, LayoutElementRenderElement,
     LayoutElementRenderSnapshot, SizingMode,
 };
+use crate::niri::ClientState;
 use crate::niri_render_elements;
 use crate::render_helpers::background_effect::BackgroundEffectElement;
 use crate::render_helpers::border::BorderRenderElement;
@@ -610,6 +612,20 @@ impl Mapped {
 
     pub fn is_urgent(&self) -> bool {
         self.is_urgent
+    }
+
+    pub fn is_xwayland(&self) -> bool {
+        let Some(surface) = self.window.wl_surface() else {
+            return false;
+        };
+        let Some(client) = surface.client() else {
+            return false;
+        };
+        client
+            .get_data::<ClientState>()
+            .unwrap()
+            .is_xwayland
+            .load(Ordering::SeqCst)
     }
 }
 
