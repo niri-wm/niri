@@ -51,8 +51,6 @@ impl Introspect {
         }
     }
 
-    // FIXME: call this upon window changes, once more of the infrastructure is there (will be
-    // needed for the event stream IPC anyway).
     #[zbus(signal)]
     pub async fn windows_changed(ctxt: &SignalEmitter<'_>) -> zbus::Result<()>;
 }
