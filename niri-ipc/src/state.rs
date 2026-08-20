@@ -231,6 +231,17 @@ impl EventStreamStatePart for WindowsState {
                     win.layout = update;
                 }
             }
+            Event::WindowSizingModeChanged {
+                id,
+                sizing_mode,
+            } => {
+                for win in self.windows.values_mut() {
+                    if win.id == id {
+                        win.sizing_mode = sizing_mode;
+                        break;
+                    }
+                }
+            }
             event => return Some(event),
         }
         None
