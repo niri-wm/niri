@@ -363,6 +363,29 @@ input {
 }
 ```
 
+<sup>Since: 25.04</sup> You can optionally set `delay-ms`.
+Then, focus-follows-mouse will only focus a window after the mouse has been over it for the specified delay.
+This prevents focus from changing while moving the mouse quickly across windows.
+
+```kdl
+input {
+    // Focus window after hovering for 200ms.
+    focus-follows-mouse {
+        delay-ms 200
+    }
+}
+```
+
+You can combine both options:
+
+```kdl
+input {
+    focus-follows-mouse max-scroll-amount="10%" {
+        delay-ms 200
+    }
+}
+```
+
 #### `workspace-auto-back-and-forth`
 
 Normally, switching to the same workspace by index twice will do nothing (since you're already on that workspace).
