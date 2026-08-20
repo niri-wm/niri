@@ -246,6 +246,11 @@ pub trait LayoutElement {
 
     fn is_urgent(&self) -> bool;
 
+    fn get_view_offset(&self) -> f64
+    {
+        0.0
+    }
+
     fn configure_intent(&self) -> ConfigureIntent;
     fn send_pending_configure(&mut self);
 
