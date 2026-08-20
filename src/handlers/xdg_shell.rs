@@ -875,6 +875,17 @@ impl XdgShellHandler for State {
         }
     }
 
+    fn minimize_request(&mut self, toplevel: ToplevelSurface) {
+        if let Some((mapped, _)) = self
+            .niri
+            .layout
+            .find_window_and_output_mut(toplevel.wl_surface())
+        {
+            // Send a configure because some clients stop committing frames after requesting minimize.
+            mapped.set_needs_configure();
+        }
+    }
+
     fn toplevel_destroyed(&mut self, surface: ToplevelSurface) {
         if self
             .niri
