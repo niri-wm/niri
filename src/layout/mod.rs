@@ -371,6 +371,8 @@ pub struct Layout<W: LayoutElement> {
     overview_open: bool,
     /// The overview zoom progress.
     overview_progress: Option<OverviewProgress>,
+    /// Output targeted by the current overview session, or none for all outputs.
+    overview_output: Option<Output>,
     /// Configurable properties of the layout.
     options: Rc<Options>,
 }
@@ -728,6 +730,7 @@ impl<W: LayoutElement> Layout<W> {
             update_render_elements_time: Duration::ZERO,
             overview_open: false,
             overview_progress: None,
+            overview_output: None,
             options: Rc::new(options),
         }
     }
@@ -753,6 +756,7 @@ impl<W: LayoutElement> Layout<W> {
             update_render_elements_time: Duration::ZERO,
             overview_open: false,
             overview_progress: None,
+            overview_output: None,
             options: opts,
         }
     }
@@ -824,7 +828,7 @@ impl<W: LayoutElement> Layout<W> {
 
                 let ws_id_to_activate = self.last_active_workspace_id.remove(&output.name());
 
-                let mut monitor = Monitor::new(
+                let monitor = Monitor::new(
                     output,
                     workspaces,
                     ws_id_to_activate,
@@ -832,8 +836,6 @@ impl<W: LayoutElement> Layout<W> {
                     self.options.clone(),
                     layout_config,
                 );
-                monitor.overview_open = self.overview_open;
-                monitor.set_overview_progress(self.overview_progress.as_ref());
                 monitors.push(monitor);
 
                 MonitorSet::Normal {
@@ -845,7 +847,7 @@ impl<W: LayoutElement> Layout<W> {
             MonitorSet::NoOutputs { workspaces } => {
                 let ws_id_to_activate = self.last_active_workspace_id.remove(&output.name());
 
-                let mut monitor = Monitor::new(
+                let monitor = Monitor::new(
                     output,
                     workspaces,
                     ws_id_to_activate,
@@ -853,16 +855,14 @@ impl<W: LayoutElement> Layout<W> {
                     self.options.clone(),
                     layout_config,
                 );
-                monitor.overview_open = self.overview_open;
-                monitor.set_overview_progress(self.overview_progress.as_ref());
-
                 MonitorSet::Normal {
                     monitors: vec![monitor],
                     primary_idx: 0,
                     active_monitor_idx: 0,
                 }
             }
-        }
+        };
+        self.set_monitors_overview_state();
     }
 
     pub fn remove_output(&mut self, output: &Output) {
@@ -2530,11 +2530,17 @@ impl<W: LayoutElement> Layout<W> {
                 "monitor base options must be synchronized with layout"
             );
 
-            assert_eq!(self.overview_open, monitor.overview_open);
-            assert_eq!(
-                self.overview_progress.as_ref().map(|p| p.value()),
-                monitor.overview_progress_value()
-            );
+            let participates = self
+                .overview_output
+                .as_ref()
+                .is_none_or(|output| monitor.output == *output);
+            assert_eq!(self.overview_open && participates, monitor.overview_open);
+            let overview_progress = if participates {
+                self.overview_progress.as_ref().map(|p| p.value())
+            } else {
+                None
+            };
+            assert_eq!(overview_progress, monitor.overview_progress_value());
 
             monitor.verify_invariants();
 
@@ -2732,10 +2738,11 @@ impl<W: LayoutElement> Layout<W> {
             }
         }
 
+        self.set_monitors_overview_state();
+
         match &mut self.monitor_set {
             MonitorSet::Normal { monitors, .. } => {
                 for mon in monitors {
-                    mon.set_overview_progress(self.overview_progress.as_ref());
                     mon.advance_animations();
                 }
             }
@@ -2833,7 +2840,17 @@ impl<W: LayoutElement> Layout<W> {
                 let is_active = self.is_active
                     && idx == *active_monitor_idx
                     && !matches!(self.interactive_move, Some(InteractiveMoveState::Moving(_)));
-                mon.set_overview_progress(self.overview_progress.as_ref());
+                let participates = self
+                    .overview_output
+                    .as_ref()
+                    .is_none_or(|output| mon.output == *output);
+                let progress = if participates {
+                    self.overview_progress.as_ref()
+                } else {
+                    None
+                };
+                mon.overview_open = self.overview_open && participates;
+                mon.set_overview_progress(progress);
                 mon.update_render_elements(is_active);
             }
         }
@@ -3741,6 +3758,7 @@ impl<W: LayoutElement> Layout<W> {
 
     pub fn overview_gesture_begin(&mut self) {
         self.overview_open = true;
+        self.overview_output = None;
 
         let value = self.overview_progress.take().map_or(0., |p| p.value());
         let gesture = OverviewGesture {
@@ -4603,18 +4621,45 @@ impl<W: LayoutElement> Layout<W> {
     }
 
     pub fn set_monitors_overview_state(&mut self) {
-        let MonitorSet::Normal { monitors, .. } = &mut self.monitor_set else {
+        let MonitorSet::Normal {
+            monitors,
+            active_monitor_idx,
+            ..
+        } = &mut self.monitor_set
+        else {
             return;
         };
 
-        for mon in monitors {
-            mon.overview_open = self.overview_open;
-            mon.set_overview_progress(self.overview_progress.as_ref());
+        if self
+            .overview_output
+            .as_ref()
+            .is_some_and(|output| monitors.iter().all(|mon| mon.output != *output))
+        {
+            self.overview_output = Some(monitors[*active_monitor_idx].output.clone());
+        }
+
+        for mon in monitors.iter_mut() {
+            let participates = self
+                .overview_output
+                .as_ref()
+                .is_none_or(|output| mon.output == *output);
+            mon.overview_open = self.overview_open && participates;
+            let progress = if participates {
+                self.overview_progress.as_ref()
+            } else {
+                None
+            };
+            mon.set_overview_progress(progress);
         }
     }
 
-    pub fn toggle_overview(&mut self) {
+    pub fn toggle_overview(&mut self, all_outputs: bool) {
         self.overview_open = !self.overview_open;
+        if self.overview_open {
+            self.overview_output = (!all_outputs)
+                .then(|| self.active_output().cloned())
+                .flatten();
+        }
 
         let from = self.overview_progress.take().map_or(0., |p| p.value());
         let to = if self.overview_open { 1. } else { 0. };
@@ -4630,12 +4675,12 @@ impl<W: LayoutElement> Layout<W> {
         self.set_monitors_overview_state();
     }
 
-    pub fn open_overview(&mut self) -> bool {
+    pub fn open_overview(&mut self, all_outputs: bool) -> bool {
         if self.overview_open {
             return false;
         }
 
-        self.toggle_overview();
+        self.toggle_overview(all_outputs);
         true
     }
 
@@ -4644,7 +4689,7 @@ impl<W: LayoutElement> Layout<W> {
             return false;
         }
 
-        self.toggle_overview();
+        self.toggle_overview(false);
         true
     }
 
@@ -4653,7 +4698,7 @@ impl<W: LayoutElement> Layout<W> {
         if let Some(mon) = self.active_monitor() {
             mon.activate_workspace_with_anim_config(ws_idx, Some(config));
         }
-        self.toggle_overview();
+        self.toggle_overview(false);
     }
 
     pub fn start_open_animation_for_window(&mut self, window: &W::Id) {
