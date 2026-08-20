@@ -381,6 +381,7 @@ pub struct Niri {
     pub mods_with_tablet_stylus_binds: HashSet<Modifiers>,
     pub vertical_finger_scroll_tracker: ScrollTracker,
     pub horizontal_finger_scroll_tracker: ScrollTracker,
+    pub trackpoint_swipe_gesture: ScrollSwipeGesture,
     pub mods_with_finger_scroll_binds: HashSet<Modifiers>,
 
     pub lock_state: LockState,
@@ -2624,6 +2625,7 @@ impl Niri {
             // 10 is copied from Clutter: DISCRETE_SCROLL_STEP.
             vertical_finger_scroll_tracker: ScrollTracker::new(10),
             horizontal_finger_scroll_tracker: ScrollTracker::new(10),
+            trackpoint_swipe_gesture: ScrollSwipeGesture::new(),
             mods_with_finger_scroll_binds,
 
             lock_state: LockState::Unlocked,

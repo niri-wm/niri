@@ -67,7 +67,7 @@ pub mod spatial_movement_grab;
 pub mod swipe_tracker;
 pub mod touch_overview_grab;
 
-use backend_ext::{NiriInputBackend as InputBackend, NiriInputDevice as _};
+use backend_ext::{NiriInputBackend as InputBackend, NiriInputDevice};
 
 pub const DOUBLE_CLICK_TIME: Duration = Duration::from_millis(400);
 
@@ -3425,7 +3425,112 @@ impl State {
                 }
             }
 
-            if is_mru_open || self.niri.mods_with_finger_scroll_binds.contains(&modifiers) {
+            // Trackpoint: use swipe gestures when modifier is held (like 3-finger touchpad)
+            let trackpoint_factors = {
+                let config = self.niri.config.borrow();
+                trackpoint_scroll_factors(&event.device(), &config.input)
+            };
+
+            if let Some((trackpoint_h_factor, trackpoint_v_factor)) = trackpoint_factors {
+                // Check if modifier is held (for compositor gestures vs app scrolling)
+                let mod_down = modifiers.contains(mod_key.to_modifiers());
+
+                if mod_down {
+                    // Apply trackpoint scroll factor
+                    let horizontal_scaled = horizontal * trackpoint_h_factor;
+                    let vertical_scaled = vertical * trackpoint_v_factor;
+
+                    // Use swipe gesture for continuous trackpoint scrolling (like 3-finger touchpad)
+                    let action = self.niri.trackpoint_swipe_gesture.update(horizontal_scaled, vertical_scaled);
+                    let is_vertical = self.niri.trackpoint_swipe_gesture.is_vertical();
+
+                    let mut redraw = false;
+
+                    if action.end() {
+                        if is_vertical {
+                            redraw |= self
+                                .niri
+                                .layout
+                                .workspace_switch_gesture_end(Some(true))
+                                .is_some();
+                        } else {
+                            redraw |= self
+                                .niri
+                                .layout
+                                .view_offset_gesture_end(Some(true))
+                                .is_some();
+                        }
+                    } else {
+                        if is_vertical {
+                            if action.begin() {
+                                if let Some(output) = self.niri.output_under_cursor() {
+                                    self.niri
+                                        .layout
+                                        .workspace_switch_gesture_begin(&output, true);
+                                    redraw = true;
+                                }
+                            }
+
+                            let res = self
+                                .niri
+                                .layout
+                                .workspace_switch_gesture_update(vertical_scaled, timestamp, true);
+                            if let Some(Some(_)) = res {
+                                redraw = true;
+                            }
+                        } else {
+                            if action.begin() {
+                                if let Some((output, ws)) = self.niri.workspace_under_cursor(true) {
+                                    let ws_id = ws.id();
+                                    let ws_idx =
+                                        self.niri.layout.find_workspace_by_id(ws_id).unwrap().0;
+
+                                    self.niri.layout.view_offset_gesture_begin(
+                                        &output,
+                                        Some(ws_idx),
+                                        true,
+                                    );
+                                    redraw = true;
+                                }
+                            }
+
+                            let res = self
+                                .niri
+                                .layout
+                                .view_offset_gesture_update(horizontal_scaled, timestamp, true);
+                            if let Some(Some(_)) = res {
+                                redraw = true;
+                            }
+                        }
+                    }
+
+                    if redraw {
+                        self.niri.queue_redraw_all();
+                    }
+
+                    return;
+                } else {
+                    let mut redraw = false;
+                    if self.niri.trackpoint_swipe_gesture.reset() {
+                        if self.niri.trackpoint_swipe_gesture.is_vertical() {
+                            redraw |= self
+                                .niri
+                                .layout
+                                .workspace_switch_gesture_end(Some(true))
+                                .is_some();
+                        } else {
+                            redraw |= self
+                                .niri
+                                .layout
+                                .view_offset_gesture_end(Some(true))
+                                .is_some();
+                        }
+                    }
+                    if redraw {
+                        self.niri.queue_redraw_all();
+                    }
+                }
+            } else if is_mru_open || self.niri.mods_with_finger_scroll_binds.contains(&modifiers) {
                 let ticks = self
                     .niri
                     .horizontal_finger_scroll_tracker
@@ -3513,9 +3618,15 @@ impl State {
 
         let device_scroll_factor = {
             let config = self.niri.config.borrow();
+            let device = event.device();
+
+            let trackpoint_factor =
+                trackpoint_scroll_factors(&device, &config.input).map(|_| config.input.trackpoint.scroll_factor.unwrap_or_default());
+
             match source {
                 AxisSource::Wheel => config.input.mouse.scroll_factor,
                 AxisSource::Finger => config.input.touchpad.scroll_factor,
+                AxisSource::Continuous => trackpoint_factor,
                 _ => None,
             }
         };
@@ -5221,6 +5332,28 @@ pub fn mods_with_tablet_stylus_binds(mod_key: ModKey, binds: &Binds) -> HashSet<
     )
 }
 
+/// Returns trackpoint scroll factors (horizontal, vertical) if this is a trackpoint device
+/// or trackpoint is configured, otherwise None.
+pub fn trackpoint_scroll_factors(
+    device: &impl NiriInputDevice,
+    config: &niri_config::Input,
+) -> Option<(f64, f64)> {
+    let is_trackpoint = device.is_trackpoint();
+    let trackpoint_configured = config.trackpoint.scroll_factor.is_some();
+
+    if is_trackpoint && trackpoint_configured {
+        Some(
+            config
+                .trackpoint
+                .scroll_factor
+                .map(|sf| sf.h_v_factors())
+                .unwrap_or((1.0, 1.0)),
+        )
+    } else {
+        None
+    }
+}
+
 fn grab_allows_hot_corner(grab: &(dyn PointerGrab<State> + 'static)) -> bool {
     let grab = grab.as_any();
 
@@ -5645,5 +5778,104 @@ mod tests {
             ),
             None,
         );
+    }
+}
+
+#[cfg(test)]
+mod trackpoint_tests {
+    use niri_config::{Input, FloatOrInt, ModKey, Modifiers};
+    use niri_config::input::ScrollFactor;
+    use niri_config::binds::{Bind, Key, Binds};
+    use niri_config::Action;
+    use crate::input::Trigger;
+    use crate::input::{mods_with_wheel_binds, scroll_tracker::ScrollTracker};
+
+    #[test]
+    fn trackpoint_scroll_outside_overview_switches_columns() {
+        let mut config = Input::default();
+        config.trackpoint.scroll_factor = Some(ScrollFactor {
+            base: Some(FloatOrInt(0.5)),
+            horizontal: None,
+            vertical: None,
+        });
+
+        let binds = Binds(vec![
+            Bind {
+                key: Key {
+                    trigger: Trigger::WheelScrollLeft,
+                    modifiers: Modifiers::empty(),
+                },
+                action: Action::FocusColumnLeft,
+                repeat: true,
+                cooldown: None,
+                allow_when_locked: false,
+                allow_inhibiting: false,
+                hotkey_overlay_title: None,
+            },
+            Bind {
+                key: Key {
+                    trigger: Trigger::WheelScrollRight,
+                    modifiers: Modifiers::empty(),
+                },
+                action: Action::FocusColumnRight,
+                repeat: true,
+                cooldown: None,
+                allow_when_locked: false,
+                allow_inhibiting: false,
+                hotkey_overlay_title: None,
+            },
+        ]);
+
+        let mod_key = ModKey::Super;
+        let wheel_mods = mods_with_wheel_binds(mod_key, &binds);
+        assert!(wheel_mods.contains(&Modifiers::empty()));
+    }
+
+    #[test]
+    fn trackpoint_scroll_factor_conversion() {
+        let mut config = Input::default();
+        config.trackpoint.scroll_factor = Some(ScrollFactor {
+            base: Some(FloatOrInt(1.0)),
+            horizontal: None,
+            vertical: None,
+        });
+
+        let trackpoint_scroll_factor = config.trackpoint.scroll_factor.unwrap();
+        let (h_factor, v_factor) = trackpoint_scroll_factor.h_v_factors();
+        assert_eq!(h_factor, 1.0);
+        assert_eq!(v_factor, 1.0);
+
+        let horizontal = 10.0;
+        let horizontal_v120 = horizontal * h_factor * 8.0;
+        assert_eq!(horizontal_v120, 80.0);
+
+        let mut tracker = ScrollTracker::new(120);
+        let ticks = tracker.accumulate(horizontal_v120);
+        assert_eq!(ticks, 0);
+        let ticks = tracker.accumulate(horizontal_v120);
+        assert_eq!(ticks, 1);
+    }
+
+    #[test]
+    fn trackpoint_scroll_half_factor() {
+        let mut config = Input::default();
+        config.trackpoint.scroll_factor = Some(ScrollFactor {
+            base: Some(FloatOrInt(0.5)),
+            horizontal: None,
+            vertical: None,
+        });
+
+        let trackpoint_scroll_factor = config.trackpoint.scroll_factor.unwrap();
+        let (h_factor, _v_factor) = trackpoint_scroll_factor.h_v_factors();
+        assert_eq!(h_factor, 0.5);
+
+        let horizontal = 10.0;
+        let horizontal_v120 = horizontal * h_factor * 8.0;
+        assert_eq!(horizontal_v120, 40.0);
+
+        let mut tracker = ScrollTracker::new(120);
+        assert_eq!(tracker.accumulate(horizontal_v120), 0);
+        assert_eq!(tracker.accumulate(horizontal_v120), 0);
+        assert_eq!(tracker.accumulate(horizontal_v120), 1);
     }
 }

@@ -1104,6 +1104,7 @@ mod tests {
                     scroll_button_lock: false,
                     left_handed: false,
                     middle_emulation: false,
+                    scroll_factor: None,
                 },
                 trackball: Trackball {
                     off: true,
