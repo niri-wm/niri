@@ -94,10 +94,55 @@ impl MergeWith<SwitchBinds> for SwitchBinds {
     }
 }
 
-#[derive(knuffel::Decode, Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct SwitchAction {
-    #[knuffel(child, unwrap(arguments))]
-    pub spawn: Vec<String>,
+    pub action: Action,
+}
+
+impl<S: knuffel::traits::ErrorSpan> knuffel::Decode<S> for SwitchAction {
+    fn decode_node(
+        node: &knuffel::ast::SpannedNode<S>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) -> Result<Self, DecodeError<S>> {
+        expect_only_children(node, ctx);
+
+        let dummy = SwitchAction {
+            action: Action::Spawn(vec![]),
+        };
+
+        let mut children = node.children();
+
+        if let Some(child) = children.next() {
+            let action = match &**child.node_name {
+                "spawn" | "spawn-sh" => match Action::decode_node(child, ctx) {
+                    Ok(a) => Ok(SwitchAction { action: a }),
+                    Err(e) => {
+                        ctx.emit_error(e);
+                        Ok(dummy)
+                    }
+                },
+                _ => {
+                    ctx.emit_error(DecodeError::unexpected(
+                        child,
+                        "node",
+                        "expected `spawn` or `spawn-sh`",
+                    ));
+                    Ok(dummy)
+                }
+            };
+            for unwanted_child in children {
+                ctx.emit_error(DecodeError::unexpected(
+                    unwanted_child,
+                    "node",
+                    "only one action is allowed per switch event",
+                ));
+            }
+            action
+        } else {
+            ctx.emit_error(DecodeError::missing(node, "expected `spawn` or `spawn-sh`"));
+            Ok(dummy)
+        }
+    }
 }
 
 // Remember to add new actions to the CLI enum too.
@@ -893,14 +938,7 @@ where
         };
 
         if let Some(child) = children.next() {
-            for unwanted_child in children {
-                ctx.emit_error(DecodeError::unexpected(
-                    unwanted_child,
-                    "node",
-                    "only one action is allowed per keybind",
-                ));
-            }
-            match Action::decode_node(child, ctx) {
+            let action = match Action::decode_node(child, ctx) {
                 Ok(action) => {
                     if !matches!(action, Action::Spawn(_) | Action::SpawnSh(_)) {
                         if let Some(node) = allow_when_locked_node {
@@ -932,7 +970,15 @@ where
                     ctx.emit_error(e);
                     Ok(dummy)
                 }
+            };
+            for unwanted_child in children {
+                ctx.emit_error(DecodeError::unexpected(
+                    unwanted_child,
+                    "node",
+                    "only one action is allowed per keybind",
+                ));
             }
+            action
         } else {
             ctx.emit_error(DecodeError::missing(
                 node,
