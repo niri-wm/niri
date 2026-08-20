@@ -3732,6 +3732,51 @@ fn workspace_render_geo_at_fractional_scale() {
     );
 }
 
+#[test]
+fn fully_visible_column_needs_no_scroll_at_fractional_scale() {
+    let options = Options {
+        layout: niri_config::Layout {
+            gaps: 8.,
+            struts: Struts {
+                left: FloatOrInt(2.),
+                right: FloatOrInt(2.),
+                top: FloatOrInt(2.),
+                bottom: FloatOrInt(2.),
+            },
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let ops = [
+        Op::AddScaledOutput {
+            id: 1,
+            scale: 2.3,
+            layout_config: None,
+        },
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::Communicate(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+        Op::Communicate(2),
+        Op::FocusWindow(2),
+        Op::CompleteAnimations,
+    ];
+
+    let layout = check_ops_with_options(options, ops);
+    let workspace = layout.active_workspace().unwrap();
+    let working_area = workspace.working_area();
+
+    for (tile, pos, _) in workspace.tiles_with_render_positions() {
+        let tile_geo = Rectangle::new(pos, tile.tile_size());
+        assert!(working_area.contains_rect(tile_geo));
+    }
+
+    assert_eq!(layout.scroll_amount_to_activate(&1), 0.);
+}
+
 fn parent_id_causes_loop(layout: &Layout<TestWindow>, id: usize, mut parent_id: usize) -> bool {
     if parent_id == id {
         return true;
