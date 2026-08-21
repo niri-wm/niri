@@ -15,7 +15,7 @@ binds {
 }
 ```
 
-The hotkey consists of modifiers separated by `+` signs, followed by an XKB key name in the end.
+The parts of a hotkey definition are separated by '+' and consist of zero or more modifiers followed by a trigger key. This can be either an XKB key name or (<sup>Since: next release</sup>) `Mod`.
 
 Valid modifiers are:
 
@@ -80,6 +80,53 @@ binds {
 ```
 
 This is mostly useful for the scroll bindings.
+
+### Press and Release bindings
+
+<sup>Since: next release</sup>
+
+Binds can be set to trigger on key press, on key release, or both. By default, binds trigger on key press. You can specify the timing using `press {}` and `release {}` blocks:
+
+```kdl
+binds {
+    // Trigger on press (default behavior)
+    Mod+T { spawn "alacritty"; }
+
+    // Trigger on release
+    Mod { release { toggle-overview; }; }
+
+    // Trigger on both press and release with different actions
+    Mod+Shift+Q {
+        press { spawn "notify-send" "Pressed"; }
+        release { spawn "notify-send" "Released"; }
+    }
+
+    // Toggleable behavior like push-to-talk can be implemented by putting the same toggle command on the press and release action
+    Control_R {
+        press { spawn "toggle-command"; }
+        release { spawn "toggle-command"; }
+    }
+
+    // For multi-key modifier-only bindings, use Ctrl/Alt/etc. for the modifier keys and Control_L/Control_R/Alt_L/Alt_R/etc. for the trigger key
+    Ctrl+Alt_L {
+        press { spawn "notify-send" "Pressed"; }
+        release { spawn "notify-send" "Released"; }
+    }
+
+}
+```
+
+Release bindings are mostly useful when you want to bind a modifier key to an action, as it avoids unwanted triggering when you're trying to use other binds involving that modifier.
+
+By default, any key binding that includes a release action will have repeat turned off for its press action. This can be overridden with `repeat=true` if desired.
+
+Release binds will normally only trigger if no other keys were released and no keys or mouse buttons were pressed after the bound key was pressed. If you want a release bind to always trigger regardless, set `allow-invalidation=false`:
+
+```kdl
+binds {
+    Mod allow-invalidation=false { release { toggle-overview; }; }
+}
+```
 
 ### Scroll Bindings
 
