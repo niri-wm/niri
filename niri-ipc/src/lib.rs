@@ -2026,6 +2026,24 @@ macro_rules! ensure {
     };
 }
 
+impl ColumnDisplay {
+    /// Returns `true` if the column display is [`Normal`]
+    ///
+    /// [`Normal`]: ColumnDisplay::Normal
+    #[must_use]
+    pub fn is_normal(&self) -> bool {
+        *self == ColumnDisplay::Normal
+    }
+
+    /// Returns `true` if the column display is [`Tabbed`]
+    ///
+    /// [`Tabbed`]: ColumnDisplay::Tabbed
+    #[must_use]
+    pub fn is_tabbed(&self) -> bool {
+        *self == ColumnDisplay::Tabbed
+    }
+}
+
 impl OutputAction {
     /// Validates some required constraints on the modeline and custom mode.
     pub fn validate(&self) -> Result<(), String> {

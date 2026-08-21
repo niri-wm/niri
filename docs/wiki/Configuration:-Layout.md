@@ -12,6 +12,7 @@ layout {
     empty-workspace-above-first
     default-column-display "tabbed"
     background-color "#003300"
+    maximized-window-placement "expel-from-column"
 
     preset-column-widths {
         proportion 0.33333
@@ -561,3 +562,16 @@ layout {
 ```
 
 You can also set the color per-output [in the output config](./Configuration:-Outputs.md#layout-config-overrides).
+
+### maximized-window-placement
+
+<sup>Since: next release</sup>
+
+Determines whether windows are expelled from their column on maximize/fullscreen.
+Can be `expel-from-column` or `keep-in-column`.
+
+```kdl
+layout {
+    maximized-window-placement "expel-from-column"
+}
+```

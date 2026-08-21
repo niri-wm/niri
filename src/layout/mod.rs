@@ -588,6 +588,11 @@ impl SizingMode {
     pub fn is_maximized(&self) -> bool {
         matches!(self, Self::Maximized)
     }
+
+    #[must_use]
+    pub fn is_fullscreen_or_maximized(&self) -> bool {
+        matches!(self, Self::Fullscreen | Self::Maximized)
+    }
 }
 
 impl<W: LayoutElement> InteractiveMoveState<W> {
