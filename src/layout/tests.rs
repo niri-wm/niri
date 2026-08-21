@@ -3630,6 +3630,568 @@ fn move_window_to_workspace_maximize_and_fullscreen() {
     assert_eq!(win.pending_sizing_mode(), SizingMode::Normal);
 }
 
+/// Create layout of `cols` columns `width` pixels wide on a 1280px output with the given layout
+/// settings.
+fn fill_empty_space_layout(
+    cols: usize,
+    width: i32,
+    fill_empty_space: bool,
+    layout: Option<niri_config::Layout>,
+) -> Layout<TestWindow> {
+    let mut ops = vec![Op::AddOutput(1)];
+    for id in 1..=cols {
+        ops.push(Op::AddWindow {
+            params: TestWindowParams::new(id),
+        });
+        ops.push(Op::SetColumnWidth(SizeChange::SetFixed(width)));
+        ops.push(Op::Communicate(id));
+    }
+
+    // Leave the last column focused, having focused away and back so that
+    // activate_prev_column_on_removal is cleared — otherwise removing the focused column would
+    // restore the pre-open view offset, independently of the fill-empty-space option.
+    if 1 < cols {
+        ops.push(Op::FocusColumn(cols - 1));
+    }
+    ops.push(Op::FocusColumn(cols));
+    ops.push(Op::CompleteAnimations);
+
+    let options = Options {
+        layout: niri_config::Layout {
+            fill_empty_space,
+            ..layout.unwrap_or_default()
+        },
+        ..Default::default()
+    };
+    check_ops_with_options(options, ops)
+}
+
+fn view_pos(layout: &Layout<TestWindow>) -> f64 {
+    layout.active_workspace().unwrap().scrolling().view_pos()
+}
+
+#[test]
+fn fill_empty_space_close_last_focused() {
+    let close = [Op::CloseWindow(5), Op::CompleteAnimations];
+
+    // Off: the view stays put, leaving empty space where the window was.
+    let mut layout = fill_empty_space_layout(5, 400, false, None);
+    insta::assert_snapshot!(view_pos(&layout), @"800");
+    check_ops_on_layout(&mut layout, close.clone());
+    insta::assert_snapshot!(view_pos(&layout), @"800");
+
+    // On: the view scrolls, leaving no empty space.
+    let mut layout = fill_empty_space_layout(5, 400, true, None);
+    insta::assert_snapshot!(view_pos(&layout), @"800");
+    check_ops_on_layout(&mut layout, close);
+    insta::assert_snapshot!(view_pos(&layout), @"384");
+}
+
+#[test]
+fn fill_empty_space_close_last_unfocused() {
+    let close = [
+        Op::FocusColumn(4),
+        Op::CloseWindow(5),
+        Op::CompleteAnimations,
+    ];
+
+    // Off: the view stays put, leaving empty space where the window was.
+    let mut layout = fill_empty_space_layout(5, 400, false, None);
+    insta::assert_snapshot!(view_pos(&layout), @"800");
+    check_ops_on_layout(&mut layout, close.clone());
+    insta::assert_snapshot!(view_pos(&layout), @"800");
+
+    // On: the view scrolls, leaving no empty space.
+    let mut layout = fill_empty_space_layout(5, 400, true, None);
+    insta::assert_snapshot!(view_pos(&layout), @"800");
+    check_ops_on_layout(&mut layout, close);
+    insta::assert_snapshot!(view_pos(&layout), @"384");
+}
+
+#[test]
+fn fill_empty_space_close_first_unfocused() {
+    // Move focus to the far left, so the leftmost column is visible when it is closed.
+    let focus = [
+        Op::FocusColumn(1),
+        Op::FocusColumn(2),
+        Op::CompleteAnimations,
+    ];
+    let close = [Op::CloseWindow(1), Op::CompleteAnimations];
+
+    // Off: the view stays put, leaving empty space where the window was.
+    let mut layout = fill_empty_space_layout(5, 400, false, None);
+    check_ops_on_layout(&mut layout, focus.clone());
+    insta::assert_snapshot!(view_pos(&layout), @"-16");
+    check_ops_on_layout(&mut layout, close.clone());
+    insta::assert_snapshot!(view_pos(&layout), @"-432");
+
+    // On: the view scrolls, leaving no empty space.
+    let mut layout = fill_empty_space_layout(5, 400, true, None);
+    check_ops_on_layout(&mut layout, focus);
+    insta::assert_snapshot!(view_pos(&layout), @"-16");
+    check_ops_on_layout(&mut layout, close);
+    insta::assert_snapshot!(view_pos(&layout), @"-16");
+}
+
+#[test]
+fn fill_empty_space_move_last_focused() {
+    let move_away = [
+        Op::MoveWindowToWorkspaceDown(true),
+        Op::FocusWorkspaceUp,
+        Op::CompleteAnimations,
+    ];
+
+    // Off: the view stays put, leaving empty space where the window was.
+    let mut layout = fill_empty_space_layout(5, 400, false, None);
+    insta::assert_snapshot!(view_pos(&layout), @"800");
+    check_ops_on_layout(&mut layout, move_away.clone());
+    insta::assert_snapshot!(view_pos(&layout), @"800");
+
+    // On: the view scrolls, leaving no empty space.
+    let mut layout = fill_empty_space_layout(5, 400, true, None);
+    insta::assert_snapshot!(view_pos(&layout), @"800");
+    check_ops_on_layout(&mut layout, move_away);
+    insta::assert_snapshot!(view_pos(&layout), @"384");
+}
+
+#[test]
+fn fill_empty_space_move_last_unfocused() {
+    let move_away = [
+        Op::FocusColumn(4),
+        Op::MoveWindowToWorkspace {
+            window_id: Some(5),
+            workspace_idx: 1,
+        },
+        Op::CompleteAnimations,
+    ];
+
+    // Off: the view stays put, leaving empty space where the window was.
+    let mut layout = fill_empty_space_layout(5, 400, false, None);
+    insta::assert_snapshot!(view_pos(&layout), @"800");
+    check_ops_on_layout(&mut layout, move_away.clone());
+    insta::assert_snapshot!(view_pos(&layout), @"800");
+
+    // On: the view scrolls, leaving no empty space.
+    let mut layout = fill_empty_space_layout(5, 400, true, None);
+    insta::assert_snapshot!(view_pos(&layout), @"800");
+    check_ops_on_layout(&mut layout, move_away);
+    insta::assert_snapshot!(view_pos(&layout), @"384");
+}
+
+#[test]
+fn fill_empty_space_move_first_unfocused() {
+    // Move focus to the far left, so the leftmost column is visible when it is moved away.
+    let setup = [
+        Op::AddOutput(2),
+        Op::FocusColumn(1),
+        Op::FocusColumn(2),
+        Op::CompleteAnimations,
+    ];
+    let move_away = [
+        Op::MoveWindowToOutput {
+            window_id: Some(1),
+            output_id: 2,
+            target_ws_idx: None,
+        },
+        Op::CompleteAnimations,
+    ];
+
+    // Off: the view stays put, leaving empty space where the window was.
+    let mut layout = fill_empty_space_layout(5, 400, false, None);
+    check_ops_on_layout(&mut layout, setup.clone());
+    insta::assert_snapshot!(view_pos(&layout), @"-16");
+    check_ops_on_layout(&mut layout, move_away.clone());
+    insta::assert_snapshot!(view_pos(&layout), @"-432");
+
+    // On: the view scrolls, leaving no empty space.
+    let mut layout = fill_empty_space_layout(5, 400, true, None);
+    check_ops_on_layout(&mut layout, setup);
+    insta::assert_snapshot!(view_pos(&layout), @"-16");
+    check_ops_on_layout(&mut layout, move_away);
+    insta::assert_snapshot!(view_pos(&layout), @"-16");
+}
+
+#[test]
+fn fill_empty_space_float_last_focused() {
+    let float = [
+        Op::ToggleWindowFloating { id: None },
+        Op::CompleteAnimations,
+    ];
+
+    // Off: the view stays put, leaving empty space where the window was.
+    let mut layout = fill_empty_space_layout(5, 400, false, None);
+    insta::assert_snapshot!(view_pos(&layout), @"800");
+    check_ops_on_layout(&mut layout, float.clone());
+    insta::assert_snapshot!(view_pos(&layout), @"800");
+
+    // On: the view scrolls, leaving no empty space.
+    let mut layout = fill_empty_space_layout(5, 400, true, None);
+    insta::assert_snapshot!(view_pos(&layout), @"800");
+    check_ops_on_layout(&mut layout, float);
+    insta::assert_snapshot!(view_pos(&layout), @"384");
+}
+
+#[test]
+fn fill_empty_space_float_last_unfocused() {
+    let float = [
+        Op::FocusColumn(4),
+        Op::ToggleWindowFloating { id: Some(5) },
+        Op::CompleteAnimations,
+    ];
+
+    // Off: the view stays put, leaving empty space where the window was.
+    let mut layout = fill_empty_space_layout(5, 400, false, None);
+    insta::assert_snapshot!(view_pos(&layout), @"800");
+    check_ops_on_layout(&mut layout, float.clone());
+    insta::assert_snapshot!(view_pos(&layout), @"800");
+
+    // On: the view scrolls, leaving no empty space.
+    let mut layout = fill_empty_space_layout(5, 400, true, None);
+    insta::assert_snapshot!(view_pos(&layout), @"800");
+    check_ops_on_layout(&mut layout, float);
+    insta::assert_snapshot!(view_pos(&layout), @"384");
+}
+
+#[test]
+fn fill_empty_space_float_first() {
+    // Move focus to the far left, so the leftmost column is visible when it is floated.
+    let focus = [
+        Op::FocusColumn(1),
+        Op::FocusColumn(2),
+        Op::CompleteAnimations,
+    ];
+    let float = [
+        Op::ToggleWindowFloating { id: Some(1) },
+        Op::CompleteAnimations,
+    ];
+
+    // Off: the view stays put, leaving empty space where the window was.
+    let mut layout = fill_empty_space_layout(5, 400, false, None);
+    check_ops_on_layout(&mut layout, focus.clone());
+    insta::assert_snapshot!(view_pos(&layout), @"-16");
+    check_ops_on_layout(&mut layout, float.clone());
+    insta::assert_snapshot!(view_pos(&layout), @"-432");
+
+    // On: the view scrolls, leaving no empty space.
+    let mut layout = fill_empty_space_layout(5, 400, true, None);
+    check_ops_on_layout(&mut layout, focus);
+    insta::assert_snapshot!(view_pos(&layout), @"-16");
+    check_ops_on_layout(&mut layout, float);
+    insta::assert_snapshot!(view_pos(&layout), @"-16");
+}
+
+#[test]
+fn fill_empty_space_consume_last() {
+    let consume = [
+        Op::FocusColumn(4),
+        Op::ConsumeWindowIntoColumn,
+        Op::CompleteAnimations,
+    ];
+
+    // Off: the view stays put, leaving empty space where the window was.
+    let mut layout = fill_empty_space_layout(5, 400, false, None);
+    insta::assert_snapshot!(view_pos(&layout), @"800");
+    check_ops_on_layout(&mut layout, consume.clone());
+    insta::assert_snapshot!(view_pos(&layout), @"800");
+
+    // On: the view scrolls, leaving no empty space.
+    let mut layout = fill_empty_space_layout(5, 400, true, None);
+    insta::assert_snapshot!(view_pos(&layout), @"800");
+    check_ops_on_layout(&mut layout, consume);
+    insta::assert_snapshot!(view_pos(&layout), @"384");
+}
+
+#[test]
+fn fill_empty_space_consume_first() {
+    let focus = [
+        Op::FocusColumn(1),
+        Op::FocusColumn(2),
+        Op::CompleteAnimations,
+    ];
+    let consume = [
+        Op::ConsumeOrExpelWindowRight { id: Some(1) },
+        Op::CompleteAnimations,
+    ];
+
+    // Off: the view stays put, leaving empty space where the window was.
+    let mut layout = fill_empty_space_layout(5, 400, false, None);
+    check_ops_on_layout(&mut layout, focus.clone());
+    insta::assert_snapshot!(view_pos(&layout), @"-16");
+    check_ops_on_layout(&mut layout, consume.clone());
+    insta::assert_snapshot!(view_pos(&layout), @"-432");
+
+    // On: the view scrolls, leaving no empty space.
+    let mut layout = fill_empty_space_layout(5, 400, true, None);
+    check_ops_on_layout(&mut layout, focus);
+    insta::assert_snapshot!(view_pos(&layout), @"-16");
+    check_ops_on_layout(&mut layout, consume);
+    insta::assert_snapshot!(view_pos(&layout), @"-16");
+}
+
+#[test]
+fn fill_empty_space_unfullscreen_focused() {
+    // Fullscreening the active column stashes the view offset, and unfullscreening puts it back as
+    // long as nothing else moved the end of the strip in the meantime.
+    let fullscreen = [
+        Op::FullscreenWindow(5),
+        Op::Communicate(5),
+        Op::CompleteAnimations,
+        Op::FullscreenWindow(5),
+        Op::Communicate(5),
+        Op::CompleteAnimations,
+    ];
+
+    // Off: the view scrolls, leaving no empty space.
+    let mut layout = fill_empty_space_layout(5, 400, false, None);
+    insta::assert_snapshot!(view_pos(&layout), @"800");
+    check_ops_on_layout(&mut layout, fullscreen.clone());
+    insta::assert_snapshot!(view_pos(&layout), @"800");
+
+    // On: the view scrolls, leaving no empty space.
+    let mut layout = fill_empty_space_layout(5, 400, true, None);
+    insta::assert_snapshot!(view_pos(&layout), @"800");
+    check_ops_on_layout(&mut layout, fullscreen);
+    insta::assert_snapshot!(view_pos(&layout), @"800");
+}
+
+#[test]
+fn fill_empty_space_unfullscreen_focused_after_content_shrank() {
+    // Same round trip, but the window shrinks while the fullscreen is up. That has no visible
+    // effect until it unfullscreens, at which point the strip is shorter than when the offset was
+    // stashed, causing the view to scroll. Resizing a non-active column yields the same result.
+    let fullscreen = [
+        Op::FullscreenWindow(5),
+        Op::Communicate(5),
+        Op::SetColumnWidth(SizeChange::SetFixed(200)),
+        Op::Communicate(5),
+        Op::CompleteAnimations,
+    ];
+    let unfullscreen = [
+        Op::FullscreenWindow(5),
+        Op::Communicate(5),
+        Op::CompleteAnimations,
+    ];
+
+    // Off: view restored to where it was, which now leaves some empty space to the right.
+    let mut layout = fill_empty_space_layout(5, 400, false, None);
+    check_ops_on_layout(&mut layout, fullscreen.clone());
+    insta::assert_snapshot!(view_pos(&layout), @"1664");
+    check_ops_on_layout(&mut layout, unfullscreen.clone());
+    insta::assert_snapshot!(view_pos(&layout), @"800");
+
+    // On: the view scrolls, leaving no empty space.
+    let mut layout = fill_empty_space_layout(5, 400, true, None);
+    check_ops_on_layout(&mut layout, fullscreen);
+    insta::assert_snapshot!(view_pos(&layout), @"1664");
+    check_ops_on_layout(&mut layout, unfullscreen);
+    insta::assert_snapshot!(view_pos(&layout), @"600");
+}
+
+#[test]
+fn fill_empty_space_unfullscreen_unfocused_after_content_shrank() {
+    // Same round trip, but a window shrinks while the fullscreen is up. That has no visible
+    // effect until it unfullscreens, at which point the strip is shorter than when the offset was
+    // stashed, causing the view to scroll.
+    let fullscreen = [
+        Op::FullscreenWindow(5),
+        Op::Communicate(5),
+        Op::FocusColumn(4),
+        Op::SetColumnWidth(SizeChange::SetFixed(200)),
+        Op::Communicate(4),
+        Op::CompleteAnimations,
+    ];
+    let unfullscreen = [
+        Op::SetFullscreenWindow {
+            window: 5,
+            is_fullscreen: false,
+        },
+        Op::Communicate(5),
+        Op::CompleteAnimations,
+    ];
+
+    // Off: the view stays put, leaving empty space that the fullscreen window was occupying.
+    let mut layout = fill_empty_space_layout(5, 400, false, None);
+    check_ops_on_layout(&mut layout, fullscreen.clone());
+    insta::assert_snapshot!(view_pos(&layout), @"1232");
+    check_ops_on_layout(&mut layout, unfullscreen.clone());
+    insta::assert_snapshot!(view_pos(&layout), @"1232");
+
+    // On: the view scrolls, leaving no empty space.
+    let mut layout = fill_empty_space_layout(5, 400, true, None);
+    check_ops_on_layout(&mut layout, fullscreen);
+    insta::assert_snapshot!(view_pos(&layout), @"1232");
+    check_ops_on_layout(&mut layout, unfullscreen);
+    insta::assert_snapshot!(view_pos(&layout), @"600");
+}
+
+#[test]
+fn fill_empty_space_shrink_last_focused() {
+    // Narrowing a column frees space next to it.
+    let shrink = [
+        Op::SetColumnWidth(SizeChange::SetFixed(200)),
+        Op::Communicate(5),
+        Op::CompleteAnimations,
+    ];
+
+    // Off: the view stays put, leaving empty space to the right of the narrowed column.
+    let mut layout = fill_empty_space_layout(5, 400, false, None);
+    insta::assert_snapshot!(view_pos(&layout), @"800");
+    check_ops_on_layout(&mut layout, shrink.clone());
+    insta::assert_snapshot!(view_pos(&layout), @"800");
+
+    // On: the view scrolls, leaving no empty space.
+    let mut layout = fill_empty_space_layout(5, 400, true, None);
+    insta::assert_snapshot!(view_pos(&layout), @"800");
+    check_ops_on_layout(&mut layout, shrink);
+    insta::assert_snapshot!(view_pos(&layout), @"600");
+}
+
+#[test]
+fn fill_empty_space_shrink_last_unfocused() {
+    // Narrowing a column frees space next to it.
+    let shrink = [
+        Op::FocusColumn(4),
+        Op::SetWindowWidth {
+            id: Some(5),
+            change: SizeChange::SetFixed(200),
+        },
+        Op::Communicate(5),
+        Op::CompleteAnimations,
+    ];
+
+    // Off: the view stays put, leaving empty space to the right of the narrowed column.
+    let mut layout = fill_empty_space_layout(5, 400, false, None);
+    insta::assert_snapshot!(view_pos(&layout), @"800");
+    check_ops_on_layout(&mut layout, shrink.clone());
+    insta::assert_snapshot!(view_pos(&layout), @"800");
+
+    // On: the view scrolls, leaving no empty space.
+    let mut layout = fill_empty_space_layout(5, 400, true, None);
+    insta::assert_snapshot!(view_pos(&layout), @"800");
+    check_ops_on_layout(&mut layout, shrink);
+    insta::assert_snapshot!(view_pos(&layout), @"600");
+}
+
+#[test]
+fn fill_empty_space_shrink_last_interactive() {
+    // Same as above, but through an interactive resize. The view is deliberately left alone while
+    // the drag is in progress, so the fill only happens once the resize ends.
+    let drag = [
+        Op::InteractiveResizeBegin {
+            window: 5,
+            edges: ResizeEdge::RIGHT,
+        },
+        Op::InteractiveResizeUpdate {
+            window: 5,
+            dx: -200.,
+            dy: 0.,
+        },
+        Op::Communicate(5),
+        Op::InteractiveResizeEnd { window: 5 },
+        Op::CompleteAnimations,
+    ];
+
+    // Off: the view stays put, leaving empty space to the right of the narrowed column.
+    let mut layout = fill_empty_space_layout(5, 400, false, None);
+    insta::assert_snapshot!(view_pos(&layout), @"800");
+    check_ops_on_layout(&mut layout, drag.clone());
+    insta::assert_snapshot!(view_pos(&layout), @"800");
+
+    // On: the view scrolls, leaving no empty space.
+    let mut layout = fill_empty_space_layout(5, 400, true, None);
+    insta::assert_snapshot!(view_pos(&layout), @"800");
+    check_ops_on_layout(&mut layout, drag);
+    insta::assert_snapshot!(view_pos(&layout), @"600");
+}
+
+#[test]
+fn fill_empty_space_shrink_first() {
+    // Shrinking the first column on the left edge leaves a gap to the left.
+    let focus = [
+        Op::FocusColumn(1),
+        Op::FocusColumn(2),
+        Op::CompleteAnimations,
+    ];
+    let shrink = [
+        Op::SetWindowWidth {
+            id: Some(1),
+            change: SizeChange::SetFixed(200),
+        },
+        Op::Communicate(1),
+        Op::CompleteAnimations,
+    ];
+
+    // Off: the view stays put, leaving empty space to the left of the narrowed column.
+    let mut layout = fill_empty_space_layout(5, 400, false, None);
+    check_ops_on_layout(&mut layout, focus.clone());
+    insta::assert_snapshot!(view_pos(&layout), @"-16");
+    check_ops_on_layout(&mut layout, shrink.clone());
+    insta::assert_snapshot!(view_pos(&layout), @"-216");
+
+    // On: the view scrolls, leaving no empty space.
+    let mut layout = fill_empty_space_layout(5, 400, true, None);
+    check_ops_on_layout(&mut layout, focus);
+    insta::assert_snapshot!(view_pos(&layout), @"-16");
+    check_ops_on_layout(&mut layout, shrink);
+    insta::assert_snapshot!(view_pos(&layout), @"-16");
+}
+
+#[test]
+fn fill_empty_space_center_focused_column_takes_precedence() {
+    // With center-focused-column "always" the focused column is centered, and that wins.
+    let config = niri_config::Layout {
+        center_focused_column: CenterFocusedColumn::Always,
+        ..Default::default()
+    };
+
+    let close = [Op::CloseWindow(5), Op::CompleteAnimations];
+
+    // Off: the focused column is centered.
+    let mut layout = fill_empty_space_layout(5, 400, false, Some(config.clone()));
+    insta::assert_snapshot!(view_pos(&layout), @"1224");
+    check_ops_on_layout(&mut layout, close.clone());
+    insta::assert_snapshot!(view_pos(&layout), @"808");
+
+    // On: the focused column is centered.
+    let mut layout = fill_empty_space_layout(5, 400, true, Some(config));
+    insta::assert_snapshot!(view_pos(&layout), @"1224");
+    check_ops_on_layout(&mut layout, close);
+    insta::assert_snapshot!(view_pos(&layout), @"808");
+}
+
+#[test]
+fn fill_empty_space_center_single_column_keeps_view() {
+    // always-center-single-column parks a lone column in the middle of the view, leaving blank
+    // space on both sides deliberately. Adding a second column drops the centering, but both
+    // columns are still fully on screen — so there is no empty space to reclaim and the view
+    // must not jump.
+    let config = niri_config::Layout {
+        always_center_single_column: true,
+        ..Default::default()
+    };
+
+    let add_second = [
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+        Op::SetColumnWidth(SizeChange::SetFixed(400)),
+        Op::Communicate(2),
+        Op::CompleteAnimations,
+    ];
+
+    // Off: the view stays put, leaving empty space to the left.
+    let mut layout = fill_empty_space_layout(1, 400, false, Some(config.clone()));
+    insta::assert_snapshot!(view_pos(&layout), @"-440");
+    check_ops_on_layout(&mut layout, add_second.clone());
+    insta::assert_snapshot!(view_pos(&layout), @"-440");
+
+    // On: the view stays put, leaving empty space to the left.
+    let mut layout = fill_empty_space_layout(1, 400, true, Some(config));
+    insta::assert_snapshot!(view_pos(&layout), @"-440");
+    check_ops_on_layout(&mut layout, add_second);
+    insta::assert_snapshot!(view_pos(&layout), @"-440");
+}
+
 #[test]
 fn tabs_with_different_border() {
     let ops = [
@@ -3887,6 +4449,7 @@ prop_compose! {
         tab_indicator in prop::option::of(arbitrary_tab_indicator()),
         center_focused_column in prop::option::of(arbitrary_center_focused_column()),
         always_center_single_column in prop::option::of(any::<bool>().prop_map(Flag)),
+        fill_empty_space in prop::option::of(any::<bool>().prop_map(Flag)),
         empty_workspace_above_first in prop::option::of(any::<bool>().prop_map(Flag)),
     ) -> niri_config::LayoutPart {
         niri_config::LayoutPart {
@@ -3894,6 +4457,7 @@ prop_compose! {
             struts,
             center_focused_column,
             always_center_single_column,
+            fill_empty_space,
             empty_workspace_above_first,
             focus_ring,
             border,
