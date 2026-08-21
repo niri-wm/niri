@@ -123,6 +123,9 @@ pub struct ResolvedWindowRules {
     /// Override whether to set the Tiled xdg-toplevel state on the window.
     pub tiled_state: Option<bool>,
 
+    /// What FPS to force renders for this window.
+    pub force_render: Option<u16>,
+
     /// Background effect configuration.
     pub background_effect: BackgroundEffect,
 
@@ -308,6 +311,9 @@ impl ResolvedWindowRules {
                 }
                 if let Some(x) = rule.tiled_state {
                     resolved.tiled_state = Some(x);
+                }
+                if let Some(x) = rule.force_render {
+                    resolved.force_render = Some(x);
                 }
 
                 resolved

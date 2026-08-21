@@ -179,9 +179,9 @@ use crate::utils::vblank_throttle::VBlankThrottle;
 use crate::utils::watcher::Watcher;
 use crate::utils::xwayland::satellite::Satellite;
 use crate::utils::{
-    center, center_f64, expand_home, get_monotonic_time, ipc_transform_to_smithay, is_mapped,
-    logical_output, make_screenshot_path, output_matches_name, output_size, panel_orientation,
-    send_scale_transform, write_png_rgba8, xwayland,
+    center, center_f64, expand_home, frequency_to_period, get_monotonic_time,
+    ipc_transform_to_smithay, is_mapped, logical_output, make_screenshot_path, output_matches_name,
+    output_size, panel_orientation, send_scale_transform, write_png_rgba8, xwayland,
 };
 use crate::window::mapped::MappedId;
 use crate::window::{InitialConfigureState, Mapped, ResolvedWindowRules, Unmapped, WindowRef};
@@ -573,6 +573,11 @@ struct SurfaceFrameThrottlingState {
     last_sent_at: RefCell<Option<(Output, u32)>>,
 }
 
+struct SurfaceForceRenderState {
+    /// Whether a forced render is scheduled in the event loop.
+    scheduled: Cell<bool>,
+}
+
 pub enum CenterCoords {
     Separately,
     Both,
@@ -663,6 +668,94 @@ impl Default for SurfaceFrameThrottlingState {
             last_sent_at: RefCell::new(None),
         }
     }
+}
+impl Default for SurfaceForceRenderState {
+    fn default() -> Self {
+        Self {
+            scheduled: Cell::new(false),
+        }
+    }
+}
+
+pub fn setup_force_render(event_loop: &mut LoopHandle<'static, State>, mapped: &Mapped) -> bool {
+    if mapped.force_render().is_none() {
+        return false;
+    }
+
+    let already_scheduled = with_states(mapped.toplevel().wl_surface(), |states| {
+        let force_render_state = states
+            .data_map
+            .get_or_insert(SurfaceForceRenderState::default);
+        force_render_state.scheduled.replace(true)
+    });
+    if already_scheduled {
+        return false;
+    }
+
+    let mapped_id = mapped.id();
+    let res = event_loop.insert_source(Timer::immediate(), move |_, _, state| {
+        force_render_callback(state, mapped_id)
+    });
+    match res {
+        Ok(_) => true,
+        Err(e) => {
+            warn!("error scheduling forced render: {e}");
+            false
+        }
+    }
+}
+
+fn force_render_callback(state: &mut State, mapped_id: MappedId) -> TimeoutAction {
+    let Some((output_rate, mapped)) = state
+        .niri
+        .layout
+        .workspaces_mut()
+        .flat_map(|ws| {
+            let rate = ws
+                .current_output()
+                .and_then(|out| out.current_mode())
+                .map(|mode| mode.refresh)
+                .unwrap_or(0);
+            ws.windows_mut().map(move |win| (rate, win))
+        })
+        .find(|(_, win)| win.id() == mapped_id)
+    else {
+        return TimeoutAction::Drop;
+    };
+
+    let Some(period) = with_states(mapped.toplevel().wl_surface(), |states| {
+        let Some(rate) = mapped.force_render() else {
+            let force_render_state = states
+                .data_map
+                .get_or_insert(SurfaceForceRenderState::default);
+            force_render_state.scheduled.set(false);
+            return None;
+        };
+
+        let period = std::cmp::max(
+            frequency_to_period(rate),
+            frequency_to_period(output_rate as u32),
+        );
+        Some(period)
+    }) else {
+        return TimeoutAction::Drop;
+    };
+
+    let output = &Output::new(
+        String::new(),
+        PhysicalProperties {
+            size: Size::from((0, 0)),
+            subpixel: Subpixel::Unknown,
+            make: String::new(),
+            model: String::new(),
+            serial_number: String::new(),
+        },
+    );
+    let frame_callback_time = get_monotonic_time();
+
+    mapped.send_frame(output, frame_callback_time, Some(period), |_, _| None);
+
+    TimeoutAction::ToDuration(period)
 }
 
 impl KeyboardFocus {
@@ -5088,6 +5181,7 @@ impl Niri {
         let frame_callback_time = get_monotonic_time();
 
         for mapped in self.layout.windows_for_output_mut(output) {
+            setup_force_render(&mut self.event_loop, mapped);
             mapped.send_frame(
                 output,
                 frame_callback_time,

@@ -164,6 +164,16 @@ pub fn get_monotonic_time() -> Duration {
     Duration::new(ts.tv_sec as u64, ts.tv_nsec as u32)
 }
 
+/// Converts a frequency in millihertz to the corresponding period, clamping to
+/// `Duration::ZERO` for nonpositive rates and `Duration::MAX` on overflow.
+pub fn frequency_to_period(rate: u32) -> Duration {
+    if rate > 0 {
+        Duration::try_from_secs_f64(1000.0 / rate as f64).unwrap_or(Duration::MAX)
+    } else {
+        Duration::ZERO
+    }
+}
+
 pub fn center(rect: Rectangle<i32, Logical>) -> Point<i32, Logical> {
     rect.loc + rect.size.downscale(2).to_point()
 }
