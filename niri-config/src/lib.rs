@@ -50,7 +50,9 @@ pub use crate::binds::*;
 pub use crate::debug::Debug;
 pub use crate::error::{ConfigIncludeError, ConfigParseResult};
 pub use crate::gestures::Gestures;
-pub use crate::input::{Input, ModKey, ScrollMethod, TrackLayout, WarpMouseToFocusMode, Xkb};
+pub use crate::input::{
+    Input, Keyboard, ModKey, ScrollMethod, TrackLayout, WarpMouseToFocusMode, Xkb,
+};
 pub use crate::layer_rule::LayerRule;
 pub use crate::layout::*;
 pub use crate::misc::*;
@@ -644,8 +646,8 @@ mod tests {
     #[test]
     fn default_repeat_params() {
         let config = Config::parse_mem("").unwrap();
-        assert_eq!(config.input.keyboard.repeat_delay, 600);
-        assert_eq!(config.input.keyboard.repeat_rate, 25);
+        assert_eq!(config.input.fallback_keyboard().repeat_delay, 600);
+        assert_eq!(config.input.fallback_keyboard().repeat_rate, 25);
     }
 
     #[track_caller]
@@ -996,22 +998,25 @@ mod tests {
         assert_debug_snapshot!(parsed, @r#"
         Config {
             input: Input {
-                keyboard: Keyboard {
-                    xkb: Xkb {
-                        rules: "",
-                        model: "",
-                        layout: "us,ru",
-                        variant: "",
-                        options: Some(
-                            "grp:win_space_toggle",
-                        ),
-                        file: None,
+                keyboards: [
+                    Keyboard {
+                        name: None,
+                        xkb: Xkb {
+                            rules: "",
+                            model: "",
+                            layout: "us,ru",
+                            variant: "",
+                            options: Some(
+                                "grp:win_space_toggle",
+                            ),
+                            file: None,
+                        },
+                        repeat_delay: 600,
+                        repeat_rate: 25,
+                        track_layout: Window,
+                        numlock: false,
                     },
-                    repeat_delay: 600,
-                    repeat_rate: 25,
-                    track_layout: Window,
-                    numlock: false,
-                },
+                ],
                 touchpad: Touchpad {
                     off: false,
                     tap: true,
@@ -2477,8 +2482,24 @@ mod tests {
                 &format!("{default_config:#?}")
             ),
             @r#"
-        -            numlock: false,
-        +            numlock: true,
+        -        keyboards: [],
+        +        keyboards: [
+        +            Keyboard {
+        +                name: None,
+        +                xkb: Xkb {
+        +                    rules: "",
+        +                    model: "",
+        +                    layout: "",
+        +                    variant: "",
+        +                    options: None,
+        +                    file: None,
+        +                },
+        +                repeat_delay: 600,
+        +                repeat_rate: 25,
+        +                track_layout: Global,
+        +                numlock: true,
+        +            },
+        +        ],
 
         -            tap: false,
         +            tap: true,

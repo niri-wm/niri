@@ -10,7 +10,8 @@ use crate::FloatOrInt;
 
 #[derive(Debug, Default, PartialEq)]
 pub struct Input {
-    pub keyboard: Keyboard,
+    /// All configured keyboard blocks, including at most one unnamed (fallback) one.
+    pub keyboards: Vec<Keyboard>,
     pub touchpad: Touchpad,
     pub mouse: Mouse,
     pub trackpoint: Trackpoint,
@@ -27,8 +28,9 @@ pub struct Input {
 
 #[derive(knuffel::Decode, Debug, Default, PartialEq)]
 pub struct InputPart {
-    #[knuffel(child)]
-    pub keyboard: Option<KeyboardPart>,
+    /// Every `keyboard { ... }` / `keyboard "name" { ... }` child of this `input` block.
+    #[knuffel(children(name = "keyboard"))]
+    pub keyboards: Vec<KeyboardPart>,
     #[knuffel(child)]
     pub touchpad: Option<Touchpad>,
     #[knuffel(child)]
@@ -57,9 +59,32 @@ pub struct InputPart {
 
 impl MergeWith<InputPart> for Input {
     fn merge_with(&mut self, part: &InputPart) {
+        // A later `input { keyboard ... }` section fully replaces the previously configured
+        // keyboards, same as e.g. `touchpad` below. Keep all `keyboard` blocks for a given setup
+        // together in one `input` section (ideally one file) to avoid surprises.
+        //
+        // Named keyboards inherit any setting they don't specify themselves from the unnamed
+        // keyboard block in the same section (or from the regular defaults, if there isn't one),
+        // so e.g. `numlock` or `repeat-rate` don't need to be repeated in every keyboard block.
+        if !part.keyboards.is_empty() {
+            let mut fallback = Keyboard::default();
+            if let Some(fallback_part) = part.keyboards.iter().find(|k| k.name.is_none()) {
+                fallback.merge_with(fallback_part);
+            }
+
+            self.keyboards = part
+                .keyboards
+                .iter()
+                .map(|keyboard_part| {
+                    let mut keyboard = fallback.clone();
+                    keyboard.merge_with(keyboard_part);
+                    keyboard
+                })
+                .collect();
+        }
+
         merge!(
             (self, part),
-            keyboard,
             disable_power_key_handling,
             workspace_auto_back_and_forth,
         );
@@ -84,8 +109,37 @@ impl MergeWith<InputPart> for Input {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+impl Input {
+    /// Returns the unnamed (fallback) keyboard config, applied to keyboards that don't match any
+    /// named `keyboard "..." { }` block, and used for devices whose identity we can't determine.
+    pub fn fallback_keyboard(&self) -> Keyboard {
+        self.keyboards
+            .iter()
+            .find(|keyboard| keyboard.name.is_none())
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    /// Returns the keyboard config for the given libinput device name, falling back to
+    /// [`Self::fallback_keyboard`] if no `keyboard "name" { }` block matches it.
+    pub fn keyboard_named(&self, name: &str) -> Keyboard {
+        self.keyboards
+            .iter()
+            .find(|keyboard| {
+                keyboard
+                    .name
+                    .as_deref()
+                    .is_some_and(|n| n.eq_ignore_ascii_case(name))
+            })
+            .cloned()
+            .unwrap_or_else(|| self.fallback_keyboard())
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Keyboard {
+    /// Libinput device name this config applies to, or `None` for the fallback keyboard config.
+    pub name: Option<String>,
     pub xkb: Xkb,
     pub repeat_delay: u16,
     pub repeat_rate: u8,
@@ -96,6 +150,7 @@ pub struct Keyboard {
 impl Default for Keyboard {
     fn default() -> Self {
         Self {
+            name: None,
             xkb: Default::default(),
             // The defaults were chosen to match wlroots and sway.
             repeat_delay: 600,
@@ -108,6 +163,8 @@ impl Default for Keyboard {
 
 #[derive(knuffel::Decode, Debug, PartialEq, Eq)]
 pub struct KeyboardPart {
+    #[knuffel(argument)]
+    pub name: Option<String>,
     #[knuffel(child)]
     pub xkb: Option<Xkb>,
     #[knuffel(child, unwrap(argument))]
@@ -122,6 +179,7 @@ pub struct KeyboardPart {
 
 impl MergeWith<KeyboardPart> for Keyboard {
     fn merge_with(&mut self, part: &KeyboardPart) {
+        self.name.clone_from(&part.name);
         merge_clone!((self, part), xkb, repeat_delay, repeat_rate, track_layout);
         merge!((self, part), numlock);
     }
