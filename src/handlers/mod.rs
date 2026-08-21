@@ -1,5 +1,6 @@
 pub mod background_effect;
 mod compositor;
+mod dmabuf_readiness;
 mod layer_shell;
 mod xdg_shell;
 
@@ -30,6 +31,7 @@ use smithay::wayland::dmabuf::{DmabufGlobal, DmabufHandler, DmabufState, ImportN
 use smithay::wayland::drm_lease::{
     DrmLease, DrmLeaseBuilder, DrmLeaseHandler, DrmLeaseRequest, DrmLeaseState, LeaseRejected,
 };
+use smithay::wayland::drm_syncobj::{DrmSyncobjHandler, DrmSyncobjState};
 use smithay::wayland::fractional_scale::FractionalScaleHandler;
 use smithay::wayland::idle_inhibit::IdleInhibitHandler;
 use smithay::wayland::idle_notify::{IdleNotifierHandler, IdleNotifierState};
@@ -456,6 +458,12 @@ impl DmabufHandler for State {
         } else {
             notifier.failed();
         }
+    }
+}
+
+impl DrmSyncobjHandler for State {
+    fn drm_syncobj_state(&mut self) -> Option<&mut DrmSyncobjState> {
+        self.niri.drm_syncobj_state.as_mut()
     }
 }
 
