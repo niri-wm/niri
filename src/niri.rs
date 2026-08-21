@@ -79,7 +79,7 @@ use smithay::wayland::compositor::{
     CompositorState, HookId, SurfaceData, TraversalAction,
 };
 use smithay::wayland::cursor_shape::CursorShapeManagerState;
-use smithay::wayland::dmabuf::DmabufState;
+use smithay::wayland::dmabuf::{DmabufFeedback, DmabufState};
 use smithay::wayland::fractional_scale::FractionalScaleManagerState;
 use smithay::wayland::idle_inhibit::IdleInhibitManagerState;
 use smithay::wayland::idle_notify::IdleNotifierState;
@@ -4964,6 +4964,23 @@ impl Niri {
     ) {
         let _span = tracy_client::span!("Niri::send_dmabuf_feedbacks");
 
+        let disable_direct_scanout = self.config.borrow().debug.disable_direct_scanout;
+        let select_client_dmabuf_feedback =
+            |surface: &WlSurface, _: &SurfaceData| -> &DmabufFeedback {
+                if disable_direct_scanout {
+                    // If direct scanout is disabled, scanout tranches cannot provide their intended
+                    // benefit and can still make clients choose fragile scanout-oriented allocations.
+                    return &feedback.render;
+                }
+
+                select_dmabuf_feedback(
+                    surface,
+                    render_element_states,
+                    &feedback.render,
+                    &feedback.scanout,
+                )
+            };
+
         // We can unconditionally send the current output's feedback to regular and layer-shell
         // surfaces, as they can only be displayed on a single output at a time. Even if a surface
         // is currently invisible, this is the DMABUF feedback that it should know about.
@@ -4971,14 +4988,7 @@ impl Niri {
             mapped.window.send_dmabuf_feedback(
                 output,
                 |_, _| Some(output.clone()),
-                |surface, _| {
-                    select_dmabuf_feedback(
-                        surface,
-                        render_element_states,
-                        &feedback.render,
-                        &feedback.scanout,
-                    )
-                },
+                select_client_dmabuf_feedback,
             );
         }
 
@@ -4986,14 +4996,7 @@ impl Niri {
             surface.send_dmabuf_feedback(
                 output,
                 |_, _| Some(output.clone()),
-                |surface, _| {
-                    select_dmabuf_feedback(
-                        surface,
-                        render_element_states,
-                        &feedback.render,
-                        &feedback.scanout,
-                    )
-                },
+                select_client_dmabuf_feedback,
             );
         }
 
@@ -5002,14 +5005,7 @@ impl Niri {
                 surface.wl_surface(),
                 output,
                 |_, _| Some(output.clone()),
-                |surface, _| {
-                    select_dmabuf_feedback(
-                        surface,
-                        render_element_states,
-                        &feedback.render,
-                        &feedback.scanout,
-                    )
-                },
+                select_client_dmabuf_feedback,
             );
         }
 
@@ -5018,14 +5014,7 @@ impl Niri {
                 surface,
                 output,
                 surface_primary_scanout_output,
-                |surface, _| {
-                    select_dmabuf_feedback(
-                        surface,
-                        render_element_states,
-                        &feedback.render,
-                        &feedback.scanout,
-                    )
-                },
+                select_client_dmabuf_feedback,
             );
         }
 
@@ -5034,14 +5023,7 @@ impl Niri {
                 surface,
                 output,
                 surface_primary_scanout_output,
-                |surface, _| {
-                    select_dmabuf_feedback(
-                        surface,
-                        render_element_states,
-                        &feedback.render,
-                        &feedback.scanout,
-                    )
-                },
+                select_client_dmabuf_feedback,
             );
         }
     }
