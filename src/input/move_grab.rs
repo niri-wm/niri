@@ -18,6 +18,7 @@ use smithay::input::{tablet, SeatHandler};
 use smithay::output::Output;
 use smithay::utils::{IsAlive, Logical, Point, SERIAL_COUNTER};
 
+use crate::input::swipe_tracker::SwipeTracker;
 use crate::input::AnyStartData;
 use crate::niri::State;
 use crate::utils::get_monotonic_time;
@@ -36,6 +37,13 @@ pub struct MoveGrab {
     new_location: Point<f64, Logical>,
     event_timestamp: Option<Duration>,
     relative_delta: Option<Point<f64, Logical>>,
+
+    // Per-axis release-velocity trackers for the flick-to-throw gesture.
+    // Fed only from touch motion (touch-only feature); `flick_last` holds
+    // the previous touch location so each motion contributes a delta.
+    flick_x: SwipeTracker,
+    flick_y: SwipeTracker,
+    flick_last: Option<Point<f64, Logical>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -69,6 +77,9 @@ impl MoveGrab {
             new_location: location,
             event_timestamp: None,
             relative_delta: None,
+            flick_x: SwipeTracker::new(),
+            flick_y: SwipeTracker::new(),
+            flick_last: None,
         })
     }
 
@@ -294,6 +305,72 @@ impl MoveGrab {
 
         true
     }
+
+    /// On a fast single-finger release of an ongoing window move, retarget
+    /// the in-flight move to the adjacent display in the flick direction.
+    /// The `interactive_move_end` that runs right after (from `on_ungrab`)
+    /// then drops the window on that output with the normal animation.
+    ///
+    /// No-op (leaving the move to drop in place) when the feature is
+    /// disabled, the release is below the velocity threshold, the grab is
+    /// not in the `Move` state, or there is no display in that direction.
+    /// Touch only — fed exclusively from `TouchGrab::motion`.
+    fn try_flick_to_monitor(&mut self, data: &mut State) {
+        if self.gesture != GestureState::Move {
+            return;
+        }
+
+        let (enabled, threshold) = {
+            let config = data.niri.config.borrow();
+            let ts = &config.input.touchscreen;
+            (ts.flick_to_monitor(), ts.flick_velocity_threshold())
+        };
+        if !enabled {
+            return;
+        }
+
+        let vx = self.flick_x.velocity();
+        let vy = self.flick_y.velocity();
+        // Compare squared magnitude against squared threshold to skip the sqrt.
+        if vx * vx + vy * vy < threshold * threshold {
+            return;
+        }
+
+        let Some((current, _)) = data.niri.output_under(self.last_location) else {
+            return;
+        };
+        let current = current.clone();
+
+        // Dominant axis picks the throw direction; up is -y in screen space.
+        let target = if vx.abs() >= vy.abs() {
+            if vx < 0. {
+                data.niri.output_left_of(&current)
+            } else {
+                data.niri.output_right_of(&current)
+            }
+        } else if vy < 0. {
+            data.niri.output_up_of(&current)
+        } else {
+            data.niri.output_down_of(&current)
+        };
+        let Some(target) = target else {
+            return;
+        };
+
+        // Drop at the centre of the target output. interactive_move_update
+        // already knows how to relocate a moving window onto another output
+        // — it's the same path a mouse drag uses when it crosses the bezel.
+        let Some(geo) = data.niri.global_space.output_geometry(&target) else {
+            return;
+        };
+        let center = Point::from((geo.size.w as f64 / 2., geo.size.h as f64 / 2.));
+        data.niri.layout.interactive_move_update(
+            &self.window,
+            Point::from((0., 0.)),
+            target,
+            center,
+        );
+    }
 }
 
 impl PointerGrab<State> for MoveGrab {
@@ -479,9 +556,15 @@ impl TouchGrab<State> for MoveGrab {
             return;
         }
 
-        if !self.on_toggle_floating(data) {
-            handle.unset_grab(self, data);
-        }
+        // Second finger landed: cancel the move grab so the multi-finger
+        // gesture recognizer can take over. On mouse, the second button
+        // toggles floating (see `button` impl above), but on touch a new
+        // finger almost always means "this is becoming a multi-finger
+        // gesture" rather than a deliberate float toggle. The points are
+        // already tracked in `touch_gesture_points` (inserted in
+        // `on_touch_down` before this call), so the recognizer picks up
+        // seamlessly once the grab releases.
+        handle.unset_grab(self, data);
     }
 
     fn up(
@@ -493,6 +576,9 @@ impl TouchGrab<State> for MoveGrab {
         handle.up(data, event);
 
         if event.slot == self.start_data.unwrap_touch().slot {
+            // A fast release throws the window to the adjacent display;
+            // must run before unset_grab, which ends the move in on_ungrab.
+            self.try_flick_to_monitor(data);
             handle.unset_grab(self, data);
         }
     }
@@ -512,6 +598,14 @@ impl TouchGrab<State> for MoveGrab {
 
         self.new_location = event.location;
         self.event_timestamp = Some(Duration::from_millis(u64::from(event.time)));
+
+        // Feed the release-velocity trackers (per axis) for flick-to-throw.
+        let ts = Duration::from_millis(u64::from(event.time));
+        if let Some(prev) = self.flick_last.replace(event.location) {
+            let delta = event.location - prev;
+            self.flick_x.push(delta.x, ts);
+            self.flick_y.push(delta.y, ts);
+        }
     }
 
     fn frame(&mut self, data: &mut State, handle: &mut TouchInnerHandle<'_, State>) {
