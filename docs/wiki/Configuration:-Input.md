@@ -308,6 +308,28 @@ input {
 }
 ```
 
+#### `wake-monitors-on-input`
+
+<sup>Since: next release</sup>
+
+By default, when monitors are powered off (for example, with the `power-off-monitors` action), any input like moving the mouse or pressing a key powers them back on.
+
+Set this to `false` to keep the monitors off regardless of input.
+Then, the only way to power them back on is the `power-on-monitors` action, for example bound to a key or invoked with `niri msg action power-on-monitors`.
+
+Keep in mind that other input keeps working normally while the monitors are off: keys will go to the focused window, and binds will trigger their actions.
+
+```kdl
+input {
+    wake-monitors-on-input false
+}
+
+binds {
+    Mod+Shift+P { power-off-monitors; }
+    Mod+Shift+O { power-on-monitors; }
+}
+```
+
 #### `warp-mouse-to-focus`
 
 Makes the mouse warp to newly focused windows.
