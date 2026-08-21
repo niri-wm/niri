@@ -148,7 +148,7 @@ impl From<MruBind> for Bind {
     fn from(x: MruBind) -> Self {
         Self {
             key: x.key,
-            action: Action::from(x.action),
+            actions: vec![Action::from(x.action)].into(),
             repeat: true,
             cooldown: None,
             allow_when_locked: false,
