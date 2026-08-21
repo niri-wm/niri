@@ -340,9 +340,15 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
             let window = windows.values().find(|win| win.is_focused).cloned();
             Response::FocusedWindow(window)
         }
-        Request::PickWindow => {
+        Request::PickWindow { now } => {
             let (tx, rx) = async_channel::bounded(1);
             ctx.event_loop.insert_idle(move |state| {
+                if now {
+                    let id = state.niri.window_under_cursor().map(Mapped::id);
+                    let _ = tx.send_blocking(id);
+                    return;
+                }
+
                 let pointer = state.niri.seat.get_pointer().unwrap();
                 let start_data = PointerGrabStartData {
                     focus: None,
