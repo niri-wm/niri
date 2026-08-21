@@ -15,7 +15,7 @@ use serde_json::json;
 use crate::cli::Msg;
 use crate::utils::version;
 
-pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
+pub fn handle_msg(mut msg: Msg, json: bool, print_request: bool) -> anyhow::Result<()> {
     // For actions taking paths, prepend the niri CLI's working directory.
     if let Msg::Action {
         action:
@@ -49,8 +49,18 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
         Msg::RequestError => Request::ReturnError,
         Msg::OverviewState => Request::OverviewState,
         Msg::Casts => Request::Casts,
+        Msg::RawRequest => {
+            let stdin = std::io::stdin();
+            serde_json::from_reader(stdin).context("error parsing request JSON from stdin")?
+        }
     };
 
+    if print_request {
+        let json_str =
+            serde_json::to_string(&request).context("error formatting request as JSON")?;
+        println!("{json_str}");
+        return Ok(());
+    }
     let mut socket = Socket::connect().context("error connecting to the niri socket")?;
 
     let result = socket.send(request);
@@ -549,6 +559,10 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
                 print_cast(&cast);
                 println!();
             }
+        }
+        Msg::RawRequest => {
+            let output = serde_json::to_string(&response).context("error formatting response")?;
+            println!("{output}");
         }
     }
 
