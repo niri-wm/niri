@@ -3631,6 +3631,85 @@ fn move_window_to_workspace_maximize_and_fullscreen() {
 }
 
 #[test]
+fn close_window_keeps_view_when_all_columns_visible() {
+    // When a newly opened column is closed without losing focus, niri activates the previous
+    // column back and restores the view offset from before the column was opened. However, if
+    // all remaining columns are already fully on screen, restoring the offset would only scroll
+    // columns that the user can see anyway, so the view should stay put instead.
+    let options = Options {
+        layout: niri_config::Layout {
+            always_center_single_column: true,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+
+    let mut layout = check_ops_with_options(options, [Op::AddOutput(1)]);
+
+    for id in 1..=3 {
+        let ops = [
+            Op::AddWindow {
+                params: TestWindowParams::new(id),
+            },
+            Op::SetColumnWidth(SizeChange::SetFixed(400)),
+            Op::Communicate(id),
+            Op::CompleteAnimations,
+        ];
+        check_ops_on_layout(&mut layout, ops);
+    }
+
+    // The view has scrolled to right-align the third column; all three columns are on screen.
+    insta::assert_snapshot!(layout.active_workspace().unwrap().scrolling().view_pos(), @"-32");
+
+    let ops = [Op::CloseWindow(3), Op::CompleteAnimations];
+    check_ops_on_layout(&mut layout, ops);
+
+    // The saved view offset points back at the position with empty space to the left of the
+    // first column. Both remaining columns are already fully on screen though, so it must not be
+    // restored: the view stays put.
+    insta::assert_snapshot!(layout.active_workspace().unwrap().scrolling().view_pos(), @"-32");
+}
+
+#[test]
+fn close_window_restores_view_when_columns_off_screen() {
+    // When a newly opened column is closed without losing focus, niri activates the previous
+    // column back and restores the view offset from before the column was opened, as long
+    // as the remaining columns are not entirely on screen already.
+    let options = Options {
+        layout: niri_config::Layout {
+            always_center_single_column: true,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+
+    let mut layout = check_ops_with_options(options, [Op::AddOutput(1)]);
+
+    for id in 1..=4 {
+        let ops = [
+            Op::AddWindow {
+                params: TestWindowParams::new(id),
+            },
+            Op::SetColumnWidth(SizeChange::SetFixed(400)),
+            Op::Communicate(id),
+            Op::CompleteAnimations,
+        ];
+        check_ops_on_layout(&mut layout, ops);
+    }
+
+    // The view has scrolled to right-align the fourth column; the first column is almost
+    // entirely off screen to the left.
+    insta::assert_snapshot!(layout.active_workspace().unwrap().scrolling().view_pos(), @"384");
+
+    let ops = [Op::CloseWindow(4), Op::CompleteAnimations];
+    check_ops_on_layout(&mut layout, ops);
+
+    // The three remaining columns aren't entirely on screen, so the view offset must be
+    // restored to bring them into view.
+    insta::assert_snapshot!(layout.active_workspace().unwrap().scrolling().view_pos(), @"-32");
+}
+
+#[test]
 fn tabs_with_different_border() {
     let ops = [
         Op::AddOutput(1),
