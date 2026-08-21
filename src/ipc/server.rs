@@ -455,6 +455,50 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
             let casts = state.casts.casts.values().cloned().collect();
             Response::Casts(casts)
         }
+        Request::CreateVirtualOutput {
+            width,
+            height,
+            refresh_rate,
+        } => {
+            let width = width.unwrap_or(1920);
+            let height = height.unwrap_or(1080);
+            let refresh_rate = refresh_rate.unwrap_or(60);
+            let (tx, rx) = async_channel::bounded(1);
+
+            ctx.event_loop.insert_idle(move |state| {
+                let result = state.backend.create_virtual_output(
+                    &mut state.niri,
+                    width,
+                    height,
+                    refresh_rate,
+                );
+                let _ = tx.send_blocking(result);
+            });
+
+            let result = rx
+                .recv()
+                .await
+                .map_err(|_| String::from("error creating virtual output"))?;
+            match result {
+                Ok(name) => Response::VirtualOutputCreated(name),
+                Err(e) => return Err(e),
+            }
+        }
+        Request::RemoveVirtualOutput { name } => {
+            let (tx, rx) = async_channel::bounded(1);
+
+            ctx.event_loop.insert_idle(move |state| {
+                let result = state.backend.remove_virtual_output(&mut state.niri, &name);
+                let _ = tx.send_blocking(result);
+            });
+
+            let result = rx
+                .recv()
+                .await
+                .map_err(|_| String::from("error removing virtual output"))?;
+            result?;
+            Response::Handled
+        }
     };
 
     Ok(response)

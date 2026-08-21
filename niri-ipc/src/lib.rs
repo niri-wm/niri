@@ -98,6 +98,24 @@ pub enum Request {
         /// Configuration to apply.
         action: OutputAction,
     },
+    /// Create a new virtual headless output.
+    ///
+    /// This works with both the headless and the TTY backend.
+    CreateVirtualOutput {
+        /// Width in pixels. Defaults to 1920 if not specified.
+        width: Option<u16>,
+        /// Height in pixels. Defaults to 1080 if not specified.
+        height: Option<u16>,
+        /// Refresh rate in Hz. Defaults to 60 if not specified.
+        refresh_rate: Option<u32>,
+    },
+    /// Remove a virtual headless output by name.
+    ///
+    /// This works with both the headless and the TTY backend.
+    RemoveVirtualOutput {
+        /// Name of the output to remove (e.g. "HEADLESS-1").
+        name: String,
+    },
     /// Start continuously receiving events from the compositor.
     ///
     /// The compositor should reply with `Reply::Ok(Response::Handled)`, then continuously send
@@ -165,6 +183,8 @@ pub enum Response {
     OverviewState(Overview),
     /// Information about screencasts.
     Casts(Vec<Cast>),
+    /// A virtual output was created successfully.
+    VirtualOutputCreated(String),
 }
 
 /// Overview information.
