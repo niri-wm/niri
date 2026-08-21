@@ -67,6 +67,12 @@ input {
     // Focus windows and outputs automatically when moving the mouse into them.
     // Setting max-scroll-amount="0%" makes it work only on windows already fully on screen.
     // focus-follows-mouse max-scroll-amount="0%"
+
+    // Resolve keybinds by keysym (Percieved text value) instead of a physical key code
+    // Note: it uses default xkb layout for resolution to physical keys, changing the default layout will
+    // adjust your keybinds with it.
+    // This logic applies to other windows that follow this path.
+    // bind-to-keysyms false
 }
 
 // You can configure outputs by their name, which you can find
