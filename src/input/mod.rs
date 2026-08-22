@@ -2432,10 +2432,6 @@ impl State {
     }
 
     fn on_pointer_motion<I: InputBackend>(&mut self, event: I::PointerMotionEvent) {
-        let was_inside_hot_corner = self.niri.pointer_inside_hot_corner;
-        // Any of the early returns here mean that the pointer is not inside the hot corner.
-        self.niri.pointer_inside_hot_corner = false;
-
         // We need an output to be able to move the pointer.
         if self.niri.global_space.outputs().next().is_none() {
             return;
@@ -2621,6 +2617,11 @@ impl State {
 
         self.niri.pointer_contents.clone_from(&under);
 
+        let hot_corner_allowed = under.hot_corner
+            && pointer
+                .with_grab(|_, grab| grab_allows_hot_corner(grab))
+                .unwrap_or(true);
+
         pointer.motion(
             self,
             under.surface.clone(),
@@ -2630,6 +2631,8 @@ impl State {
                 time: event.time_msec(),
             },
         );
+        // A pointer grab may consume motion without updating the canonical location.
+        let motion_reached_target = pointer.current_location() == new_pos;
 
         pointer.relative_motion(
             self,
@@ -2643,17 +2646,14 @@ impl State {
 
         pointer.frame(self);
 
-        // contents_under() will return no surface when the hot corner should trigger, so
-        // pointer.motion() will set the current focus to None.
-        if under.hot_corner && pointer.current_focus().is_none() {
-            if !was_inside_hot_corner
-                && pointer
-                    .with_grab(|_, grab| grab_allows_hot_corner(grab))
-                    .unwrap_or(true)
-            {
-                self.niri.layout.toggle_overview();
-            }
-            self.niri.pointer_inside_hot_corner = true;
+        // contents_under() returns no surface for an active hot corner, so pointer.motion() will
+        // clear the current focus.
+        if hot_corner_allowed
+            && motion_reached_target
+            && pointer.current_focus().is_none()
+            && !self.niri.is_inside_hot_corner_at(pos)
+        {
+            self.niri.layout.toggle_overview();
         }
 
         // Activate a new confinement if necessary.
@@ -2683,10 +2683,6 @@ impl State {
         &mut self,
         event: I::PointerMotionAbsoluteEvent,
     ) {
-        let was_inside_hot_corner = self.niri.pointer_inside_hot_corner;
-        // Any of the early returns here mean that the pointer is not inside the hot corner.
-        self.niri.pointer_inside_hot_corner = false;
-
         let Some(pos) = self.compute_absolute_location(&event, None).or_else(|| {
             self.global_bounding_rectangle().map(|output_geo| {
                 event.position_transformed(output_geo.size) + output_geo.loc.to_f64()
@@ -2698,6 +2694,7 @@ impl State {
         let serial = SERIAL_COUNTER.next_serial();
 
         let pointer = self.niri.seat.get_pointer().unwrap();
+        let old_pos = pointer.current_location();
 
         if let Some(output) = self.niri.screenshot_ui.selection_output() {
             let geom = self.niri.global_space.output_geometry(output).unwrap();
@@ -2722,6 +2719,11 @@ impl State {
 
         self.niri.pointer_contents.clone_from(&under);
 
+        let hot_corner_allowed = under.hot_corner
+            && pointer
+                .with_grab(|_, grab| grab_allows_hot_corner(grab))
+                .unwrap_or(true);
+
         pointer.motion(
             self,
             under.surface,
@@ -2731,20 +2733,19 @@ impl State {
                 time: event.time_msec(),
             },
         );
+        // A pointer grab may consume motion without updating the canonical location.
+        let motion_reached_target = pointer.current_location() == pos;
 
         pointer.frame(self);
 
-        // contents_under() will return no surface when the hot corner should trigger, so
-        // pointer.motion() will set the current focus to None.
-        if under.hot_corner && pointer.current_focus().is_none() {
-            if !was_inside_hot_corner
-                && pointer
-                    .with_grab(|_, grab| grab_allows_hot_corner(grab))
-                    .unwrap_or(true)
-            {
-                self.niri.layout.toggle_overview();
-            }
-            self.niri.pointer_inside_hot_corner = true;
+        // contents_under() returns no surface for an active hot corner, so pointer.motion() will
+        // clear the current focus.
+        if hot_corner_allowed
+            && motion_reached_target
+            && pointer.current_focus().is_none()
+            && !self.niri.is_inside_hot_corner_at(old_pos)
+        {
+            self.niri.layout.toggle_overview();
         }
 
         self.niri.maybe_activate_pointer_constraint();
@@ -5232,7 +5233,11 @@ fn grab_allows_hot_corner(grab: &(dyn PointerGrab<State> + 'static)) -> bool {
     // - DnDGrab allows hot corner to DnD across workspaces.
     // - ClickGrab keeps pointer focus on the window, so the hot corner doesn't trigger.
     // - Touch grabs: touch doesn't trigger the hot corner.
-    if grab.is::<ResizeGrab>() || grab.is::<SpatialMovementGrab>() {
+    if grab.is::<PickWindowGrab>()
+        || grab.is::<PickColorGrab>()
+        || grab.is::<ResizeGrab>()
+        || grab.is::<SpatialMovementGrab>()
+    {
         return false;
     }
 
@@ -5275,6 +5280,18 @@ mod tests {
 
     use super::*;
     use crate::animation::Clock;
+
+    #[test]
+    fn picker_grabs_inhibit_hot_corner() {
+        let start_data = || PointerGrabStartData::<State> {
+            focus: None,
+            button: 0,
+            location: (0., 0.).into(),
+        };
+
+        assert!(!grab_allows_hot_corner(&PickWindowGrab::new(start_data())));
+        assert!(!grab_allows_hot_corner(&PickColorGrab::new(start_data())));
+    }
 
     #[test]
     fn bindings_suppress_keys() {

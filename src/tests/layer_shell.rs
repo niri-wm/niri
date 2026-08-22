@@ -8,6 +8,44 @@ use super::*;
 use crate::tests::client::{LayerConfigureProps, LayerMargin};
 
 #[test]
+fn hot_corner_respects_layer_surface_ordering() {
+    let mut f = Fixture::new();
+    f.add_output(1, (1920, 1080));
+    let id = f.add_client();
+
+    let layer = f.client(id).create_layer(None, Layer::Top, "");
+    let surface = layer.surface.clone();
+    layer.set_configure_props(LayerConfigureProps {
+        size: Some((1920, 1080)),
+        ..Default::default()
+    });
+    layer.commit();
+    f.double_roundtrip(id);
+
+    let layer = f.client(id).layer(&surface);
+    layer.attach_new_buffer();
+    layer.set_size(1920, 1080);
+    layer.ack_last_and_commit();
+    f.double_roundtrip(id);
+
+    let under = f.niri().contents_under((0.5, 0.5).into());
+    assert!(under.hot_corner);
+    assert!(under.surface.is_none());
+
+    let layer = f.client(id).layer(&surface);
+    layer.set_configure_props(LayerConfigureProps {
+        layer: Some(Layer::Overlay),
+        ..Default::default()
+    });
+    layer.commit();
+    f.double_roundtrip(id);
+
+    let under = f.niri().contents_under((0.5, 0.5).into());
+    assert!(!under.hot_corner);
+    assert!(under.surface.is_some());
+}
+
+#[test]
 fn simple_top_anchor() {
     let mut f = Fixture::new();
     f.add_output(1, (1920, 1080));

@@ -369,7 +369,6 @@ pub struct Niri {
     /// Used for limiting the notify to once per iteration, so that it's not spammed with high
     /// resolution mice.
     pub notified_activity_this_iteration: bool,
-    pub pointer_inside_hot_corner: bool,
     pub pointer_constraint_position_hint: Option<Point<f64, Logical>>,
     pub tablet_cursor_location: Option<Point<f64, Logical>>,
     pub gesture_swipe_3f_cumulative: Option<(f64, f64)>,
@@ -541,7 +540,7 @@ pub struct PointContents {
     pub window: Option<(Window, HitType)>,
     // If surface belongs to a layer surface, this is that layer surface.
     pub layer: Option<LayerSurface>,
-    // Pointer is over a hot corner.
+    // The hot corner wins the input hit test at this point.
     pub hot_corner: bool,
 }
 
@@ -2610,7 +2609,6 @@ impl Niri {
             pointer_inactivity_timer: None,
             pointer_inactivity_timer_got_reset: false,
             notified_activity_this_iteration: false,
-            pointer_inside_hot_corner: false,
             pointer_constraint_position_hint: None,
             tablet_cursor_location: None,
             gesture_swipe_3f_cumulative: None,
@@ -3131,6 +3129,11 @@ impl Niri {
         false
     }
 
+    pub(crate) fn is_inside_hot_corner_at(&self, pos: Point<f64, Logical>) -> bool {
+        self.output_under(pos)
+            .is_some_and(|(output, pos)| self.is_inside_hot_corner(output, pos))
+    }
+
     pub fn is_sticky_obscured_under(
         &self,
         output: &Output,
@@ -3451,7 +3454,9 @@ impl Niri {
                 .or_else(|| layer_toplevel_under(Layer::Bottom))
                 .or_else(|| layer_toplevel_under(Layer::Background));
         } else {
-            if self.is_inside_hot_corner(output, pos_within_output) {
+            // An input-interactive overlay is above the hot corner. Let it own the pointer while
+            // preserving the hot corner over regular top-layer panels and widgets.
+            if self.is_inside_hot_corner(output, pos_within_output) && under.is_none() {
                 rv.hot_corner = true;
                 return rv;
             }
