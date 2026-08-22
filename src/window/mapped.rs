@@ -791,23 +791,26 @@ impl LayoutElement for Mapped {
             self.needs_configure = true;
         }
 
-        let changed = self.toplevel().with_pending_state(|state| {
+        let (changed, fullscreen_changed) = self.toplevel().with_pending_state(|state| {
             let changed = state.size != Some(size);
             state.size = Some(size);
 
-            if mode.is_fullscreen() || self.is_pending_windowed_fullscreen {
-                state.states.set(xdg_toplevel::State::Fullscreen);
+            let fullscreen_changed = if mode.is_fullscreen() || self.is_pending_windowed_fullscreen
+            {
                 state.states.unset(xdg_toplevel::State::Maximized);
+                state.states.set(xdg_toplevel::State::Fullscreen)
             } else if mode.is_maximized() {
-                state.states.unset(xdg_toplevel::State::Fullscreen);
                 state.states.set(xdg_toplevel::State::Maximized);
+                state.states.unset(xdg_toplevel::State::Fullscreen)
             } else {
-                state.states.unset(xdg_toplevel::State::Fullscreen);
                 state.states.unset(xdg_toplevel::State::Maximized);
-            }
+                state.states.unset(xdg_toplevel::State::Fullscreen)
+            };
 
-            changed
+            (changed, fullscreen_changed)
         });
+
+        self.need_to_recompute_rules |= fullscreen_changed;
 
         if changed && animate {
             self.animate_next_configure = true;
@@ -880,15 +883,19 @@ impl LayoutElement for Mapped {
             return;
         }
 
-        let changed = self.toplevel().with_pending_state(|state| {
+        let (changed, fullscreen_changed) = self.toplevel().with_pending_state(|state| {
             let changed = state.size != Some(size);
             state.size = Some(size);
-            if !self.is_pending_windowed_fullscreen {
-                state.states.unset(xdg_toplevel::State::Fullscreen);
-            }
+            let fullscreen_changed = if !self.is_pending_windowed_fullscreen {
+                state.states.unset(xdg_toplevel::State::Fullscreen)
+            } else {
+                false
+            };
             state.states.unset(xdg_toplevel::State::Maximized);
-            changed
+            (changed, fullscreen_changed)
         });
+
+        self.need_to_recompute_rules |= fullscreen_changed;
 
         if changed && animate {
             self.animate_next_configure = true;
@@ -1329,18 +1336,19 @@ impl LayoutElement for Mapped {
         //
         // When going from windowed to real fullscreen, we'll use request_size() which will set the
         // fullscreen state back.
-        self.toplevel().with_pending_state(|state| {
+        let fullscreen_changed = self.toplevel().with_pending_state(|state| {
             if value {
-                state.states.set(xdg_toplevel::State::Fullscreen);
                 state.states.unset(xdg_toplevel::State::Maximized);
+                state.states.set(xdg_toplevel::State::Fullscreen)
             } else {
-                state.states.unset(xdg_toplevel::State::Fullscreen);
-
                 if self.is_pending_maximized {
                     state.states.set(xdg_toplevel::State::Maximized);
                 }
+                state.states.unset(xdg_toplevel::State::Fullscreen)
             }
         });
+
+        self.need_to_recompute_rules |= fullscreen_changed;
 
         // Make sure we receive a commit later to update self.is_windowed_fullscreen.
         self.needs_configure = true;
