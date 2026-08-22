@@ -3732,6 +3732,96 @@ fn workspace_render_geo_at_fractional_scale() {
     );
 }
 
+fn layout_with_overview_zoom(zoom: f64, remember_last: bool) -> Layout<TestWindow> {
+    let options = Options {
+        overview: niri_config::Overview {
+            zoom,
+            zoom_remember_last: remember_last,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let mut layout = Layout::with_options(Clock::with_time(Duration::ZERO), options);
+    Op::AddOutput(1).apply(&mut layout);
+    layout
+}
+
+fn zoom_target(layout: &Layout<TestWindow>) -> f64 {
+    layout.active_monitor_ref().unwrap().overview_zoom_target()
+}
+
+#[test]
+fn overview_remembers_last_zoom_by_default() {
+    let mut layout = layout_with_overview_zoom(0.5, true);
+
+    layout.toggle_overview();
+    layout
+        .active_monitor()
+        .unwrap()
+        .set_zoom_target_no_anim(0.3);
+    layout.toggle_overview(); // close
+    layout.toggle_overview(); // reopen
+
+    assert_eq!(
+        zoom_target(&layout),
+        0.3,
+        "with zoom-remember-last, the parked zoom survives close/reopen"
+    );
+}
+
+#[test]
+fn overview_uses_config_zoom_when_remember_last_disabled() {
+    // Both standard entry points must agree: toggle_overview (hot corner and
+    // the toggle-overview bind) and open_overview (the open-overview bind).
+    for (name, open) in [
+        (
+            "toggle_overview",
+            &Layout::toggle_overview as &dyn Fn(&mut _),
+        ),
+        ("open_overview", &|l: &mut Layout<TestWindow>| {
+            l.open_overview();
+        }),
+    ] {
+        let mut layout = layout_with_overview_zoom(0.5, false);
+
+        layout.toggle_overview();
+        layout
+            .active_monitor()
+            .unwrap()
+            .set_zoom_target_no_anim(0.3);
+        layout.toggle_overview(); // close
+
+        open(&mut layout);
+
+        assert_eq!(
+            zoom_target(&layout),
+            0.5,
+            "{name} must start at the configured overview zoom, not the parked 0.3"
+        );
+    }
+}
+
+#[test]
+fn zoom_preset_auto_open_keeps_its_own_zoom() {
+    // The zoom-preset actions pick a zoom and then auto-open; that choice must
+    // survive regardless of how zoom-remember-last is set.
+    for remember_last in [true, false] {
+        let mut layout = layout_with_overview_zoom(0.5, remember_last);
+
+        layout
+            .active_monitor()
+            .unwrap()
+            .set_zoom_target_no_anim(0.1);
+        layout.open_overview_preserving_zoom();
+
+        assert_eq!(
+            zoom_target(&layout),
+            0.1,
+            "preset zoom must survive auto-open (zoom_remember_last = {remember_last})"
+        );
+    }
+}
+
 fn parent_id_causes_loop(layout: &Layout<TestWindow>, id: usize, mut parent_id: usize) -> bool {
     if parent_id == id {
         return true;

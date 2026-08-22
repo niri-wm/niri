@@ -667,7 +667,7 @@ impl Options {
             layout: config.layout.clone(),
             animations: config.animations.clone(),
             gestures: config.gestures,
-            overview: config.overview,
+            overview: config.overview.clone(),
             blur: config.blur,
             disable_resize_throttling: config.debug.disable_resize_throttling,
             disable_transactions: config.debug.disable_transactions,
@@ -2393,7 +2393,12 @@ impl<W: LayoutElement> Layout<W> {
 
     pub fn overview_zoom(&self) -> f64 {
         let progress = self.overview_progress.as_ref().map(|p| p.value());
-        compute_overview_zoom(&self.options, progress)
+        // Use runtime zoom from active monitor, falling back to config default
+        let target_zoom = self
+            .active_monitor_ref()
+            .map(|m| m.overview_zoom_target())
+            .unwrap_or(self.options.overview.zoom);
+        compute_overview_zoom(target_zoom, progress)
     }
 
     #[cfg(test)]
@@ -4614,8 +4619,27 @@ impl<W: LayoutElement> Layout<W> {
     }
 
     pub fn toggle_overview(&mut self) {
-        self.overview_open = !self.overview_open;
+        self.toggle_overview_with_zoom(None);
+    }
 
+    pub fn toggle_overview_with_zoom(&mut self, zoom: Option<f64>) {
+        // if not opened (and will be opening), set zoom target from provided
+        // zoom parameter (default to `options.overview.zoom`).
+        if !self.overview_open && !self.options.overview.zoom_remember_last {
+            // set zoom factor if opening
+            let zoom: f64 = zoom.unwrap_or(self.options.overview.zoom);
+            for monitor in self.monitors_mut() {
+                monitor.set_zoom_target_no_anim(zoom);
+            }
+        }
+
+        if self.overview_open {
+            for monitor in self.monitors_mut() {
+                monitor.reset_overview_zoom();
+            }
+        }
+
+        self.overview_open = !self.overview_open;
         let from = self.overview_progress.take().map_or(0., |p| p.value());
         let to = if self.overview_open { 1. } else { 0. };
 
@@ -4639,12 +4663,53 @@ impl<W: LayoutElement> Layout<W> {
         true
     }
 
+    pub fn open_overview_preserving_zoom(&mut self) -> bool {
+        if self.overview_open {
+            return false;
+        }
+
+        self.toggle_overview_with_zoom(self.active_monitor_ref().map(|m| m.overview_zoom_target()));
+        true
+    }
+
     pub fn close_overview(&mut self) -> bool {
         if !self.overview_open {
             return false;
         }
 
         self.toggle_overview();
+        true
+    }
+
+    /// Close the overview without resetting zoom level.
+    ///
+    /// Used when auto-closing from zoom-in so the close animation smoothly
+    /// transitions from the current zoom level instead of snapping to the
+    /// config default first.
+    pub fn close_overview_preserving_zoom(&mut self) -> bool {
+        if !self.overview_open {
+            return false;
+        }
+
+        self.overview_open = false;
+
+        // Reset only the preset index so the next open starts fresh,
+        // but keep the current zoom target/animation so the close
+        // animation doesn't snap.
+        for monitor in self.monitors_mut() {
+            monitor.reset_overview_zoom_preset_idx();
+        }
+
+        let from = self.overview_progress.take().map_or(0., |p| p.value());
+        self.overview_progress = Some(OverviewProgress::Animation(Animation::new(
+            self.clock.clone(),
+            from,
+            0.,
+            0.,
+            self.options.animations.overview_open_close.0,
+        )));
+
+        self.set_monitors_overview_state();
         true
     }
 
@@ -5017,9 +5082,9 @@ impl<W: LayoutElement> Default for MonitorSet<W> {
     }
 }
 
-fn compute_overview_zoom(options: &Options, overview_progress: Option<f64>) -> f64 {
+fn compute_overview_zoom(target_zoom: f64, overview_progress: Option<f64>) -> f64 {
     // Clamp to some sane values.
-    let zoom = options.overview.zoom.clamp(0.0001, 0.75);
+    let zoom = target_zoom.clamp(0.0001, 0.75);
 
     if let Some(p) = overview_progress {
         (1. - p * (1. - zoom)).max(0.0001)

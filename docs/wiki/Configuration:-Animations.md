@@ -59,6 +59,10 @@ animations {
         spring damping-ratio=1.0 stiffness=800 epsilon=0.0001
     }
 
+    overview-zoom {
+        spring damping-ratio=1.0 stiffness=800 epsilon=0.0001
+    }
+
     recent-windows-close {
         spring damping-ratio=1.0 stiffness=800 epsilon=0.001
     }
@@ -421,6 +425,18 @@ The open/close zoom animation of the [Overview](./Overview.md).
 ```kdl
 animations {
     overview-open-close {
+        spring damping-ratio=1.0 stiffness=800 epsilon=0.0001
+    }
+}
+```
+
+#### `overview-zoom`
+
+The zoom level change animation when using `overview-zoom-cycle` in the [Overview](./Overview.md).
+
+```kdl
+animations {
+    overview-zoom {
         spring damping-ratio=1.0 stiffness=800 epsilon=0.0001
     }
 }

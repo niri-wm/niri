@@ -248,6 +248,20 @@ overview {
 }
 ```
 
+#### `zoom-presets`
+
+Define a list of zoom levels to cycle through using the `overview-zoom-cycle` action.
+If not set or empty, the cycle action does nothing.
+
+Option `zoom-remember-last` controls the starting "zoom" behaviour for standard niri overview actions (e.g. entering overview via hot-corner or keybind).  The default value of `true` causes overview to always "start" at the _last used_ zoom level.  Setting this to `false` causes niri to always open overview at the defined `overview { zoom }` value for standard niri overview actions.
+
+```kdl
+overview {
+    zoom-presets 0.5 0.25 0.1
+    zoom-remember-last true
+}
+```
+
 ### `xwayland-satellite`
 
 <sup>Since: 25.08</sup>
