@@ -1024,7 +1024,11 @@ impl WindowMruUi {
         self.set_scope(scope);
     }
 
-    pub fn pointer_motion(&mut self, pos_within_output: Point<f64, Logical>) -> Option<MappedId> {
+    pub fn pointer_motion(
+        &mut self,
+        output: &Output,
+        pos_within_output: Point<f64, Logical>,
+    ) -> Option<MappedId> {
         let UiState::Open(inner) = &mut self.state else {
             return None;
         };
@@ -1033,9 +1037,12 @@ impl WindowMruUi {
             return None;
         }
 
-        inner.freeze_view = true;
+        // Only freeze the view on the output the UI was opened on.
+        if *output == inner.output {
+            inner.freeze_view = true;
+        }
 
-        let id = inner.thumbnail_under(pos_within_output);
+        let id = inner.thumbnail_under(output, pos_within_output);
         if let Some(id) = id {
             inner.wmru.set_current(id);
         }
@@ -1132,13 +1139,16 @@ impl WindowMruUi {
             // different <R> generic in offscreen vs. normal path.
         };
 
-        // During the closing fade, use an offscreen to avoid transparent compositing artifacts.
+        // During the closing fade, use an offscreen on the output the UI was opened on to avoid
+        // transparent compositing artifacts.
+        let is_main_output = *output == inner.output;
+
         let mut pushed_offscreen = false;
-        if *output == inner.output && alpha < 1. {
+        if is_main_output && alpha < 1. {
             let mut ctx = ctx.as_gles();
 
             let mut elems = Vec::new();
-            inner.render(niri, ctx.r(), &mut |elem| elems.push(elem));
+            inner.render(niri, output, ctx.r(), &mut |elem| elems.push(elem));
             elems.push(WindowMruUiRenderElement::SolidColor(render_backdrop(1.)));
 
             let scale = output.current_scale().fractional_scale();
@@ -1166,12 +1176,18 @@ impl WindowMruUi {
             }
         }
 
-        // When alpha is 1., render everything directly, without an offscreen.
+        // Render the switcher itself on every output.
         //
-        // This is not used as fallback when offscreen fails to render because it looks better to
-        // hide the previews immediately than to render them with alpha = 1. during a fade-out.
-        if *output == inner.output && alpha == 1. {
-            inner.render(niri, ctx, &mut |elem| push(elem));
+        // On the output the UI was opened on, render it directly only when alpha is 1.; during the
+        // closing fade it is instead drawn from the offscreen above.
+        //
+        // On the other outputs we render directly at full opacity: without a per-output offscreen,
+        // a partial fade would cause transparent compositing artifacts, and it looks better to
+        // keep the switcher visible for the entire (short) closing animation than to hide it
+        // immediately. This is only done when the `all-outputs` option is enabled.
+        let all_outputs = inner.config.borrow().recent_windows.all_outputs;
+        if !pushed_offscreen && (alpha == 1. || (all_outputs && !is_main_output)) {
+            inner.render(niri, output, ctx, &mut |elem| push(elem));
         }
 
         // This is used for both normal elems and for other outputs.
@@ -1297,18 +1313,28 @@ impl Inner {
     }
 
     fn compute_view_pos(&self) -> f64 {
+        self.compute_view_pos_for(&self.output, self.view_pos.target())
+    }
+
+    /// Computes the view position that shows the current selection on the given output, aligning
+    /// relative to the given current view position.
+    ///
+    /// On the output the UI was opened on, the current (animated) view position is passed in so
+    /// that the view scrolls to keep the selection in place. On other outputs a static view
+    /// position is used, centering the selection on that output.
+    fn compute_view_pos_for(&self, output: &Output, cur_view_pos: f64) -> f64 {
         let Some(current_id) = self.wmru.current_id else {
             return 0.;
         };
 
-        let output_size = output_size(&self.output);
+        let output_size = output_size(output);
 
         let working_x = STRUT + GAP;
         let working_width = (output_size.w - working_x * 2.).max(0.);
 
         let mut current_geo = Rectangle::default();
         let mut strip_width = 0.;
-        for (thumbnail, geo) in self.thumbnails() {
+        for (thumbnail, geo) in self.thumbnails(output) {
             if thumbnail.id == current_id {
                 current_geo = geo;
             }
@@ -1327,7 +1353,7 @@ impl Inner {
         }
 
         compute_view_offset(
-            self.view_pos.target() + working_x,
+            cur_view_pos + working_x,
             working_width,
             current_geo.loc.x,
             current_geo.size.w,
@@ -1483,9 +1509,12 @@ impl Inner {
         self.view_pos.offset(-delta);
     }
 
-    fn thumbnails(&self) -> impl Iterator<Item = (&Thumbnail, Rectangle<f64, Logical>)> {
-        let output_size = output_size(&self.output);
-        let scale = self.output.current_scale().fractional_scale();
+    fn thumbnails(
+        &self,
+        output: &Output,
+    ) -> impl Iterator<Item = (&Thumbnail, Rectangle<f64, Logical>)> {
+        let output_size = output_size(output);
+        let scale = output.current_scale().fractional_scale();
         let round = move |logical: f64| round_logical_in_physical(scale, logical);
 
         let padding = self.config.borrow().recent_windows.highlight.padding;
@@ -1507,17 +1536,19 @@ impl Inner {
 
     fn thumbnails_in_view_static(
         &self,
+        output: &Output,
+        view_pos: f64,
     ) -> impl Iterator<Item = (&Thumbnail, Rectangle<f64, Logical>)> {
-        let output_size = output_size(&self.output);
-        let scale = self.output.current_scale().fractional_scale();
+        let output_size = output_size(output);
+        let scale = output.current_scale().fractional_scale();
         let round = |logical: f64| round_logical_in_physical(scale, logical);
 
-        let view_pos = round(self.view_pos.current());
+        let view_pos = round(view_pos);
 
         let leftmost = view_pos;
         let rightmost = view_pos + output_size.w;
 
-        self.thumbnails()
+        self.thumbnails(output)
             .skip_while(move |(_, geo)| geo.loc.x + geo.size.w <= leftmost)
             .map_while(move |(thumbnail, mut geo)| {
                 if rightmost <= geo.loc.x {
@@ -1531,33 +1562,43 @@ impl Inner {
 
     fn thumbnails_in_view_render(
         &self,
+        output: &Output,
+        view_pos: f64,
     ) -> impl Iterator<Item = (&Thumbnail, Rectangle<f64, Logical>)> {
-        let output_size = output_size(&self.output);
-        let scale = self.output.current_scale().fractional_scale();
+        let output_size = output_size(output);
+        let scale = output.current_scale().fractional_scale();
         let round = move |logical: f64| round_logical_in_physical(scale, logical);
 
-        let view_pos = round(self.view_pos.current());
+        let view_pos = round(view_pos);
 
-        self.thumbnails().filter_map(move |(thumbnail, mut geo)| {
-            geo.loc.x -= view_pos;
-            geo.loc.x += round(thumbnail.render_offset());
+        self.thumbnails(output)
+            .filter_map(move |(thumbnail, mut geo)| {
+                geo.loc.x -= view_pos;
+                geo.loc.x += round(thumbnail.render_offset());
 
-            if geo.loc.x + geo.size.w < 0. || output_size.w < geo.loc.x {
-                return None;
-            }
+                if geo.loc.x + geo.size.w < 0. || output_size.w < geo.loc.x {
+                    return None;
+                }
 
-            Some((thumbnail, geo))
-        })
+                Some((thumbnail, geo))
+            })
     }
 
     fn render<R: NiriRenderer>(
         &self,
         niri: &Niri,
+        output: &Output,
         mut ctx: RenderCtx<R>,
         push: &mut dyn FnMut(WindowMruUiRenderElement<R>),
     ) {
-        let output_size = output_size(&self.output);
-        let scale = self.output.current_scale().fractional_scale();
+        let output_size = output_size(output);
+        let scale = output.current_scale().fractional_scale();
+
+        let view_pos = if *output == self.output {
+            self.view_pos.current()
+        } else {
+            self.compute_view_pos_for(output, 0.)
+        };
 
         let panel_texture =
             self.scope_panel
@@ -1586,7 +1627,7 @@ impl Inner {
 
         let config = self.config.borrow();
 
-        for (thumbnail, geo) in self.thumbnails_in_view_render() {
+        for (thumbnail, geo) in self.thumbnails_in_view_render(output, view_pos) {
             let id = thumbnail.id;
             let Some((_, mapped)) = niri.layout.windows().find(|(_, m)| m.id() == id) else {
                 error!("window in the MRU must be present in the layout");
@@ -1600,15 +1641,21 @@ impl Inner {
         }
     }
 
-    fn thumbnail_under(&self, pos: Point<f64, Logical>) -> Option<MappedId> {
-        let scale = self.output.current_scale().fractional_scale();
+    fn thumbnail_under(&self, output: &Output, pos: Point<f64, Logical>) -> Option<MappedId> {
+        let scale = output.current_scale().fractional_scale();
         let round = move |logical: f64| round_logical_in_physical(scale, logical);
         let padding = self.config.borrow().recent_windows.highlight.padding;
         let padding = round(padding) + round(BORDER);
         let padding = Point::new(padding, padding);
         let title_gap = round(TITLE_GAP);
 
-        for (thumbnail, mut geo) in self.thumbnails_in_view_static() {
+        let view_pos = if *output == self.output {
+            self.view_pos.current()
+        } else {
+            self.compute_view_pos_for(output, 0.)
+        };
+
+        for (thumbnail, mut geo) in self.thumbnails_in_view_static(output, view_pos) {
             geo.loc -= padding;
             geo.size += padding.to_size().upscale(2.);
 

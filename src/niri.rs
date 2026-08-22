@@ -6492,8 +6492,9 @@ impl Niri {
     }
 
     pub fn queue_redraw_mru_output(&mut self) {
-        if let Some(output) = self.window_mru_ui.output().cloned() {
-            self.queue_redraw(&output);
+        // The switcher is rendered on all outputs, so redraw them all.
+        if self.window_mru_ui.is_open() {
+            self.queue_redraw_all();
         }
     }
 }
