@@ -43,6 +43,8 @@ window-rule {
     default-window-height { fixed 500; }
     open-on-output "Some Company CoolMonitor 1234"
     open-on-workspace "chat"
+    open-in-column "messaging"
+    open-in-column-order 10
     open-maximized true
     open-maximized-to-edges true
     open-fullscreen true
@@ -423,6 +425,66 @@ window-rule {
     open-on-workspace "chat"
 }
 ```
+
+#### `open-in-column`
+
+Make the window join a named column group.
+
+The first tiled window with a given group name opens in a new column as usual.
+Further tiled windows with the same group name on the same workspace open at the bottom of that column.
+The group name is local to each workspace, so windows never join a group on another workspace.
+
+Use this together with [`open-on-workspace`](#open-on-workspace) to place a set of applications in a predictable workspace and column:
+
+```kdl
+// Open Telegram and Fractal in one column on the "chat" workspace.
+window-rule {
+    match app-id=r#"^org\.telegram\.desktop$"#
+    match app-id=r#"^org\.gnome\.Fractal$"#
+
+    open-on-workspace "chat"
+    open-in-column "messaging"
+}
+```
+
+This property only controls initial window placement.
+You can move or expel windows from the column afterwards, and niri will not move them back.
+If you split a group across multiple columns, a later window joins the first tiled column containing a window with that group name.
+
+Floating windows do not join column groups.
+Parented windows, such as dialogs, continue to open next to their parent instead.
+
+#### `open-in-column-order`
+
+Set the window's position within its named column group.
+Lower integer values open higher in the column.
+
+This makes the result independent of application startup timing.
+For example, Telegram will open above Fractal in this configuration even if Fractal creates its window first:
+
+```kdl
+window-rule {
+    match app-id=r#"^org\.telegram\.desktop$"#
+
+    open-on-workspace "chat"
+    open-in-column "messaging"
+    open-in-column-order 10
+}
+
+window-rule {
+    match app-id=r#"^org\.gnome\.Fractal$"#
+
+    open-on-workspace "chat"
+    open-in-column "messaging"
+    open-in-column-order 20
+}
+```
+
+Windows without `open-in-column-order` open after explicitly ordered windows.
+Windows with the same order retain the order in which they open.
+The order is only applied when a new window opens; changing the configuration does not rearrange windows that are already open, and manual rearrangement remains possible.
+
+`open-in-column-order` has no effect without [`open-in-column`](#open-in-column).
 
 #### `open-maximized`
 

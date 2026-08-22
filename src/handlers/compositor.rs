@@ -19,7 +19,7 @@ use smithay::wayland::shm::{ShmHandler, ShmState};
 
 use super::xdg_shell::add_mapped_toplevel_pre_commit_hook;
 use crate::handlers::XDG_ACTIVATION_TOKEN_TIMEOUT;
-use crate::layout::{ActivateWindow, AddWindowTarget, LayoutElement as _};
+use crate::layout::{ActivateWindow, AddWindowTarget, LayoutElement};
 use crate::niri::{CastTarget, ClientState, LockState, State};
 use crate::utils::transaction::Transaction;
 use crate::utils::{is_mapped, send_scale_transform};
@@ -148,6 +148,7 @@ impl CompositorHandler for State {
                     // before mapping, so we need to compute open_floating at the last possible
                     // moment, that is here.
                     let is_floating = rules.compute_open_floating(toplevel);
+                    let open_in_column = rules.open_in_column.clone();
 
                     // Figure out if we should activate the window.
                     let activate = rules.open_focused.map(|focus| {
@@ -200,9 +201,32 @@ impl CompositorHandler for State {
                     };
                     let window = mapped.window.clone();
 
+                    let target_workspace_id = workspace_id
+                        .or_else(|| {
+                            output.as_ref().and_then(|output| {
+                                self.niri
+                                    .layout
+                                    .monitor_for_output(output)
+                                    .map(|monitor| monitor.active_workspace_ref().id())
+                            })
+                        })
+                        .or_else(|| self.niri.layout.active_workspace().map(|ws| ws.id()));
+                    let column_group_target = (!is_floating && parent.is_none())
+                        .then_some(open_in_column.as_deref())
+                        .flatten()
+                        .zip(target_workspace_id)
+                        .and_then(|(group, workspace_id)| {
+                            self.niri
+                                .layout
+                                .window_in_column_group(workspace_id, group)
+                                .map(|window| LayoutElement::id(window).clone())
+                        });
+
                     let target = if let Some(p) = &parent {
                         // Open dialogs next to their parent window.
                         AddWindowTarget::NextTo(p)
+                    } else if let Some(group_target) = &column_group_target {
+                        AddWindowTarget::InColumn(group_target)
                     } else if let Some(id) = workspace_id {
                         AddWindowTarget::Workspace(id)
                     } else if let Some(output) = &output {
