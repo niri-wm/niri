@@ -187,6 +187,7 @@ use crate::window::mapped::MappedId;
 use crate::window::{InitialConfigureState, Mapped, ResolvedWindowRules, Unmapped, WindowRef};
 
 const CLEAR_COLOR_LOCKED: [f32; 4] = [0.3, 0.1, 0.1, 1.];
+const POWER_KEY_RESUME_SUPPRESS_DURATION: Duration = Duration::from_secs(2);
 
 // We'll try to send frame callbacks at least once a second. We'll make a timer that fires once a
 // second, so with the worst timing the maximum interval between two frame callbacks for a surface
@@ -267,6 +268,7 @@ pub struct Niri {
     /// Libinput guarantees that the lid switch starts in open state, and if it was closed during
     /// startup, libinput will immediately send a closed event.
     pub is_lid_closed: bool,
+    pub suppress_power_key_until: Option<Duration>,
 
     pub devices: HashSet<input::Device>,
     pub tablets: HashMap<input::Device, TabletData>,
@@ -2542,6 +2544,7 @@ impl Niri {
             blocker_cleared_rx,
             monitors_active: true,
             is_lid_closed: false,
+            suppress_power_key_until: None,
 
             devices: HashSet::new(),
             tablets: HashMap::new(),
@@ -3071,8 +3074,22 @@ impl Niri {
 
         self.monitors_active = true;
         backend.set_monitors_active(true);
+        backend.on_output_config_changed(self);
 
         self.queue_redraw_all();
+    }
+
+    pub fn suppress_power_key_after_resume(&mut self) {
+        self.suppress_power_key_until =
+            Some(get_monotonic_time().saturating_add(POWER_KEY_RESUME_SUPPRESS_DURATION));
+    }
+
+    pub fn take_power_key_resume_suppression(&mut self, now: Duration) -> bool {
+        let Some(until) = self.suppress_power_key_until.take() else {
+            return false;
+        };
+
+        now <= until
     }
 
     pub fn output_under(&self, pos: Point<f64, Logical>) -> Option<(&Output, Point<f64, Logical>)> {

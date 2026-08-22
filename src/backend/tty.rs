@@ -731,6 +731,7 @@ impl Tty {
 
                 self.refresh_ipc_outputs(niri);
 
+                niri.suppress_power_key_after_resume();
                 niri.notify_activity();
                 niri.monitors_active = true;
                 self.set_monitors_active(true);

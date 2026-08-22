@@ -554,6 +554,15 @@ impl State {
                     this.niri.screenshot_ui.set_space_down(pressed);
                 }
 
+                let disable_power_key_handling =
+                    this.niri.config.borrow().input.disable_power_key_handling;
+                let suppress_power_key_after_resume = !disable_power_key_handling
+                    && pressed
+                    && is_power_key(modified)
+                    && this
+                        .niri
+                        .take_power_key_resume_suppression(get_monotonic_time());
+
                 let res = {
                     let config = this.niri.config.borrow();
                     let bindings =
@@ -569,7 +578,8 @@ impl State {
                         pressed,
                         *mods,
                         &this.niri.screenshot_ui,
-                        this.niri.config.borrow().input.disable_power_key_handling,
+                        disable_power_key_handling,
+                        suppress_power_key_after_resume,
                         is_inhibiting_shortcuts,
                     )
                 };
@@ -4507,6 +4517,7 @@ fn should_intercept_key<'a>(
     mods: ModifiersState,
     screenshot_ui: &ScreenshotUi,
     disable_power_key_handling: bool,
+    suppress_power_key_after_resume: bool,
     is_inhibiting_shortcuts: bool,
 ) -> FilterResult<Option<Bind>> {
     // Actions are only triggered on presses, release of the key
@@ -4514,6 +4525,15 @@ fn should_intercept_key<'a>(
     // the key to suppress.
     if !pressed && !suppressed_keys.contains(&key_code) {
         return FilterResult::Forward;
+    }
+
+    if pressed
+        && suppress_power_key_after_resume
+        && !disable_power_key_handling
+        && is_power_key(modified)
+    {
+        suppressed_keys.insert(key_code);
+        return FilterResult::Intercept(None);
     }
 
     let mut final_bind = find_bind(
@@ -4578,6 +4598,10 @@ fn should_intercept_key<'a>(
         }
         (None, true) => FilterResult::Forward,
     }
+}
+
+fn is_power_key(keysym: Keysym) -> bool {
+    keysym.raw() == keysyms::KEY_XF86PowerOff
 }
 
 fn find_bind<'a>(
@@ -5315,6 +5339,7 @@ mod tests {
                 mods,
                 &screenshot_ui,
                 disable_power_key_handling,
+                false,
                 is_inhibiting_shortcuts.get(),
             )
         };
@@ -5332,6 +5357,7 @@ mod tests {
                 mods,
                 &screenshot_ui,
                 disable_power_key_handling,
+                false,
                 is_inhibiting_shortcuts.get(),
             )
         };
@@ -5460,6 +5486,83 @@ mod tests {
         let filter = close_key_event(&mut suppressed_keys, mods, false);
         assert!(matches!(filter, FilterResult::Intercept(None)));
         assert!(suppressed_keys.is_empty());
+    }
+
+    #[test]
+    fn power_key_wake_press_is_suppressed_after_resume() {
+        let mut suppressed_keys = HashSet::new();
+        let screenshot_ui = ScreenshotUi::new(Clock::default(), Default::default());
+        let power_key = Keysym::XF86_PowerOff;
+        let key_code = Keycode::from(power_key.raw() + 8);
+        let no_mods = ModifiersState::default();
+
+        let filter = should_intercept_key(
+            &mut suppressed_keys,
+            [],
+            ModKey::Super,
+            key_code,
+            power_key,
+            Some(power_key),
+            true,
+            no_mods,
+            &screenshot_ui,
+            false,
+            true,
+            false,
+        );
+
+        assert!(matches!(filter, FilterResult::Intercept(None)));
+        assert!(suppressed_keys.contains(&key_code));
+
+        let filter = should_intercept_key(
+            &mut suppressed_keys,
+            [],
+            ModKey::Super,
+            key_code,
+            power_key,
+            Some(power_key),
+            false,
+            no_mods,
+            &screenshot_ui,
+            false,
+            false,
+            false,
+        );
+
+        assert!(matches!(filter, FilterResult::Intercept(None)));
+        assert!(suppressed_keys.is_empty());
+    }
+
+    #[test]
+    fn power_key_still_suspends_outside_resume_suppression() {
+        let mut suppressed_keys = HashSet::new();
+        let screenshot_ui = ScreenshotUi::new(Clock::default(), Default::default());
+        let power_key = Keysym::XF86_PowerOff;
+        let key_code = Keycode::from(power_key.raw() + 8);
+
+        let filter = should_intercept_key(
+            &mut suppressed_keys,
+            [],
+            ModKey::Super,
+            key_code,
+            power_key,
+            Some(power_key),
+            true,
+            ModifiersState::default(),
+            &screenshot_ui,
+            false,
+            false,
+            false,
+        );
+
+        assert!(matches!(
+            filter,
+            FilterResult::Intercept(Some(Bind {
+                action: Action::Suspend,
+                ..
+            }))
+        ));
+        assert!(suppressed_keys.contains(&key_code));
     }
 
     #[test]
