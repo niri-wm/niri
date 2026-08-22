@@ -1,12 +1,11 @@
 #[macro_use]
 extern crate tracing;
 
-use std::fmt::Write as _;
 use std::fs::File;
 use std::io::{self, Write};
 use std::os::fd::FromRawFd;
 use std::path::PathBuf;
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::sync::atomic::Ordering;
 use std::{env, mem};
 
@@ -279,52 +278,66 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn import_environment() {
-    let variables = [
+    const VARIABLES: &[&str] = &[
         "WAYLAND_DISPLAY",
         "DISPLAY",
         "XDG_CURRENT_DESKTOP",
         "XDG_SESSION_TYPE",
         SOCKET_PATH_ENV,
-    ]
-    .join(" ");
+    ];
 
-    let mut init_system_import = String::new();
+    let mut children = Vec::new();
+
     if cfg!(feature = "systemd") {
-        write!(
-            init_system_import,
-            "systemctl --user import-environment {variables};"
-        )
-        .unwrap();
-    }
-    if cfg!(feature = "dinit") {
-        write!(init_system_import, "dinitctl setenv {variables};").unwrap();
+        children.push((
+            "systemctl --user import-environment",
+            Command::new("systemctl")
+                .args(["--user", "import-environment"])
+                .args(VARIABLES)
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn(),
+            true,
+        ));
     }
 
-    let rv = Command::new("/bin/sh")
-        .args([
-            "-c",
-            &format!(
-                "{init_system_import}\
-                 hash dbus-update-activation-environment 2>/dev/null && \
-                 dbus-update-activation-environment {variables}"
-            ),
-        ])
-        .spawn();
-    // Wait for the import process to complete, otherwise services will start too fast without
-    // environment variables available.
-    match rv {
-        Ok(mut child) => match child.wait() {
+    if cfg!(feature = "dinit") {
+        children.push((
+            "dinitctl setenv",
+            Command::new("dinitctl")
+                .arg("setenv")
+                .args(VARIABLES)
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn(),
+            true,
+        ));
+    }
+
+    children.push((
+        "dbus-update-activation-environment",
+        Command::new("dbus-update-activation-environment")
+            .args(VARIABLES)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn(),
+        false,
+    ));
+
+    for (name, process, warn_if_missing) in children {
+        match process.and_then(|mut process| process.wait()) {
+            Ok(status) if status.success() => {}
             Ok(status) => {
-                if !status.success() {
-                    warn!("import environment shell exited with {status}");
+                warn!("import environment program '{name}' exited with {status}");
+            }
+            Err(err) if err.kind() == io::ErrorKind::NotFound => {
+                if warn_if_missing {
+                    warn!("import environment program '{name}' not found in PATH");
                 }
             }
             Err(err) => {
-                warn!("error waiting for import environment shell: {err:?}");
+                warn!("error running import environment program '{name}': {err:?}");
             }
-        },
-        Err(err) => {
-            warn!("error spawning shell to import environment: {err:?}");
         }
     }
 }
