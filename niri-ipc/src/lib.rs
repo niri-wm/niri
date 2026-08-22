@@ -198,6 +198,8 @@ pub enum Action {
         #[cfg_attr(feature = "clap", arg(short, long))]
         skip_confirmation: bool,
     },
+    /// Suspend the system.
+    Suspend {},
     /// Power off all monitors via DPMS.
     PowerOffMonitors {},
     /// Power on all monitors via DPMS.

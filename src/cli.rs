@@ -135,3 +135,23 @@ impl TryFrom<CompletionShell> for Shell {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_suspend_action() {
+        let cli = Cli::parse_from(["niri", "msg", "action", "suspend"]);
+
+        match cli.subcommand {
+            Some(Sub::Msg {
+                msg: Msg::Action {
+                    action: Action::Suspend {},
+                },
+                json: false,
+            }) => (),
+            _ => panic!("expected suspend action"),
+        }
+    }
+}
