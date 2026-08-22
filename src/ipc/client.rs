@@ -29,6 +29,16 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
         }
     }
 
+    let wait_for_screenshot = matches!(
+        &msg,
+        Msg::Action { action } if action_waits_for_screenshot(action)
+    );
+    let screenshot_event_stream = if wait_for_screenshot {
+        Some(connect_event_stream().context("error subscribing to screenshot events")?)
+    } else {
+        None
+    };
+
     let request = match &msg {
         Msg::Version => Request::Version,
         Msg::Outputs => Request::Outputs,
@@ -321,6 +331,11 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
             let Response::Handled = response else {
                 bail!("unexpected response: expected Handled, got {response:?}");
             };
+
+            if let Some(socket) = screenshot_event_stream {
+                wait_for_screenshot_capture(socket)
+                    .context("error waiting for screenshot capture")?;
+            }
         }
         Msg::Output { output, .. } => {
             let Response::OutputConfigChanged(response) = response else {
@@ -553,6 +568,45 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+fn connect_event_stream() -> anyhow::Result<Socket> {
+    let mut socket = Socket::connect().context("error connecting to the niri socket")?;
+    let reply = socket
+        .send(Request::EventStream)
+        .context("error communicating with niri")?;
+    let response = reply.map_err(|err_msg| anyhow!(err_msg).context("niri returned an error"))?;
+
+    let Response::Handled = response else {
+        bail!("unexpected response: expected Handled, got {response:?}");
+    };
+
+    Ok(socket)
+}
+
+fn action_waits_for_screenshot(action: &Action) -> bool {
+    matches!(
+        action,
+        Action::Screenshot { .. }
+            | Action::ScreenshotScreen { .. }
+            | Action::ScreenshotWindow { .. }
+    )
+}
+
+fn wait_for_screenshot_capture(socket: Socket) -> anyhow::Result<()> {
+    wait_for_screenshot_captured(socket.read_events())
+}
+
+fn wait_for_screenshot_captured(
+    mut read_event: impl FnMut() -> std::io::Result<Event>,
+) -> anyhow::Result<()> {
+    loop {
+        if let Event::ScreenshotCaptured { .. } =
+            read_event().context("error reading event from niri")?
+        {
+            return Ok(());
+        }
+    }
 }
 
 fn print_output(output: Output) -> anyhow::Result<()> {
@@ -816,5 +870,43 @@ mod tests {
         assert_snapshot!(fmt_rounded(2.004), @"2");
         assert_snapshot!(fmt_rounded(2.006), @"2.01");
         assert_snapshot!(fmt_rounded(2.1), @"2.10");
+    }
+
+    #[test]
+    fn screenshot_actions_wait_for_capture() {
+        assert!(action_waits_for_screenshot(&Action::Screenshot {
+            show_pointer: true,
+            path: None,
+        }));
+        assert!(action_waits_for_screenshot(&Action::ScreenshotScreen {
+            write_to_disk: true,
+            show_pointer: true,
+            path: None,
+        }));
+        assert!(action_waits_for_screenshot(&Action::ScreenshotWindow {
+            id: None,
+            write_to_disk: true,
+            show_pointer: false,
+            path: None,
+        }));
+        assert!(!action_waits_for_screenshot(&Action::ToggleOverview {}));
+    }
+
+    #[test]
+    fn waits_until_screenshot_captured_event() {
+        let mut events = [
+            Event::WorkspacesChanged { workspaces: vec![] },
+            Event::ScreenshotCaptured {
+                path: Some("/tmp/screenshot.png".to_owned()),
+            },
+        ]
+        .into_iter();
+
+        wait_for_screenshot_captured(|| {
+            events.next().ok_or_else(|| {
+                std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "no more events")
+            })
+        })
+        .unwrap();
     }
 }
