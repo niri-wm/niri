@@ -2356,7 +2356,15 @@ impl State {
                 filter,
             } => {
                 if self.niri.window_mru_ui.is_open() {
-                    self.niri.window_mru_ui.advance(direction, filter);
+                    if let Some(scope) = scope {
+                        if self.niri.window_mru_ui.scope() != scope {
+                            self.niri.window_mru_ui.set_scope(scope);
+                        } else {
+                            self.niri.window_mru_ui.advance(direction, filter);
+                        }
+                    } else {
+                        self.niri.window_mru_ui.advance(direction, filter);
+                    }
                     self.niri.queue_redraw_mru_output();
                 } else if self.niri.config.borrow().recent_windows.on {
                     self.niri.mru_apply_keyboard_commit();
