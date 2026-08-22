@@ -287,6 +287,31 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
             let windows = state.windows.windows.values().cloned().collect();
             Response::Windows(windows)
         }
+        Request::WindowGeometries => {
+            let (tx, rx) = async_channel::bounded(1);
+            ctx.event_loop.insert_idle(move |state| {
+                let mut geometries = Vec::new();
+                state
+                    .niri
+                    .layout
+                    .with_window_render_geometries(|window, output, geometry| {
+                        geometries.push(niri_ipc::WindowGeometry {
+                            id: window.id().get(),
+                            output: output.name(),
+                            x: geometry.loc.x,
+                            y: geometry.loc.y,
+                            width: geometry.size.w,
+                            height: geometry.size.h,
+                        });
+                    });
+                let _ = tx.send_blocking(geometries);
+            });
+            let geometries = rx
+                .recv()
+                .await
+                .map_err(|_| String::from("error getting window geometries"))?;
+            Response::WindowGeometries(geometries)
+        }
         Request::Layers => {
             let (tx, rx) = async_channel::bounded(1);
             ctx.event_loop.insert_idle(move |state| {
