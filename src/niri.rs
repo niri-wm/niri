@@ -188,6 +188,8 @@ use crate::window::{InitialConfigureState, Mapped, ResolvedWindowRules, Unmapped
 
 const CLEAR_COLOR_LOCKED: [f32; 4] = [0.3, 0.1, 0.1, 1.];
 
+pub(crate) type IpcScreenshotReply = Result<Option<Vec<u8>>, String>;
+
 // We'll try to send frame callbacks at least once a second. We'll make a timer that fires once a
 // second, so with the worst timing the maximum interval between two frame callbacks for a surface
 // should be ~1.995 seconds.
@@ -389,6 +391,7 @@ pub struct Niri {
     pub locked_hint: Option<bool>,
 
     pub screenshot_ui: ScreenshotUi,
+    pending_ipc_screenshot: Option<async_channel::Sender<IpcScreenshotReply>>,
     pub config_error_notification: ConfigErrorNotification,
     pub hotkey_overlay: HotkeyOverlay,
     pub exit_confirm_dialog: ExitConfirmDialog,
@@ -1976,27 +1979,29 @@ impl State {
         self.niri.output_management_state.notify_changes(new_config);
     }
 
-    pub fn open_screenshot_ui(&mut self, show_pointer: bool, path: Option<String>) {
-        if self.niri.is_locked() || self.niri.screenshot_ui.is_open() {
-            return;
-        }
+    pub fn open_screenshot_ui(
+        &mut self,
+        show_pointer: bool,
+        path: Option<String>,
+    ) -> anyhow::Result<()> {
+        ensure!(!self.niri.is_locked(), "session is locked");
+        ensure!(
+            !self.niri.screenshot_ui.is_open(),
+            "screenshot UI is already open"
+        );
 
         let default_output = self
             .niri
             .output_under_cursor()
             .or_else(|| self.niri.layout.active_output().cloned());
-        let Some(default_output) = default_output else {
-            return;
-        };
+        let default_output = default_output.context("no output is available")?;
 
         self.niri.update_render_elements(None);
 
-        let Some(screenshots) = self
+        let screenshots = self
             .backend
             .with_primary_renderer(|renderer| self.niri.capture_screenshots(renderer).collect())
-        else {
-            return;
-        };
+            .context("no renderer is available")?;
 
         // Now that we captured the screenshots, clear grabs like drag-and-drop, etc.
         let time = get_monotonic_time().as_millis() as u32;
@@ -2018,16 +2023,107 @@ impl State {
             tool.unset_grab(self, SERIAL_COUNTER.next_serial(), time);
         }
 
-        self.backend.with_primary_renderer(|renderer| {
-            self.niri
-                .screenshot_ui
-                .open(renderer, screenshots, default_output, show_pointer, path)
-        });
+        let opened = self
+            .backend
+            .with_primary_renderer(|renderer| {
+                self.niri.screenshot_ui.open(
+                    renderer,
+                    screenshots,
+                    default_output,
+                    show_pointer,
+                    path,
+                )
+            })
+            .context("no renderer is available")?;
+        ensure!(opened, "could not open screenshot UI");
 
         self.niri
             .cursor_manager
             .set_cursor_image(CursorImageStatus::Named(CursorIcon::Crosshair));
         self.niri.queue_redraw_all();
+
+        Ok(())
+    }
+
+    pub(crate) fn handle_ipc_screenshot(
+        &mut self,
+        request: niri_ipc::ScreenshotRequest,
+        tx: async_channel::Sender<IpcScreenshotReply>,
+    ) {
+        if tx.is_closed() {
+            return;
+        }
+
+        let result = (|| -> anyhow::Result<_> {
+            ensure!(!self.niri.is_locked(), "session is locked");
+            ensure!(
+                !self.niri.screenshot_ui.is_open(),
+                "screenshot UI is already open"
+            );
+
+            let niri_ipc::ScreenshotRequest {
+                target,
+                show_pointer,
+            } = request;
+            let captured = match target {
+                niri_ipc::ScreenshotTarget::Selection => {
+                    self.open_screenshot_ui(show_pointer, None)?;
+                    self.niri.cancel_mru();
+                    None
+                }
+                niri_ipc::ScreenshotTarget::Screen => {
+                    let output = self
+                        .niri
+                        .layout
+                        .active_output()
+                        .cloned()
+                        .context("no output is focused")?;
+                    Some(
+                        self.backend
+                            .with_primary_renderer(|renderer| {
+                                self.niri.screenshot_pixels(renderer, &output, show_pointer)
+                            })
+                            .context("no renderer is available")??,
+                    )
+                }
+                niri_ipc::ScreenshotTarget::Window { id } => {
+                    let window = if let Some(id) = id {
+                        self.niri
+                            .layout
+                            .windows()
+                            .find(|(_, mapped)| mapped.id().get() == id)
+                            .and_then(|(monitor, mapped)| {
+                                monitor.map(|monitor| (mapped, monitor.output()))
+                            })
+                    } else {
+                        self.niri.layout.focus_with_output()
+                    };
+                    let (mapped, output) = window.context("window is not available")?;
+                    Some(
+                        self.backend
+                            .with_primary_renderer(|renderer| {
+                                self.niri.screenshot_window_pixels(
+                                    renderer,
+                                    output,
+                                    mapped,
+                                    show_pointer,
+                                )
+                            })
+                            .context("no renderer is available")??,
+                    )
+                }
+            };
+
+            Ok(captured)
+        })();
+
+        match result {
+            Ok(Some((size, pixels))) => self.niri.save_ipc_screenshot(size, pixels, tx),
+            Ok(None) => self.niri.pending_ipc_screenshot = Some(tx),
+            Err(err) => {
+                let _ = tx.send_blocking(Err(format!("{err:#}")));
+            }
+        }
     }
 
     pub fn handle_pick_color(&mut self, tx: async_channel::Sender<Option<niri_ipc::PickedColor>>) {
@@ -2051,25 +2147,33 @@ impl State {
             return;
         };
         let path = path.take();
+        let pending = self.niri.pending_ipc_screenshot.take();
 
-        self.backend.with_primary_renderer(|renderer| {
-            match self.niri.screenshot_ui.capture(renderer) {
-                Ok((size, pixels)) => {
-                    if let Err(err) = self.niri.save_screenshot(size, pixels, write_to_disk, path) {
-                        warn!("error saving screenshot: {err:?}");
-                    }
-                }
-                Err(err) => {
-                    warn!("error capturing screenshot: {err:?}");
+        let captured = self
+            .backend
+            .with_primary_renderer(|renderer| self.niri.screenshot_ui.capture(renderer))
+            .context("no renderer is available")
+            .and_then(|result| result);
+
+        match captured {
+            Ok((size, pixels)) => {
+                if let Some(tx) = pending {
+                    self.niri.save_ipc_screenshot(size, pixels, tx);
+                } else if let Err(err) =
+                    self.niri.save_screenshot(size, pixels, write_to_disk, path)
+                {
+                    warn!("error saving screenshot: {err:?}");
                 }
             }
-        });
+            Err(err) => {
+                if let Some(tx) = pending {
+                    let _ = tx.send_blocking(Err(format!("{err:#}")));
+                }
+                warn!("error capturing screenshot: {err:?}");
+            }
+        }
 
-        self.niri.screenshot_ui.close();
-        self.niri
-            .cursor_manager
-            .set_cursor_image(CursorImageStatus::default_named());
-        self.niri.queue_redraw_all();
+        self.niri.close_screenshot_ui();
     }
 
     pub fn store_unmap_snapshot(&mut self, window: &Window, output: Option<&Output>) {
@@ -2630,6 +2734,7 @@ impl Niri {
             locked_hint: None,
 
             screenshot_ui,
+            pending_ipc_screenshot: None,
             config_error_notification,
             hotkey_overlay,
             exit_confirm_dialog,
@@ -2994,11 +3099,7 @@ impl Niri {
             }
         }
 
-        if self.screenshot_ui.close() {
-            self.cursor_manager
-                .set_cursor_image(CursorImageStatus::default_named());
-            self.queue_redraw_all();
-        }
+        self.close_screenshot_ui();
 
         if self.window_mru_ui.output() == Some(output) {
             self.cancel_mru();
@@ -3044,10 +3145,7 @@ impl Niri {
             // I haven't quite figured out how to draw the screenshot textures in
             // physical coordinates.
             if old_size != size || old_scale != scale || old_transform != transform {
-                self.screenshot_ui.close();
-                self.cursor_manager
-                    .set_cursor_image(CursorImageStatus::default_named());
-                self.queue_redraw_all();
+                self.close_screenshot_ui();
                 return;
             }
         }
@@ -5577,6 +5675,18 @@ impl Niri {
         include_pointer: bool,
         path: Option<String>,
     ) -> anyhow::Result<()> {
+        let (size, pixels) = self.screenshot_pixels(renderer, output, include_pointer)?;
+
+        self.save_screenshot(size, pixels, write_to_disk, path)
+            .context("error saving screenshot")
+    }
+
+    fn screenshot_pixels(
+        &mut self,
+        renderer: &mut GlesRenderer,
+        output: &Output,
+        include_pointer: bool,
+    ) -> anyhow::Result<(Size<i32, Physical>, Vec<u8>)> {
         let _span = tracy_client::span!("Niri::screenshot");
 
         self.update_render_elements(Some(output));
@@ -5602,8 +5712,7 @@ impl Niri {
             elements,
         )?;
 
-        self.save_screenshot(size, pixels, write_to_disk, path)
-            .context("error saving screenshot")
+        Ok((size, pixels))
     }
 
     pub fn screenshot_window(
@@ -5615,6 +5724,20 @@ impl Niri {
         show_pointer: bool,
         path: Option<String>,
     ) -> anyhow::Result<()> {
+        let (size, pixels) =
+            self.screenshot_window_pixels(renderer, output, mapped, show_pointer)?;
+
+        self.save_screenshot(size, pixels, write_to_disk, path)
+            .context("error saving screenshot")
+    }
+
+    fn screenshot_window_pixels(
+        &self,
+        renderer: &mut GlesRenderer,
+        output: &Output,
+        mapped: &Mapped,
+        show_pointer: bool,
+    ) -> anyhow::Result<(Size<i32, Physical>, Vec<u8>)> {
         let _span = tracy_client::span!("Niri::screenshot_window");
 
         let scale = Scale::from(output.current_scale().fractional_scale());
@@ -5670,8 +5793,53 @@ impl Niri {
             elements,
         )?;
 
-        self.save_screenshot(geo.size, pixels, write_to_disk, path)
-            .context("error saving screenshot")
+        Ok((geo.size, pixels))
+    }
+
+    fn save_ipc_screenshot(
+        &self,
+        size: Size<i32, Physical>,
+        pixels: Vec<u8>,
+        tx: async_channel::Sender<IpcScreenshotReply>,
+    ) {
+        thread::spawn(move || {
+            let mut buf = Vec::new();
+            let result = write_png_rgba8(
+                std::io::Cursor::new(&mut buf),
+                size.w as u32,
+                size.h as u32,
+                &pixels,
+            )
+            .context("error encoding screenshot image")
+            .map(|()| Some(buf))
+            .map_err(|err| format!("{err:#}"));
+
+            let _ = tx.send_blocking(result);
+        });
+    }
+
+    pub(crate) fn close_screenshot_ui(&mut self) {
+        if !self.screenshot_ui.close() {
+            return;
+        }
+
+        if let Some(pending) = self.pending_ipc_screenshot.take() {
+            let _ = pending.send_blocking(Ok(None));
+        }
+
+        self.cursor_manager
+            .set_cursor_image(CursorImageStatus::default_named());
+        self.queue_redraw_all();
+    }
+
+    pub(crate) fn cancel_ipc_screenshot(&mut self, tx: &async_channel::Sender<IpcScreenshotReply>) {
+        if self
+            .pending_ipc_screenshot
+            .as_ref()
+            .is_some_and(|pending| pending.same_channel(tx))
+        {
+            self.close_screenshot_ui();
+        }
     }
 
     pub fn save_screenshot(
@@ -5894,9 +6062,7 @@ impl Niri {
 
         if self.output_state.is_empty() {
             // There are no outputs, lock the session right away.
-            self.screenshot_ui.close();
-            self.cursor_manager
-                .set_cursor_image(CursorImageStatus::default_named());
+            self.close_screenshot_ui();
 
             let lock = confirmation.ext_session_lock().clone();
             confirmation.lock();
@@ -5954,9 +6120,7 @@ impl Niri {
             } => {
                 self.event_loop.remove(deadline_token);
 
-                self.screenshot_ui.close();
-                self.cursor_manager
-                    .set_cursor_image(CursorImageStatus::default_named());
+                self.close_screenshot_ui();
                 self.cancel_mru();
 
                 if self.output_state.is_empty() {

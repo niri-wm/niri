@@ -18,7 +18,7 @@ use niri_config::OutputName;
 use niri_ipc::state::{EventStreamState, EventStreamStatePart as _};
 use niri_ipc::{
     Action, Event, KeyboardLayouts, OutputConfigChanged, Overview, Reply, Request, Response,
-    Timestamp, WindowLayout, Workspace,
+    Screenshot, ScreenshotRequest, Timestamp, WindowLayout, Workspace,
 };
 use smithay::desktop::layer_map_for_output;
 use smithay::input::pointer::{
@@ -208,9 +208,16 @@ async fn handle_client(ctx: ClientCtx, stream: Async<'static, UnixStream>) -> an
         let requested_error = matches!(request, Ok(Request::ReturnError));
         let requested_event_stream = matches!(request, Ok(Request::EventStream));
 
-        let reply = match request {
-            Ok(request) => process(&ctx, request).await,
-            Err(err) => Err(err),
+        let (reply, payload, close_after_reply) = match request {
+            Ok(Request::Screenshot(request)) => {
+                let Some((reply, payload)) = process_screenshot(&ctx, request, &mut read).await
+                else {
+                    return Ok(());
+                };
+                (reply, payload, true)
+            }
+            Ok(request) => (process(&ctx, request).await, None, false),
+            Err(err) => (Err(err), None, false),
         };
 
         if let Err(err) = &reply {
@@ -223,6 +230,17 @@ async fn handle_client(ctx: ClientCtx, stream: Async<'static, UnixStream>) -> an
         serde_json::to_writer(&mut buf, &reply).context("error formatting reply")?;
         buf.push(b'\n');
         write.write_all(&buf).await.context("error writing reply")?;
+
+        if let Some(payload) = payload {
+            write
+                .write_all(&payload)
+                .await
+                .context("error writing screenshot data")?;
+        }
+
+        if close_after_reply {
+            return Ok(());
+        }
 
         if requested_event_stream {
             let (events_tx, events_rx) = async_channel::bounded(EVENT_STREAM_BUFFER_SIZE);
@@ -378,6 +396,7 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
             let color = result.map_err(|_| String::from("error getting picked color"))?;
             Response::PickedColor(color)
         }
+        Request::Screenshot(_) => unreachable!("screenshot requests are handled separately"),
         Request::Action(action) => {
             validate_action(&action)?;
 
@@ -458,6 +477,49 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
     };
 
     Ok(response)
+}
+
+async fn process_screenshot(
+    ctx: &ClientCtx,
+    request: ScreenshotRequest,
+    read: &mut (impl futures_util::AsyncRead + Unpin),
+) -> Option<(Reply, Option<Vec<u8>>)> {
+    let (tx, rx) = async_channel::bounded(1);
+    let cancel_tx = tx.clone();
+    ctx.event_loop.insert_idle(move |state| {
+        state.handle_ipc_screenshot(request, tx);
+    });
+
+    let mut byte = [0];
+    let result = select_biased! {
+        result = rx.recv().fuse() => result,
+        read = read.read(&mut byte).fuse() => {
+            ctx.event_loop.insert_idle(move |state| {
+                state.niri.cancel_ipc_screenshot(&cancel_tx);
+            });
+
+            return match read {
+                Ok(0) => None,
+                Ok(_) => Some((Err(String::from(
+                    "screenshot requests must be last on an IPC connection",
+                )), None)),
+                Err(_) => None,
+            };
+        },
+    };
+    let result = match result {
+        Ok(Ok(Some(result))) => result,
+        Ok(Ok(None)) => return Some((Ok(Response::Screenshot(None)), None)),
+        Ok(Err(err)) => return Some((Err(err), None)),
+        Err(_) => {
+            return Some((Err(String::from("error receiving screenshot result")), None));
+        }
+    };
+    let response = Screenshot {
+        data_length: result.len() as u64,
+    };
+
+    Some((Ok(Response::Screenshot(Some(response))), Some(result)))
 }
 
 fn validate_action(action: &Action) -> Result<(), String> {
