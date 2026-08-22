@@ -119,6 +119,8 @@ pub enum Request {
     OverviewState,
     /// Request information about screencasts.
     Casts,
+    /// Request the current global cursor position and image state.
+    CursorState,
 }
 
 /// Reply from niri to client.
@@ -165,6 +167,30 @@ pub enum Response {
     OverviewState(Overview),
     /// Information about screencasts.
     Casts(Vec<Cast>),
+    /// Current global cursor position and image state.
+    CursorState(CursorState),
+}
+
+/// Cursor state sampled atomically with its global position.
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct CursorState {
+    /// Global cursor position in logical pixels.
+    pub position: [f64; 2],
+    /// Current compositor-visible cursor image.
+    pub image: CursorImage,
+}
+
+/// Compositor-visible cursor image classification.
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum CursorImage {
+    /// A standard Wayland cursor shape such as `text` or `pointer`.
+    Named(String),
+    /// An application-owned cursor surface with no portable shape name.
+    Surface,
+    /// A hidden cursor.
+    Hidden,
 }
 
 /// Overview information.
@@ -2163,5 +2189,24 @@ mod tests {
         );
         assert!("-".parse::<PositionChange>().is_err());
         assert!("10% ".parse::<PositionChange>().is_err());
+    }
+
+    #[test]
+    fn cursor_state_ipc_messages_round_trip() {
+        let request = serde_json::to_string(&Request::CursorState).unwrap();
+        assert!(matches!(
+            serde_json::from_str::<Request>(&request).unwrap(),
+            Request::CursorState
+        ));
+
+        let state = CursorState {
+            position: [123.5, 456.25],
+            image: CursorImage::Named("text".to_owned()),
+        };
+        let response = serde_json::to_string(&Response::CursorState(state.clone())).unwrap();
+        let Response::CursorState(actual) = serde_json::from_str(&response).unwrap() else {
+            panic!("cursor state response did not deserialize");
+        };
+        assert_eq!(actual, state);
     }
 }

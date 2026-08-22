@@ -17,8 +17,8 @@ use futures_util::{select_biased, AsyncBufReadExt, AsyncWrite, AsyncWriteExt, Fu
 use niri_config::OutputName;
 use niri_ipc::state::{EventStreamState, EventStreamStatePart as _};
 use niri_ipc::{
-    Action, Event, KeyboardLayouts, OutputConfigChanged, Overview, Reply, Request, Response,
-    Timestamp, WindowLayout, Workspace,
+    Action, CursorImage, CursorState, Event, KeyboardLayouts, OutputConfigChanged, Overview, Reply,
+    Request, Response, Timestamp, WindowLayout, Workspace,
 };
 use smithay::desktop::layer_map_for_output;
 use smithay::input::pointer::{
@@ -454,6 +454,26 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
             let state = ctx.event_stream_state.borrow();
             let casts = state.casts.casts.values().cloned().collect();
             Response::Casts(casts)
+        }
+        Request::CursorState => {
+            let (tx, rx) = async_channel::bounded(1);
+            ctx.event_loop.insert_idle(move |state| {
+                let position = state.niri.seat.get_pointer().unwrap().current_location();
+                let image = match state.niri.cursor_manager.cursor_image() {
+                    CursorImageStatus::Named(icon) => CursorImage::Named(icon.name().to_owned()),
+                    CursorImageStatus::Surface(_) => CursorImage::Surface,
+                    CursorImageStatus::Hidden => CursorImage::Hidden,
+                };
+                let _ = tx.send_blocking(CursorState {
+                    position: [position.x, position.y],
+                    image,
+                });
+            });
+            let state = rx
+                .recv()
+                .await
+                .map_err(|_| String::from("error getting cursor state"))?;
+            Response::CursorState(state)
         }
     };
 
