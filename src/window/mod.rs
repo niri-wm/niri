@@ -13,6 +13,7 @@ use smithay::wayland::compositor::with_states;
 use smithay::wayland::shell::xdg::{
     SurfaceCachedState, ToplevelSurface, XdgToplevelSurfaceRoleAttributes,
 };
+use smithay::wayland::xdg_toplevel_tag::XdgToplevelTagSurfaceData;
 
 use crate::utils::with_toplevel_role;
 
@@ -178,6 +179,19 @@ impl<'a> WindowRef<'a> {
         match self {
             WindowRef::Unmapped(_) => false,
             WindowRef::Mapped(mapped) => mapped.is_window_cast_target(),
+        }
+    }
+
+    pub fn xdg_toplevel_tag(&self) -> Option<Box<str>> {
+        match self {
+            WindowRef::Unmapped(unmapped) => {
+                with_states(unmapped.toplevel().wl_surface(), |states| {
+                    let tag_data = states.data_map.get::<XdgToplevelTagSurfaceData>()?;
+                    let tag = tag_data.tag()?;
+                    Some(tag.as_ref().into())
+                })
+            }
+            WindowRef::Mapped(mapped) => mapped.xdg_toplevel_tag().0.map(|tag| tag.into()),
         }
     }
 }
@@ -430,6 +444,15 @@ fn window_matches(window: WindowRef, role: &XdgToplevelSurfaceRoleAttributes, m:
             return false;
         };
         if !title_re.0.is_match(title) {
+            return false;
+        }
+    }
+
+    if let Some(tag_re) = &m.xdg_tag {
+        let Some(tag) = &window.xdg_toplevel_tag() else {
+            return false;
+        };
+        if !tag_re.0.is_match(tag) {
             return false;
         }
     }

@@ -19,6 +19,7 @@ use smithay::wayland::shell::xdg::{
     SurfaceCachedState, ToplevelCachedState, ToplevelConfigure, ToplevelSurface,
     XdgToplevelSurfaceData,
 };
+use smithay::wayland::xdg_toplevel_tag::XdgToplevelTagSurfaceData;
 use wayland_backend::server::Credentials;
 
 use super::{ResolvedWindowRules, WindowRef};
@@ -193,6 +194,9 @@ pub struct Mapped {
 
     /// Most recent monotonic time when the window had the focus.
     focus_timestamp: Option<Duration>,
+
+    /// XdgToplevelTag tag and description
+    xdg_toplevel_tag: (Option<Box<str>>, Option<Box<str>>),
 }
 
 niri_render_elements! {
@@ -275,6 +279,17 @@ impl Mapped {
     pub fn new(window: Window, rules: ResolvedWindowRules, hook: HookId, config: &Config) -> Self {
         let surface = window.wl_surface().expect("no X11 support");
         let credentials = get_credentials_for_surface(&surface);
+        let xdg_toplevel_tag = with_states(
+            window.toplevel().expect("no X11 support").wl_surface(),
+            |states| {
+                let Some(tag_data) = states.data_map.get::<XdgToplevelTagSurfaceData>() else {
+                    return (None, None);
+                };
+                let tag = tag_data.tag().map(|tag| tag.as_ref().into());
+                let desc = tag_data.description().map(|desc| desc.as_ref().into());
+                (tag, desc)
+            },
+        );
         let mut rv = Self {
             window,
             id: MappedId::next(),
@@ -308,6 +323,7 @@ impl Mapped {
             is_pending_maximized: false,
             uncommitted_maximized: Vec::new(),
             focus_timestamp: None,
+            xdg_toplevel_tag,
         };
 
         rv.is_maximized = rv.sizing_mode().is_maximized();
@@ -404,6 +420,28 @@ impl Mapped {
 
         self.is_window_cast_target = value;
         self.need_to_recompute_rules = true;
+    }
+
+    pub fn set_xdg_toplevel_tag(&mut self, tag: Option<Box<str>>, description: Option<Box<str>>) {
+        if let Some(tag) = tag {
+            if Some(&tag) != self.xdg_toplevel_tag.0.as_ref() {
+                self.xdg_toplevel_tag.0 = Some(tag);
+                self.need_to_recompute_rules = true;
+            }
+        }
+
+        if let Some(description) = description {
+            if Some(&description) != self.xdg_toplevel_tag.1.as_ref() {
+                self.xdg_toplevel_tag.0 = Some(description);
+            }
+        }
+    }
+
+    pub fn xdg_toplevel_tag(&self) -> (Option<&str>, Option<&str>) {
+        let (tag, desc) = &self.xdg_toplevel_tag;
+        let tag = tag.as_ref().map(|tag| tag.as_ref());
+        let desc = desc.as_ref().map(|desc| desc.as_ref());
+        (tag, desc)
     }
 
     /// Renders a snapshot of the window without popups.
