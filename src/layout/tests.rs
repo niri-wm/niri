@@ -2467,6 +2467,46 @@ fn set_window_height_recomputes_to_auto() {
 }
 
 #[test]
+fn set_window_height_to_max_recomputes_to_auto() {
+    for scale in [1., 1.5] {
+        let ops = [
+            Op::AddScaledOutput {
+                id: 1,
+                scale,
+                layout_config: None,
+            },
+            Op::AddWindow {
+                params: TestWindowParams::new(0),
+            },
+            Op::Communicate(0),
+            Op::AddWindow {
+                params: TestWindowParams::new(1),
+            },
+            Op::Communicate(1),
+            Op::FocusColumnLeft,
+            Op::SetWindowHeight {
+                id: None,
+                change: SizeChange::AdjustProportion(-10.),
+            },
+            Op::Communicate(0),
+            Op::SetWindowHeight {
+                id: None,
+                change: SizeChange::AdjustProportion(10.),
+            },
+            Op::Communicate(0),
+            Op::ConsumeWindowIntoColumn,
+        ];
+
+        let layout = check_ops(ops);
+        let mut windows = layout.windows().map(|(_, win)| win);
+        let first = windows.next().unwrap().requested_size().unwrap();
+        let second = windows.next().unwrap().requested_size().unwrap();
+
+        assert_eq!(first.h, second.h, "scale: {scale}");
+    }
+}
+
+#[test]
 fn one_window_in_column_becomes_weight_1() {
     let ops = [
         Op::AddOutput(1),
