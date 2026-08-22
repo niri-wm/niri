@@ -6,7 +6,9 @@ use niri_config::utils::MergeWith as _;
 use niri_config::{
     CenterFocusedColumn, CornerRadius, OutputName, PresetSize, Workspace as WorkspaceConfig,
 };
-use niri_ipc::{ColumnDisplay, PositionChange, SizeChange, WindowLayout};
+use niri_ipc::{
+    ColumnDisplay, HorizontalAlignment, PositionChange, SizeChange, VerticalAlignment, WindowLayout,
+};
 use smithay::backend::renderer::element::Kind;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::desktop::{layer_map_for_output, Window};
@@ -1166,6 +1168,27 @@ impl<W: LayoutElement> Workspace<W> {
             self.floating.center_window(id);
         } else {
             self.scrolling.center_window(id);
+        }
+    }
+
+    pub fn align_column(&mut self, horizontal: Option<HorizontalAlignment>) {
+        if !self.floating_is_active.get() {
+            self.scrolling.align_column(horizontal);
+        }
+    }
+
+    pub fn align_window(
+        &mut self,
+        id: Option<&W::Id>,
+        horizontal: Option<HorizontalAlignment>,
+        vertical: Option<VerticalAlignment>,
+    ) {
+        if id.map_or(self.floating_is_active.get(), |id| {
+            self.floating.has_window(id)
+        }) {
+            self.floating.align_window(id, horizontal, vertical);
+        } else {
+            self.scrolling.align_window(id, horizontal, vertical);
         }
     }
 

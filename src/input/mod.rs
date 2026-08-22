@@ -1682,6 +1682,27 @@ impl State {
                     self.niri.queue_redraw_all();
                 }
             }
+            Action::AlignColumn(horizontal) => {
+                self.niri.layout.align_column(horizontal);
+                // FIXME: granular (added by artiepoole)
+                self.niri.queue_redraw_all();
+            }
+            Action::AlignWindow(horizontal, vertical) => {
+                self.niri.layout.align_window(None, horizontal, vertical);
+                // FIXME: granular
+                self.niri.queue_redraw_all();
+            }
+            Action::AlignWindowById(id, horizontal, vertical) => {
+                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
+                let window = window.map(|(_, m)| m.window.clone());
+                if let Some(window) = window {
+                    self.niri
+                        .layout
+                        .align_window(Some(&window), horizontal, vertical);
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
+                }
+            }
             Action::CenterVisibleColumns => {
                 self.niri.layout.center_visible_columns();
                 // FIXME: granular
