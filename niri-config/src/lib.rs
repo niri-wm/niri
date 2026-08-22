@@ -1724,6 +1724,8 @@ mod tests {
                         a: 0.3137255,
                     },
                 },
+                wheel_y: Workspaces,
+                wheel_shift_y: Columns,
             },
             environment: Environment(
                 [

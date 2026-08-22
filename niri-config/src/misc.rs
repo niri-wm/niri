@@ -123,6 +123,8 @@ pub struct Overview {
     pub zoom: f64,
     pub backdrop_color: Color,
     pub workspace_shadow: WorkspaceShadow,
+    pub wheel_y: OverviewWheelAction,
+    pub wheel_shift_y: OverviewWheelAction,
 }
 
 impl Default for Overview {
@@ -131,6 +133,8 @@ impl Default for Overview {
             zoom: 0.5,
             backdrop_color: DEFAULT_BACKDROP_COLOR,
             workspace_shadow: WorkspaceShadow::default(),
+            wheel_y: OverviewWheelAction::Workspaces,
+            wheel_shift_y: OverviewWheelAction::Columns,
         }
     }
 }
@@ -143,13 +147,24 @@ pub struct OverviewPart {
     pub backdrop_color: Option<Color>,
     #[knuffel(child)]
     pub workspace_shadow: Option<WorkspaceShadowPart>,
+    #[knuffel(child, unwrap(argument))]
+    pub wheel_y: Option<OverviewWheelAction>,
+    #[knuffel(child, unwrap(argument))]
+    pub wheel_shift_y: Option<OverviewWheelAction>,
 }
 
 impl MergeWith<OverviewPart> for Overview {
     fn merge_with(&mut self, part: &OverviewPart) {
         merge!((self, part), zoom, workspace_shadow);
-        merge_clone!((self, part), backdrop_color);
+        merge_clone!((self, part), backdrop_color, wheel_y, wheel_shift_y);
     }
+}
+
+#[derive(knuffel::DecodeScalar, Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum OverviewWheelAction {
+    #[default]
+    Workspaces,
+    Columns,
 }
 
 #[derive(knuffel::Decode, Debug, Default, Clone, PartialEq, Eq)]
