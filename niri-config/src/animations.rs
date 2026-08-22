@@ -19,6 +19,8 @@ pub struct Animations {
     pub screenshot_ui_open: ScreenshotUiOpenAnim,
     pub overview_open_close: OverviewOpenCloseAnim,
     pub recent_windows_close: RecentWindowsCloseAnim,
+    pub cursor_expand: CursorExpandAnim,
+    pub cursor_shrink: CursorShrinkAnim,
 }
 
 impl Default for Animations {
@@ -37,6 +39,8 @@ impl Default for Animations {
             screenshot_ui_open: Default::default(),
             overview_open_close: Default::default(),
             recent_windows_close: Default::default(),
+            cursor_expand: Default::default(),
+            cursor_shrink: Default::default(),
         }
     }
 }
@@ -71,6 +75,10 @@ pub struct AnimationsPart {
     pub overview_open_close: Option<OverviewOpenCloseAnim>,
     #[knuffel(child)]
     pub recent_windows_close: Option<RecentWindowsCloseAnim>,
+    #[knuffel(child)]
+    pub cursor_expand: Option<CursorExpandAnim>,
+    #[knuffel(child)]
+    pub cursor_shrink: Option<CursorShrinkAnim>,
 }
 
 impl MergeWith<AnimationsPart> for Animations {
@@ -97,6 +105,8 @@ impl MergeWith<AnimationsPart> for Animations {
             screenshot_ui_open,
             overview_open_close,
             recent_windows_close,
+            cursor_expand,
+            cursor_shrink,
         );
     }
 }
@@ -326,6 +336,36 @@ impl Default for RecentWindowsCloseAnim {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CursorExpandAnim(pub Animation);
+
+impl Default for CursorExpandAnim {
+    fn default() -> Self {
+        Self(Animation {
+            off: false,
+            kind: Kind::Easing(EasingParams {
+                duration_ms: 200,
+                curve: Curve::EaseOutCubic,
+            }),
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CursorShrinkAnim(pub Animation);
+
+impl Default for CursorShrinkAnim {
+    fn default() -> Self {
+        Self(Animation {
+            off: false,
+            kind: Kind::Easing(EasingParams {
+                duration_ms: 300,
+                curve: Curve::EaseOutCubic,
+            }),
+        })
+    }
+}
+
 impl<S> knuffel::Decode<S> for WorkspaceSwitchAnim
 where
     S: knuffel::traits::ErrorSpan,
@@ -510,6 +550,36 @@ where
 }
 
 impl<S> knuffel::Decode<S> for RecentWindowsCloseAnim
+where
+    S: knuffel::traits::ErrorSpan,
+{
+    fn decode_node(
+        node: &knuffel::ast::SpannedNode<S>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) -> Result<Self, DecodeError<S>> {
+        let default = Self::default().0;
+        Ok(Self(Animation::decode_node(node, ctx, default, |_, _| {
+            Ok(false)
+        })?))
+    }
+}
+
+impl<S> knuffel::Decode<S> for CursorExpandAnim
+where
+    S: knuffel::traits::ErrorSpan,
+{
+    fn decode_node(
+        node: &knuffel::ast::SpannedNode<S>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) -> Result<Self, DecodeError<S>> {
+        let default = Self::default().0;
+        Ok(Self(Animation::decode_node(node, ctx, default, |_, _| {
+            Ok(false)
+        })?))
+    }
+}
+
+impl<S> knuffel::Decode<S> for CursorShrinkAnim
 where
     S: knuffel::traits::ErrorSpan,
 {

@@ -22,6 +22,16 @@ cursor {
 
     hide-when-typing
     hide-after-inactive-ms 1000
+    // shake {
+        // off
+        // max-multiplier 2.5
+        // post-expand-delay-ms 250
+        // expand-duration-ms 200
+        // decay-duration-ms 300
+        // shake-interval-ms 400
+        // min-diagonal 100.0
+        // sensitivity 2.0
+    // }
 }
 
 overview {
@@ -193,6 +203,119 @@ If set, the cursor will automatically hide once this number of milliseconds pass
 cursor {
     // Hide the cursor after one second of inactivity.
     hide-after-inactive-ms 1000
+}
+```
+
+#### `shake` (cursor.shake)
+
+<sup>Since: 25.??</sup>
+
+Cursor shake detection temporarily enlarges the cursor when you shake the mouse, making it easier to find.
+
+`off` disables cursor shake detection.
+
+```kdl
+cursor {
+    shake {
+        // off
+        max-multiplier 4.5
+        behavior "hold"
+        sensitivity 2.0
+    }
+}
+```
+
+#### `max-multiplier`
+
+Maximum cursor size multiplier when shake is detected.
+
+```kdl
+shake {
+    max-multiplier 2.5
+}
+```
+
+#### `behavior`
+
+How the enlarged cursor behaves:
+  - `"hold"` (default): stays enlarged while moving, shrinks when stopped.
+  - `"intensity"`: stays enlarged while shaking continues, shrinks when intensity drops.
+
+```kdl
+shake {
+    behavior "hold"
+}
+```
+
+#### `cooldown-ms`
+
+Time to wait after shrinking before detecting shakes again.
+
+```kdl
+shake {
+    cooldown-ms 400
+}
+```
+
+#### `stopped-threshold-ms`
+
+For `behavior "hold"`: time without motion to consider pointer stopped.
+
+```kdl
+shake {
+    stopped-threshold-ms 50
+}
+```
+
+#### `shake-relax-ms`
+
+For `behavior "intensity"`: time below sensitivity threshold before shrinking.
+
+```kdl
+shake {
+    shake-relax-ms 150
+}
+```
+
+#### `post-expand-delay-ms`
+
+Delay after expansion completes before starting shrink.
+
+```kdl
+shake {
+    post-expand-delay-ms 250
+}
+```
+
+> **Note:** Expansion and shrink animations are configured through the global `animations` settings using `cursor-expand` and `cursor-shrink`. See [Animations](./Configuration:-Animations.md) for details.
+
+#### shake-interval-ms
+
+Time window for tracking pointer motion history.
+
+```kdl
+shake {
+    shake-interval-ms 400
+}
+```
+
+#### min-diagonal
+
+Minimum movement area (in pixels) required to detect shake.
+
+```kdl
+shake {
+    min-diagonal 100.0
+}
+```
+
+#### sensitivity
+
+Shake detection threshold. Higher values require more vigorous shaking.
+
+```kdl
+shake {
+    sensitivity 2.0
 }
 ```
 
