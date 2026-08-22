@@ -898,7 +898,7 @@ impl<W: LayoutElement> Workspace<W> {
                 let rules = window.rules();
                 let border = self.options.layout.border.merged_with(&rules.border);
                 if !border.off {
-                    fixed += border.width * 2.;
+                    fixed += border.width.outset() * 2.;
                 }
 
                 ColumnWidth::Fixed(fixed)
