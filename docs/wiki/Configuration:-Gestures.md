@@ -21,6 +21,10 @@ gestures {
         max-speed 1500
     }
 
+    edge-overscroll {
+        // resistance 0   // 0 disables this gesture (the default)
+    }
+
     hot-corners {
         // off
         top-left
@@ -77,6 +81,32 @@ gestures {
     dnd-edge-workspace-switch {
         trigger-height 100
         max-speed 3000
+    }
+}
+```
+
+### `edge-overscroll`
+
+<sup>Since: next release</sup>
+
+Push the mouse cursor *past* a true screen edge — a hard edge with no adjacent output, so the motion is clipped — to pan focus to the adjacent column (left/right edge) or workspace (up/down edge).
+
+Unlike `dnd-edge-*`, this works outside drag-and-drop, during normal pointer use. It requires the cursor to reach the *actual* screen boundary (not a proximity band) and keep pushing; the clipped over-travel accumulates and, once it crosses `resistance`, performs a single discrete navigation step. Because the pointer is pinned at a hard edge, incidental edge contact accumulates only a few pixels and cannot trigger it — there is no timer and no heuristic.
+
+It is suppressed while the session is locked, in the overview/screenshot/MRU UIs, during a pointer grab or constraint, and on a fullscreen window (leaving fullscreen must be explicit). It acts on the monitor the cursor is on, fires once per excursion, and re-arms when the cursor returns inside the outputs.
+
+The option is:
+
+- `resistance`: accumulated over-travel past the edge, in logical pixels, required to trigger. `0` (the default) disables the gesture. Higher values require a firmer, more deliberate shove.
+
+This is primarily useful for scrollable layouts run *without* left/right `struts` (combined with `focus-follows-mouse max-scroll-amount="0%"`), where a maximized column leaves no off-screen sliver for ordinary focus-follows-mouse to pan via. Note: with side-by-side monitors of differing height/offset, the L-shaped no-output region next to the shorter monitor is also a true screen edge.
+
+```kdl
+gestures {
+    // Shove the cursor ~200 px past a screen edge to pan focus
+    // to the adjacent column / workspace.
+    edge-overscroll {
+        resistance 200
     }
 }
 ```
