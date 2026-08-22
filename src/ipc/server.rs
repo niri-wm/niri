@@ -225,7 +225,9 @@ async fn handle_client(ctx: ClientCtx, stream: Async<'static, UnixStream>) -> an
         write.write_all(&buf).await.context("error writing reply")?;
 
         if requested_event_stream {
-            let (events_tx, events_rx) = async_channel::bounded(EVENT_STREAM_BUFFER_SIZE);
+            let initial_events = ctx.event_stream_state.borrow().replicate();
+            let (events_tx, events_rx) =
+                async_channel::bounded(event_stream_buffer_size(initial_events.len()));
             let (disconnect_tx, disconnect_rx) = async_channel::bounded(1);
 
             // Spawn a task for the client.
@@ -243,13 +245,9 @@ async fn handle_client(ctx: ClientCtx, stream: Async<'static, UnixStream>) -> an
                 warn!("error scheduling IPC event stream future: {err:?}");
             }
 
-            // Send the initial state.
-            {
-                let state = ctx.event_stream_state.borrow();
-                for event in state.replicate() {
-                    events_tx
-                        .try_send(event)
-                        .expect("initial event burst had more events than buffer size");
+            for event in initial_events {
+                if events_tx.try_send(event).is_err() {
+                    break;
                 }
             }
 
@@ -266,6 +264,10 @@ async fn handle_client(ctx: ClientCtx, stream: Async<'static, UnixStream>) -> an
             return Ok(());
         }
     }
+}
+
+fn event_stream_buffer_size(initial_events_len: usize) -> usize {
+    EVENT_STREAM_BUFFER_SIZE.max(initial_events_len)
 }
 
 async fn process(ctx: &ClientCtx, request: Request) -> Reply {
@@ -941,5 +943,25 @@ impl State {
         let event = Event::ScreenshotCaptured { path };
         state.apply(event.clone());
         server.send_event(event);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn event_stream_initial_buffer_grows_when_initial_state_exceeds_slow_client_limit() {
+        let initial_events_len = EVENT_STREAM_BUFFER_SIZE + 1;
+
+        assert_eq!(
+            event_stream_buffer_size(initial_events_len),
+            initial_events_len
+        );
+    }
+
+    #[test]
+    fn event_stream_initial_buffer_keeps_slow_client_limit_when_initial_state_is_small() {
+        assert_eq!(event_stream_buffer_size(1), EVENT_STREAM_BUFFER_SIZE);
     }
 }
