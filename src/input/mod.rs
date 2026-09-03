@@ -3585,7 +3585,17 @@ impl State {
     where
         I::Device: 'static, // Needed for downcasting.
     {
-        let Some(pos) = self.compute_tablet_position(&event) else {
+        self.update_tablet_tool::<I>(&event, true);
+    }
+
+    fn update_tablet_tool<I: InputBackend>(
+        &mut self,
+        event: &(impl Event<I> + TabletToolEvent<I>),
+        send_frame: bool,
+    ) where
+        I::Device: 'static,
+    {
+        let Some(pos) = self.compute_tablet_position(event) else {
             return;
         };
 
@@ -3635,7 +3645,9 @@ impl State {
                 },
             );
 
-            tool.frame(self, time);
+            if send_frame {
+                tool.frame(self, time);
+            }
 
             self.niri.pointer_visibility = PointerVisibility::Visible;
             self.niri.tablet_cursor_location = Some(pos);
@@ -3646,12 +3658,19 @@ impl State {
         self.niri.queue_redraw_all();
     }
 
-    fn on_tablet_tool_tip<I: InputBackend>(&mut self, event: I::TabletToolTipEvent) {
+    fn on_tablet_tool_tip<I: InputBackend>(&mut self, event: I::TabletToolTipEvent)
+    where
+        I::Device: 'static,
+    {
         let tool = self.niri.seat.tablet_seat().get_tool(&event.tool());
 
         let Some(tool) = tool else {
             return;
         };
+
+        // Tip events may contain position and axis updates without a separate axis event.
+        self.update_tablet_tool::<I>(&event, false);
+
         let tip_state = event.tip_state();
 
         let serial = SERIAL_COUNTER.next_serial();
