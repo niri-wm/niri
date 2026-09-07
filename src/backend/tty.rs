@@ -1362,9 +1362,11 @@ impl Tty {
 
         // Reset the CTM in case it was set before, applying the configured value.
         let ctm = config.color_matrix.map(|m| m.0);
+        let mut ctm_applied = ctm.is_none();
         if let Some(ctm_props) = &mut ctm_props {
-            if let Err(err) = ctm_props.set_ctm(&device.drm, ctm) {
-                debug!("couldn't set color matrix: {err:?}");
+            match ctm_props.set_ctm(&device.drm, ctm) {
+                Ok(()) => ctm_applied = true,
+                Err(err) => debug!("couldn't set color matrix: {err:?}"),
             }
         }
 
@@ -1577,7 +1579,7 @@ impl Tty {
             gamma_props,
             pending_gamma_change: None,
             ctm_props,
-            current_ctm: ctm,
+            current_ctm: ctm.filter(|_| ctm_applied),
             vblank_frame: None,
             vblank_frame_name,
             time_since_presentation_plot_name,
