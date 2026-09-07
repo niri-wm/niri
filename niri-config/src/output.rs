@@ -416,9 +416,23 @@ impl<S: ErrorSpan> knuffel::Decode<S> for ColorMatrix {
         let mut coefficients: [f64; 9] = [0.0; 9];
         let mut valid = true;
         for (i, value) in node.arguments.iter().take(9).enumerate() {
-            match knuffel::traits::DecodeScalar::decode(value, ctx) {
-                Ok(v) => coefficients[i] = v,
-                Err(_) => valid = false,
+            match &*value.literal {
+                knuffel::ast::Literal::Int(_) => match <i64 as knuffel::traits::DecodeScalar<S>>::decode(value, ctx) {
+                    Ok(v) => coefficients[i] = v as f64,
+                    Err(_) => valid = false,
+                },
+                knuffel::ast::Literal::Decimal(_) => match knuffel::traits::DecodeScalar::decode(value, ctx) {
+                    Ok(v) => coefficients[i] = v,
+                    Err(_) => valid = false,
+                },
+                _ => {
+                    ctx.emit_error(DecodeError::unexpected(
+                        &value.literal,
+                        "argument",
+                        "expected a number (integer or decimal)",
+                    ));
+                    valid = false;
+                }
             }
         }
 
@@ -631,11 +645,14 @@ mod tests {
             output "eDP-1" {
                 color-matrix 1.0 0.0 0.0 0.0 1.0 0.0 0.0 0.0 1.0
             }
+            output "HDMI-A-1" {
+                color-matrix 0.2126 0.7152 0.0722 0 0 0 0 0 0
+            }
         "#,
         )
         .unwrap();
         let outputs = &config.outputs.0;
-        assert_eq!(outputs.len(), 2);
+        assert_eq!(outputs.len(), 3);
         assert_eq!(
             outputs[0].color_matrix,
             Some(ColorMatrix([
@@ -650,6 +667,15 @@ mod tests {
                 [1.0, 0.0, 0.0],
                 [0.0, 1.0, 0.0],
                 [0.0, 0.0, 1.0],
+            ])),
+        );
+        // Regression: bare integer scalars (KDL ints) must be accepted alongside decimals.
+        assert_eq!(
+            outputs[2].color_matrix,
+            Some(ColorMatrix([
+                [0.2126, 0.7152, 0.0722],
+                [0.0, 0.0, 0.0],
+                [0.0, 0.0, 0.0],
             ])),
         );
     }
