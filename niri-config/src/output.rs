@@ -47,6 +47,18 @@ pub struct Modeline {
     pub vsync_polarity: niri_ipc::VSyncPolarity,
 }
 
+/// A 3x3 color matrix, stored row-major.
+///
+/// Applied as a hardware color transformation matrix (DRM CTM) to the output:
+///
+/// ```text
+/// | R' |   | m00 m01 m02 |   | R |
+/// | G' | = | m10 m11 m12 | x | G |
+/// | B' |   | m20 m21 m22 |   | B |
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ColorMatrix(pub [[f64; 3]; 3]);
+
 #[derive(knuffel::Decode, Debug, Clone, PartialEq)]
 pub struct Output {
     #[knuffel(child)]
@@ -61,6 +73,8 @@ pub struct Output {
     pub position: Option<Position>,
     #[knuffel(child, unwrap(argument))]
     pub max_bpc: Option<MaxBpc>,
+    #[knuffel(child)]
+    pub color_matrix: Option<ColorMatrix>,
     #[knuffel(child)]
     pub mode: Option<Mode>,
     #[knuffel(child)]
@@ -104,6 +118,7 @@ impl Default for Output {
             transform: Transform::Normal,
             position: None,
             max_bpc: None,
+            color_matrix: None,
             mode: None,
             modeline: None,
             variable_refresh_rate: None,
@@ -372,6 +387,70 @@ impl<S: ErrorSpan> knuffel::Decode<S> for Mode {
     }
 }
 
+impl<S: ErrorSpan> knuffel::Decode<S> for ColorMatrix {
+    fn decode_node(node: &SpannedNode<S>, ctx: &mut Context<S>) -> Result<Self, DecodeError<S>> {
+        if let Some(type_name) = &node.type_name {
+            ctx.emit_error(DecodeError::unexpected(
+                type_name,
+                "type name",
+                "no type name expected for this node",
+            ));
+        }
+
+        for child in node.children() {
+            ctx.emit_error(DecodeError::unexpected(
+                child,
+                "node",
+                format!("unexpected node `{}`", child.node_name.escape_default()),
+            ));
+        }
+
+        for prop in &node.properties {
+            ctx.emit_error(DecodeError::unexpected(
+                prop.0,
+                "property",
+                format!("unexpected property `{}`", (**prop.0).escape_default()),
+            ));
+        }
+
+        let mut coefficients: [f64; 9] = [0.0; 9];
+        let mut valid = true;
+        for (i, value) in node.arguments.iter().take(9).enumerate() {
+            match knuffel::traits::DecodeScalar::decode(value, ctx) {
+                Ok(v) => coefficients[i] = v,
+                Err(_) => valid = false,
+            }
+        }
+
+        if node.arguments.len() > 9 {
+            ctx.emit_error(DecodeError::unexpected(
+                &node.arguments[9].literal,
+                "argument",
+                "unexpected argument; exactly 9 coefficients expected",
+            ));
+        } else if node.arguments.len() < 9 {
+            ctx.emit_error(DecodeError::missing(
+                node,
+                "argument; exactly 9 coefficients expected",
+            ));
+        }
+
+        if valid && node.arguments.len() == 9 {
+            Ok(ColorMatrix([
+                [coefficients[0], coefficients[1], coefficients[2]],
+                [coefficients[3], coefficients[4], coefficients[5]],
+                [coefficients[6], coefficients[7], coefficients[8]],
+            ]))
+        } else {
+            Ok(ColorMatrix([
+                [1.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0],
+                [0.0, 0.0, 1.0],
+            ]))
+        }
+    }
+}
+
 macro_rules! ensure {
     ($cond:expr, $ctx:expr, $span:expr, $fmt:literal $($arg:tt)* ) => {
         if !$cond {
@@ -540,6 +619,40 @@ mod tests {
     use insta::assert_debug_snapshot;
 
     use super::*;
+    use crate::Config;
+
+    #[test]
+    fn parse_color_matrix() {
+        let config = Config::parse_mem(
+            r#"
+            output "DP-1" {
+                color-matrix 0.2126 0.7152 0.0722 0.2126 0.7152 0.0722 0.2126 0.7152 0.0722
+            }
+            output "eDP-1" {
+                color-matrix 1.0 0.0 0.0 0.0 1.0 0.0 0.0 0.0 1.0
+            }
+        "#,
+        )
+        .unwrap();
+        let outputs = &config.outputs.0;
+        assert_eq!(outputs.len(), 2);
+        assert_eq!(
+            outputs[0].color_matrix,
+            Some(ColorMatrix([
+                [0.2126, 0.7152, 0.0722],
+                [0.2126, 0.7152, 0.0722],
+                [0.2126, 0.7152, 0.0722],
+            ])),
+        );
+        assert_eq!(
+            outputs[1].color_matrix,
+            Some(ColorMatrix([
+                [1.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0],
+                [0.0, 0.0, 1.0],
+            ])),
+        );
+    }
 
     #[test]
     fn parse_mode() {
