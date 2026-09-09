@@ -3633,7 +3633,6 @@ impl State {
                     .wheel_has_changed()
                     .then(|| (event.wheel_delta(), event.wheel_delta_discrete())),
             };
-            tool.axis(self, frame);
 
             tool.motion(
                 self,
@@ -3644,6 +3643,8 @@ impl State {
                     time,
                 },
             );
+
+            tool.axis(self, frame);
 
             if send_frame {
                 tool.frame(self, time);
@@ -3668,10 +3669,10 @@ impl State {
             return;
         };
 
-        // Tip events may contain position and axis updates without a separate axis event.
-        self.update_tablet_tool::<I>(&event, false);
-
         let tip_state = event.tip_state();
+        if tip_state == TabletToolTipState::Down {
+            self.update_tablet_tool::<I>(&event, false);
+        }
 
         let serial = SERIAL_COUNTER.next_serial();
         let time = event.time();
@@ -3805,6 +3806,8 @@ impl State {
                 }
 
                 tool.up(self, &tablet::tool::UpEvent { serial, time });
+
+                self.update_tablet_tool::<I>(&event, false);
             }
         }
 
