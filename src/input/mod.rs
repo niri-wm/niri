@@ -38,6 +38,7 @@ use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Rectangle, Transform, SERIAL_COUNTER};
 use smithay::wayland::keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitor;
 use smithay::wayland::pointer_constraints::{with_pointer_constraint, PointerConstraint};
+use smithay::wayland::virtual_keyboard::VirtualKeyboardDevice;
 use touch_overview_grab::TouchOverviewGrab;
 
 use self::move_grab::MoveGrab;
@@ -413,7 +414,16 @@ impl State {
         &mut self,
         event: I::KeyboardKeyEvent,
         consumed_by_a11y: &mut bool,
-    ) {
+    ) where
+        I::Device: 'static,
+    {
+        // Restore the real keymap if required (the virtual keyboard uses its own one).
+        if self.niri.virtual_keyboard_keymap.is_some()
+            && !(&event.device() as &dyn Any).is::<VirtualKeyboardDevice>()
+        {
+            self.set_configured_keymap();
+        }
+
         let mod_key = self.backend.mod_key(&self.niri.config.borrow());
 
         let serial = SERIAL_COUNTER.next_serial();
@@ -4249,10 +4259,16 @@ impl State {
         evt: &impl AbsolutePositionEvent<I>,
         fallback_output: Option<&Output>,
     ) -> Option<Point<f64, Logical>> {
-        let output = evt.device().output(self);
+        let device = evt.device();
+        let output = device.output(self);
         let output = output.filter(|output| self.niri.output_exists(output));
         let output = output.as_ref().or(fallback_output)?;
         let output_geo = self.niri.global_space.output_geometry(output).unwrap();
+
+        if device.absolute_position_is_logical() {
+            return Some(evt.position_transformed(output_geo.size) + output_geo.loc.to_f64());
+        }
+
         let transform = output.current_transform();
         let size = transform.invert().transform_size(output_geo.size);
         Some(
