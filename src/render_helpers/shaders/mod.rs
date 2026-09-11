@@ -97,6 +97,10 @@ impl Shaders {
                     UniformName::new("geo_size", UniformType::_2f),
                     UniformName::new("corner_radius", UniformType::_4f),
                     UniformName::new("input_to_geo", UniformType::Matrix3x3),
+                    UniformName::new("refraction", UniformType::_1f),
+                    UniformName::new("refraction_bevel", UniformType::_1f),
+                    UniformName::new("refraction_saturation", UniformType::_1f),
+                    UniformName::new("refraction_brightness", UniformType::_1f),
                 ],
             )
             .map_err(|err| {
@@ -119,6 +123,10 @@ impl Shaders {
                     UniformName::new("noise", UniformType::_1f),
                     UniformName::new("saturation", UniformType::_1f),
                     UniformName::new("bg_color", UniformType::_4f),
+                    UniformName::new("refraction", UniformType::_1f),
+                    UniformName::new("refraction_bevel", UniformType::_1f),
+                    UniformName::new("refraction_saturation", UniformType::_1f),
+                    UniformName::new("refraction_brightness", UniformType::_1f),
                 ],
             )
             .map_err(|err| {

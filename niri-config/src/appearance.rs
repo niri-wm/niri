@@ -1065,6 +1065,14 @@ pub struct BackgroundEffectRule {
     pub noise: Option<FloatOrInt<0, 1000>>,
     #[knuffel(child, unwrap(argument))]
     pub saturation: Option<FloatOrInt<0, 1000>>,
+    #[knuffel(child, unwrap(argument))]
+    pub refraction: Option<FloatOrInt<0, 1000>>,
+    #[knuffel(child, unwrap(argument))]
+    pub refraction_bevel: Option<FloatOrInt<0, 1000>>,
+    #[knuffel(child, unwrap(argument))]
+    pub refraction_saturation: Option<FloatOrInt<0, 1000>>,
+    #[knuffel(child, unwrap(argument))]
+    pub refraction_brightness: Option<FloatOrInt<0, 1000>>,
 }
 
 /// Resolved background effect rule.
@@ -1087,6 +1095,10 @@ pub struct BackgroundEffect {
 
     pub noise: Option<f64>,
     pub saturation: Option<f64>,
+    pub refraction: Option<f64>,
+    pub refraction_bevel: Option<f64>,
+    pub refraction_saturation: Option<f64>,
+    pub refraction_brightness: Option<f64>,
 }
 
 impl MergeWith<BackgroundEffectRule> for BackgroundEffect {
@@ -1099,6 +1111,22 @@ impl MergeWith<BackgroundEffectRule> for BackgroundEffect {
 
         if let Some(x) = part.saturation {
             self.saturation = Some(x.0);
+        }
+
+        if let Some(x) = part.refraction {
+            self.refraction = Some(x.0);
+        }
+
+        if let Some(x) = part.refraction_bevel {
+            self.refraction_bevel = Some(x.0);
+        }
+
+        if let Some(x) = part.refraction_saturation {
+            self.refraction_saturation = Some(x.0);
+        }
+
+        if let Some(x) = part.refraction_brightness {
+            self.refraction_brightness = Some(x.0);
         }
     }
 }
@@ -1348,5 +1376,35 @@ mod tests {
         )
         "
         );
+    }
+
+    #[test]
+    fn parse_background_effect_refraction_tuning() {
+        let config = Config::parse_mem(
+            r#"
+            layer-rule {
+                background-effect {
+                    refraction 0.6
+                    refraction-bevel 54
+                    refraction-saturation 1.5
+                    refraction-brightness 1.2
+                }
+            }
+            "#,
+        )
+        .unwrap();
+
+        let rule = &config.layer_rules[0].background_effect;
+        assert_eq!(rule.refraction, Some(FloatOrInt(0.6)));
+        assert_eq!(rule.refraction_bevel, Some(FloatOrInt(54.0)));
+        assert_eq!(rule.refraction_saturation, Some(FloatOrInt(1.5)));
+        assert_eq!(rule.refraction_brightness, Some(FloatOrInt(1.2)));
+
+        let mut effect = BackgroundEffect::default();
+        effect.merge_with(rule);
+        assert_eq!(effect.refraction, Some(0.6));
+        assert_eq!(effect.refraction_bevel, Some(54.0));
+        assert_eq!(effect.refraction_saturation, Some(1.5));
+        assert_eq!(effect.refraction_brightness, Some(1.2));
     }
 }

@@ -79,6 +79,10 @@ pub struct XrayElement {
     blur: bool,
     noise: f32,
     saturation: f32,
+    refraction: f32,
+    refraction_bevel: f32,
+    refraction_saturation: f32,
+    refraction_brightness: f32,
     bg_color: Color32F,
     program: Option<GlesTexProgram>,
 }
@@ -102,6 +106,10 @@ impl Xray {
         blur: bool,
         noise: f32,
         saturation: f32,
+        refraction: f32,
+        refraction_bevel: f32,
+        refraction_saturation: f32,
+        refraction_brightness: f32,
         push: &mut dyn FnMut(XrayElement),
     ) {
         let program = Shaders::get(ctx.renderer).postprocess_and_clip.clone();
@@ -200,6 +208,10 @@ impl Xray {
                     blur,
                     noise,
                     saturation,
+                    refraction,
+                    refraction_bevel,
+                    refraction_saturation,
+                    refraction_brightness,
                     bg_color: *bg_color,
                     program: program.clone(),
                 };
@@ -250,6 +262,10 @@ impl Xray {
                 blur,
                 noise,
                 saturation,
+                refraction,
+                refraction_bevel: refraction_bevel * zoom as f32,
+                refraction_saturation,
+                refraction_brightness,
                 bg_color: self.backdrop_color,
                 program: program.clone(),
             };
@@ -259,7 +275,7 @@ impl Xray {
 }
 
 impl XrayElement {
-    fn compute_uniforms(&self) -> [Uniform<'static>; 7] {
+    fn compute_uniforms(&self) -> [Uniform<'static>; 11] {
         [
             Uniform::new("niri_scale", self.scale),
             Uniform::new("geo_size", <[f32; 2]>::from(self.clip_geo_size)),
@@ -268,6 +284,10 @@ impl XrayElement {
             Uniform::new("noise", self.noise),
             Uniform::new("saturation", self.saturation),
             Uniform::new("bg_color", self.bg_color.components()),
+            Uniform::new("refraction", self.refraction),
+            Uniform::new("refraction_bevel", self.refraction_bevel),
+            Uniform::new("refraction_saturation", self.refraction_saturation),
+            Uniform::new("refraction_brightness", self.refraction_brightness),
         ]
     }
 }
