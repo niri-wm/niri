@@ -2453,6 +2453,11 @@ impl Niri {
                 Timer::from_duration(Duration::from_secs(1)),
                 |_, _, state| {
                     state.niri.send_frame_callbacks_on_fallback_timer();
+                    // Cache maintenance must not depend on frame production:
+                    // there may be no active outputs, but clients can still
+                    // import and destroy buffers. Only dead entries are freed;
+                    // live surface textures and frame callback policy stay intact.
+                    state.backend.cleanup_texture_cache();
                     TimeoutAction::ToDuration(Duration::from_secs(1))
                 },
             )
