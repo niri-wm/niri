@@ -1,6 +1,7 @@
 use std::cell::RefCell;
 use std::cmp::min;
 use std::collections::HashMap;
+use std::ffi::CStr;
 use std::io::Cursor;
 use std::iter::zip;
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd};
@@ -31,7 +32,7 @@ use pipewire::spa::utils::{
 };
 use pipewire::spa::{self};
 use pipewire::stream::{Stream, StreamFlags, StreamListener, StreamRc, StreamState};
-use pipewire::sys::{pw_buffer, pw_check_library_version, pw_stream_queue_buffer};
+use pipewire::sys::{pw_buffer, pw_get_library_version, pw_stream_queue_buffer};
 use smithay::backend::allocator::dmabuf::{AsDmabuf, Dmabuf};
 use smithay::backend::allocator::format::FormatSet;
 use smithay::backend::allocator::gbm::{GbmBuffer, GbmBufferFlags, GbmDevice};
@@ -1243,7 +1244,58 @@ impl CastState {
 fn pw_version_supports_cursor_metadata() -> bool {
     // This PipeWire version fixed a critical memory issue with cursor metadata:
     // https://gitlab.freedesktop.org/pipewire/pipewire/-/merge_requests/2538
-    unsafe { pw_check_library_version(1, 4, 8) }
+    const CURSOR_METADATA_MIN_PIPEWIRE_VERSION: [u32; 3] = [1, 4, 8];
+
+    // SAFETY: Category 8 - FFI Boundary UB.
+    // PipeWire returns either null or a pointer to a nul-terminated library
+    // version string owned by libpipewire.
+    let version = unsafe { pw_get_library_version() };
+    if version.is_null() {
+        return false;
+    }
+
+    // SAFETY: Category 8 - FFI Boundary UB.
+    // The null check above rejects invalid nullable pointers, and PipeWire's
+    // version API returns a nul-terminated C string.
+    let Ok(version) = (unsafe { CStr::from_ptr(version) }).to_str() else {
+        return false;
+    };
+
+    pipewire_version_is_at_least(version, CURSOR_METADATA_MIN_PIPEWIRE_VERSION)
+}
+
+fn pipewire_version_is_at_least(version: &str, minimum: [u32; 3]) -> bool {
+    let Some(version) = parse_pipewire_version(version) else {
+        return false;
+    };
+
+    version >= minimum
+}
+
+fn parse_pipewire_version(version: &str) -> Option<[u32; 3]> {
+    let mut components = version.split('.');
+
+    Some([
+        parse_pipewire_version_component(components.next()?)?,
+        parse_pipewire_version_component(components.next()?)?,
+        parse_pipewire_version_component(components.next()?)?,
+    ])
+}
+
+fn parse_pipewire_version_component(component: &str) -> Option<u32> {
+    let mut value = 0u32;
+    let mut has_digit = false;
+
+    for byte in component.bytes() {
+        if !byte.is_ascii_digit() {
+            break;
+        }
+
+        has_digit = true;
+        value = value.checked_mul(10)?.checked_add(u32::from(byte - b'0'))?;
+    }
+
+    has_digit.then_some(value)
 }
 
 fn make_video_params(
@@ -1590,5 +1642,49 @@ unsafe fn add_cursor_metadata(
         bitmap_meta.size.width = size.w as _;
         bitmap_meta.size.height = size.h as _;
         bitmap_meta.stride = size.w * CURSOR_BPP as i32;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::pipewire_version_is_at_least;
+
+    #[test]
+    fn pipewire_version_is_at_least_rejects_old_versions_when_runtime_is_too_old() {
+        // Given: PipeWire releases older than the cursor metadata fix.
+        // When: comparing them to the required version.
+        // Then: metadata cursor support is disabled.
+        assert!(!pipewire_version_is_at_least("0.3.74", [1, 4, 8]));
+        assert!(!pipewire_version_is_at_least("1.4.7", [1, 4, 8]));
+    }
+
+    #[test]
+    fn pipewire_version_is_at_least_accepts_fixed_and_newer_versions_when_runtime_is_new_enough() {
+        // Given: PipeWire releases with or after the cursor metadata fix.
+        // When: comparing them to the required version.
+        // Then: metadata cursor support is enabled.
+        assert!(pipewire_version_is_at_least("1.4.8", [1, 4, 8]));
+        assert!(pipewire_version_is_at_least("1.4.9", [1, 4, 8]));
+        assert!(pipewire_version_is_at_least("1.5.0", [1, 4, 8]));
+        assert!(pipewire_version_is_at_least("2.0.0", [1, 4, 8]));
+    }
+
+    #[test]
+    fn pipewire_version_is_at_least_accepts_packaged_versions_when_core_version_is_new_enough() {
+        // Given: distro-packaged version strings with suffixes.
+        // When: comparing their numeric prefix to the required version.
+        // Then: packaging suffixes do not hide supported runtimes.
+        assert!(pipewire_version_is_at_least("1.4.8-2.fc42", [1, 4, 8]));
+        assert!(pipewire_version_is_at_least("1.4.8.r1.gabcdef", [1, 4, 8]));
+    }
+
+    #[test]
+    fn pipewire_version_is_at_least_rejects_malformed_versions_when_runtime_version_is_unknown() {
+        // Given: missing or malformed PipeWire version strings.
+        // When: comparing them to the required version.
+        // Then: metadata cursor support stays disabled.
+        assert!(!pipewire_version_is_at_least("", [1, 4, 8]));
+        assert!(!pipewire_version_is_at_least("1.4", [1, 4, 8]));
+        assert!(!pipewire_version_is_at_least("1.4.x", [1, 4, 8]));
     }
 }
