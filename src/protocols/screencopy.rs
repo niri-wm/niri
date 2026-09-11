@@ -550,12 +550,11 @@ where
                 );
                 return;
             }
-        } else if shm::with_buffer_contents(&buffer, |_, shm_len, buffer_data| {
+        } else if shm::with_buffer_contents(&buffer, |_, _, buffer_data| {
             buffer_data.format == Format::Xrgb8888
                 && buffer_data.width == size.w
                 && buffer_data.height == size.h
                 && buffer_data.stride == size.w * 4
-                && shm_len == buffer_data.stride as usize * buffer_data.height as usize
         })
         .unwrap_or(false)
         {
