@@ -36,6 +36,10 @@ pub struct Options {
     pub xray: bool,
     pub noise: Option<f64>,
     pub saturation: Option<f64>,
+    pub refraction: Option<f64>,
+    pub refraction_bevel: Option<f64>,
+    pub refraction_saturation: Option<f64>,
+    pub refraction_brightness: Option<f64>,
 }
 
 impl Options {
@@ -44,6 +48,7 @@ impl Options {
             || self.blur
             || self.noise.is_some_and(|x| x > 0.)
             || self.saturation.is_some_and(|x| x != 1.)
+            || self.refraction.is_some_and(|x| x > 0.)
     }
 }
 
@@ -126,6 +131,10 @@ impl BackgroundEffect {
             xray: effect.xray == Some(true),
             noise: effect.noise,
             saturation: effect.saturation,
+            refraction: effect.refraction,
+            refraction_bevel: effect.refraction_bevel,
+            refraction_saturation: effect.refraction_saturation,
+            refraction_brightness: effect.refraction_brightness,
         };
 
         // If we have some background effect but xray wasn't explicitly set, default it to true
@@ -179,6 +188,10 @@ impl BackgroundEffect {
             1.
         };
         let saturation = self.options.saturation.unwrap_or(saturation) as f32;
+        let refraction = self.options.refraction.unwrap_or(0.) as f32;
+        let refraction_bevel = self.options.refraction_bevel.unwrap_or(0.) as f32;
+        let refraction_saturation = self.options.refraction_saturation.unwrap_or(1.30) as f32;
+        let refraction_brightness = self.options.refraction_brightness.unwrap_or(1.10) as f32;
 
         if self.options.xray {
             let Some(xray) = ctx.xray else {
@@ -193,13 +206,25 @@ impl BackgroundEffect {
                 blur,
                 noise,
                 saturation,
+                refraction,
+                refraction_bevel,
+                refraction_saturation,
+                refraction_brightness,
                 &mut |elem| push(elem.into()),
             );
         } else {
             // Render non-xray effect.
-            let elem = self
-                .nonxray
-                .render(ns, params, blur_options, noise, saturation);
+            let elem = self.nonxray.render(
+                ns,
+                params,
+                blur_options,
+                noise,
+                saturation,
+                refraction,
+                refraction_bevel,
+                refraction_saturation,
+                refraction_brightness,
+            );
             push(elem.into());
         }
     }

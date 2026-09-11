@@ -3,7 +3,7 @@
 <sup>Since: 26.04</sup>
 
 You can apply background effects to windows and layer-shell surfaces.
-These include blur, xray, saturation, and noise.
+These include blur, xray, saturation, noise, and refraction.
 They can be enabled in the `background-effect {}` section of [window](./Configuration:-Window-Rules.md#background-effect) or [layer](./Configuration:-Layer-Rules.md#background-effect) rules.
 
 ![Screenshot with blur](./img/blur.png)
@@ -57,6 +57,14 @@ Xray is automatically enabled by default if any other background effect (like bl
 This is because it's much more efficient: with xray active, niri only needs to blur the background once, and then can reuse this blurred version with no extra work (since the wallpaper changes very rarely).
 
 If you have an animated wallpaper, xray will still have to recompute blur every frame, but that happens once and shared among all windows, rather than recomputed separately for each window.
+
+### Refraction
+
+<sup>Since: next release</sup>
+
+Refraction bends the background along the surface bevel for a glass-lens look (`refraction 0.6` is a good starting point, usually paired with `blur`). The width of the curved bevel can be set explicitly with `refraction-bevel` (defaulting automatically to the corner radius if omitted). Tune it with `refraction-saturation` (default `1.3`) and `refraction-brightness` (default `1.1`); lower both toward `1.0` for neutral, readable glass.
+
+For a lightweight glass effect, refraction can also be used with `blur false` and `xray true`. This produces a clear glass look with only a single texture sample along the bevel, avoiding the multi-pass blur overhead.
 
 #### Non-xray effects (experimental)
 
