@@ -58,6 +58,7 @@ window-rule {
     default-column-display "tabbed"
     default-floating-position x=100 y=200 relative-to="bottom-left"
     scroll-factor 0.75
+    pinch-sensitivity 1.25
     on-xdg-activate "focus"
 
     focus-ring {
@@ -755,6 +756,23 @@ window-rule {
     match app-id="firefox$"
 
     scroll-factor 0.75
+}
+```
+
+#### `pinch-sensitivity`
+
+<sup>Since: next release</sup>
+
+Set the sensitivity of pinch gestures sent to a window.
+
+This will be multiplied with the pinch sensitivity set for your touchpad in the [input section](./Configuration:-Input.md#pointing-devices).
+
+```kdl
+// Make pinch gestures in Firefox more sensitive.
+window-rule {
+    match app-id="firefox$"
+
+    pinch-sensitivity 1.25
 }
 ```
 

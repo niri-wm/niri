@@ -708,6 +708,7 @@ mod tests {
                     tap-button-map "left-middle-right"
                     disabled-on-external-mouse
                     scroll-factor 0.9
+                    pinch-sensitivity 1.8
                 }
 
                 mouse {
@@ -930,6 +931,8 @@ mod tests {
                 tab-indicator {
                     active-color "#f00"
                 }
+
+                pinch-sensitivity 1.2
             }
 
             layer-rule {
@@ -1054,6 +1057,11 @@ mod tests {
                             horizontal: None,
                             vertical: None,
                         },
+                    ),
+                    pinch_sensitivity: Some(
+                        FloatOrInt(
+                            1.8,
+                        ),
                     ),
                 },
                 mouse: Mouse {
@@ -1909,6 +1917,11 @@ mod tests {
                         },
                     ),
                     scroll_factor: None,
+                    pinch_sensitivity: Some(
+                        FloatOrInt(
+                            1.2,
+                        ),
+                    ),
                     tiled_state: None,
                     background_effect: BackgroundEffectRule {
                         xray: None,

@@ -76,6 +76,8 @@ pub struct WindowRule {
     #[knuffel(child, unwrap(argument))]
     pub scroll_factor: Option<FloatOrInt<0, 100>>,
     #[knuffel(child, unwrap(argument))]
+    pub pinch_sensitivity: Option<FloatOrInt<0, 100>>,
+    #[knuffel(child, unwrap(argument))]
     pub tiled_state: Option<bool>,
     #[knuffel(child, default)]
     pub background_effect: BackgroundEffectRule,
