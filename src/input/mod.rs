@@ -413,7 +413,11 @@ impl State {
         &mut self,
         event: I::KeyboardKeyEvent,
         consumed_by_a11y: &mut bool,
-    ) {
+    ) where
+        I::Device: 'static,
+    {
+        self.apply_keyboard_config::<I>(&event);
+
         let mod_key = self.backend.mod_key(&self.niri.config.borrow());
 
         let serial = SERIAL_COUNTER.next_serial();
@@ -614,17 +618,17 @@ impl State {
             self.niri.event_loop.remove(token);
         }
 
-        let config = self.niri.config.borrow();
-        let config = &config.input.keyboard;
-
-        let repeat_rate = config.repeat_rate;
+        // Use the currently active keyboard's repeat settings, so bind repeat matches whichever
+        // physical device is actually being used.
+        let repeat_rate = self.niri.current_keyboard.repeat_rate;
         if repeat_rate == 0 {
             return;
         }
         let repeat_duration = Duration::from_secs_f64(1. / f64::from(repeat_rate));
 
-        let repeat_timer =
-            Timer::from_duration(Duration::from_millis(u64::from(config.repeat_delay)));
+        let repeat_timer = Timer::from_duration(Duration::from_millis(u64::from(
+            self.niri.current_keyboard.repeat_delay,
+        )));
 
         let token = self
             .niri
@@ -658,6 +662,71 @@ impl State {
 
         self.niri.pointer_visibility = PointerVisibility::Hidden;
         self.niri.queue_redraw_all();
+    }
+
+    /// Resolves the keyboard config for the physical device that produced `event`, and applies it
+    /// if it differs from the config currently active on the seat.
+    ///
+    /// The Wayland protocol only allows a single active keymap per seat, so "per keyboard device"
+    /// configuration means re-applying the resolved config for whichever physical device most
+    /// recently sent a key event. The resolved config is cached per device, so idle devices and
+    /// repeat events from the same device don't pay for re-matching against the config every time.
+    fn apply_keyboard_config<I: InputBackend>(&mut self, event: &I::KeyboardKeyEvent)
+    where
+        I::Device: 'static,
+    {
+        let device = event.device();
+
+        let keyboard_config = match (&device as &dyn Any).downcast_ref::<input::Device>() {
+            Some(input_device) => {
+                match self.niri.keyboard_device_cache.entry(input_device.clone()) {
+                    Entry::Occupied(entry) => entry.get().clone(),
+                    Entry::Vacant(entry) => {
+                        let config = self
+                            .niri
+                            .config
+                            .borrow()
+                            .input
+                            .keyboard_named(&input_device.name());
+                        entry.insert(config.clone());
+                        config
+                    }
+                }
+            }
+            // Backends without a real libinput device (e.g. winit, used for nested test
+            // sessions) always get the fallback keyboard config.
+            None => self.niri.config.borrow().input.fallback_keyboard(),
+        };
+
+        if keyboard_config == self.niri.current_keyboard {
+            return;
+        }
+
+        if keyboard_config.xkb != self.niri.current_keyboard.xkb {
+            if let Some(xkb_file) = keyboard_config.xkb.file.clone() {
+                if let Err(err) = self.set_xkb_file(xkb_file) {
+                    warn!("error loading xkb_file for keyboard device: {err:?}");
+                }
+            } else {
+                let keyboard = self.niri.seat.get_keyboard().unwrap();
+                if let Err(err) = keyboard.set_xkb_config(self, keyboard_config.xkb.to_xkb_config())
+                {
+                    warn!("error updating xkb config for keyboard device: {err:?}");
+                }
+            }
+        }
+
+        if keyboard_config.repeat_rate != self.niri.current_keyboard.repeat_rate
+            || keyboard_config.repeat_delay != self.niri.current_keyboard.repeat_delay
+        {
+            let keyboard = self.niri.seat.get_keyboard().unwrap();
+            keyboard.change_repeat_info(
+                keyboard_config.repeat_rate.into(),
+                keyboard_config.repeat_delay.into(),
+            );
+        }
+
+        self.niri.current_keyboard = keyboard_config;
     }
 
     pub fn handle_bind(&mut self, bind: Bind) {

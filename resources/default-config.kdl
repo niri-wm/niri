@@ -25,6 +25,18 @@ input {
         numlock
     }
 
+    // You can give a keyboard block a device name to configure just that keyboard, e.g. to set
+    // a different layout on an external keyboard than on your laptop's built-in one. Run
+    // `niri msg keyboard-layouts` or check `libinput list-devices` to find the exact device name.
+    // A named keyboard block only overrides settings it sets; anything left unset falls back to
+    // the unnamed keyboard block above.
+    //
+    // keyboard "My External Keyboard" {
+    //     xkb {
+    //         layout "us"
+    //     }
+    // }
+
     // Next sections include libinput settings.
     // Omitting settings disables them, or leaves them at their default values.
     // All commented-out settings here are examples, not defaults.

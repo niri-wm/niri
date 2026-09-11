@@ -4,7 +4,7 @@ In this section you can configure input devices like keyboard and mouse, and som
 
 There's a section for each device type: `keyboard`, `touchpad`, `mouse`, `trackpoint`, `trackball`, `tablet`, `touch`.
 Settings in those sections will apply to every device of that type.
-Currently, there's no way to configure specific devices individually (but that is planned).
+Currently, there's no way to configure specific touchpad/mouse/etc. devices individually (but that is planned), except for `keyboard`, which can be given a device name to configure just that one keyboard — see [Per-Keyboard Configuration](#per-keyboard-configuration) below.
 
 All settings at a glance:
 
@@ -130,6 +130,36 @@ input {
     }
 }
 ```
+
+#### Per-Keyboard Configuration
+
+You can give a `keyboard` block a device name argument to configure just that keyboard, e.g. to use a different layout on an external keyboard than on your laptop's built-in one.
+Run `niri msg keyboard-layouts` or `libinput list-devices` to find a device's exact name.
+
+```kdl
+input {
+    // Applies to every keyboard that isn't matched by a named block below.
+    keyboard {
+        xkb {
+            layout "br"
+        }
+    }
+
+    keyboard "Topre Corporation Realforce 87U" {
+        xkb {
+            layout "us"
+        }
+    }
+}
+```
+
+A named `keyboard` block only needs to set what's different about that device: any setting it doesn't specify (`repeat-rate`, `numlock`, etc.) falls back to the unnamed `keyboard` block above it, the same way the unnamed block itself falls back to the regular defaults.
+
+Keep all of your `keyboard` blocks together in one `input` section (ideally in one file): a later `input` section's `keyboard` blocks fully replace the earlier ones, the same as `touchpad` and other device sections do.
+
+> [!TIP]
+>
+> Since the Wayland protocol only lets a compositor advertise one active keymap per seat at a time, niri implements this by switching the active keymap whenever a different keyboard device sends a key press than the one that sent the last one. This is transparent for normal use, but note that XWayland applications generally only see one X11-wide keymap, so per-keyboard layouts may not be reflected correctly in X11-only clients.
 
 > [!TIP]
 >
