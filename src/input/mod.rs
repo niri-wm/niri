@@ -3644,6 +3644,7 @@ impl State {
                 },
             );
 
+            // Set axis after motion to ensure it reaches the new focus surface.
             tool.axis(self, frame);
 
             if send_frame {
@@ -3671,6 +3672,7 @@ impl State {
 
         let tip_state = event.tip_state();
         if tip_state == TabletToolTipState::Down {
+            // Tip events can come together with axis event data with no separate axis event.
             self.update_tablet_tool::<I>(&event, false);
         }
 
