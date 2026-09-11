@@ -872,10 +872,9 @@ impl<W: LayoutElement> Layout<W> {
                 mut primary_idx,
                 mut active_monitor_idx,
             } => {
-                let idx = monitors
-                    .iter()
-                    .position(|mon| &mon.output == output)
-                    .expect("trying to remove non-existing output");
+                let Some(idx) = monitors.iter().position(|mon| &mon.output == output) else {
+                    return;
+                };
                 let monitor = monitors.remove(idx);
 
                 self.last_active_workspace_id.insert(

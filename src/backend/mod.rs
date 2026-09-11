@@ -14,6 +14,9 @@ use crate::utils::id::IdCounter;
 pub mod tty;
 pub use tty::Tty;
 
+mod libinput_plugins;
+mod virtual_output;
+
 pub mod winit;
 pub use winit::Winit;
 
@@ -38,6 +41,20 @@ pub enum RenderResult {
 }
 
 pub type IpcOutputMap = HashMap<OutputId, niri_ipc::Output>;
+
+/// Marker inserted into `Output::user_data()` for outputs that are not driven by a real scanout
+/// pipeline (e.g. HEADLESS-* virtual outputs).
+///
+/// Such outputs require special-casing in a few places (notably frame callback delivery), because
+/// they don't participate in the normal GPU pipeline that tracks `surface_primary_scanout_output`.
+#[derive(Debug, Default)]
+pub struct VirtualOutputMarker;
+
+impl VirtualOutputMarker {
+    pub(crate) fn is_virtual(output: &Output) -> bool {
+        output.user_data().get::<Self>().is_some()
+    }
+}
 
 static OUTPUT_ID_COUNTER: IdCounter = IdCounter::new();
 
@@ -165,7 +182,7 @@ impl Backend {
         match self {
             Backend::Tty(tty) => tty.primary_gbm_device(),
             Backend::Winit(_) => None,
-            Backend::Headless(_) => None,
+            Backend::Headless(headless) => headless.gbm_device(),
         }
     }
 
@@ -197,7 +214,7 @@ impl Backend {
         match self {
             Backend::Tty(tty) => tty.on_output_config_changed(niri),
             Backend::Winit(_) => (),
-            Backend::Headless(_) => (),
+            Backend::Headless(headless) => headless.on_output_config_changed(niri),
         }
     }
 
@@ -230,6 +247,38 @@ impl Backend {
             v
         } else {
             panic!("backend is not Headless")
+        }
+    }
+
+    /// Create a new virtual output and return its name.
+    /// Only supported on TTY and Headless backends.
+    pub fn create_virtual_output(
+        &mut self,
+        niri: &mut Niri,
+        width: u16,
+        height: u16,
+        refresh_rate: u32,
+        name: Option<String>,
+    ) -> Result<String, String> {
+        match self {
+            Backend::Headless(headless) => {
+                headless.create_virtual_output(niri, width, height, refresh_rate, name)
+            }
+            Backend::Tty(tty) => tty.create_virtual_output(niri, width, height, refresh_rate, name),
+            Backend::Winit(_) => {
+                Err("virtual outputs are not supported on the Winit backend".to_string())
+            }
+        }
+    }
+
+    /// Remove a virtual output by name.
+    pub fn remove_virtual_output(&mut self, niri: &mut Niri, name: &str) -> Result<(), String> {
+        match self {
+            Backend::Headless(headless) => headless.remove_virtual_output(niri, name),
+            Backend::Tty(tty) => tty.remove_virtual_output(niri, name),
+            Backend::Winit(_) => {
+                Err("virtual outputs are not supported on the Winit backend".to_string())
+            }
         }
     }
 }
