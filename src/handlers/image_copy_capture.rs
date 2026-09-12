@@ -423,9 +423,8 @@ impl ImageCopyCaptureHandler for State {
     }
 
     fn cursor_session_destroyed(&mut self, session: CursorSessionRef) {
-        // FIXME: this doesn't get called by smithay when the underlying
-        // ext_image_copy_capture_session_v1 is destroyed, only when the
-        // ext_image_copy_capture_cursor_session_v1 is destroyed
+        // Called for both the cursor session and its capture session, so this
+        // may run twice (the session won't be found the second time).
         let sessions = &mut self.niri.image_copy_cursor_sessions;
         if let Some(idx) = sessions.iter().position(|s| s.session == session) {
             let s = sessions.remove(idx);
