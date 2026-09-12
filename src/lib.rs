@@ -11,6 +11,7 @@ pub mod cursor;
 pub mod dbus;
 pub mod frame_clock;
 pub mod handlers;
+pub mod image_copy_capture;
 pub mod input;
 pub mod ipc;
 pub mod layer;

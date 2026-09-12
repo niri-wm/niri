@@ -14,7 +14,8 @@ For instance:
 
 Anything with access to niri's Wayland socket can, among other things:
 
-- Record the user's screen via [wlr-screencopy](https://wayland.app/protocols/wlr-screencopy-unstable-v1).
+- Record the user's screen and individual windows via [ext-image-copy-capture](https://wayland.app/protocols/ext-image-copy-capture-v1) or [wlr-screencopy](https://wayland.app/protocols/wlr-screencopy-unstable-v1) (outputs only).
+- Track the cursor's image and position via [ext-image-copy-capture](https://wayland.app/protocols/ext-image-copy-capture-v1).
 - Emulate input via [wlr-virtual-pointer](https://wayland.app/protocols/wlr-virtual-pointer-unstable-v1) and [virtual-keyboard](https://wayland.app/protocols/virtual-keyboard-unstable-v1).
 - Get the user's clipboard contents via [wlr-data-control](https://wayland.app/protocols/ext-data-control-v1).
 - Create arbitrary fullscreen surfaces through [wlr-layer-shell](https://wayland.app/protocols/wlr-layer-shell-unstable-v1) that can steal the user's input, pretend to be a password entry, or lock the user out of their session.

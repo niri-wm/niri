@@ -20,8 +20,10 @@ use smithay::input::tablet::TabletSeatHandler;
 use smithay::input::{keyboard, Seat, SeatHandler, SeatState};
 use smithay::output::Output;
 use smithay::reexports::rustix::fs::{fcntl_setfl, OFlags};
+use smithay::reexports::wayland_protocols::ext::foreign_toplevel_list::v1::server::ext_foreign_toplevel_handle_v1::ExtForeignToplevelHandleV1;
 use smithay::reexports::wayland_protocols_wlr::screencopy::v1::server::zwlr_screencopy_manager_v1::ZwlrScreencopyManagerV1;
 use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
+use smithay::reexports::wayland_server::protocol::wl_pointer::WlPointer;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::Resource;
 use smithay::utils::{Logical, Point, Rectangle, Serial};
@@ -33,6 +35,14 @@ use smithay::wayland::drm_lease::{
 use smithay::wayland::fractional_scale::FractionalScaleHandler;
 use smithay::wayland::idle_inhibit::IdleInhibitHandler;
 use smithay::wayland::idle_notify::{IdleNotifierHandler, IdleNotifierState};
+use smithay::wayland::image_capture_source::{
+    ImageCaptureSource, ImageCaptureSourceHandler, OutputCaptureSourceHandler,
+    OutputCaptureSourceState,
+};
+use smithay::wayland::image_copy_capture::{
+    BufferConstraints, CursorSession, CursorSessionRef, Frame, FrameRef, ImageCopyCaptureHandler,
+    ImageCopyCaptureState, Session, SessionRef,
+};
 use smithay::wayland::input_method::{InputMethodHandler, PopupSurface};
 use smithay::wayland::keyboard_shortcuts_inhibit::{
     KeyboardShortcutsInhibitHandler, KeyboardShortcutsInhibitState, KeyboardShortcutsInhibitor,
@@ -77,6 +87,7 @@ use crate::protocols::gamma_control::{GammaControlHandler, GammaControlManagerSt
 use crate::protocols::mutter_x11_interop::MutterX11InteropHandler;
 use crate::protocols::output_management::{OutputManagementHandler, OutputManagementManagerState};
 use crate::protocols::screencopy::{Screencopy, ScreencopyHandler, ScreencopyManagerState};
+use crate::protocols::toplevel_image_capture_source::ToplevelImageCaptureHandler;
 use crate::protocols::virtual_pointer::{
     VirtualPointerAxisEvent, VirtualPointerButtonEvent, VirtualPointerHandler,
     VirtualPointerInputBackend, VirtualPointerManagerState, VirtualPointerMotionAbsoluteEvent,
@@ -588,6 +599,80 @@ impl ForeignToplevelHandler for State {
             let window = mapped.window.clone();
             self.niri.layout.set_maximized(&window, false);
         }
+    }
+}
+
+impl ImageCaptureSourceHandler for State {
+    fn source_destroyed(&mut self, _source: ImageCaptureSource) {
+        // niri doesn't need to track sources
+    }
+}
+
+impl OutputCaptureSourceHandler for State {
+    fn output_capture_source_state(&mut self) -> &mut OutputCaptureSourceState {
+        &mut self.niri.output_capture_source_state
+    }
+
+    fn output_source_created(&mut self, source: ImageCaptureSource, output: &Output) {
+        source.user_data().insert_if_missing(|| output.downgrade());
+    }
+}
+
+impl ImageCopyCaptureHandler for State {
+    fn image_copy_capture_state(&mut self) -> &mut ImageCopyCaptureState {
+        &mut self.niri.image_copy_capture_state
+    }
+
+    fn capture_constraints(&mut self, source: &ImageCaptureSource) -> Option<BufferConstraints> {
+        self.image_capture_constraints(source)
+    }
+
+    fn cursor_capture_constraints(
+        &mut self,
+        source: &ImageCaptureSource,
+        _pointer: &WlPointer,
+    ) -> Option<BufferConstraints> {
+        self.image_capture_cursor_constraints(source)
+    }
+
+    fn new_session(&mut self, session: Session) {
+        self.new_image_copy_capture_session(session);
+    }
+
+    fn new_cursor_session(&mut self, session: CursorSession) {
+        self.new_image_copy_capture_cursor_session(session);
+    }
+
+    fn frame(&mut self, session: &SessionRef, frame: Frame) {
+        self.image_copy_capture_frame_requested(session, frame);
+    }
+
+    fn cursor_frame(&mut self, session: &CursorSessionRef, frame: Frame) {
+        self.image_copy_capture_cursor_frame_requested(session, frame);
+    }
+
+    fn frame_aborted(&mut self, frame: FrameRef) {
+        self.image_copy_capture_frame_aborted(&frame);
+    }
+
+    fn session_destroyed(&mut self, session: SessionRef) {
+        self.image_copy_capture_session_destroyed(&session);
+    }
+
+    fn cursor_session_destroyed(&mut self, session: CursorSessionRef) {
+        self.image_copy_capture_cursor_session_destroyed(&session);
+    }
+}
+
+impl ToplevelImageCaptureHandler for State {
+    fn lookup_toplevel_surface(
+        &mut self,
+        handle: &ExtForeignToplevelHandleV1,
+    ) -> Option<WlSurface> {
+        self.niri
+            .foreign_toplevel_state
+            .find_surface_for_handle(handle)
+            .cloned()
     }
 }
 

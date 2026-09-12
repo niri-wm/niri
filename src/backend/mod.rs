@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use niri_config::{Config, ModKey};
 use smithay::backend::allocator::dmabuf::Dmabuf;
+use smithay::backend::drm::DrmNode;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::output::Output;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
@@ -154,6 +155,18 @@ impl Backend {
             Backend::Tty(tty) => tty.ipc_outputs(),
             Backend::Winit(winit) => winit.ipc_outputs(),
             Backend::Headless(headless) => headless.ipc_outputs(),
+        }
+    }
+
+    /// DRM render node of the primary renderer, if it has one.
+    ///
+    /// This is the node clients should allocate dma-bufs on for the primary renderer to import
+    /// and render into them directly.
+    pub fn primary_render_node(&mut self) -> Option<DrmNode> {
+        match self {
+            Backend::Tty(tty) => tty.primary_render_node(),
+            Backend::Winit(winit) => winit.primary_render_node(),
+            Backend::Headless(_) => None,
         }
     }
 

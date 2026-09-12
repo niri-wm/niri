@@ -83,6 +83,9 @@ use smithay::wayland::dmabuf::DmabufState;
 use smithay::wayland::fractional_scale::FractionalScaleManagerState;
 use smithay::wayland::idle_inhibit::IdleInhibitManagerState;
 use smithay::wayland::idle_notify::IdleNotifierState;
+use smithay::wayland::image_capture_source::ImageCaptureSourceState;
+use smithay::wayland::image_capture_source::OutputCaptureSourceState;
+use smithay::wayland::image_copy_capture::ImageCopyCaptureState;
 use smithay::wayland::input_method::InputMethodManagerState;
 use smithay::wayland::keyboard_shortcuts_inhibit::{
     KeyboardShortcutsInhibitState, KeyboardShortcutsInhibitor,
@@ -130,6 +133,7 @@ use crate::dbus::gnome_shell_introspect::{self, IntrospectToNiri, NiriToIntrospe
 use crate::dbus::gnome_shell_screenshot::{NiriToScreenshot, ScreenshotToNiri};
 use crate::frame_clock::FrameClock;
 use crate::handlers::{configure_lock_surface, XDG_ACTIVATION_TOKEN_TIMEOUT};
+use crate::image_copy_capture::{CopyCaptureCursorSession, CopyCaptureSession};
 use crate::input::pick_color_grab::PickColorGrab;
 use crate::input::scroll_swipe_gesture::ScrollSwipeGesture;
 use crate::input::scroll_tracker::ScrollTracker;
@@ -152,6 +156,7 @@ use crate::protocols::gamma_control::GammaControlManagerState;
 use crate::protocols::mutter_x11_interop::MutterX11InteropManagerState;
 use crate::protocols::output_management::OutputManagementManagerState;
 use crate::protocols::screencopy::{Screencopy, ScreencopyBuffer, ScreencopyManagerState};
+use crate::protocols::toplevel_image_capture_source::ToplevelImageCaptureManagerState;
 use crate::protocols::virtual_pointer::VirtualPointerManagerState;
 use crate::render_helpers::blur::BlurOptions;
 use crate::render_helpers::debug::push_opaque_regions;
@@ -280,6 +285,12 @@ pub struct Niri {
     pub layer_shell_state: WlrLayerShellState,
     pub session_lock_state: SessionLockManagerState,
     pub foreign_toplevel_state: ForeignToplevelManagerState,
+    pub image_capture_source_state: ImageCaptureSourceState,
+    pub output_capture_source_state: OutputCaptureSourceState,
+    pub image_copy_capture_state: ImageCopyCaptureState,
+    pub toplevel_image_capture_state: ToplevelImageCaptureManagerState,
+    pub copy_capture_sessions: Vec<CopyCaptureSession>,
+    pub copy_capture_cursor_sessions: Vec<CopyCaptureCursorSession>,
     pub ext_workspace_state: ExtWorkspaceManagerState,
     pub screencopy_state: ScreencopyManagerState,
     pub output_management_state: OutputManagementManagerState,
@@ -822,6 +833,8 @@ impl State {
         self.refresh_pointer_contents();
         foreign_toplevel::refresh(self);
         ext_workspace::refresh(self);
+        self.refresh_image_copy_capture();
+        self.niri.refresh_image_copy_cursor_sessions();
 
         #[cfg(feature = "xdp-gnome-screencast")]
         self.niri.refresh_mapped_cast_outputs();
@@ -2360,6 +2373,19 @@ impl Niri {
             VirtualPointerManagerState::new::<State, _>(&display_handle, client_is_unrestricted);
         let foreign_toplevel_state =
             ForeignToplevelManagerState::new::<State, _>(&display_handle, client_is_unrestricted);
+        let image_capture_source_state = ImageCaptureSourceState::new();
+        let output_capture_source_state = OutputCaptureSourceState::new_with_filter::<State, _>(
+            &display_handle,
+            client_is_unrestricted,
+        );
+        let image_copy_capture_state = ImageCopyCaptureState::new_with_filter::<State, _>(
+            &display_handle,
+            client_is_unrestricted,
+        );
+        let toplevel_image_capture_state = ToplevelImageCaptureManagerState::new::<State, _>(
+            &display_handle,
+            client_is_unrestricted,
+        );
         let ext_workspace_state =
             ExtWorkspaceManagerState::new::<State, _>(&display_handle, client_is_unrestricted);
         let mut output_management_state =
@@ -2549,6 +2575,12 @@ impl Niri {
             layer_shell_state,
             session_lock_state,
             foreign_toplevel_state,
+            image_capture_source_state,
+            output_capture_source_state,
+            image_copy_capture_state,
+            toplevel_image_capture_state,
+            copy_capture_sessions: Vec::new(),
+            copy_capture_cursor_sessions: Vec::new(),
             ext_workspace_state,
             output_management_state,
             screencopy_state,
@@ -4730,6 +4762,9 @@ impl Niri {
             }
 
             self.render_for_screencopy_with_damage(renderer, output);
+
+            self.render_for_image_copy_capture(renderer, output, target_presentation_time);
+            self.render_for_image_copy_cursor_capture(renderer, output, target_presentation_time);
         });
     }
 
@@ -5456,8 +5491,15 @@ impl Niri {
                 Some(sync)
             }
             ScreencopyBuffer::Shm(wl_buffer) => {
-                render_to_shm(renderer, damage_tracker, wl_buffer, elements, states)
-                    .context("error rendering to screencopy shm buffer")?;
+                render_to_shm(
+                    renderer,
+                    damage_tracker,
+                    wl_buffer,
+                    wl_shm::Format::Xrgb8888,
+                    elements,
+                    states,
+                )
+                .context("error rendering to screencopy shm buffer")?;
                 None
             }
         };
