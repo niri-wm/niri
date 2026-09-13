@@ -329,7 +329,7 @@ jobs:
         continue-on-error: true
 
   publish-wiki:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'niri-wm/niri'
     needs:
       - publish-docs
     permissions:
@@ -346,7 +346,7 @@ jobs:
           path: docs/wiki/
 
   publish-docs:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'niri-wm/niri'
     needs:
       - test
     permissions:
