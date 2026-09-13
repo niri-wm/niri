@@ -25,16 +25,18 @@ tracing = { version = "0.1.44", features = ["max_level_trace", "release_max_leve
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 tracy-client = { version = "0.18.5", default-features = false }
 
+# FIXME: replace with upstream smithay once #2159 is merged.
 [workspace.dependencies.smithay]
 # version = "0.4.1"
-git = "https://github.com/Smithay/smithay.git"
-rev = "0ff00983b6007257a7a161a4fe8b14a778e2ac8f"
+git = "https://github.com/pgaskin/smithay.git"
+rev = "4af361aa2824326d2aef68bf987875470b2db1f7"
 default-features = false
 
+# FIXME: replace with upstream smithay once #2159 is merged.
 [workspace.dependencies.smithay-drm-extras]
 # version = "0.1.0"
-git = "https://github.com/Smithay/smithay.git"
-rev = "0ff00983b6007257a7a161a4fe8b14a778e2ac8f"
+git = "https://github.com/pgaskin/smithay.git"
+rev = "4af361aa2824326d2aef68bf987875470b2db1f7"
 # path = "../smithay/smithay-drm-extras"
 
 [package]
