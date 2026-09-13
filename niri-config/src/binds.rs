@@ -9,6 +9,7 @@ use miette::miette;
 use niri_ipc::{
     ColumnDisplay, LayoutSwitchTarget, PositionChange, SizeChange, WorkspaceReferenceArg,
 };
+use serde::Serialize;
 use smithay::input::keyboard::keysyms::KEY_NoSymbol;
 use smithay::input::keyboard::xkb::{keysym_from_name, KEYSYM_CASE_INSENSITIVE, KEYSYM_NO_FLAGS};
 use smithay::input::keyboard::Keysym;
@@ -101,7 +102,7 @@ pub struct SwitchAction {
 }
 
 // Remember to add new actions to the CLI enum too.
-#[derive(knuffel::Decode, Debug, Clone, PartialEq)]
+#[derive(knuffel::Decode, Serialize, Debug, Clone, PartialEq)]
 pub enum Action {
     Quit(#[knuffel(property(name = "skip-confirmation"), default)] bool),
     #[knuffel(skip)]
@@ -708,7 +709,7 @@ impl From<niri_ipc::Action> for Action {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Serialize, Debug, PartialEq, Eq, Clone)]
 pub enum WorkspaceReference {
     Id(u64),
     Index(u8),

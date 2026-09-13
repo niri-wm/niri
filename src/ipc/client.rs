@@ -49,6 +49,7 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
         Msg::RequestError => Request::ReturnError,
         Msg::OverviewState => Request::OverviewState,
         Msg::Casts => Request::Casts,
+        Msg::Binds => Request::Binds,
     };
 
     let mut socket = Socket::connect().context("error connecting to the niri socket")?;
@@ -549,6 +550,56 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
                 print_cast(&cast);
                 println!();
             }
+        }
+        Msg::Binds => {
+            let Response::Binds(response) = response else {
+                bail!("unexpected response: expect Binds, got {response:?}");
+            };
+
+            if json {
+                let response =
+                    serde_json::to_string(&response).context("error formatting response")?;
+                println!("{response}");
+                return Ok(());
+            }
+
+            let mut output = Vec::new();
+            for bind in response.binds {
+                let niri_ipc::Bind {
+                    trigger,
+                    modifiers,
+                    hotkey_overlay_title,
+                    repeat,
+                    action,
+                    cooldown,
+                    allow_when_locked,
+                    allow_inhibiting,
+                } = bind;
+                let modifiers = modifiers.join("+");
+                let trigger = trigger.unwrap_or_else(|| "<unknown>".into());
+                if modifiers.is_empty() {
+                    output.push(trigger);
+                } else {
+                    output.push(format!("{modifiers}+{trigger}"));
+                }
+                if let Some(title) = hotkey_overlay_title {
+                    output.push(format!("Title: {title}"));
+                } else {
+                    output.push("No title".into());
+                }
+                output.push(format!("Action: {action}"));
+                output.push(format!("Can repeat: {repeat}"));
+                if let Some(cd) = cooldown {
+                    let ms = cd.as_millis();
+                    output.push(format!("Cooldown: {ms}ms"));
+                } else {
+                    output.push("No cooldown".into());
+                }
+                output.push(format!("Allow when locked: {allow_when_locked}"));
+                output.push(format!("Allow inhibiting: {allow_inhibiting}"));
+                output.push(String::new());
+            }
+            println!("{}", output.join("\n"));
         }
     }
 

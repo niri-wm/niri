@@ -14,6 +14,7 @@ knuffel = "3.2.0"
 miette = { version = "5.10.0", features = ["fancy-no-backtrace"] }
 niri-ipc = { version = "26.4.0", path = "../niri-ipc" }
 regex = "1.13.1"
+serde.workspace = true
 smithay = { workspace = true, features = ["backend_libinput"] }
 tracing.workspace = true
 tracy-client.workspace = true

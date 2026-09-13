@@ -456,6 +456,85 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
             let casts = state.casts.casts.values().cloned().collect();
             Response::Casts(casts)
         }
+        Request::Binds => {
+            let (tx, rx) = async_channel::bounded(1);
+            ctx.event_loop.insert_idle(move |state| {
+                let binds = state
+                    .niri
+                    .config
+                    .borrow()
+                    .binds
+                    .0
+                    .iter()
+                    .map(|b| {
+                        let trigger = match b.key.trigger {
+                            niri_config::Trigger::Keysym(k) => k.name().map(From::from),
+                            niri_config::Trigger::MouseLeft => Some("MouseLeft".into()),
+                            niri_config::Trigger::MouseRight => Some("MouseRight".into()),
+                            niri_config::Trigger::MouseMiddle => Some("MouseMiddle".into()),
+                            niri_config::Trigger::MouseBack => Some("MouseBack".into()),
+                            niri_config::Trigger::MouseForward => Some("MouseForward".into()),
+                            niri_config::Trigger::WheelScrollDown => Some("WheelScrollDown".into()),
+                            niri_config::Trigger::WheelScrollUp => Some("WheelScrollUp".into()),
+                            niri_config::Trigger::WheelScrollLeft => Some("WheelScrollLeft".into()),
+                            niri_config::Trigger::WheelScrollRight => {
+                                Some("WheelScrollRight".into())
+                            }
+                            niri_config::Trigger::TouchpadScrollDown => {
+                                Some("TouchpadScrollDown".into())
+                            }
+                            niri_config::Trigger::TouchpadScrollUp => {
+                                Some("TouchpadScrollUp".into())
+                            }
+                            niri_config::Trigger::TouchpadScrollLeft => {
+                                Some("TouchpadScrollLeft".into())
+                            }
+                            niri_config::Trigger::TouchpadScrollRight => {
+                                Some("TouchpadScrollRight".into())
+                            }
+                            niri_config::Trigger::TabletStylusButton1 => {
+                                Some("TabletStylusButton1".into())
+                            }
+                            niri_config::Trigger::TabletStylusButton2 => {
+                                Some("TabletStylusButton2".into())
+                            }
+                            niri_config::Trigger::TabletStylusButton3 => {
+                                Some("TabletStylusButton3".into())
+                            }
+                        };
+                        let modifiers = b
+                            .key
+                            .modifiers
+                            .iter_names()
+                            .map(|(name, _)| name.into())
+                            .collect();
+                        let niri_config::Bind {
+                            repeat,
+                            cooldown,
+                            allow_when_locked,
+                            allow_inhibiting,
+                            hotkey_overlay_title,
+                            ..
+                        } = b;
+
+                        niri_ipc::Bind {
+                            trigger,
+                            modifiers,
+                            action: serde_json::to_value(&b.action).unwrap(),
+                            repeat: *repeat,
+                            cooldown: *cooldown,
+                            allow_when_locked: *allow_when_locked,
+                            allow_inhibiting: *allow_inhibiting,
+                            hotkey_overlay_title: hotkey_overlay_title.clone().flatten(),
+                        }
+                    })
+                    .collect();
+                let _ = tx.send_blocking(binds);
+            });
+            let result = rx.recv().await;
+            let binds = result.map_err(|_| String::from("error getting key binds info"))?;
+            Response::Binds(niri_ipc::Binds { binds })
+        }
     };
 
     Ok(response)

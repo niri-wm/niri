@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 
 use knuffel::errors::DecodeError;
+use serde::Serialize;
 use smithay::input::keyboard::Keysym;
 
 use crate::utils::{expect_only_children, MergeWith};
@@ -158,7 +159,7 @@ impl From<MruBind> for Bind {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Serialize, Clone, Copy, Debug, Default, PartialEq)]
 pub enum MruDirection {
     /// Most recently used to least.
     #[default]
@@ -167,7 +168,7 @@ pub enum MruDirection {
     Backward,
 }
 
-#[derive(knuffel::DecodeScalar, Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Serialize, knuffel::DecodeScalar, Clone, Copy, Debug, Default, PartialEq)]
 pub enum MruScope {
     /// All windows.
     #[default]
@@ -178,7 +179,7 @@ pub enum MruScope {
     Workspace,
 }
 
-#[derive(knuffel::DecodeScalar, Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Serialize, knuffel::DecodeScalar, Clone, Copy, Debug, Default, PartialEq)]
 pub enum MruFilter {
     /// All windows.
     #[default]

@@ -119,6 +119,8 @@ pub enum Request {
     OverviewState,
     /// Request information about screencasts.
     Casts,
+    /// Request information about key binds.
+    Binds,
 }
 
 /// Reply from niri to client.
@@ -165,6 +167,8 @@ pub enum Response {
     OverviewState(Overview),
     /// Information about screencasts.
     Casts(Vec<Cast>),
+    /// Information about key binds.
+    Binds(Binds),
 }
 
 /// Overview information.
@@ -173,6 +177,36 @@ pub enum Response {
 pub struct Overview {
     /// Whether the overview is currently open.
     pub is_open: bool,
+}
+
+/// Key binds information.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct Binds {
+    /// The list of all key binds.
+    pub binds: Vec<Bind>,
+}
+
+/// Key bind information.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct Bind {
+    /// The trigger key of the key bind.
+    pub trigger: Option<String>,
+    /// The modifier keys of the key bind.
+    pub modifiers: Vec<String>,
+    /// The action that the key bind triggers.
+    pub action: serde_json::Value,
+    /// If the key bind will repeat itself.
+    pub repeat: bool,
+    /// Cooldown of the key bind.
+    pub cooldown: Option<Duration>,
+    /// If the key bind works while the session is locked.
+    pub allow_when_locked: bool,
+    /// If the key bind ignores inhibiting.
+    pub allow_inhibiting: bool,
+    /// The title displayed in the hotkey overlay.
+    pub hotkey_overlay_title: Option<String>,
 }
 
 /// Color picked from the screen.

@@ -109,6 +109,8 @@ pub enum Msg {
     OverviewState,
     /// List screencasts.
     Casts,
+    /// Print all the key binds.
+    Binds,
 }
 
 #[derive(Clone, Debug, clap::ValueEnum)]
