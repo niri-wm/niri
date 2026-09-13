@@ -10,7 +10,7 @@
 * [Layer‐Shell Components](./Layer%E2%80%90Shell-Components.md)
 * [IPC, `niri msg`](./IPC.md)
 * [Application-Specific Issues](./Application-Issues.md)
-* [Nvidia](./Nvidia.md)
+* [GPUs](./GPUs.md)
 * [Xwayland](./Xwayland.md)
 * [Gestures](./Gestures.md)
 * [Fullscreen and Maximize](./Fullscreen-and-Maximize.md)
