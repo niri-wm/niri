@@ -916,13 +916,13 @@ impl State {
             .niri
             .image_copy_sessions
             .iter()
-            .map(|s| (s.session_id, s.stream_id, s.session.source()));
+            .map(|s| (s.session_id, s.stream_id, s.session.source(), s.credentials));
         let cursor_sessions = self
             .niri
             .image_copy_cursor_sessions
             .iter()
-            .map(|s| (s.session_id, s.stream_id, s.session.source()));
-        for (session_id, stream_id, source) in output_sessions.chain(cursor_sessions) {
+            .map(|s| (s.session_id, s.stream_id, s.session.source(), s.credentials));
+        for (session_id, stream_id, source, credentials) in output_sessions.chain(cursor_sessions) {
             let Some(output) = image_copy_capture::source_output(&source) else {
                 continue;
             };
@@ -940,8 +940,7 @@ impl State {
                     },
                     is_dynamic_target: false,
                     is_active: true,
-                    // FIXME: smithay doesn't expose the client of a image-copy-capture session.
-                    pid: None,
+                    pid: credentials.map(|creds| creds.pid),
                     pw_node_id: None,
                 };
                 events.push(Event::CastStartedOrChanged { cast });

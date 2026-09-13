@@ -12,6 +12,7 @@ use smithay::reexports::calloop::{Interest, LoopHandle, Mode, PostAction};
 use smithay::reexports::wayland_server::protocol::wl_buffer::WlBuffer;
 use smithay::reexports::wayland_server::protocol::wl_pointer::WlPointer;
 use smithay::reexports::wayland_server::protocol::wl_shm;
+use smithay::reexports::wayland_server::{Client, DisplayHandle};
 use smithay::utils::{
     Buffer as BufferCoords, Logical, Physical, Point, Rectangle, Scale, Size, Transform,
 };
@@ -25,10 +26,11 @@ use smithay::wayland::image_copy_capture::{
     Frame, FrameRef, ImageCopyCaptureHandler, ImageCopyCaptureState, Session, SessionRef,
 };
 use smithay::wayland::shm;
+use wayland_backend::server::Credentials;
 
 use crate::cursor::{RenderCursor, XCursor};
 use crate::niri::{Niri, State};
-use crate::utils::{CastSessionId, CastStreamId};
+use crate::utils::{get_credentials_for_client, CastSessionId, CastStreamId};
 
 /// Output capture session.
 pub struct ImageCopySession {
@@ -40,6 +42,8 @@ pub struct ImageCopySession {
     pub session_id: CastSessionId,
     /// Cast stream id, unique to this session.
     pub stream_id: CastStreamId,
+    /// Credentials of the capturing client, if known.
+    pub credentials: Option<Credentials>,
 }
 
 /// Cursor capture session of an output.
@@ -53,6 +57,17 @@ pub struct ImageCopyCursorSession {
     pub session_id: CastSessionId,
     /// Cast stream id, unique to this session.
     pub stream_id: CastStreamId,
+    /// Credentials of the capturing client, if known.
+    pub credentials: Option<Credentials>,
+}
+
+/// Credentials for the client which created a capture session.
+///
+/// Returns `None` if the session doesn't have its client (it has already been
+/// dropped) or if the credentials cannot be determined (e.g., if peer is
+/// credentials_unknown like mutter_service_channel).
+fn session_credentials(dh: &DisplayHandle, client: Option<Client>) -> Option<Credentials> {
+    get_credentials_for_client(dh, &client?)
 }
 
 /// Cast session id of an image capture source.
@@ -311,12 +326,14 @@ impl ImageCopyCaptureHandler for State {
         // Will be updated with the output properties before capture.
         let damage_tracker = OutputDamageTracker::new((0, 0), 1.0, Transform::Normal);
         let session_id = source_session_id(&session.source());
+        let credentials = session_credentials(&self.niri.display_handle, session.client());
         self.niri.image_copy_sessions.push(ImageCopySession {
             session,
             damage_tracker,
             pending_frame: None,
             session_id,
             stream_id: CastStreamId::next(),
+            credentials,
         });
     }
 
@@ -324,6 +341,7 @@ impl ImageCopyCaptureHandler for State {
         // Will be updated with the output properties before capture.
         let damage_tracker = OutputDamageTracker::new((0, 0), 1.0, Transform::Normal);
         let session_id = source_session_id(&session.source());
+        let credentials = session_credentials(&self.niri.display_handle, session.client());
         self.niri
             .image_copy_cursor_sessions
             .push(ImageCopyCursorSession {
@@ -332,6 +350,7 @@ impl ImageCopyCaptureHandler for State {
                 pending_frame: None,
                 session_id,
                 stream_id: CastStreamId::next(),
+                credentials,
             });
         // Send the initial cursor position and hotspot.
         self.niri.refresh_image_copy_cursor_sessions();
