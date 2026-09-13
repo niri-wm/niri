@@ -49,6 +49,7 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
         Msg::RequestError => Request::ReturnError,
         Msg::OverviewState => Request::OverviewState,
         Msg::Casts => Request::Casts,
+        Msg::CursorState => Request::CursorState,
     };
 
     let mut socket = Socket::connect().context("error connecting to the niri socket")?;
@@ -548,6 +549,21 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
             for cast in casts {
                 print_cast(&cast);
                 println!();
+            }
+        }
+        Msg::CursorState => {
+            let Response::CursorState(state) = response else {
+                bail!("unexpected response: expected CursorState, got {response:?}");
+            };
+            if json {
+                println!("{}", serde_json::to_string(&state)?);
+            } else {
+                let image = match state.image {
+                    niri_ipc::CursorImage::Named(name) => name,
+                    niri_ipc::CursorImage::Surface => "surface".to_owned(),
+                    niri_ipc::CursorImage::Hidden => "hidden".to_owned(),
+                };
+                println!("{},{},{}", state.position[0], state.position[1], image);
             }
         }
     }
