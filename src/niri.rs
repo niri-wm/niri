@@ -6151,8 +6151,46 @@ impl Niri {
 
         let mut sessions = mem::take(&mut self.image_copy_cursor_sessions);
         for s in &mut sessions {
-            let Some(output) = image_copy_capture_impl::source_output(&s.session.source()) else {
-                s.session.set_cursor_pos(None);
+            let source = s.session.source();
+
+            let Some(output) = image_copy_capture_impl::source_output(&source) else {
+                let Some((mapped, Some(output))) =
+                    image_copy_capture_impl::source_window(self, &source)
+                else {
+                    s.session.set_cursor_pos(None);
+                    continue;
+                };
+                let Some(geo) = self.global_space.output_geometry(&output) else {
+                    s.session.set_cursor_pos(None);
+                    continue;
+                };
+
+                let scale = Scale::from(output.current_scale().fractional_scale());
+
+                image_copy_capture_impl::update_cursor_constraints(self, s, &output);
+
+                let hotspot = image_copy_capture_impl::cursor_capture_hotspot(self, &output);
+                s.session.set_cursor_hotspot((hotspot.x, hotspot.y));
+
+                let pos = if self.pointer_visibility.is_visible() {
+                    self.pointer_pos_for_window_cast(mapped)
+                        .map(|(_, win_pos)| {
+                            let ipos = (pointer_pos
+                                - geo.loc.to_f64()
+                                - (win_pos
+                                    + image_copy_capture_impl::window_capture_bbox(
+                                        mapped, &output,
+                                    )
+                                    .loc
+                                    .to_f64()
+                                    .to_logical(scale)))
+                            .to_physical_precise_round(scale);
+                            Point::from((ipos.x, ipos.y))
+                        })
+                } else {
+                    None
+                };
+                s.session.set_cursor_pos(pos);
                 continue;
             };
             let Some(geo) = self.global_space.output_geometry(&output) else {
@@ -6167,21 +6205,7 @@ impl Niri {
             let scale = Scale::from(output.current_scale().fractional_scale());
 
             // Update the constraints if the cursor image size changed.
-            let constraints = image_copy_capture_impl::cursor_capture_constraints(self, &output);
-            let cursor_size = constraints.size;
-            let size_changed = s
-                .session
-                .current_constraints()
-                .is_none_or(|c| (c.size.w, c.size.h) != (constraints.size.w, constraints.size.h));
-            if size_changed {
-                // Cannot capture a frame for outdated constraints, so fail it
-                // before sending the new constraints (otherwise clients which
-                // re-negotiate on failure may miss the new `done`).
-                if let Some(frame) = s.pending_frame.take() {
-                    frame.fail(CaptureFailureReason::BufferConstraints);
-                }
-                s.session.update_constraints(constraints);
-            }
+            let cursor_size = image_copy_capture_impl::update_cursor_constraints(self, s, &output);
 
             let hotspot = image_copy_capture_impl::cursor_capture_hotspot(self, &output);
             s.session.set_cursor_hotspot((hotspot.x, hotspot.y));

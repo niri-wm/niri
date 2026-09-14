@@ -208,6 +208,29 @@ pub fn refresh_session_constraints(
     true
 }
 
+/// Updates the cursor session constraints if the cursor size has changed, returning the current
+/// cursor size.
+pub fn update_cursor_constraints(
+    niri: &Niri,
+    s: &mut ImageCopyCursorSession,
+    output: &Output,
+) -> Size<i32, BufferCoords> {
+    let constraints = cursor_capture_constraints(niri, output);
+    let size = constraints.size;
+    if s.session
+        .current_constraints()
+        .is_none_or(|c| (c.size.w, c.size.h) != (size.w, size.h))
+    {
+        // Cannot capture a frame for outdated constraints, so fail it before sending the new
+        // constraints (otherwise clients which re-negotiate on failure may miss the new `done`).
+        if let Some(frame) = s.pending_frame.take() {
+            frame.fail(CaptureFailureReason::BufferConstraints);
+        }
+        s.session.update_constraints(constraints);
+    }
+    size
+}
+
 /// Buffer constraints for capturing the cursor of an output. Argb8888 since it has alpha.
 pub fn cursor_capture_constraints(niri: &Niri, output: &Output) -> BufferConstraints {
     BufferConstraints {
@@ -395,7 +418,7 @@ impl ImageCopyCaptureHandler for State {
         source: &ImageCaptureSource,
         _pointer: &WlPointer,
     ) -> Option<BufferConstraints> {
-        let output = source_output(source)?;
+        let output = source_session_output(&self.niri, source)?;
         if !self.niri.output_state.contains_key(&output) {
             return None;
         }
