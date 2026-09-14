@@ -18,7 +18,7 @@ use niri_config::OutputName;
 use niri_ipc::state::{EventStreamState, EventStreamStatePart as _};
 use niri_ipc::{
     Action, Event, KeyboardLayouts, OutputConfigChanged, Overview, Reply, Request, Response,
-    Timestamp, WindowLayout, Workspace,
+    Timestamp, WindowLayout, Workspace, XdgToplevelTag,
 };
 use smithay::desktop::layer_map_for_output;
 use smithay::input::pointer::{
@@ -28,7 +28,10 @@ use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::{Interest, LoopHandle, Mode, PostAction};
 use smithay::reexports::rustix::fs::unlink;
 use smithay::utils::SERIAL_COUNTER;
+use smithay::wayland::compositor::with_states;
 use smithay::wayland::shell::wlr_layer::{KeyboardInteractivity, Layer};
+use smithay::wayland::shell::xdg::XdgToplevelSurfaceData;
+use smithay::wayland::xdg_toplevel_tag::XdgToplevelTagSurfaceData;
 
 use crate::backend::IpcOutputMap;
 use crate::handlers::image_copy_capture;
@@ -518,17 +521,37 @@ fn make_ipc_window(
     workspace_id: Option<WorkspaceId>,
     layout: WindowLayout,
 ) -> niri_ipc::Window {
-    with_toplevel_role(mapped.toplevel(), |role| niri_ipc::Window {
-        id: mapped.id().get(),
-        title: role.title.clone(),
-        app_id: role.app_id.clone(),
-        pid: mapped.credentials().map(|c| c.pid),
-        workspace_id: workspace_id.map(|id| id.get()),
-        is_focused: mapped.is_focused(),
-        is_floating: mapped.is_floating(),
-        is_urgent: mapped.is_urgent(),
-        layout,
-        focus_timestamp: mapped.get_focus_timestamp().map(Timestamp::from),
+    with_states(mapped.toplevel().wl_surface(), |states| {
+        let role = &states
+            .data_map
+            .get::<XdgToplevelSurfaceData>()
+            .unwrap()
+            .lock()
+            .unwrap();
+
+        let xdg_tag = {
+            let data = &states.data_map.get::<XdgToplevelTagSurfaceData>();
+            XdgToplevelTag {
+                tag: data.and_then(|data| data.tag()).map(|tag| (*tag).into()),
+                description: data
+                    .and_then(|data| data.description())
+                    .map(|desc| (*desc).into()),
+            }
+        };
+
+        niri_ipc::Window {
+            id: mapped.id().get(),
+            title: role.title.clone(),
+            app_id: role.app_id.clone(),
+            xdg_tag,
+            pid: mapped.credentials().map(|c| c.pid),
+            workspace_id: workspace_id.map(|id| id.get()),
+            is_focused: mapped.is_focused(),
+            is_floating: mapped.is_floating(),
+            is_urgent: mapped.is_urgent(),
+            layout,
+            focus_timestamp: mapped.get_focus_timestamp().map(Timestamp::from),
+        }
     })
 }
 

@@ -197,12 +197,30 @@ You can find the title and the app ID of a window by running `niri msg pick-wind
 
 > [!TIP]
 > Another way to find the window title and app ID is to configure the `wlr/taskbar` module in [Waybar](https://github.com/Alexays/Waybar) to include them in the tooltip:
-> 
+>
 > ```json
 > "wlr/taskbar": {
 >     "tooltip-format": "{title} | {app_id}",
 > }
 > ```
+
+#### `xdg-tag`
+
+<sup>Since: next release</sup>
+
+This is a regular expression that should match anywhere in the window's XDG toplevel tag.
+This always fails if the window has not set an XDG toplevel tag.
+See above for more information on regular expressions.
+
+```kdl
+// Match windows with the XDG toplevel tag "proton-game".
+// Note that only some versions of Proton set this.
+window-rule {
+    match xdg-tag="^proton-game$"
+}
+```
+
+You can find the XDG toplevel tag of a window by running `niri msg pick-window` and clicking on the window in question.
 
 #### `is-active`
 
