@@ -4,7 +4,7 @@ use std::time::Duration;
 use niri::animation::Clock;
 use niri::layout::{ActivateWindow, AddWindowTarget, LayoutElement as _, Options, SizingMode};
 use niri::render_helpers::{RenderCtx, RenderTarget};
-use niri_config::{Color, OutputName, PresetSize};
+use niri_config::{BorderWidth, Color, OutputName, PresetSize};
 use smithay::backend::renderer::element::RenderElement;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::desktop::layer_map_for_output;
@@ -59,7 +59,7 @@ impl Layout {
                 },
                 border: niri_config::Border {
                     off: false,
-                    width: 4.,
+                    width: BorderWidth::Outset(4.),
                     active_color: Color::from_rgba8_unpremul(255, 163, 72, 255),
                     inactive_color: Color::from_rgba8_unpremul(50, 50, 50, 255),
                     urgent_color: Color::from_rgba8_unpremul(155, 0, 0, 255),

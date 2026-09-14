@@ -1306,7 +1306,9 @@ mod tests {
             layout: Layout {
                 focus_ring: FocusRing {
                     off: false,
-                    width: 5.0,
+                    width: Outset(
+                        5.0,
+                    ),
                     active_color: Color {
                         r: 0.0,
                         g: 0.39215687,
@@ -1352,7 +1354,9 @@ mod tests {
                 },
                 border: Border {
                     off: false,
-                    width: 3.0,
+                    width: Outset(
+                        3.0,
+                    ),
                     active_color: Color {
                         r: 1.0,
                         g: 0.78431374,
@@ -1840,6 +1844,7 @@ mod tests {
                                 3.0,
                             ),
                         ),
+                        is_inset: None,
                         active_color: None,
                         inactive_color: None,
                         urgent_color: None,
@@ -1855,6 +1860,7 @@ mod tests {
                                 8.5,
                             ),
                         ),
+                        is_inset: None,
                         active_color: None,
                         inactive_color: None,
                         urgent_color: None,
