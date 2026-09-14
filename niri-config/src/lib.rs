@@ -699,6 +699,7 @@ mod tests {
                     dwt
                     dwtp
                     drag true
+                    three-finger-drag "3fg"
                     click-method "clickfinger"
                     accel-speed 0.2
                     accel-profile "flat"
@@ -758,6 +759,7 @@ mod tests {
                 warp-mouse-to-focus
                 focus-follows-mouse
                 workspace-auto-back-and-forth
+                gesture-swipe-fingers 4
 
                 mod-key "Mod5"
                 mod-key-nested "Super"
@@ -1021,6 +1023,9 @@ mod tests {
                         true,
                     ),
                     drag_lock: false,
+                    three_finger_drag: Some(
+                        EnabledThreeFinger,
+                    ),
                     natural_scroll: false,
                     click_method: Some(
                         Clickfinger,
@@ -1162,6 +1167,9 @@ mod tests {
                     },
                 ),
                 workspace_auto_back_and_forth: true,
+                gesture_swipe_fingers: Some(
+                    4,
+                ),
                 mod_key: Some(
                     IsoLevel3Shift,
                 ),

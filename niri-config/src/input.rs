@@ -21,6 +21,7 @@ pub struct Input {
     pub warp_mouse_to_focus: Option<WarpMouseToFocus>,
     pub focus_follows_mouse: Option<FocusFollowsMouse>,
     pub workspace_auto_back_and_forth: bool,
+    pub gesture_swipe_fingers: Option<u32>,
     pub mod_key: Option<ModKey>,
     pub mod_key_nested: Option<ModKey>,
 }
@@ -49,6 +50,8 @@ pub struct InputPart {
     pub focus_follows_mouse: Option<FocusFollowsMouse>,
     #[knuffel(child)]
     pub workspace_auto_back_and_forth: Option<Flag>,
+    #[knuffel(child, unwrap(argument))]
+    pub gesture_swipe_fingers: Option<u32>,
     #[knuffel(child, unwrap(argument, str))]
     pub mod_key: Option<ModKey>,
     #[knuffel(child, unwrap(argument, str))]
@@ -78,6 +81,7 @@ impl MergeWith<InputPart> for Input {
             (self, part),
             warp_mouse_to_focus,
             focus_follows_mouse,
+            gesture_swipe_fingers,
             mod_key,
             mod_key_nested,
         );
@@ -197,6 +201,8 @@ pub struct Touchpad {
     pub drag: Option<bool>,
     #[knuffel(child)]
     pub drag_lock: bool,
+    #[knuffel(child, unwrap(argument, str))]
+    pub three_finger_drag: Option<ThreeFingerDrag>,
     #[knuffel(child)]
     pub natural_scroll: bool,
     #[knuffel(child, unwrap(argument, str))]
@@ -289,6 +295,23 @@ pub struct Trackball {
     pub left_handed: bool,
     #[knuffel(child)]
     pub middle_emulation: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ThreeFingerDrag {
+    Disabled,
+    EnabledThreeFinger,
+    EnabledFourFinger,
+}
+
+impl From<ThreeFingerDrag> for input::ThreeFingerDragState {
+    fn from(value: ThreeFingerDrag) -> Self {
+        match value {
+            ThreeFingerDrag::Disabled => Self::Disabled,
+            ThreeFingerDrag::EnabledThreeFinger => Self::EnabledThreeFinger,
+            ThreeFingerDrag::EnabledFourFinger => Self::EnabledFourFinger,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -448,6 +471,21 @@ impl FromStr for ModKey {
             "iso_level3_shift" | "mod5" => Ok(Self::IsoLevel3Shift),
             "iso_level5_shift" | "mod3" => Ok(Self::IsoLevel5Shift),
             _ => Err(miette!("invalid Mod key: {s}")),
+        }
+    }
+}
+
+impl FromStr for ThreeFingerDrag {
+    type Err = miette::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "disabled" => Ok(Self::Disabled),
+            "3fg" => Ok(Self::EnabledThreeFinger),
+            "4fg" => Ok(Self::EnabledFourFinger),
+            _ => Err(miette!(
+                r#"invalid three-finger drag mode, can be "disabled", "3fg", or "4fg""#
+            )),
         }
     }
 }
