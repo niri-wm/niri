@@ -35,6 +35,7 @@ pub mod debug;
 pub mod effect_buffer;
 pub mod framebuffer_effect;
 pub mod gradient_fade_texture;
+pub mod masked_offscreen;
 pub mod memory;
 pub mod offscreen;
 pub mod primary_gpu_texture;

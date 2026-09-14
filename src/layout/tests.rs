@@ -3413,6 +3413,62 @@ fn preset_column_width_reset_after_set_width() {
 }
 
 #[test]
+fn tabbed_column_width_tracks_active_tab() {
+    let ops = [
+        Op::AddOutput(0),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::SetForcedSize {
+            id: 1,
+            size: Some(Size::from((400, 200))),
+        },
+        Op::Communicate(1),
+        Op::SetColumnDisplay(ColumnDisplay::Tabbed),
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+        Op::SetForcedSize {
+            id: 2,
+            size: Some(Size::from((400, 200))),
+        },
+        Op::Communicate(2),
+        Op::ConsumeOrExpelWindowLeft { id: None },
+        Op::AddWindow {
+            params: TestWindowParams::new(3),
+        },
+        Op::FocusColumnLeft,
+        Op::CompleteAnimations,
+        Op::SetForcedSize {
+            id: 2,
+            size: Some(Size::from((200, 200))),
+        },
+        Op::Communicate(2),
+    ];
+
+    let options = Options {
+        layout: niri_config::Layout {
+            gaps: 0.,
+            center_focused_column: CenterFocusedColumn::Never,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let layout = check_ops_with_options(options, ops);
+    let ws = layout.active_workspace().unwrap();
+
+    let mut tiles = ws
+        .tiles_with_render_positions()
+        .filter(|(_, _, visible)| *visible);
+    let (active_tab, active_pos, _) = tiles.next().unwrap();
+    let (right, right_pos, _) = tiles.next().unwrap();
+
+    assert_eq!(active_tab.window().0.id, 2);
+    assert_eq!(right.window().0.id, 3);
+    assert_eq!(active_pos.x + active_tab.tile_size().w, right_pos.x);
+}
+
+#[test]
 fn move_column_to_workspace_unfocused_with_multiple_monitors() {
     let ops = [
         Op::AddOutput(1),
