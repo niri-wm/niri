@@ -6151,25 +6151,22 @@ impl Niri {
         for s in &mut sessions {
             let source = s.session.source();
 
-            let (_, output) = if let Some(id) = image_copy_capture_impl::source_mapped_id(&source) {
-                let Some((mapped, Some(output))) = self.find_mapped_output_by_id(id) else {
-                    s.session.set_cursor_pos(None);
-                    continue;
+            let (mapped, output) =
+                if let Some(id) = image_copy_capture_impl::source_mapped_id(&source) {
+                    let Some((mapped, Some(output))) = self.find_mapped_output_by_id(id) else {
+                        s.session.set_cursor_pos(None);
+                        continue;
+                    };
+                    (Some(mapped), output.clone())
+                } else {
+                    let Some(output) = image_copy_capture_impl::source_output(&source) else {
+                        s.session.set_cursor_pos(None);
+                        continue;
+                    };
+                    (None, output)
                 };
-                (Some(mapped), output.clone())
-            } else {
-                let Some(output) = image_copy_capture_impl::source_output(&source) else {
-                    s.session.set_cursor_pos(None);
-                    continue;
-                };
-                (None, output)
-            };
 
-            let Some(geo) = self.global_space.output_geometry(&output) else {
-                s.session.set_cursor_pos(None);
-                continue;
-            };
-            let Some(mode) = output.current_mode() else {
+            let Some(output_geo) = self.global_space.output_geometry(&output) else {
                 s.session.set_cursor_pos(None);
                 continue;
             };
@@ -6196,34 +6193,63 @@ impl Niri {
             let hotspot = image_copy_capture_impl::cursor_capture_hotspot(self, &output);
             s.session.set_cursor_hotspot((hotspot.x, hotspot.y));
 
-            // Unlike frame damage, the position is in transformed buffer coordinates, i.e. the
-            // displayed orientation, so the output transform is not undone here. This matches
-            // wlroots.
-            let pos: Point<i32, Physical> =
-                (pointer_pos - geo.loc.to_f64()).to_physical_precise_round(scale);
+            let pos = if !self.pointer_visibility.is_visible() {
+                None
+            } else if let Some(mapped) = mapped {
+                // For window casts, we intentionally use the same logic as in PipeWire: the window
+                // must have pointer focus to show the pointer. The reasoning is to prevent
+                // accidental leaking of pointer position when not interacting with the window.
+                //
+                // While this may seem to contradict the protocol wording, I'd argue one of the
+                // readings does allow it.
+                //
+                // > The cursor enters the captured area when the cursor image
+                // > intersects with the captured area.
+                //
+                // For windows, the captured area is the window itself, not a cut-out of the output.
+                // Therefore, we consider the pointer to not intersect the "captured area" when the
+                // window doesn't have pointer focus. (Otherwise the pointer would need to be
+                // displayed even when it's over a different window completely covering the casted
+                // one.)
+                self.pointer_pos_for_window_cast(mapped)
+                    .map(|(pointer_pos, win_pos)| {
+                        let bbox = mapped.capture_bbox(scale);
+                        let buf_pos = win_pos + bbox.loc.to_f64().to_logical(scale);
+                        let ipos = (pointer_pos - output_geo.loc.to_f64() - buf_pos)
+                            .to_physical_precise_round(scale);
+                        Point::from((ipos.x, ipos.y))
+                    })
+            } else if let Some(mode) = output.current_mode() {
+                // Unlike frame damage, the position is in transformed buffer coordinates, i.e. the
+                // displayed orientation, so the output transform is not undone here. This matches
+                // wlroots.
+                let pos: Point<i32, Physical> =
+                    (pointer_pos - output_geo.loc.to_f64()).to_physical_precise_round(scale);
 
-            // Cursors are considered to have entered if any part of the image
-            // intersects the output, not just the hotspot, so the position may
-            // be negative or past the edge.
-            //
-            // The imagecopy protocol specifies this interpretation
-            // specifically, even though it differs from wl_pointer.enter,
-            // including the coordinates being outside the output bounds. This
-            // is also how wlroots implements it.
-            //
-            // This intentionally differs from how PipeWire casts work since PW
-            // requires the pointer to be within the output bounds, but this
-            // isn't relevant (or wanted) for the imagecopy protocol.
-            let hotspot = Point::<i32, Physical>::from((hotspot.x, hotspot.y));
-            let image = Rectangle::new(pos - hotspot, Size::from((cursor_size.w, cursor_size.h)));
-            let output_rect =
-                Rectangle::from_size(output.current_transform().transform_size(mode.size));
-            if self.pointer_visibility.is_visible() && image.overlaps(output_rect) {
-                // not geo.to_f64().contains(pointer_pos)
-                s.session.set_cursor_pos(Some(Point::from((pos.x, pos.y))));
+                // Cursors are considered to have entered if any part of the image
+                // intersects the output, not just the hotspot, so the position may
+                // be negative or past the edge.
+                //
+                // The imagecopy protocol specifies this interpretation
+                // specifically, even though it differs from wl_pointer.enter,
+                // including the coordinates being outside the output bounds. This
+                // is also how wlroots implements it.
+                //
+                // This intentionally differs from how PipeWire casts work since PW
+                // requires the pointer to be within the output bounds, but this
+                // isn't relevant (or wanted) for the imagecopy protocol.
+                let hotspot = Point::<i32, Physical>::from((hotspot.x, hotspot.y));
+                let image =
+                    Rectangle::new(pos - hotspot, Size::from((cursor_size.w, cursor_size.h)));
+                let output_rect =
+                    Rectangle::from_size(output.current_transform().transform_size(mode.size));
+                image
+                    .overlaps(output_rect)
+                    .then_some(Point::from((pos.x, pos.y)))
             } else {
-                s.session.set_cursor_pos(None);
-            }
+                None
+            };
+            s.session.set_cursor_pos(pos);
         }
         // This shouldn't be possible since sessions are only added from the
         // ImageCopyCaptureHandler callbacks, which run in dispatch_clients()

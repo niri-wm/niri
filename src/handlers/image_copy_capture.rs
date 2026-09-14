@@ -359,7 +359,7 @@ impl ImageCopyCaptureHandler for State {
         source: &ImageCaptureSource,
         _pointer: &WlPointer,
     ) -> Option<BufferConstraints> {
-        let output = source_output(source)?;
+        let output = source_session_output(&self.niri, source)?;
         if !self.niri.output_state.contains_key(&output) {
             return None;
         }
