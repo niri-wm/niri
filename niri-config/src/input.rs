@@ -397,6 +397,7 @@ pub struct WarpMouseToFocus {
 pub enum WarpMouseToFocusMode {
     CenterXy,
     CenterXyAlways,
+    CrossOutput,
 }
 
 impl FromStr for WarpMouseToFocusMode {
@@ -406,8 +407,9 @@ impl FromStr for WarpMouseToFocusMode {
         match s {
             "center-xy" => Ok(Self::CenterXy),
             "center-xy-always" => Ok(Self::CenterXyAlways),
+            "cross-output" => Ok(Self::CrossOutput),
             _ => Err(miette!(
-                r#"invalid mode for warp-mouse-to-focus, can be "center-xy" or "center-xy-always" (or leave unset for separate centering)"#
+                r#"invalid mode for warp-mouse-to-focus, can be "center-xy", "center-xy-always" or "cross-output" (or leave unset for separate centering)"#
             )),
         }
     }
@@ -522,6 +524,20 @@ mod tests {
             .map_err(miette::Report::new)
             .unwrap();
         Input::from_part(&part)
+    }
+
+    #[test]
+    fn parse_warp_mouse_to_focus_cross_output() {
+        let parsed = do_parse(r#"warp-mouse-to-focus mode="cross-output""#);
+        assert_debug_snapshot!(parsed.warp_mouse_to_focus, @r"
+        Some(
+            WarpMouseToFocus {
+                mode: Some(
+                    CrossOutput,
+                ),
+            },
+        )
+        ");
     }
 
     #[test]

@@ -328,10 +328,21 @@ I.e. if moving the mouse only horizontally is enough to put it inside the newly 
 - `mode="center-xy"`: warps by both X and Y coordinates together.
 So if the mouse was anywhere outside the newly focused window, it will warp to the center of the window.
 - `mode="center-xy-always"`: warps by both X and Y coordinates together, even if the mouse was already somewhere inside the newly focused window.
+- `mode="cross-output"`: <sup>Since: next release</sup> warps to the center of the focused window only when switching to a different output, even if the mouse was already inside that window.
+Switching windows or workspaces on the same output does not warp the mouse.
+If the destination workspace is empty, the mouse moves to the center of the output instead.
 
 ```kdl
 input {
     warp-mouse-to-focus mode="center-xy"
+}
+```
+
+To center the mouse only when switching between monitors:
+
+```kdl
+input {
+    warp-mouse-to-focus mode="cross-output"
 }
 ```
 

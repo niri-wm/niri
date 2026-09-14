@@ -1091,7 +1091,7 @@ impl State {
 
         let new_active = self.niri.layout.active_output().cloned();
         if new_active != active_output {
-            if !self.maybe_warp_cursor_to_focus_centered() {
+            if !self.maybe_warp_cursor_to_focus_centered(active_output.as_ref()) {
                 self.move_cursor_to_output(&new_active.unwrap());
             }
         } else {
@@ -1121,18 +1121,32 @@ impl State {
                 None => CenterCoords::Separately,
                 Some(WarpMouseToFocusMode::CenterXy) => CenterCoords::Both,
                 Some(WarpMouseToFocusMode::CenterXyAlways) => CenterCoords::BothAlways,
+                Some(WarpMouseToFocusMode::CrossOutput) => return false,
             },
         };
         self.move_cursor_to_focused_tile(focused)
     }
 
-    pub fn maybe_warp_cursor_to_focus_centered(&mut self) -> bool {
+    /// Handles cursor warping after an output focus action.
+    ///
+    /// Returns true if the cursor was warped or intentionally left in place, so the caller
+    /// should not fall back to moving it to the output center.
+    pub fn maybe_warp_cursor_to_focus_centered(
+        &mut self,
+        previous_output: Option<&Output>,
+    ) -> bool {
         let focused = match self.niri.config.borrow().input.warp_mouse_to_focus {
             None => return false,
             Some(inner) => match inner.mode {
                 None => CenterCoords::Both,
                 Some(WarpMouseToFocusMode::CenterXy) => CenterCoords::Both,
                 Some(WarpMouseToFocusMode::CenterXyAlways) => CenterCoords::BothAlways,
+                Some(WarpMouseToFocusMode::CrossOutput) => {
+                    if self.niri.layout.active_output() == previous_output {
+                        return true;
+                    }
+                    CenterCoords::BothAlways
+                }
             },
         };
         self.move_cursor_to_focused_tile(focused)
