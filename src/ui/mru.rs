@@ -538,6 +538,8 @@ impl Thumbnail {
                 radius,
                 scale,
                 0.5,
+                None,
+                0.,
             );
             background.render(ctx.renderer, loc, &mut |elem| {
                 push(WindowMruUiRenderElement::FocusRing(elem))
@@ -559,6 +561,8 @@ impl Thumbnail {
                 radius.expanded_by(config.width as f32),
                 scale,
                 1.,
+                None,
+                0.,
             );
 
             border.render(ctx.renderer, loc, &mut |elem| {

@@ -62,6 +62,16 @@ animations {
     recent-windows-close {
         spring damping-ratio=1.0 stiffness=800 epsilon=0.001
     }
+
+    // border-fade {
+    //     duration-ms 200
+    //     curve "ease-out-cubic"
+    // }
+
+    // border-angle {
+    //     duration-ms 2000
+    //     curve "linear"
+    // }
 }
 ```
 
@@ -439,6 +449,49 @@ animations {
     }
 }
 ```
+
+#### `border-fade`
+
+Smooth crossfade between old and new border gradient colors when a window gains or loses focus.
+Without this animation, the border color changes instantly on focus change.
+
+Disabled by default.
+
+```kdl
+animations {
+    border-fade {
+        duration-ms 200
+        curve "ease-out-cubic"
+    }
+}
+```
+
+This animation works with both [focus ring and border gradients](./Configuration:-Layout.md#gradients) (solid color borders are unaffected since the color transition is invisible).
+
+#### `border-angle`
+
+Continuously rotates the gradient angle around the border or focus ring, producing a spinning gradient effect.
+
+Disabled by default.
+
+```kdl
+animations {
+    border-angle {
+        duration-ms 2000
+        curve "linear"
+    }
+}
+```
+
+`duration-ms` controls how long one full 360° rotation takes.
+`curve` is technically accepted but has no visible effect since the animation loops continuously.
+
+> [!WARNING]
+> Enabling this animation will cause niri to constantly render new frames at your monitor's refresh rate.
+> This may increase CPU/GPU usage and impact battery life on laptops.
+
+This animation requires [gradient borders](./Configuration:-Layout.md#gradients) to be configured.
+Solid color borders will not show any visible rotation.
 
 ### Synchronized Animations
 

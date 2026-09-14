@@ -1,9 +1,10 @@
 use std::iter::zip;
 
-use niri_config::{CornerRadius, Gradient, GradientRelativeTo};
+use niri_config::{Color, CornerRadius, Gradient, GradientRelativeTo};
 use smithay::backend::renderer::element::{Element as _, Kind};
 use smithay::utils::{Logical, Point, Rectangle, Size};
 
+use crate::animation::Animation;
 use crate::niri_render_elements;
 use crate::render_helpers::border::BorderRenderElement;
 use crate::render_helpers::renderer::NiriRenderer;
@@ -20,6 +21,13 @@ pub struct FocusRing {
     use_border_shader: bool,
     config: niri_config::FocusRing,
     thicken_corners: bool,
+    previous_gradient: Option<GradientPrevious>,
+}
+
+#[derive(Debug, Clone)]
+struct GradientPrevious {
+    from: Color,
+    to: Color,
 }
 
 niri_render_elements! {
@@ -41,6 +49,7 @@ impl FocusRing {
             use_border_shader: false,
             config,
             thicken_corners: true,
+            previous_gradient: None,
         }
     }
 
@@ -65,6 +74,8 @@ impl FocusRing {
         radius: CornerRadius,
         scale: f64,
         alpha: f32,
+        fade_anim: Option<&Animation>,
+        angle_offset: f32,
     ) {
         let width = self.config.width;
         self.full_size = win_size + Size::from((width, width)).upscale(2.);
@@ -96,6 +107,22 @@ impl FocusRing {
 
         // Set the defaults for solid color + rounded corners.
         let gradient = gradient.unwrap_or_else(|| Gradient::from(color));
+
+        let fade_lerp = fade_anim
+            .filter(|a| !a.is_done())
+            .map(|a| a.value() as f32)
+            .unwrap_or(-1.);
+
+        let (color_from2, color_to2) = self
+            .previous_gradient
+            .as_ref()
+            .map(|p| (p.from, p.to))
+            .unwrap_or_default();
+
+        self.previous_gradient = Some(GradientPrevious {
+            from: gradient.from,
+            to: gradient.to,
+        });
 
         let full_rect = Rectangle::new(Point::from((-width, -width)), self.full_size);
         let gradient_area = match gradient.relative_to {
@@ -180,18 +207,21 @@ impl FocusRing {
             }
 
             for (border, (loc, size)) in zip(&mut self.borders, zip(self.locations, self.sizes)) {
-                border.update(
+                border.update_with_fade(
                     size,
                     Rectangle::new(gradient_area.loc - loc, gradient_area.size),
                     gradient.in_,
                     gradient.from,
                     gradient.to,
-                    ((gradient.angle as f32) - 90.).to_radians(),
+                    ((gradient.angle as f32 + angle_offset) - 90.).to_radians(),
                     Rectangle::new(full_rect.loc - loc, full_rect.size),
                     rounded_corner_border_width,
                     radius,
                     scale as f32,
                     alpha,
+                    color_from2,
+                    color_to2,
+                    fade_lerp,
                 );
             }
         } else {
@@ -199,18 +229,21 @@ impl FocusRing {
             self.buffers[0].resize(self.sizes[0]);
             self.locations[0] = Point::from((-width, -width));
 
-            self.borders[0].update(
+            self.borders[0].update_with_fade(
                 self.sizes[0],
                 Rectangle::new(gradient_area.loc - self.locations[0], gradient_area.size),
                 gradient.in_,
                 gradient.from,
                 gradient.to,
-                ((gradient.angle as f32) - 90.).to_radians(),
+                ((gradient.angle as f32 + angle_offset) - 90.).to_radians(),
                 Rectangle::new(full_rect.loc - self.locations[0], full_rect.size),
                 rounded_corner_border_width,
                 radius,
                 scale as f32,
                 alpha,
+                color_from2,
+                color_to2,
+                fade_lerp,
             );
         }
     }
