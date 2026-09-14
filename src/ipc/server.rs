@@ -31,7 +31,7 @@ use smithay::utils::SERIAL_COUNTER;
 use smithay::wayland::shell::wlr_layer::{KeyboardInteractivity, Layer};
 
 use crate::backend::IpcOutputMap;
-use crate::handlers::image_copy_capture;
+use crate::handlers::image_copy_capture::{source_mapped_id, source_output};
 use crate::input::pick_window_grab::PickWindowGrab;
 use crate::layout::workspace::WorkspaceId;
 use crate::niri::State;
@@ -923,8 +923,14 @@ impl State {
             .iter()
             .map(|s| (s.session_id, s.stream_id, s.session.source(), s.credentials));
         for (session_id, stream_id, source, credentials) in output_sessions.chain(cursor_sessions) {
-            let Some(output) = image_copy_capture::source_output(&source) else {
-                continue;
+            let target = if let Some(output) = source_output(&source) {
+                niri_ipc::CastTarget::Output {
+                    name: output.name(),
+                }
+            } else if let Some(id) = source_mapped_id(&source) {
+                niri_ipc::CastTarget::Window { id: id.get() }
+            } else {
+                niri_ipc::CastTarget::Nothing {}
             };
 
             let stream_id = stream_id.get();
@@ -935,9 +941,7 @@ impl State {
                     session_id: session_id.get(),
                     stream_id,
                     kind: niri_ipc::CastKind::ExtImageCopyCapture,
-                    target: niri_ipc::CastTarget::Output {
-                        name: output.name(),
-                    },
+                    target,
                     is_dynamic_target: false,
                     is_active: true,
                     pid: credentials.map(|creds| creds.pid),
