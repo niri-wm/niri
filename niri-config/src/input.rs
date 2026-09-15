@@ -267,6 +267,8 @@ pub struct Trackpoint {
     pub left_handed: bool,
     #[knuffel(child)]
     pub middle_emulation: bool,
+    #[knuffel(child)]
+    pub scroll_factor: Option<ScrollFactor>,
 }
 
 #[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]

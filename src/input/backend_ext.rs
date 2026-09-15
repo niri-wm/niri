@@ -21,12 +21,24 @@ pub trait NiriInputDevice: input::Device {
     // but it's not clear that this matters in practice?
     // it might be more obvious once we implement it for libinput
     fn output(&self, state: &State) -> Option<Output>;
+
+    fn is_trackpoint(&self) -> bool {
+        false
+    }
 }
 
 impl NiriInputDevice for libinput::Device {
     fn output(&self, _state: &State) -> Option<Output> {
         // FIXME: Allow specifying the output per-device?
         None
+    }
+
+    fn is_trackpoint(&self) -> bool {
+        if let Some(udev_device) = unsafe { self.udev_device() } {
+            udev_device.property_value("ID_INPUT_POINTINGSTICK").is_some()
+        } else {
+            false
+        }
     }
 }
 
