@@ -358,6 +358,8 @@ Actions for taking screenshots.
 
 The screenshot is both stored to the clipboard and saved to disk, according to the [`screenshot-path` option](./Configuration:-Miscellaneous.md#screenshot-path).
 
+You can disable the notification shown after taking a screenshot with the [`screenshot-notification` option](./Configuration:-Miscellaneous.md#screenshot-notification).
+
 <sup>Since: 25.02</sup> You can disable saving to disk for a specific bind with the `write-to-disk=false` property:
 
 ```kdl
