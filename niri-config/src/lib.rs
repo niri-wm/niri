@@ -825,7 +825,7 @@ mod tests {
                     fixed 1280
                 }
 
-                default-column-width { proportion 0.25; }
+                default-column-width maximize=true { proportion 0.25; }
 
                 gaps 8
 
@@ -1462,11 +1462,14 @@ mod tests {
                         1280,
                     ),
                 ],
-                default_column_width: Some(
-                    Proportion(
-                        0.25,
+                default_column_width: DefaultColumnWidth {
+                    size: Some(
+                        Proportion(
+                            0.25,
+                        ),
                     ),
-                ),
+                    maximize: true,
+                },
                 preset_window_heights: [
                     Proportion(
                         0.25,
