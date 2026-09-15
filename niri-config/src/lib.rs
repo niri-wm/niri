@@ -58,7 +58,7 @@ pub use crate::output::{Output, OutputName, Outputs, Position, Vrr};
 use crate::recent_windows::RecentWindowsPart;
 pub use crate::recent_windows::{MruDirection, MruFilter, MruPreviews, MruScope, RecentWindows};
 pub use crate::utils::FloatOrInt;
-use crate::utils::{Flag, MergeWith as _};
+use crate::utils::{expand_home_path, Flag, MergeWith as _};
 pub use crate::window_rule::{
     FloatingPosition, OnXdgActivate, PopupsRule, RelativeTo, ResolvedPopupsRules, WindowRule,
 };
@@ -117,8 +117,12 @@ pub enum ConfigPath {
 struct BasePath(PathBuf);
 struct RootBase(PathBuf);
 struct Recursion(u8);
+
+// TODO: This is currently used to track all the files that needed to be watched. The name
+// `Includes` is not really correct and should be renamed in the future.
 #[derive(Default)]
 struct Includes(Vec<PathBuf>);
+
 #[derive(Default)]
 struct IncludeErrors(Vec<knuffel::Error>);
 // Used for recursive include detection.
@@ -303,8 +307,6 @@ where
                             "additional argument for include path is required",
                         )
                     })?;
-                    let path: PathBuf = knuffel::traits::DecodeScalar::decode(path_val, ctx)?;
-
                     // Check for extra arguments
                     if let Some(val) = iter_args.next() {
                         ctx.emit_error(DecodeError::unexpected(
@@ -344,20 +346,12 @@ where
                     // least confusing error messages while still allowing to provide a span.
 
                     // Expand ~ into the home dir
-                    let path = if let Ok(rest) = path.strip_prefix("~") {
-                        let Some(home) = std::env::home_dir() else {
-                            ctx.emit_error(DecodeError::missing(
-                                node,
-                                format!("error retrieving home directory to expand {path:?}"),
-                            ));
-                            continue;
-                        };
-
-                        home.join(rest)
-                    } else {
-                        // Otherwise, use the current include base dir
-                        let base = ctx.get::<BasePath>().unwrap();
-                        base.0.join(path)
+                    let Some(path) = expand_home_path(
+                        knuffel::traits::DecodeScalar::decode(path_val, ctx)?,
+                        node,
+                        ctx,
+                    ) else {
+                        continue;
                     };
 
                     let recursion = ctx.get::<Recursion>().unwrap().0 + 1;
