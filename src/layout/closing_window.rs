@@ -47,6 +47,9 @@ pub struct ClosingWindow {
     /// Position in the workspace.
     pos: Point<f64, Logical>,
 
+    /// Horizontal movement synchronized with a layout change.
+    move_x: Option<Animation>,
+
     /// How much the texture should be offset.
     buffer_offset: Point<f64, Logical>,
 
@@ -149,6 +152,7 @@ impl ClosingWindow {
             block_out_from: snapshot.block_out_from,
             geo_size,
             pos,
+            move_x: None,
             buffer_offset,
             buffer_with_blocked_out_bg_offset,
             blocked_out_buffer_offset,
@@ -174,6 +178,17 @@ impl ClosingWindow {
             AnimationState::Waiting { .. } => true,
             AnimationState::Animating(anim) => !anim.is_done(),
         }
+    }
+
+    pub(super) fn set_move_x_animation(&mut self, animation: Animation) {
+        self.move_x = Some(animation);
+    }
+
+    pub(super) fn position_in_view(&self, view_x: f64) -> Point<f64, Logical> {
+        let mut pos = self.pos;
+        pos.x += self.move_x.as_ref().map_or(0., Animation::value);
+        pos.x -= view_x;
+        pos
     }
 
     pub fn render(
@@ -207,8 +222,7 @@ impl ClosingWindow {
                 let elem = PrimaryGpuTextureRenderElement(elem);
                 let elem = RescaleRenderElement::from_element(elem, Point::from((0, 0)), 1.);
 
-                let mut location = self.pos + offset;
-                location.x -= view_rect.loc.x;
+                let location = self.position_in_view(view_rect.loc.x) + offset;
                 let elem = RelocateRenderElement::from_element(
                     elem,
                     location.to_physical_precise_round(scale),
@@ -232,7 +246,7 @@ impl ClosingWindow {
 
             // Round to physical pixels relative to the view position. This is similar to what
             // happens when rendering normal windows.
-            let relative = self.pos - view_rect.loc;
+            let relative = self.position_in_view(view_rect.loc.x);
             let pos = view_rect.loc + relative.to_physical_precise_round(scale).to_logical(scale);
 
             let geo_loc = Vec2::new(pos.x as f32, pos.y as f32);
@@ -289,8 +303,7 @@ impl ClosingWindow {
             ((1. - clamped_progress) / 5. + 0.8).max(0.),
         );
 
-        let mut location = self.pos + offset;
-        location.x -= view_rect.loc.x;
+        let location = self.position_in_view(view_rect.loc.x) + offset;
         let elem = RelocateRenderElement::from_element(
             elem,
             location.to_physical_precise_round(scale),
