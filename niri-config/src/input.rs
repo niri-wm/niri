@@ -205,6 +205,8 @@ pub struct Touchpad {
     pub accel_speed: FloatOrInt<-1, 1>,
     #[knuffel(child, unwrap(argument, str))]
     pub accel_profile: Option<AccelProfile>,
+    #[knuffel(child, unwrap(argument))]
+    pub sensitivity: Option<FloatOrInt<0, 100>>,
     #[knuffel(child, unwrap(argument, str))]
     pub scroll_method: Option<ScrollMethod>,
     #[knuffel(child, unwrap(argument))]
@@ -233,6 +235,8 @@ pub struct Mouse {
     pub accel_speed: FloatOrInt<-1, 1>,
     #[knuffel(child, unwrap(argument, str))]
     pub accel_profile: Option<AccelProfile>,
+    #[knuffel(child, unwrap(argument))]
+    pub sensitivity: Option<FloatOrInt<0, 100>>,
     #[knuffel(child, unwrap(argument, str))]
     pub scroll_method: Option<ScrollMethod>,
     #[knuffel(child, unwrap(argument))]
@@ -257,6 +261,8 @@ pub struct Trackpoint {
     pub accel_speed: FloatOrInt<-1, 1>,
     #[knuffel(child, unwrap(argument, str))]
     pub accel_profile: Option<AccelProfile>,
+    #[knuffel(child, unwrap(argument))]
+    pub sensitivity: Option<FloatOrInt<0, 100>>,
     #[knuffel(child, unwrap(argument, str))]
     pub scroll_method: Option<ScrollMethod>,
     #[knuffel(child, unwrap(argument))]
@@ -279,6 +285,8 @@ pub struct Trackball {
     pub accel_speed: FloatOrInt<-1, 1>,
     #[knuffel(child, unwrap(argument, str))]
     pub accel_profile: Option<AccelProfile>,
+    #[knuffel(child, unwrap(argument))]
+    pub sensitivity: Option<FloatOrInt<0, 100>>,
     #[knuffel(child, unwrap(argument, str))]
     pub scroll_method: Option<ScrollMethod>,
     #[knuffel(child, unwrap(argument))]
@@ -564,6 +572,23 @@ mod tests {
             },
         )
         "#);
+    }
+
+    #[test]
+    fn parse_sensitivity() {
+        let parsed = do_parse(
+            r#"
+            mouse {
+                sensitivity 2.5
+            }
+            touchpad {
+                sensitivity 0.5
+            }
+            "#,
+        );
+
+        assert_eq!(parsed.mouse.sensitivity.unwrap().0, 2.5);
+        assert_eq!(parsed.touchpad.sensitivity.unwrap().0, 0.5);
     }
 
     #[test]
