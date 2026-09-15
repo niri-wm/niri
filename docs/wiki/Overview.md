@@ -54,6 +54,33 @@ overview {
 }
 ```
 
+### Dynamic Zoom
+
+You can dynamically adjust the zoom level while in the overview by cycling through preset values.
+This lets you zoom in to focus on specific workspaces, or zoom out to get a broader view.
+
+The zoom actions can also automatically open and close the overview:
+`overview-zoom-out` and `overview-zoom-cycle` will auto-open the overview if it is closed, and `overview-zoom-in` will auto-close the overview when zoomed in past the highest preset.
+This means you only need two binds (zoom-in and zoom-out) to fully control overview and zoom.
+
+Zoom changes are animated smoothly and reset to the config default when the overview closes.
+You can configure the animation in the [`animations` section](./Configuration:-Animations.md#overview-zoom).
+
+```kdl
+overview {
+    zoom 0.5
+
+    // Optional: preset levels for cycling
+    zoom-presets 0.5 0.25 0.1
+}
+
+binds {
+    // Scroll to zoom in/out — also opens/closes the overview
+    Mod+WheelScrollUp   cooldown-ms=150 { overview-zoom-in; }
+    Mod+WheelScrollDown cooldown-ms=150 { overview-zoom-out; }
+}
+```
+
 To change the color behind the workspaces, use the `backdrop-color` setting:
 
 ```kdl
