@@ -67,6 +67,11 @@ input {
     // Focus windows and outputs automatically when moving the mouse into them.
     // Setting max-scroll-amount="0%" makes it work only on windows already fully on screen.
     // focus-follows-mouse max-scroll-amount="0%"
+
+    // Automatically raise floating windows when they receive focus.
+    // The delay (in milliseconds) lets you move the mouse across windows
+    // without raising them; set to 0 for immediate raise.
+    // auto-raise-on-focus delay-ms=300
 }
 
 // You can configure outputs by their name, which you can find
