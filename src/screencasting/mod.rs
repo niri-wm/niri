@@ -154,7 +154,7 @@ impl State {
             CastTarget::Nothing => {
                 self.backend.with_primary_renderer(|renderer| {
                     if cast.dequeue_buffer_and_clear(renderer) {
-                        cast.last_frame_time = get_monotonic_time();
+                        cast.record_frame_time(get_monotonic_time());
                     }
                 });
                 return;
@@ -243,7 +243,7 @@ impl State {
                     bbox.size,
                     scale,
                 ) {
-                    cast.last_frame_time = get_monotonic_time();
+                    cast.record_frame_time(get_monotonic_time());
                 }
             });
 
@@ -541,6 +541,10 @@ impl Niri {
     ) {
         let _span = tracy_client::span!("Niri::render_for_screen_cast");
 
+        // A nested backend may have blocked on submission since predicting presentation.
+        // Keep future predictions, but use the same non-stale time for pacing and recording.
+        let target_presentation_time = target_presentation_time.max(get_monotonic_time());
+
         let weak = output.downgrade();
         let size = output.current_mode().unwrap().size;
         let transform = output.current_transform();
@@ -611,7 +615,7 @@ impl Niri {
             let cursor_data = cursor_data.as_ref().unwrap();
 
             if cast.dequeue_buffer_and_render(renderer, &elements, cursor_data, size, scale) {
-                cast.last_frame_time = target_presentation_time;
+                cast.record_frame_time(target_presentation_time);
             }
         }
         self.casting.casts = casts;
@@ -628,6 +632,8 @@ impl Niri {
         target_presentation_time: Duration,
     ) {
         let _span = tracy_client::span!("Niri::render_windows_for_screen_cast");
+
+        let target_presentation_time = target_presentation_time.max(get_monotonic_time());
 
         let scale = Scale::from(output.current_scale().fractional_scale());
 
@@ -696,7 +702,7 @@ impl Niri {
             let cursor_data = CursorData::compute(&elements, main_start, pointer_location, scale);
 
             if cast.dequeue_buffer_and_render(renderer, &elements, &cursor_data, bbox.size, scale) {
-                cast.last_frame_time = target_presentation_time;
+                cast.record_frame_time(target_presentation_time);
             }
         }
         self.casting.casts = casts;
