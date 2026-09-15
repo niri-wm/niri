@@ -120,7 +120,7 @@ use wayland_server::protocol::wl_output::WlOutput;
 
 #[cfg(feature = "dbus")]
 use crate::a11y::A11y;
-use crate::animation::Clock;
+use crate::animation::{Animation, Clock};
 use crate::backend::tty::SurfaceDmabufFeedback;
 use crate::backend::{Backend, Headless, RenderResult, Tty, Winit};
 use crate::cursor::{CursorManager, CursorTextureCache, RenderCursor, XCursor};
@@ -162,6 +162,7 @@ use crate::protocols::screencopy::{Screencopy, ScreencopyBuffer, ScreencopyManag
 use crate::protocols::virtual_pointer::VirtualPointerManagerState;
 use crate::render_helpers::blur::BlurOptions;
 use crate::render_helpers::debug::push_opaque_regions;
+use crate::render_helpers::magnifier::MagnifierElement;
 use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
@@ -418,6 +419,13 @@ pub struct Niri {
 
     pub debug_draw_opaque_regions: bool,
     pub debug_draw_damage: bool,
+
+    pub magnifier: crate::render_helpers::magnifier::Magnifier,
+    pub magnifier_active: bool,
+    /// Target zoom level, as set by the user (e.g. via scrolling).
+    pub magnifier_zoom_target: f64,
+    /// Animation driving the actual rendered zoom level towards `magnifier_zoom_target`.
+    pub magnifier_zoom_anim: Animation,
 
     #[cfg(feature = "dbus")]
     pub dbus: Option<crate::dbus::DBusServers>,
@@ -2624,6 +2632,14 @@ impl Niri {
             )
             .unwrap();
 
+        let magnifier_zoom_target = config_.magnifier.zoom;
+        let magnifier_zoom_anim = Animation::new(
+            animation_clock.clone(),
+            magnifier_zoom_target,
+            magnifier_zoom_target,
+            0.,
+            config_.animations.magnifier_zoom.0,
+        );
         drop(config_);
         let mut niri = Self {
             config,
@@ -2758,6 +2774,11 @@ impl Niri {
 
             debug_draw_opaque_regions: false,
             debug_draw_damage: false,
+
+            magnifier: crate::render_helpers::magnifier::Magnifier::new(),
+            magnifier_active: false,
+            magnifier_zoom_target,
+            magnifier_zoom_anim,
 
             #[cfg(feature = "dbus")]
             dbus: None,
@@ -3839,15 +3860,33 @@ impl Niri {
         output: &Output,
         push: &mut dyn FnMut(PointerRenderElements<R>),
     ) {
+        self.render_pointer_at(renderer, output, None, push);
+    }
+
+    /// Like [`Self::render_pointer`], but if `pos_override` is given, draws the cursor at
+    /// that output-local logical position instead of the real pointer location.
+    ///
+    /// Used by the magnifier: it warps the framebuffer around the cursor, so the cursor
+    /// sprite (drawn separately, on top) needs the same warp applied to its position, or it
+    /// visually drifts away from the magnified content it's supposed to be pointing at.
+    pub fn render_pointer_at<R: NiriRenderer>(
+        &self,
+        renderer: &mut R,
+        output: &Output,
+        pos_override: Option<Point<f64, Logical>>,
+        push: &mut dyn FnMut(PointerRenderElements<R>),
+    ) {
         let _span = tracy_client::span!("Niri::render_pointer");
         let output_scale = output.current_scale();
         let output_pos = self.global_space.output_geometry(output).unwrap().loc;
 
         // Check whether we need to draw the tablet cursor or the regular cursor.
-        let pointer_pos = self
-            .tablet_cursor_location
-            .unwrap_or_else(|| self.seat.get_pointer().unwrap().current_location());
-        let pointer_pos = pointer_pos - output_pos.to_f64();
+        let pointer_pos = pos_override.unwrap_or_else(|| {
+            let pointer_pos = self
+                .tablet_cursor_location
+                .unwrap_or_else(|| self.seat.get_pointer().unwrap().current_location());
+            pointer_pos - output_pos.to_f64()
+        });
 
         // Get the render cursor to draw.
         let cursor_scale = output_scale.integer_scale();
@@ -4199,6 +4238,26 @@ impl Niri {
         }
     }
 
+    /// Sets a new target zoom level for the magnifier, animating towards it from whatever the
+    /// current (possibly still-animating) zoom level is.
+    pub fn set_magnifier_zoom_target(&mut self, target: f64) {
+        let config = self.config.borrow();
+        let target = target.clamp(1., config.magnifier.max_zoom);
+        self.magnifier_zoom_target = target;
+
+        let current = self.magnifier_zoom_anim.value();
+        self.magnifier_zoom_anim = Animation::new(
+            self.clock.clone(),
+            current,
+            target,
+            0.,
+            config.animations.magnifier_zoom.0,
+        );
+        drop(config);
+
+        self.magnifier.damage();
+    }
+
     pub fn advance_animations(&mut self) {
         let _span = tracy_client::span!("Niri::advance_animations");
 
@@ -4207,6 +4266,13 @@ impl Niri {
         self.exit_confirm_dialog.advance_animations();
         self.screenshot_ui.advance_animations();
         self.window_mru_ui.advance_animations();
+
+        if self.magnifier_active {
+            // Force a fresh capture every frame while the magnifier is active: the cursor
+            // can move and the scene behind it can change between frames, both of which
+            // invalidate the captured crop just as much as a zoom change would.
+            self.magnifier.damage();
+        }
 
         for state in self.output_state.values_mut() {
             if let Some(transition) = &mut state.screen_transition {
@@ -4358,9 +4424,72 @@ impl Niri {
             push
         };
 
+        // The magnifier, if active, goes above literally everything, including the pointer:
+        // it needs to be the very first thing pushed so that its capture_framebuffer() call
+        // (which grabs whatever the renderer already drew this frame) runs dead last, after
+        // every other element below has actually been drawn to the real framebuffer. Pushing
+        // elements is front-to-back (see "The pointer goes on the top" below, which pushes
+        // first to end up on top), and the renderer draws back-to-front, so "pushed first" is
+        // "drawn last" is "on top".
+        let mut hide_pointer_for_magnifier = false;
+        let mut magnifier_pointer_pos = None;
+
+        if self.magnifier_active {
+            if let Some(output_geo) = self.global_space.output_geometry(output) {
+                let mag = self.config.borrow().magnifier;
+                hide_pointer_for_magnifier = mag.hide_mouse;
+
+                let pointer_pos = self
+                    .tablet_cursor_location
+                    .unwrap_or_else(|| self.seat.get_pointer().unwrap().current_location());
+                let pointer_pos_logical = pointer_pos - output_geo.loc.to_f64();
+                let pointer_pos: Point<i32, Physical> =
+                    pointer_pos_logical.to_physical_precise_round(output_scale);
+
+                let output_size = output_geo.size.to_f64();
+
+                // A spring animation can overshoot its target, so clamp the rendered value in
+                // addition to the target itself: otherwise a bouncy magnifier-zoom spring
+                // could momentarily exceed the configured max-zoom.
+                let zoom = self.magnifier_zoom_anim.value().clamp(1., mag.max_zoom);
+
+                let geometry = Rectangle::from_size(output_size);
+
+                // The magnifier warps the framebuffer around the cursor (crops a small box
+                // centered on it, then scales that box up to fill `geometry`), so the cursor
+                // sprite, drawn separately below via `render_pointer_at`, needs the same warp
+                // applied to its position — otherwise it stays at its real screen location
+                // while the content it's pointing at moves out from under it. This mirrors
+                // the crop-rect math in magnifier.rs's capture_framebuffer exactly.
+                let dst: Rectangle<i32, Physical> =
+                    geometry.to_physical_precise_round(output_scale);
+                let output_size_phys: Size<i32, Physical> =
+                    output_size.to_physical_precise_round(output_scale);
+                let src_w = ((dst.size.w as f64) / zoom).round().max(1.) as i32;
+                let src_h = ((dst.size.h as f64) / zoom).round().max(1.) as i32;
+                let max_x = (output_size_phys.w - src_w).max(0);
+                let max_y = (output_size_phys.h - src_h).max(0);
+                let src_x = (pointer_pos.x - src_w / 2).clamp(0, max_x);
+                let src_y = (pointer_pos.y - src_h / 2).clamp(0, max_y);
+                let mapped_x = dst.loc.x as f64
+                    + (pointer_pos.x - src_x) as f64 / src_w as f64 * dst.size.w as f64;
+                let mapped_y = dst.loc.y as f64
+                    + (pointer_pos.y - src_y) as f64 / src_h as f64 * dst.size.h as f64;
+                magnifier_pointer_pos = Some(Point::from((
+                    mapped_x / output_scale.x,
+                    mapped_y / output_scale.y,
+                )));
+
+                let elem = self.magnifier.render(geometry, pointer_pos, zoom);
+                push(elem.into());
+            }
+        }
+
         // The pointer goes on the top.
-        if include_pointer && self.pointer_visibility.is_visible() {
-            self.render_pointer(ctx.renderer, output, &mut |elem| push(elem.into()));
+        if include_pointer && self.pointer_visibility.is_visible() && !hide_pointer_for_magnifier {
+            self.render_pointer_at(ctx.renderer, output, magnifier_pointer_pos, &mut |elem| {
+                push(elem.into())
+            });
         }
 
         // Next, the screen transition texture.
@@ -4752,6 +4881,8 @@ impl Niri {
             state.unfinished_animations_remain |= self.screenshot_ui.are_animations_ongoing();
             state.unfinished_animations_remain |= self.window_mru_ui.are_animations_ongoing();
             state.unfinished_animations_remain |= state.screen_transition.is_some();
+            state.unfinished_animations_remain |=
+                self.magnifier_active && !self.magnifier_zoom_anim.is_clamped_done();
 
             // Also keep redrawing if the current cursor is animated.
             state.unfinished_animations_remain |= self
@@ -7077,5 +7208,6 @@ niri_render_elements! {
         Texture = PrimaryGpuTextureRenderElement,
         // Used for the CPU-rendered panels.
         RelocatedMemoryBuffer = RelocateRenderElement<MemoryRenderBufferRenderElement<R>>,
+        Magnifier = MagnifierElement,
     }
 }
