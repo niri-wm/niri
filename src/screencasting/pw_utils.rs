@@ -50,7 +50,6 @@ use smithay::reexports::rustix::fd::OwnedFd;
 use smithay::reexports::rustix::fs::{
     fcntl_add_seals, ftruncate, memfd_create, MemfdFlags, SealFlags,
 };
-use smithay::reexports::rustix::mm::{mmap, munmap, MapFlags, ProtFlags};
 use smithay::utils::{DeviceFd, Logical, Physical, Point, Scale, Size, Transform};
 use zbus::object_server::SignalEmitter;
 
@@ -67,6 +66,9 @@ use crate::utils::{get_monotonic_time, CastSessionId, CastStreamId};
 const CAST_DELAY_ALLOWANCE: Duration = Duration::from_micros(100);
 const SHM_BLOCKS: usize = 1;
 const SHM_BYTES_PER_PIXEL: usize = 4;
+
+mod shm_mapping;
+use shm_mapping::ShmMapping;
 
 const CURSOR_FORMAT: spa_video_format = SPA_VIDEO_FORMAT_BGRA;
 const CURSOR_BPP: u32 = 4;
@@ -1620,6 +1622,7 @@ fn allocate_dmabuf(
 pub struct Shmbuf {
     fd: Rc<OwnedFd>,
     layout: ShmLayout,
+    mapping: Rc<ShmMapping>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1664,9 +1667,11 @@ fn allocate_shmbuf(size: Size<u32, Physical>) -> anyhow::Result<Shmbuf> {
     ftruncate(&fd, layout.size.into()).context("error setting size of the fd")?;
     fcntl_add_seals(&fd, SealFlags::SEAL | SealFlags::SHRINK | SealFlags::GROW)
         .context("error sealing the fd")?;
+    let mapping = Rc::new(ShmMapping::new(fd.as_fd(), layout.size_usize())?);
     Ok(Shmbuf {
         fd: fd.into(),
         layout,
+        mapping,
     })
 }
 
@@ -1899,44 +1904,11 @@ fn render_to_shmbuf(
         .map_texture(&mapping)
         .context("error mapping texture")?;
 
-    unsafe {
-        let buf = mmap(
-            std::ptr::null_mut(),
-            buffer.layout.size_usize(),
-            ProtFlags::READ | ProtFlags::WRITE,
-            MapFlags::SHARED,
-            buffer.fd.clone(),
-            0,
-        )?;
-        {
-            let buf = slice::from_raw_parts_mut(buf.cast::<u8>(), buffer.layout.size_usize());
-            buf.copy_from_slice(bytes);
-        }
-        if let Err(err) = munmap(buf, buffer.layout.size_usize()) {
-            warn!("error unmapping shm buffer: {err:?}");
-        }
-    }
-    Ok(())
+    buffer.mapping.copy_frame(bytes)
 }
 
 fn clear_shmbuf(buffer: &Shmbuf) -> anyhow::Result<()> {
-    unsafe {
-        let buf = mmap(
-            std::ptr::null_mut(),
-            buffer.layout.size_usize(),
-            ProtFlags::READ | ProtFlags::WRITE,
-            MapFlags::SHARED,
-            buffer.fd.clone(),
-            0,
-        )?;
-        {
-            let buf = slice::from_raw_parts_mut(buf.cast::<u8>(), buffer.layout.size_usize());
-            buf.fill(0);
-        }
-        if let Err(err) = munmap(buf, buffer.layout.size_usize()) {
-            warn!("error unmapping shm buffer: {err:?}");
-        }
-    }
+    buffer.mapping.clear();
     Ok(())
 }
 
@@ -1952,5 +1924,35 @@ mod tests {
 
         assert!(ShmLayout::new(Size::from((536_870_912, 1))).is_err());
         assert!(ShmLayout::new(Size::from((500_000_000, 3))).is_err());
+    }
+
+    #[test]
+    fn shm_mapping_survives_buffer_clones_and_rejects_invalid_copies() {
+        use std::os::unix::fs::FileExt;
+
+        let buffer = allocate_shmbuf(Size::from((4, 2))).unwrap();
+        let cloned = buffer.clone();
+        assert!(Rc::ptr_eq(&buffer.mapping, &cloned.mapping));
+        let file = std::fs::File::from(buffer.fd.try_clone().unwrap());
+        let mapping = Rc::downgrade(&buffer.mapping);
+        drop(buffer);
+
+        for value in [3, 7] {
+            cloned.mapping.copy_frame(&[value; 32]).unwrap();
+            for len in [0, 31, 33] {
+                assert!(cloned.mapping.copy_frame(&[0; 33][..len]).is_err());
+            }
+            let mut bytes = [0; 32];
+            file.read_exact_at(&mut bytes, 0).unwrap();
+            assert_eq!(bytes, [value; 32]);
+        }
+        assert!(ftruncate(&*cloned.fd, 0).is_err());
+        assert!(ftruncate(&*cloned.fd, 64).is_err());
+        clear_shmbuf(&cloned).unwrap();
+        let mut bytes = [1; 32];
+        file.read_exact_at(&mut bytes, 0).unwrap();
+        assert_eq!(bytes, [0; 32]);
+        drop(cloned);
+        assert!(mapping.upgrade().is_none());
     }
 }
