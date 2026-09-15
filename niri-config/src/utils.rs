@@ -1,11 +1,16 @@
+use std::env::home_dir;
+use std::path::PathBuf;
 use std::str::FromStr;
 
+use knuffel::ast::SpannedNode;
 use knuffel::errors::DecodeError;
 use miette::miette;
 use regex::Regex;
 
 mod merge_with;
 pub use merge_with::*;
+
+use crate::BasePath;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Percent(pub f64);
@@ -204,4 +209,24 @@ pub fn parse_arg_node<S: knuffel::traits::ErrorSpan, T: knuffel::traits::DecodeS
     }
 
     Ok(value)
+}
+
+pub fn expand_home_path<S: knuffel::traits::ErrorSpan>(
+    path: PathBuf,
+    spanned: &SpannedNode<S>,
+    ctx: &mut knuffel::decode::Context<S>,
+) -> Option<PathBuf> {
+    if let Ok(rest) = path.strip_prefix("~") {
+        let Some(home) = home_dir() else {
+            ctx.emit_error(DecodeError::missing(
+                spanned,
+                format!("error retrieving home directory to expand {:?}", path),
+            ));
+            return None;
+        };
+        home.join(rest).into()
+    } else {
+        let base = ctx.get::<BasePath>().unwrap();
+        base.0.join(path).into()
+    }
 }

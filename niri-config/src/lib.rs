@@ -117,8 +117,12 @@ pub enum ConfigPath {
 struct BasePath(PathBuf);
 struct RootBase(PathBuf);
 struct Recursion(u8);
+
+// TODO: This is currently used to track all the files that needed to be watched. The name
+// `Includes` is not really correct and should be renamed in the future.
 #[derive(Default)]
 struct Includes(Vec<PathBuf>);
+
 #[derive(Default)]
 struct IncludeErrors(Vec<knuffel::Error>);
 // Used for recursive include detection.
