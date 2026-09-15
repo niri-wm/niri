@@ -317,25 +317,37 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
                             let anchor = surface.cached_state().anchor;
                             let mut values = Vec::with_capacity(4);
                             if anchor.contains(Anchor::TOP) {
-                                values.push(String::from("top"));
+                                values.push("top")
                             }
                             if anchor.contains(Anchor::BOTTOM) {
-                                values.push(String::from("bottom"));
+                                values.push("bottom");
                             }
                             if anchor.contains(Anchor::LEFT) {
-                                values.push(String::from("left"));
+                                values.push("left");
                             }
                             if anchor.contains(Anchor::RIGHT) {
-                                values.push(String::from("right"));
+                                values.push("right");
                             }
                             values
+                                .iter()
+                                .map(|s| match *s {
+                                    "top" => niri_ipc::LayerSurfaceAnchor::Top,
+                                    "bottom" => niri_ipc::LayerSurfaceAnchor::Bottom,
+                                    "left" => niri_ipc::LayerSurfaceAnchor::Left,
+                                    "right" => niri_ipc::LayerSurfaceAnchor::Right,
+                                    _ => unreachable!(),
+                                })
+                                .collect()
                         };
                         let anchor_sides = surface.cached_state().anchor.bits().count_ones() as u8;
                         let exclusive_zone = match surface.cached_state().exclusive_zone {
                             ExclusiveZone::Exclusive(_) => {
                                 niri_ipc::LayerSurfaceExclusiveZone::Exclusive
                             }
-                            _ => niri_ipc::LayerSurfaceExclusiveZone::Neutral,
+                            ExclusiveZone::Neutral => niri_ipc::LayerSurfaceExclusiveZone::Neutral,
+                            ExclusiveZone::DontCare => {
+                                niri_ipc::LayerSurfaceExclusiveZone::DontCare
+                            }
                         };
 
                         layers.push(niri_ipc::LayerSurface {

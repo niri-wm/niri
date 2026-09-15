@@ -1521,6 +1521,22 @@ pub enum LayerSurfaceExclusiveZone {
     Exclusive,
     /// Surface does not reserve screen space.
     Neutral,
+    /// Surface does not care about exclusive zone.
+    DontCare,
+}
+
+/// Anchors for a layer-shell surface.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum LayerSurfaceAnchor {
+    /// Anchored to the top of the output.
+    Top,
+    /// Anchored to the bottom of the output.
+    Bottom,
+    /// Anchored to the left of the output.
+    Left,
+    /// Anchored to the right of the output.
+    Right,
 }
 
 /// A layer-shell surface.
@@ -1534,9 +1550,7 @@ pub struct LayerSurface {
     /// Layer that the surface is on.
     pub layer: Layer,
     /// Anchors for this surface.
-    ///
-    /// Values are one or more of: `"top"`, `"bottom"`, `"left"`, `"right"`.
-    pub anchors: Vec<String>,
+    pub anchors: Vec<LayerSurfaceAnchor>,
     /// Number of anchored sides, between 0 and 4.
     pub anchor_sides: u8,
     /// The surface's exclusive zone mode.

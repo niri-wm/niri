@@ -7,7 +7,8 @@ use anyhow::{anyhow, bail, Context};
 use niri_config::OutputName;
 use niri_ipc::socket::Socket;
 use niri_ipc::{
-    Action, Cast, CastKind, CastTarget, Event, KeyboardLayouts, LogicalOutput, Mode, Output,
+    Action, Cast, CastKind, CastTarget, Event, KeyboardLayouts, LayerSurface, LayerSurfaceAnchor,
+    LayerSurfaceExclusiveZone, LayerSurfaceKeyboardInteractivity, LogicalOutput, Mode, Output,
     OutputConfigChanged, Overview, Request, Response, Transform, Window, WindowLayout,
 };
 use serde_json::json;
@@ -234,23 +235,38 @@ pub fn handle_msg(mut msg: Msg, json: bool, print_request: bool) -> anyhow::Resu
             });
             let mut iter = layers.iter().peekable();
 
-            let print = |surface: &niri_ipc::LayerSurface| {
+            let print = |surface: &LayerSurface| {
                 println!("    Surface:");
                 println!("      Namespace: \"{}\"", surface.namespace);
 
                 let interactivity = match surface.keyboard_interactivity {
-                    niri_ipc::LayerSurfaceKeyboardInteractivity::None => "none",
-                    niri_ipc::LayerSurfaceKeyboardInteractivity::Exclusive => "exclusive",
-                    niri_ipc::LayerSurfaceKeyboardInteractivity::OnDemand => "on-demand",
+                    LayerSurfaceKeyboardInteractivity::None => "none",
+                    LayerSurfaceKeyboardInteractivity::Exclusive => "exclusive",
+                    LayerSurfaceKeyboardInteractivity::OnDemand => "on-demand",
                 };
                 let exclusive_zone = match surface.exclusive_zone {
-                    niri_ipc::LayerSurfaceExclusiveZone::Exclusive => "exclusive",
-                    niri_ipc::LayerSurfaceExclusiveZone::Neutral => "neutral",
+                    LayerSurfaceExclusiveZone::Exclusive => "exclusive",
+                    LayerSurfaceExclusiveZone::Neutral => "neutral",
+                    LayerSurfaceExclusiveZone::DontCare => "don't-care",
                 };
                 let anchors = if surface.anchors.is_empty() {
                     String::from("none")
                 } else {
-                    surface.anchors.join(",")
+                    surface
+                        .anchors
+                        .iter()
+                        .fold(String::new(), |mut acc, anchor| {
+                            if !acc.is_empty() {
+                                acc.push_str(", ");
+                            }
+                            acc.push_str(match anchor {
+                                LayerSurfaceAnchor::Top => "top",
+                                LayerSurfaceAnchor::Bottom => "bottom",
+                                LayerSurfaceAnchor::Left => "left",
+                                LayerSurfaceAnchor::Right => "right",
+                            });
+                            acc
+                        })
                 };
                 println!("      Anchors: {anchors}");
                 println!("      Anchor sides: {}", surface.anchor_sides);
