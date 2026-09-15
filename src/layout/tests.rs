@@ -1129,7 +1129,9 @@ impl Op {
             Op::FocusWindowUpOrColumnRight => layout.focus_up_or_right(),
             Op::FocusWindowOrWorkspaceDown => layout.focus_window_or_workspace_down(),
             Op::FocusWindowOrWorkspaceUp => layout.focus_window_or_workspace_up(),
-            Op::FocusWindow(id) => layout.activate_window(&id),
+            Op::FocusWindow(id) => {
+                layout.activate_window(&id);
+            }
             Op::FocusWindowInColumn(index) => layout.focus_window_in_column(index),
             Op::FocusWindowTop => layout.focus_window_top(),
             Op::FocusWindowBottom => layout.focus_window_bottom(),
