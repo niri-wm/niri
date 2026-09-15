@@ -2396,6 +2396,29 @@ impl<W: LayoutElement> Layout<W> {
         compute_overview_zoom(&self.options, progress)
     }
 
+    /// Current on-screen rectangle of the given window relative to its output, and that output.
+    ///
+    /// Add the output's global location to get global coordinates.
+    pub fn window_rect(&self, window: &W::Id) -> Option<(&Output, Rectangle<f64, Logical>)> {
+        let zoom = self.overview_zoom();
+        self.monitors().find_map(|mon| {
+            mon.workspaces_with_render_geo_cull(false)
+                .find(|(ws, _)| ws.has_window(window))
+                .and_then(|(ws, ws_geo)| {
+                    let (tile, offset, _) = ws
+                        .tiles_with_render_positions()
+                        .find(|(tile, _, _)| tile.window().id() == window)?;
+                    Some((
+                        mon.output(),
+                        Rectangle::new(
+                            ws_geo.loc + (offset + tile.window_loc()).upscale(zoom),
+                            tile.window_size().upscale(zoom),
+                        ),
+                    ))
+                })
+        })
+    }
+
     #[cfg(test)]
     fn verify_invariants(&self) {
         use std::collections::HashSet;

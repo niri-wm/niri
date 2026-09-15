@@ -128,6 +128,9 @@ pub struct ResolvedWindowRules {
 
     /// Rules for this window's popups.
     pub popups: ResolvedPopupsRules,
+
+    /// Whether to lock the cursor inside this window while it is focused.
+    pub lock_cursor_when_focused: Option<bool>,
 }
 
 impl<'a> WindowRef<'a> {
@@ -308,6 +311,9 @@ impl ResolvedWindowRules {
                 }
                 if let Some(x) = rule.tiled_state {
                     resolved.tiled_state = Some(x);
+                }
+                if let Some(x) = rule.lock_cursor_when_focused {
+                    resolved.lock_cursor_when_focused = Some(x);
                 }
 
                 resolved

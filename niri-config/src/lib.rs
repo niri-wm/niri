@@ -1910,6 +1910,7 @@ mod tests {
                     ),
                     scroll_factor: None,
                     tiled_state: None,
+                    lock_cursor_when_focused: None,
                     background_effect: BackgroundEffectRule {
                         xray: None,
                         blur: None,
