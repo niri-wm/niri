@@ -412,6 +412,7 @@ pub struct Niri {
 
     pub window_mru_ui: WindowMruUi,
     pub pending_mru_commit: Option<PendingMruCommit>,
+    pub mru_nav_anchor: Option<MappedId>,
 
     pub pick_window: Option<async_channel::Sender<Option<MappedId>>>,
     pub pick_color: Option<async_channel::Sender<Option<niri_ipc::PickedColor>>>,
@@ -649,7 +650,7 @@ impl CastTarget {
 #[derive(Debug)]
 pub struct PendingMruCommit {
     id: MappedId,
-    token: RegistrationToken,
+    token: Option<RegistrationToken>,
     stamp: Duration,
 }
 
@@ -1404,8 +1405,25 @@ impl State {
                     let debounce = self.niri.config.borrow().recent_windows.debounce_ms;
                     let debounce = Duration::from_millis(u64::from(debounce));
 
+                    // Prevent debounce from firing if we are using commit-on-modifier-release.
+                    let in_nav_session = self.niri.mru_nav_anchor.is_some();
+
                     if mapped.get_focus_timestamp().is_none() || debounce.is_zero() {
                         mapped.set_focus_timestamp(stamp);
+                    } else if in_nav_session {
+                        // Don't commit, but rather replace the pending window, and clear
+                        // an existing timer
+                        if let Some(PendingMruCommit { token, .. }) =
+                            self.niri.pending_mru_commit.replace(PendingMruCommit {
+                                id: mapped.id(),
+                                token: None,
+                                stamp,
+                            })
+                        {
+                            if let Some(token) = token {
+                                self.niri.event_loop.remove(token);
+                            }
+                        }
                     } else {
                         let timer = Timer::from_duration(debounce);
 
@@ -1420,11 +1438,13 @@ impl State {
                         if let Some(PendingMruCommit { token, .. }) =
                             self.niri.pending_mru_commit.replace(PendingMruCommit {
                                 id: mapped.id(),
-                                token: focus_token,
+                                token: Some(focus_token),
                                 stamp,
                             })
                         {
-                            self.niri.event_loop.remove(token);
+                            if let Some(token) = token {
+                                self.niri.event_loop.remove(token);
+                            }
                         }
                     }
                 }
@@ -2752,6 +2772,7 @@ impl Niri {
 
             window_mru_ui,
             pending_mru_commit: None,
+            mru_nav_anchor: None,
 
             pick_window: None,
             pick_color: None,
@@ -6991,7 +7012,9 @@ impl Niri {
         let Some(pending) = self.pending_mru_commit.take() else {
             return;
         };
-        self.event_loop.remove(pending.token);
+        if let Some(token) = pending.token {
+            self.event_loop.remove(token);
+        }
 
         if let Some(window) = self
             .layout
@@ -7000,6 +7023,46 @@ impl Niri {
             .find(|w| w.id() == pending.id)
         {
             window.set_focus_timestamp(pending.stamp);
+        }
+    }
+
+    /// Complete a modifier-held keyboard navigation session.
+    ///
+    /// Commits the pending destination window (if any), then explicitly makes the window that
+    /// was focused when the session began (`mru_nav_anchor`) rank as "previous" by giving it a
+    /// timestamp just behind the destination's — regardless of how many windows were passed
+    /// through in between, or which bind/feature was used to move between them.
+    pub fn mru_nav_commit_anchor(&mut self) {
+        let Some(anchor) = self.mru_nav_anchor.take() else {
+            return;
+        };
+
+        self.mru_apply_keyboard_commit();
+
+        let Some(dest) = self.layout.focus().map(|mapped| mapped.id()) else {
+            return;
+        };
+        if dest == anchor {
+            return;
+        }
+
+        let Some(dest_stamp) = self
+            .layout
+            .focus()
+            .and_then(|mapped| mapped.get_focus_timestamp())
+        else {
+            return;
+        };
+        let anchor_stamp = dest_stamp.saturating_sub(Duration::from_millis(1));
+
+        if let Some(window) = self
+            .layout
+            .workspaces_mut()
+            .flat_map(|ws| ws.windows_mut())
+            .find(|w| w.id() == anchor)
+        {
+            // Mark the anchor as the previous window accessed
+            window.set_focus_timestamp(anchor_stamp);
         }
     }
 

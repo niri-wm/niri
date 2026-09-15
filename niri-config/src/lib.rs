@@ -2330,6 +2330,7 @@ mod tests {
             recent_windows: RecentWindows {
                 on: false,
                 debounce_ms: 750,
+                commit_on_modifier_release: false,
                 open_delay_ms: 150,
                 highlight: MruHighlight {
                     active_color: Color {
