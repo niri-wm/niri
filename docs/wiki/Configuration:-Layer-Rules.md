@@ -58,6 +58,17 @@ layer-rule {
             saturation 3
         }
     }
+
+    animations {
+        layer-open {
+            duration-ms 150
+            curve "ease-out-expo"
+        }
+        layer-close {
+            duration-ms 150
+            curve "ease-out-quad"
+        }
+    }
 }
 ```
 
@@ -353,3 +364,51 @@ layer-rule {
 
 Keep in mind that the background effect will look right only if the pop-up is shaped like a (rounded) rectangle, and the layer surface correctly sets its Wayland geometry to exclude any shadows.
 Pop-ups with custom shapes will need the app to implement the [ext-background-effect protocol](https://wayland.app/protocols/ext-background-effect-v1) to work properly.
+
+#### `animations`
+
+<sup>Since: 26.04</sup>
+
+Override the open and close animations for matching layer surfaces.
+
+The `layer-open` and `layer-close` blocks accept the same parameters as the corresponding global [`animations` settings](./Configuration:-Animations.md#layer-open), including easing curves, springs, and custom shaders.
+See the [animations page](./Configuration:-Animations.md) for details on animation types and custom shaders.
+
+```kdl
+// Customize the open/close animations for fuzzel.
+layer-rule {
+    match namespace="^launcher$"
+
+    animations {
+        layer-open {
+            duration-ms 200
+            curve "ease-out-expo"
+        }
+        layer-close {
+            duration-ms 150
+            curve "ease-out-quad"
+        }
+    }
+}
+```
+
+Custom shaders can also be set per-rule, using inline GLSL (KDL raw string):
+
+```kdl
+layer-rule {
+    match namespace="^launcher$"
+
+    animations {
+        layer-open {
+            duration-ms 250
+            curve "linear"
+
+            custom-shader r"
+                vec4 open_color(vec3 coords_geo, vec3 size_geo) {
+                    return niri_clamped_progress;
+                }
+            "
+        }
+    }
+}
+```
