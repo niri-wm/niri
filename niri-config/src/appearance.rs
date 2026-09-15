@@ -459,6 +459,7 @@ impl MergeWith<WorkspaceShadowPart> for WorkspaceShadow {
 pub struct TabIndicator {
     pub off: bool,
     pub hide_when_single_tab: bool,
+    pub scroll_to_switch_tabs: bool,
     pub place_within_column: bool,
     pub gap: f64,
     pub width: f64,
@@ -479,6 +480,7 @@ impl Default for TabIndicator {
         Self {
             off: false,
             hide_when_single_tab: false,
+            scroll_to_switch_tabs: false,
             place_within_column: false,
             gap: 5.,
             width: 4.,
@@ -508,6 +510,7 @@ impl MergeWith<TabIndicatorPart> for TabIndicator {
         merge!(
             (self, part),
             hide_when_single_tab,
+            scroll_to_switch_tabs,
             place_within_column,
             gap,
             width,
@@ -534,6 +537,8 @@ pub struct TabIndicatorPart {
     pub on: bool,
     #[knuffel(child)]
     pub hide_when_single_tab: Option<Flag>,
+    #[knuffel(child)]
+    pub scroll_to_switch_tabs: Option<Flag>,
     #[knuffel(child)]
     pub place_within_column: Option<Flag>,
     #[knuffel(child, unwrap(argument))]
