@@ -23,6 +23,7 @@ pub struct Input {
     pub workspace_auto_back_and_forth: bool,
     pub mod_key: Option<ModKey>,
     pub mod_key_nested: Option<ModKey>,
+    pub center_area_percentage: Option<CenterAreaPercentage>,
 }
 
 #[derive(knuffel::Decode, Debug, Default, PartialEq)]
@@ -53,6 +54,8 @@ pub struct InputPart {
     pub mod_key: Option<ModKey>,
     #[knuffel(child, unwrap(argument, str))]
     pub mod_key_nested: Option<ModKey>,
+    #[knuffel(child)]
+    pub center_area_percentage: Option<CenterAreaPercentage>,
 }
 
 impl MergeWith<InputPart> for Input {
@@ -80,6 +83,7 @@ impl MergeWith<InputPart> for Input {
             focus_follows_mouse,
             mod_key,
             mod_key_nested,
+            center_area_percentage,
         );
     }
 }
@@ -436,6 +440,42 @@ impl ModKey {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CenterSidePercent(pub f64);
+
+impl FromStr for CenterSidePercent {
+    type Err = miette::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let Some((value, empty)) = s.split_once('%') else {
+            return Err(miette!("value must end with '%'"));
+        };
+
+        if !empty.is_empty() {
+            return Err(miette!("trailing characters after '%' are not allowed"));
+        }
+
+        let value: f64 = value.parse().map_err(|_| miette!("error parsing value"))?;
+
+        if !(0.0..100.0).contains(&value) {
+            return Err(miette!(
+                "value must be between 0% (inclusive) and 100% (exclusive)"
+            ));
+        }
+        Ok(CenterSidePercent(value / 100.))
+    }
+}
+
+#[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq)]
+pub struct CenterAreaPercentage {
+    // using Option means a person can just have `center-percentage;`
+    // in their kdl file, which does nothing, so :( i guess
+    #[knuffel(property, str)]
+    pub width: Option<CenterSidePercent>,
+    #[knuffel(property, str)]
+    pub height: Option<CenterSidePercent>,
+}
+
 impl FromStr for ModKey {
     type Err = miette::Error;
 
@@ -745,5 +785,68 @@ mod tests {
             2.0,
         )
         ");
+    }
+
+    #[test]
+    fn parse_center_area_percentage() {
+        let parsed = do_parse(
+            r#"
+            center-area-percentage height="25%" width="25%"
+            "#,
+        );
+        assert_debug_snapshot!(parsed.center_area_percentage, @r#"
+        Some(
+            CenterAreaPercentage {
+                width: Some(
+                    CenterSidePercent(
+                        0.25,
+                    ),
+                ),
+                height: Some(
+                    CenterSidePercent(
+                        0.25,
+                    ),
+                ),
+            },
+        )
+        "#);
+        let parsed = do_parse(
+            r#"
+            center-area-percentage height="10%"
+            "#,
+        );
+        assert_debug_snapshot!(parsed.center_area_percentage, @r#"
+        Some(
+            CenterAreaPercentage {
+                width: None,
+                height: Some(
+                    CenterSidePercent(
+                        0.1,
+                    ),
+                ),
+            },
+        )
+        "#);
+        let parsed = do_parse(
+            r#"
+            center-area-percentage width="50%"
+            "#,
+        );
+        assert_debug_snapshot!(parsed.center_area_percentage, @r#"
+        Some(
+            CenterAreaPercentage {
+                width: Some(
+                    CenterSidePercent(
+                        0.5,
+                    ),
+                ),
+                height: None,
+            },
+        )
+        "#);
+        assert!("100%".parse::<CenterSidePercent>().is_err());
+        assert!("-1%".parse::<CenterSidePercent>().is_err());
+        assert!("50".parse::<CenterSidePercent>().is_err());
+        assert!("50%x".parse::<CenterSidePercent>().is_err());
     }
 }
