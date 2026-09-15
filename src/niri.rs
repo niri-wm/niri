@@ -6624,6 +6624,10 @@ impl Niri {
             return;
         }
 
+        if Some(&self.find_root_shell_surface(surface)) != self.keyboard_focus.surface() {
+            return;
+        }
+
         with_pointer_constraint(surface, &pointer, |constraint| {
             let Some(constraint) = constraint else { return };
 
