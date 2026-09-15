@@ -3568,7 +3568,7 @@ impl State {
             }
         }
 
-        if source == AxisSource::Finger {
+        if source == AxisSource::Finger || source == AxisSource::Continuous {
             if event.amount(Axis::Horizontal) == Some(0.0) {
                 frame = frame.stop(Axis::Horizontal);
             }
