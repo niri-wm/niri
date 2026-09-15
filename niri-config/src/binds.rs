@@ -7,7 +7,8 @@ use bitflags::bitflags;
 use knuffel::errors::DecodeError;
 use miette::miette;
 use niri_ipc::{
-    ColumnDisplay, LayoutSwitchTarget, PositionChange, SizeChange, WorkspaceReferenceArg,
+    ColumnDisplay, HorizontalAlignment, LayoutSwitchTarget, PositionChange, SizeChange,
+    VerticalAlignment, WorkspaceReferenceArg,
 };
 use smithay::input::keyboard::keysyms::KEY_NoSymbol;
 use smithay::input::keyboard::xkb::{keysym_from_name, KEYSYM_CASE_INSENSITIVE, KEYSYM_NO_FLAGS};
@@ -215,6 +216,14 @@ pub enum Action {
     CenterWindow,
     #[knuffel(skip)]
     CenterWindowById(u64),
+    AlignColumn(#[knuffel(property(name = "horizontal"), str)] Option<HorizontalAlignment>),
+    // bare `align-window` parses and means "reset this column's alignment".
+    AlignWindow(
+        #[knuffel(property(name = "horizontal"), str)] Option<HorizontalAlignment>,
+        #[knuffel(property(name = "vertical"), str)] Option<VerticalAlignment>,
+    ),
+    #[knuffel(skip)]
+    AlignWindowById(u64, Option<HorizontalAlignment>, Option<VerticalAlignment>),
     CenterVisibleColumns,
     FocusWorkspaceDown,
     #[knuffel(skip)]
@@ -506,6 +515,17 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::CenterColumn {} => Self::CenterColumn,
             niri_ipc::Action::CenterWindow { id: None } => Self::CenterWindow,
             niri_ipc::Action::CenterWindow { id: Some(id) } => Self::CenterWindowById(id),
+            niri_ipc::Action::AlignWindow {
+                id: None,
+                horizontal,
+                vertical,
+            } => Self::AlignWindow(horizontal, vertical),
+            niri_ipc::Action::AlignWindow {
+                id: Some(id),
+                horizontal,
+                vertical,
+            } => Self::AlignWindowById(id, horizontal, vertical),
+            niri_ipc::Action::AlignColumn { horizontal } => Self::AlignColumn(horizontal),
             niri_ipc::Action::CenterVisibleColumns {} => Self::CenterVisibleColumns,
             niri_ipc::Action::FocusWorkspaceDown {} => Self::FocusWorkspaceDown,
             niri_ipc::Action::FocusWorkspaceUp {} => Self::FocusWorkspaceUp,

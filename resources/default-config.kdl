@@ -577,6 +577,46 @@ binds {
     // Center all fully visible columns on screen.
     Mod+Ctrl+C { center-visible-columns; }
 
+    // Align the focused window or column to an edge or the center of the screen.
+    // On tiling, aligning a window aligns its column; vertical is ignored since
+    // columns are always full height. On floating, windows can also be aligned
+    // vertically, and align-column does nothing.
+    //
+    // Alignment is remembered per column until it is reset, replaced by another
+    // align action, interactively resized, or the column is closed.
+    // Omit the properties to reset to the default alignment.
+    //
+    // `center-column` is equivalent to `align-window horizontal="center" vertical="center"`.
+    // See also the `center-focused-column` and `always-center-single-column` layout options.
+    //
+    // In this example, the numpad forms a 3x3 grid matching the target position
+    // (NumLock OFF keysyms; with NumLock on, these keys produce KP_1..KP_9 digits, but they are not working
+    // since 2024):
+    // 7 8 9
+    // 4 5 6
+    // 1 2 3
+    //   0
+    // Horizontal and vertical are decoupled: Mod+KP_Up then Mod+KP_Left is the same as Mod+KP_Home.
+    //
+    // align-window actions:
+    //
+    // Mod+KP_Home { align-window horizontal="left" vertical="top"; }
+    // Mod+KP_Up { align-window horizontal="center" vertical="top"; }
+    // Mod+KP_Prior { align-window horizontal="right" vertical="top"; }
+    // Mod+KP_Left { align-window horizontal="left" vertical="center"; }
+    // Mod+KP_Begin { align-window horizontal="center" vertical="center"; }
+    // Mod+KP_Right { align-window horizontal="right" vertical="center"; }
+    // Mod+KP_End { align-window horizontal="left" vertical="bottom"; }
+    // Mod+KP_Down { align-window horizontal="center" vertical="bottom"; }
+    // Mod+KP_Next { align-window horizontal="right" vertical="bottom"; }
+    //
+    // align-column actions:
+    //
+    // Mod+Ctrl+KP_Left  { align-column horizontal="left"; }
+    // Mod+Ctrl+KP_Begin { align-column horizontal="center"; }
+    // Mod+Ctrl+KP_Right { align-column horizontal="right"; }
+    // Mod+Shift+KP_Insert { align-column; }
+
     // Finer width adjustments.
     // This command can also:
     // * set width in pixels: "1000"
