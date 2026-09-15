@@ -1513,6 +1513,32 @@ pub enum LayerSurfaceKeyboardInteractivity {
     OnDemand,
 }
 
+/// Exclusive zone mode for a layer-shell surface.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum LayerSurfaceExclusiveZone {
+    /// Surface reserves some screen space.
+    Exclusive,
+    /// Surface does not reserve screen space.
+    Neutral,
+    /// Surface does not care about exclusive zone.
+    DontCare,
+}
+
+/// Anchors for a layer-shell surface.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum LayerSurfaceAnchor {
+    /// Anchored to the top of the output.
+    Top,
+    /// Anchored to the bottom of the output.
+    Bottom,
+    /// Anchored to the left of the output.
+    Left,
+    /// Anchored to the right of the output.
+    Right,
+}
+
 /// A layer-shell surface.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
@@ -1523,6 +1549,12 @@ pub struct LayerSurface {
     pub output: String,
     /// Layer that the surface is on.
     pub layer: Layer,
+    /// Anchors for this surface.
+    pub anchors: Vec<LayerSurfaceAnchor>,
+    /// Number of anchored sides, between 0 and 4.
+    pub anchor_sides: u8,
+    /// The surface's exclusive zone mode.
+    pub exclusive_zone: LayerSurfaceExclusiveZone,
     /// The surface's keyboard interactivity mode.
     pub keyboard_interactivity: LayerSurfaceKeyboardInteractivity,
 }

@@ -1575,6 +1575,30 @@ mod tests {
                     },
                     custom_shader: None,
                 },
+                layer_open: LayerOpenAnim {
+                    anim: Animation {
+                        off: false,
+                        kind: Easing(
+                            EasingParams {
+                                duration_ms: 150,
+                                curve: EaseOutExpo,
+                            },
+                        ),
+                    },
+                    custom_shader: None,
+                },
+                layer_close: LayerCloseAnim {
+                    anim: Animation {
+                        off: false,
+                        kind: Easing(
+                            EasingParams {
+                                duration_ms: 150,
+                                curve: EaseOutQuad,
+                            },
+                        ),
+                    },
+                    custom_shader: None,
+                },
                 horizontal_view_movement: HorizontalViewMovementAnim(
                     Animation {
                         off: false,
@@ -1926,6 +1950,7 @@ mod tests {
                             saturation: None,
                         },
                     },
+                    animations: None,
                 },
             ],
             layer_rules: [
@@ -1941,6 +1966,10 @@ mod tests {
                             ),
                             at_startup: None,
                             layer: None,
+                            anchors: None,
+                            anchor_sides: None,
+                            exclusive_zone: None,
+                            keyboard_interactivity: None,
                         },
                     ],
                     excludes: [],
@@ -1977,6 +2006,7 @@ mod tests {
                             saturation: None,
                         },
                     },
+                    animations: None,
                 },
             ],
             binds: Binds(
@@ -2470,6 +2500,7 @@ mod tests {
         // Some notable omissions: the default config has some window rules, and an empty config
         // will not have any binds. Clear them out so they don't spam the diff.
         default_config.window_rules.clear();
+        default_config.layer_rules.clear();
         default_config.binds.0.clear();
 
         assert_snapshot!(

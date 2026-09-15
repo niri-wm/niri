@@ -346,6 +346,66 @@ window-rule {
     clip-to-geometry true
 }
 
+// Layer rules let you adjust behavior for layer shell windows, like quickshell.
+// Find more information on the wiki:
+// https://niri-wm.github.io/niri/Configuration:-Layer-Rules
+//
+// Matching: properties on a SINGLE match line are ANDed together;
+// multiple match lines within one rule are ORed.
+// Keep rules narrow by combining conditions on one line.
+
+// Bar animations — match panels with exclusive zones and specific anchor sets.
+// Each line is a narrow AND combination; lines are ORed across bar shapes.
+layer-rule {
+    // Top bar (e.g. standard waybar anchored to top edge)
+    match anchors="left,right,top" exclusive-zone="exclusive"
+    // Bottom bar
+    match anchors="left,right,bottom" exclusive-zone="exclusive"
+    // Left+right only bar (vertical panels on both sides)
+    match anchors="left,right" exclusive-zone="exclusive"
+
+    animations {
+        layer-open {
+            spring damping-ratio=0.80 stiffness=523 epsilon=0.0001
+        }
+        layer-close {
+            spring damping-ratio=0.80 stiffness=523 epsilon=0.0001
+        }
+    }
+}
+
+// Wallpaper animations — match background layer covering all 4 edges with no keyboard.
+// All three conditions on one match line (AND).
+layer-rule {
+    match layer="background" anchor-sides=4 keyboard-interactivity="none"
+
+    animations {
+        layer-open {
+            spring damping-ratio=0.80 stiffness=523 epsilon=0.0001
+        }
+        layer-close {
+            spring damping-ratio=0.80 stiffness=523 epsilon=0.0001
+        }
+    }
+}
+
+// Launcher animations — match keyboard-exclusive surfaces on top or overlay layers.
+// Two lines (OR): keyboard=exclusive AND layer=top, OR keyboard=exclusive AND layer=overlay.
+layer-rule {
+    match keyboard-interactivity="exclusive" layer="top"
+    match keyboard-interactivity="exclusive" layer="overlay"
+
+    animations {
+        layer-open {
+            spring damping-ratio=0.80 stiffness=523 epsilon=0.0001
+        }
+        layer-close {
+            spring damping-ratio=0.80 stiffness=523 epsilon=0.0001
+        }
+    }
+}
+
+
 binds {
     // Keys consist of modifiers separated by + signs, followed by an XKB key name
     // in the end. To find an XKB name for a particular key, you may use a program

@@ -28,7 +28,7 @@ use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::{Interest, LoopHandle, Mode, PostAction};
 use smithay::reexports::rustix::fs::unlink;
 use smithay::utils::SERIAL_COUNTER;
-use smithay::wayland::shell::wlr_layer::{KeyboardInteractivity, Layer};
+use smithay::wayland::shell::wlr_layer::{Anchor, ExclusiveZone, KeyboardInteractivity, Layer};
 
 use crate::backend::IpcOutputMap;
 use crate::handlers::image_copy_capture;
@@ -313,11 +313,50 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
                                     niri_ipc::LayerSurfaceKeyboardInteractivity::OnDemand
                                 }
                             };
+                        let anchors = {
+                            let anchor = surface.cached_state().anchor;
+                            let mut values = Vec::with_capacity(4);
+                            if anchor.contains(Anchor::TOP) {
+                                values.push("top")
+                            }
+                            if anchor.contains(Anchor::BOTTOM) {
+                                values.push("bottom");
+                            }
+                            if anchor.contains(Anchor::LEFT) {
+                                values.push("left");
+                            }
+                            if anchor.contains(Anchor::RIGHT) {
+                                values.push("right");
+                            }
+                            values
+                                .iter()
+                                .map(|s| match *s {
+                                    "top" => niri_ipc::LayerSurfaceAnchor::Top,
+                                    "bottom" => niri_ipc::LayerSurfaceAnchor::Bottom,
+                                    "left" => niri_ipc::LayerSurfaceAnchor::Left,
+                                    "right" => niri_ipc::LayerSurfaceAnchor::Right,
+                                    _ => unreachable!(),
+                                })
+                                .collect()
+                        };
+                        let anchor_sides = surface.cached_state().anchor.bits().count_ones() as u8;
+                        let exclusive_zone = match surface.cached_state().exclusive_zone {
+                            ExclusiveZone::Exclusive(_) => {
+                                niri_ipc::LayerSurfaceExclusiveZone::Exclusive
+                            }
+                            ExclusiveZone::Neutral => niri_ipc::LayerSurfaceExclusiveZone::Neutral,
+                            ExclusiveZone::DontCare => {
+                                niri_ipc::LayerSurfaceExclusiveZone::DontCare
+                            }
+                        };
 
                         layers.push(niri_ipc::LayerSurface {
                             namespace: surface.namespace().to_owned(),
                             output: name.clone(),
                             layer,
+                            anchors,
+                            anchor_sides,
+                            exclusive_zone,
                             keyboard_interactivity,
                         });
                     }
