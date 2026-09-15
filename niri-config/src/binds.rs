@@ -206,7 +206,11 @@ pub enum Action {
     #[knuffel(skip)]
     ConsumeOrExpelWindowRightById(u64),
     ConsumeWindowIntoColumn,
+    ConsumeWindowIntoColumnLeft,
     ExpelWindowFromColumn,
+    ExpelWindowFromColumnLeft,
+    ExpelFocusedWindowFromColumn,
+    ExpelFocusedWindowFromColumnLeft,
     SwapWindowLeft,
     SwapWindowRight,
     ToggleColumnTabbedDisplay,
@@ -498,7 +502,13 @@ impl From<niri_ipc::Action> for Action {
                 Self::ConsumeOrExpelWindowRightById(id)
             }
             niri_ipc::Action::ConsumeWindowIntoColumn {} => Self::ConsumeWindowIntoColumn,
+            niri_ipc::Action::ConsumeWindowIntoColumnLeft {} => Self::ConsumeWindowIntoColumnLeft,
             niri_ipc::Action::ExpelWindowFromColumn {} => Self::ExpelWindowFromColumn,
+            niri_ipc::Action::ExpelWindowFromColumnLeft {} => Self::ExpelWindowFromColumnLeft,
+            niri_ipc::Action::ExpelFocusedWindowFromColumn {} => Self::ExpelFocusedWindowFromColumn,
+            niri_ipc::Action::ExpelFocusedWindowFromColumnLeft {} => {
+                Self::ExpelFocusedWindowFromColumnLeft
+            }
             niri_ipc::Action::SwapWindowRight {} => Self::SwapWindowRight,
             niri_ipc::Action::SwapWindowLeft {} => Self::SwapWindowLeft,
             niri_ipc::Action::ToggleColumnTabbedDisplay {} => Self::ToggleColumnTabbedDisplay,

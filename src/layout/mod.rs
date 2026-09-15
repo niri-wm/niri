@@ -2240,11 +2240,39 @@ impl<W: LayoutElement> Layout<W> {
         workspace.consume_into_column();
     }
 
+    pub fn consume_into_column_left(&mut self) {
+        let Some(workspace) = self.active_workspace_mut() else {
+            return;
+        };
+        workspace.consume_into_column_left();
+    }
+
     pub fn expel_from_column(&mut self) {
         let Some(workspace) = self.active_workspace_mut() else {
             return;
         };
         workspace.expel_from_column();
+    }
+
+    pub fn expel_from_column_left(&mut self) {
+        let Some(workspace) = self.active_workspace_mut() else {
+            return;
+        };
+        workspace.expel_from_column_left();
+    }
+
+    pub fn expel_focused_from_column(&mut self) {
+        let Some(workspace) = self.active_workspace_mut() else {
+            return;
+        };
+        workspace.expel_focused_from_column();
+    }
+
+    pub fn expel_focused_from_column_left(&mut self) {
+        let Some(workspace) = self.active_workspace_mut() else {
+            return;
+        };
+        workspace.expel_focused_from_column_left();
     }
 
     pub fn swap_window_in_direction(&mut self, direction: ScrollDirection) {
