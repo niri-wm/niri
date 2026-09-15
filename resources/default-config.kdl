@@ -38,6 +38,7 @@ input {
         natural-scroll
         // accel-speed 0.2
         // accel-profile "flat"
+        // pinch-sensitivity 1.0
         // scroll-method "two-finger"
         // disabled-on-external-mouse
     }

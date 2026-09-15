@@ -4179,12 +4179,29 @@ impl State {
             pointer.frame(self);
         }
 
+        let input_sensitivity = self
+            .niri
+            .config
+            .borrow()
+            .input
+            .touchpad
+            .pinch_sensitivity
+            .map(|x| x.0)
+            .unwrap_or(1.);
+        let window_sensitivity = pointer
+            .current_focus()
+            .map(|focused| self.niri.find_root_shell_surface(&focused))
+            .and_then(|root| self.niri.layout.find_window_and_output(&root).unzip().0)
+            .and_then(|window| window.rules().pinch_sensitivity)
+            .unwrap_or(1.);
+        let sensitivity = input_sensitivity * window_sensitivity;
+
         pointer.gesture_pinch_update(
             self,
             &GesturePinchUpdateEvent {
                 time: event.time(),
                 delta: event.delta(),
-                scale: event.scale(),
+                scale: event.scale().powf(sensitivity),
                 rotation: event.rotation(),
             },
         );

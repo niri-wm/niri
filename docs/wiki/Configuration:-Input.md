@@ -36,6 +36,7 @@ input {
         natural-scroll
         // accel-speed 0.2
         // accel-profile "flat"
+        // pinch-sensitivity 1.0
         // scroll-factor 1.0
         // scroll-factor vertical=1.0 horizontal=-2.0
         // scroll-method "two-finger"
@@ -244,6 +245,8 @@ A few settings are common between `touchpad`, `mouse`, `trackpoint`, and `trackb
 
 Settings specific to `touchpad`s:
 
+- `pinch-sensitivity`: <sup>Since: next release</sup> scales the sensitivity of pinch gestures sent to applications.
+  Values above `1.0` increase sensitivity, while values below `1.0` decrease it.
 - `tap`: tap-to-click.
 - `dwt`: disable-when-typing.
 - `dwtp`: disable-when-trackpointing.
