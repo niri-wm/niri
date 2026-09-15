@@ -258,6 +258,7 @@ pub struct DownloadTexture {
 }
 
 impl DownloadTexture {
+    #[allow(clippy::too_many_arguments)]
     pub fn render_and_download(
         &mut self,
         renderer: &mut GlesRenderer,
@@ -265,6 +266,7 @@ impl DownloadTexture {
         fourcc: Fourcc,
         elements: &[impl RenderElement<GlesRenderer>],
         states: RenderElementStates,
+        region: Rectangle<i32, Physical>,
     ) -> anyhow::Result<GlesMapping> {
         let _span = tracy_client::span!();
 
@@ -294,7 +296,16 @@ impl DownloadTexture {
             )
             .context("error rendering")?;
 
-        copy_framebuffer(renderer, &target, fourcc).context("error copying framebuffer")
+        renderer
+            .copy_framebuffer(
+                &target,
+                Rectangle::new(
+                    (region.loc.x, region.loc.y).into(),
+                    (region.size.w, region.size.h).into(),
+                ),
+                fourcc,
+            )
+            .context("error copying framebuffer")
     }
 }
 
@@ -528,6 +539,7 @@ mod download_tests {
                                 format,
                                 &elements,
                                 states,
+                                Rectangle::from_size(size.into()),
                             )
                             .unwrap();
                         renderer.map_texture(&mapping).unwrap().to_vec()

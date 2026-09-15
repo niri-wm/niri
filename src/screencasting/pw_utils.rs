@@ -41,6 +41,7 @@ use smithay::backend::renderer::element::utils::{Relocate, RelocateRenderElement
 use smithay::backend::renderer::element::{Element, RenderElement, RenderElementStates};
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::renderer::sync::SyncPoint;
+use smithay::backend::renderer::utils::DamageBag;
 use smithay::backend::renderer::ExportMem;
 use smithay::output::{Output, OutputModeSource};
 use smithay::reexports::calloop::generic::Generic;
@@ -116,6 +117,7 @@ pub struct Cast {
 /// Mutable `Cast` state shared with PipeWire callbacks.
 #[derive(Debug)]
 struct CastInner {
+    shm_damage: Option<DamageBag<i32, Physical>>,
     is_active: bool,
     node_id: Option<u32>,
     state: CastState,
@@ -454,6 +456,7 @@ impl PipeWire {
 
         // Like in good old wayland-rs times...
         let inner = Rc::new(RefCell::new(CastInner {
+            shm_damage: None,
             is_active: false,
             node_id: None,
             state: CastState::ResizePending { pending_size },
@@ -1240,6 +1243,7 @@ impl Cast {
             elements = &elements[cursor_data.elem_count..];
         }
         let (damage, states) = damage_tracker.damage_output(1, elements).unwrap();
+        let frame_damage = damage.and_then(|rects| rects.iter().copied().reduce(|a, b| a.merge(b)));
 
         if self.cursor_mode == CursorMode::Metadata {
             let (damage, _states) = cursor_damage_tracker
@@ -1255,6 +1259,18 @@ impl Cast {
             return false;
         }
         *last_cursor_location = Some(cursor_data.location);
+        if matches!(
+            inner.state,
+            CastState::Ready {
+                dma_negotiation: None,
+                ..
+            }
+        ) {
+            inner
+                .shm_damage
+                .get_or_insert_with(|| DamageBag::new(16))
+                .add(frame_damage);
+        }
         drop(inner);
 
         let Some(pw_buffer) = self.dequeue_available_buffer() else {
@@ -1306,6 +1322,7 @@ impl Cast {
                     render_to_shmbuf(
                         renderer,
                         &mut self.shm_texture,
+                        inner_.shm_damage.as_mut().unwrap(),
                         damage_tracker,
                         &shmbuf,
                         fourcc,
@@ -1329,6 +1346,9 @@ impl Cast {
                 }
                 Err(err) => {
                     warn!("error rendering to buffer: {err:?}");
+                    if let Some(history) = self.inner.borrow_mut().shm_damage.as_mut() {
+                        history.reset();
+                    }
                     return_unused_buffer(&self.stream, pw_buffer);
                     false
                 }
@@ -1890,9 +1910,11 @@ unsafe fn add_cursor_metadata(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_to_shmbuf(
     renderer: &mut GlesRenderer,
     texture: &mut DownloadTexture,
+    history: &mut DamageBag<i32, Physical>,
     damage_tracker: &mut OutputDamageTracker,
     buffer: &Shmbuf,
     fourcc: Fourcc,
@@ -1900,21 +1922,43 @@ fn render_to_shmbuf(
     states: RenderElementStates,
 ) -> anyhow::Result<()> {
     let _span = tracy_client::span!();
-    let (size, _scale, _transform) = damage_tracker.mode().try_into().unwrap();
+    let (size, _scale, transform) = damage_tracker.mode().try_into().unwrap();
     let expected_size = size.w as usize * size.h as usize * SHM_BYTES_PER_PIXEL;
     ensure!(
         buffer.layout.size_usize() == expected_size,
         "invalid buffer size"
     );
 
+    let full = smithay::utils::Rectangle::from_size(size);
+    let region = if transform == Transform::Normal {
+        history
+            .damage_since(buffer.mapping.last_commit.get())
+            .map(|damage| damage.iter().copied().reduce(|a, b| a.merge(b)))
+            .unwrap_or(Some(full))
+    } else {
+        Some(full)
+    };
+    let Some(region) = region else {
+        return Ok(());
+    };
+    let region = if !full.contains_rect(region) {
+        full
+    } else {
+        region
+    };
     let mapping =
-        texture.render_and_download(renderer, damage_tracker, fourcc, elements, states)?;
+        texture.render_and_download(renderer, damage_tracker, fourcc, elements, states, region)?;
 
     let bytes = renderer
         .map_texture(&mapping)
         .context("error mapping texture")?;
 
-    buffer.mapping.copy_frame(bytes)
+    buffer.mapping.copy_region(bytes, size, region)?;
+    buffer
+        .mapping
+        .last_commit
+        .set(Some(history.current_commit()));
+    Ok(())
 }
 
 fn clear_shmbuf(buffer: &Shmbuf) -> anyhow::Result<()> {
@@ -1925,6 +1969,89 @@ fn clear_shmbuf(buffer: &Shmbuf) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[ignore = "requires a working EGL renderer"]
+    fn rotating_shm_buffers_match_full_readback() {
+        use std::os::unix::fs::FileExt;
+
+        use smithay::backend::egl::native::EGLSurfacelessDisplay;
+        use smithay::backend::egl::{EGLContext, EGLDisplay};
+        use smithay::backend::renderer::element::Kind;
+
+        use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
+
+        let mut renderer = unsafe {
+            let display = EGLDisplay::new(EGLSurfacelessDisplay).unwrap();
+            GlesRenderer::new(EGLContext::new(&display).unwrap()).unwrap()
+        };
+        let mut texture = DownloadTexture::default();
+        for (size, transform) in [((32, 24), Transform::Normal), ((24, 32), Transform::_180)] {
+            let size: Size<i32, Physical> = size.into();
+            let buffers = std::array::from_fn::<_, 3, _>(|_| {
+                allocate_shmbuf((size.w as u32, size.h as u32).into()).unwrap()
+            });
+            let mut history = DamageBag::new(4);
+            let mut damage = OutputDamageTracker::new(size, 1.0, transform);
+            let mut patch = SolidColorBuffer::new((4.0, 3.0), [1.0, 0.0, 0.0, 1.0]);
+            for frame in 0..30 {
+                patch.set_color([0.0, (frame % 2) as f32, 1.0, 1.0]);
+                let elements = [SolidColorRenderElement::from_buffer(
+                    &patch,
+                    ((frame % 5) as f64, (frame % 7) as f64),
+                    1.0,
+                    Kind::Unspecified,
+                )];
+                let (changed, states) = damage.damage_output(1, &elements).unwrap();
+                history.add(changed.into_iter().flatten().copied());
+                // Retire a buffer long enough for history to expire, and skip some deliveries.
+                if frame % 7 == 0 {
+                    continue;
+                }
+                let buffer = &buffers[if (6..20).contains(&frame) {
+                    frame % 2
+                } else {
+                    frame % 3
+                }];
+                if frame == 22 {
+                    clear_shmbuf(buffer).unwrap();
+                }
+                if frame == 25 {
+                    history.reset();
+                }
+                render_to_shmbuf(
+                    &mut renderer,
+                    &mut texture,
+                    &mut history,
+                    &mut damage,
+                    buffer,
+                    Fourcc::Argb8888,
+                    &elements,
+                    states,
+                )
+                .unwrap();
+
+                let mut reference_damage = OutputDamageTracker::new(size, 1.0, transform);
+                let (_, states) = reference_damage.damage_output(1, &elements).unwrap();
+                let mapping = DownloadTexture::default()
+                    .render_and_download(
+                        &mut renderer,
+                        &mut reference_damage,
+                        Fourcc::Argb8888,
+                        &elements,
+                        states,
+                        smithay::utils::Rectangle::from_size(size),
+                    )
+                    .unwrap();
+                let expected = renderer.map_texture(&mapping).unwrap();
+                let mut actual = vec![0; expected.len()];
+                std::fs::File::from(buffer.fd.try_clone().unwrap())
+                    .read_exact_at(&mut actual, 0)
+                    .unwrap();
+                assert_eq!(actual, expected, "frame {frame}, transform {transform:?}");
+            }
+        }
+    }
 
     #[test]
     fn shm_layout_uses_spa_representable_dimensions() {
@@ -1964,5 +2091,33 @@ mod tests {
         assert_eq!(bytes, [0; 32]);
         drop(cloned);
         assert!(mapping.upgrade().is_none());
+    }
+
+    #[test]
+    fn partial_copy_preserves_other_rows_and_rejects_out_of_bounds() {
+        use std::os::unix::fs::FileExt;
+
+        use smithay::utils::Rectangle;
+
+        let size = Size::from((4, 3));
+        let buffer = allocate_shmbuf((4, 3).into()).unwrap();
+        buffer.mapping.copy_frame(&[1; 48]).unwrap();
+        let region = Rectangle::new((1, 1).into(), (2, 1).into());
+        buffer.mapping.copy_region(&[2; 8], size, region).unwrap();
+        for invalid in [
+            Rectangle::new((-1, 0).into(), (2, 1).into()),
+            Rectangle::new((3, 2).into(), (2, 1).into()),
+            Rectangle::new((0, 3).into(), (2, 1).into()),
+        ] {
+            assert!(buffer.mapping.copy_region(&[3; 8], size, invalid).is_err());
+        }
+        assert!(buffer.mapping.copy_region(&[3; 7], size, region).is_err());
+        let mut actual = [0; 48];
+        std::fs::File::from(buffer.fd.try_clone().unwrap())
+            .read_exact_at(&mut actual, 0)
+            .unwrap();
+        let mut expected = [1; 48];
+        expected[20..28].fill(2);
+        assert_eq!(actual, expected);
     }
 }
