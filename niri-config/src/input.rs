@@ -289,6 +289,8 @@ pub struct Trackball {
     pub left_handed: bool,
     #[knuffel(child)]
     pub middle_emulation: bool,
+    #[knuffel(child)]
+    pub scroll_factor: Option<ScrollFactor>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -535,6 +537,9 @@ mod tests {
             touchpad {
                 scroll-factor 1.5
             }
+            trackball {
+                scroll-factor 0.75
+            }
             "#,
         );
 
@@ -557,6 +562,19 @@ mod tests {
                 base: Some(
                     FloatOrInt(
                         1.5,
+                    ),
+                ),
+                horizontal: None,
+                vertical: None,
+            },
+        )
+        "#);
+        assert_debug_snapshot!(parsed.trackball.scroll_factor, @r#"
+        Some(
+            ScrollFactor {
+                base: Some(
+                    FloatOrInt(
+                        0.75,
                     ),
                 ),
                 horizontal: None,

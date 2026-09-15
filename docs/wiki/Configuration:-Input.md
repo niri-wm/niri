@@ -67,6 +67,8 @@ input {
         // natural-scroll
         // accel-speed 0.2
         // accel-profile "flat"
+        // scroll-factor 1.0
+        // scroll-factor vertical=1.0 horizontal=-2.0
         // scroll-method "on-button-down"
         // scroll-button 273
         // scroll-button-lock
@@ -253,7 +255,7 @@ Settings specific to `touchpad`s:
 - `click-method`: can be `button-areas` or `clickfinger`, changes the [click method](https://wayland.freedesktop.org/libinput/doc/latest/clickpad-softbuttons.html).
 - `disabled-on-external-mouse`: do not send events while external pointer device is plugged in.
 
-Settings specific to `touchpad` and `mouse`:
+Settings specific to `touchpad`, `mouse`, and `trackball`:
 
 - `scroll-factor`: <sup>Since: 0.1.10</sup> scales the scrolling speed by this value.
 
