@@ -158,7 +158,7 @@ fn format_bind(binds: &[Bind], action: &Action) -> Option<(Option<Key>, String)>
     let mut found_null_title = false;
 
     for bind in binds {
-        if bind.action != *action {
+        if bind.press_action.as_ref() != Some(action) {
             continue;
         }
 
@@ -202,9 +202,9 @@ fn collect_actions(config: &Config) -> Vec<&Action> {
 
     // Prefer Quit(false) if found, otherwise try Quit(true), and if there's neither, fall back to
     // Quit(false).
-    if binds.iter().any(|bind| bind.action == Action::Quit(false)) {
+    if binds.iter().any(|bind| matches!(bind.press_action, Some(Action::Quit(false)))) {
         actions.push(&Action::Quit(false));
-    } else if binds.iter().any(|bind| bind.action == Action::Quit(true)) {
+    } else if binds.iter().any(|bind| matches!(bind.press_action, Some(Action::Quit(true)))) {
         actions.push(&Action::Quit(true));
     } else {
         actions.push(&Action::Quit(false));
@@ -223,12 +223,12 @@ fn collect_actions(config: &Config) -> Vec<&Action> {
     // Prefer move-column-to-workspace-down, but fall back to move-window-to-workspace-down.
     if let Some(bind) = binds
         .iter()
-        .find(|bind| matches!(bind.action, Action::MoveColumnToWorkspaceDown(_)))
+        .find(|bind| matches!(&bind.press_action, Some(Action::MoveColumnToWorkspaceDown(_))))
     {
-        actions.push(&bind.action);
+        actions.push(bind.press_action.as_ref().unwrap());
     } else if binds
         .iter()
-        .any(|bind| matches!(bind.action, Action::MoveWindowToWorkspaceDown(_)))
+        .any(|bind| matches!(&bind.press_action, Some(Action::MoveWindowToWorkspaceDown(_))))
     {
         actions.push(&Action::MoveWindowToWorkspaceDown(true));
     } else {
@@ -238,12 +238,12 @@ fn collect_actions(config: &Config) -> Vec<&Action> {
     // Same for -up.
     if let Some(bind) = binds
         .iter()
-        .find(|bind| matches!(bind.action, Action::MoveColumnToWorkspaceUp(_)))
+        .find(|bind| matches!(&bind.press_action, Some(Action::MoveColumnToWorkspaceUp(_))))
     {
-        actions.push(&bind.action);
+        actions.push(bind.press_action.as_ref().unwrap());
     } else if binds
         .iter()
-        .any(|bind| matches!(bind.action, Action::MoveWindowToWorkspaceUp(_)))
+        .any(|bind| matches!(&bind.press_action, Some(Action::MoveWindowToWorkspaceUp(_))))
     {
         actions.push(&Action::MoveWindowToWorkspaceUp(true));
     } else {
@@ -263,31 +263,33 @@ fn collect_actions(config: &Config) -> Vec<&Action> {
     // Screenshot is not as important, can omit if not bound.
     if let Some(bind) = binds
         .iter()
-        .find(|bind| matches!(bind.action, Action::Screenshot(_, _)))
+        .find(|bind| matches!(&bind.press_action, Some(Action::Screenshot(_, _))))
     {
-        actions.push(&bind.action);
+        actions.push(bind.press_action.as_ref().unwrap());
     }
 
     // Add actions with a custom hotkey-overlay-title.
     for bind in binds {
         if matches!(bind.hotkey_overlay_title, Some(Some(_))) {
             // Avoid duplicate actions.
-            if !actions.contains(&&bind.action) {
-                actions.push(&bind.action);
+            if let Some(action) = &bind.press_action {
+                if !actions.contains(&action) {
+                    actions.push(action);
+                }
             }
         }
     }
 
     // Add the spawn actions.
     for bind in binds.iter().filter(|bind| {
-        matches!(bind.action, Action::Spawn(_) | Action::SpawnSh(_))
+        matches!(&bind.press_action, Some(Action::Spawn(_)) | Some(Action::SpawnSh(_)))
             // Only show binds with Mod or Super to filter out stuff like volume up/down.
             && (bind.key.modifiers.contains(Modifiers::COMPOSITOR)
                 || bind.key.modifiers.contains(Modifiers::SUPER))
             // Also filter out wheel and touchpad scroll binds.
             && matches!(bind.key.trigger, Trigger::Keysym(_))
     }) {
-        let action = &bind.action;
+        let action = bind.press_action.as_ref().unwrap();
 
         // We only show one bind for each action, so we need to deduplicate the Spawn actions.
         if !actions.contains(&action) {
@@ -297,7 +299,7 @@ fn collect_actions(config: &Config) -> Vec<&Action> {
 
     if config.hotkey_overlay.hide_not_bound {
         // Only keep actions that have been bound
-        actions.retain(|&action| binds.iter().any(|bind| bind.action == *action))
+        actions.retain(|&action| binds.iter().any(|bind| bind.press_action.as_ref() == Some(action)))
     }
 
     actions
@@ -498,28 +500,19 @@ fn key_name(screen_reader: bool, mod_key: ModKey, key: &Key) -> String {
 
     let has_comp_mod = key.modifiers.contains(Modifiers::COMPOSITOR);
 
+    let mod_key_pretty = match mod_key {
+        ModKey::Super => String::from("Super"),
+        ModKey::Alt => String::from("Alt"),
+        ModKey::Shift => String::from("Shift"),
+        ModKey::Ctrl => String::from("Ctrl"),
+        ModKey::IsoLevel3Shift => String::from("Mod5"),
+        ModKey::IsoLevel5Shift => String::from("Mod3"),
+    };
+
     // Compositor mod goes first.
     if has_comp_mod {
-        match mod_key {
-            ModKey::Super => {
-                name.push_str("Super + ");
-            }
-            ModKey::Alt => {
-                name.push_str("Alt + ");
-            }
-            ModKey::Shift => {
-                name.push_str("Shift + ");
-            }
-            ModKey::Ctrl => {
-                name.push_str("Ctrl + ");
-            }
-            ModKey::IsoLevel3Shift => {
-                name.push_str("Mod5 + ");
-            }
-            ModKey::IsoLevel5Shift => {
-                name.push_str("Mod3 + ");
-            }
-        }
+        name.push_str(&mod_key_pretty);
+        name.push_str(" + ");
     }
 
     if key.modifiers.contains(Modifiers::SUPER) && !(has_comp_mod && mod_key == ModKey::Super) {
@@ -547,6 +540,7 @@ fn key_name(screen_reader: bool, mod_key: ModKey, key: &Key) -> String {
 
     let pretty = match key.trigger {
         Trigger::Keysym(keysym) => prettify_keysym_name(screen_reader, &keysym_get_name(keysym)),
+        Trigger::KeyCompositor => mod_key_pretty,
         Trigger::MouseLeft => String::from("Mouse Left"),
         Trigger::MouseRight => String::from("Mouse Right"),
         Trigger::MouseMiddle => String::from("Mouse Middle"),
