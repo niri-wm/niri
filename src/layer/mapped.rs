@@ -1,5 +1,5 @@
 use niri_config::utils::MergeWith as _;
-use niri_config::{Config, LayerRule};
+use niri_config::{Config, LayerRule, DEFAULT_CORNER_RADIUS_EXPONENT};
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::element::Kind;
 use smithay::desktop::{LayerSurface, PopupKind, PopupManager};
@@ -122,8 +122,16 @@ impl MappedLayer {
 
         let radius = self.rules.geometry_corner_radius.unwrap_or_default();
         // FIXME: is_active based on keyboard focus?
-        self.shadow
-            .update_render_elements(size, true, radius, self.scale, 1.);
+        self.shadow.update_render_elements(
+            size,
+            true,
+            radius,
+            self.rules
+                .geometry_corner_radius_exponent
+                .unwrap_or(DEFAULT_CORNER_RADIUS_EXPONENT),
+            self.scale,
+            1.,
+        );
     }
 
     pub fn are_animations_ongoing(&self) -> bool {
@@ -248,6 +256,9 @@ impl MappedLayer {
             surface_anim_scale,
             self.blur_config,
             radius,
+            self.rules
+                .geometry_corner_radius_exponent
+                .unwrap_or(DEFAULT_CORNER_RADIUS_EXPONENT),
             self.rules.background_effect,
             should_block_out,
             xray_pos,
@@ -317,6 +328,9 @@ impl MappedLayer {
                 surface_anim_scale,
                 self.blur_config,
                 popup_rules.geometry_corner_radius.unwrap_or_default(),
+                popup_rules
+                    .geometry_corner_radius_exponent
+                    .unwrap_or(DEFAULT_CORNER_RADIUS_EXPONENT),
                 effect,
                 false,
                 xray_pos,
