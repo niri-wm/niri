@@ -85,6 +85,9 @@ pub struct ResolvedWindowRules {
     /// Extra bound on the maximum window height.
     pub max_height: Option<u16>,
 
+    /// Ignore client-provided size limits
+    pub ignore_client_size: bool,
+
     /// Focus ring overrides.
     pub focus_ring: BorderRule,
     /// Window border overrides.
@@ -276,6 +279,9 @@ impl ResolvedWindowRules {
                 if let Some(x) = rule.max_height {
                     resolved.max_height = Some(x);
                 }
+                if let Some(x) = rule.ignore_client_size {
+                    resolved.ignore_client_size = x;
+                }
 
                 resolved.focus_ring.merge_with(&rule.focus_ring);
                 resolved.border.merge_with(&rule.border);
@@ -325,6 +331,13 @@ impl ResolvedWindowRules {
     }
 
     pub fn apply_min_size(&self, min_size: Size<i32, Logical>) -> Size<i32, Logical> {
+        if self.ignore_client_size {
+            return Size::new(
+                self.min_width.unwrap_or(0).into(),
+                self.min_height.unwrap_or(0).into(),
+            );
+        }
+
         let mut size = min_size;
 
         if let Some(x) = self.min_width {
@@ -338,6 +351,13 @@ impl ResolvedWindowRules {
     }
 
     pub fn apply_max_size(&self, max_size: Size<i32, Logical>) -> Size<i32, Logical> {
+        if self.ignore_client_size {
+            return Size::new(
+                self.max_width.unwrap_or(0).into(),
+                self.max_height.unwrap_or(0).into(),
+            );
+        }
+
         let mut size = max_size;
 
         if let Some(x) = self.max_width {
@@ -383,10 +403,20 @@ impl ResolvedWindowRules {
             let current = guard.current();
             (current.min_size, current.max_size)
         });
-        let (min_size, max_size) = self.apply_min_max_size(min_size, max_size);
+
+        let (min_height, max_height) = if self.ignore_client_size {
+            if let (Some(min_height), Some(max_height)) = (self.min_height, self.max_height) {
+                (min_height.into(), max_height.into())
+            } else {
+                (min_size.h, max_size.h)
+            }
+        } else {
+            let (min_size, max_size) = self.apply_min_max_size(min_size, max_size);
+            (min_size.h, max_size.h)
+        };
 
         // We open fixed-height windows as floating.
-        min_size.h > 0 && min_size.h == max_size.h
+        min_height > 0 && min_height == max_height
     }
 }
 

@@ -46,6 +46,8 @@ pub struct WindowRule {
     pub max_width: Option<u16>,
     #[knuffel(child, unwrap(argument))]
     pub max_height: Option<u16>,
+    #[knuffel(child, unwrap(argument))]
+    pub ignore_client_size: Option<bool>,
 
     #[knuffel(child, default)]
     pub focus_ring: BorderRule,
