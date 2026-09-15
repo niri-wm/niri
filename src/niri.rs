@@ -3048,9 +3048,20 @@ impl Niri {
     }
 
     pub fn remove_output(&mut self, output: &Output) {
-        for layer in layer_map_for_output(output).layers() {
+        let mut layer_map = layer_map_for_output(output);
+        let layers = layer_map.layers().cloned().collect::<Vec<_>>();
+        for layer in layers {
             layer.layer_surface().send_close();
+
+            layer_map.unmap_layer(&layer);
+            self.unmapped_layer_surfaces.remove(layer.wl_surface());
+            self.mapped_layer_surfaces.remove(&layer);
+
+            if self.layer_shell_on_demand_focus.as_ref() == Some(&layer) {
+                self.layer_shell_on_demand_focus = None;
+            }
         }
+        drop(layer_map);
 
         self.layout.remove_output(output);
         self.global_space.unmap_output(output);
