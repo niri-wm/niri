@@ -131,12 +131,14 @@ pub enum Action {
     ScreenshotScreen(
         #[knuffel(property(name = "write-to-disk"), default = true)] bool,
         #[knuffel(property(name = "show-pointer"), default = true)] bool,
+        #[knuffel(property(name = "write-to-clipboard"), default = true)] bool,
         // Path; not settable from knuffel
         Option<String>,
     ),
     ScreenshotWindow(
         #[knuffel(property(name = "write-to-disk"), default = true)] bool,
         #[knuffel(property(name = "show-pointer"), default = false)] bool,
+        #[knuffel(property(name = "write-to-clipboard"), default = true)] bool,
         // Path; not settable from knuffel
         Option<String>,
     ),
@@ -145,6 +147,7 @@ pub enum Action {
         id: u64,
         write_to_disk: bool,
         show_pointer: bool,
+        write_to_clipboard: bool,
         path: Option<String>,
     },
     ToggleKeyboardShortcutsInhibit,
@@ -410,23 +413,27 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::ScreenshotScreen {
                 write_to_disk,
                 show_pointer,
+                write_to_clipboard,
                 path,
-            } => Self::ScreenshotScreen(write_to_disk, show_pointer, path),
+            } => Self::ScreenshotScreen(write_to_disk, show_pointer, write_to_clipboard, path),
             niri_ipc::Action::ScreenshotWindow {
                 id: None,
                 write_to_disk,
                 show_pointer,
+                write_to_clipboard,
                 path,
-            } => Self::ScreenshotWindow(write_to_disk, show_pointer, path),
+            } => Self::ScreenshotWindow(write_to_disk, show_pointer, write_to_clipboard, path),
             niri_ipc::Action::ScreenshotWindow {
                 id: Some(id),
                 write_to_disk,
                 show_pointer,
+                write_to_clipboard,
                 path,
             } => Self::ScreenshotWindowById {
                 id,
                 write_to_disk,
                 show_pointer,
+                write_to_clipboard,
                 path,
             },
             niri_ipc::Action::ToggleKeyboardShortcutsInhibit {} => {
