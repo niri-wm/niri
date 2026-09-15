@@ -1191,6 +1191,7 @@ mod tests {
                                 _10,
                             ),
                         ),
+                        color_matrix: None,
                         mode: Some(
                             Mode {
                                 custom: false,
@@ -1237,6 +1238,7 @@ mod tests {
                         transform: Normal,
                         position: None,
                         max_bpc: None,
+                        color_matrix: None,
                         mode: Some(
                             Mode {
                                 custom: true,
@@ -1264,6 +1266,7 @@ mod tests {
                         transform: Normal,
                         position: None,
                         max_bpc: None,
+                        color_matrix: None,
                         mode: None,
                         modeline: Some(
                             Modeline {
