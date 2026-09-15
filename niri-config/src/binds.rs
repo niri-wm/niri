@@ -399,6 +399,7 @@ impl From<niri_ipc::Action> for Action {
     fn from(value: niri_ipc::Action) -> Self {
         match value {
             niri_ipc::Action::Quit { skip_confirmation } => Self::Quit(skip_confirmation),
+            niri_ipc::Action::Suspend {} => Self::Suspend,
             niri_ipc::Action::PowerOffMonitors {} => Self::PowerOffMonitors,
             niri_ipc::Action::PowerOnMonitors {} => Self::PowerOnMonitors,
             niri_ipc::Action::Spawn { command } => Self::Spawn(command),
