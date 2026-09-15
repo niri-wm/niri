@@ -183,6 +183,10 @@ pub struct PickedColor {
     pub rgb: [f64; 3],
 }
 
+const fn default_true() -> bool {
+    true
+}
+
 /// Actions that niri can perform.
 // Variants in this enum should match the spelling of the ones in niri-config. Most, but not all,
 // variants from niri-config should be present here.
@@ -909,9 +913,25 @@ pub enum Action {
         session_id: u64,
     },
     /// Toggle (open/close) the Overview.
-    ToggleOverview {},
+    ToggleOverview {
+        /// Whether the Overview includes every output.
+        #[serde(default = "default_true")]
+        #[cfg_attr(
+            feature = "clap",
+            arg(long, action = clap::ArgAction::Set, default_value_t = true)
+        )]
+        all_outputs: bool,
+    },
     /// Open the Overview.
-    OpenOverview {},
+    OpenOverview {
+        /// Whether the Overview includes every output.
+        #[serde(default = "default_true")]
+        #[cfg_attr(
+            feature = "clap",
+            arg(long, action = clap::ArgAction::Set, default_value_t = true)
+        )]
+        all_outputs: bool,
+    },
     /// Close the Overview.
     CloseOverview {},
     /// Toggle urgent status of a window.

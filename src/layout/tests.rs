@@ -1615,7 +1615,7 @@ impl Op {
                 layout.interactive_resize_end(&window);
             }
             Op::ToggleOverview => {
-                layout.toggle_overview();
+                layout.toggle_overview(true);
             }
             Op::UpdateConfig { layout_config } => {
                 let options = Options {
@@ -3695,6 +3695,41 @@ fn expel_pending_left_from_fullscreen_tabbed_column() {
     ];
 
     check_ops(ops);
+}
+
+#[test]
+fn overview_can_target_only_active_output() {
+    let ops = [Op::AddOutput(1), Op::AddOutput(2)];
+
+    let mut active_only_layout = check_ops(ops.clone());
+    active_only_layout.toggle_overview(false);
+    active_only_layout.update_render_elements(None);
+    let MonitorSet::Normal {
+        monitors,
+        active_monitor_idx,
+        ..
+    } = &active_only_layout.monitor_set
+    else {
+        unreachable!()
+    };
+    for (idx, mon) in monitors.iter().enumerate() {
+        assert_eq!(mon.overview_open, idx == *active_monitor_idx);
+        assert_eq!(
+            mon.overview_progress_value().is_some(),
+            idx == *active_monitor_idx
+        );
+    }
+
+    let mut all_outputs_layout = check_ops(ops);
+    all_outputs_layout.toggle_overview(true);
+    all_outputs_layout.update_render_elements(None);
+    let MonitorSet::Normal { monitors, .. } = &all_outputs_layout.monitor_set else {
+        unreachable!()
+    };
+    assert!(monitors.iter().all(|mon| mon.overview_open));
+    assert!(monitors
+        .iter()
+        .all(|mon| mon.overview_progress_value().is_some()));
 }
 
 #[test]
