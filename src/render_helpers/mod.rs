@@ -12,7 +12,7 @@ use smithay::backend::renderer::gles::{
 };
 use smithay::backend::renderer::sync::SyncPoint;
 use smithay::backend::renderer::{
-    Bind, Color32F, ExportMem, Frame, Offscreen, Renderer, Texture as _,
+    Bind, Color32F, ContextId, ExportMem, Frame, Offscreen, Renderer, Texture as _,
 };
 use smithay::reexports::wayland_server::protocol::wl_buffer::WlBuffer;
 use smithay::reexports::wayland_server::protocol::wl_shm;
@@ -251,33 +251,51 @@ pub fn render_and_download(
     copy_framebuffer(renderer, &target, fourcc).context("error copying framebuffer")
 }
 
-pub fn render_and_download_with_damage(
-    renderer: &mut GlesRenderer,
-    damage_tracker: &mut OutputDamageTracker,
-    fourcc: Fourcc,
-    elements: &[impl RenderElement<GlesRenderer>],
-    states: RenderElementStates,
-) -> anyhow::Result<GlesMapping> {
-    let _span = tracy_client::span!();
+/// Reuses texture storage, not its contents, across synchronous frame downloads.
+#[derive(Default)]
+pub struct DownloadTexture {
+    cached: Option<(ContextId<GlesTexture>, Fourcc, GlesTexture)>,
+}
 
-    let (size, _scale, _transform) = damage_tracker.mode().try_into().unwrap();
-    let mut texture = create_texture(renderer, size, fourcc).context("error creating texture")?;
-    let mut target = renderer
-        .bind(&mut texture)
-        .context("error binding texture")?;
+impl DownloadTexture {
+    pub fn render_and_download(
+        &mut self,
+        renderer: &mut GlesRenderer,
+        damage_tracker: &mut OutputDamageTracker,
+        fourcc: Fourcc,
+        elements: &[impl RenderElement<GlesRenderer>],
+        states: RenderElementStates,
+    ) -> anyhow::Result<GlesMapping> {
+        let _span = tracy_client::span!();
 
-    let _res = damage_tracker
-        .render_output_with_states(
-            renderer,
-            &mut target,
-            0,
-            elements,
-            Color32F::TRANSPARENT,
-            states,
-        )
-        .context("error rendering")?;
+        let (size, _scale, _transform) = damage_tracker.mode().try_into().unwrap();
+        let context = renderer.context_id();
+        if !self.cached.as_ref().is_some_and(|(id, format, texture)| {
+            *id == context
+                && *format == fourcc
+                && texture.width() == size.w as u32
+                && texture.height() == size.h as u32
+        }) {
+            let texture =
+                create_texture(renderer, size, fourcc).context("error creating texture")?;
+            self.cached = Some((context, fourcc, texture));
+        }
+        let (_, _, texture) = self.cached.as_mut().unwrap();
+        let mut target = renderer.bind(texture).context("error binding texture")?;
 
-    copy_framebuffer(renderer, &target, fourcc).context("error copying framebuffer")
+        let _res = damage_tracker
+            .render_output_with_states(
+                renderer,
+                &mut target,
+                0,
+                elements,
+                Color32F::TRANSPARENT,
+                states,
+            )
+            .context("error rendering")?;
+
+        copy_framebuffer(renderer, &target, fourcc).context("error copying framebuffer")
+    }
 }
 
 pub fn render_to_vec(
@@ -469,4 +487,54 @@ fn render_elements(
     }
 
     frame.finish().context("error finishing frame")
+}
+
+#[cfg(test)]
+mod download_tests {
+    use smithay::backend::egl::native::EGLSurfacelessDisplay;
+    use smithay::backend::egl::{EGLContext, EGLDisplay};
+
+    use super::*;
+
+    #[test]
+    #[ignore = "requires a working EGL renderer"]
+    fn reused_download_matches_fresh_storage() {
+        let mut cached = DownloadTexture::default();
+        for _ in 0..2 {
+            let mut renderer = unsafe {
+                let display = EGLDisplay::new(EGLSurfacelessDisplay).unwrap();
+                GlesRenderer::new(EGLContext::new(&display).unwrap()).unwrap()
+            };
+            for (size, format) in [
+                ((32, 16), Fourcc::Argb8888),
+                ((32, 16), Fourcc::Argb8888),
+                ((16, 32), Fourcc::Xrgb8888),
+            ] {
+                for color in [[1.0, 0.0, 0.0, 1.0], [0.0, 1.0, 0.0, 1.0]] {
+                    let buffer = SolidColorBuffer::new((size.0 as f64, size.1 as f64), color);
+                    let elements = [SolidColorRenderElement::from_buffer(
+                        &buffer,
+                        (0.0, 0.0),
+                        1.0,
+                        Kind::Unspecified,
+                    )];
+                    let mut render = |storage: &mut DownloadTexture| {
+                        let mut damage = OutputDamageTracker::new(size, 1.0, Transform::Normal);
+                        let (_, states) = damage.damage_output(1, &elements).unwrap();
+                        let mapping = storage
+                            .render_and_download(
+                                &mut renderer,
+                                &mut damage,
+                                format,
+                                &elements,
+                                states,
+                            )
+                            .unwrap();
+                        renderer.map_texture(&mapping).unwrap().to_vec()
+                    };
+                    assert_eq!(render(&mut cached), render(&mut DownloadTexture::default()));
+                }
+            }
+        }
+    }
 }
