@@ -440,6 +440,20 @@ animations {
 }
 ```
 
+### Specifying Custom Shader by Path
+
+<sup>Since: next release</sup>
+
+For animations that accept custom shader, you can also refer to the file containing the shader by specifying its path.
+
+```kdl,must-fail
+animations {
+    window-open {
+        custom-shader path="./my-shader.glsl"
+    }
+}
+```
+
 ### Synchronized Animations
 
 <sup>Since: 0.1.5</sup>
