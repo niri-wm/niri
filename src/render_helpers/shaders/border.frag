@@ -14,6 +14,9 @@ uniform float colorspace;
 uniform float hue_interpolation;
 uniform vec4 color_from;
 uniform vec4 color_to;
+uniform vec4 color_from2;
+uniform vec4 color_to2;
+uniform float gradient_lerp;
 uniform vec2 grad_offset;
 uniform float grad_width;
 uniform vec2 grad_vec;
@@ -205,7 +208,14 @@ vec4 gradient_color(vec2 coords) {
         frac += 1.0;
 
     frac = clamp(frac, 0.0, 1.0);
-    return color_mix(color_from, color_to, frac);
+    vec4 result = color_mix(color_from, color_to, frac);
+
+    if (gradient_lerp < 0.0) {
+        return result;
+    }
+
+    vec4 result2 = color_mix(color_from2, color_to2, frac);
+    return mix(result, result2, gradient_lerp);
 }
 
 float niri_rounding_alpha(vec2 coords, vec2 size, vec4 corner_radius);
