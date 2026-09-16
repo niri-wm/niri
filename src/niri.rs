@@ -2493,6 +2493,26 @@ impl State {
     }
 }
 
+fn reset_damage_tracker_if_changed(
+    tracker: &mut OutputDamageTracker,
+    size: Size<i32, Physical>,
+    scale: Scale<f64>,
+    transform: Transform,
+) {
+    let OutputModeSource::Static {
+        size: last_size,
+        scale: last_scale,
+        transform: last_transform,
+    } = tracker.mode().clone()
+    else {
+        unreachable!("damage tracker must have static mode");
+    };
+
+    if size != last_size || scale != last_scale || transform != last_transform {
+        *tracker = OutputDamageTracker::new(size, scale, transform);
+    }
+}
+
 impl Niri {
     pub fn new(
         config: Rc<RefCell<Config>>,
@@ -5748,17 +5768,7 @@ impl Niri {
             }
 
             // Recreate the damage tracker if the output changed.
-            let OutputModeSource::Static {
-                size: last_size,
-                scale: last_scale,
-                transform: last_transform,
-            } = s.damage_tracker.mode().clone()
-            else {
-                unreachable!("damage tracker must have static mode");
-            };
-            if size != last_size || scale != last_scale || transform != last_transform {
-                s.damage_tracker = OutputDamageTracker::new(size, scale, transform);
-            }
+            reset_damage_tracker_if_changed(&mut s.damage_tracker, size, scale, transform);
 
             let draw_cursor = s.session.draw_cursor();
             let cached = &mut cached_elements[usize::from(draw_cursor)];
@@ -5887,17 +5897,7 @@ impl Niri {
             let size = Size::<i32, Physical>::from((constraints.size.w, constraints.size.h));
 
             // Recreate the damage tracker if the cursor buffer size or output scale changed.
-            let OutputModeSource::Static {
-                size: last_size,
-                scale: last_scale,
-                ..
-            } = s.damage_tracker.mode().clone()
-            else {
-                unreachable!("damage tracker must have static mode");
-            };
-            if size != last_size || scale != last_scale {
-                s.damage_tracker = OutputDamageTracker::new(size, scale, Transform::Normal);
-            }
+            reset_damage_tracker_if_changed(&mut s.damage_tracker, size, scale, Transform::Normal);
 
             let elements = cached_elements
                 .get_or_insert_with(|| self.render_cursor_for_capture(renderer, output));
@@ -6108,22 +6108,11 @@ impl Niri {
         Option<&'a Vec<Rectangle<i32, Physical>>>,
         RenderElementStates,
     ) {
-        let OutputModeSource::Static {
-            size: last_size,
-            scale: last_scale,
-            transform: last_transform,
-        } = damage_tracker.mode().clone()
-        else {
-            unreachable!("damage tracker must have static mode");
-        };
-
         let size = screencopy.buffer_size();
         let scale: Scale<f64> = output.current_scale().fractional_scale().into();
         let transform = output.current_transform();
 
-        if size != last_size || scale != last_scale || transform != last_transform {
-            *damage_tracker = OutputDamageTracker::new(size, scale, transform);
-        }
+        reset_damage_tracker_if_changed(damage_tracker, size, scale, transform);
 
         // Just checked damage tracker has static mode
         damage_tracker.damage_output(1, elements).unwrap()
