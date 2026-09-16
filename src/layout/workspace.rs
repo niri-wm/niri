@@ -388,12 +388,14 @@ impl<W: LayoutElement> Workspace<W> {
         );
 
         if layer.is_normal() {
-            self.shadow.update_render_elements(
+            self.shadow.update_render_elements_with_feather(
                 self.view_size,
                 true,
                 CornerRadius::default(),
                 self.scale.fractional_scale(),
                 1.,
+                Rectangle::from_size(self.view_size),
+                CornerRadius::default(),
             );
         }
     }

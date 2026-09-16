@@ -3,7 +3,7 @@
 <sup>Since: 26.04</sup>
 
 You can apply background effects to windows and layer-shell surfaces.
-These include blur, xray, saturation, noise, and refraction.
+These include blur, xray, saturation, noise, refraction, feather, and dim.
 They can be enabled in the `background-effect {}` section of [window](./Configuration:-Window-Rules.md#background-effect) or [layer](./Configuration:-Layer-Rules.md#background-effect) rules.
 
 ![Screenshot with blur](./img/blur.png)
@@ -62,9 +62,17 @@ If you have an animated wallpaper, xray will still have to recompute blur every 
 
 <sup>Since: next release</sup>
 
-Refraction bends the background along the surface bevel for a glass-lens look (`refraction 0.6` is a good starting point, usually paired with `blur`). The width of the curved bevel can be set explicitly with `refraction-bevel` (defaulting automatically to the corner radius if omitted). Tune it with `refraction-saturation` (default `1.3`) and `refraction-brightness` (default `1.1`); lower both toward `1.0` for neutral, readable glass.
+Refraction bends the background along the surface bevel for a glass-lens look (`refraction 0.6` is a good starting point, usually paired with `blur`). The width of the curved bevel can be set explicitly with `refraction-bevel`; when omitted, it uses 85% of the largest corner radius, capped at 35% of the smaller surface dimension. Explicit values are capped at 45% of the smaller dimension. Tune it with `refraction-saturation` (default `1.3`) and `refraction-brightness` (default `1.1`); lower both toward `1.0` for neutral, readable glass.
 
 For a lightweight glass effect, refraction can also be used with `blur false` and `xray true`. This produces a clear glass look with only a single texture sample along the bevel, avoiding the multi-pass blur overhead.
+
+### Feather and Dim
+
+<sup>Since: next release</sup>
+
+`feather` progressively fades the background effect inward from the surface boundary over the given width in logical pixels (`feather 24` is a good starting point). This softens hard blur cutoffs and reduces perceptual Mach banding without expanding geometry.
+
+Pair it with `dim` (`0.0` to `1.0`) to uniformly shade the background under the surface.
 
 #### Non-xray effects (experimental)
 

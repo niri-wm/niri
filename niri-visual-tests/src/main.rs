@@ -10,6 +10,7 @@ use gtk::{gdk, gio, glib};
 use smithay_view::SmithayView;
 use tracing_subscriber::EnvFilter;
 
+use crate::cases::effects::Effects;
 use crate::cases::gradient_angle::GradientAngle;
 use crate::cases::gradient_area::GradientArea;
 use crate::cases::gradient_oklab::GradientOklab;
@@ -100,6 +101,10 @@ fn build_ui(app: &adw::Application) {
         Tile::fixed_size_with_csd_shadow_open,
         "Fixed Size Tile - CSD Shadow - Open",
     );
+
+    s.add(Effects::refraction, "Effects - Refraction");
+    s.add(Effects::feather, "Effects - Feather and Dim");
+    s.add(Effects::shadow, "Effects - Shadow Feather");
 
     s.add(Layout::open_in_between, "Layout - Open In-Between");
     s.add(

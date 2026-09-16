@@ -7,19 +7,26 @@ uniform float niri_tint;
 uniform float niri_alpha;
 uniform float niri_scale;
 
-uniform vec2 niri_size;
 varying vec2 niri_v_coords;
 
 uniform vec4 shadow_color;
 uniform float sigma;
 
-uniform mat3 input_to_geo;
+uniform vec4 input_to_geo;
 uniform vec2 geo_size;
 uniform vec4 corner_radius;
 
-uniform mat3 window_input_to_geo;
+uniform vec4 window_input_to_geo;
 uniform vec2 window_geo_size;
 uniform vec4 window_corner_radius;
+
+// Progressive inner-edge fade for draw-behind-window shadows,
+// coupled with the background-effect feather: same cubic curve,
+// same surface box when the widths match.
+uniform vec4 feather_input_to_geo;
+uniform vec2 feather_geo_size;
+uniform vec4 feather_corner_radius;
+uniform float feather;
 
 // Based on: https://madebyevan.com/shaders/fast-rounded-rectangle-shadows/
 //
@@ -73,10 +80,15 @@ float roundedBoxShadow(vec2 lower, vec2 upper, vec2 point, float sigma, float co
 }
 
 float niri_rounding_alpha(vec2 coords, vec2 size, vec4 corner_radius);
+float niri_rounded_box_sdf(vec2 p, vec2 size, vec4 corner_radius);
+
+vec2 transform_coords(vec4 transform, vec2 coords) {
+    return coords * transform.xy + transform.zw;
+}
 
 void main() {
-    vec3 coords_geo = input_to_geo * vec3(niri_v_coords, 1.0);
-    vec3 coords_window_geo = window_input_to_geo * vec3(niri_v_coords, 1.0);
+    vec2 coords_geo = transform_coords(input_to_geo, niri_v_coords);
+    vec2 coords_window_geo = transform_coords(window_input_to_geo, niri_v_coords);
 
     vec4 color = shadow_color;
 
@@ -105,6 +117,30 @@ void main() {
                 && 0.0 <= coords_window_geo.y && coords_window_geo.y <= window_geo_size.y) {
             float alpha = niri_rounding_alpha(coords_window_geo.xy, window_geo_size, window_corner_radius);
             color = color * (1.0 - alpha);
+        }
+    }
+
+    // Progressive inner-edge fade: dissolve toward the surface edge in
+    // sync with the blur feather. Inside the bbox only (d < 0) — the
+    // outer halo is untouched, so depth survives.
+    if (feather > 0.001) {
+        vec2 coords_feather_geo = transform_coords(feather_input_to_geo, niri_v_coords);
+        vec2 fpx = coords_feather_geo.xy;
+        if (fpx.x >= 0.0 && fpx.x <= feather_geo_size.x
+                && fpx.y >= 0.0 && fpx.y <= feather_geo_size.y) {
+            vec2 fb = feather_geo_size * 0.5;
+            vec2 fp = fpx - fb;
+            float fd = niri_rounded_box_sdf(fp, feather_geo_size, feather_corner_radius);
+            if (fd < 0.0) {
+                float t = clamp(-fd / feather, 0.0, 1.0);
+                float u = 1.0 - t;
+                float coverage = niri_rounding_alpha(
+                    fpx,
+                    feather_geo_size,
+                    feather_corner_radius
+                );
+                color = color * coverage * (1.0 - u * u * u);
+            }
         }
     }
 

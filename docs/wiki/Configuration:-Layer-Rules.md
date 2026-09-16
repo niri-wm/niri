@@ -242,6 +242,8 @@ Override the background effect options for this surface.
 - `refraction-bevel`: <sup>Since: next release</sup> width in logical pixels of the curved surface bevel (`0` = automatic, scaling with corner radius).
 - `refraction-saturation`: <sup>Since: next release</sup> saturation of the refracted background (`1` = normal, default `1.3`). Lower it toward `1.0` for neutral glass on skin tones and text.
 - `refraction-brightness`: <sup>Since: next release</sup> brightness multiplier on the refracted background (default `1.1`). Lower it toward `1.0` for dimmer, calmer glass.
+- `feather`: <sup>Since: next release</sup> progressive inward fade of the background effect over the given width in logical pixels (`0` = off). Softens hard blur cutoffs and Mach bands without expanding geometry.
+- `dim`: <sup>Since: next release</sup> uniform dimming of the background effect toward black (`0` = off, `1` = black).
 
 See the [window effects page](./Window-Effects.md) for an overview of background effects.
 

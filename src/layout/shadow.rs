@@ -40,6 +40,28 @@ impl Shadow {
         scale: f64,
         alpha: f32,
     ) {
+        self.update_render_elements_with_feather(
+            win_size,
+            is_active,
+            radius,
+            scale,
+            alpha,
+            Rectangle::from_size(win_size),
+            radius,
+        );
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn update_render_elements_with_feather(
+        &mut self,
+        win_size: Size<f64, Logical>,
+        is_active: bool,
+        radius: CornerRadius,
+        scale: f64,
+        alpha: f32,
+        feather_geometry: Rectangle<f64, Logical>,
+        feather_radius: CornerRadius,
+    ) {
         let ceil = |logical: f64| (logical * scale).ceil() / scale;
 
         // All of this stuff should end up aligned to physical pixels because:
@@ -62,6 +84,10 @@ impl Shadow {
         let offset = offset - Point::from((spread, spread));
 
         let win_radius = radius.fit_to(win_size.w as f32, win_size.h as f32);
+        let feather_radius = feather_radius.expanded_by(1.).fit_to(
+            feather_geometry.size.w as f32,
+            feather_geometry.size.h as f32,
+        );
 
         let box_size = if spread >= 0. {
             win_size + Size::from((spread, spread)).upscale(2.)
@@ -127,7 +153,7 @@ impl Shadow {
                 .resize_with(self.shader_rects.len(), Default::default);
 
             for (shader, rect) in zip(&mut self.shaders, &mut self.shader_rects) {
-                shader.update(
+                shader.update_with_feather(
                     rect.size,
                     Rectangle::new(rect.loc.upscale(-1.), box_size),
                     color,
@@ -137,6 +163,11 @@ impl Shadow {
                     Rectangle::new(window_geo.loc - offset - rect.loc, window_geo.size),
                     win_radius,
                     alpha,
+                    window_geo,
+                    win_radius,
+                    // Hole-cut shadows keep exact current behavior: the cut
+                    // already zeroes the interior, so no ramp is applied.
+                    0.,
                 );
 
                 rect.loc += offset;
@@ -146,7 +177,7 @@ impl Shadow {
             self.shader_rects[0] = shader_geo;
 
             self.shaders.resize_with(1, Default::default);
-            self.shaders[0].update(
+            self.shaders[0].update_with_feather(
                 shader_geo.size,
                 Rectangle::new(shader_geo.loc.upscale(-1.), box_size),
                 color,
@@ -156,6 +187,17 @@ impl Shadow {
                 Rectangle::zero(),
                 Default::default(),
                 alpha,
+                // Draw-behind-window path carries the surface box for the progressive
+                // inner-edge fade (independent of the hole-cut slots).
+                // Frame matches the hole-cut convention (surface origin in
+                // shader-rect space, offset-compensated) so the ramp
+                // zero-line coincides with the blur feather zero-line.
+                Rectangle::new(
+                    feather_geometry.loc - offset - shader_geo.loc,
+                    feather_geometry.size,
+                ),
+                feather_radius,
+                self.config.feather as f32,
             );
 
             self.shader_rects[0].loc += offset;

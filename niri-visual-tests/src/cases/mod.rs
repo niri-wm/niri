@@ -5,6 +5,7 @@ use smithay::backend::renderer::element::RenderElement;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::utils::{Logical, Physical, Size};
 
+pub mod effects;
 pub mod gradient_angle;
 pub mod gradient_area;
 pub mod gradient_oklab;

@@ -16,6 +16,8 @@ use crate::render_helpers::RenderCtx;
 use crate::utils::region::TransformedRegion;
 use crate::utils::surface_geo;
 
+const MIN_EFFECT: f64 = 0.001;
+
 #[derive(Debug)]
 pub struct BackgroundEffect {
     nonxray: FramebufferEffect,
@@ -40,6 +42,8 @@ pub struct Options {
     pub refraction_bevel: Option<f64>,
     pub refraction_saturation: Option<f64>,
     pub refraction_brightness: Option<f64>,
+    pub feather: Option<f64>,
+    pub dim: Option<f64>,
 }
 
 impl Options {
@@ -48,7 +52,9 @@ impl Options {
             || self.blur
             || self.noise.is_some_and(|x| x > 0.)
             || self.saturation.is_some_and(|x| x != 1.)
-            || self.refraction.is_some_and(|x| x > 0.)
+            || self.refraction.is_some_and(|x| x > MIN_EFFECT)
+            || self.feather.is_some_and(|x| x > MIN_EFFECT)
+            || self.dim.is_some_and(|x| x > MIN_EFFECT)
     }
 }
 
@@ -135,6 +141,8 @@ impl BackgroundEffect {
             refraction_bevel: effect.refraction_bevel,
             refraction_saturation: effect.refraction_saturation,
             refraction_brightness: effect.refraction_brightness,
+            feather: effect.feather,
+            dim: effect.dim,
         };
 
         // If we have some background effect but xray wasn't explicitly set, default it to true
@@ -192,6 +200,8 @@ impl BackgroundEffect {
         let refraction_bevel = self.options.refraction_bevel.unwrap_or(0.) as f32;
         let refraction_saturation = self.options.refraction_saturation.unwrap_or(1.30) as f32;
         let refraction_brightness = self.options.refraction_brightness.unwrap_or(1.10) as f32;
+        let feather = self.options.feather.unwrap_or(0.) as f32;
+        let dim = self.options.dim.unwrap_or(0.) as f32;
 
         if self.options.xray {
             let Some(xray) = ctx.xray else {
@@ -210,6 +220,8 @@ impl BackgroundEffect {
                 refraction_bevel,
                 refraction_saturation,
                 refraction_brightness,
+                feather,
+                dim,
                 &mut |elem| push(elem.into()),
             );
         } else {
@@ -224,6 +236,8 @@ impl BackgroundEffect {
                 refraction_bevel,
                 refraction_saturation,
                 refraction_brightness,
+                feather,
+                dim,
             );
             push(elem.into());
         }
@@ -354,4 +368,29 @@ pub fn render_for_tile(
         let xray_pos = xray_pos.offset(params.geometry.loc - geometry.loc);
         background_effect.render(ctx, ns, params, xray_pos, push);
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Options;
+
+    #[test]
+    fn tiny_scalar_effects_match_shader_threshold() {
+        for value in [0.0005, 0.001] {
+            let options = Options {
+                dim: Some(value),
+                ..Default::default()
+            };
+            assert!(
+                !options.is_visible(),
+                "dim {value} should stay below the effect threshold"
+            );
+        }
+
+        let options = Options {
+            feather: Some(0.0011),
+            ..Default::default()
+        };
+        assert!(options.is_visible());
+    }
 }

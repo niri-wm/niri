@@ -405,6 +405,8 @@ However, instead you may want to set `prefer-no-csd` and/or `geometry-corner-rad
 Then, niri will know the corner radius and draw the shadow correctly, without having to draw it behind the window.
 These will also remove client-side shadows if the window draws any.
 
+`feather` <sup>Since: next release</sup> progressively dissolves a draw-behind-window shadow *inside* the surface edge over the given width in logical pixels (0 = off, the default). It uses the same cubic falloff as the `background-effect` feather, so setting both to the same width **and matching the surface geometry and corner radius** fades blur and shadow in sync with no visible rim — useful when the blur comes from a separate backdrop surface rather than the shadowed surface itself. It can also be used alone (blur off) for a shadow that softens inward. The outer halo is untouched, so depth survives.
+
 `color` is the shadow color and opacity.
 
 `inactive-color` lets you override the shadow color for inactive windows; by default, a more transparent `color` is used.

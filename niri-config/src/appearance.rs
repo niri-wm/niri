@@ -345,6 +345,10 @@ pub struct Shadow {
     pub softness: f64,
     pub spread: f64,
     pub draw_behind_window: bool,
+    /// Progressive inner-edge fade (logical pixels) of a draw-behind-window shadow,
+    /// on the same cubic curve as the background-effect feather. Set
+    /// both to the same width to fade blur and shadow in sync. 0 = off.
+    pub feather: f64,
     pub color: Color,
     pub inactive_color: Option<Color>,
 }
@@ -360,6 +364,7 @@ impl Default for Shadow {
             softness: 30.,
             spread: 5.,
             draw_behind_window: false,
+            feather: 0.,
             color: Color::from_rgba8_unpremul(0, 0, 0, 0x77),
             inactive_color: None,
         }
@@ -373,7 +378,7 @@ impl MergeWith<ShadowRule> for Shadow {
             self.on = false;
         }
 
-        merge!((self, part), softness, spread);
+        merge!((self, part), softness, spread, feather);
 
         merge_clone!((self, part), offset, draw_behind_window, color);
 
@@ -421,6 +426,7 @@ impl From<WorkspaceShadow> for Shadow {
             softness: value.softness,
             spread: value.spread,
             draw_behind_window: false,
+            feather: 0.,
             color: value.color,
             inactive_color: None,
         }
@@ -658,6 +664,8 @@ pub struct ShadowRule {
     pub spread: Option<FloatOrInt<-1024, 1024>>,
     #[knuffel(child, unwrap(argument))]
     pub draw_behind_window: Option<bool>,
+    #[knuffel(child, unwrap(argument))]
+    pub feather: Option<FloatOrInt<0, 1024>>,
     #[knuffel(child)]
     pub color: Option<Color>,
     #[knuffel(child)]
@@ -705,6 +713,7 @@ impl MergeWith<Self> for ShadowRule {
             softness,
             spread,
             draw_behind_window,
+            feather,
             color,
             inactive_color,
         );
@@ -1073,6 +1082,10 @@ pub struct BackgroundEffectRule {
     pub refraction_saturation: Option<FloatOrInt<0, 1000>>,
     #[knuffel(child, unwrap(argument))]
     pub refraction_brightness: Option<FloatOrInt<0, 1000>>,
+    #[knuffel(child, unwrap(argument))]
+    pub feather: Option<FloatOrInt<0, 1000>>,
+    #[knuffel(child, unwrap(argument))]
+    pub dim: Option<FloatOrInt<0, 1>>,
 }
 
 /// Resolved background effect rule.
@@ -1099,6 +1112,8 @@ pub struct BackgroundEffect {
     pub refraction_bevel: Option<f64>,
     pub refraction_saturation: Option<f64>,
     pub refraction_brightness: Option<f64>,
+    pub feather: Option<f64>,
+    pub dim: Option<f64>,
 }
 
 impl MergeWith<BackgroundEffectRule> for BackgroundEffect {
@@ -1127,6 +1142,14 @@ impl MergeWith<BackgroundEffectRule> for BackgroundEffect {
 
         if let Some(x) = part.refraction_brightness {
             self.refraction_brightness = Some(x.0);
+        }
+
+        if let Some(x) = part.feather {
+            self.feather = Some(x.0);
+        }
+
+        if let Some(x) = part.dim {
+            self.dim = Some(x.0);
         }
     }
 }
@@ -1406,5 +1429,119 @@ mod tests {
         assert_eq!(effect.refraction_bevel, Some(54.0));
         assert_eq!(effect.refraction_saturation, Some(1.5));
         assert_eq!(effect.refraction_brightness, Some(1.2));
+    }
+
+    #[test]
+    fn parse_background_effect_feather() {
+        let config = Config::parse_mem(
+            r#"
+            layer-rule {
+                background-effect {
+                    blur true
+                    feather 24
+                }
+            }
+            "#,
+        )
+        .unwrap();
+
+        let rule = &config.layer_rules[0].background_effect;
+        assert_eq!(rule.feather, Some(FloatOrInt(24.0)));
+
+        let mut effect = BackgroundEffect::default();
+        effect.merge_with(rule);
+        assert_eq!(effect.feather, Some(24.0));
+    }
+
+    #[test]
+    fn parse_shadow_feather() {
+        let config = Config::parse_mem(
+            r#"
+            layer-rule {
+                shadow {
+                    on
+                    draw-behind-window true
+                    feather 24
+                }
+            }
+            "#,
+        )
+        .unwrap();
+
+        let rule = &config.layer_rules[0].shadow;
+        assert_eq!(rule.feather, Some(FloatOrInt(24.0)));
+
+        let mut shadow = Shadow::default();
+        shadow.merge_with(rule);
+        assert!(shadow.draw_behind_window);
+        assert_eq!(shadow.feather, 24.0);
+
+        for value in ["-0.1", "1024.1"] {
+            let config = format!(
+                r#"
+                layer-rule {{
+                    shadow {{
+                        feather {value}
+                    }}
+                }}
+                "#
+            );
+            assert!(
+                Config::parse_mem(&config).is_err(),
+                "shadow feather {value} should be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn parse_background_effect_dim_range() {
+        let config = Config::parse_mem(
+            r#"
+            layer-rule {
+                background-effect {
+                    dim 0.25
+                }
+            }
+            "#,
+        )
+        .unwrap();
+
+        let rule = &config.layer_rules[0].background_effect;
+        assert_eq!(rule.dim, Some(FloatOrInt(0.25)));
+
+        let mut effect = BackgroundEffect::default();
+        effect.merge_with(rule);
+        assert_eq!(effect.dim, Some(0.25));
+
+        let boundary = Config::parse_mem(
+            r#"
+            layer-rule {
+                background-effect {
+                    dim 1
+                }
+            }
+            "#,
+        )
+        .unwrap();
+        assert_eq!(
+            boundary.layer_rules[0].background_effect.dim,
+            Some(FloatOrInt(1.0))
+        );
+
+        for value in ["-0.1", "1.0001", "2", "1000"] {
+            let config = format!(
+                r#"
+                layer-rule {{
+                    background-effect {{
+                        dim {value}
+                    }}
+                }}
+                "#
+            );
+            assert!(
+                Config::parse_mem(&config).is_err(),
+                "dim {value} should be rejected"
+            );
+        }
     }
 }

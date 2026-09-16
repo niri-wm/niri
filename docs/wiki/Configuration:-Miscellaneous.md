@@ -234,7 +234,7 @@ You can also set the color per-output [in the output config](./Configuration:-Ou
 
 Control the shadow behind workspaces visible in the overview.
 
-Settings here mirror the normal [`shadow` config in the layout section](./Configuration:-Layout.md#shadow), so check the documentation there.
+Settings here mirror the normal [`shadow` config in the layout section](./Configuration:-Layout.md#shadow), so check the documentation there. Workspace shadows do not support `draw-behind-window` or `feather`; they are drawn around the workspace bounds.
 
 Workspace shadows are configured for a workspace size normalized to 1080 pixels tall, then zoomed out together with the workspace.
 Practically, this means that you'll want bigger spread, offset, and softness compared to window shadows.

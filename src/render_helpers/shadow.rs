@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use glam::{Mat3, Vec2};
+use glam::Vec2;
 use niri_config::{Color, CornerRadius};
 use smithay::backend::renderer::element::{Element, Id, Kind, RenderElement, UnderlyingStorage};
 use smithay::backend::renderer::gles::{GlesError, GlesFrame, GlesRenderer, Uniform};
@@ -12,7 +12,7 @@ use smithay::utils::{Buffer, Logical, Physical, Point, Rectangle, Scale, Size, T
 
 use super::renderer::NiriRenderer;
 use super::shader_element::ShaderRenderElement;
-use super::shaders::{mat3_uniform, ProgramType, Shaders};
+use super::shaders::{ProgramType, Shaders};
 use crate::backend::tty::{TtyFrame, TtyRenderer, TtyRendererError};
 use crate::render_helpers::renderer::AsGlesFrame as _;
 
@@ -36,6 +36,14 @@ struct Parameters {
 
     window_geometry: Rectangle<f64, Logical>,
     window_corner_radius: CornerRadius,
+    /// Box the progressive inner-edge shadow fade is measured from
+    /// (surface rounded rect); independent of window_geometry so the
+    /// slab path can carry it without triggering the hole-cut.
+    feather_geometry: Rectangle<f64, Logical>,
+    feather_corner_radius: CornerRadius,
+    /// Width (logical pixels) of the inner-edge fade, same cubic curve as
+    /// background-effect feather. 0 = off (current behavior).
+    feather: f32,
 }
 
 impl ShadowRenderElement {
@@ -51,6 +59,37 @@ impl ShadowRenderElement {
         window_corner_radius: CornerRadius,
         alpha: f32,
     ) -> Self {
+        Self::new_with_feather(
+            size,
+            geometry,
+            color,
+            sigma,
+            corner_radius,
+            scale,
+            window_geometry,
+            window_corner_radius,
+            alpha,
+            geometry,
+            corner_radius,
+            0.,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_with_feather(
+        size: Size<f64, Logical>,
+        geometry: Rectangle<f64, Logical>,
+        color: Color,
+        sigma: f32,
+        corner_radius: CornerRadius,
+        scale: f32,
+        window_geometry: Rectangle<f64, Logical>,
+        window_corner_radius: CornerRadius,
+        alpha: f32,
+        feather_geometry: Rectangle<f64, Logical>,
+        feather_corner_radius: CornerRadius,
+        feather: f32,
+    ) -> Self {
         let inner = ShaderRenderElement::empty(ProgramType::Shadow, Kind::Unspecified);
         let mut rv = Self {
             inner,
@@ -64,6 +103,9 @@ impl ShadowRenderElement {
                 alpha,
                 window_geometry,
                 window_corner_radius,
+                feather_geometry,
+                feather_corner_radius,
+                feather,
             },
         };
         rv.update_inner();
@@ -84,6 +126,9 @@ impl ShadowRenderElement {
                 alpha: 1.,
                 window_geometry: Default::default(),
                 window_corner_radius: Default::default(),
+                feather_geometry: Default::default(),
+                feather_corner_radius: Default::default(),
+                feather: 0.,
             },
         }
     }
@@ -105,6 +150,38 @@ impl ShadowRenderElement {
         window_corner_radius: CornerRadius,
         alpha: f32,
     ) {
+        self.update_with_feather(
+            size,
+            geometry,
+            color,
+            sigma,
+            corner_radius,
+            scale,
+            window_geometry,
+            window_corner_radius,
+            alpha,
+            geometry,
+            corner_radius,
+            0.,
+        );
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn update_with_feather(
+        &mut self,
+        size: Size<f64, Logical>,
+        geometry: Rectangle<f64, Logical>,
+        color: Color,
+        sigma: f32,
+        corner_radius: CornerRadius,
+        scale: f32,
+        window_geometry: Rectangle<f64, Logical>,
+        window_corner_radius: CornerRadius,
+        alpha: f32,
+        feather_geometry: Rectangle<f64, Logical>,
+        feather_corner_radius: CornerRadius,
+        feather: f32,
+    ) {
         let params = Parameters {
             size,
             geometry,
@@ -115,6 +192,9 @@ impl ShadowRenderElement {
             scale,
             window_geometry,
             window_corner_radius,
+            feather_geometry,
+            feather_corner_radius,
+            feather,
         };
         if self.params == params {
             return;
@@ -135,6 +215,9 @@ impl ShadowRenderElement {
             scale,
             window_geometry,
             window_corner_radius,
+            feather_geometry: feather_box,
+            feather_corner_radius: feather_radius,
+            feather,
         } = self.params;
 
         let area_size = Vec2::new(size.w as f32, size.h as f32);
@@ -142,15 +225,23 @@ impl ShadowRenderElement {
         let geo_loc = Vec2::new(geometry.loc.x as f32, geometry.loc.y as f32);
         let geo_size = Vec2::new(geometry.size.w as f32, geometry.size.h as f32);
 
-        let input_to_geo =
-            Mat3::from_scale(area_size) * Mat3::from_translation(-geo_loc / area_size);
+        let input_to_geo = [area_size.x, area_size.y, -geo_loc.x, -geo_loc.y];
 
         let window_geo_loc = Vec2::new(window_geometry.loc.x as f32, window_geometry.loc.y as f32);
         let window_geo_size =
             Vec2::new(window_geometry.size.w as f32, window_geometry.size.h as f32);
-
-        let window_input_to_geo =
-            Mat3::from_scale(area_size) * Mat3::from_translation(-window_geo_loc / area_size);
+        let window_input_to_geo = [
+            area_size.x,
+            area_size.y,
+            -window_geo_loc.x,
+            -window_geo_loc.y,
+        ];
+        let feather_input_to_geo = [
+            area_size.x,
+            area_size.y,
+            -(feather_box.loc.x as f32),
+            -(feather_box.loc.y as f32),
+        ];
 
         self.inner.update(
             size,
@@ -160,15 +251,22 @@ impl ShadowRenderElement {
             Rc::new([
                 Uniform::new("shadow_color", color.to_array_premul()),
                 Uniform::new("sigma", sigma),
-                mat3_uniform("input_to_geo", input_to_geo),
+                Uniform::new("input_to_geo", input_to_geo),
                 Uniform::new("geo_size", geo_size.to_array()),
                 Uniform::new("corner_radius", <[f32; 4]>::from(corner_radius)),
-                mat3_uniform("window_input_to_geo", window_input_to_geo),
+                Uniform::new("window_input_to_geo", window_input_to_geo),
                 Uniform::new("window_geo_size", window_geo_size.to_array()),
                 Uniform::new(
                     "window_corner_radius",
                     <[f32; 4]>::from(window_corner_radius),
                 ),
+                Uniform::new("feather_input_to_geo", feather_input_to_geo),
+                Uniform::new(
+                    "feather_geo_size",
+                    Vec2::new(feather_box.size.w as f32, feather_box.size.h as f32).to_array(),
+                ),
+                Uniform::new("feather_corner_radius", <[f32; 4]>::from(feather_radius)),
+                Uniform::new("feather", feather),
             ]),
             HashMap::new(),
         );

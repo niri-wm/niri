@@ -525,12 +525,19 @@ impl<W: LayoutElement> Tile<W> {
                 .geometry_corner_radius()
                 .scaled_by(1. - expanded_progress as f32)
         };
-        self.shadow.update_render_elements(
+        let feather_radius = self
+            .window
+            .geometry_corner_radius()
+            .scaled_by(1. - expanded_progress as f32);
+        let feather_geometry = Rectangle::new(self.window_loc(), self.animated_window_size());
+        self.shadow.update_render_elements_with_feather(
             animated_tile_size,
             is_active,
             radius,
             self.scale,
             1. - expanded_progress as f32,
+            feather_geometry,
+            feather_radius,
         );
 
         let draw_focus_ring_with_background = if self.border.is_off() {
