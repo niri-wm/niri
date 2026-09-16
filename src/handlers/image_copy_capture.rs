@@ -102,40 +102,43 @@ pub fn output_capture_constraints(
     let mode = output.current_mode()?;
     let size = Size::<i32, BufferCoords>::from((mode.size.w, mode.size.h));
 
-    let dma = (|| {
-        let node = render_node?;
-        let egl = renderer.egl_context();
-
-        // Offer all formats the renderer can draw into to avoid unnecessary
-        // conversions, preserving the original order (many clients depend on
-        // the order being stable to select the same format when renegotiating).
-        let mut formats: Vec<(Fourcc, Vec<Modifier>)> = Vec::new();
-        for format in egl.dmabuf_render_formats().iter() {
-            match formats.iter_mut().find(|(code, _)| *code == format.code) {
-                Some((_, modifiers)) => modifiers.push(format.modifier),
-                None => formats.push((format.code, vec![format.modifier])),
-            }
-        }
-        if formats.is_empty() {
-            return None;
-        }
-
-        // Put Xrgb8888 and Argb8888 first since some clients always take the
-        // first advertised format (e.g. wl-mirror, grim).
-        formats.sort_by_key(|(code, _)| match code {
-            Fourcc::Xrgb8888 => 0,
-            Fourcc::Argb8888 => 1,
-            _ => 2,
-        });
-
-        Some(DmabufConstraints { node, formats })
-    })();
-
     Some(BufferConstraints {
         size,
         shm: vec![wl_shm::Format::Xrgb8888],
-        dma,
+        dma: capture_dmabuf_constraints(renderer, render_node),
     })
+}
+
+fn capture_dmabuf_constraints(
+    renderer: &GlesRenderer,
+    render_node: Option<DrmNode>,
+) -> Option<DmabufConstraints> {
+    let node = render_node?;
+    let egl = renderer.egl_context();
+
+    // Offer all formats the renderer can draw into to avoid unnecessary
+    // conversions, preserving the original order (many clients depend on
+    // the order being stable to select the same format when renegotiating).
+    let mut formats: Vec<(Fourcc, Vec<Modifier>)> = Vec::new();
+    for format in egl.dmabuf_render_formats().iter() {
+        match formats.iter_mut().find(|(code, _)| *code == format.code) {
+            Some((_, modifiers)) => modifiers.push(format.modifier),
+            None => formats.push((format.code, vec![format.modifier])),
+        }
+    }
+    if formats.is_empty() {
+        return None;
+    }
+
+    // Put Xrgb8888 and Argb8888 first since some clients always take the
+    // first advertised format (e.g. wl-mirror, grim).
+    formats.sort_by_key(|(code, _)| match code {
+        Fourcc::Xrgb8888 => 0,
+        Fourcc::Argb8888 => 1,
+        _ => 2,
+    });
+
+    Some(DmabufConstraints { node, formats })
 }
 
 /// Buffer constraints for capturing the cursor of an output. Argb8888 since it has alpha.
