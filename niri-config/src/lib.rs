@@ -1467,6 +1467,17 @@ mod tests {
                 }
 
                 pinch-sensitivity 1.2
+
+                animations {
+                    window-open {
+                        duration-ms 150
+                        curve "ease-out-expo"
+                    }
+                    window-close {
+                        duration-ms 150
+                        curve "ease-out-expo"
+                    }
+                }
             }
 
             layer-rule {
@@ -2488,7 +2499,38 @@ mod tests {
                             saturation: None,
                         },
                     },
-                    animations: None,
+                    animations: Some(
+                        WindowAnimationsRule {
+                            window_open: Some(
+                                WindowOpenAnim {
+                                    anim: Animation {
+                                        off: false,
+                                        kind: Easing(
+                                            EasingParams {
+                                                duration_ms: 150,
+                                                curve: EaseOutExpo,
+                                            },
+                                        ),
+                                    },
+                                    custom_shader: None,
+                                },
+                            ),
+                            window_close: Some(
+                                WindowCloseAnim {
+                                    anim: Animation {
+                                        off: false,
+                                        kind: Easing(
+                                            EasingParams {
+                                                duration_ms: 150,
+                                                curve: EaseOutExpo,
+                                            },
+                                        ),
+                                    },
+                                    custom_shader: None,
+                                },
+                            ),
+                        },
+                    ),
                 },
             ],
             layer_rules: [
