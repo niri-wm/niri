@@ -31,6 +31,7 @@ use crate::cursor::{RenderCursor, XCursor};
 use crate::niri::{Niri, State};
 use crate::render_helpers::CaptureBuffer;
 use crate::utils::{get_credentials_for_client, CastSessionId, CastStreamId};
+use crate::window::mapped::{Mapped, MappedId};
 
 /// Output capture session.
 pub struct ImageCopySession {
@@ -61,6 +62,9 @@ pub struct ImageCopyCursorSession {
     pub credentials: Option<Credentials>,
 }
 
+#[derive(Copy, Clone)]
+pub struct WindowSourceMappedId(pub MappedId);
+
 /// Credentials for the client which created a capture session.
 ///
 /// Returns `None` if the session doesn't have its client (it has already been
@@ -80,9 +84,25 @@ fn source_session_id(source: &ImageCaptureSource) -> CastSessionId {
 }
 
 /// Output captured by a session, or `None` if it's gone (sessions can outlive
-/// their output).
+/// their output) or this is not an output source.
 pub fn source_output(source: &ImageCaptureSource) -> Option<Output> {
     source.user_data().get::<WeakOutput>()?.upgrade()
+}
+
+/// Id of the window captured by a session, or `None` if it doesn't correspond to one.
+pub fn source_mapped_id(source: &ImageCaptureSource) -> Option<MappedId> {
+    Some(source.user_data().get::<WindowSourceMappedId>()?.0)
+}
+
+/// Output of a session's source.
+pub fn source_session_output(niri: &Niri, source: &ImageCaptureSource) -> Option<Output> {
+    if let Some(output) = source_output(source) {
+        return Some(output);
+    }
+
+    let id = source_mapped_id(source)?;
+    let (_, out) = niri.find_mapped_output_by_id(id)?;
+    Some(out?.clone())
 }
 
 /// Buffer constraints for capturing an output.
@@ -107,6 +127,23 @@ pub fn output_capture_constraints(
         shm: vec![wl_shm::Format::Xrgb8888],
         dma: capture_dmabuf_constraints(renderer, render_node),
     })
+}
+
+/// Buffer constraints for capturing a window.
+pub fn window_capture_constraints(
+    renderer: &GlesRenderer,
+    render_node: Option<DrmNode>,
+    mapped: &Mapped,
+    output: &Output,
+) -> BufferConstraints {
+    let scale = Scale::from(output.current_scale().fractional_scale());
+    let size = mapped.capture_bbox(scale).size;
+
+    BufferConstraints {
+        size: Size::from((size.w, size.h)),
+        shm: vec![wl_shm::Format::Xrgb8888, wl_shm::Format::Argb8888],
+        dma: capture_dmabuf_constraints(renderer, render_node),
+    }
 }
 
 fn capture_dmabuf_constraints(
@@ -289,17 +326,32 @@ impl ImageCopyCaptureHandler for State {
     }
 
     fn capture_constraints(&mut self, source: &ImageCaptureSource) -> Option<BufferConstraints> {
-        let output = source_output(source)?;
-        if !self.niri.output_state.contains_key(&output) {
-            return None;
-        }
+        if let Some(id) = source_mapped_id(source) {
+            let Some((mapped, Some(output))) = self.niri.find_mapped_output_by_id(id) else {
+                return None;
+            };
+            if !self.niri.output_state.contains_key(output) {
+                return None;
+            }
 
-        let render_node = self.backend.primary_render_node();
-        self.backend
-            .with_primary_renderer(|renderer| {
-                output_capture_constraints(renderer, render_node, &output)
+            let render_node = self.backend.primary_render_node();
+            self.backend.with_primary_renderer(|renderer| {
+                window_capture_constraints(renderer, render_node, mapped, output)
             })
-            .flatten()
+        } else if let Some(output) = source_output(source) {
+            if !self.niri.output_state.contains_key(&output) {
+                return None;
+            }
+
+            let render_node = self.backend.primary_render_node();
+            self.backend
+                .with_primary_renderer(|renderer| {
+                    output_capture_constraints(renderer, render_node, &output)
+                })
+                .flatten()
+        } else {
+            None
+        }
     }
 
     fn cursor_capture_constraints(
@@ -373,7 +425,7 @@ impl ImageCopyCaptureHandler for State {
         s.pending_frame = Some(frame);
 
         // The frame is captured on the next redraw with damage.
-        if let Some(output) = source_output(&session.source()) {
+        if let Some(output) = source_session_output(&self.niri, &session.source()) {
             // The output may be gone already (the global lingers).
             if self.niri.output_exists(&output) {
                 self.niri.queue_redraw(&output);
@@ -401,7 +453,7 @@ impl ImageCopyCaptureHandler for State {
         s.pending_frame = Some(frame);
 
         // The frame is captured on the next redraw when the cursor image changes.
-        if let Some(output) = source_output(&session.source()) {
+        if let Some(output) = source_session_output(&self.niri, &session.source()) {
             // The output may be gone already (the global lingers).
             if self.niri.output_exists(&output) {
                 self.niri.queue_redraw(&output);
