@@ -57,6 +57,7 @@ use crate::ui::mru::{WindowMru, WindowMruUi};
 use crate::ui::screenshot_ui::ScreenshotUi;
 use crate::utils::spawning::{spawn, spawn_sh};
 use crate::utils::{center, get_monotonic_time, CastSessionId, ResizeEdge};
+use crate::window::mapped::MappedId;
 
 pub mod backend_ext;
 pub mod click_grab;
@@ -1027,10 +1028,8 @@ impl State {
                 show_pointer,
                 path,
             } => {
-                let mut windows = self.niri.layout.windows();
-                let window = windows.find(|(_, m)| m.id().get() == id);
-                if let Some((Some(monitor), mapped)) = window {
-                    let output = monitor.output();
+                let id = MappedId::specific(id);
+                if let Some((mapped, Some(output))) = self.niri.find_mapped_output_by_id(id) {
                     self.backend.with_primary_renderer(|renderer| {
                         if let Err(err) = self.niri.screenshot_window(
                             renderer,
@@ -1064,8 +1063,8 @@ impl State {
                 }
             }
             Action::CloseWindowById(id) => {
-                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
-                if let Some((_, mapped)) = window {
+                let id = MappedId::specific(id);
+                if let Some((mapped, _)) = self.niri.find_mapped_output_by_id(id) {
                     mapped.toplevel().send_close();
                 }
             }
@@ -1078,9 +1077,8 @@ impl State {
                 }
             }
             Action::FullscreenWindowById(id) => {
-                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
-                let window = window.map(|(_, m)| m.window.clone());
-                if let Some(window) = window {
+                let id = MappedId::specific(id);
+                if let Some(window) = self.niri.find_window_by_id(id) {
                     self.niri.layout.toggle_fullscreen(&window);
                     // FIXME: granular
                     self.niri.queue_redraw_all();
@@ -1095,18 +1093,16 @@ impl State {
                 }
             }
             Action::ToggleWindowedFullscreenById(id) => {
-                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
-                let window = window.map(|(_, m)| m.window.clone());
-                if let Some(window) = window {
+                let id = MappedId::specific(id);
+                if let Some(window) = self.niri.find_window_by_id(id) {
                     self.niri.layout.toggle_windowed_fullscreen(&window);
                     // FIXME: granular
                     self.niri.queue_redraw_all();
                 }
             }
             Action::FocusWindow(id) => {
-                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
-                let window = window.map(|(_, m)| m.window.clone());
-                if let Some(window) = window {
+                let id = MappedId::specific(id);
+                if let Some(window) = self.niri.find_window_by_id(id) {
                     self.focus_window(&window);
                 }
             }
@@ -1270,9 +1266,8 @@ impl State {
                 self.niri.queue_redraw_all();
             }
             Action::ConsumeOrExpelWindowLeftById(id) => {
-                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
-                let window = window.map(|(_, m)| m.window.clone());
-                if let Some(window) = window {
+                let id = MappedId::specific(id);
+                if let Some(window) = self.niri.find_window_by_id(id) {
                     self.niri.layout.consume_or_expel_window_left(Some(&window));
                     self.maybe_warp_cursor_to_focus();
                     // FIXME: granular
@@ -1286,9 +1281,8 @@ impl State {
                 self.niri.queue_redraw_all();
             }
             Action::ConsumeOrExpelWindowRightById(id) => {
-                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
-                let window = window.map(|(_, m)| m.window.clone());
-                if let Some(window) = window {
+                let id = MappedId::specific(id);
+                if let Some(window) = self.niri.find_window_by_id(id) {
                     self.niri
                         .layout
                         .consume_or_expel_window_right(Some(&window));
@@ -1584,9 +1578,8 @@ impl State {
                 reference,
                 focus,
             } => {
-                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
-                let window = window.map(|(_, m)| m.window.clone());
-                if let Some(window) = window {
+                let id = MappedId::specific(id);
+                if let Some(window) = self.niri.find_window_by_id(id) {
                     if let Some((output, index)) =
                         self.niri.find_output_and_workspace_index(reference)
                     {
@@ -1844,16 +1837,14 @@ impl State {
                 self.niri.layout.toggle_window_width(None, false);
             }
             Action::SwitchPresetWindowWidthById(id) => {
-                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
-                let window = window.map(|(_, m)| m.window.clone());
-                if let Some(window) = window {
+                let id = MappedId::specific(id);
+                if let Some(window) = self.niri.find_window_by_id(id) {
                     self.niri.layout.toggle_window_width(Some(&window), true);
                 }
             }
             Action::SwitchPresetWindowWidthBackById(id) => {
-                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
-                let window = window.map(|(_, m)| m.window.clone());
-                if let Some(window) = window {
+                let id = MappedId::specific(id);
+                if let Some(window) = self.niri.find_window_by_id(id) {
                     self.niri.layout.toggle_window_width(Some(&window), false);
                 }
             }
@@ -1864,16 +1855,14 @@ impl State {
                 self.niri.layout.toggle_window_height(None, false);
             }
             Action::SwitchPresetWindowHeightById(id) => {
-                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
-                let window = window.map(|(_, m)| m.window.clone());
-                if let Some(window) = window {
+                let id = MappedId::specific(id);
+                if let Some(window) = self.niri.find_window_by_id(id) {
                     self.niri.layout.toggle_window_height(Some(&window), true);
                 }
             }
             Action::SwitchPresetWindowHeightBackById(id) => {
-                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
-                let window = window.map(|(_, m)| m.window.clone());
-                if let Some(window) = window {
+                let id = MappedId::specific(id);
+                if let Some(window) = self.niri.find_window_by_id(id) {
                     self.niri.layout.toggle_window_height(Some(&window), false);
                 }
             }
@@ -1888,9 +1877,8 @@ impl State {
                 self.niri.queue_redraw_all();
             }
             Action::CenterWindowById(id) => {
-                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
-                let window = window.map(|(_, m)| m.window.clone());
-                if let Some(window) = window {
+                let id = MappedId::specific(id);
+                if let Some(window) = self.niri.find_window_by_id(id) {
                     self.niri.layout.center_window(Some(&window));
                     // FIXME: granular
                     self.niri.queue_redraw_all();
@@ -1913,9 +1901,8 @@ impl State {
                 }
             }
             Action::MaximizeWindowToEdgesById(id) => {
-                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
-                let window = window.map(|(_, m)| m.window.clone());
-                if let Some(window) = window {
+                let id = MappedId::specific(id);
+                if let Some(window) = self.niri.find_window_by_id(id) {
                     self.niri.layout.toggle_maximized(&window);
                     // FIXME: granular
                     self.niri.queue_redraw_all();
@@ -2098,10 +2085,8 @@ impl State {
             }
             Action::MoveWindowToMonitorById { id, output } => {
                 if let Some(output) = self.niri.output_by_name_match(&output).cloned() {
-                    let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
-                    let window = window.map(|(_, m)| m.window.clone());
-
-                    if let Some(window) = window {
+                    let id = MappedId::specific(id);
+                    if let Some(window) = self.niri.find_window_by_id(id) {
                         let target_was_active = self
                             .niri
                             .layout
@@ -2244,9 +2229,8 @@ impl State {
                 }
             }
             Action::SetWindowWidthById { id, change } => {
-                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
-                let window = window.map(|(_, m)| m.window.clone());
-                if let Some(window) = window {
+                let id = MappedId::specific(id);
+                if let Some(window) = self.niri.find_window_by_id(id) {
                     self.niri.layout.set_window_width(Some(&window), change);
                 }
             }
@@ -2261,9 +2245,8 @@ impl State {
                 }
             }
             Action::SetWindowHeightById { id, change } => {
-                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
-                let window = window.map(|(_, m)| m.window.clone());
-                if let Some(window) = window {
+                let id = MappedId::specific(id);
+                if let Some(window) = self.niri.find_window_by_id(id) {
                     self.niri.layout.set_window_height(Some(&window), change);
                 }
             }
@@ -2271,9 +2254,8 @@ impl State {
                 self.niri.layout.reset_window_height(None);
             }
             Action::ResetWindowHeightById(id) => {
-                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
-                let window = window.map(|(_, m)| m.window.clone());
-                if let Some(window) = window {
+                let id = MappedId::specific(id);
+                if let Some(window) = self.niri.find_window_by_id(id) {
                     self.niri.layout.reset_window_height(Some(&window));
                 }
             }
@@ -2373,9 +2355,8 @@ impl State {
                 self.niri.queue_redraw_all();
             }
             Action::ToggleWindowFloatingById(id) => {
-                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
-                let window = window.map(|(_, m)| m.window.clone());
-                if let Some(window) = window {
+                let id = MappedId::specific(id);
+                if let Some(window) = self.niri.find_window_by_id(id) {
                     self.niri.layout.toggle_window_floating(Some(&window));
                     // FIXME: granular
                     self.niri.queue_redraw_all();
@@ -2387,9 +2368,8 @@ impl State {
                 self.niri.queue_redraw_all();
             }
             Action::MoveWindowToFloatingById(id) => {
-                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
-                let window = window.map(|(_, m)| m.window.clone());
-                if let Some(window) = window {
+                let id = MappedId::specific(id);
+                if let Some(window) = self.niri.find_window_by_id(id) {
                     self.niri.layout.set_window_floating(Some(&window), true);
                     // FIXME: granular
                     self.niri.queue_redraw_all();
@@ -2401,9 +2381,8 @@ impl State {
                 self.niri.queue_redraw_all();
             }
             Action::MoveWindowToTilingById(id) => {
-                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
-                let window = window.map(|(_, m)| m.window.clone());
-                if let Some(window) = window {
+                let id = MappedId::specific(id);
+                if let Some(window) = self.niri.find_window_by_id(id) {
                     self.niri.layout.set_window_floating(Some(&window), false);
                     // FIXME: granular
                     self.niri.queue_redraw_all();
@@ -2429,8 +2408,8 @@ impl State {
             }
             Action::MoveFloatingWindowById { id, x, y } => {
                 let window = if let Some(id) = id {
-                    let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
-                    let window = window.map(|(_, m)| m.window.clone());
+                    let id = MappedId::specific(id);
+                    let window = self.niri.find_window_by_id(id);
                     if window.is_none() {
                         return;
                     }

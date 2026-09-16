@@ -217,6 +217,10 @@ impl MappedId {
         self.0
     }
 
+    pub fn specific(id: u64) -> Self {
+        Self(id)
+    }
+
     /// Converts the ID to a string that can be used as an identifier in
     /// ext_foreign_toplevel_handle_v1::identifier
     ///
