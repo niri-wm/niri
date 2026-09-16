@@ -1,30 +1,34 @@
-#ifdef GL_FRAGMENT_PRECISION_HIGH
-precision highp float;
-#else
-precision mediump float;
+#version 100
+
+//_DEFINES_
+
+#if defined(EXTERNAL)
+#extension GL_OES_EGL_image_external : require
 #endif
 
+precision highp float;
+#if defined(EXTERNAL)
+uniform samplerExternalOES tex;
+#else
+uniform sampler2D tex;
+#endif
+
+uniform float alpha;
 varying vec2 v_coords;
 
-uniform sampler2D tex;
-uniform float alpha;
 #if defined(DEBUG_FLAGS)
 uniform float tint;
 #endif
 
-// To round the corners of the geometry, we need to know the geometry's size, its corner radius, and
-// have a matrix to transform from the texture's coordinates to the geometry's coordinates.
-//
-// Transforming input coordinates with this matrix gives coordinates in [0, 1] relative to the
-// geometry.
-//
-// These uniforms are in logical pixels.
 uniform float niri_scale;
+
 uniform vec2 geo_size;
 uniform vec4 corner_radius;
 uniform mat3 input_to_geo;
 uniform float refraction;
 uniform float refraction_bevel;
+uniform float feather;
+uniform float dim;
 uniform float refraction_saturation;
 uniform float refraction_brightness;
 
@@ -36,8 +40,20 @@ void main() {
     vec2 sample_coords = v_coords;
     float specular = 0.0;
 
-    // Optical Snell's law refraction along curved surface bevel.
-    if (refraction > 0.001 && geo_size.x > 2.0 && geo_size.y > 2.0) {
+    // Compute the rounded-rectangle SDF once and reuse it for refraction and feather.
+    // Refraction needs a sane size for stable bevel math; feather works at any size.
+    bool big_enough = geo_size.x > 2.0 && geo_size.y > 2.0;
+    bool do_refr = refraction > 0.001 && big_enough;
+    bool do_feather = feather > 0.001;
+    bool need_sdf = do_refr || do_feather;
+
+    // Shared rounded-rect SDF state (valid only when need_sdf).
+    float sdf_r = 0.0;
+    float sdf_d = 0.0;
+    vec2 sdf_p = vec2(0.0);
+    vec2 sdf_q = vec2(0.0);
+
+    if (need_sdf) {
         vec2 px = coords_geo.xy * geo_size;
         vec2 b = geo_size * 0.5;
         vec2 p = px - b;
@@ -54,24 +70,32 @@ void main() {
         vec2 q = abs(p) - b + vec2(r);
         float d = min(max(q.x, q.y), 0.0) + length(max(q, vec2(0.0))) - r;
 
+        sdf_r = r;
+        sdf_d = d;
+        sdf_p = p;
+        sdf_q = q;
+    }
+
+    // Optical Snell's law refraction along curved surface bevel.
+    if (do_refr) {
         // Analytic surface normal direction vector.
         vec2 dir;
-        if (max(q.x, q.y) < 0.0) {
-            dir = (q.x > q.y) ? vec2(sign(p.x), 0.0) : vec2(0.0, sign(p.y));
+        if (max(sdf_q.x, sdf_q.y) < 0.0) {
+            dir = (sdf_q.x > sdf_q.y) ? vec2(sign(sdf_p.x), 0.0) : vec2(0.0, sign(sdf_p.y));
         } else {
-            vec2 qc = max(q, vec2(0.0));
-            dir = sign(p) * (qc / max(length(qc), 1e-4));
+            vec2 qc = max(sdf_q, vec2(0.0));
+            dir = sign(sdf_p) * (qc / max(length(qc), 1e-4));
         }
 
         // Bevel width: explicit if configured (> 0.001), otherwise scaled with corner radius.
-        float r_eff = max(r, 1.0);
+        float r_eff = max(sdf_r, 1.0);
         float min_dim = min(geo_size.x, geo_size.y);
         float bevel_auto = clamp(r_eff * 0.85, 8.0, min_dim * 0.35);
         float bevel = (refraction_bevel > 0.001) ? clamp(refraction_bevel, 1.0, min_dim * 0.45) : bevel_auto;
 
         // Evaluate refraction within the outer curved bevel strictly inside the geometry.
-        if (bevel >= 0.5 && d >= -bevel && d <= 0.0) {
-            float edge_dist = -d;
+        if (bevel >= 0.5 && sdf_d >= -bevel && sdf_d <= 0.0) {
+            float edge_dist = -sdf_d;
             float u = edge_dist / bevel;
 
             // Sextic shoulder matching the superellipse profile (slope 3.5 at
@@ -136,12 +160,37 @@ void main() {
         color.rgb += (vec3(1.0) - color.rgb) * specular;
     }
 
-    if (coords_geo.x < 0.0 || 1.0 < coords_geo.x || coords_geo.y < 0.0 || 1.0 < coords_geo.y) {
-        // Clip outside geometry.
-        color = vec4(0.0);
+    // Dimming applied in the same coordinate space.
+    if (dim > 0.001) {
+        color.rgb = mix(color.rgb, vec3(0.0), clamp(dim, 0.0, 1.0));
+    }
+
+    if (!do_feather) {
+        if (coords_geo.x < 0.0 || 1.0 < coords_geo.x || coords_geo.y < 0.0 || 1.0 < coords_geo.y) {
+            // Clip outside geometry.
+            color = vec4(0.0);
+        } else {
+            // Apply corner rounding inside geometry.
+            color = color * niri_rounding_alpha(coords_geo.xy * geo_size, geo_size, corner_radius);
+        }
     } else {
-        // Apply corner rounding inside geometry.
-        color = color * niri_rounding_alpha(coords_geo.xy * geo_size, geo_size, corner_radius);
+        // Reuse shared SDF; no second evaluation.
+        float d = sdf_d;
+
+        if (coords_geo.x < 0.0 || 1.0 < coords_geo.x || coords_geo.y < 0.0 || 1.0 < coords_geo.y || d >= 0.0) {
+            // Clip outside geometry.
+            color = vec4(0.0);
+        } else if (d > -feather) {
+            // Progressive smooth falloff from inner core (d <= -feather, factor = 1.0)
+            // to outer boundary (d == 0.0, factor = 0.0).
+            float t = clamp(-d / feather, 0.0, 1.0);
+            // Cubic-in: holds ~full strength until close to the edge, so a
+            // wide ramp softens sides without eating interior content.
+            // (Shared curve with shadow feather — keep the two in sync.)
+            float u = 1.0 - t;
+            float factor = 1.0 - u * u * u;
+            color = color * factor;
+        }
     }
 
     // Apply final alpha and tint.

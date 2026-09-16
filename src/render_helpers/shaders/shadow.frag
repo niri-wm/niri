@@ -21,6 +21,14 @@ uniform mat3 window_input_to_geo;
 uniform vec2 window_geo_size;
 uniform vec4 window_corner_radius;
 
+// Progressive inner-edge fade for draw-behind-window shadows,
+// coupled with the background-effect feather: same cubic curve,
+// same surface box when the widths match.
+uniform mat3 feather_input_to_geo;
+uniform vec2 feather_geo_size;
+uniform vec4 feather_corner_radius;
+uniform float feather;
+
 // Based on: https://madebyevan.com/shaders/fast-rounded-rectangle-shadows/
 //
 // License: CC0 (http://creativecommons.org/publicdomain/zero/1.0/)
@@ -105,6 +113,27 @@ void main() {
                 && 0.0 <= coords_window_geo.y && coords_window_geo.y <= window_geo_size.y) {
             float alpha = niri_rounding_alpha(coords_window_geo.xy, window_geo_size, window_corner_radius);
             color = color * (1.0 - alpha);
+        }
+    }
+
+    // Progressive inner-edge fade: dissolve toward the surface edge in
+    // sync with the blur feather. Inside the bbox only (d < 0) — the
+    // outer halo is untouched, so depth survives.
+    if (feather > 0.001) {
+        vec3 coords_feather_geo = feather_input_to_geo * vec3(niri_v_coords, 1.0);
+        vec2 fpx = coords_feather_geo.xy;
+        vec2 fb = feather_geo_size * 0.5;
+        vec2 fp = fpx - fb;
+        float fr = (fpx.x < fb.x)
+            ? ((fpx.y < fb.y) ? feather_corner_radius.x : feather_corner_radius.w)
+            : ((fpx.y < fb.y) ? feather_corner_radius.y : feather_corner_radius.z);
+        fr = clamp(fr, 0.0, min(fb.x, fb.y));
+        vec2 fq = abs(fp) - fb + vec2(fr);
+        float fd = min(max(fq.x, fq.y), 0.0) + length(max(fq, vec2(0.0))) - fr;
+        if (fd < 0.0) {
+            float t = clamp(-fd / feather, 0.0, 1.0);
+            float u = 1.0 - t;
+            color = color * (1.0 - u * u * u);
         }
     }
 

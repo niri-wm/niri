@@ -137,6 +137,11 @@ impl Shadow {
                     Rectangle::new(window_geo.loc - offset - rect.loc, window_geo.size),
                     win_radius,
                     alpha,
+                    window_geo,
+                    win_radius,
+                    // Hole-cut shadows keep exact current behavior: the cut
+                    // already zeroes the interior, so no ramp is applied.
+                    0.,
                 );
 
                 rect.loc += offset;
@@ -156,6 +161,14 @@ impl Shadow {
                 Rectangle::zero(),
                 Default::default(),
                 alpha,
+                // Draw-behind-window path carries the surface box for the progressive
+                // inner-edge fade (independent of the hole-cut slots).
+                // Frame matches the hole-cut convention (surface origin in
+                // shader-rect space, offset-compensated) so the ramp
+                // zero-line coincides with the blur feather zero-line.
+                Rectangle::new(window_geo.loc - offset - shader_geo.loc, window_geo.size),
+                win_radius,
+                self.config.feather as f32,
             );
 
             self.shader_rects[0].loc += offset;

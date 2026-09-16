@@ -100,6 +100,8 @@ impl<R: NiriRenderer> ClippedSurfaceRenderElement<R> {
             Uniform::new("refraction_bevel", 0.0f32),
             Uniform::new("refraction_saturation", 1.30f32),
             Uniform::new("refraction_brightness", 1.10f32),
+            Uniform::new("feather", 0.0f32),
+            Uniform::new("dim", 0.0f32),
         ]
     }
 

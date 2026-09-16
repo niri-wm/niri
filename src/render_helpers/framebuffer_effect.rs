@@ -42,6 +42,8 @@ pub struct FramebufferEffectElement {
     refraction_bevel: f32,
     refraction_saturation: f32,
     refraction_brightness: f32,
+    feather: f32,
+    dim: f32,
 }
 
 #[derive(Debug)]
@@ -77,6 +79,8 @@ impl FramebufferEffect {
         refraction_bevel: f32,
         refraction_saturation: f32,
         refraction_brightness: f32,
+        feather: f32,
+        dim: f32,
     ) -> FramebufferEffectElement {
         let (clip_geo, corner_radius) = params
             .clip
@@ -102,6 +106,8 @@ impl FramebufferEffect {
             refraction_bevel,
             refraction_saturation,
             refraction_brightness,
+            feather,
+            dim,
         }
     }
 }
@@ -111,7 +117,7 @@ impl FramebufferEffectElement {
         &self,
         crop: Rectangle<f64, Logical>,
         transform: Transform,
-    ) -> [Uniform<'static>; 11] {
+    ) -> [Uniform<'static>; 13] {
         let offset = crop.loc - (self.clip_geo.loc - self.geometry.loc);
         let offset = Vec2::new(offset.x as f32, offset.y as f32);
         let crop_size = Vec2::new(crop.size.w as f32, crop.size.h as f32);
@@ -141,6 +147,8 @@ impl FramebufferEffectElement {
             Uniform::new("refraction_bevel", self.refraction_bevel),
             Uniform::new("refraction_saturation", self.refraction_saturation),
             Uniform::new("refraction_brightness", self.refraction_brightness),
+            Uniform::new("feather", self.feather),
+            Uniform::new("dim", self.dim),
         ]
     }
 }
