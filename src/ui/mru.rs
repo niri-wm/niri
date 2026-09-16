@@ -1588,7 +1588,7 @@ impl Inner {
 
         for (thumbnail, geo) in self.thumbnails_in_view_render() {
             let id = thumbnail.id;
-            let Some((_, mapped)) = niri.layout.windows().find(|(_, m)| m.id() == id) else {
+            let Some((mapped, _)) = niri.find_mapped_output_by_id(id) else {
                 error!("window in the MRU must be present in the layout");
                 continue;
             };

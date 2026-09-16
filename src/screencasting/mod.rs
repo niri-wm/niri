@@ -165,7 +165,7 @@ impl State {
                 }
                 return;
             }
-            CastTarget::Window { id } => *id,
+            CastTarget::Window { id } => MappedId::specific(*id),
         };
 
         // Lack of partial borrowing strikes again...
@@ -174,9 +174,9 @@ impl State {
         let mut stop = false;
         // Use a loop {} so we can break instead of early-return.
         #[allow(clippy::never_loop)]
+        #[allow(clippy::while_let_loop)]
         loop {
-            let mut windows = self.niri.layout.windows();
-            let Some((_, mapped)) = windows.find(|(_, mapped)| mapped.id().get() == id) else {
+            let Some((mapped, _)) = self.niri.find_mapped_output_by_id(id) else {
                 break;
             };
 
