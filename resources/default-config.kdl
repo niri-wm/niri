@@ -361,6 +361,69 @@ window-rule {
     }
 }
 
+// Layer rules let you adjust behavior for layer shell windows, like quickshell.
+// Find more information on the wiki:
+// https://niri-wm.github.io/niri/Configuration:-Layer-Rules
+
+// Example: set opacity and turn off animations for layer surfaces with
+// exclusive zones and specific anchor sets, i.e., bars, panels, docks, etc.
+layer-rule {
+    // Top bar (e.g. standard waybar anchored to top edge)
+    match anchors="left,right,top" exclusive-zone="exclusive"
+    // Bottom bar
+    match anchors="left,right,bottom" exclusive-zone="exclusive"
+    // Left+right only bar (vertical panels on both sides)
+    match anchors="left,right" exclusive-zone="exclusive"
+
+    opacity 0.7
+
+    animations {
+        layer-open {
+            off
+        }
+        layer-close {
+            off
+        }
+    }
+}
+
+// Example: Disable blur and override animations for background layer surfaces,
+// like wallpapers.
+layer-rule {
+    match layer="background" anchor-sides=4 keyboard-interactivity="none"
+
+    background-effect {
+        blur false
+        xray true
+    }
+
+    animations {
+        layer-open {
+            curve "ease-out-quad"
+        }
+        layer-close {
+            curve "ease-out-quad"
+        }
+    }
+}
+
+// Example: Animations on keyboard-exclusive surfaces on top or overlay layers,
+// i.e., launchers.
+/-layer-rule {
+    // keyboard=exclusive AND layer=top OR keyboard=exclusive AND layer=overlay.
+    match keyboard-interactivity="exclusive" layer="top"
+    match keyboard-interactivity="exclusive" layer="overlay"
+
+    animations {
+        layer-open {
+            curve "ease-out-quad"
+        }
+        layer-close {
+            curve "ease-out-quad"
+        }
+    }
+}
+
 binds {
     // Keys consist of modifiers separated by + signs, followed by an XKB key name
     // in the end. To find an XKB name for a particular key, you may use a program
