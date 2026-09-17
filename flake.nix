@@ -49,6 +49,7 @@
               ./src
               ./Cargo.toml
               ./Cargo.lock
+              ./build.rs
             ];
           };
 
@@ -164,6 +165,11 @@
     in
     {
       checks = forAllSystems (system: {
+        niri-source = nixpkgsFor.${system}.runCommand "niri-source-contract" { } ''
+          # Cargo must discover the libinput capability probe in the filtered source.
+          cmp ${./build.rs} ${self.packages.${system}.niri.src}/build.rs
+          touch "$out"
+        '';
         # We use the debug build here to save a bit of time
         inherit (self.packages.${system}) niri-debug;
       });
