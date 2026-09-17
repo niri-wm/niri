@@ -63,7 +63,7 @@ pub struct Key {
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub enum Trigger {
     Keysym(Keysym),
-    KeyCompositor,
+    CompositorMod,
     MouseLeft,
     MouseRight,
     MouseMiddle,
@@ -1190,7 +1190,7 @@ impl FromStr for Key {
         } else if key.eq_ignore_ascii_case("TabletStylusButton3") {
             Trigger::TabletStylusButton3
         } else if key.eq_ignore_ascii_case("Mod") {
-            Trigger::KeyCompositor
+            Trigger::CompositorMod
         } else {
             let mut keysym = keysym_from_name(key, KEYSYM_CASE_INSENSITIVE);
             // The keyboard event handling code can receive either
@@ -1297,7 +1297,7 @@ mod tests {
         assert_eq!(
             "Mod".parse::<Key>().unwrap(),
             Key {
-                trigger: Trigger::KeyCompositor,
+                trigger: Trigger::CompositorMod,
                 modifiers: Modifiers::empty(),
             },
         );
@@ -1305,7 +1305,7 @@ mod tests {
         assert_eq!(
             "Ctrl+Mod".parse::<Key>().unwrap(),
             Key {
-                trigger: Trigger::KeyCompositor,
+                trigger: Trigger::CompositorMod,
                 modifiers: Modifiers::CTRL,
             },
         );

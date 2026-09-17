@@ -15,7 +15,8 @@ binds {
 }
 ```
 
-The parts of a hotkey definition are separated by '+' and consist of zero or more modifiers followed by a trigger key. This can be either an XKB key name or (<sup>Since: next release</sup>) `Mod`.
+The parts of a hotkey definition are separated by '+' and consist of zero or more modifiers followed by a trigger key.
+This can be either an XKB key name or <sup>Since: next release</sup> `Mod`.
 
 Valid modifiers are:
 
@@ -85,42 +86,61 @@ This is mostly useful for the scroll bindings.
 
 <sup>Since: next release</sup>
 
-Binds can be set to trigger on key press, on key release, or both. By default, binds trigger on key press. You can specify the timing using `press {}` and `release {}` blocks:
+Binds can be set to trigger on key press, on key release, or both.
+By default, binds trigger on key press.
+You can change it using `press {}` and `release {}` blocks:
 
 ```kdl
 binds {
-    // Trigger on press (default behavior)
+    // Trigger on press (default behavior).
     Mod+T { spawn "alacritty"; }
 
-    // Trigger on release
+    // Trigger on release.
     Mod { release { toggle-overview; }; }
 
-    // Trigger on both press and release with different actions
+    // Trigger on both press and release with different actions.
     Mod+Shift+Q {
         press { spawn "notify-send" "Pressed"; }
         release { spawn "notify-send" "Released"; }
     }
 
-    // Toggleable behavior like push-to-talk can be implemented by putting the same toggle command on the press and release action
+    // Toggleable behavior like push-to-talk can be implemented
+    // by putting the same toggle command on the press and release action.
     Control_R {
         press { spawn "toggle-command"; }
         release { spawn "toggle-command"; }
     }
 
-    // For multi-key modifier-only bindings, use Ctrl/Alt/etc. for the modifier keys and Control_L/Control_R/Alt_L/Alt_R/etc. for the trigger key
+    // For multi-key modifier-only bindings,
+    // use Ctrl/Alt/etc. for the modifier keys and
+    // Control_L/Control_R/Alt_L/Alt_R/etc. for the trigger key.
     Ctrl+Alt_L {
         press { spawn "notify-send" "Pressed"; }
         release { spawn "notify-send" "Released"; }
     }
-
 }
 ```
 
-Release bindings are mostly useful when you want to bind a modifier key to an action, as it avoids unwanted triggering when you're trying to use other binds involving that modifier.
+Release bindings are useful when you want to bind a modifier key to an action.
+Modifiers usually participate in other bindings, so a press binding would trigger every time you try to input another binding.
 
-By default, any key binding that includes a release action will have repeat turned off for its press action. This can be overridden with `repeat=true` if desired.
+In bindings with both press and release, the release action is guaranteed to trigger if the press action triggers.
+So your push-to-talk press-release binding will never get stuck pressed, no matter how you release the keys.
 
-Release binds will normally only trigger if no other keys were released and no keys or mouse buttons were pressed after the bound key was pressed. If you want a release bind to always trigger regardless, set `allow-invalidation=false`:
+By default, any key binding that includes a release action will have repeat turned off for its press action.
+This can be overridden with `repeat=true` if desired:
+
+```kdl
+binds {
+    Mod+Shift+Q repeat=true {
+        press { spawn "notify-send" "Pressed (repeating)"; }
+        release { spawn "notify-send" "Released"; }
+    }
+}
+```
+
+Release binds will normally only trigger if no other keys were released and no keys or mouse buttons were pressed after the bound key was pressed.
+If you want a release bind to always trigger regardless, set `allow-invalidation=false`:
 
 ```kdl
 binds {
@@ -128,7 +148,8 @@ binds {
 }
 ```
 
-Note that the modifiers of the bind itself (e.g. `Mod` in `Mod+T`) must still be held when the key is released, both for regular and invalidated releases. Extra modifiers that are not part of the bind are only allowed when `allow-invalidation=false`.
+Note that the modifiers of the bind itself (e.g. `Mod` in `Mod+T`) must still be held when the key is released, both for regular and invalidated releases.
+Extra modifiers that are not part of the bind are only allowed when `allow-invalidation=false`.
 
 ### Scroll Bindings
 
