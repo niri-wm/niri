@@ -202,9 +202,15 @@ fn collect_actions(config: &Config) -> Vec<&Action> {
 
     // Prefer Quit(false) if found, otherwise try Quit(true), and if there's neither, fall back to
     // Quit(false).
-    if binds.iter().any(|bind| matches!(bind.press_action, Some(Action::Quit(false)))) {
+    if binds
+        .iter()
+        .any(|bind| matches!(bind.press_action, Some(Action::Quit(false))))
+    {
         actions.push(&Action::Quit(false));
-    } else if binds.iter().any(|bind| matches!(bind.press_action, Some(Action::Quit(true)))) {
+    } else if binds
+        .iter()
+        .any(|bind| matches!(bind.press_action, Some(Action::Quit(true))))
+    {
         actions.push(&Action::Quit(true));
     } else {
         actions.push(&Action::Quit(false));
@@ -221,15 +227,19 @@ fn collect_actions(config: &Config) -> Vec<&Action> {
     ]);
 
     // Prefer move-column-to-workspace-down, but fall back to move-window-to-workspace-down.
-    if let Some(bind) = binds
-        .iter()
-        .find(|bind| matches!(&bind.press_action, Some(Action::MoveColumnToWorkspaceDown(_))))
-    {
+    if let Some(bind) = binds.iter().find(|bind| {
+        matches!(
+            &bind.press_action,
+            Some(Action::MoveColumnToWorkspaceDown(_))
+        )
+    }) {
         actions.push(bind.press_action.as_ref().unwrap());
-    } else if binds
-        .iter()
-        .any(|bind| matches!(&bind.press_action, Some(Action::MoveWindowToWorkspaceDown(_))))
-    {
+    } else if binds.iter().any(|bind| {
+        matches!(
+            &bind.press_action,
+            Some(Action::MoveWindowToWorkspaceDown(_))
+        )
+    }) {
         actions.push(&Action::MoveWindowToWorkspaceDown(true));
     } else {
         actions.push(&Action::MoveColumnToWorkspaceDown(true));
@@ -299,7 +309,11 @@ fn collect_actions(config: &Config) -> Vec<&Action> {
 
     if config.hotkey_overlay.hide_not_bound {
         // Only keep actions that have been bound
-        actions.retain(|&action| binds.iter().any(|bind| bind.press_action.as_ref() == Some(action)))
+        actions.retain(|&action| {
+            binds
+                .iter()
+                .any(|bind| bind.press_action.as_ref() == Some(action))
+        })
     }
 
     actions

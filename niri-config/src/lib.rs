@@ -657,7 +657,8 @@ mod tests {
 
     #[test]
     fn parse_bind_release_sections() {
-        // Release sections are not supported for scroll binds, since scroll ticks are dispatched as press events only.
+        // Release sections are not supported for scroll binds, since scroll ticks are dispatched as
+        // press events only.
         assert!(Config::parse_mem(
             r#"
             binds {

@@ -2858,9 +2858,12 @@ impl State {
                 find_configured_bind(bindings, mod_key, trigger, mods, false)
             })
             .filter(|bind| {
-                !self.niri.screenshot_ui.is_open() || allowed_during_screenshot(bind.release_action.as_ref())
+                !self.niri.screenshot_ui.is_open()
+                    || allowed_during_screenshot(bind.release_action.as_ref())
             }) {
-                if bind.has_release() && (valid_mouse_release_trigger == Some(button_code) || !bind.allow_invalidation)
+                if bind.has_release()
+                    && (valid_mouse_release_trigger == Some(button_code)
+                        || !bind.allow_invalidation)
                 {
                     self.niri.suppressed_buttons.remove(&button_code);
                     self.handle_bind(bind.clone(), false);
@@ -2910,11 +2913,13 @@ impl State {
                 }
                 .and_then(|trigger| {
                     let config = self.niri.config.borrow();
-                    let bindings = make_binds_iter(&config, &mut self.niri.window_mru_ui, modifiers);
+                    let bindings =
+                        make_binds_iter(&config, &mut self.niri.window_mru_ui, modifiers);
                     find_configured_bind(bindings, mod_key, trigger, mods, true)
                 })
                 .filter(|bind| {
-                    !self.niri.screenshot_ui.is_open() || allowed_during_screenshot(bind.press_action.as_ref())
+                    !self.niri.screenshot_ui.is_open()
+                        || allowed_during_screenshot(bind.press_action.as_ref())
                 }) {
                     if bind.has_press() {
                         self.niri.suppressed_buttons.insert(button_code);
@@ -3388,12 +3393,17 @@ impl State {
                             !self.niri.screenshot_ui.is_open()
                                 || allowed_during_screenshot(bind.press_action.as_ref())
                         });
-                        let bind_down =
-                            find_configured_bind(bindings, mod_key, Trigger::WheelScrollDown, mods, true)
-                                .filter(|bind| {
-                                    !self.niri.screenshot_ui.is_open()
-                                        || allowed_during_screenshot(bind.press_action.as_ref())
-                                });
+                        let bind_down = find_configured_bind(
+                            bindings,
+                            mod_key,
+                            Trigger::WheelScrollDown,
+                            mods,
+                            true,
+                        )
+                        .filter(|bind| {
+                            !self.niri.screenshot_ui.is_open()
+                                || allowed_during_screenshot(bind.press_action.as_ref())
+                        });
                         (bind_up, bind_down)
                     };
 
@@ -3543,12 +3553,17 @@ impl State {
                         !self.niri.screenshot_ui.is_open()
                             || allowed_during_screenshot(bind.press_action.as_ref())
                     });
-                    let bind_right =
-                        find_configured_bind(bindings, mod_key, Trigger::TouchpadScrollRight, mods, true)
-                            .filter(|bind| {
-                                !self.niri.screenshot_ui.is_open()
-                                    || allowed_during_screenshot(bind.press_action.as_ref())
-                            });
+                    let bind_right = find_configured_bind(
+                        bindings,
+                        mod_key,
+                        Trigger::TouchpadScrollRight,
+                        mods,
+                        true,
+                    )
+                    .filter(|bind| {
+                        !self.niri.screenshot_ui.is_open()
+                            || allowed_during_screenshot(bind.press_action.as_ref())
+                    });
                     drop(config);
 
                     if let Some(right) = bind_right {
@@ -3582,12 +3597,17 @@ impl State {
                         !self.niri.screenshot_ui.is_open()
                             || allowed_during_screenshot(bind.press_action.as_ref())
                     });
-                    let bind_down =
-                        find_configured_bind(bindings, mod_key, Trigger::TouchpadScrollDown, mods, true)
-                            .filter(|bind| {
-                                !self.niri.screenshot_ui.is_open()
-                                    || allowed_during_screenshot(bind.press_action.as_ref())
-                            });
+                    let bind_down = find_configured_bind(
+                        bindings,
+                        mod_key,
+                        Trigger::TouchpadScrollDown,
+                        mods,
+                        true,
+                    )
+                    .filter(|bind| {
+                        !self.niri.screenshot_ui.is_open()
+                            || allowed_during_screenshot(bind.press_action.as_ref())
+                    });
                     drop(config);
 
                     if let Some(down) = bind_down {
@@ -4853,15 +4873,17 @@ fn find_configured_bind<'a>(
     let mut modifiers = modifiers_from_state(mods);
 
     // Check if the trigger is a modifier key (like Mod, Alt_L, Control_L, Shift_L, etc.)
-    // If so, we need to remove its modifier from the current modifiers since the key is the trigger, not a modifier.
+    // If so, we need to remove its modifier from the current modifiers since the key is the
+    // trigger, not a modifier.
     let trigger_is_modifier = match trigger {
         Trigger::KeyCompositor => true,
         Trigger::Keysym(keysym) => keysym.is_modifier_key(),
         _ => false,
     };
 
-    // Check if the trigger is the mod key itself, either bound as `Mod` or as its own keysym (like `Super_L` when the mod key is Super).
-    // In this case its modifier is part of the trigger, not a held modifier.
+    // Check if the trigger is the mod key itself, either bound as `Mod` or as its own keysym (like
+    // `Super_L` when the mod key is Super). In this case its modifier is part of the trigger,
+    // not a held modifier.
     let trigger_is_mod_key = match trigger {
         Trigger::KeyCompositor => true,
         Trigger::Keysym(keysym) => trigger_is_modifier && mod_key.matches_keysym(keysym),
@@ -4882,7 +4904,8 @@ fn find_configured_bind<'a>(
     }
 
     // If there is an exact match, return it.
-    // Otherwise, if allow-invalidation=false, return the first bind whose modifiers are a subset of the held modifiers.
+    // Otherwise, if allow-invalidation=false, return the first bind whose modifiers are a subset of
+    // the held modifiers.
     let mut relaxed_match = None;
 
     for bind in bindings {
@@ -5068,7 +5091,8 @@ fn allowed_when_locked(action: &Action) -> bool {
 fn allowed_during_screenshot(action: Option<&Action>) -> bool {
     matches!(
         action,
-        Some(Action::Quit(_)
+        Some(
+            Action::Quit(_)
             | Action::ChangeVt(_)
             | Action::Suspend
             | Action::PowerOffMonitors
@@ -5101,7 +5125,8 @@ fn allowed_during_screenshot(action: Option<&Action>) -> bool {
             | Action::MoveWindowToMonitor(_)
             | Action::SetWindowWidth(_)
             | Action::SetWindowHeight(_)
-            | Action::SetColumnWidth(_))
+            | Action::SetColumnWidth(_)
+        )
     )
 }
 

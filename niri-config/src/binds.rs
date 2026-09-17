@@ -1048,7 +1048,8 @@ where
         }
 
         if press_action.is_none() && release_action.is_none() {
-            // If a press or release section was present, an error about its missing or invalid action was already emitted above.
+            // If a press or release section was present, an error about its missing or invalid
+            // action was already emitted above.
             let has_section = node.children().any(|child| {
                 let name = child.node_name.as_ref();
                 name == "press" || name == "release"
