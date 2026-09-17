@@ -1823,6 +1823,26 @@ impl State {
             layer_rules_changed = true;
         }
 
+        let new_layer_close_shader = config.animations.layer_close.custom_shader.as_deref();
+        let old_layer_close_shader = old_config.animations.layer_close.custom_shader.as_deref();
+        if new_layer_close_shader != old_layer_close_shader {
+            self.backend.with_primary_renderer(|_renderer| {
+                // TODO: Implement the set_custom_layer_close_program function in the shaders module.
+                unimplemented!()
+            });
+            shaders_changed = true;
+        }
+
+        let new_layer_open_shader = config.animations.layer_open.custom_shader.as_deref();
+        let old_layer_open_shader = old_config.animations.layer_open.custom_shader.as_deref();
+        if new_layer_open_shader != old_layer_open_shader {
+            self.backend.with_primary_renderer(|_renderer| {
+                // TODO: Implement the set_custom_layer_open_program function in the shaders module.
+                unimplemented!()
+            });
+            shaders_changed = true;
+        }
+
         if config.animations.window_resize.custom_shader
             != old_config.animations.window_resize.custom_shader
         {
