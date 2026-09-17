@@ -13,6 +13,9 @@ pub struct ConfigParseResult<T, E> {
     // If the main config is valid, but an included file fails to parse, config will be an Err(),
     // but includes will still be filled, so that fixing just the included file is enough to
     // trigger a reload.
+    //
+    // FIXME: This is currently used to track all the files that needed to be watched. The name
+    // `includes` is not really correct and should be renamed in the future.
     pub includes: Vec<PathBuf>,
 }
 
