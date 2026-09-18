@@ -1368,6 +1368,8 @@ pub struct Window {
     ///
     /// The timestamp comes from the monotonic clock.
     pub focus_timestamp: Option<Timestamp>,
+    /// Data for xdg-toplevel-tag-v1.
+    pub xdg_tag: XdgToplevelTag,
 }
 
 /// A moment in time.
@@ -1424,6 +1426,16 @@ pub struct WindowLayout {
     /// the distance from the corner of the black backdrop to the corner of the (centered) window
     /// contents.
     pub window_offset_in_tile: (f64, f64),
+}
+
+/// xdg-toplevel-tag-v1 data of a [`Window`].
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
+pub struct XdgToplevelTag {
+    /// The tag set by `xdg_toplevel_tag_manager_v1::set_toplevel_tag()`. `None` if never set.
+    pub tag: Option<Box<str>>,
+    /// The description set by `xdg_toplevel_tag_manager_v1::set_toplevel_description()`. `None` if
+    /// never set.
+    pub description: Option<Box<str>>,
 }
 
 /// Output configuration change result.
