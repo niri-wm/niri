@@ -2447,9 +2447,6 @@ impl State {
 
         let pos = pointer.current_location();
 
-        // We have an output, so we can compute the new location and focus.
-        let mut new_pos = pos + event.delta();
-
         // We received an event for the regular pointer, so show it now.
         self.niri.pointer_visibility = PointerVisibility::Visible;
         self.niri.tablet_cursor_location = None;
@@ -2524,6 +2521,10 @@ impl State {
             }
             None
         });
+
+        // We have an output, so we can compute the new location and focus.
+        let mut new_pos = pos + event.delta();
+
         if let Some((output, horizontal)) = spatial_grab.flatten() {
             if let Some(geo) = self.niri.global_space.output_geometry(&output) {
                 let geo = geo.to_f64();
@@ -2581,26 +2582,31 @@ impl State {
             }
         }
 
-        let under = self.niri.contents_under(new_pos);
+        let mut under = self.niri.contents_under(new_pos);
 
         // Handle confined pointer.
         if let Some((focus_surface, region)) = pointer_confined {
-            let mut prevent = false;
+            let new_pos_x = Point::new(new_pos.x, pos.y);
+            let new_pos_y = Point::new(pos.x, new_pos.y);
 
-            // Prevent the pointer from leaving the focused surface.
-            if Some(&focus_surface.0) != under.surface.as_ref().map(|(s, _)| s) {
-                prevent = true;
-            }
+            let under_x = self.niri.contents_under(new_pos_x);
+            let under_y = self.niri.contents_under(new_pos_y);
 
-            // Prevent the pointer from leaving the confine region, if any.
+            // Check if the pointer leaves the focused surface in the x/y directions.
+            let mut confine_x = Some(&focus_surface.0) != under_x.surface.as_ref().map(|(s, _)| s);
+            let mut confine_y = Some(&focus_surface.0) != under_y.surface.as_ref().map(|(s, _)| s);
+
+            // Check if the pointer leaves the confine region, if any, in the x/y directions.
             if let Some(region) = region {
-                let new_pos_within_surface = new_pos - focus_surface.1;
-                if !region.contains(new_pos_within_surface.to_i32_round()) {
-                    prevent = true;
-                }
+                let new_pos_within_surface_x = new_pos_x - focus_surface.1;
+                let new_pos_within_surface_y = new_pos_y - focus_surface.1;
+
+                confine_x = confine_x || !region.contains(new_pos_within_surface_x.to_i32_round());
+                confine_y = confine_y || !region.contains(new_pos_within_surface_y.to_i32_round());
             }
 
-            if prevent {
+            // If both x and y movement are confined, only send relative motion.
+            if confine_x && confine_y {
                 pointer.relative_motion(
                     self,
                     Some(focus_surface),
@@ -2614,6 +2620,16 @@ impl State {
                 pointer.frame(self);
 
                 return;
+            } else if confine_x {
+                // Discard any x movement.
+                new_pos.x = pos.x;
+
+                under = under_y;
+            } else if confine_y {
+                // Discard any y movement.
+                new_pos.y = pos.y;
+
+                under = under_x;
             }
         }
 
