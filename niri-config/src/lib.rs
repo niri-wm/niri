@@ -1176,6 +1176,7 @@ mod tests {
                 mod_key_nested: Some(
                     Super,
                 ),
+                center_area_percentage: None,
             },
             outputs: Outputs(
                 [
