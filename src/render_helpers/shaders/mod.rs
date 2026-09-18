@@ -119,6 +119,10 @@ impl Shaders {
                     UniformName::new("noise", UniformType::_1f),
                     UniformName::new("saturation", UniformType::_1f),
                     UniformName::new("bg_color", UniformType::_4f),
+                    UniformName::new("surface_to_geo", UniformType::Matrix3x3),
+                    UniformName::new("alpha_mask_enabled", UniformType::_1i),
+                    UniformName::new("alpha_threshold", UniformType::_1f),
+                    UniformName::new("surface_tex", UniformType::_1i),
                 ],
             )
             .map_err(|err| {
