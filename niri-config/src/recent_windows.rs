@@ -3,13 +3,14 @@ use std::collections::HashSet;
 use knuffel::errors::DecodeError;
 use smithay::input::keyboard::Keysym;
 
-use crate::utils::{expect_only_children, MergeWith};
+use crate::utils::{expect_only_children, Flag, MergeWith};
 use crate::{Action, Bind, Color, FloatOrInt, Key, Modifiers, Trigger};
 
 #[derive(Debug, PartialEq)]
 pub struct RecentWindows {
     pub on: bool,
     pub debounce_ms: u16,
+    pub commit_on_modifier_release: bool,
     pub open_delay_ms: u16,
     pub highlight: MruHighlight,
     pub previews: MruPreviews,
@@ -21,6 +22,7 @@ impl Default for RecentWindows {
         RecentWindows {
             on: true,
             debounce_ms: 750,
+            commit_on_modifier_release: false,
             open_delay_ms: 150,
             highlight: MruHighlight::default(),
             previews: MruPreviews::default(),
@@ -37,6 +39,8 @@ pub struct RecentWindowsPart {
     pub off: bool,
     #[knuffel(child, unwrap(argument))]
     pub debounce_ms: Option<u16>,
+    #[knuffel(child)]
+    pub commit_on_modifier_release: Option<Flag>,
     #[knuffel(child, unwrap(argument))]
     pub open_delay_ms: Option<u16>,
     #[knuffel(child)]
@@ -55,7 +59,7 @@ impl MergeWith<RecentWindowsPart> for RecentWindows {
         }
 
         merge_clone!((self, part), debounce_ms, open_delay_ms);
-        merge!((self, part), highlight, previews);
+        merge!((self, part), commit_on_modifier_release, highlight, previews);
 
         if let Some(part) = &part.binds {
             // Remove existing binds matching any new bind.
