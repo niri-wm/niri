@@ -1,4 +1,4 @@
-use fixture::Fixture;
+pub(crate) use fixture::Fixture;
 
 mod client;
 mod fixture;
