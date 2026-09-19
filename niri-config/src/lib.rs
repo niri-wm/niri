@@ -1666,6 +1666,18 @@ mod tests {
                         ),
                     },
                 ),
+                overview_zoom: OverviewZoomAnim(
+                    Animation {
+                        off: false,
+                        kind: Spring(
+                            SpringParams {
+                                damping_ratio: 1.0,
+                                stiffness: 800,
+                                epsilon: 0.0001,
+                            },
+                        ),
+                    },
+                ),
                 recent_windows_close: RecentWindowsCloseAnim(
                     Animation {
                         off: true,
@@ -1732,6 +1744,8 @@ mod tests {
                         a: 0.3137255,
                     },
                 },
+                zoom_presets: None,
+                zoom_remember_last: true,
             },
             environment: Environment(
                 [
