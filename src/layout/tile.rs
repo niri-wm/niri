@@ -32,7 +32,7 @@ use crate::render_helpers::xray::{Xray, XrayPos};
 use crate::render_helpers::{RenderCtx, RenderTarget};
 use crate::utils::transaction::Transaction;
 use crate::utils::{
-    baba_is_float_offset, round_logical_in_physical, round_logical_in_physical_max1,
+    baba_is_float_offset, round_logical_in_physical, round_logical_in_physical_max1, ResizeEdge,
 };
 
 /// Toplevel window with decorations.
@@ -914,9 +914,35 @@ impl<W: LayoutElement> Tile<W> {
         self.window.is_in_input_region(point)
     }
 
+    fn is_in_window_geometry(&self, mut point: Point<f64, Logical>) -> bool {
+        point -= self.window_loc().to_f64();
+        Rectangle::from_size(self.window_size()).contains(point)
+    }
+
     fn is_in_activation_region(&self, point: Point<f64, Logical>) -> bool {
-        let activation_region = Rectangle::from_size(self.tile_size());
+        let focus_ring_width =
+            if self.border.is_off() && !self.focus_ring.is_off() && self.expanded_progress() < 1. {
+                self.focus_ring.width()
+            } else {
+                0.
+            };
+        let activation_region = Rectangle::new(
+            Point::from((-focus_ring_width, -focus_ring_width)),
+            self.tile_size() + Size::from((focus_ring_width, focus_ring_width)).upscale(2.),
+        );
         activation_region.contains(point)
+    }
+
+    /// Whether the border or focus ring can draw a solid background behind the window.
+    fn draws_background_behind_window(&self) -> bool {
+        if self.border.is_off() && self.focus_ring.is_off() {
+            return false;
+        }
+
+        self.window
+            .rules()
+            .draw_border_with_background
+            .unwrap_or_else(|| !self.window.has_ssd())
     }
 
     pub fn hit(&self, point: Point<f64, Logical>) -> Option<HitType> {
@@ -926,13 +952,67 @@ impl<W: LayoutElement> Tile<W> {
         if self.is_in_input_region(point) {
             let win_pos = self.buf_loc() + offset;
             Some(HitType::Input { win_pos })
-        } else if self.is_in_activation_region(point) {
+        // Keep compositor decorations and their visible background activatable, but let holes in
+        // the client's input region pass through to surfaces below.
+        } else if self.is_in_activation_region(point)
+            && (!self.is_in_window_geometry(point) || self.draws_background_behind_window())
+        {
             Some(HitType::Activate {
                 is_tab_indicator: false,
             })
         } else {
             None
         }
+    }
+
+    // Overview windows are transformed and cannot receive forwarded input. Still respect the
+    // client's input region when deciding which window to activate, then turn any accepted hit
+    // into an activation-only hit.
+    pub fn hit_for_activation(&self, point: Point<f64, Logical>) -> Option<HitType> {
+        self.hit(point).map(|_| HitType::Activate {
+            is_tab_indicator: false,
+        })
+    }
+
+    /// Returns resize edges when a point is on compositor-drawn decoration outside the window.
+    pub fn decoration_resize_edges(
+        &self,
+        point: Point<f64, Logical>,
+        focus_ring_visible: bool,
+    ) -> Option<ResizeEdge> {
+        let point = point - self.bob_offset();
+        let focus_ring_width =
+            if focus_ring_visible && !self.focus_ring.is_off() && self.expanded_progress() < 1. {
+                self.focus_ring.width()
+            } else {
+                0.
+            };
+        let decoration_region = Rectangle::new(
+            Point::from((-focus_ring_width, -focus_ring_width)),
+            self.tile_size() + Size::from((focus_ring_width, focus_ring_width)).upscale(2.),
+        );
+        if !decoration_region.contains(point) {
+            return None;
+        }
+
+        let window_region = Rectangle::new(self.window_loc(), self.window_size());
+        if window_region.contains(point) {
+            return None;
+        }
+
+        let mut edges = ResizeEdge::empty();
+        if point.x < window_region.loc.x {
+            edges |= ResizeEdge::LEFT;
+        } else if point.x >= window_region.loc.x + window_region.size.w {
+            edges |= ResizeEdge::RIGHT;
+        }
+        if point.y < window_region.loc.y {
+            edges |= ResizeEdge::TOP;
+        } else if point.y >= window_region.loc.y + window_region.size.h {
+            edges |= ResizeEdge::BOTTOM;
+        }
+
+        (!edges.is_empty()).then_some(edges)
     }
 
     pub fn request_tile_size(

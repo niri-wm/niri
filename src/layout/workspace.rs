@@ -1762,18 +1762,40 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     pub fn window_under(&self, pos: Point<f64, Logical>) -> Option<(&W, HitType)> {
+        self.window_under_impl(pos, false)
+    }
+
+    pub fn window_under_for_activation(&self, pos: Point<f64, Logical>) -> Option<(&W, HitType)> {
+        self.window_under_impl(pos, true)
+    }
+
+    fn window_under_impl(
+        &self,
+        pos: Point<f64, Logical>,
+        for_activation: bool,
+    ) -> Option<(&W, HitType)> {
         // This logic is consistent with tiles_with_render_positions().
         if self.is_floating_visible() {
-            if let Some(rv) = self
-                .floating
-                .tiles_with_render_positions()
-                .find_map(|(tile, tile_pos)| HitType::hit_tile(tile, tile_pos, pos))
+            if let Some(rv) =
+                self.floating
+                    .tiles_with_render_positions()
+                    .find_map(|(tile, tile_pos)| {
+                        if for_activation {
+                            HitType::hit_tile_for_activation(tile, tile_pos, pos)
+                        } else {
+                            HitType::hit_tile(tile, tile_pos, pos)
+                        }
+                    })
             {
                 return Some(rv);
             }
         }
 
-        self.scrolling.window_under(pos)
+        if for_activation {
+            self.scrolling.window_under_for_activation(pos)
+        } else {
+            self.scrolling.window_under(pos)
+        }
     }
 
     pub fn resize_edges_under(&self, pos: Point<f64, Logical>) -> Option<ResizeEdge> {
@@ -1805,6 +1827,20 @@ impl<W: LayoutElement> Workspace<W> {
                 }
 
                 None
+            })
+    }
+
+    pub fn decoration_resize_edges_under(&self, pos: Point<f64, Logical>) -> Option<ResizeEdge> {
+        let active_id = self.active_window().map(|window| window.id().clone());
+
+        self.tiles_with_render_positions()
+            .find_map(|(tile, tile_pos, visible)| {
+                if !visible {
+                    return None;
+                }
+
+                let focus_ring_visible = active_id.as_ref() == Some(tile.window().id());
+                tile.decoration_resize_edges(pos - tile_pos, focus_ring_visible)
             })
     }
 

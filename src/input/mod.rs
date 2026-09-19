@@ -2951,6 +2951,34 @@ impl State {
                                     .set_cursor_image(CursorImageStatus::Named(icon));
                             }
                         }
+                    } else {
+                        let location = pointer.current_location();
+                        let (output, pos_within_output) = self.niri.output_under(location).unwrap();
+                        if let Some(edges) = self
+                            .niri
+                            .layout
+                            .decoration_resize_edges_under(output, pos_within_output)
+                        {
+                            self.niri.layout.activate_window(&window);
+
+                            if self
+                                .niri
+                                .layout
+                                .interactive_resize_begin(window.clone(), edges)
+                            {
+                                let start_data = PointerGrabStartData {
+                                    focus: None,
+                                    button: button_code,
+                                    location,
+                                };
+                                let start_data = AnyStartData::Pointer(start_data);
+                                let grab = ResizeGrab::new(start_data, window.clone());
+                                pointer.set_grab(self, grab, serial, Focus::Clear);
+                                self.niri.cursor_manager.set_cursor_image(
+                                    CursorImageStatus::Named(edges.cursor_icon()),
+                                );
+                            }
+                        }
                     }
                 }
                 // Check if we need to start an interactive resize.

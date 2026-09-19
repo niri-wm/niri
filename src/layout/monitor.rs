@@ -1573,10 +1573,10 @@ impl<W: LayoutElement> Monitor<W> {
         if self.overview_progress.is_some() {
             let zoom = self.overview_zoom();
             let pos_within_workspace = (pos_within_output - geo.loc).downscale(zoom);
-            let (win, hit) = ws.window_under(pos_within_workspace)?;
+            let (win, hit) = ws.window_under_for_activation(pos_within_workspace)?;
             // During the overview animation, we cannot do input hits because we cannot really
             // represent scaled windows properly.
-            Some((win, hit.to_activate()))
+            Some((win, hit))
         } else {
             let (win, hit) = ws.window_under(pos_within_output - geo.loc)?;
             Some((win, hit.offset_win_pos(geo.loc)))
@@ -1590,6 +1590,18 @@ impl<W: LayoutElement> Monitor<W> {
 
         let (ws, geo) = self.workspace_under(pos_within_output)?;
         ws.resize_edges_under(pos_within_output - geo.loc)
+    }
+
+    pub fn decoration_resize_edges_under(
+        &self,
+        pos_within_output: Point<f64, Logical>,
+    ) -> Option<ResizeEdge> {
+        if self.overview_progress.is_some() {
+            return None;
+        }
+
+        let (ws, geo) = self.workspace_under(pos_within_output)?;
+        ws.decoration_resize_edges_under(pos_within_output - geo.loc)
     }
 
     pub(super) fn insert_position(

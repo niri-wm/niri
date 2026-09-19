@@ -3013,6 +3013,18 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     }
 
     pub fn window_under(&self, pos: Point<f64, Logical>) -> Option<(&W, HitType)> {
+        self.window_under_impl(pos, false)
+    }
+
+    pub fn window_under_for_activation(&self, pos: Point<f64, Logical>) -> Option<(&W, HitType)> {
+        self.window_under_impl(pos, true)
+    }
+
+    fn window_under_impl(
+        &self,
+        pos: Point<f64, Logical>,
+        for_activation: bool,
+    ) -> Option<(&W, HitType)> {
         // This matches self.tiles_with_render_positions().
         let scale = self.scale;
         for (col, col_pos) in self.columns_with_render_positions() {
@@ -3042,7 +3054,12 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                 // Round to physical pixels.
                 let tile_pos = tile_pos.to_physical_precise_round(scale).to_logical(scale);
 
-                if let Some(rv) = HitType::hit_tile(tile, tile_pos, pos) {
+                let hit = if for_activation {
+                    HitType::hit_tile_for_activation(tile, tile_pos, pos)
+                } else {
+                    HitType::hit_tile(tile, tile_pos, pos)
+                };
+                if let Some(rv) = hit {
                     return Some(rv);
                 }
             }

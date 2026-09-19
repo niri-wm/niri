@@ -32,6 +32,7 @@ use wayland_client::protocol::wl_compositor::WlCompositor;
 use wayland_client::protocol::wl_display::WlDisplay;
 use wayland_client::protocol::wl_output::{self, WlOutput};
 use wayland_client::protocol::wl_registry::{self, WlRegistry};
+use wayland_client::protocol::wl_region::WlRegion;
 use wayland_client::protocol::wl_surface::{self, WlSurface};
 use wayland_client::{Connection, Dispatch, Proxy as _, QueueHandle};
 
@@ -245,6 +246,20 @@ impl Client {
             .unwrap()
             .0
             .clone()
+    }
+
+    pub fn set_input_region(
+        &mut self,
+        surface: &WlSurface,
+        rectangles: impl IntoIterator<Item = (i32, i32, i32, i32)>,
+    ) {
+        let compositor = self.state.compositor.as_ref().unwrap();
+        let region = compositor.create_region(&self.qh, ());
+        for (x, y, width, height) in rectangles {
+            region.add(x, y, width, height);
+        }
+        surface.set_input_region(Some(&region));
+        region.destroy();
     }
 }
 
@@ -613,6 +628,7 @@ impl Dispatch<ZwlrLayerShellV1, ()> for State {
 
 wayland_client::delegate_noop!(State: ZwlrVirtualPointerManagerV1);
 wayland_client::delegate_noop!(State: ZwlrVirtualPointerV1);
+wayland_client::delegate_noop!(State: WlRegion);
 
 impl Dispatch<WlSurface, ()> for State {
     fn event(
