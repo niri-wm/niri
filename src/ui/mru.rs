@@ -1831,15 +1831,16 @@ fn make_preset_opened_binds() -> Vec<Bind> {
         rv.push(Bind {
             key: Key {
                 trigger: Trigger::Keysym(trigger),
-                // The modifier is filled dynamically.
                 modifiers: Modifiers::empty(),
             },
             action,
+            sequence: vec![],
             repeat: true,
             cooldown: None,
             allow_when_locked: false,
             allow_inhibiting: false,
             hotkey_overlay_title: None,
+            universal: false,
         })
     };
 
@@ -1924,7 +1925,6 @@ fn make_dynamic_opened_binds(config: &Config) -> Vec<Bind> {
         rv.push(Bind {
             key: Key {
                 trigger: bind.key.trigger,
-                // The modifier is filled dynamically.
                 modifiers: Modifiers::empty(),
             },
             ..bind

@@ -8,7 +8,7 @@ use niri_config::OutputName;
 use niri_ipc::socket::Socket;
 use niri_ipc::{
     Action, Cast, CastKind, CastTarget, Event, KeyboardLayouts, LogicalOutput, Mode, Output,
-    OutputConfigChanged, Overview, Request, Response, Transform, Window, WindowLayout,
+    OutputConfigChanged, Overview, Request, Response, SubmapInfo, Transform, Window, WindowLayout,
 };
 use serde_json::json;
 
@@ -49,6 +49,8 @@ pub fn handle_msg(mut msg: Msg, json: bool, print_request: bool) -> anyhow::Resu
         Msg::RequestError => Request::ReturnError,
         Msg::OverviewState => Request::OverviewState,
         Msg::Casts => Request::Casts,
+        Msg::Submaps => Request::Submaps,
+        Msg::ActiveSubmap => Request::ActiveSubmap,
         Msg::RawRequest => {
             let mut buf = Vec::new();
             let mut stdin = std::io::stdin().lock();
@@ -522,6 +524,12 @@ pub fn handle_msg(mut msg: Msg, json: bool, print_request: bool) -> anyhow::Resu
                     Event::CastStopped { stream_id } => {
                         println!("Cast stopped: stream id {stream_id}");
                     }
+                    Event::SubmapActivated { name } => {
+                        println!("Submap activated: {name}");
+                    }
+                    Event::SubmapDeactivated => {
+                        println!("Submap deactivated");
+                    }
                 }
             }
         }
@@ -564,6 +572,46 @@ pub fn handle_msg(mut msg: Msg, json: bool, print_request: bool) -> anyhow::Resu
             for cast in casts {
                 print_cast(&cast);
                 println!();
+            }
+        }
+        Msg::Submaps => {
+            let Response::Submaps(mut submaps) = response else {
+                bail!("unexpected response: expected Submaps, got {response:?}");
+            };
+
+            if json {
+                let submaps =
+                    serde_json::to_string(&submaps).context("error formatting response")?;
+                println!("{submaps}");
+                return Ok(());
+            }
+
+            if submaps.is_empty() {
+                println!("No submaps configured.");
+                return Ok(());
+            }
+
+            submaps.sort_by_key(|s| s.name.clone());
+            for submap in submaps {
+                print_submap(&submap);
+                println!();
+            }
+        }
+        Msg::ActiveSubmap => {
+            let Response::ActiveSubmap(name) = response else {
+                bail!("unexpected response: expected ActiveSubmap, got {response:?}");
+            };
+
+            if json {
+                let name =
+                    serde_json::to_string(&name).context("error formatting response")?;
+                println!("{name}");
+                return Ok(());
+            }
+
+            match name {
+                Some(name) => println!("Active submap: {name}"),
+                None => println!("No active submap."),
             }
         }
         Msg::RawRequest => {
@@ -829,6 +877,13 @@ fn ensure_absolute_path(path: &mut String) -> anyhow::Result<()> {
         }
     }
     Ok(())
+}
+
+fn print_submap(submap: &SubmapInfo) {
+    println!("Submap: {}", submap.name);
+    if let Some(title) = &submap.overlay_title {
+        println!("  Overlay title: {title}");
+    }
 }
 
 #[cfg(test)]

@@ -18,7 +18,7 @@ use niri_config::OutputName;
 use niri_ipc::state::{EventStreamState, EventStreamStatePart as _};
 use niri_ipc::{
     Action, Event, KeyboardLayouts, OutputConfigChanged, Overview, Reply, Request, Response,
-    Timestamp, WindowLayout, Workspace,
+    SubmapInfo, Timestamp, WindowLayout, Workspace,
 };
 use smithay::desktop::layer_map_for_output;
 use smithay::input::pointer::{
@@ -113,7 +113,7 @@ impl IpcServer {
         })
     }
 
-    fn send_event(&self, event: Event) {
+    pub fn send_event(&self, event: Event) {
         let mut streams = self.event_streams.borrow_mut();
         let mut to_remove = Vec::new();
         for (idx, stream) in streams.iter_mut().enumerate() {
@@ -455,6 +455,44 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
             let state = ctx.event_stream_state.borrow();
             let casts = state.casts.casts.values().cloned().collect();
             Response::Casts(casts)
+        }
+        Request::Submaps => {
+            let (tx, rx) = async_channel::bounded(1);
+            ctx.event_loop.insert_idle(move |state| {
+                let submaps: Vec<SubmapInfo> = state
+                    .niri
+                    .config
+                    .borrow()
+                    .submaps
+                    .iter()
+                    .map(|(name, sub)| SubmapInfo {
+                        name: name.clone(),
+                        overlay_title: sub.overlay_title.clone(),
+                    })
+                    .collect();
+                let _ = tx.send_blocking(submaps);
+            });
+            let submaps = rx
+                .recv()
+                .await
+                .map_err(|_| String::from("error getting submaps"))?;
+            Response::Submaps(submaps)
+        }
+        Request::ActiveSubmap => {
+            let (tx, rx) = async_channel::bounded(1);
+            ctx.event_loop.insert_idle(move |state| {
+                let name = state
+                    .niri
+                    .active_submap
+                    .as_ref()
+                    .map(|s| s.name.clone());
+                let _ = tx.send_blocking(name);
+            });
+            let name = rx
+                .recv()
+                .await
+                .map_err(|_| String::from("error getting active submap"))?;
+            Response::ActiveSubmap(name)
         }
     };
 

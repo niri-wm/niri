@@ -119,6 +119,10 @@ pub enum Request {
     OverviewState,
     /// Request information about screencasts.
     Casts,
+    /// Request information about configured submaps.
+    Submaps,
+    /// Request information about the currently active submap.
+    ActiveSubmap,
 }
 
 /// Reply from niri to client.
@@ -165,6 +169,10 @@ pub enum Response {
     OverviewState(Overview),
     /// Information about screencasts.
     Casts(Vec<Cast>),
+    /// Information about configured submaps.
+    Submaps(Vec<SubmapInfo>),
+    /// Information about the currently active submap.
+    ActiveSubmap(Option<String>),
 }
 
 /// Overview information.
@@ -173,6 +181,16 @@ pub enum Response {
 pub struct Overview {
     /// Whether the overview is currently open.
     pub is_open: bool,
+}
+
+/// Information about a configured submap.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct SubmapInfo {
+    /// Name of the submap.
+    pub name: String,
+    /// Display title for the overlay, if set.
+    pub overlay_title: Option<String>,
 }
 
 /// Color picked from the screen.
@@ -942,6 +960,21 @@ pub enum Action {
         /// If unset, reloads the current config file.
         #[cfg_attr(feature = "clap", arg(long))]
         path: Option<String>,
+    },
+
+    /// Switch to a named submap.
+    SwitchSubmap {
+        /// Name of the submap to activate.
+        #[cfg_attr(feature = "clap", arg())]
+        name: String,
+    },
+    /// Reset (exit) the current submap, returning to root bindings.
+    ResetSubmap {},
+    /// Toggle a named submap: if already active, exit it; otherwise, enter it.
+    ToggleSubmap {
+        /// Name of the submap to toggle.
+        #[cfg_attr(feature = "clap", arg())]
+        name: String,
     },
 }
 
@@ -1746,6 +1779,13 @@ pub enum Event {
         /// Stream ID of the stopped screencast.
         stream_id: u64,
     },
+    /// A submap was activated.
+    SubmapActivated {
+        /// Name of the activated submap.
+        name: String,
+    },
+    /// A submap was deactivated.
+    SubmapDeactivated,
 }
 
 impl From<Duration> for Timestamp {

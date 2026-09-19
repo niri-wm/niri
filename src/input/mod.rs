@@ -556,8 +556,23 @@ impl State {
 
                 let res = {
                     let config = this.niri.config.borrow();
-                    let bindings =
-                        make_binds_iter(&config, &mut this.niri.window_mru_ui, modifiers);
+
+                    let bindings: Vec<&Bind> = if let Some(ref submap) = this.niri.active_submap {
+                        let mut binds: Vec<&Bind> = config
+                            .submaps
+                            .get(&submap.name)
+                            .map(|s| s.binds.iter().collect())
+                            .unwrap_or_default();
+                        if submap.clear_global_binds {
+                            binds.extend(config.binds.0.iter().filter(|b| b.universal));
+                        } else {
+                            binds.extend(config.binds.0.iter());
+                        }
+                        binds
+                    } else {
+                        make_binds_iter(&config, &mut this.niri.window_mru_ui, modifiers)
+                            .collect()
+                    };
 
                     should_intercept_key(
                         &mut this.niri.suppressed_keys,
@@ -573,6 +588,29 @@ impl State {
                         is_inhibiting_shortcuts,
                     )
                 };
+
+                if matches!(res, FilterResult::Forward)
+                    && this.niri.active_submap.is_some()
+                    && pressed
+                {
+                    let catch_all = this
+                        .niri
+                        .active_submap
+                        .as_ref()
+                        .map(|s| s.catch_all);
+                    match catch_all {
+                        Some(niri_config::CatchAllMode::Ignore) => {
+                            this.niri.suppressed_keys.insert(key_code);
+                            return FilterResult::Intercept(None);
+                        }
+                        Some(niri_config::CatchAllMode::Reset) => {
+                            this.niri.suppressed_keys.insert(key_code);
+                            this.niri.exit_submap();
+                            return FilterResult::Intercept(None);
+                        }
+                        Some(niri_config::CatchAllMode::Passthrough) | None => {}
+                    }
+                }
 
                 if matches!(res, FilterResult::Forward) {
                     // If we didn't find any bind, try other hardcoded keys.
@@ -662,17 +700,32 @@ impl State {
 
     pub fn handle_bind(&mut self, bind: Bind) {
         let Some(cooldown) = bind.cooldown else {
-            self.do_action(bind.action, bind.allow_when_locked);
+            let actions = if bind.sequence.is_empty() {
+                vec![bind.action]
+            } else {
+                let mut seq = vec![bind.action];
+                seq.extend(bind.sequence);
+                seq
+            };
+            for action in actions {
+                self.do_action(action, bind.allow_when_locked);
+            }
+            if self
+                .niri
+                .active_submap
+                .as_ref()
+                .is_some_and(|s| s.auto_reset)
+            {
+                self.niri.exit_submap();
+            }
             return;
         };
 
-        // Check this first so that it doesn't trigger the cooldown.
         if self.niri.is_locked() && !(bind.allow_when_locked || allowed_when_locked(&bind.action)) {
             return;
         }
 
         match self.niri.bind_cooldown_timers.entry(bind.key) {
-            // The bind is on cooldown.
             Entry::Occupied(_) => (),
             Entry::Vacant(entry) => {
                 let timer = Timer::from_duration(cooldown);
@@ -688,7 +741,24 @@ impl State {
                     .unwrap();
                 entry.insert(token);
 
-                self.do_action(bind.action, bind.allow_when_locked);
+                let actions = if bind.sequence.is_empty() {
+                    vec![bind.action]
+                } else {
+                    let mut seq = vec![bind.action];
+                    seq.extend(bind.sequence);
+                    seq
+                };
+                for action in actions {
+                    self.do_action(action, bind.allow_when_locked);
+                }
+                if self
+                    .niri
+                    .active_submap
+                    .as_ref()
+                    .is_some_and(|s| s.auto_reset)
+                {
+                    self.niri.exit_submap();
+                }
             }
         }
     }
@@ -2428,6 +2498,19 @@ impl State {
                     self.niri.queue_redraw_mru_output();
                 }
             }
+            Action::SwitchSubmap(name) => {
+                self.niri.enter_submap(&name);
+            }
+            Action::ResetSubmap => {
+                self.niri.exit_submap();
+            }
+            Action::ToggleSubmap(name) => {
+                if self.niri.active_submap.as_ref().is_some_and(|s| s.name == name) {
+                    self.niri.exit_submap();
+                } else {
+                    self.niri.enter_submap(&name);
+                }
+            }
         }
     }
 
@@ -3157,17 +3240,19 @@ impl State {
                 if ticks != 0 {
                     let (bind_left, bind_right) =
                         if should_handle_in_overview && modifiers.is_empty() {
-                            let bind_left = Some(Bind {
+                             let bind_left = Some(Bind {
                                 key: Key {
                                     trigger: Trigger::WheelScrollLeft,
                                     modifiers: Modifiers::empty(),
                                 },
                                 action: Action::FocusColumnLeftUnderMouse,
+                                sequence: vec![],
                                 repeat: true,
                                 cooldown: None,
                                 allow_when_locked: false,
                                 allow_inhibiting: false,
                                 hotkey_overlay_title: None,
+                                universal: false,
                             });
                             let bind_right = Some(Bind {
                                 key: Key {
@@ -3175,11 +3260,13 @@ impl State {
                                     modifiers: Modifiers::empty(),
                                 },
                                 action: Action::FocusColumnRightUnderMouse,
+                                sequence: vec![],
                                 repeat: true,
                                 cooldown: None,
                                 allow_when_locked: false,
                                 allow_inhibiting: false,
                                 hotkey_overlay_title: None,
+                                universal: false,
                             });
                             (bind_left, bind_right)
                         } else {
@@ -3232,11 +3319,13 @@ impl State {
                                 modifiers: Modifiers::empty(),
                             },
                             action: Action::FocusWorkspaceUpUnderMouse,
+                            sequence: vec![],
                             repeat: true,
                             cooldown: Some(Duration::from_millis(50)),
                             allow_when_locked: false,
                             allow_inhibiting: false,
                             hotkey_overlay_title: None,
+                            universal: false,
                         });
                         let bind_down = Some(Bind {
                             key: Key {
@@ -3244,11 +3333,13 @@ impl State {
                                 modifiers: Modifiers::empty(),
                             },
                             action: Action::FocusWorkspaceDownUnderMouse,
+                            sequence: vec![],
                             repeat: true,
                             cooldown: Some(Duration::from_millis(50)),
                             allow_when_locked: false,
                             allow_inhibiting: false,
                             hotkey_overlay_title: None,
+                            universal: false,
                         });
                         (bind_up, bind_down)
                     } else if should_handle_in_overview && modifiers == Modifiers::SHIFT {
@@ -3258,11 +3349,13 @@ impl State {
                                 modifiers: Modifiers::empty(),
                             },
                             action: Action::FocusColumnLeftUnderMouse,
+                            sequence: vec![],
                             repeat: true,
                             cooldown: Some(Duration::from_millis(50)),
                             allow_when_locked: false,
                             allow_inhibiting: false,
                             hotkey_overlay_title: None,
+                            universal: false,
                         });
                         let bind_down = Some(Bind {
                             key: Key {
@@ -3270,11 +3363,13 @@ impl State {
                                 modifiers: Modifiers::empty(),
                             },
                             action: Action::FocusColumnRightUnderMouse,
+                            sequence: vec![],
                             repeat: true,
                             cooldown: Some(Duration::from_millis(50)),
                             allow_when_locked: false,
                             allow_inhibiting: false,
                             hotkey_overlay_title: None,
+                            universal: false,
                         });
                         (bind_up, bind_down)
                     } else {
@@ -4577,24 +4672,22 @@ fn should_intercept_key<'a>(
             }
         }
 
-        if use_screenshot_ui_action {
-            if let Some(raw) = raw {
-                final_bind = screenshot_ui.action(raw, mods).map(|action| Bind {
-                    key: Key {
-                        trigger: Trigger::Keysym(raw),
-                        // Not entirely correct but it doesn't matter in how we currently use it.
-                        modifiers: Modifiers::empty(),
-                    },
-                    action,
-                    repeat: true,
-                    cooldown: None,
-                    allow_when_locked: false,
-                    // The screenshot UI owns the focus anyway, so this doesn't really matter.
-                    // But logically, nothing can inhibit its actions. Only opening it can be
-                    // inhibited.
-                    allow_inhibiting: false,
-                    hotkey_overlay_title: None,
-                });
+                if use_screenshot_ui_action {
+                if let Some(raw) = raw {
+                    final_bind = screenshot_ui.action(raw, mods).map(|action| Bind {
+                        key: Key {
+                            trigger: Trigger::Keysym(raw),
+                            modifiers: Modifiers::empty(),
+                        },
+                        action,
+                        sequence: vec![],
+                        repeat: true,
+                        cooldown: None,
+                        allow_when_locked: false,
+                        allow_inhibiting: false,
+                        hotkey_overlay_title: None,
+                        universal: false,
+                    });
             }
         }
     }
@@ -4645,21 +4738,17 @@ fn find_bind<'a>(
     if let Some(action) = hardcoded_action {
         return Some(Bind {
             key: Key {
-                // Not entirely correct but it doesn't matter in how we currently use it.
                 trigger: Trigger::Keysym(modified),
                 modifiers: Modifiers::empty(),
             },
             action,
+            sequence: vec![],
             repeat: true,
             cooldown: None,
             allow_when_locked: false,
-            // In a worst-case scenario, the user has no way to unlock the compositor and a
-            // misbehaving client has a keyboard shortcuts inhibitor, "jailing" the user.
-            // The user must always be able to change VTs to recover from such a situation.
-            // It also makes no sense to inhibit the default power key handling.
-            // Hardcoded binds must never be inhibited.
             allow_inhibiting: false,
             hotkey_overlay_title: None,
+            universal: false,
         });
     }
 
@@ -4892,11 +4981,13 @@ fn hardcoded_overview_bind(raw: Keysym, mods: ModifiersState) -> Option<Bind> {
             modifiers: Modifiers::empty(),
         },
         action,
+        sequence: vec![],
         repeat,
         cooldown: None,
         allow_when_locked: false,
         allow_inhibiting: false,
         hotkey_overlay_title: None,
+        universal: false,
     })
 }
 
@@ -5325,11 +5416,13 @@ mod tests {
                 modifiers: Modifiers::COMPOSITOR | Modifiers::CTRL,
             },
             action: Action::CloseWindow,
+            sequence: vec![],
             repeat: true,
             cooldown: None,
             allow_when_locked: false,
             allow_inhibiting: true,
             hotkey_overlay_title: None,
+            universal: false,
         }]);
 
         let comp_mod = ModKey::Super;
@@ -5511,11 +5604,13 @@ mod tests {
                     modifiers: Modifiers::COMPOSITOR,
                 },
                 action: Action::CloseWindow,
+                sequence: vec![],
                 repeat: true,
                 cooldown: None,
                 allow_when_locked: false,
                 allow_inhibiting: true,
                 hotkey_overlay_title: None,
+                universal: false,
             },
             Bind {
                 key: Key {
@@ -5523,11 +5618,13 @@ mod tests {
                     modifiers: Modifiers::SUPER,
                 },
                 action: Action::FocusColumnLeft,
+                sequence: vec![],
                 repeat: true,
                 cooldown: None,
                 allow_when_locked: false,
                 allow_inhibiting: true,
                 hotkey_overlay_title: None,
+                universal: false,
             },
             Bind {
                 key: Key {
@@ -5535,11 +5632,13 @@ mod tests {
                     modifiers: Modifiers::empty(),
                 },
                 action: Action::FocusWindowDown,
+                sequence: vec![],
                 repeat: true,
                 cooldown: None,
                 allow_when_locked: false,
                 allow_inhibiting: true,
                 hotkey_overlay_title: None,
+                universal: false,
             },
             Bind {
                 key: Key {
@@ -5547,11 +5646,13 @@ mod tests {
                     modifiers: Modifiers::COMPOSITOR | Modifiers::SUPER,
                 },
                 action: Action::FocusWindowUp,
+                sequence: vec![],
                 repeat: true,
                 cooldown: None,
                 allow_when_locked: false,
                 allow_inhibiting: true,
                 hotkey_overlay_title: None,
+                universal: false,
             },
             Bind {
                 key: Key {
@@ -5559,11 +5660,13 @@ mod tests {
                     modifiers: Modifiers::SUPER | Modifiers::ALT,
                 },
                 action: Action::FocusColumnRight,
+                sequence: vec![],
                 repeat: true,
                 cooldown: None,
                 allow_when_locked: false,
                 allow_inhibiting: true,
                 hotkey_overlay_title: None,
+                universal: false,
             },
         ]);
 

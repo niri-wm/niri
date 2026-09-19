@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use bitflags::bitflags;
 use knuffel::errors::DecodeError;
+use knuffel::traits::DecodeScalar;
 use miette::miette;
 use niri_ipc::{
     ColumnDisplay, LayoutSwitchTarget, PositionChange, SizeChange, WorkspaceReferenceArg,
@@ -23,11 +24,13 @@ pub struct Binds(pub Vec<Bind>);
 pub struct Bind {
     pub key: Key,
     pub action: Action,
+    pub sequence: Vec<Action>,
     pub repeat: bool,
     pub cooldown: Option<Duration>,
     pub allow_when_locked: bool,
     pub allow_inhibiting: bool,
     pub hotkey_overlay_title: Option<Option<String>>,
+    pub universal: bool,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
@@ -393,6 +396,10 @@ pub enum Action {
     MruSetScope(MruScope),
     #[knuffel(skip)]
     MruCycleScope,
+
+    SwitchSubmap(#[knuffel(argument)] String),
+    ResetSubmap,
+    ToggleSubmap(#[knuffel(argument)] String),
 }
 
 impl From<niri_ipc::Action> for Action {
@@ -704,6 +711,9 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::SetWindowUrgent { id } => Self::SetWindowUrgent(id),
             niri_ipc::Action::UnsetWindowUrgent { id } => Self::UnsetWindowUrgent(id),
             niri_ipc::Action::LoadConfigFile { path } => Self::LoadConfigFile(path),
+            niri_ipc::Action::SwitchSubmap { name } => Self::SwitchSubmap(name),
+            niri_ipc::Action::ResetSubmap {} => Self::ResetSubmap,
+            niri_ipc::Action::ToggleSubmap { name } => Self::ToggleSubmap(name),
         }
     }
 }
@@ -847,6 +857,7 @@ where
         let mut allow_when_locked_node = None;
         let mut allow_inhibiting = true;
         let mut hotkey_overlay_title = None;
+        let mut universal = false;
         for (name, val) in &node.properties {
             match &***name {
                 "repeat" => {
@@ -867,6 +878,9 @@ where
                 "hotkey-overlay-title" => {
                     hotkey_overlay_title = Some(knuffel::traits::DecodeScalar::decode(val, ctx)?);
                 }
+                "universal" => {
+                    universal = knuffel::traits::DecodeScalar::decode(val, ctx)?;
+                }
                 name_str => {
                     ctx.emit_error(DecodeError::unexpected(
                         name,
@@ -877,29 +891,30 @@ where
             }
         }
 
-        let mut children = node.children();
-
-        // If the action is invalid but the key is fine, we still want to return something.
-        // That way, the parent can handle the existence of duplicate keybinds,
-        // even if their contents are not valid.
         let dummy = Self {
             key,
             action: Action::Spawn(vec![]),
+            sequence: vec![],
             repeat: true,
             cooldown: None,
             allow_when_locked: false,
             allow_inhibiting: true,
             hotkey_overlay_title: None,
+            universal: false,
         };
 
-        if let Some(child) = children.next() {
-            for unwanted_child in children {
-                ctx.emit_error(DecodeError::unexpected(
-                    unwanted_child,
-                    "node",
-                    "only one action is allowed per keybind",
-                ));
-            }
+        let mut children: Vec<_> = node.children().collect();
+
+        if children.is_empty() {
+            ctx.emit_error(DecodeError::missing(
+                node,
+                "expected an action for this keybind",
+            ));
+            return Ok(dummy);
+        }
+
+        if children.len() == 1 {
+            let child = children.remove(0);
             match Action::decode_node(child, ctx) {
                 Ok(action) => {
                     if !matches!(action, Action::Spawn(_) | Action::SpawnSh(_)) {
@@ -912,8 +927,6 @@ where
                         }
                     }
 
-                    // The toggle-inhibit action must always be uninhibitable.
-                    // Otherwise, it would be impossible to trigger it.
                     if matches!(action, Action::ToggleKeyboardShortcutsInhibit) {
                         allow_inhibiting = false;
                     }
@@ -921,11 +934,13 @@ where
                     Ok(Self {
                         key,
                         action,
+                        sequence: vec![],
                         repeat,
                         cooldown,
                         allow_when_locked,
                         allow_inhibiting,
                         hotkey_overlay_title,
+                        universal,
                     })
                 }
                 Err(e) => {
@@ -934,11 +949,47 @@ where
                 }
             }
         } else {
-            ctx.emit_error(DecodeError::missing(
-                node,
-                "expected an action for this keybind",
-            ));
-            Ok(dummy)
+            let mut sequence = Vec::new();
+            for child in &children {
+                match Action::decode_node(child, ctx) {
+                    Ok(action) => sequence.push(action),
+                    Err(e) => {
+                        ctx.emit_error(e);
+                    }
+                }
+            }
+
+            if sequence.is_empty() {
+                return Ok(dummy);
+            }
+
+            let action = sequence.remove(0);
+
+            if !matches!(action, Action::Spawn(_) | Action::SpawnSh(_)) {
+                if let Some(node) = allow_when_locked_node {
+                    ctx.emit_error(DecodeError::unexpected(
+                        node,
+                        "property",
+                        "allow-when-locked can only be set on spawn binds",
+                    ));
+                }
+            }
+
+            if matches!(action, Action::ToggleKeyboardShortcutsInhibit) {
+                allow_inhibiting = false;
+            }
+
+            Ok(Self {
+                key,
+                action,
+                sequence,
+                repeat,
+                cooldown,
+                allow_when_locked,
+                allow_inhibiting,
+                hotkey_overlay_title,
+                universal,
+            })
         }
     }
 }
@@ -1045,6 +1096,231 @@ impl FromStr for Key {
         };
 
         Ok(Key { trigger, modifiers })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Submap {
+    pub name: String,
+    pub auto_reset: bool,
+    pub clear_global_binds: bool,
+    pub catch_all: CatchAllMode,
+    pub input_policy: SubmapInputPolicy,
+    pub timeout_ms: Option<u64>,
+    pub reset_target: String,
+    pub overlay_title: Option<String>,
+    pub on_enter: Vec<Action>,
+    pub on_exit: Vec<Action>,
+    pub binds: Vec<Bind>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum CatchAllMode {
+    #[default]
+    Ignore,
+    Reset,
+    Passthrough,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SubmapInputPolicy {
+    pub mouse: bool,
+    pub touchpad: bool,
+    pub trackpoint: bool,
+    pub trackball: bool,
+    pub tablet: bool,
+    pub touch: bool,
+}
+
+impl Default for SubmapInputPolicy {
+    fn default() -> Self {
+        Self {
+            mouse: true,
+            touchpad: true,
+            trackpoint: true,
+            trackball: true,
+            tablet: true,
+            touch: true,
+        }
+    }
+}
+
+impl<S> knuffel::Decode<S> for Submap
+where
+    S: knuffel::traits::ErrorSpan,
+{
+    fn decode_node(
+        node: &knuffel::ast::SpannedNode<S>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) -> Result<Self, DecodeError<S>> {
+        let name: String = node
+            .arguments
+            .first()
+            .ok_or_else(|| DecodeError::missing(node, "submap name is required"))
+            .and_then(|v| DecodeScalar::decode(v, ctx))?;
+
+        if name.is_empty() {
+            ctx.emit_error(DecodeError::missing(node, "submap name cannot be empty"));
+        }
+
+        let mut auto_reset = false;
+        let mut clear_global_binds = true;
+        let mut catch_all = CatchAllMode::default();
+        let mut input_policy = SubmapInputPolicy::default();
+        let mut timeout_ms = None;
+        let mut reset_target = String::from("default");
+        let mut overlay_title = None;
+        let mut on_enter = Vec::new();
+        let mut on_exit = Vec::new();
+        let mut binds = Vec::new();
+
+        for child in node.children() {
+            match child.node_name.as_ref() {
+                "on-enter" => {
+                    for action_node in child.children() {
+                        match Action::decode_node(action_node, ctx) {
+                            Ok(action) => on_enter.push(action),
+                            Err(e) => ctx.emit_error(e),
+                        }
+                    }
+                }
+                "on-exit" => {
+                    for action_node in child.children() {
+                        match Action::decode_node(action_node, ctx) {
+                            Ok(action) => on_exit.push(action),
+                            Err(e) => ctx.emit_error(e),
+                        }
+                    }
+                }
+                "overlay-title" => {
+                    let val = child.arguments.first().ok_or_else(|| {
+                        DecodeError::missing(child, "overlay-title requires a value")
+                    })?;
+                    overlay_title = Some(DecodeScalar::decode(val, ctx)?);
+                }
+                "clear-global-binds" => {
+                    let val = child.arguments.first().ok_or_else(|| {
+                        DecodeError::missing(child, "clear-global-binds requires a value")
+                    })?;
+                    clear_global_binds = DecodeScalar::decode(val, ctx)?;
+                }
+                "catch-all" => {
+                    let val = child.arguments.first().ok_or_else(|| {
+                        DecodeError::missing(child, "catch-all requires a value")
+                    })?;
+                    let s: String = DecodeScalar::decode(val, ctx)?;
+                    catch_all = match s.as_str() {
+                        "ignore" => CatchAllMode::Ignore,
+                        "reset" => CatchAllMode::Reset,
+                        "passthrough" => CatchAllMode::Passthrough,
+                        other => {
+                            ctx.emit_error(DecodeError::unexpected(
+                                &child.node_name,
+                                "node",
+                                format!(
+                                    "catch-all value must be one of: ignore, reset, passthrough; got \"{other}\""
+                                ),
+                            ));
+                            CatchAllMode::Ignore
+                        }
+                    };
+                }
+                "timeout-ms" => {
+                    let val = child.arguments.first().ok_or_else(|| {
+                        DecodeError::missing(child, "timeout-ms requires a value")
+                    })?;
+                    let ms: u64 = DecodeScalar::decode(val, ctx)?;
+                    if ms == 0 {
+                        ctx.emit_error(DecodeError::unexpected(
+                            &child.node_name,
+                            "node",
+                            "timeout-ms must be > 0",
+                        ));
+                    } else {
+                        timeout_ms = Some(ms);
+                    }
+                }
+                "reset-target" => {
+                    let val = child.arguments.first().ok_or_else(|| {
+                        DecodeError::missing(child, "reset-target requires a value")
+                    })?;
+                    reset_target = DecodeScalar::decode(val, ctx)?;
+                }
+                "auto-reset" => {
+                    let val = child.arguments.first().ok_or_else(|| {
+                        DecodeError::missing(child, "auto-reset requires a value")
+                    })?;
+                    auto_reset = DecodeScalar::decode(val, ctx)?;
+                }
+                "input-policy" => {
+                    for prop_child in child.children() {
+                        let val = match prop_child.arguments.first() {
+                            Some(v) => v,
+                            None => {
+                                ctx.emit_error(DecodeError::missing(
+                                    prop_child,
+                                    "input policy flag requires a value",
+                                ));
+                                continue;
+                            }
+                        };
+                        match prop_child.node_name.as_ref() {
+                            "allow-mouse" => input_policy.mouse = DecodeScalar::decode(val, ctx)?,
+                            "allow-touchpad" => {
+                                input_policy.touchpad = DecodeScalar::decode(val, ctx)?
+                            }
+                            "allow-trackpoint" => {
+                                input_policy.trackpoint = DecodeScalar::decode(val, ctx)?
+                            }
+                            "allow-trackball" => {
+                                input_policy.trackball = DecodeScalar::decode(val, ctx)?
+                            }
+                            "allow-tablet" => {
+                                input_policy.tablet = DecodeScalar::decode(val, ctx)?
+                            }
+                            "allow-touch" => input_policy.touch = DecodeScalar::decode(val, ctx)?,
+                            other => {
+                                ctx.emit_error(DecodeError::unexpected(
+                                    &prop_child.node_name,
+                                    "node",
+                                    format!(
+                                        "unexpected input-policy flag `{}`",
+                                        other.escape_default()
+                                    ),
+                                ));
+                            }
+                        }
+                    }
+                }
+                _ => match Bind::decode_node(child, ctx) {
+                    Ok(bind) => {
+                        if bind.universal {
+                            ctx.emit_error(DecodeError::unexpected(
+                                &child.node_name,
+                                "property",
+                                "universal is only valid on root binds",
+                            ));
+                        }
+                        binds.push(bind);
+                    }
+                    Err(e) => ctx.emit_error(e),
+                },
+            }
+        }
+
+        Ok(Submap {
+            name,
+            auto_reset,
+            clear_global_binds,
+            catch_all,
+            input_policy,
+            timeout_ms,
+            reset_target,
+            overlay_title,
+            on_enter,
+            on_exit,
+            binds,
+        })
     }
 }
 

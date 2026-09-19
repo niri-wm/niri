@@ -14,7 +14,7 @@
 extern crate tracing;
 
 use std::cell::{Cell, RefCell};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::ffi::OsStr;
 use std::fs::{self, File};
 use std::io::Write as _;
@@ -92,6 +92,7 @@ pub struct Config {
     pub debug: Debug,
     pub workspaces: Vec<Workspace>,
     pub recent_windows: RecentWindows,
+    pub submaps: HashMap<String, Submap>,
 }
 
 #[derive(Debug, Clone)]
@@ -214,6 +215,11 @@ where
                 "window-rule" => m_push!(window_rules),
                 "layer-rule" => m_push!(layer_rules),
                 "workspace" => m_push!(workspaces),
+
+                "submap" => {
+                    let submap = Submap::decode_node(node, ctx)?;
+                    config.borrow_mut().submaps.insert(submap.name.clone(), submap);
+                }
 
                 // Single-part sections.
                 "binds" => {
@@ -2004,6 +2010,7 @@ mod tests {
                             ),
                         },
                         action: ToggleKeyboardShortcutsInhibit,
+                        sequence: [],
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
@@ -2013,6 +2020,7 @@ mod tests {
                                 "Inhibit",
                             ),
                         ),
+                        universal: false,
                     },
                     Bind {
                         key: Key {
@@ -2024,11 +2032,13 @@ mod tests {
                             ),
                         },
                         action: ToggleKeyboardShortcutsInhibit,
+                        sequence: [],
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: false,
                         hotkey_overlay_title: None,
+                        universal: false,
                     },
                     Bind {
                         key: Key {
@@ -2044,11 +2054,13 @@ mod tests {
                                 "alacritty",
                             ],
                         ),
+                        sequence: [],
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: true,
                         allow_inhibiting: true,
                         hotkey_overlay_title: None,
+                        universal: false,
                     },
                     Bind {
                         key: Key {
@@ -2060,6 +2072,7 @@ mod tests {
                             ),
                         },
                         action: CloseWindow,
+                        sequence: [],
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
@@ -2067,6 +2080,7 @@ mod tests {
                         hotkey_overlay_title: Some(
                             None,
                         ),
+                        universal: false,
                     },
                     Bind {
                         key: Key {
@@ -2078,11 +2092,13 @@ mod tests {
                             ),
                         },
                         action: FocusMonitorLeft,
+                        sequence: [],
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: true,
                         hotkey_overlay_title: None,
+                        universal: false,
                     },
                     Bind {
                         key: Key {
@@ -2096,11 +2112,13 @@ mod tests {
                         action: FocusMonitor(
                             "eDP-1",
                         ),
+                        sequence: [],
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: true,
                         hotkey_overlay_title: None,
+                        universal: false,
                     },
                     Bind {
                         key: Key {
@@ -2112,11 +2130,13 @@ mod tests {
                             ),
                         },
                         action: MoveWindowToMonitorRight,
+                        sequence: [],
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: true,
                         hotkey_overlay_title: None,
+                        universal: false,
                     },
                     Bind {
                         key: Key {
@@ -2130,11 +2150,13 @@ mod tests {
                         action: MoveWindowToMonitor(
                             "eDP-1",
                         ),
+                        sequence: [],
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: true,
                         hotkey_overlay_title: None,
+                        universal: false,
                     },
                     Bind {
                         key: Key {
@@ -2148,11 +2170,13 @@ mod tests {
                         action: MoveColumnToMonitor(
                             "DP-1",
                         ),
+                        sequence: [],
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: true,
                         hotkey_overlay_title: None,
+                        universal: false,
                     },
                     Bind {
                         key: Key {
@@ -2164,11 +2188,13 @@ mod tests {
                             ),
                         },
                         action: ConsumeWindowIntoColumn,
+                        sequence: [],
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: true,
                         hotkey_overlay_title: None,
+                        universal: false,
                     },
                     Bind {
                         key: Key {
@@ -2184,11 +2210,13 @@ mod tests {
                                 1,
                             ),
                         ),
+                        sequence: [],
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: true,
                         hotkey_overlay_title: None,
+                        universal: false,
                     },
                     Bind {
                         key: Key {
@@ -2204,11 +2232,13 @@ mod tests {
                                 "workspace-1",
                             ),
                         ),
+                        sequence: [],
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: true,
                         hotkey_overlay_title: None,
+                        universal: false,
                     },
                     Bind {
                         key: Key {
@@ -2222,11 +2252,13 @@ mod tests {
                         action: Quit(
                             true,
                         ),
+                        sequence: [],
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: false,
                         hotkey_overlay_title: None,
+                        universal: false,
                     },
                     Bind {
                         key: Key {
@@ -2236,6 +2268,7 @@ mod tests {
                             ),
                         },
                         action: FocusWorkspaceDown,
+                        sequence: [],
                         repeat: true,
                         cooldown: Some(
                             150ms,
@@ -2243,6 +2276,7 @@ mod tests {
                         allow_when_locked: false,
                         allow_inhibiting: true,
                         hotkey_overlay_title: None,
+                        universal: false,
                     },
                     Bind {
                         key: Key {
@@ -2256,11 +2290,13 @@ mod tests {
                         action: SpawnSh(
                             "pkill orca || exec orca",
                         ),
+                        sequence: [],
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: true,
                         allow_inhibiting: true,
                         hotkey_overlay_title: None,
+                        universal: false,
                     },
                 ],
             ),
@@ -2381,11 +2417,13 @@ mod tests {
                                 All,
                             ),
                         },
+                        sequence: [],
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: true,
                         hotkey_overlay_title: None,
+                        universal: false,
                     },
                     Bind {
                         key: Key {
@@ -2403,11 +2441,13 @@ mod tests {
                                 AppId,
                             ),
                         },
+                        sequence: [],
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: true,
                         hotkey_overlay_title: None,
+                        universal: false,
                     },
                     Bind {
                         key: Key {
@@ -2427,14 +2467,17 @@ mod tests {
                                 All,
                             ),
                         },
+                        sequence: [],
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: true,
                         hotkey_overlay_title: None,
+                        universal: false,
                     },
                 ],
             },
+            submaps: {},
         }
         "#);
     }
