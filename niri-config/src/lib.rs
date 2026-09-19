@@ -962,7 +962,7 @@ mod tests {
             }
 
             workspace "workspace-1" {
-                open-on-output "eDP-1"
+                open-on-output "eDP-1" "DP-1"
             }
             workspace "workspace-2"
             workspace "workspace-3"
@@ -2312,23 +2312,24 @@ mod tests {
                     name: WorkspaceName(
                         "workspace-1",
                     ),
-                    open_on_output: Some(
+                    open_on_output: [
                         "eDP-1",
-                    ),
+                        "DP-1",
+                    ],
                     layout: None,
                 },
                 Workspace {
                     name: WorkspaceName(
                         "workspace-2",
                     ),
-                    open_on_output: None,
+                    open_on_output: [],
                     layout: None,
                 },
                 Workspace {
                     name: WorkspaceName(
                         "workspace-3",
                     ),
-                    open_on_output: None,
+                    open_on_output: [],
                     layout: None,
                 },
             ],

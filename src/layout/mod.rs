@@ -19,10 +19,10 @@
 //! 2. Connecting an output must not change the layout for any workspaces that were never on that
 //!    output.
 //!
-//! Therefore, we implement the following logic: every workspace keeps track of which output it
-//! originated on—its *original output*. When an output disconnects, its workspaces are appended to
-//! the (potentially new) primary output, but remember their original output. Then, if the original
-//! output connects again, all workspaces originally from there move back to that output.
+//! Therefore, we implement the following logic: every workspace keeps track of its ordered
+//! original output candidates. When an output disconnects, its workspaces move to the first
+//! connected candidate or the (potentially new) primary output. When a higher-priority candidate
+//! connects, matching workspaces move to it.
 //!
 //! In order to avoid surprising behavior, if the user creates or moves any new windows onto a
 //! workspace, it forgets its original output, and its current output becomes its original output.
@@ -32,9 +32,9 @@
 //! don't want an unassuming workspace to end up on it.
 
 use std::collections::HashMap;
-use std::mem;
 use std::rc::Rc;
 use std::time::Duration;
+use std::{iter, mem};
 
 use monitor::{InsertHint, InsertPosition, InsertWorkspace, MonitorAddWindowTarget};
 use niri_config::utils::MergeWith as _;
@@ -764,31 +764,52 @@ impl<W: LayoutElement> Layout<W> {
                 primary_idx,
                 active_monitor_idx,
             } => {
-                let primary = &mut monitors[primary_idx];
+                let connected_outputs = monitors
+                    .iter()
+                    .map(|monitor| &monitor.output)
+                    .chain(iter::once(&output))
+                    .collect::<Vec<_>>();
 
-                let mut stopped_primary_ws_switch = false;
+                // Find the workspaces that prefer the new output, before mutating the monitors.
+                let to_move = monitors
+                    .iter()
+                    .map(|monitor| {
+                        monitor
+                            .workspaces
+                            .iter()
+                            .enumerate()
+                            .filter(|(_, ws)| {
+                                ws.first_connected_output(&connected_outputs) == Some(&output)
+                            })
+                            .map(|(idx, _)| idx)
+                            .collect::<Vec<_>>()
+                    })
+                    .collect::<Vec<_>>();
 
                 let mut workspaces = vec![];
-                for i in (0..primary.workspaces.len()).rev() {
-                    if primary.workspaces[i].original_output.matches(&output) {
-                        let ws = primary.workspaces.remove(i);
+                for (source, indices) in monitors.iter_mut().zip(to_move) {
+                    let mut stopped_ws_switch = false;
+                    let mut source_workspaces = vec![];
+
+                    for idx in indices.into_iter().rev() {
+                        let ws = source.workspaces.remove(idx);
 
                         // FIXME: this can be coded in a way that the workspace switch won't be
-                        // affected if the removed workspace is invisible. But this is good enough
-                        // for now.
-                        if primary.workspace_switch.is_some() {
-                            primary.workspace_switch = None;
-                            stopped_primary_ws_switch = true;
+                        // affected if the removed workspace is invisible. But this is good
+                        // enough for now.
+                        if source.workspace_switch.is_some() {
+                            source.workspace_switch = None;
+                            stopped_ws_switch = true;
                         }
 
-                        // The user could've closed a window while remaining on this workspace, on
-                        // another monitor. However, we will add an empty workspace in the end
-                        // instead.
+                        // The user could've closed a window while remaining on this workspace,
+                        // on another monitor. However, we will add
+                        // an empty workspace in the end instead.
                         if ws.has_windows_or_name() {
-                            workspaces.push(ws);
+                            source_workspaces.push(ws);
                         }
 
-                        if i <= primary.active_workspace_idx
+                        if idx <= source.active_workspace_idx
                             // Generally when moving the currently active workspace, we want to
                             // fall back to the workspace above, so as not to end up on the last
                             // empty workspace. However, with empty workspace above first, when
@@ -799,28 +820,28 @@ impl<W: LayoutElement> Layout<W> {
                             // workspaces set up across multiple monitors. Without this check, the
                             // first monitor to connect can end up with the first empty workspace
                             // focused instead of the first named workspace.
-                            && !(primary.options.layout.empty_workspace_above_first
-                                && primary.active_workspace_idx == 1)
+                            && !(source.options.layout.empty_workspace_above_first
+                                && source.active_workspace_idx == 1)
                         {
-                            primary.active_workspace_idx =
-                                primary.active_workspace_idx.saturating_sub(1);
+                            source.active_workspace_idx =
+                                source.active_workspace_idx.saturating_sub(1);
                         }
                     }
+
+                    // If we stopped a workspace switch, then we might need to clean up workspaces.
+                    // Also if empty_workspace_above_first is set and there are only 2 workspaces
+                    // left, both will be empty and one of them needs to be
+                    // removed. clean_up_workspaces takes care of this.
+                    if stopped_ws_switch
+                        || (source.options.layout.empty_workspace_above_first
+                            && source.workspaces.len() == 2)
+                    {
+                        source.clean_up_workspaces();
+                    }
+
+                    source_workspaces.reverse();
+                    workspaces.extend(source_workspaces);
                 }
-
-                // If we stopped a workspace switch, then we might need to clean up workspaces.
-                // Also if empty_workspace_above_first is set and there are only 2 workspaces left,
-                // both will be empty and one of them needs to be removed. clean_up_workspaces
-                // takes care of this.
-
-                if stopped_primary_ws_switch
-                    || (primary.options.layout.empty_workspace_above_first
-                        && primary.workspaces.len() == 2)
-                {
-                    primary.clean_up_workspaces();
-                }
-
-                workspaces.reverse();
 
                 let ws_id_to_activate = self.last_active_workspace_id.remove(&output.name());
 
@@ -907,8 +928,31 @@ impl<W: LayoutElement> Layout<W> {
                         active_monitor_idx = active_monitor_idx.saturating_sub(1);
                     }
 
-                    let primary = &mut monitors[primary_idx];
-                    primary.append_workspaces(workspaces);
+                    let connected_outputs = monitors
+                        .iter()
+                        .map(|monitor| &monitor.output)
+                        .collect::<Vec<_>>();
+                    let target_indices = workspaces
+                        .iter()
+                        .map(|ws| {
+                            ws.first_connected_output(&connected_outputs)
+                                .and_then(|target| {
+                                    connected_outputs.iter().position(|o| *o == target)
+                                })
+                                .unwrap_or(primary_idx)
+                        })
+                        .collect::<Vec<_>>();
+
+                    let mut workspaces_by_monitor = iter::repeat_with(Vec::new)
+                        .take(monitors.len())
+                        .collect::<Vec<_>>();
+                    for (ws, target_idx) in workspaces.into_iter().zip(target_indices) {
+                        workspaces_by_monitor[target_idx].push(ws);
+                    }
+
+                    for (monitor, workspaces) in monitors.iter_mut().zip(workspaces_by_monitor) {
+                        monitor.append_workspaces(workspaces);
+                    }
 
                     MonitorSet::Normal {
                         monitors,
@@ -2522,6 +2566,10 @@ impl<W: LayoutElement> Layout<W> {
         assert!(active_monitor_idx < monitors.len());
 
         let mut saw_view_offset_gesture = false;
+        let connected_outputs = monitors
+            .iter()
+            .map(|monitor| &monitor.output)
+            .collect::<Vec<_>>();
 
         for (idx, monitor) in monitors.iter().enumerate() {
             assert_eq!(self.clock, monitor.clock);
@@ -2538,33 +2586,17 @@ impl<W: LayoutElement> Layout<W> {
 
             monitor.verify_invariants();
 
-            if idx == primary_idx {
-                for ws in &monitor.workspaces {
-                    if ws.original_output.matches(&monitor.output) {
-                        // This is the primary monitor's own workspace.
-                        continue;
-                    }
-
-                    let own_monitor_exists = monitors
-                        .iter()
-                        .any(|m| ws.original_output.matches(&m.output));
-                    assert!(
-                        !own_monitor_exists,
-                        "primary monitor cannot have workspaces for which their own monitor exists"
-                    );
+            for workspace in &monitor.workspaces {
+                let preferred = workspace.first_connected_output(&connected_outputs);
+                if idx == primary_idx && preferred.is_none() {
+                    continue;
                 }
-            } else {
-                assert!(
-                    monitor
-                        .workspaces
-                        .iter()
-                        .any(|workspace| workspace.original_output.matches(&monitor.output)),
-                    "secondary monitor must not have any non-own workspaces"
+                assert_eq!(
+                    preferred,
+                    Some(&monitor.output),
+                    "workspace must be on its first connected output candidate"
                 );
             }
-
-            // FIXME: verify that primary doesn't have any workspaces for which their own monitor
-            // exists.
 
             for workspace in &monitor.workspaces {
                 assert!(
@@ -2937,16 +2969,19 @@ impl<W: LayoutElement> Layout<W> {
                 primary_idx,
                 active_monitor_idx,
             } => {
-                let mon_idx = ws_config
-                    .open_on_output
-                    .as_deref()
-                    .map(|name| {
-                        monitors
-                            .iter_mut()
-                            .position(|monitor| output_matches_name(&monitor.output, name))
-                            .unwrap_or(*primary_idx)
-                    })
-                    .unwrap_or(*active_monitor_idx);
+                let mon_idx = if ws_config.open_on_output.is_empty() {
+                    *active_monitor_idx
+                } else {
+                    ws_config
+                        .open_on_output
+                        .iter()
+                        .find_map(|name| {
+                            monitors
+                                .iter()
+                                .position(|monitor| output_matches_name(&monitor.output, name))
+                        })
+                        .unwrap_or(*primary_idx)
+                };
                 let mon = &mut monitors[mon_idx];
 
                 let ws = Workspace::new_with_config(
@@ -3490,7 +3525,7 @@ impl<W: LayoutElement> Layout<W> {
         // Do not do anything if the output is already correct
         if current_idx == target_idx {
             // Just update the original output since this is an explicit movement action.
-            current.workspaces[old_idx].original_output = OutputId::new(&current.output);
+            current.workspaces[old_idx].original_outputs = vec![OutputId::new(&current.output)];
 
             return false;
         }
@@ -3501,7 +3536,7 @@ impl<W: LayoutElement> Layout<W> {
             current_idx == *active_monitor_idx && old_idx == current.active_workspace_idx;
 
         let mut ws = current.remove_workspace_by_idx(old_idx);
-        ws.original_output = OutputId::new(new_output);
+        ws.original_outputs = vec![OutputId::new(new_output)];
 
         let target = &mut monitors[target_idx];
         target.insert_workspace(ws, target.active_workspace_idx + 1, activate);
