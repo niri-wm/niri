@@ -62,6 +62,10 @@ animations {
     recent-windows-close {
         spring damping-ratio=1.0 stiffness=800 epsilon=0.001
     }
+
+    magnifier-zoom {
+        spring damping-ratio=1.0 stiffness=800 epsilon=0.0001
+    }
 }
 ```
 
@@ -436,6 +440,18 @@ The close fade-out animation of the recent windows switcher.
 animations {
     recent-windows-close {
         spring damping-ratio=1.0 stiffness=800 epsilon=0.001
+    }
+}
+```
+
+#### `magnifier-zoom`
+
+The zoom level change animation of the magnifier when adjusting it (e.g. by scrolling while it's open).
+
+```kdl
+animations {
+    magnifier-zoom {
+        spring damping-ratio=1.0 stiffness=800 epsilon=0.0001
     }
 }
 ```
