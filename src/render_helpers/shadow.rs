@@ -36,6 +36,14 @@ struct Parameters {
 
     window_geometry: Rectangle<f64, Logical>,
     window_corner_radius: CornerRadius,
+    /// Box the progressive inner-edge shadow fade is measured from
+    /// (surface rounded rect); independent of window_geometry so the
+    /// slab path can carry it without triggering the hole-cut.
+    feather_geometry: Rectangle<f64, Logical>,
+    feather_corner_radius: CornerRadius,
+    /// Width (px) of the inner-edge fade, same cubic curve as
+    /// background-effect feather. 0 = off (current behavior).
+    feather: f32,
 }
 
 impl ShadowRenderElement {
@@ -50,6 +58,9 @@ impl ShadowRenderElement {
         window_geometry: Rectangle<f64, Logical>,
         window_corner_radius: CornerRadius,
         alpha: f32,
+        feather_geometry: Rectangle<f64, Logical>,
+        feather_corner_radius: CornerRadius,
+        feather: f32,
     ) -> Self {
         let inner = ShaderRenderElement::empty(ProgramType::Shadow, Kind::Unspecified);
         let mut rv = Self {
@@ -64,6 +75,9 @@ impl ShadowRenderElement {
                 alpha,
                 window_geometry,
                 window_corner_radius,
+                feather_geometry,
+                feather_corner_radius,
+                feather,
             },
         };
         rv.update_inner();
@@ -84,6 +98,9 @@ impl ShadowRenderElement {
                 alpha: 1.,
                 window_geometry: Default::default(),
                 window_corner_radius: Default::default(),
+                feather_geometry: Default::default(),
+                feather_corner_radius: Default::default(),
+                feather: 0.,
             },
         }
     }
@@ -104,6 +121,9 @@ impl ShadowRenderElement {
         window_geometry: Rectangle<f64, Logical>,
         window_corner_radius: CornerRadius,
         alpha: f32,
+        feather_geometry: Rectangle<f64, Logical>,
+        feather_corner_radius: CornerRadius,
+        feather: f32,
     ) {
         let params = Parameters {
             size,
@@ -115,6 +135,9 @@ impl ShadowRenderElement {
             scale,
             window_geometry,
             window_corner_radius,
+            feather_geometry,
+            feather_corner_radius,
+            feather,
         };
         if self.params == params {
             return;
@@ -135,6 +158,9 @@ impl ShadowRenderElement {
             scale,
             window_geometry,
             window_corner_radius,
+            feather_geometry: feather_box,
+            feather_corner_radius: feather_radius,
+            feather,
         } = self.params;
 
         let area_size = Vec2::new(size.w as f32, size.h as f32);
@@ -169,6 +195,20 @@ impl ShadowRenderElement {
                     "window_corner_radius",
                     <[f32; 4]>::from(window_corner_radius),
                 ),
+                mat3_uniform(
+                    "feather_input_to_geo",
+                    Mat3::from_scale(area_size)
+                        * Mat3::from_translation(
+                            -Vec2::new(feather_box.loc.x as f32, feather_box.loc.y as f32)
+                                / area_size,
+                        ),
+                ),
+                Uniform::new(
+                    "feather_geo_size",
+                    Vec2::new(feather_box.size.w as f32, feather_box.size.h as f32).to_array(),
+                ),
+                Uniform::new("feather_corner_radius", <[f32; 4]>::from(feather_radius)),
+                Uniform::new("feather", feather),
             ]),
             HashMap::new(),
         );

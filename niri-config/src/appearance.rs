@@ -345,6 +345,10 @@ pub struct Shadow {
     pub softness: f64,
     pub spread: f64,
     pub draw_behind_window: bool,
+    /// Progressive inner-edge fade (px) of a draw-behind-window shadow,
+    /// on the same cubic curve as the background-effect feather. Set
+    /// both to the same width to fade blur and shadow in sync. 0 = off.
+    pub feather: f64,
     pub color: Color,
     pub inactive_color: Option<Color>,
 }
@@ -360,6 +364,7 @@ impl Default for Shadow {
             softness: 30.,
             spread: 5.,
             draw_behind_window: false,
+            feather: 0.,
             color: Color::from_rgba8_unpremul(0, 0, 0, 0x77),
             inactive_color: None,
         }
@@ -373,7 +378,7 @@ impl MergeWith<ShadowRule> for Shadow {
             self.on = false;
         }
 
-        merge!((self, part), softness, spread);
+        merge!((self, part), softness, spread, feather);
 
         merge_clone!((self, part), offset, draw_behind_window, color);
 
@@ -421,6 +426,7 @@ impl From<WorkspaceShadow> for Shadow {
             softness: value.softness,
             spread: value.spread,
             draw_behind_window: false,
+            feather: 0.,
             color: value.color,
             inactive_color: None,
         }
@@ -658,6 +664,8 @@ pub struct ShadowRule {
     pub spread: Option<FloatOrInt<-1024, 1024>>,
     #[knuffel(child, unwrap(argument))]
     pub draw_behind_window: Option<bool>,
+    #[knuffel(child, unwrap(argument))]
+    pub feather: Option<FloatOrInt<0, 1024>>,
     #[knuffel(child)]
     pub color: Option<Color>,
     #[knuffel(child)]
@@ -705,6 +713,7 @@ impl MergeWith<Self> for ShadowRule {
             softness,
             spread,
             draw_behind_window,
+            feather,
             color,
             inactive_color,
         );
@@ -1065,6 +1074,18 @@ pub struct BackgroundEffectRule {
     pub noise: Option<FloatOrInt<0, 1000>>,
     #[knuffel(child, unwrap(argument))]
     pub saturation: Option<FloatOrInt<0, 1000>>,
+    #[knuffel(child, unwrap(argument))]
+    pub refraction: Option<FloatOrInt<0, 1000>>,
+    #[knuffel(child, unwrap(argument))]
+    pub refraction_bevel: Option<FloatOrInt<0, 1000>>,
+    #[knuffel(child, unwrap(argument))]
+    pub refraction_saturation: Option<FloatOrInt<0, 1000>>,
+    #[knuffel(child, unwrap(argument))]
+    pub refraction_brightness: Option<FloatOrInt<0, 1000>>,
+    #[knuffel(child, unwrap(argument))]
+    pub feather: Option<FloatOrInt<0, 1000>>,
+    #[knuffel(child, unwrap(argument))]
+    pub dim: Option<FloatOrInt<0, 1000>>,
 }
 
 /// Resolved background effect rule.
@@ -1087,6 +1108,12 @@ pub struct BackgroundEffect {
 
     pub noise: Option<f64>,
     pub saturation: Option<f64>,
+    pub refraction: Option<f64>,
+    pub refraction_bevel: Option<f64>,
+    pub refraction_saturation: Option<f64>,
+    pub refraction_brightness: Option<f64>,
+    pub feather: Option<f64>,
+    pub dim: Option<f64>,
 }
 
 impl MergeWith<BackgroundEffectRule> for BackgroundEffect {
@@ -1099,6 +1126,30 @@ impl MergeWith<BackgroundEffectRule> for BackgroundEffect {
 
         if let Some(x) = part.saturation {
             self.saturation = Some(x.0);
+        }
+
+        if let Some(x) = part.refraction {
+            self.refraction = Some(x.0);
+        }
+
+        if let Some(x) = part.refraction_bevel {
+            self.refraction_bevel = Some(x.0);
+        }
+
+        if let Some(x) = part.refraction_saturation {
+            self.refraction_saturation = Some(x.0);
+        }
+
+        if let Some(x) = part.refraction_brightness {
+            self.refraction_brightness = Some(x.0);
+        }
+
+        if let Some(x) = part.feather {
+            self.feather = Some(x.0);
+        }
+
+        if let Some(x) = part.dim {
+            self.dim = Some(x.0);
         }
     }
 }
@@ -1348,5 +1399,57 @@ mod tests {
         )
         "
         );
+    }
+
+    #[test]
+    fn parse_background_effect_refraction_tuning() {
+        let config = Config::parse_mem(
+            r#"
+            layer-rule {
+                background-effect {
+                    refraction 0.6
+                    refraction-bevel 54
+                    refraction-saturation 1.5
+                    refraction-brightness 1.2
+                }
+            }
+            "#,
+        )
+        .unwrap();
+
+        let rule = &config.layer_rules[0].background_effect;
+        assert_eq!(rule.refraction, Some(FloatOrInt(0.6)));
+        assert_eq!(rule.refraction_bevel, Some(FloatOrInt(54.0)));
+        assert_eq!(rule.refraction_saturation, Some(FloatOrInt(1.5)));
+        assert_eq!(rule.refraction_brightness, Some(FloatOrInt(1.2)));
+
+        let mut effect = BackgroundEffect::default();
+        effect.merge_with(rule);
+        assert_eq!(effect.refraction, Some(0.6));
+        assert_eq!(effect.refraction_bevel, Some(54.0));
+        assert_eq!(effect.refraction_saturation, Some(1.5));
+        assert_eq!(effect.refraction_brightness, Some(1.2));
+    }
+
+    #[test]
+    fn parse_background_effect_feather() {
+        let config = Config::parse_mem(
+            r#"
+            layer-rule {
+                background-effect {
+                    blur true
+                    feather 24
+                }
+            }
+            "#,
+        )
+        .unwrap();
+
+        let rule = &config.layer_rules[0].background_effect;
+        assert_eq!(rule.feather, Some(FloatOrInt(24.0)));
+
+        let mut effect = BackgroundEffect::default();
+        effect.merge_with(rule);
+        assert_eq!(effect.feather, Some(24.0));
     }
 }
