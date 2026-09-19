@@ -1714,6 +1714,49 @@ impl<W: LayoutElement> Layout<W> {
         }
     }
 
+    pub(crate) fn with_window_render_geometries(
+        &self,
+        mut f: impl FnMut(&W, &Output, Rectangle<f64, Logical>),
+    ) {
+        if let Some(move_) = self
+            .interactive_move
+            .as_ref()
+            .and_then(InteractiveMoveState::moving)
+        {
+            let zoom = self.overview_zoom();
+            let geometry = Rectangle::new(
+                move_.tile_render_location(zoom) + move_.tile.bob_offset().upscale(zoom),
+                move_.tile.animated_tile_size().upscale(zoom),
+            );
+            if geometry
+                .intersection(Rectangle::from_size(output_size(&move_.output)))
+                .is_some()
+            {
+                f(move_.tile.window(), &move_.output, geometry);
+            }
+        }
+
+        for mon in self.monitors() {
+            let zoom = mon.overview_zoom();
+            let output_bounds = Rectangle::from_size(output_size(mon.output()));
+            for (ws, ws_geometry) in mon.workspaces_with_render_geo() {
+                for (tile, pos, visible) in ws.tiles_with_render_positions() {
+                    if !visible {
+                        continue;
+                    }
+
+                    let geometry = Rectangle::new(
+                        ws_geometry.loc + (pos + tile.bob_offset()).upscale(zoom),
+                        tile.animated_tile_size().upscale(zoom),
+                    );
+                    if geometry.intersection(output_bounds).is_some() {
+                        f(tile.window(), mon.output(), geometry);
+                    }
+                }
+            }
+        }
+    }
+
     pub fn with_windows_mut(&mut self, mut f: impl FnMut(&mut W, Option<&Output>)) {
         if let Some(InteractiveMoveState::Moving(move_)) = &mut self.interactive_move {
             f(move_.tile.window_mut(), Some(&move_.output));
