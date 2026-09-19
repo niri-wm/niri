@@ -19,6 +19,7 @@ pub struct Animations {
     pub screenshot_ui_open: ScreenshotUiOpenAnim,
     pub overview_open_close: OverviewOpenCloseAnim,
     pub recent_windows_close: RecentWindowsCloseAnim,
+    pub screen_transition: ScreenTransitionAnim,
 }
 
 impl Default for Animations {
@@ -37,6 +38,7 @@ impl Default for Animations {
             screenshot_ui_open: Default::default(),
             overview_open_close: Default::default(),
             recent_windows_close: Default::default(),
+            screen_transition: Default::default(),
         }
     }
 }
@@ -71,6 +73,8 @@ pub struct AnimationsPart {
     pub overview_open_close: Option<OverviewOpenCloseAnim>,
     #[knuffel(child)]
     pub recent_windows_close: Option<RecentWindowsCloseAnim>,
+    #[knuffel(child)]
+    pub screen_transition: Option<ScreenTransitionAnim>,
 }
 
 impl MergeWith<AnimationsPart> for Animations {
@@ -97,6 +101,7 @@ impl MergeWith<AnimationsPart> for Animations {
             screenshot_ui_open,
             overview_open_close,
             recent_windows_close,
+            screen_transition,
         );
     }
 }
@@ -326,6 +331,27 @@ impl Default for RecentWindowsCloseAnim {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct ScreenTransitionAnim {
+    pub anim: Animation,
+    pub custom_shader: Option<String>,
+}
+
+impl Default for ScreenTransitionAnim {
+    fn default() -> Self {
+        Self {
+            anim: Animation {
+                off: false,
+                kind: Kind::Easing(EasingParams {
+                    duration_ms: 300,
+                    curve: Curve::EaseOutExpo,
+                }),
+            },
+            custom_shader: None,
+        }
+    }
+}
+
 impl<S> knuffel::Decode<S> for WorkspaceSwitchAnim
 where
     S: knuffel::traits::ErrorSpan,
@@ -521,6 +547,32 @@ where
         Ok(Self(Animation::decode_node(node, ctx, default, |_, _| {
             Ok(false)
         })?))
+    }
+}
+
+impl<S> knuffel::Decode<S> for ScreenTransitionAnim
+where
+    S: knuffel::traits::ErrorSpan,
+{
+    fn decode_node(
+        node: &knuffel::ast::SpannedNode<S>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) -> Result<Self, DecodeError<S>> {
+        let default = Self::default().anim;
+        let mut custom_shader = None;
+        let anim = Animation::decode_node(node, ctx, default, |child, ctx| {
+            if &**child.node_name == "custom-shader" {
+                custom_shader = parse_arg_node("custom-shader", child, ctx)?;
+                Ok(true)
+            } else {
+                Ok(false)
+            }
+        })?;
+
+        Ok(Self {
+            anim,
+            custom_shader,
+        })
     }
 }
 
