@@ -2878,7 +2878,11 @@ impl State {
                 }
             }
 
-            if button == Some(MouseButton::Middle) && !pointer.is_grabbed() && mod_down {
+            if button == Some(MouseButton::Middle)
+                && !pointer.is_grabbed()
+                && mod_down
+                && !self.is_inhibiting_shortcuts()
+            {
                 let output_ws = if is_overview_open {
                     self.niri.workspace_under_cursor(true)
                 } else {
@@ -2921,7 +2925,7 @@ impl State {
 
                 // Check if we need to start an interactive move.
                 if button == Some(MouseButton::Left) && !pointer.is_grabbed() {
-                    if is_overview_open || mod_down {
+                    if (is_overview_open || mod_down) && !self.is_inhibiting_shortcuts() {
                         let location = pointer.current_location();
 
                         if !is_overview_open {
@@ -2954,7 +2958,11 @@ impl State {
                     }
                 }
                 // Check if we need to start an interactive resize.
-                else if button == Some(MouseButton::Right) && !pointer.is_grabbed() && mod_down {
+                else if button == Some(MouseButton::Right)
+                    && !pointer.is_grabbed()
+                    && mod_down
+                    && !self.is_inhibiting_shortcuts()
+                {
                     let location = pointer.current_location();
                     let (output, pos_within_output) = self.niri.output_under(location).unwrap();
                     let edges = self
@@ -3152,6 +3160,11 @@ impl State {
                 || is_mru_open
                 || self.niri.mods_with_wheel_binds.contains(&modifiers);
             if should_handle {
+                // Honor keyboard-shortcuts-inhibit for wheel binds, mirroring the
+                // FilterResult::Forward check in on_keyboard_key_event.
+                let inhibited = self.is_inhibiting_shortcuts();
+                let mut any_bind_ran = false;
+
                 let horizontal = horizontal_amount_v120.unwrap_or(0.);
                 let ticks = self.niri.horizontal_wheel_tracker.accumulate(horizontal);
                 if ticks != 0 {
@@ -3210,13 +3223,19 @@ impl State {
                         };
 
                     if let Some(right) = bind_right {
-                        for _ in 0..ticks {
-                            self.handle_bind(right.clone());
+                        if !inhibited || !right.allow_inhibiting {
+                            for _ in 0..ticks {
+                                self.handle_bind(right.clone());
+                                any_bind_ran = true;
+                            }
                         }
                     }
                     if let Some(left) = bind_left {
-                        for _ in ticks..0 {
-                            self.handle_bind(left.clone());
+                        if !inhibited || !left.allow_inhibiting {
+                            for _ in ticks..0 {
+                                self.handle_bind(left.clone());
+                                any_bind_ran = true;
+                            }
                         }
                     }
                 }
@@ -3301,18 +3320,26 @@ impl State {
                     };
 
                     if let Some(down) = bind_down {
-                        for _ in 0..ticks {
-                            self.handle_bind(down.clone());
+                        if !inhibited || !down.allow_inhibiting {
+                            for _ in 0..ticks {
+                                self.handle_bind(down.clone());
+                                any_bind_ran = true;
+                            }
                         }
                     }
                     if let Some(up) = bind_up {
-                        for _ in ticks..0 {
-                            self.handle_bind(up.clone());
+                        if !inhibited || !up.allow_inhibiting {
+                            for _ in ticks..0 {
+                                self.handle_bind(up.clone());
+                                any_bind_ran = true;
+                            }
                         }
                     }
                 }
 
-                return;
+                if any_bind_ran {
+                    return;
+                }
             } else {
                 self.niri.horizontal_wheel_tracker.reset();
                 self.niri.vertical_wheel_tracker.reset();
@@ -3426,6 +3453,11 @@ impl State {
             }
 
             if is_mru_open || self.niri.mods_with_finger_scroll_binds.contains(&modifiers) {
+                // Honor keyboard-shortcuts-inhibit for touchpad scroll binds, mirroring
+                // the wheel bind handling above.
+                let inhibited = self.is_inhibiting_shortcuts();
+                let mut any_bind_ran = false;
+
                 let ticks = self
                     .niri
                     .horizontal_finger_scroll_tracker
@@ -3453,13 +3485,19 @@ impl State {
                     drop(config);
 
                     if let Some(right) = bind_right {
-                        for _ in 0..ticks {
-                            self.handle_bind(right.clone());
+                        if !inhibited || !right.allow_inhibiting {
+                            for _ in 0..ticks {
+                                self.handle_bind(right.clone());
+                                any_bind_ran = true;
+                            }
                         }
                     }
                     if let Some(left) = bind_left {
-                        for _ in ticks..0 {
-                            self.handle_bind(left.clone());
+                        if !inhibited || !left.allow_inhibiting {
+                            for _ in ticks..0 {
+                                self.handle_bind(left.clone());
+                                any_bind_ran = true;
+                            }
                         }
                     }
                 }
@@ -3491,18 +3529,26 @@ impl State {
                     drop(config);
 
                     if let Some(down) = bind_down {
-                        for _ in 0..ticks {
-                            self.handle_bind(down.clone());
+                        if !inhibited || !down.allow_inhibiting {
+                            for _ in 0..ticks {
+                                self.handle_bind(down.clone());
+                                any_bind_ran = true;
+                            }
                         }
                     }
                     if let Some(up) = bind_up {
-                        for _ in ticks..0 {
-                            self.handle_bind(up.clone());
+                        if !inhibited || !up.allow_inhibiting {
+                            for _ in ticks..0 {
+                                self.handle_bind(up.clone());
+                                any_bind_ran = true;
+                            }
                         }
                     }
                 }
 
-                return;
+                if any_bind_ran {
+                    return;
+                }
             } else {
                 self.niri.horizontal_finger_scroll_tracker.reset();
                 self.niri.vertical_finger_scroll_tracker.reset();
