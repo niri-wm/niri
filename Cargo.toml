@@ -70,7 +70,7 @@ fastrand = "2.5.0"
 futures-util = { version = "0.3", default-features = false, features = ["std", "io"] }
 git-version = "0.3.9"
 glam = "0.33"
-input = { version = "0.10.0", features = ["libinput_1_21"] }
+input = { version = "0.10.0", features = ["libinput_1_28"] }
 keyframe = { version = "1.1.1", default-features = false }
 libc = "0.2.189"
 libdisplay-info = "0.3.0"
