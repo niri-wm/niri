@@ -62,6 +62,16 @@ animations {
     recent-windows-close {
         spring damping-ratio=1.0 stiffness=800 epsilon=0.001
     }
+
+    cursor-expand {
+        duration-ms 200
+        curve "ease-out-cubic"
+    }
+
+    cursor-shrink {
+        duration-ms 300
+        curve "ease-out-cubic"
+    }
 }
 ```
 
@@ -436,6 +446,36 @@ The close fade-out animation of the recent windows switcher.
 animations {
     recent-windows-close {
         spring damping-ratio=1.0 stiffness=800 epsilon=0.001
+    }
+}
+```
+
+#### `cursor-expand`
+
+<sup>Since: 25.??</sup>
+
+Animation when the cursor grows due to shake detection.
+
+```kdl
+animations {
+    cursor-expand {
+        duration-ms 200
+        curve "ease-out-cubic"
+    }
+}
+```
+
+#### `cursor-shrink`
+
+<sup>Since: 25.??</sup>
+
+Animation when the cursor returns to normal size after shake.
+
+```kdl
+animations {
+    cursor-shrink {
+        duration-ms 300
+        curve "ease-out-cubic"
     }
 }
 ```
