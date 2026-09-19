@@ -755,6 +755,7 @@ mod tests {
                 }
 
                 disable-power-key-handling
+                wake-monitors-on-input false
 
                 warp-mouse-to-focus
                 focus-follows-mouse
@@ -1159,6 +1160,7 @@ mod tests {
                     ),
                 },
                 disable_power_key_handling: true,
+                wake_monitors_on_input: false,
                 warp_mouse_to_focus: Some(
                     WarpMouseToFocus {
                         mode: None,
