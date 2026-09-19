@@ -987,6 +987,8 @@ mod tests {
                     max-height 960
                 }
 
+                all-outputs true
+
                 binds {
                     Alt+Tab { next-window; }
                     Alt+grave { next-window filter="app-id"; }
@@ -2364,6 +2366,7 @@ mod tests {
                     max_height: 960.0,
                     max_scale: 0.5,
                 },
+                all_outputs: true,
                 binds: [
                     Bind {
                         key: Key {
