@@ -1120,14 +1120,44 @@ impl<W: LayoutElement> Workspace<W> {
         if self.floating_is_active.get() {
             return;
         }
-        self.scrolling.consume_into_column();
+        self.scrolling.consume_into_column(ScrollDirection::Right);
+    }
+
+    pub fn consume_into_column_left(&mut self) {
+        if self.floating_is_active.get() {
+            return;
+        }
+        self.scrolling.consume_into_column(ScrollDirection::Left);
     }
 
     pub fn expel_from_column(&mut self) {
         if self.floating_is_active.get() {
             return;
         }
-        self.scrolling.expel_from_column();
+        self.scrolling.expel_from_column(ScrollDirection::Right);
+    }
+
+    pub fn expel_from_column_left(&mut self) {
+        if self.floating_is_active.get() {
+            return;
+        }
+        self.scrolling.expel_from_column(ScrollDirection::Left);
+    }
+
+    pub fn expel_focused_from_column(&mut self) {
+        if self.floating_is_active.get() {
+            return;
+        }
+        self.scrolling
+            .expel_focused_from_column(ScrollDirection::Right);
+    }
+
+    pub fn expel_focused_from_column_left(&mut self) {
+        if self.floating_is_active.get() {
+            return;
+        }
+        self.scrolling
+            .expel_focused_from_column(ScrollDirection::Left);
     }
 
     pub fn swap_window_in_direction(&mut self, direction: ScrollDirection) {
