@@ -4875,7 +4875,6 @@ impl<W: LayoutElement> Layout<W> {
             win.set_bounds(output_size(&move_.output).to_i32_round());
 
             win.send_pending_configure();
-            win.refresh();
 
             ongoing_scrolling_dnd.get_or_insert(!move_.is_floating);
         } else if let Some(InteractiveMoveState::Starting { window_id, .. }) =
