@@ -15,6 +15,10 @@ layer-rule {
     match namespace="waybar"
     match at-startup=true
     match layer="top"
+    match anchors="top,left,right"
+    match anchor-sides=3
+    match exclusive-zone="exclusive"
+    match keyboard-interactivity="none"
 
     // Properties that apply continuously.
     opacity 0.5
@@ -54,6 +58,17 @@ layer-rule {
             saturation 3
         }
     }
+
+    animations {
+        layer-open {
+            duration-ms 150
+            curve "ease-out-expo"
+        }
+        layer-close {
+            duration-ms 150
+            curve "ease-out-quad"
+        }
+    }
 }
 ```
 
@@ -91,7 +106,7 @@ layer-rule {
 
 #### `layer`
 
-<sup>Since: 26.04</sup>
+<sup>Since: next release</sup>
 
 Matches surfaces on this layer-shell layer.
 Can be `"background"`, `"bottom"`, `"top"`, or `"overlay"`.
@@ -102,6 +117,63 @@ layer-rule {
     match layer="overlay"
 
     baba-is-float true
+}
+```
+
+#### `anchors`
+
+Matches surfaces by their exact anchored edge set.
+This matcher expects a comma-separated list using any of: `top`, `bottom`, `left`, `right`.
+
+Order does not matter:
+
+```kdl
+// Match bars on top edge.
+layer-rule {
+    match anchors="top,left,right"
+}
+
+// Same matcher as above.
+layer-rule {
+    match anchors="left,right,top"
+}
+```
+
+#### `anchor-sides`
+
+Matches surfaces by the number of anchored sides.
+Can be from `0` to `4`.
+
+```kdl
+// Match all surfaces anchored to exactly 3 sides.
+layer-rule {
+    match anchor-sides=3
+}
+```
+
+#### `exclusive-zone`
+
+Matches surfaces by exclusive zone behavior.
+Can be:
+- `"exclusive"`: surface reserves screen space
+- `"neutral"`: surface does not reserve screen space
+
+If you omit this matcher, it means “don't care”.
+
+```kdl
+layer-rule {
+    match exclusive-zone="neutral"
+}
+```
+
+#### `keyboard-interactivity`
+
+Matches surfaces by keyboard interactivity mode.
+Can be `"none"`, `"exclusive"`, or `"on-demand"`.
+
+```kdl
+layer-rule {
+    match keyboard-interactivity="exclusive"
 }
 ```
 
@@ -230,7 +302,7 @@ layer-rule {
 
 #### `background-effect`
 
-<sup>Since: 26.04</sup>
+<sup>Since: next release</sup>
 
 Override the background effect options for this surface.
 
@@ -256,7 +328,7 @@ layer-rule {
 
 #### `popups`
 
-<sup>Since: 26.04</sup>
+<sup>Since: next release</sup>
 
 Override properties for this layer surface's pop-ups (e.g. a menu opened by clicking an item in Waybar).
 
@@ -292,3 +364,51 @@ layer-rule {
 
 Keep in mind that the background effect will look right only if the pop-up is shaped like a (rounded) rectangle, and the layer surface correctly sets its Wayland geometry to exclude any shadows.
 Pop-ups with custom shapes will need the app to implement the [ext-background-effect protocol](https://wayland.app/protocols/ext-background-effect-v1) to work properly.
+
+#### `animations`
+
+<sup>Since: next release</sup>
+
+Override the open and close animations for matching layer surfaces.
+
+The `layer-open` and `layer-close` blocks accept the same parameters as the corresponding global [`animations` settings](./Configuration:-Animations.md#layer-open), including easing curves, springs, and custom shaders.
+See the [animations page](./Configuration:-Animations.md) for details on animation types and custom shaders.
+
+```kdl
+// Customize the open/close animations for fuzzel.
+layer-rule {
+    match namespace="^launcher$"
+
+    animations {
+        layer-open {
+            duration-ms 200
+            curve "ease-out-expo"
+        }
+        layer-close {
+            duration-ms 150
+            curve "ease-out-quad"
+        }
+    }
+}
+```
+
+Custom shaders can also be set per-rule, using inline GLSL (KDL raw string):
+
+```kdl
+layer-rule {
+    match namespace="^launcher$"
+
+    animations {
+        layer-open {
+            duration-ms 250
+            curve "linear"
+
+            custom-shader r"
+                vec4 open_color(vec3 coords_geo, vec3 size_geo) {
+                    return niri_clamped_progress;
+                }
+            "
+        }
+    }
+}
+```

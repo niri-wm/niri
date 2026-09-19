@@ -30,6 +30,16 @@ animations {
         curve "ease-out-quad"
     }
 
+    layer-open {
+        duration-ms 150
+        curve "ease-out-expo"
+    }
+
+    layer-close {
+        duration-ms 150
+        curve "ease-out-quad"
+    }
+
     horizontal-view-movement {
         spring damping-ratio=1.0 stiffness=800 epsilon=0.0001
     }
@@ -260,6 +270,119 @@ Example: close will fill the current geometry with a solid gradient that gradual
 ```kdl
 animations {
     window-close {
+        custom-shader r"
+            vec4 close_color(vec3 coords_geo, vec3 size_geo) {
+                vec4 color = vec4(0.0);
+
+                if (0.0 <= coords_geo.x && coords_geo.x <= 1.0
+                        && 0.0 <= coords_geo.y && coords_geo.y <= 1.0)
+                {
+                    vec4 from = vec4(1.0, 0.0, 0.0, 1.0);
+                    vec4 to = vec4(0.0, 1.0, 0.0, 1.0);
+                    color = mix(from, to, coords_geo.y);
+                }
+
+                return color * (1.0 - niri_clamped_progress);
+            }
+        "
+    }
+}
+```
+
+#### `layer-open`
+
+<sup>Since: next release</sup>
+
+Layer-shell surface opening animation.
+
+This one uses an easing type by default.
+
+```kdl
+animations {
+    layer-open {
+        duration-ms 150
+        curve "ease-out-expo"
+    }
+}
+```
+
+##### `custom-shader`
+
+<sup>Since: next release</sup>
+
+You can write a custom shader for drawing the layer surface during an open animation.
+
+The shader is specified as an inline GLSL string (using a KDL raw string `r"..."`), the same as for [window-open custom shaders](#custom-shader).
+
+If a custom shader fails to compile, niri will print a warning and fall back to the default, or previous successfully compiled shader.
+When running niri as a systemd service, you can see the warnings in the journal: `journalctl -ef /usr/bin/niri`
+
+> [!WARNING]
+>
+> Custom shaders do not have a backwards compatibility guarantee.
+> I may need to change their interface as I'm developing new features.
+
+```kdl
+animations {
+    layer-open {
+        duration-ms 250
+        curve "linear"
+
+        custom-shader r"
+            vec4 open_color(vec3 coords_geo, vec3 size_geo) {
+                vec4 color = vec4(0.0);
+
+                if (0.0 <= coords_geo.x && coords_geo.x <= 1.0
+                        && 0.0 <= coords_geo.y && coords_geo.y <= 1.0)
+                {
+                    vec4 from = vec4(1.0, 0.0, 0.0, 1.0);
+                    vec4 to = vec4(0.0, 1.0, 0.0, 1.0);
+                    color = mix(from, to, coords_geo.y);
+                }
+
+                return color * niri_clamped_progress;
+            }
+        "
+    }
+}
+```
+
+#### `layer-close`
+
+<sup>Since: next release</sup>
+
+Layer-shell surface opening animation.
+
+This one uses an easing type by default.
+
+```kdl
+animations {
+    layer-close {
+        duration-ms 150
+        curve "ease-out-expo"
+    }
+}
+```
+
+##### `custom-shader`
+
+<sup>Since: next release</sup>
+
+You can write a custom shader for drawing the layer surface during a close animation.
+
+The shader is specified as an inline GLSL string (using a KDL raw string `r"..."`), the same as for [window-close custom shaders](#custom-shader).
+
+If a custom shader fails to compile, niri will print a warning and fall back to the default, or previous successfully compiled shader.
+When running niri as a systemd service, you can see the warnings in the journal: `journalctl -ef /usr/bin/niri`
+
+> [!WARNING]
+>
+> Custom shaders do not have a backwards compatibility guarantee.
+> I may need to change their interface as I'm developing new features.
+
+```kdl
+animations {
+    layer-close {
         custom-shader r"
             vec4 close_color(vec3 coords_geo, vec3 size_geo) {
                 vec4 color = vec4(0.0);
