@@ -3929,3 +3929,67 @@ proptest! {
         check_ops_with_options(options, ops);
     }
 }
+
+#[test]
+fn interactive_move_cross_output_overlap() {
+    let ops = [
+        Op::AddOutput(1),
+        Op::AddOutput(2),
+        Op::AddWindow {
+            params: TestWindowParams::new(0),
+        },
+        Op::InteractiveMoveBegin {
+            window: 0,
+            output_idx: 1,
+            px: 0.,
+            py: 0.,
+        },
+        Op::InteractiveMoveUpdate {
+            window: 0,
+            dx: 500.,
+            dy: 0.,
+            output_idx: 1,
+            px: 0.,
+            py: 0.,
+        },
+        Op::InteractiveMoveEnd { window: 0 },
+    ];
+
+    check_ops(ops);
+}
+
+#[test]
+fn interactive_move_cross_scaled_output_overlap() {
+    let ops = [
+        Op::AddScaledOutput {
+            id: 1,
+            scale: 1.0,
+            layout_config: None,
+        },
+        Op::AddScaledOutput {
+            id: 2,
+            scale: 1.5,
+            layout_config: None,
+        },
+        Op::AddWindow {
+            params: TestWindowParams::new(0),
+        },
+        Op::InteractiveMoveBegin {
+            window: 0,
+            output_idx: 1,
+            px: 0.,
+            py: 0.,
+        },
+        Op::InteractiveMoveUpdate {
+            window: 0,
+            dx: 600.,
+            dy: 0.,
+            output_idx: 1,
+            px: 0.,
+            py: 0.,
+        },
+        Op::InteractiveMoveEnd { window: 0 },
+    ];
+
+    check_ops(ops);
+}
