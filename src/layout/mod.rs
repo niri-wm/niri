@@ -341,8 +341,10 @@ pub trait LayoutElement {
 
 #[derive(Debug)]
 pub struct Layout<W: LayoutElement> {
-    /// Monitors and workspaes in the layout.
+    /// Monitors and workspaces in the layout.
     monitor_set: MonitorSet<W>,
+    /// Focused outputs ordered from least to most recently focused.
+    output_focus_stack: Vec<Output>,
     /// Whether the layout should draw as active.
     ///
     /// This normally indicates that the layout has keyboard focus, but not always. E.g. when the
@@ -713,6 +715,15 @@ impl RenderLayer {
 }
 
 impl<W: LayoutElement> Layout<W> {
+    pub fn outputs_by_recent_focus(&self) -> impl DoubleEndedIterator<Item = &Output> {
+        self.output_focus_stack.iter()
+    }
+
+    fn record_output_focus(output_focus_stack: &mut Vec<Output>, output: &Output) {
+        output_focus_stack.retain(|focused| focused != output);
+        output_focus_stack.push(output.clone());
+    }
+
     pub fn new(clock: Clock, config: &Config) -> Self {
         Self::with_options_and_workspaces(clock, config, Options::from_config(config))
     }
@@ -720,6 +731,7 @@ impl<W: LayoutElement> Layout<W> {
     pub fn with_options(clock: Clock, options: Options) -> Self {
         Self {
             monitor_set: MonitorSet::NoOutputs { workspaces: vec![] },
+            output_focus_stack: vec![],
             is_active: true,
             last_active_workspace_id: HashMap::new(),
             interactive_move: None,
@@ -745,6 +757,7 @@ impl<W: LayoutElement> Layout<W> {
 
         Self {
             monitor_set: MonitorSet::NoOutputs { workspaces },
+            output_focus_stack: vec![],
             is_active: true,
             last_active_workspace_id: HashMap::new(),
             interactive_move: None,
@@ -856,6 +869,9 @@ impl<W: LayoutElement> Layout<W> {
                 monitor.overview_open = self.overview_open;
                 monitor.set_overview_progress(self.overview_progress.as_ref());
 
+                self.output_focus_stack.clear();
+                self.output_focus_stack.push(monitor.output.clone());
+
                 MonitorSet::Normal {
                     monitors: vec![monitor],
                     primary_idx: 0,
@@ -866,6 +882,7 @@ impl<W: LayoutElement> Layout<W> {
     }
 
     pub fn remove_output(&mut self, output: &Output) {
+        self.output_focus_stack.retain(|focused| focused != output);
         self.monitor_set = match mem::take(&mut self.monitor_set) {
             MonitorSet::Normal {
                 mut monitors,
@@ -943,6 +960,7 @@ impl<W: LayoutElement> Layout<W> {
 
         if activate {
             *active_monitor_idx = monitor_idx;
+            Self::record_output_focus(&mut self.output_focus_stack, &monitors[monitor_idx].output);
         }
     }
 
@@ -1039,6 +1057,7 @@ impl<W: LayoutElement> Layout<W> {
 
                 if activate.map_smart(|| false) {
                     *active_monitor_idx = mon_idx;
+                    Self::record_output_focus(&mut self.output_focus_stack, &mon.output);
                 }
 
                 // Set the default height for scrolling windows.
@@ -1550,6 +1569,7 @@ impl<W: LayoutElement> Layout<W> {
             for (workspace_idx, ws) in mon.workspaces.iter_mut().enumerate() {
                 if ws.activate_window(window) {
                     *active_monitor_idx = monitor_idx;
+                    Self::record_output_focus(&mut self.output_focus_stack, &mon.output);
 
                     // If currently in the middle of a vertical swipe between the target workspace
                     // and some other, don't switch the workspace.
@@ -1586,6 +1606,7 @@ impl<W: LayoutElement> Layout<W> {
             for (workspace_idx, ws) in mon.workspaces.iter_mut().enumerate() {
                 if ws.activate_window_without_raising(window) {
                     *active_monitor_idx = monitor_idx;
+                    Self::record_output_focus(&mut self.output_focus_stack, &mon.output);
 
                     // If currently in the middle of a vertical swipe between the target workspace
                     // and some other, don't switch the workspace.
@@ -3294,6 +3315,7 @@ impl<W: LayoutElement> Layout<W> {
             for (idx, mon) in monitors.iter().enumerate() {
                 if &mon.output == output {
                     *active_monitor_idx = idx;
+                    Self::record_output_focus(&mut self.output_focus_stack, output);
                     return;
                 }
             }
@@ -3393,6 +3415,7 @@ impl<W: LayoutElement> Layout<W> {
             );
             if activate.map_smart(|| false) {
                 *active_monitor_idx = new_idx;
+                Self::record_output_focus(&mut self.output_focus_stack, &monitors[new_idx].output);
             }
 
             let mon = &mut monitors[mon_idx];
@@ -3508,6 +3531,7 @@ impl<W: LayoutElement> Layout<W> {
 
         if activate {
             *active_monitor_idx = target_idx;
+            Self::record_output_focus(&mut self.output_focus_stack, &monitors[target_idx].output);
         }
 
         activate
