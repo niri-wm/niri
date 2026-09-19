@@ -1,6 +1,64 @@
+use std::str::FromStr;
+
+use bitflags::bitflags;
+use miette::miette;
+
 use crate::appearance::{BackgroundEffectRule, BlockOutFrom, CornerRadius, ShadowRule};
 use crate::utils::RegexEq;
 use crate::window_rule::PopupsRule;
+
+bitflags! {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub struct Anchors: u8 {
+        const TOP = 1;
+        const BOTTOM = 1 << 1;
+        const LEFT = 1 << 2;
+        const RIGHT = 1 << 3;
+    }
+}
+
+impl FromStr for Anchors {
+    type Err = miette::Report;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut anchors = Anchors::empty();
+        for raw in s.split(',') {
+            let part = raw.trim();
+            if part.is_empty() {
+                return Err(miette!("anchor cannot be empty"));
+            }
+
+            let next = match part {
+                "top" => Anchors::TOP,
+                "bottom" => Anchors::BOTTOM,
+                "left" => Anchors::LEFT,
+                "right" => Anchors::RIGHT,
+                _ => return Err(miette!("unknown anchor: {part:?}")),
+            };
+
+            if anchors.contains(next) {
+                return Err(miette!("duplicate anchor: {part:?}"));
+            }
+
+            anchors |= next;
+        }
+
+        Ok(anchors)
+    }
+}
+
+#[derive(knuffel::DecodeScalar, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExclusiveZone {
+    Exclusive,
+    Neutral,
+}
+
+#[derive(knuffel::DecodeScalar, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LayerKeyboardInteractivity {
+    None,
+    Exclusive,
+    OnDemand,
+}
 
 #[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]
 pub struct LayerRule {
@@ -35,4 +93,12 @@ pub struct Match {
     pub at_startup: Option<bool>,
     #[knuffel(property, str)]
     pub layer: Option<niri_ipc::Layer>,
+    #[knuffel(property, str)]
+    pub anchors: Option<Anchors>,
+    #[knuffel(property(name = "anchor-sides"))]
+    pub anchor_sides: Option<u8>,
+    #[knuffel(property(name = "exclusive-zone"))]
+    pub exclusive_zone: Option<ExclusiveZone>,
+    #[knuffel(property(name = "keyboard-interactivity"))]
+    pub keyboard_interactivity: Option<LayerKeyboardInteractivity>,
 }
