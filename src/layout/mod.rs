@@ -41,7 +41,9 @@ use niri_config::utils::MergeWith as _;
 use niri_config::{
     Config, CornerRadius, LayoutPart, PresetSize, Workspace as WorkspaceConfig, WorkspaceReference,
 };
-use niri_ipc::{ColumnDisplay, PositionChange, SizeChange, WindowLayout};
+use niri_ipc::{
+    ColumnDisplay, HorizontalAlignment, PositionChange, SizeChange, VerticalAlignment, WindowLayout,
+};
 use scrolling::{Column, ColumnWidth};
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::element::utils::RescaleRenderElement;
@@ -2292,6 +2294,37 @@ impl<W: LayoutElement> Layout<W> {
             return;
         };
         workspace.center_window(id);
+    }
+
+    pub fn align_column(&mut self, horizontal: Option<HorizontalAlignment>) {
+        let Some(workspace) = self.active_workspace_mut() else {
+            return;
+        };
+        workspace.align_column(horizontal)
+    }
+
+    pub fn align_window(
+        &mut self,
+        id: Option<&W::Id>,
+        horizontal: Option<HorizontalAlignment>,
+        vertical: Option<VerticalAlignment>,
+    ) {
+        if let Some(InteractiveMoveState::Moving(move_)) = &mut self.interactive_move {
+            if id.is_none() || id == Some(move_.tile.window().id()) {
+                return;
+            }
+        }
+
+        let workspace = if let Some(id) = id {
+            Some(self.workspaces_mut().find(|ws| ws.has_window(id)).unwrap())
+        } else {
+            self.active_workspace_mut()
+        };
+
+        let Some(workspace) = workspace else {
+            return;
+        };
+        workspace.align_window(id, horizontal, vertical)
     }
 
     pub fn center_visible_columns(&mut self) {
