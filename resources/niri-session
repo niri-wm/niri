@@ -21,6 +21,111 @@ if [ -n "$SHELL" ] &&
   fi
 fi
 
+# Drop repeated colon-list segments, keeping the first occurrence.
+dedup_colons() {
+    out='' seen=:
+    set -f
+    IFS=:
+    for seg in $1; do
+        case "$seen" in
+            *":$seg:"*) ;;
+            *) seen=$seen$seg: out=$out$seg: ;;
+        esac
+    done
+    unset IFS
+    set +f
+    printf '%s' "${out%:}"
+}
+
+# Re-apply environment.d(5) on top of the login environment, so that the
+# later import cannot overwrite what the user manager already carries
+# from environment.d (notably PATH). Plain assignments win outright;
+# self-referencing ones such as PATH=...:$PATH compose with the
+# login-shell value.
+merge_environment_d() {
+    envgen=
+    envgen_dirs=$(systemd-path systemd-search-user-environment-generator 2>/dev/null)
+    IFS=:
+    for envgen_dir in ${envgen_dirs:-/usr/lib/systemd/user-environment-generators:/lib/systemd/user-environment-generators}; do
+        if [ -x "$envgen_dir/30-systemd-environment-d-generator" ]; then
+            envgen=$envgen_dir/30-systemd-environment-d-generator
+            break
+        fi
+    done
+    unset IFS
+
+    if [ -n "$envgen" ]; then
+        # A generator run against an empty environment identifies
+        # self-referencing entries: a login environment that descends from
+        # a previous manager state (GDM seeds sessions that way) already
+        # contains one application of environment.d, so those entries must
+        # be deduplicated or they would grow by one copy per login.
+        # (Ideally the generator itself would deduplicate — it knows which
+        # entries self-reference. Doing it here can in principle collapse
+        # a meaningful duplicate segment in a composed value.)
+        baseline=$(env -i HOME="$HOME" \
+            XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}" "$envgen")
+        # Loose prefix check; export itself rejects invalid names.
+        # shellcheck disable=SC2163 # exporting a NAME=value held in a var
+        while IFS= read -r assignment; do
+            case "$assignment" in
+                [A-Za-z_]*=*) ;;
+                *) continue ;;
+            esac
+            if ! printf '%s\n' "$baseline" | grep -qxF "$assignment"; then
+                assignment=${assignment%%=*}=$(dedup_colons "${assignment#*=}")
+            fi
+            export "$assignment" 2>/dev/null || :
+        done <<EOF
+$("$envgen")
+EOF
+        return 0
+    fi
+
+    # No generator (e.g. systemd built without environment.d): approximate
+    # the merge by prepending the PATH entries that the manager has and
+    # the login environment is missing.
+    manager_path=$(systemctl --user show-environment 2>/dev/null | sed -n 's/^PATH=//p')
+    [ -n "$manager_path" ] || return 0
+    missing=
+    # Disable globbing while splitting PATH entries.
+    set -f
+    IFS=:
+    for entry in $manager_path; do
+        # Drop empty entries — they mean the current directory.
+        [ -n "$entry" ] || continue
+        case ":$PATH:$missing" in
+            *":$entry:"*) ;;
+            *) missing=$missing$entry: ;;
+        esac
+    done
+    unset IFS
+    set +f
+    PATH=$missing$PATH
+    export PATH
+}
+
+# Print the environment variable names worth importing into the user
+# manager. Skipped: variables that systemd set for the login chain's own
+# execution — foreign and meaningless-to-harmful for other units, see
+# systemd.exec(5) — plus display variables a parent session may have
+# leaked (niri publishes the real ones itself once it starts), plus
+# AWKPATH/AWKLIBPATH, which gawk fabricates in ENVIRON even when unset.
+# Harmless shell clutter (SHLVL, TERM, ...) is left in — that set is
+# open-ended, so any curated list of it would go stale.
+session_env_names() {
+    skip_vars='NOTIFY_SOCKET LISTEN_PID LISTEN_FDS LISTEN_FDNAMES
+        LISTEN_PIDFDID WATCHDOG_PID WATCHDOG_USEC CREDENTIALS_DIRECTORY
+        MANAGERPID SYSTEMD_EXEC_PID INVOCATION_ID JOURNAL_STREAM
+        WAYLAND_DISPLAY DISPLAY AWKPATH AWKLIBPATH'
+    # shellcheck disable=SC2086 # deliberate: build a regex from the names
+    awk -v skip="^($(echo $skip_vars | tr ' ' '|'))$" 'BEGIN {
+        for (v in ENVIRON)
+            if (v ~ /^[A-Za-z_][A-Za-z0-9_]*$/ && v !~ skip)
+                print v
+    }' | sort
+}
+
 # Try to detect the service manager that is being used
 if hash systemctl >/dev/null 2>&1; then
     # Make sure there's no already running session.
@@ -32,15 +137,18 @@ if hash systemctl >/dev/null 2>&1; then
     # Reset failed state of all user units.
     systemctl --user reset-failed
 
-    # Import the login manager environment.
-    systemctl --user import-environment
+    merge_environment_d
+    session_vars=$(session_env_names)
+    # shellcheck disable=SC2086 # deliberate: one argument per variable name
+    systemctl --user import-environment $session_vars
 
     # DBus activation environment is independent from systemd. While most of
     # dbus-activated services are already using `SystemdService` directive, some
     # still don't and thus we should set the dbus environment with a separate
     # command.
     if hash dbus-update-activation-environment 2>/dev/null; then
-        dbus-update-activation-environment --all
+        # shellcheck disable=SC2086 # deliberate: one argument per variable name
+        dbus-update-activation-environment $session_vars
     fi
 
     # Start niri and wait for it to terminate.
