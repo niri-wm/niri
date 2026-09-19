@@ -1,6 +1,6 @@
 use std::cell::RefCell;
 use std::cmp::min;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::io::Cursor;
 use std::iter::zip;
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd};
@@ -50,15 +50,13 @@ use smithay::reexports::rustix::fd::OwnedFd;
 use smithay::reexports::rustix::fs::{
     fcntl_add_seals, ftruncate, memfd_create, MemfdFlags, SealFlags,
 };
-use smithay::reexports::rustix::mm::{mmap, munmap, MapFlags, ProtFlags};
 use smithay::utils::{DeviceFd, Logical, Physical, Point, Scale, Size, Transform};
 use zbus::object_server::SignalEmitter;
 
 use crate::dbus::mutter_screen_cast::{self, CursorMode};
 use crate::niri::{CastTarget, State};
 use crate::render_helpers::{
-    clear_dmabuf, encompassing_geo, render_and_download, render_and_download_with_damage,
-    render_to_dmabuf,
+    clear_dmabuf, encompassing_geo, render_and_download, render_to_dmabuf, DownloadTexture,
 };
 use crate::screencasting::CastRenderElement;
 use crate::utils::{get_monotonic_time, CastSessionId, CastStreamId};
@@ -67,6 +65,11 @@ use crate::utils::{get_monotonic_time, CastSessionId, CastStreamId};
 const CAST_DELAY_ALLOWANCE: Duration = Duration::from_micros(100);
 const SHM_BLOCKS: usize = 1;
 const SHM_BYTES_PER_PIXEL: usize = 4;
+
+mod frame_pacing;
+mod shm_mapping;
+use frame_pacing::FramePacing;
+use shm_mapping::ShmMapping;
 
 const CURSOR_FORMAT: spa_video_format = SPA_VIDEO_FORMAT_BGRA;
 const CURSOR_BPP: u32 = 4;
@@ -104,8 +107,9 @@ pub struct Cast {
     formats: FormatSet,
     offer_alpha: bool,
     cursor_mode: CursorMode,
-    pub last_frame_time: Duration,
+    frame_pacing: FramePacing,
     scheduled_redraw: Option<RegistrationToken>,
+    shm_texture: DownloadTexture,
     // Incremented once per successful frame, stored in buffer meta.
     sequence_counter: u64,
     inner: Rc<RefCell<CastInner>>,
@@ -115,6 +119,7 @@ pub struct Cast {
 #[derive(Debug)]
 struct CastInner {
     is_active: bool,
+    waiting_for_buffer: bool,
     node_id: Option<u32>,
     state: CastState,
     refresh: u32,
@@ -127,7 +132,7 @@ struct CastInner {
     /// rendering to complete. The completion can be checked from the `SyncPoint`s. The buffers are
     /// stored in order from oldest to newest, and the same ordering should be preserved when
     /// submitting completed buffers to PipeWire.
-    rendering_buffers: Vec<(NonNull<pw_buffer>, SyncPoint)>,
+    rendering_buffers: VecDeque<(NonNull<pw_buffer>, SyncPoint)>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -453,18 +458,30 @@ impl PipeWire {
         // Like in good old wayland-rs times...
         let inner = Rc::new(RefCell::new(CastInner {
             is_active: false,
+            waiting_for_buffer: false,
             node_id: None,
             state: CastState::ResizePending { pending_size },
             refresh,
             min_time_between_frames: Duration::ZERO,
             dmabufs: HashMap::new(),
             shmbufs: HashMap::new(),
-            rendering_buffers: Vec::new(),
+            rendering_buffers: VecDeque::new(),
         }));
 
         let listener =
             stream
                 .add_local_listener_with_user_data(())
+                .process({
+                    let inner = inner.clone();
+                    let redraw = redraw.clone();
+                    move |_, ()| {
+                        let mut inner = inner.borrow_mut();
+                        if inner.is_active && mem::take(&mut inner.waiting_for_buffer) {
+                            drop(inner);
+                            redraw();
+                        }
+                    }
+                })
                 .state_changed({
                     let inner = inner.clone();
                     let stop_cast = stop_cast.clone();
@@ -497,6 +514,7 @@ impl PipeWire {
                                 }
 
                                 inner.is_active = false;
+                                inner.waiting_for_buffer = false;
                             }
                             StreamState::Error(_) => {
                                 if inner.is_active {
@@ -508,6 +526,7 @@ impl PipeWire {
                             StreamState::Connecting => (),
                             StreamState::Streaming => {
                                 inner.is_active = true;
+                                inner.state.invalidate_damage();
                                 redraw();
                             }
                         }
@@ -891,7 +910,17 @@ impl PipeWire {
                     move |stream, (), buffer| {
                         let _span = debug_span!("add_buffer", %stream_id).entered();
 
-                        match unsafe { inner.borrow_mut().on_add_buffer(gbm.as_ref(), buffer) } {
+                        let result = unsafe {
+                            let mut inner = inner.borrow_mut();
+                            inner
+                                .on_add_buffer(gbm.as_ref(), buffer)
+                                .inspect(|&redraw| {
+                                    if redraw {
+                                        inner.state.invalidate_damage();
+                                    }
+                                })
+                        };
+                        match result {
                             Ok(redraw) => {
                                 // During size re-negotiation, the stream sometimes just keeps
                                 // running, in which case we may need to force a redraw once we got
@@ -943,8 +972,9 @@ impl PipeWire {
             formats,
             offer_alpha: alpha,
             cursor_mode,
-            last_frame_time: Duration::ZERO,
+            frame_pacing: FramePacing::default(),
             scheduled_redraw: None,
+            shm_texture: DownloadTexture::default(),
             sequence_counter: 0,
             inner,
         };
@@ -1017,10 +1047,15 @@ impl Cast {
         Ok(())
     }
 
+    pub fn record_frame_time(&mut self, time: Duration) {
+        let interval = self.inner.borrow().min_time_between_frames;
+        self.frame_pacing.record(time, interval);
+    }
+
     fn compute_extra_delay(&self, target_frame_time: Duration) -> Duration {
         let inner = self.inner.borrow();
 
-        let last = self.last_frame_time;
+        let last = self.frame_pacing.last;
         let min = inner.min_time_between_frames;
 
         if last.is_zero() {
@@ -1038,9 +1073,9 @@ impl Cast {
             return Duration::ZERO;
         }
 
-        let diff = target_frame_time - last;
-        if diff < min {
-            let delay = min - diff;
+        let deadline = self.frame_pacing.deadline(min);
+        if target_frame_time < deadline {
+            let delay = deadline - target_frame_time;
             trace!(
                 ?target_frame_time,
                 ?last,
@@ -1049,7 +1084,7 @@ impl Cast {
             );
             return delay;
         } else {
-            trace!("overshoot={:?}", diff - min);
+            trace!("overshoot={:?}", target_frame_time - deadline);
         }
 
         Duration::ZERO
@@ -1111,7 +1146,7 @@ impl Cast {
     }
 
     fn queue_completed_buffers(&mut self) {
-        let mut inner = self.inner.borrow_mut();
+        let inner = self.inner.borrow();
 
         // We want to queue buffers in order, so find the first still-rendering buffer, and queue
         // everything up to that. Even if there are completed buffers past the first
@@ -1123,7 +1158,19 @@ impl Cast {
             .position(|(_, sync)| !sync.is_reached())
             .unwrap_or(inner.rendering_buffers.len());
 
-        for (buffer, _) in inner.rendering_buffers.drain(..first_in_progress_idx) {
+        drop(inner);
+        for _ in 0..first_in_progress_idx {
+            let mut inner = self.inner.borrow_mut();
+            if !inner
+                .rendering_buffers
+                .front()
+                .is_some_and(|(_, sync)| sync.is_reached())
+            {
+                break;
+            }
+            let (buffer, _) = inner.rendering_buffers.pop_front().unwrap();
+            // Queuing can re-enter the process callback.
+            drop(inner);
             trace!("queueing completed buffer");
             unsafe {
                 pw_stream_queue_buffer(self.stream.as_raw_ptr(), buffer.as_ptr());
@@ -1156,7 +1203,7 @@ impl Cast {
             }
         };
 
-        inner.rendering_buffers.push((pw_buffer, sync_point));
+        inner.rendering_buffers.push_back((pw_buffer, sync_point));
         drop(inner);
 
         match sync_fd {
@@ -1256,8 +1303,12 @@ impl Cast {
 
         let Some(pw_buffer) = self.dequeue_available_buffer() else {
             warn!("no available buffer in pw stream, skipping frame");
+            let mut inner = self.inner.borrow_mut();
+            inner.state.invalidate_damage();
+            inner.waiting_for_buffer = true;
             return false;
         };
+        self.inner.borrow_mut().waiting_for_buffer = false;
         let buffer = pw_buffer.as_ptr();
 
         let mut inner = self.inner.borrow_mut();
@@ -1292,7 +1343,7 @@ impl Cast {
                         .map(|x| (x, SharingBuf::Dma))
                 }
                 x if x == DataType::MemFd.as_raw() => {
-                    let shmbuf = inner_.shmbufs[&fd].clone();
+                    let shmbuf = &inner_.shmbufs[&fd];
 
                     let fourcc = if alpha {
                         Fourcc::Argb8888
@@ -1300,8 +1351,16 @@ impl Cast {
                         Fourcc::Xrgb8888
                     };
 
-                    render_to_shmbuf(renderer, damage_tracker, &shmbuf, fourcc, elements, states)
-                        .map(|()| (SyncPoint::signaled(), SharingBuf::Shm(shmbuf)))
+                    render_to_shmbuf(
+                        renderer,
+                        &mut self.shm_texture,
+                        damage_tracker,
+                        shmbuf,
+                        fourcc,
+                        elements,
+                        states,
+                    )
+                    .map(|()| (SyncPoint::signaled(), SharingBuf::Shm(shmbuf.layout)))
                 }
                 _ => Err(anyhow::anyhow!(
                     "unknown data type in dequeue_buffer_and_render"
@@ -1318,6 +1377,7 @@ impl Cast {
                 }
                 Err(err) => {
                     warn!("error rendering to buffer: {err:?}");
+                    self.inner.borrow_mut().state.invalidate_damage();
                     return_unused_buffer(&self.stream, pw_buffer);
                     false
                 }
@@ -1342,8 +1402,10 @@ impl Cast {
 
         let Some(pw_buffer) = self.dequeue_available_buffer() else {
             warn!("no available buffer in pw stream, skipping frame");
+            self.inner.borrow_mut().waiting_for_buffer = true;
             return false;
         };
+        self.inner.borrow_mut().waiting_for_buffer = false;
         let buffer = pw_buffer.as_ptr();
 
         unsafe {
@@ -1361,8 +1423,10 @@ impl Cast {
                     clear_dmabuf(renderer, dmabuf).map(|x| (x, SharingBuf::Dma))
                 }
                 x if x == DataType::MemFd.as_raw() => {
-                    let shmbuf = self.inner.borrow().shmbufs[&fd].clone();
-                    clear_shmbuf(&shmbuf).map(|()| (SyncPoint::signaled(), SharingBuf::Shm(shmbuf)))
+                    let inner = self.inner.borrow();
+                    let shmbuf = &inner.shmbufs[&fd];
+                    clear_shmbuf(shmbuf);
+                    Ok((SyncPoint::signaled(), SharingBuf::Shm(shmbuf.layout)))
                 }
                 _ => Err(anyhow::anyhow!(
                     "unknown data type in dequeue_buffer_and_clear"
@@ -1523,6 +1587,21 @@ impl CastInner {
 }
 
 impl CastState {
+    /// A resumed consumer or a new buffer pool needs a frame even on a static scene.
+    fn invalidate_damage(&mut self) {
+        if let Self::Ready {
+            damage_tracker,
+            cursor_damage_tracker,
+            last_cursor_location,
+            ..
+        } = self
+        {
+            *damage_tracker = None;
+            *cursor_damage_tracker = None;
+            *last_cursor_location = None;
+        }
+    }
+
     fn pending_size(&self) -> Option<Size<u32, Physical>> {
         match self {
             CastState::ResizePending { pending_size } => Some(*pending_size),
@@ -1616,10 +1695,11 @@ fn allocate_dmabuf(
     Ok(dmabuf)
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Shmbuf {
-    fd: Rc<OwnedFd>,
+    fd: OwnedFd,
     layout: ShmLayout,
+    mapping: ShmMapping,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1651,7 +1731,7 @@ impl ShmLayout {
 
 enum SharingBuf {
     Dma,
-    Shm(Shmbuf),
+    Shm(ShmLayout),
 }
 
 fn allocate_shmbuf(size: Size<u32, Physical>) -> anyhow::Result<Shmbuf> {
@@ -1664,9 +1744,11 @@ fn allocate_shmbuf(size: Size<u32, Physical>) -> anyhow::Result<Shmbuf> {
     ftruncate(&fd, layout.size.into()).context("error setting size of the fd")?;
     fcntl_add_seals(&fd, SealFlags::SEAL | SealFlags::SHRINK | SealFlags::GROW)
         .context("error sealing the fd")?;
+    let mapping = ShmMapping::new(fd.as_fd(), layout.size_usize())?;
     Ok(Shmbuf {
-        fd: fd.into(),
+        fd,
         layout,
+        mapping,
     })
 }
 
@@ -1706,8 +1788,8 @@ unsafe fn mark_buffer_as_good(pw_buffer: NonNull<pw_buffer>, sequence: &mut u64,
             // Clear the corrupted flag we may have set before.
             (*chunk).flags = SPA_CHUNK_FLAG_NONE as i32;
         }
-        SharingBuf::Shm(shmbuf) => {
-            (*chunk).size = shmbuf.layout.size;
+        SharingBuf::Shm(layout) => {
+            (*chunk).size = layout.size;
             (*chunk).flags = SPA_CHUNK_FLAG_NONE as i32;
         }
     }
@@ -1878,6 +1960,7 @@ unsafe fn add_cursor_metadata(
 
 fn render_to_shmbuf(
     renderer: &mut GlesRenderer,
+    texture: &mut DownloadTexture,
     damage_tracker: &mut OutputDamageTracker,
     buffer: &Shmbuf,
     fourcc: Fourcc,
@@ -1893,56 +1976,81 @@ fn render_to_shmbuf(
     );
 
     let mapping =
-        render_and_download_with_damage(renderer, damage_tracker, fourcc, elements, states)?;
+        texture.render_and_download(renderer, damage_tracker, fourcc, elements, states)?;
 
     let bytes = renderer
         .map_texture(&mapping)
         .context("error mapping texture")?;
 
-    unsafe {
-        let buf = mmap(
-            std::ptr::null_mut(),
-            buffer.layout.size_usize(),
-            ProtFlags::READ | ProtFlags::WRITE,
-            MapFlags::SHARED,
-            buffer.fd.clone(),
-            0,
-        )?;
-        {
-            let buf = slice::from_raw_parts_mut(buf.cast::<u8>(), buffer.layout.size_usize());
-            buf.copy_from_slice(bytes);
-        }
-        if let Err(err) = munmap(buf, buffer.layout.size_usize()) {
-            warn!("error unmapping shm buffer: {err:?}");
-        }
-    }
-    Ok(())
+    buffer.mapping.copy_frame(bytes)
 }
 
-fn clear_shmbuf(buffer: &Shmbuf) -> anyhow::Result<()> {
-    unsafe {
-        let buf = mmap(
-            std::ptr::null_mut(),
-            buffer.layout.size_usize(),
-            ProtFlags::READ | ProtFlags::WRITE,
-            MapFlags::SHARED,
-            buffer.fd.clone(),
-            0,
-        )?;
-        {
-            let buf = slice::from_raw_parts_mut(buf.cast::<u8>(), buffer.layout.size_usize());
-            buf.fill(0);
-        }
-        if let Err(err) = munmap(buf, buffer.layout.size_usize()) {
-            warn!("error unmapping shm buffer: {err:?}");
-        }
-    }
-    Ok(())
+fn clear_shmbuf(buffer: &Shmbuf) {
+    buffer.mapping.clear();
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn resuming_restores_static_scene_damage_without_renegotiating() {
+        use smithay::backend::renderer::element::Kind;
+
+        use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
+
+        let buffer = SolidColorBuffer::new((16.0, 8.0), [1.0, 0.0, 0.0, 1.0]);
+        let elements = [SolidColorRenderElement::from_buffer(
+            &buffer,
+            (0.0, 0.0),
+            1.0,
+            Kind::Unspecified,
+        )];
+        let size = Size::from((16, 8));
+        let mut state = CastState::Ready {
+            size,
+            alpha: false,
+            dma_negotiation: Some(DmaNegotiation {
+                modifier: Modifier::Linear,
+                plane_count: 1,
+            }),
+            damage_tracker: None,
+            cursor_damage_tracker: Some(OutputDamageTracker::new((16, 8), 1.0, Transform::Normal)),
+            last_cursor_location: Some(Point::from((4, 4))),
+        };
+        let damaged = |state: &mut CastState| {
+            let CastState::Ready { damage_tracker, .. } = state else {
+                unreachable!()
+            };
+            damage_tracker
+                .get_or_insert_with(|| OutputDamageTracker::new((16, 8), 1.0, Transform::Normal))
+                .damage_output(1, &elements)
+                .unwrap()
+                .0
+                .is_some()
+        };
+        assert!(damaged(&mut state));
+        assert!(!damaged(&mut state));
+        state.invalidate_damage();
+        assert!(damaged(&mut state));
+        assert!(!damaged(&mut state));
+        let CastState::Ready {
+            size: actual,
+            alpha,
+            dma_negotiation,
+            cursor_damage_tracker,
+            last_cursor_location,
+            ..
+        } = state
+        else {
+            panic!("negotiation state changed")
+        };
+        assert_eq!(actual, size);
+        assert!(!alpha);
+        assert_eq!(dma_negotiation.unwrap().modifier, Modifier::Linear);
+        assert!(cursor_damage_tracker.is_none());
+        assert!(last_cursor_location.is_none());
+    }
 
     #[test]
     fn shm_layout_uses_spa_representable_dimensions() {
@@ -1952,5 +2060,29 @@ mod tests {
 
         assert!(ShmLayout::new(Size::from((536_870_912, 1))).is_err());
         assert!(ShmLayout::new(Size::from((500_000_000, 3))).is_err());
+    }
+
+    #[test]
+    fn shm_mapping_rejects_invalid_copies_and_clears_contents() {
+        use std::os::unix::fs::FileExt;
+
+        let buffer = allocate_shmbuf(Size::from((4, 2))).unwrap();
+        let file = std::fs::File::from(buffer.fd.try_clone().unwrap());
+
+        for value in [3, 7] {
+            buffer.mapping.copy_frame(&[value; 32]).unwrap();
+            for len in [0, 31, 33] {
+                assert!(buffer.mapping.copy_frame(&[0; 33][..len]).is_err());
+            }
+            let mut bytes = [0; 32];
+            file.read_exact_at(&mut bytes, 0).unwrap();
+            assert_eq!(bytes, [value; 32]);
+        }
+        assert!(ftruncate(&buffer.fd, 0).is_err());
+        assert!(ftruncate(&buffer.fd, 64).is_err());
+        clear_shmbuf(&buffer);
+        let mut bytes = [1; 32];
+        file.read_exact_at(&mut bytes, 0).unwrap();
+        assert_eq!(bytes, [0; 32]);
     }
 }
