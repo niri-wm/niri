@@ -932,6 +932,8 @@ pub enum Action {
         #[cfg_attr(feature = "clap", arg(long))]
         id: u64,
     },
+    /// Toggle disable-while-typing on/off at runtime.
+    ToggleDwt {},
     /// Reload the config file.
     ///
     /// Can be useful for scripts changing the config file, to avoid waiting the small duration for
