@@ -15,7 +15,8 @@ binds {
 }
 ```
 
-The hotkey consists of modifiers separated by `+` signs, followed by an XKB key name in the end.
+The parts of a hotkey definition are separated by '+' and consist of zero or more modifiers followed by a trigger key.
+This can be either an XKB key name or <sup>Since: next release</sup> `Mod`.
 
 Valid modifiers are:
 
@@ -80,6 +81,75 @@ binds {
 ```
 
 This is mostly useful for the scroll bindings.
+
+### Press and Release bindings
+
+<sup>Since: next release</sup>
+
+Binds can be set to trigger on key press, on key release, or both.
+By default, binds trigger on key press.
+You can change it using `press {}` and `release {}` blocks:
+
+```kdl
+binds {
+    // Trigger on press (default behavior).
+    Mod+T { spawn "alacritty"; }
+
+    // Trigger on release.
+    Mod { release { toggle-overview; }; }
+
+    // Trigger on both press and release with different actions.
+    Mod+Shift+Q {
+        press { spawn "notify-send" "Pressed"; }
+        release { spawn "notify-send" "Released"; }
+    }
+
+    // Toggleable behavior like push-to-talk can be implemented
+    // by putting the same toggle command on the press and release action.
+    Control_R {
+        press { spawn "toggle-command"; }
+        release { spawn "toggle-command"; }
+    }
+
+    // For multi-key modifier-only bindings,
+    // use Ctrl/Alt/etc. for the modifier keys and
+    // Control_L/Control_R/Alt_L/Alt_R/etc. for the trigger key.
+    Ctrl+Alt_L {
+        press { spawn "notify-send" "Pressed"; }
+        release { spawn "notify-send" "Released"; }
+    }
+}
+```
+
+Release bindings are useful when you want to bind a modifier key to an action.
+Modifiers usually participate in other bindings, so a press binding would trigger every time you try to input another binding.
+
+In bindings with both press and release, the release action is guaranteed to trigger if the press action triggers.
+So your push-to-talk press-release binding will never get stuck pressed, no matter how you release the keys.
+
+By default, any key binding that includes a release action will have repeat turned off for its press action.
+This can be overridden with `repeat=true` if desired:
+
+```kdl
+binds {
+    Mod+Shift+Q repeat=true {
+        press { spawn "notify-send" "Pressed (repeating)"; }
+        release { spawn "notify-send" "Released"; }
+    }
+}
+```
+
+Release binds will normally only trigger if no other keys were released and no keys or mouse buttons were pressed after the bound key was pressed.
+If you want a release bind to always trigger regardless, set `allow-invalidation=false`:
+
+```kdl
+binds {
+    Mod allow-invalidation=false { release { toggle-overview; }; }
+}
+```
+
+Note that the modifiers of the bind itself (e.g. `Mod` in `Mod+T`) must still be held when the key is released, both for regular and invalidated releases.
+Extra modifiers that are not part of the bind are only allowed when `allow-invalidation=false`.
 
 ### Scroll Bindings
 

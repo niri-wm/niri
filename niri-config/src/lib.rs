@@ -656,6 +656,80 @@ mod tests {
     }
 
     #[test]
+    fn parse_bind_release_sections() {
+        // Release sections are not supported for scroll binds, since scroll ticks are dispatched as
+        // press events only.
+        assert!(Config::parse_mem(
+            r#"
+            binds {
+                Mod+WheelScrollDown {
+                    release { toggle-overview; }
+                }
+            }
+            "#
+        )
+        .is_err());
+        assert!(Config::parse_mem(
+            r#"
+            binds {
+                Mod+TouchpadScrollDown {
+                    release { toggle-overview; }
+                }
+            }
+            "#
+        )
+        .is_err());
+
+        // Mouse buttons and keys do have release events, so those are fine.
+        do_parse(
+            r#"
+            binds {
+                Mod+MouseLeft {
+                    release { close-window; }
+                }
+                Mod+Q {
+                    press { close-window; }
+                    release { close-window; }
+                }
+            }
+            "#,
+        );
+    }
+
+    #[test]
+    fn parse_bind_repeat_on_release_only() {
+        // repeat=true on a release-only bind has no effect and is rejected.
+        assert!(Config::parse_mem(
+            r#"
+            binds {
+                Mod+Q repeat=true {
+                    release { close-window; }
+                }
+            }
+            "#
+        )
+        .is_err());
+
+        do_parse(
+            r#"
+            binds {
+                Mod+T repeat=true { spawn "alacritty"; }
+                Mod+Q repeat=true {
+                    press { close-window; }
+                    release { close-window; }
+                }
+                Mod+W {
+                    release { close-window; }
+                }
+                Mod+E repeat=false {
+                    release { close-window; }
+                }
+            }
+            "#,
+        );
+    }
+
+    #[test]
     fn parse_on_xdg_activate() {
         let parsed = do_parse(
             r#"
@@ -956,6 +1030,12 @@ mod tests {
                 Mod+Shift+E allow-inhibiting=false { quit skip-confirmation=true; }
                 Mod+WheelScrollDown cooldown-ms=150 { focus-workspace-down; }
                 Super+Alt+S allow-when-locked=true { spawn-sh "pkill orca || exec orca"; }
+                Mod {
+                    release { toggle-overview; }
+                }
+                Shift+Mod allow-invalidation=false {
+                    release { toggle-window-floating; }
+                }
             }
 
             switch-events {
@@ -2003,11 +2083,15 @@ mod tests {
                                 COMPOSITOR,
                             ),
                         },
-                        action: ToggleKeyboardShortcutsInhibit,
+                        press_action: Some(
+                            ToggleKeyboardShortcutsInhibit,
+                        ),
+                        release_action: None,
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: false,
+                        allow_invalidation: true,
                         hotkey_overlay_title: Some(
                             Some(
                                 "Inhibit",
@@ -2023,11 +2107,15 @@ mod tests {
                                 SHIFT | COMPOSITOR,
                             ),
                         },
-                        action: ToggleKeyboardShortcutsInhibit,
+                        press_action: Some(
+                            ToggleKeyboardShortcutsInhibit,
+                        ),
+                        release_action: None,
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: false,
+                        allow_invalidation: true,
                         hotkey_overlay_title: None,
                     },
                     Bind {
@@ -2039,15 +2127,19 @@ mod tests {
                                 COMPOSITOR,
                             ),
                         },
-                        action: Spawn(
-                            [
-                                "alacritty",
-                            ],
+                        press_action: Some(
+                            Spawn(
+                                [
+                                    "alacritty",
+                                ],
+                            ),
                         ),
+                        release_action: None,
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: true,
                         allow_inhibiting: true,
+                        allow_invalidation: true,
                         hotkey_overlay_title: None,
                     },
                     Bind {
@@ -2059,11 +2151,15 @@ mod tests {
                                 COMPOSITOR,
                             ),
                         },
-                        action: CloseWindow,
+                        press_action: Some(
+                            CloseWindow,
+                        ),
+                        release_action: None,
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: true,
+                        allow_invalidation: true,
                         hotkey_overlay_title: Some(
                             None,
                         ),
@@ -2077,11 +2173,15 @@ mod tests {
                                 SHIFT | COMPOSITOR,
                             ),
                         },
-                        action: FocusMonitorLeft,
+                        press_action: Some(
+                            FocusMonitorLeft,
+                        ),
+                        release_action: None,
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: true,
+                        allow_invalidation: true,
                         hotkey_overlay_title: None,
                     },
                     Bind {
@@ -2093,13 +2193,17 @@ mod tests {
                                 SHIFT | COMPOSITOR,
                             ),
                         },
-                        action: FocusMonitor(
-                            "eDP-1",
+                        press_action: Some(
+                            FocusMonitor(
+                                "eDP-1",
+                            ),
                         ),
+                        release_action: None,
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: true,
+                        allow_invalidation: true,
                         hotkey_overlay_title: None,
                     },
                     Bind {
@@ -2111,11 +2215,15 @@ mod tests {
                                 CTRL | SHIFT | COMPOSITOR,
                             ),
                         },
-                        action: MoveWindowToMonitorRight,
+                        press_action: Some(
+                            MoveWindowToMonitorRight,
+                        ),
+                        release_action: None,
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: true,
+                        allow_invalidation: true,
                         hotkey_overlay_title: None,
                     },
                     Bind {
@@ -2127,13 +2235,17 @@ mod tests {
                                 CTRL | ALT | COMPOSITOR,
                             ),
                         },
-                        action: MoveWindowToMonitor(
-                            "eDP-1",
+                        press_action: Some(
+                            MoveWindowToMonitor(
+                                "eDP-1",
+                            ),
                         ),
+                        release_action: None,
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: true,
+                        allow_invalidation: true,
                         hotkey_overlay_title: None,
                     },
                     Bind {
@@ -2145,13 +2257,17 @@ mod tests {
                                 CTRL | ALT | COMPOSITOR,
                             ),
                         },
-                        action: MoveColumnToMonitor(
-                            "DP-1",
+                        press_action: Some(
+                            MoveColumnToMonitor(
+                                "DP-1",
+                            ),
                         ),
+                        release_action: None,
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: true,
+                        allow_invalidation: true,
                         hotkey_overlay_title: None,
                     },
                     Bind {
@@ -2163,11 +2279,15 @@ mod tests {
                                 COMPOSITOR,
                             ),
                         },
-                        action: ConsumeWindowIntoColumn,
+                        press_action: Some(
+                            ConsumeWindowIntoColumn,
+                        ),
+                        release_action: None,
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: true,
+                        allow_invalidation: true,
                         hotkey_overlay_title: None,
                     },
                     Bind {
@@ -2179,15 +2299,19 @@ mod tests {
                                 COMPOSITOR,
                             ),
                         },
-                        action: FocusWorkspace(
-                            Index(
-                                1,
+                        press_action: Some(
+                            FocusWorkspace(
+                                Index(
+                                    1,
+                                ),
                             ),
                         ),
+                        release_action: None,
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: true,
+                        allow_invalidation: true,
                         hotkey_overlay_title: None,
                     },
                     Bind {
@@ -2199,15 +2323,19 @@ mod tests {
                                 SHIFT | COMPOSITOR,
                             ),
                         },
-                        action: FocusWorkspace(
-                            Name(
-                                "workspace-1",
+                        press_action: Some(
+                            FocusWorkspace(
+                                Name(
+                                    "workspace-1",
+                                ),
                             ),
                         ),
+                        release_action: None,
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: true,
+                        allow_invalidation: true,
                         hotkey_overlay_title: None,
                     },
                     Bind {
@@ -2219,13 +2347,17 @@ mod tests {
                                 SHIFT | COMPOSITOR,
                             ),
                         },
-                        action: Quit(
-                            true,
+                        press_action: Some(
+                            Quit(
+                                true,
+                            ),
                         ),
+                        release_action: None,
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: false,
+                        allow_invalidation: true,
                         hotkey_overlay_title: None,
                     },
                     Bind {
@@ -2235,13 +2367,17 @@ mod tests {
                                 COMPOSITOR,
                             ),
                         },
-                        action: FocusWorkspaceDown,
+                        press_action: Some(
+                            FocusWorkspaceDown,
+                        ),
+                        release_action: None,
                         repeat: true,
                         cooldown: Some(
                             150ms,
                         ),
                         allow_when_locked: false,
                         allow_inhibiting: true,
+                        allow_invalidation: true,
                         hotkey_overlay_title: None,
                     },
                     Bind {
@@ -2253,13 +2389,53 @@ mod tests {
                                 ALT | SUPER,
                             ),
                         },
-                        action: SpawnSh(
-                            "pkill orca || exec orca",
+                        press_action: Some(
+                            SpawnSh(
+                                "pkill orca || exec orca",
+                            ),
                         ),
+                        release_action: None,
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: true,
                         allow_inhibiting: true,
+                        allow_invalidation: true,
+                        hotkey_overlay_title: None,
+                    },
+                    Bind {
+                        key: Key {
+                            trigger: KeyCompositor,
+                            modifiers: Modifiers(
+                                0x0,
+                            ),
+                        },
+                        press_action: None,
+                        release_action: Some(
+                            ToggleOverview,
+                        ),
+                        repeat: false,
+                        cooldown: None,
+                        allow_when_locked: false,
+                        allow_inhibiting: true,
+                        allow_invalidation: true,
+                        hotkey_overlay_title: None,
+                    },
+                    Bind {
+                        key: Key {
+                            trigger: KeyCompositor,
+                            modifiers: Modifiers(
+                                SHIFT,
+                            ),
+                        },
+                        press_action: None,
+                        release_action: Some(
+                            ToggleWindowFloating,
+                        ),
+                        repeat: false,
+                        cooldown: None,
+                        allow_when_locked: false,
+                        allow_inhibiting: true,
+                        allow_invalidation: false,
                         hotkey_overlay_title: None,
                     },
                 ],
@@ -2374,17 +2550,21 @@ mod tests {
                                 ALT,
                             ),
                         },
-                        action: MruAdvance {
-                            direction: Forward,
-                            scope: None,
-                            filter: Some(
-                                All,
-                            ),
-                        },
+                        press_action: Some(
+                            MruAdvance {
+                                direction: Forward,
+                                scope: None,
+                                filter: Some(
+                                    All,
+                                ),
+                            },
+                        ),
+                        release_action: None,
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: true,
+                        allow_invalidation: true,
                         hotkey_overlay_title: None,
                     },
                     Bind {
@@ -2396,17 +2576,21 @@ mod tests {
                                 ALT,
                             ),
                         },
-                        action: MruAdvance {
-                            direction: Forward,
-                            scope: None,
-                            filter: Some(
-                                AppId,
-                            ),
-                        },
+                        press_action: Some(
+                            MruAdvance {
+                                direction: Forward,
+                                scope: None,
+                                filter: Some(
+                                    AppId,
+                                ),
+                            },
+                        ),
+                        release_action: None,
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: true,
+                        allow_invalidation: true,
                         hotkey_overlay_title: None,
                     },
                     Bind {
@@ -2418,19 +2602,23 @@ mod tests {
                                 SUPER,
                             ),
                         },
-                        action: MruAdvance {
-                            direction: Forward,
-                            scope: Some(
-                                Output,
-                            ),
-                            filter: Some(
-                                All,
-                            ),
-                        },
+                        press_action: Some(
+                            MruAdvance {
+                                direction: Forward,
+                                scope: Some(
+                                    Output,
+                                ),
+                                filter: Some(
+                                    All,
+                                ),
+                            },
+                        ),
+                        release_action: None,
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: true,
+                        allow_invalidation: true,
                         hotkey_overlay_title: None,
                     },
                 ],
