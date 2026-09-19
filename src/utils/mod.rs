@@ -569,7 +569,7 @@ pub fn show_screenshot_notification(image_path: Option<&Path>) -> anyhow::Result
 
     let actions: &[&str] = &[];
 
-    conn.call_method(
+    let notify_result = conn.call_method(
         Some("org.freedesktop.Notifications"),
         "/org/freedesktop/Notifications",
         Some("org.freedesktop.Notifications"),
@@ -587,9 +587,36 @@ pub fn show_screenshot_notification(image_path: Option<&Path>) -> anyhow::Result
             ]),
             -1,
         ),
-    )?;
+    );
+    match notify_result {
+        Ok(_) => (),
+        Err(err) if is_missing_notification_service(&err) => {
+            debug!("no notification service is available for screenshot notification");
+        }
+        Err(err) => return Err(err.into()),
+    }
 
     Ok(())
+}
+
+#[cfg(feature = "dbus")]
+fn is_missing_notification_service(err: &zbus::Error) -> bool {
+    match err {
+        zbus::Error::FDO(err) => matches!(
+            err.as_ref(),
+            zbus::fdo::Error::ServiceUnknown(_) | zbus::fdo::Error::NameHasNoOwner(_)
+        ),
+        zbus::Error::MethodError(name, _, _) => is_missing_notification_service_name(name.as_str()),
+        _ => false,
+    }
+}
+
+#[cfg(feature = "dbus")]
+fn is_missing_notification_service_name(name: &str) -> bool {
+    matches!(
+        name,
+        "org.freedesktop.DBus.Error.ServiceUnknown" | "org.freedesktop.DBus.Error.NameHasNoOwner"
+    )
 }
 
 #[inline(never)]
@@ -633,5 +660,19 @@ mod tests {
         check((0, 0, 10, 20), (20, 30, 40, 5), (0, 15));
         check((0, 0, 10, 20), (20, 30, 4, 50), (6, 0));
         check((0, 0, 10, 20), (20, 30, 40, 50), (0, 0));
+    }
+
+    #[cfg(feature = "dbus")]
+    #[test]
+    fn missing_notification_service_name_is_optional_when_screenshot_notification_is_sent() {
+        assert!(is_missing_notification_service_name(
+            "org.freedesktop.DBus.Error.ServiceUnknown"
+        ));
+        assert!(is_missing_notification_service_name(
+            "org.freedesktop.DBus.Error.NameHasNoOwner"
+        ));
+        assert!(!is_missing_notification_service_name(
+            "org.freedesktop.DBus.Error.AccessDenied"
+        ));
     }
 }
