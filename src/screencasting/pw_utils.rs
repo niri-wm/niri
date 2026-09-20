@@ -50,7 +50,6 @@ use smithay::reexports::rustix::fd::OwnedFd;
 use smithay::reexports::rustix::fs::{
     fcntl_add_seals, ftruncate, memfd_create, MemfdFlags, SealFlags,
 };
-use smithay::reexports::rustix::mm::{mmap, munmap, MapFlags, ProtFlags};
 use smithay::utils::{DeviceFd, Logical, Physical, Point, Scale, Size, Transform};
 use zbus::object_server::SignalEmitter;
 
@@ -62,6 +61,9 @@ use crate::render_helpers::{
 };
 use crate::screencasting::CastRenderElement;
 use crate::utils::{get_monotonic_time, CastSessionId, CastStreamId};
+
+mod shm_mapping;
+use shm_mapping::ShmMapping;
 
 // Give a 0.1 ms allowance for presentation time errors.
 const CAST_DELAY_ALLOWANCE: Duration = Duration::from_micros(100);
@@ -1363,8 +1365,8 @@ impl Cast {
                 x if x == DataType::MemFd.as_raw() => {
                     let inner = self.inner.borrow();
                     let shmbuf = &inner.shmbufs[&fd];
-                    clear_shmbuf(shmbuf)
-                        .map(|()| (SyncPoint::signaled(), SharingBuf::Shm(shmbuf.layout)))
+                    clear_shmbuf(shmbuf);
+                    Ok((SyncPoint::signaled(), SharingBuf::Shm(shmbuf.layout)))
                 }
                 _ => Err(anyhow::anyhow!(
                     "unknown data type in dequeue_buffer_and_clear"
@@ -1622,6 +1624,7 @@ fn allocate_dmabuf(
 pub struct Shmbuf {
     fd: OwnedFd,
     layout: ShmLayout,
+    mapping: ShmMapping,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1666,7 +1669,14 @@ fn allocate_shmbuf(size: Size<u32, Physical>) -> anyhow::Result<Shmbuf> {
     ftruncate(&fd, layout.size.into()).context("error setting size of the fd")?;
     fcntl_add_seals(&fd, SealFlags::SEAL | SealFlags::SHRINK | SealFlags::GROW)
         .context("error sealing the fd")?;
-    Ok(Shmbuf { fd, layout })
+    // SAFETY: The file has the requested size and is sealed against shrinking.
+    // We only access the mapping while we own the dequeued PipeWire buffer.
+    let mapping = unsafe { ShmMapping::new(fd.as_fd(), layout.size_usize()) }?;
+    Ok(Shmbuf {
+        fd,
+        layout,
+        mapping,
+    })
 }
 
 unsafe fn return_unused_buffer(stream: &Stream, pw_buffer: NonNull<pw_buffer>) {
@@ -1898,45 +1908,12 @@ fn render_to_shmbuf(
         .map_texture(&mapping)
         .context("error mapping texture")?;
 
-    unsafe {
-        let buf = mmap(
-            std::ptr::null_mut(),
-            buffer.layout.size_usize(),
-            ProtFlags::READ | ProtFlags::WRITE,
-            MapFlags::SHARED,
-            &buffer.fd,
-            0,
-        )?;
-        {
-            let buf = slice::from_raw_parts_mut(buf.cast::<u8>(), buffer.layout.size_usize());
-            buf.copy_from_slice(bytes);
-        }
-        if let Err(err) = munmap(buf, buffer.layout.size_usize()) {
-            warn!("error unmapping shm buffer: {err:?}");
-        }
-    }
+    buffer.mapping.copy_frame(bytes);
     Ok(())
 }
 
-fn clear_shmbuf(buffer: &Shmbuf) -> anyhow::Result<()> {
-    unsafe {
-        let buf = mmap(
-            std::ptr::null_mut(),
-            buffer.layout.size_usize(),
-            ProtFlags::READ | ProtFlags::WRITE,
-            MapFlags::SHARED,
-            &buffer.fd,
-            0,
-        )?;
-        {
-            let buf = slice::from_raw_parts_mut(buf.cast::<u8>(), buffer.layout.size_usize());
-            buf.fill(0);
-        }
-        if let Err(err) = munmap(buf, buffer.layout.size_usize()) {
-            warn!("error unmapping shm buffer: {err:?}");
-        }
-    }
-    Ok(())
+fn clear_shmbuf(buffer: &Shmbuf) {
+    buffer.mapping.clear();
 }
 
 #[cfg(test)]
