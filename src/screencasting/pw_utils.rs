@@ -106,7 +106,9 @@ pub struct Cast {
     formats: FormatSet,
     offer_alpha: bool,
     cursor_mode: CursorMode,
-    pub last_frame_time: Duration,
+    // The last slot in the capture cadence, rather than the time a late frame was rendered.
+    last_frame_time: Duration,
+    last_frame_interval: Duration,
     scheduled_redraw: Option<RegistrationToken>,
     // Incremented once per successful frame, stored in buffer meta.
     sequence_counter: u64,
@@ -946,6 +948,7 @@ impl PipeWire {
             offer_alpha: alpha,
             cursor_mode,
             last_frame_time: Duration::ZERO,
+            last_frame_interval: Duration::ZERO,
             scheduled_redraw: None,
             sequence_counter: 0,
             inner,
@@ -1017,6 +1020,23 @@ impl Cast {
             .context("error updating stream params")?;
 
         Ok(())
+    }
+
+    pub fn record_frame_time(&mut self, time: Duration) {
+        let interval = self.inner.borrow().min_time_between_frames;
+        let next = self.last_frame_time + interval;
+
+        // Absorb small scheduling delays without moving every subsequent frame back.
+        // After a missed interval or a rate change, restart instead of catching up in a burst.
+        self.last_frame_time = if self.last_frame_interval == interval
+            && time >= self.last_frame_time
+            && time < next + interval
+        {
+            next
+        } else {
+            time
+        };
+        self.last_frame_interval = interval;
     }
 
     fn compute_extra_delay(&self, target_frame_time: Duration) -> Duration {
