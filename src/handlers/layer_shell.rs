@@ -102,29 +102,30 @@ impl State {
 
         let mut map = layer_map_for_output(&output);
 
-        // Arrange the layers before sending the initial configure to respect any size the
-        // client may have sent.
-        map.arrange();
-
         let layer = map
             .layer_for_surface(surface, WindowSurfaceType::TOPLEVEL)
-            .unwrap();
+            .unwrap()
+            .clone();
 
         if is_mapped(surface) {
-            let was_unmapped = self.niri.unmapped_layer_surfaces.remove(surface);
+            let was_mapped = self.niri.mapped_layer_surfaces.contains_key(&layer);
 
-            // Resolve rules for newly mapped layer surfaces.
-            if was_unmapped {
+            // Handle map edge: create state and start the open animation once.
+            // And then resolve rules for newly mapped layer surfaces.
+            if !was_mapped {
+                self.niri.unmapped_layer_surfaces.remove(surface);
+
                 let config = self.niri.config.borrow();
 
                 let rules = &config.layer_rules;
-                let rules = ResolvedLayerRules::compute(rules, layer, self.niri.is_at_startup);
+                let rules = ResolvedLayerRules::compute(rules, &layer, self.niri.is_at_startup);
+                let anim_config = rules.effective_layer_open(&config.animations);
 
                 let output_size = output_size(&output);
                 let scale = output.current_scale().fractional_scale();
 
-                let hook = add_mapped_layer_pre_commit_hook(layer);
-                let mapped = MappedLayer::new(
+                let hook = add_mapped_layer_pre_commit_hook(&layer);
+                let mut mapped = MappedLayer::new(
                     layer.clone(),
                     hook,
                     rules,
@@ -133,6 +134,14 @@ impl State {
                     self.niri.clock.clone(),
                     &config,
                 );
+
+                // Start the open animation immediately on map.
+                mapped.start_open_animation(&anim_config, anim_config.custom_shader.clone());
+
+                // Arrange after the open animation started so the client gets a configure
+                // for the arranged size. Exclusive zones are (re)computed here; every path
+                // through this handler ends in output_resized(), which arranges again.
+                map.arrange();
 
                 let prev = self
                     .niri
@@ -143,7 +152,12 @@ impl State {
                 }
             } else {
                 // The surface remains mapped.
-                if let Some(mapped) = self.niri.mapped_layer_surfaces.get_mut(layer) {
+
+                // Arrange first so geometry and exclusives pick up any size the client just
+                // committed.
+                map.arrange();
+
+                if let Some(mapped) = self.niri.mapped_layer_surfaces.get_mut(&layer) {
                     // Check if the layer changed.
                     if mapped.take_recompute_rules_on_commit() {
                         let config = self.niri.config.borrow();
@@ -172,7 +186,7 @@ impl State {
             // https://github.com/niri-wm/niri/issues/641
             let on_demand = layer.cached_state().keyboard_interactivity
                 == wlr_layer::KeyboardInteractivity::OnDemand;
-            if was_unmapped && on_demand {
+            if !was_mapped && on_demand {
                 // I guess it'd make sense to check that no higher-layer on-demand surface
                 // has focus, but Smithay's Layer doesn't implement Ord so this would be a
                 // little annoying.
@@ -180,13 +194,19 @@ impl State {
             }
         } else {
             // The surface is unmapped.
-            if self.niri.mapped_layer_surfaces.remove(layer).is_some() {
+            if self.niri.mapped_layer_surfaces.remove(&layer).is_some() {
                 // A mapped surface got unmapped via a null commit. Now it needs to do a new
                 // initial commit again.
                 self.niri.unmapped_layer_surfaces.insert(surface.clone());
             } else {
-                // An unmapped surface remains unmapped. If we haven't sent an initial configure
-                // yet, we should do so.
+                // An unmapped surface remains unmapped.
+
+                // Arrange first so a first configure carries the arranged size (this path never
+                // handles mapped surfaces, so no close-animation geometry is at
+                // stake here).
+                map.arrange();
+
+                // If we haven't sent an initial configure yet, we should do so.
                 let initial_configure_sent = with_states(surface, |states| {
                     states
                         .data_map
