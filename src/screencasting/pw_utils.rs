@@ -1292,7 +1292,7 @@ impl Cast {
                         .map(|x| (x, SharingBuf::Dma))
                 }
                 x if x == DataType::MemFd.as_raw() => {
-                    let shmbuf = inner_.shmbufs[&fd].clone();
+                    let shmbuf = &inner_.shmbufs[&fd];
 
                     let fourcc = if alpha {
                         Fourcc::Argb8888
@@ -1300,8 +1300,8 @@ impl Cast {
                         Fourcc::Xrgb8888
                     };
 
-                    render_to_shmbuf(renderer, damage_tracker, &shmbuf, fourcc, elements, states)
-                        .map(|()| (SyncPoint::signaled(), SharingBuf::Shm(shmbuf)))
+                    render_to_shmbuf(renderer, damage_tracker, shmbuf, fourcc, elements, states)
+                        .map(|()| (SyncPoint::signaled(), SharingBuf::Shm(shmbuf.layout)))
                 }
                 _ => Err(anyhow::anyhow!(
                     "unknown data type in dequeue_buffer_and_render"
@@ -1361,8 +1361,10 @@ impl Cast {
                     clear_dmabuf(renderer, dmabuf).map(|x| (x, SharingBuf::Dma))
                 }
                 x if x == DataType::MemFd.as_raw() => {
-                    let shmbuf = self.inner.borrow().shmbufs[&fd].clone();
-                    clear_shmbuf(&shmbuf).map(|()| (SyncPoint::signaled(), SharingBuf::Shm(shmbuf)))
+                    let inner = self.inner.borrow();
+                    let shmbuf = &inner.shmbufs[&fd];
+                    clear_shmbuf(shmbuf)
+                        .map(|()| (SyncPoint::signaled(), SharingBuf::Shm(shmbuf.layout)))
                 }
                 _ => Err(anyhow::anyhow!(
                     "unknown data type in dequeue_buffer_and_clear"
@@ -1616,9 +1618,9 @@ fn allocate_dmabuf(
     Ok(dmabuf)
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Shmbuf {
-    fd: Rc<OwnedFd>,
+    fd: OwnedFd,
     layout: ShmLayout,
 }
 
@@ -1651,7 +1653,7 @@ impl ShmLayout {
 
 enum SharingBuf {
     Dma,
-    Shm(Shmbuf),
+    Shm(ShmLayout),
 }
 
 fn allocate_shmbuf(size: Size<u32, Physical>) -> anyhow::Result<Shmbuf> {
@@ -1664,10 +1666,7 @@ fn allocate_shmbuf(size: Size<u32, Physical>) -> anyhow::Result<Shmbuf> {
     ftruncate(&fd, layout.size.into()).context("error setting size of the fd")?;
     fcntl_add_seals(&fd, SealFlags::SEAL | SealFlags::SHRINK | SealFlags::GROW)
         .context("error sealing the fd")?;
-    Ok(Shmbuf {
-        fd: fd.into(),
-        layout,
-    })
+    Ok(Shmbuf { fd, layout })
 }
 
 unsafe fn return_unused_buffer(stream: &Stream, pw_buffer: NonNull<pw_buffer>) {
@@ -1706,8 +1705,8 @@ unsafe fn mark_buffer_as_good(pw_buffer: NonNull<pw_buffer>, sequence: &mut u64,
             // Clear the corrupted flag we may have set before.
             (*chunk).flags = SPA_CHUNK_FLAG_NONE as i32;
         }
-        SharingBuf::Shm(shmbuf) => {
-            (*chunk).size = shmbuf.layout.size;
+        SharingBuf::Shm(layout) => {
+            (*chunk).size = layout.size;
             (*chunk).flags = SPA_CHUNK_FLAG_NONE as i32;
         }
     }
@@ -1905,7 +1904,7 @@ fn render_to_shmbuf(
             buffer.layout.size_usize(),
             ProtFlags::READ | ProtFlags::WRITE,
             MapFlags::SHARED,
-            buffer.fd.clone(),
+            &buffer.fd,
             0,
         )?;
         {
@@ -1926,7 +1925,7 @@ fn clear_shmbuf(buffer: &Shmbuf) -> anyhow::Result<()> {
             buffer.layout.size_usize(),
             ProtFlags::READ | ProtFlags::WRITE,
             MapFlags::SHARED,
-            buffer.fd.clone(),
+            &buffer.fd,
             0,
         )?;
         {
