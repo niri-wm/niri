@@ -150,6 +150,7 @@ use crate::input::{
     TabletData,
 };
 use crate::ipc::server::IpcServer;
+use crate::layer::closing_layer::ClosingLayer;
 use crate::layer::mapped::LayerSurfaceRenderElement;
 use crate::layer::MappedLayer;
 use crate::layout::tile::TileRenderElement;
@@ -264,6 +265,10 @@ pub struct Niri {
 
     /// Extra data for mapped layer surfaces.
     pub mapped_layer_surfaces: HashMap<LayerSurface, MappedLayer>,
+
+    /// Layer surfaces in closing animations, scoped by output, layer level,
+    /// and backdrop rendering, mirroring how spaces own their closing windows.
+    pub closing_layers: HashMap<(Output, u8, bool), Vec<ClosingLayer>>,
 
     // Cached root surface for every surface, so that we can access it in destroyed() where the
     // normal get_parent() is cleared out.
@@ -2813,6 +2818,7 @@ impl Niri {
             unmapped_windows: HashMap::new(),
             unmapped_layer_surfaces: HashSet::new(),
             mapped_layer_surfaces: HashMap::new(),
+            closing_layers: HashMap::new(),
             root_surface: HashMap::new(),
             dmabuf_pre_commit_hook: HashMap::new(),
             blocker_cleared_tx,
@@ -4395,6 +4401,13 @@ impl Niri {
         self.mapped_layer_surfaces.values_mut().for_each(|mapped| {
             mapped.advance_animations();
         });
+        self.closing_layers.retain(|_, closings| {
+            closings.retain_mut(|closing| {
+                closing.advance_animations();
+                closing.are_animations_ongoing()
+            });
+            !closings.is_empty()
+        });
 
         for state in self.output_state.values_mut() {
             if let Some(transition) = &mut state.screen_transition {
@@ -4668,6 +4681,7 @@ impl Niri {
                 self.render_layer_normal(
                     ctx.r(),
                     $ns,
+                    output,
                     &layer_map,
                     $layer,
                     $xray_pos,
@@ -4675,18 +4689,16 @@ impl Niri {
                     $push,
                 );
             }};
-            ($layer:expr, true) => {{
-                push_normal_from_layer!($layer, None, XrayPos::default(), true, &mut |elem| {
-                    push(elem.into())
-                });
-            }};
             ($layer:expr, $ns:expr, $xray_pos:expr, $push:expr) => {{
                 push_normal_from_layer!($layer, $ns, $xray_pos, false, $push);
             }};
-            ($layer:expr) => {{
-                push_normal_from_layer!($layer, None, XrayPos::default(), false, &mut |elem| {
+            ($layer:expr, $backdrop:expr) => {{
+                push_normal_from_layer!($layer, None, XrayPos::default(), $backdrop, &mut |elem| {
                     push(elem.into())
                 });
+            }};
+            ($layer:expr) => {{
+                push_normal_from_layer!($layer, false);
             }};
         }
 
@@ -4801,6 +4813,7 @@ impl Niri {
             self.render_layer_normal(
                 ctx.r(),
                 None,
+                output,
                 &layer_map,
                 Layer::Background,
                 XrayPos::default(),
@@ -4818,6 +4831,7 @@ impl Niri {
             self.render_layer_normal(
                 ctx.r(),
                 None,
+                output,
                 &layer_map,
                 Layer::Background,
                 XrayPos::default(),
@@ -4882,6 +4896,7 @@ impl Niri {
         &self,
         mut ctx: RenderCtx<R>,
         ns: Option<usize>,
+        output: &Output,
         layer_map: &LayerMap,
         layer: Layer,
         xray_pos: XrayPos,
@@ -4892,6 +4907,19 @@ impl Niri {
             let loc = geo.loc.to_f64();
             let xray_pos = xray_pos.offset(loc);
             mapped.render_normal(ctx.r(), ns, loc, xray_pos, geo.size.to_f64(), push);
+        }
+
+        let scale = Scale::from(output.current_scale().fractional_scale());
+        let view_rect = Rectangle::from_size(output_size(output));
+        if let Some(closings) = self.closing_layers.get(&(
+            output.clone(),
+            ClosingLayer::level_index(layer),
+            for_backdrop,
+        )) {
+            for closing in closings.iter().rev() {
+                let elem = closing.render(ctx.as_gles(), view_rect, scale);
+                push(elem.into());
+            }
         }
     }
 
@@ -4955,6 +4983,13 @@ impl Niri {
                 .layers()
                 .filter_map(|surface| self.mapped_layer_surfaces.get(surface))
                 .any(|mapped| mapped.are_animations_ongoing());
+            state.unfinished_animations_remain |=
+                self.closing_layers
+                    .iter()
+                    .any(|((closing_output, _, _), closings)| {
+                        closing_output == output
+                            && closings.iter().any(|c| c.are_animations_ongoing())
+                    });
 
             // Render.
             res = backend.render(self, output, target_presentation_time);

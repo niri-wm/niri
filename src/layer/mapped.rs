@@ -6,6 +6,7 @@ use niri_config::utils::MergeWith as _;
 use niri_config::{Config, LayerRule, ResolvedPopupsRules};
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::element::Kind;
+use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::desktop::{LayerSurface, PopupKind, PopupManager};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Size};
@@ -14,6 +15,7 @@ use smithay::wayland::shell::wlr_layer::{ExclusiveZone, Layer};
 
 use super::ResolvedLayerRules;
 use crate::animation::{Animation, Clock};
+use crate::layer::closing_layer::ClosingLayerRenderElement;
 use crate::layer::opening_layer::{OpenAnimation, OpeningLayerRenderElement};
 use crate::layout::shadow::Shadow;
 use crate::niri_render_elements;
@@ -21,10 +23,11 @@ use crate::render_helpers::background_effect::BackgroundEffectElement;
 use crate::render_helpers::offscreen::OffscreenData;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::shadow::ShadowRenderElement;
+use crate::render_helpers::snapshot::RenderSnapshot;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
 use crate::render_helpers::surface::push_elements_from_surface_tree;
 use crate::render_helpers::xray::XrayPos;
-use crate::render_helpers::{background_effect, encompassing_geo, RenderCtx};
+use crate::render_helpers::{background_effect, encompassing_geo, RenderCtx, RenderTarget};
 use crate::utils::{baba_is_float_offset, round_logical_in_physical};
 
 #[derive(Debug)]
@@ -60,11 +63,17 @@ pub struct MappedLayer {
 
     /// The animation upon opening a layer.
     open_animation: Option<OpenAnimation>,
+
     /// Offscreen state from the current frame's opening animation render.
     offscreen_data: RefCell<Option<OffscreenData>>,
+
+    /// Snapshot of the last committed frame, used for the close animation.
+    unmap_snapshot: Option<LayerSurfaceRenderSnapshot>,
+
     /// Clock for driving animations.
     clock: Clock,
 }
+
 niri_render_elements! {
     LayerSurfaceRenderElement<R> => {
         Wayland = WaylandSurfaceRenderElement<R>,
@@ -72,8 +81,14 @@ niri_render_elements! {
         Shadow = ShadowRenderElement,
         BackgroundEffect = BackgroundEffectElement,
         Opening = OpeningLayerRenderElement,
+        Closing = ClosingLayerRenderElement,
     }
 }
+
+pub type LayerSurfaceRenderSnapshot = RenderSnapshot<
+    LayerSurfaceRenderElement<GlesRenderer>,
+    LayerSurfaceRenderElement<GlesRenderer>,
+>;
 
 /// A popup surface with rule-resolved parameters.
 ///
@@ -121,6 +136,7 @@ impl MappedLayer {
             shadow: Shadow::new(shadow_config),
             open_animation: None,
             offscreen_data: RefCell::new(None),
+            unmap_snapshot: None,
             blur_config: config.blur,
             clock,
         }
@@ -157,6 +173,127 @@ impl MappedLayer {
         // FIXME: is_active based on keyboard focus?
         self.shadow
             .update_render_elements(size, true, radius, self.scale, 1.);
+    }
+
+    pub fn store_unmap_snapshot(
+        &mut self,
+        renderer: &mut GlesRenderer,
+        geo_size: Size<f64, Logical>,
+    ) {
+        let _span = tracy_client::span!("MappedLayer::store_unmap_snapshot");
+        let mut contents = Vec::new();
+        self.render_normal_inner(
+            RenderCtx {
+                renderer,
+                target: RenderTarget::Output,
+                xray: None,
+            },
+            None,
+            Point::from((0., 0.)),
+            XrayPos::default(),
+            RenderTarget::Output.should_block_out(self.rules.block_out_from),
+            &mut |elem| contents.push(elem),
+        );
+        self.render_popups(
+            RenderCtx {
+                renderer,
+                target: RenderTarget::Output,
+                xray: None,
+            },
+            None,
+            Point::from((0., 0.)),
+            XrayPos::default(),
+            &mut |elem| contents.push(elem),
+        );
+
+        let mut contents_with_blocked_out_bg = None;
+        if self.rules.block_out_from.is_some() {
+            let mut with_blocked_out_bg = Vec::new();
+            self.render_normal_inner(
+                RenderCtx {
+                    renderer,
+                    target: RenderTarget::Output,
+                    xray: None,
+                },
+                None,
+                Point::from((0., 0.)),
+                XrayPos::default(),
+                true,
+                &mut |elem| with_blocked_out_bg.push(elem),
+            );
+            self.render_popups(
+                RenderCtx {
+                    renderer,
+                    target: RenderTarget::Output,
+                    xray: None,
+                },
+                None,
+                Point::from((0., 0.)),
+                XrayPos::default(),
+                &mut |elem| with_blocked_out_bg.push(elem),
+            );
+
+            contents_with_blocked_out_bg = Some(with_blocked_out_bg);
+        }
+
+        // A bit of a hack to render blocked out as for screencast, but I think it's fine here as
+        // well.
+        let mut blocked_out_contents = Vec::new();
+        self.render_normal_inner(
+            RenderCtx {
+                renderer,
+                target: RenderTarget::Screencast,
+                xray: None,
+            },
+            None,
+            Point::from((0., 0.)),
+            XrayPos::default(),
+            RenderTarget::Screencast.should_block_out(self.rules.block_out_from),
+            &mut |elem| blocked_out_contents.push(elem),
+        );
+        self.render_popups(
+            RenderCtx {
+                renderer,
+                target: RenderTarget::Screencast,
+                xray: None,
+            },
+            None,
+            Point::from((0., 0.)),
+            XrayPos::default(),
+            &mut |elem| blocked_out_contents.push(elem),
+        );
+
+        let is_empty = contents.is_empty() && blocked_out_contents.is_empty();
+        if is_empty {
+            // Preserve the last live snapshot if the surface tree has already started tearing
+            // down. A late empty capture must not erase a usable close frame.
+            return;
+        }
+
+        self.unmap_snapshot = Some(LayerSurfaceRenderSnapshot {
+            contents,
+            blocked_out_contents,
+            contents_with_blocked_out_bg,
+            block_out_from: self.rules.block_out_from,
+            size: geo_size,
+            texture: Default::default(),
+            texture_with_blocked_out_bg: Default::default(),
+            blocked_out_texture: Default::default(),
+        });
+    }
+
+    pub fn store_unmap_snapshot_if_empty(
+        &mut self,
+        renderer: &mut GlesRenderer,
+        geo_size: Size<f64, Logical>,
+    ) {
+        if self.unmap_snapshot.is_none() {
+            self.store_unmap_snapshot(renderer, geo_size);
+        }
+    }
+
+    pub fn take_unmap_snapshot(&mut self) -> Option<LayerSurfaceRenderSnapshot> {
+        self.unmap_snapshot.take()
     }
 
     pub fn offscreen_data(&self) -> Ref<'_, Option<OffscreenData>> {
