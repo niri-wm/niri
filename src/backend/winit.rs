@@ -7,6 +7,7 @@ use std::sync::{Arc, Mutex};
 use anyhow::Context as _;
 use niri_config::{Config, OutputName};
 use smithay::backend::allocator::dmabuf::Dmabuf;
+use smithay::backend::drm::DrmNode;
 use smithay::backend::egl::EGLDevice;
 use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::gles::GlesRenderer;
@@ -32,7 +33,10 @@ pub struct Winit {
     output: Output,
     backend: WinitGraphicsBackend<GlesRenderer>,
     damage_tracker: OutputDamageTracker,
+    render_node: Option<DrmNode>,
     dmabuf_global: Option<DmabufGlobal>,
+    #[cfg(feature = "xdp-gnome-screencast")]
+    gbm_device: Option<smithay::backend::allocator::gbm::GbmDevice<smithay::utils::DeviceFd>>,
     ipc_outputs: Arc<Mutex<IpcOutputMap>>,
 }
 
@@ -144,7 +148,10 @@ impl Winit {
             output,
             backend,
             damage_tracker,
+            render_node: None,
             dmabuf_global: None,
+            #[cfg(feature = "xdp-gnome-screencast")]
+            gbm_device: None,
             ipc_outputs,
         })
     }
@@ -175,23 +182,50 @@ impl Winit {
 
         niri.update_shaders();
 
+        // Winit creates a single EGL display, so its render node cannot change.
+        self.render_node = match self.fetch_render_node() {
+            Ok(node) => {
+                if let Some(path) = node.dev_path() {
+                    debug!("using as the render node: {path:?}");
+                } else {
+                    debug!("using as the render node: {node}");
+                }
+
+                Some(node)
+            }
+            Err(err) => {
+                debug!("failed querying render node: {err:?}");
+                None
+            }
+        };
+
         self.create_dmabuf_global(niri);
 
+        #[cfg(feature = "xdp-gnome-screencast")]
+        if let Err(err) = self.create_gbm_device() {
+            debug!("couldn't create GBM device for screencasting: {err:?}");
+        };
+
         niri.add_output(self.output.clone(), None, false);
+    }
+
+    fn fetch_render_node(&mut self) -> anyhow::Result<DrmNode> {
+        let display = self.backend.renderer().egl_context().display();
+        EGLDevice::device_for_display(display)
+            .context("error getting EGL device")?
+            .try_get_render_node()
+            .context("error getting EGL device render node")?
+            .context("failed to query EGL device render node")
     }
 
     pub fn create_dmabuf_global(&mut self, niri: &mut Niri) {
         let renderer = self.backend.renderer();
 
         let default_feedback = || {
-            let display = renderer.egl_context().display();
-            let device =
-                EGLDevice::device_for_display(display).context("error getting EGL device")?;
-            let node = device
-                .try_get_render_node()
-                .context("error getting EGL device render node")?
-                .context("failed to query EGL device render node")?;
-
+            let node = self
+                .render_node
+                .as_ref()
+                .context("no render node available")?;
             let primary_formats = renderer.dmabuf_formats();
             DmabufFeedbackBuilder::new(node.dev_id(), primary_formats)
                 .build()
@@ -213,6 +247,38 @@ impl Winit {
         assert!(self.dmabuf_global.replace(dmabuf_global).is_none());
     }
 
+    #[cfg(feature = "xdp-gnome-screencast")]
+    fn create_gbm_device(&mut self) -> anyhow::Result<()> {
+        use std::os::fd::OwnedFd;
+
+        use smithay::backend::allocator::gbm::GbmDevice;
+        use smithay::utils::DeviceFd;
+
+        let node = self
+            .render_node
+            .as_ref()
+            .context("no render node available")?;
+        let path = node.dev_path().context("render node has no device path")?;
+        let file = std::fs::File::options()
+            .read(true)
+            .write(true)
+            .open(path)
+            .context("error opening render node")?;
+
+        let gbm_device = GbmDevice::new(DeviceFd::from(OwnedFd::from(file)))
+            .context("error creating GBM device")?;
+
+        self.gbm_device = Some(gbm_device);
+        Ok(())
+    }
+
+    #[cfg(feature = "xdp-gnome-screencast")]
+    pub fn gbm_device(
+        &self,
+    ) -> Option<smithay::backend::allocator::gbm::GbmDevice<smithay::utils::DeviceFd>> {
+        self.gbm_device.clone()
+    }
+
     pub fn seat_name(&self) -> String {
         "winit".to_owned()
     }
@@ -222,6 +288,10 @@ impl Winit {
         f: impl FnOnce(&mut GlesRenderer) -> T,
     ) -> Option<T> {
         Some(f(self.backend.renderer()))
+    }
+
+    pub fn primary_render_node(&mut self) -> Option<DrmNode> {
+        self.render_node
     }
 
     pub fn render(&mut self, niri: &mut Niri, output: &Output) -> RenderResult {

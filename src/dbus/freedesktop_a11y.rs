@@ -11,13 +11,13 @@ use futures_util::StreamExt;
 use smithay::backend::input::{KeyState, Keycode};
 use smithay::input::keyboard::{xkb, Keysym};
 use zbus::blocking::object_server::InterfaceRef;
-use zbus::fdo::{self, RequestNameFlags};
 use zbus::message::Header;
 use zbus::names::{BusName, OwnedUniqueName, UniqueName};
 use zbus::object_server::SignalEmitter;
 use zbus::zvariant::{NoneValue, OwnedObjectPath, SerializeDict, Type, Value};
-use zbus::{interface, DBusError};
+use zbus::{fdo, interface, DBusError};
 
+use super::request_name;
 use crate::niri::{PointContents, State};
 use crate::utils::get_credentials_for_surface;
 
@@ -563,12 +563,8 @@ impl Manager {
         }
     }
 
-    pub fn start(&self) -> anyhow::Result<zbus::blocking::Connection> {
+    pub fn start(&self, monitor: bool) -> anyhow::Result<zbus::blocking::Connection> {
         let conn = zbus::blocking::Connection::session()?;
-        let flags = RequestNameFlags::AllowReplacement
-            | RequestNameFlags::ReplaceExisting
-            | RequestNameFlags::DoNotQueue;
-
         conn.object_server().at(
             "/org/freedesktop/a11y/Manager",
             self.keyboard_monitor.clone(),
@@ -577,7 +573,7 @@ impl Manager {
             "/org/freedesktop/a11y/Manager",
             self.pointer_locator.clone(),
         )?;
-        conn.request_name_with_flags("org.freedesktop.a11y.Manager", flags)?;
+        request_name(&conn, "org.freedesktop.a11y.Manager", monitor)?;
 
         let iface = conn
             .object_server()

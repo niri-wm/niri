@@ -15,6 +15,7 @@ pub struct Debug {
     pub render_drm_device: Option<PathBuf>,
     pub ignored_drm_devices: Vec<PathBuf>,
     pub force_pipewire_invalid_modifier: bool,
+    pub disable_pipewire_dmabuf: bool,
     pub emulate_zero_presentation_time: bool,
     pub disable_resize_throttling: bool,
     pub disable_transactions: bool,
@@ -52,6 +53,8 @@ pub struct DebugPart {
     #[knuffel(child)]
     pub force_pipewire_invalid_modifier: Option<Flag>,
     #[knuffel(child)]
+    pub disable_pipewire_dmabuf: Option<Flag>,
+    #[knuffel(child)]
     pub emulate_zero_presentation_time: Option<Flag>,
     #[knuffel(child)]
     pub disable_resize_throttling: Option<Flag>,
@@ -85,6 +88,7 @@ impl MergeWith<DebugPart> for Debug {
             restrict_primary_scanout_to_matching_format,
             force_disable_connectors_on_resume,
             force_pipewire_invalid_modifier,
+            disable_pipewire_dmabuf,
             emulate_zero_presentation_time,
             disable_resize_throttling,
             disable_transactions,

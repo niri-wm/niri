@@ -29,6 +29,10 @@ use crate::utils::{get_credentials_for_client, get_monotonic_time, CastSessionId
 
 const VERSION: u32 = 3;
 
+fn screencopy_shm_buffer_stride(size: Size<i32, Physical>) -> i32 {
+    size.w * 4
+}
+
 /// Inactivity timeout for considering a screencopy cast as stopped.
 ///
 /// xdg-desktop-portal-wlr keeps the screencopy manager alive across casts, so there's no way to
@@ -416,7 +420,7 @@ where
             Format::Xrgb8888,
             buffer_size.w as u32,
             buffer_size.h as u32,
-            buffer_size.w as u32 * 4,
+            screencopy_shm_buffer_stride(buffer_size) as u32,
         );
 
         if frame.version() >= 3 {
@@ -550,12 +554,11 @@ where
                 );
                 return;
             }
-        } else if shm::with_buffer_contents(&buffer, |_, shm_len, buffer_data| {
+        } else if shm::with_buffer_contents(&buffer, |_, _, buffer_data| {
             buffer_data.format == Format::Xrgb8888
                 && buffer_data.width == size.w
                 && buffer_data.height == size.h
-                && buffer_data.stride == size.w * 4
-                && shm_len == buffer_data.stride as usize * buffer_data.height as usize
+                && buffer_data.stride == screencopy_shm_buffer_stride(size)
         })
         .unwrap_or(false)
         {

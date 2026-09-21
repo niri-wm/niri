@@ -16,25 +16,25 @@ rust-version = "1.87"
 
 [workspace.dependencies]
 anyhow = "1.0.104"
-bitflags = "2.13.1"
+bitflags = "2.13"
 clap = { version = "4.6.6", features = ["derive"] }
 insta = "1.48.0"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 tracing = { version = "0.1.44", features = ["max_level_trace", "release_max_level_debug"] }
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
-tracy-client = { version = "0.18.4", default-features = false }
+tracy-client = { version = "0.18.5", default-features = false }
 
 [workspace.dependencies.smithay]
 # version = "0.4.1"
 git = "https://github.com/Smithay/smithay.git"
-rev = "4cf0b62028039661477d482ec4758b687d8f4392"
+rev = "22571baa20d34d71092942dbb520c4e3fbbd6263"
 default-features = false
 
 [workspace.dependencies.smithay-drm-extras]
 # version = "0.1.0"
 git = "https://github.com/Smithay/smithay.git"
-rev = "4cf0b62028039661477d482ec4758b687d8f4392"
+rev = "22571baa20d34d71092942dbb520c4e3fbbd6263"
 # path = "../smithay/smithay-drm-extras"
 
 [package]
@@ -51,8 +51,8 @@ readme = "README.md"
 keywords = ["wayland", "compositor", "tiling", "smithay", "wm"]
 
 [dependencies]
-accesskit = { version = "0.24", optional = true }
-accesskit_unix = { version = "0.22", optional = true }
+accesskit = { version = "0.25", optional = true }
+accesskit_unix = { version = "0.23", optional = true }
 anyhow.workspace = true
 arrayvec = "0.7.8"
 async-channel = "2.5.0"
@@ -62,25 +62,25 @@ bitflags.workspace = true
 bytemuck = { version = "1.25.2", features = ["derive"] }
 calloop = { version = "0.14.4", features = ["executor", "futures-io", "signals"] }
 clap = { workspace = true, features = ["string"] }
-clap_complete = "4.6.9"
-clap_complete_nushell = "4.6.1"
+clap_complete = "4.6"
+clap_complete_nushell = "4.6"
 directories = "6.0.0"
 drm-ffi = "0.9.1"
 fastrand = "2.5.0"
-futures-util = { version = "0.3.33", default-features = false, features = ["std", "io"] }
+futures-util = { version = "0.3", default-features = false, features = ["std", "io"] }
 git-version = "0.3.9"
 glam = "0.33"
 input = { version = "0.10.0", features = ["libinput_1_21"] }
 keyframe = { version = "1.1.1", default-features = false }
 libc = "0.2.189"
 libdisplay-info = "0.3.0"
-log = { version = "0.4.33", features = ["max_level_trace", "release_max_level_debug"] }
+log = { version = "0.4", features = ["max_level_trace", "release_max_level_debug"] }
 niri-config = { version = "26.4.0", path = "niri-config" }
 niri-ipc = { version = "26.4.0", path = "niri-ipc", features = ["clap"] }
-ordered-float = "5.3.0"
+ordered-float = "5"
 pango = { version = "0.21.5", features = ["v1_44"] }
 pangocairo = "0.21.5"
-pipewire = { version = "0.10.0", optional = true, features = ["v0_3_33"] }
+pipewire = { version = "0.10", optional = true, features = ["v0_3_33"] }
 png = "0.18.1"
 portable-atomic = "1"
 profiling = "1.0.18"
@@ -91,11 +91,11 @@ smithay-drm-extras.workspace = true
 tracing-subscriber.workspace = true
 tracing.workspace = true
 tracy-client.workspace = true
-wayland-backend = "0.3.16"
+wayland-backend = "0.3"
 wayland-scanner = "0.31.11"
 wayland-server = "0.31.14"
 xcursor = "0.3.11"
-zbus = { version = "5.18.0", optional = true }
+zbus = { version = "5", optional = true }
 
 [dependencies.smithay]
 workspace = true
@@ -126,7 +126,7 @@ wayland-client = "0.31.15"
 xshell = "0.2.7"
 
 [build-dependencies]
-pkg-config = "0.3.33"
+pkg-config = "0.3"
 
 [features]
 default = ["dbus", "systemd", "xdp-gnome-screencast"]
@@ -161,6 +161,7 @@ debug = false
 [profile.dev.package]
 insta.opt-level = 3
 similar.opt-level = 3
+png.opt-level = 3
 
 [package.metadata.generate-rpm]
 version = "26.04"

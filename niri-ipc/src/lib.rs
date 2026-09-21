@@ -1579,6 +1579,13 @@ pub enum CastKind {
     /// Only wlr-screencopy with damage tracking is reported here. Screencopy without damage is
     /// treated as a regular screenshot and not reported as a screencast.
     WlrScreencopy,
+    /// ext-image-copy-capture protocol screencast.
+    ///
+    /// Tools like wayvnc, wl-mirror, and the xdg-desktop-portal-wlr portal.
+    ///
+    /// A client capturing both an output and the cursor creates two sessions, which are reported
+    /// as two `Cast`s sharing one [`session_id`](Cast::session_id).
+    ExtImageCopyCapture,
 }
 
 /// Target of a screencast.

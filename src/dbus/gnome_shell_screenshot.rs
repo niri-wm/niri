@@ -2,11 +2,10 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use niri_ipc::PickedColor;
-use zbus::fdo::{self, RequestNameFlags};
 use zbus::zvariant::OwnedValue;
-use zbus::{interface, zvariant};
+use zbus::{fdo, interface, zvariant};
 
-use super::Start;
+use super::{request_name, Start};
 
 pub struct Screenshot {
     to_niri: calloop::channel::Sender<ScreenshotToNiri>,
@@ -91,15 +90,11 @@ impl Screenshot {
 }
 
 impl Start for Screenshot {
-    fn start(self) -> anyhow::Result<zbus::blocking::Connection> {
+    fn start(self, monitor: bool) -> anyhow::Result<zbus::blocking::Connection> {
         let conn = zbus::blocking::Connection::session()?;
-        let flags = RequestNameFlags::AllowReplacement
-            | RequestNameFlags::ReplaceExisting
-            | RequestNameFlags::DoNotQueue;
-
         conn.object_server()
             .at("/org/gnome/Shell/Screenshot", self)?;
-        conn.request_name_with_flags("org.gnome.Shell.Screenshot", flags)?;
+        request_name(&conn, "org.gnome.Shell.Screenshot", monitor)?;
 
         Ok(conn)
     }

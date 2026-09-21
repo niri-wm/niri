@@ -58,7 +58,7 @@ pub use crate::output::{Output, OutputName, Outputs, Position, Vrr};
 use crate::recent_windows::RecentWindowsPart;
 pub use crate::recent_windows::{MruDirection, MruFilter, MruPreviews, MruScope, RecentWindows};
 pub use crate::utils::FloatOrInt;
-use crate::utils::{Flag, MergeWith as _};
+use crate::utils::{expand_home_path, Flag, MergeWith as _};
 pub use crate::window_rule::{
     FloatingPosition, OnXdgActivate, PopupsRule, RelativeTo, ResolvedPopupsRules, WindowRule,
 };
@@ -117,8 +117,12 @@ pub enum ConfigPath {
 struct BasePath(PathBuf);
 struct RootBase(PathBuf);
 struct Recursion(u8);
+
+// FIXME: This is currently used to track all the files that needed to be watched. The name
+// `Includes` is not really correct and should be renamed in the future.
 #[derive(Default)]
 struct Includes(Vec<PathBuf>);
+
 #[derive(Default)]
 struct IncludeErrors(Vec<knuffel::Error>);
 // Used for recursive include detection.
@@ -303,8 +307,6 @@ where
                             "additional argument for include path is required",
                         )
                     })?;
-                    let path: PathBuf = knuffel::traits::DecodeScalar::decode(path_val, ctx)?;
-
                     // Check for extra arguments
                     if let Some(val) = iter_args.next() {
                         ctx.emit_error(DecodeError::unexpected(
@@ -343,21 +345,11 @@ where
                     // We use DecodeError::Missing throughout this block because it results in the
                     // least confusing error messages while still allowing to provide a span.
 
-                    // Expand ~ into the home dir
-                    let path = if let Ok(rest) = path.strip_prefix("~") {
-                        let Some(home) = std::env::home_dir() else {
-                            ctx.emit_error(DecodeError::missing(
-                                node,
-                                format!("error retrieving home directory to expand {path:?}"),
-                            ));
-                            continue;
-                        };
+                    let decoded_path = knuffel::traits::DecodeScalar::decode(path_val, ctx)?;
 
-                        home.join(rest)
-                    } else {
-                        // Otherwise, use the current include base dir
-                        let base = ctx.get::<BasePath>().unwrap();
-                        base.0.join(path)
+                    // Expand ~ into the home dir
+                    let Some(path) = expand_home_path(decoded_path, node, ctx) else {
+                        continue;
                     };
 
                     let recursion = ctx.get::<Recursion>().unwrap().0 + 1;
@@ -708,6 +700,7 @@ mod tests {
                     tap-button-map "left-middle-right"
                     disabled-on-external-mouse
                     scroll-factor 0.9
+                    pinch-sensitivity 1.8
                 }
 
                 mouse {
@@ -930,6 +923,8 @@ mod tests {
                 tab-indicator {
                     active-color "#f00"
                 }
+
+                pinch-sensitivity 1.2
             }
 
             layer-rule {
@@ -1054,6 +1049,11 @@ mod tests {
                             horizontal: None,
                             vertical: None,
                         },
+                    ),
+                    pinch_sensitivity: Some(
+                        FloatOrInt(
+                            1.8,
+                        ),
                     ),
                 },
                 mouse: Mouse {
@@ -1909,6 +1909,11 @@ mod tests {
                         },
                     ),
                     scroll_factor: None,
+                    pinch_sensitivity: Some(
+                        FloatOrInt(
+                            1.2,
+                        ),
+                    ),
                     tiled_state: None,
                     background_effect: BackgroundEffectRule {
                         xray: None,
@@ -2290,6 +2295,7 @@ mod tests {
                     "/dev/dri/renderD130",
                 ],
                 force_pipewire_invalid_modifier: false,
+                disable_pipewire_dmabuf: false,
                 emulate_zero_presentation_time: false,
                 disable_resize_throttling: false,
                 disable_transactions: false,
