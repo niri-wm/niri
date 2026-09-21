@@ -106,7 +106,6 @@ pub struct Cast {
     formats: FormatSet,
     offer_alpha: bool,
     cursor_mode: CursorMode,
-    // The last slot in the capture cadence, rather than the time a late frame was rendered.
     last_frame_time: Duration,
     last_frame_interval: Duration,
     scheduled_redraw: Option<RegistrationToken>,
@@ -1022,19 +1021,21 @@ impl Cast {
         Ok(())
     }
 
-    pub fn record_frame_time(&mut self, time: Duration) {
+    pub fn record_frame_time(&mut self, recorded: Duration) {
         let interval = self.inner.borrow().min_time_between_frames;
-        let next = self.last_frame_time + interval;
+        let ideal = self.last_frame_time + interval;
 
-        // Absorb small scheduling delays without moving every subsequent frame back.
+        // Absorb small (< 1 frame) differences in output refresh interval vs. screencast framerate
+        // to keep the screencast time base consistent instead of shifting forward every frame.
+        //
         // After a missed interval or a rate change, restart instead of catching up in a burst.
         self.last_frame_time = if self.last_frame_interval == interval
-            && time >= self.last_frame_time
-            && time < next + interval
+            && recorded >= self.last_frame_time
+            && recorded < ideal + interval
         {
-            next
+            ideal
         } else {
-            time
+            recorded
         };
         self.last_frame_interval = interval;
     }
