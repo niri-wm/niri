@@ -3568,7 +3568,7 @@ impl State {
             }
         }
 
-        if source == AxisSource::Finger {
+        if source == AxisSource::Finger || source == AxisSource::Continuous {
             if event.amount(Axis::Horizontal) == Some(0.0) {
                 frame = frame.stop(Axis::Horizontal);
             }
@@ -4179,12 +4179,29 @@ impl State {
             pointer.frame(self);
         }
 
+        let input_sensitivity = self
+            .niri
+            .config
+            .borrow()
+            .input
+            .touchpad
+            .pinch_sensitivity
+            .map(|x| x.0)
+            .unwrap_or(1.);
+        let window_sensitivity = pointer
+            .current_focus()
+            .map(|focused| self.niri.find_root_shell_surface(&focused))
+            .and_then(|root| self.niri.layout.find_window_and_output(&root).unzip().0)
+            .and_then(|window| window.rules().pinch_sensitivity)
+            .unwrap_or(1.);
+        let sensitivity = input_sensitivity * window_sensitivity;
+
         pointer.gesture_pinch_update(
             self,
             &GesturePinchUpdateEvent {
                 time: event.time(),
                 delta: event.delta(),
-                scale: event.scale(),
+                scale: event.scale().powf(sensitivity),
                 rotation: event.rotation(),
             },
         );
@@ -4799,8 +4816,7 @@ fn should_reset_pointer_inactivity_timer<I: InputBackend>(event: &InputEvent<I>)
 fn allowed_when_locked(action: &Action) -> bool {
     matches!(
         action,
-        Action::Quit(_)
-            | Action::ChangeVt(_)
+        Action::ChangeVt(_)
             | Action::Suspend
             | Action::PowerOffMonitors
             | Action::PowerOnMonitors

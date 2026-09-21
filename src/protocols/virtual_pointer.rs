@@ -516,7 +516,9 @@ where
                     }
                 };
                 pointer.mutate_axis_frame(Some(time), |frame| {
-                    frame.value(axis, value).v120(axis, discrete * 120)
+                    frame
+                        .value(axis, value)
+                        .v120(axis, discrete.saturating_mul(120))
                 });
             }
             zwlr_virtual_pointer_v1::Request::Destroy => {}

@@ -161,6 +161,7 @@ debug = false
 [profile.dev.package]
 insta.opt-level = 3
 similar.opt-level = 3
+png.opt-level = 3
 
 [package.metadata.generate-rpm]
 version = "26.04"

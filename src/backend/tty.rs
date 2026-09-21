@@ -3120,13 +3120,13 @@ pub fn calculate_mode_cvt(width: u16, height: u16, refresh: f64) -> DrmMode {
     };
     let cvt_timing = libdisplay_info::cvt::Timing::compute(options);
 
-    let hsync_start = width + cvt_timing.h_front_porch as u16;
+    let hsync_start = width.saturating_add(cvt_timing.h_front_porch as u16);
     let vsync_start = (cvt_timing.v_lines_rnd + cvt_timing.v_front_porch) as u16;
-    let hsync_end = hsync_start + cvt_timing.h_sync as u16;
-    let vsync_end = vsync_start + cvt_timing.v_sync as u16;
+    let hsync_end = hsync_start.saturating_add(cvt_timing.h_sync as u16);
+    let vsync_end = vsync_start.saturating_add(cvt_timing.v_sync as u16);
 
-    let htotal = hsync_end + cvt_timing.h_back_porch as u16;
-    let vtotal = vsync_end + cvt_timing.v_back_porch as u16;
+    let htotal = hsync_end.saturating_add(cvt_timing.h_back_porch as u16);
+    let vtotal = vsync_end.saturating_add(cvt_timing.v_back_porch as u16);
 
     let clock = f64::round(cvt_timing.act_pixel_freq * 1000f64) as u32;
     let vrefresh = f64::round(cvt_timing.act_frame_rate) as u32;
@@ -3678,5 +3678,14 @@ mod tests {
             ),
         }
         "#);
+    }
+
+    #[test]
+    fn test_calc_cvt_extreme_size() {
+        // Width and height come from the client through set_custom_mode, so the timing sums must
+        // not overflow u16.
+        for (width, height) in [(u16::MAX, u16::MAX), (u16::MAX, 1), (1, u16::MAX)] {
+            calculate_mode_cvt(width, height, 60.0);
+        }
     }
 }

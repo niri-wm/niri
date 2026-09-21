@@ -22,6 +22,8 @@ use smithay::reexports::wayland_protocols_wlr::layer_shell::v1::client::zwlr_lay
 use smithay::reexports::wayland_protocols_wlr::layer_shell::v1::client::zwlr_layer_surface_v1::{
     self, ZwlrLayerSurfaceV1,
 };
+use smithay::reexports::wayland_protocols_wlr::virtual_pointer::v1::client::zwlr_virtual_pointer_manager_v1::ZwlrVirtualPointerManagerV1;
+use smithay::reexports::wayland_protocols_wlr::virtual_pointer::v1::client::zwlr_virtual_pointer_v1::ZwlrVirtualPointerV1;
 use wayland_backend::client::Backend;
 use wayland_client::globals::Global;
 use wayland_client::protocol::wl_buffer::{self, WlBuffer};
@@ -53,6 +55,7 @@ pub struct State {
     pub compositor: Option<WlCompositor>,
     pub xdg_wm_base: Option<XdgWmBase>,
     pub layer_shell: Option<ZwlrLayerShellV1>,
+    pub virtual_pointer_manager: Option<ZwlrVirtualPointerManagerV1>,
     pub spbm: Option<WpSinglePixelBufferManagerV1>,
     pub viewporter: Option<WpViewporter>,
 
@@ -179,6 +182,7 @@ impl Client {
             compositor: None,
             xdg_wm_base: None,
             layer_shell: None,
+            virtual_pointer_manager: None,
             spbm: None,
             viewporter: None,
             windows: Vec::new(),
@@ -512,6 +516,9 @@ impl Dispatch<WlRegistry, ()> for State {
                 } else if interface == ZwlrLayerShellV1::interface().name {
                     let version = min(version, ZwlrLayerShellV1::interface().version);
                     state.layer_shell = Some(registry.bind(name, version, qh, ()));
+                } else if interface == ZwlrVirtualPointerManagerV1::interface().name {
+                    let version = min(version, ZwlrVirtualPointerManagerV1::interface().version);
+                    state.virtual_pointer_manager = Some(registry.bind(name, version, qh, ()));
                 } else if interface == WpSinglePixelBufferManagerV1::interface().name {
                     let version = min(version, WpSinglePixelBufferManagerV1::interface().version);
                     state.spbm = Some(registry.bind(name, version, qh, ()));
@@ -603,6 +610,9 @@ impl Dispatch<ZwlrLayerShellV1, ()> for State {
         unreachable!()
     }
 }
+
+wayland_client::delegate_noop!(State: ZwlrVirtualPointerManagerV1);
+wayland_client::delegate_noop!(State: ZwlrVirtualPointerV1);
 
 impl Dispatch<WlSurface, ()> for State {
     fn event(

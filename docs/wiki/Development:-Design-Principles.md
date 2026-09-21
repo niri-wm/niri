@@ -48,6 +48,29 @@ This is niri state that is not immediately apparent from looking at the screen. 
 - For example, when a monitor disconnects, all its workspaces move to another connected monitor. In order to be able to restore these workspaces when the first monitor connects again, these workspaces keep the knowledge of which was their *original monitor*—this is an example of invisible state, since you can't tell it in any way by looking at the screen. This can have surprising consequences: imagine disconnecting a monitor at home, going to work, completely rearranging the windows there, then coming back home, and suddenly some random workspaces end up on your home monitor. In order to reduce this surprise factor, whenever a new window appears on a workspace, that workspace resets its *original monitor* to its current monitor. This way, the workspaces you actively worked on remain where they were.
 - For example, niri preserves the view position whenever a window appears, or whenever a window goes full-screen, to restore it afterward. This way, dealing with temporary things like dialogs opening and closing, or toggling full-screen, becomes less annoying, since it doesn't mess up the view position. This is also invisible state, as you cannot tell by looking at the screen where closing a window will restore the view position. If taken to the extreme (previous view position saved forever for every open window), this can be surprising, as closing long-running windows would result in the view shifting around pretty much randomly. To reduce this surprise factor, niri remembers only one last view position per workspace, and forgets this stored view position upon window focus change.
 
+### Consider all edge cases.
+
+A Wayland compositor sits between the user and everything they do with their computer.
+Generally, the user wants to do their work, and not think about the Wayland compositor in the middle.
+
+Any sort of breakage in a compositor can prevent users from doing what they want.
+Since *everything* runs through the compositor, all sorts of weird setups and edge cases do show up in practice.
+We cannot ignore them in niri.
+
+Not every edge case needs to be *supported*.
+For example, what if you move a window with a mouse cursor, and at the same time try to move another window from a touchscreen?
+You *could* make it work, but for simplicity, niri only supports moving a single window at a time, and that's fine.
+I considered this edge case while implementing window movement and made this decision.
+
+Thankfully, Rust makes corner cases easy to see and gets you to deal with them.
+You can't forget to handle an enum variant, or forget to check if an `Option` is `None`—it won't compile.
+All that's left is considering when these conditions can happen in practice and thinking of the best way to deal with them.
+
+Of course, not all state combinations are bound by Rust types.
+When working on niri, actively try to come up with unexpected interactions, and try them to see that they work reasonably.
+Try to break the code that you wrote and check that it behaves well.
+Try different input devices: keyboard, mouse, trackpad, tablet, touchscreen, and their combinations.
+
 ## Window layout
 
 Here are some design considerations for the window layout logic.
