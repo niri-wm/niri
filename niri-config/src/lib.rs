@@ -2765,7 +2765,9 @@ mod tests {
                             ),
                         },
                         action: Press(
-                            FocusWorkspaceDown,
+                            FocusWorkspaceDown(
+                                Active,
+                            ),
                         ),
                         repeat: true,
                         pass_through: None,
