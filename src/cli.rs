@@ -112,6 +112,10 @@ pub enum Msg {
     OverviewState,
     /// List screencasts.
     Casts,
+    /// List configured submaps.
+    Submaps,
+    /// Print the currently active submap.
+    ActiveSubmap,
     /// Send a raw JSON request to the compositor, reading from stdin.
     RawRequest,
 }

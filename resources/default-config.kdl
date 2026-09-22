@@ -347,6 +347,20 @@ window-rule {
     clip-to-geometry true
 }
 
+// Example submap (uncomment to try):
+// submap "resize" {
+//     overlay-title "Resize Mode"
+//     clear-global-binds true
+//     catch-all "reset"
+//     timeout-ms 5000
+//     reset-target "default"
+//     input-policy { allow-mouse true; allow-touchpad false; }
+//     on-enter { show-hotkey-overlay; }
+//     on-exit { show-hotkey-overlay; }
+//     // Add resize binds here, e.g.:
+//     // Mod+Right { focus-column-right; }
+// }
+
 binds {
     // Keys consist of modifiers separated by + signs, followed by an XKB key name
     // in the end. To find an XKB name for a particular key, you may use a program

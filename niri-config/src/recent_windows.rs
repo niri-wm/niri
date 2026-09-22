@@ -149,11 +149,13 @@ impl From<MruBind> for Bind {
         Self {
             key: x.key,
             action: Action::from(x.action),
+            sequence: vec![],
             repeat: true,
             cooldown: None,
             allow_when_locked: false,
             allow_inhibiting: x.allow_inhibiting,
             hotkey_overlay_title: x.hotkey_overlay_title,
+            universal: false,
         }
     }
 }
