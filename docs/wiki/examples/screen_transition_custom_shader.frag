@@ -14,11 +14,13 @@ vec4 screen_transition_color(vec3 coords_geo, vec3 size_geo) {
 
 // It takes as input:
 //
-// * coords_geo: coordinates of the current pixel relative to the output.
+// * coords_geo: coordinates of the current pixel relative to the output geometry.
 //
 // These are homogeneous (the Z component is equal to 1) and scaled in such a
 // way that the 0 to 1 coordinates cover the full output.
 //
+// Unlike the window shaders, the shader always runs over exactly the output
+// area, so the coordinates always lie within the [0, 1] range.
 // * size_geo: size of the output in logical pixels.
 //
 // It is homogeneous (the Z component is equal to 1).
@@ -44,16 +46,15 @@ uniform sampler2D niri_tex_from;
 // Matrix that converts geometry coordinates into the old workspace texture
 // coordinates.
 //
-// You must always use this matrix to sample the texture, like this:
-//   vec3 coords_tex = niri_geo_to_tex * coords_geo;
-//   vec4 color = texture2D(niri_tex_from, coords_tex.st);
-// This ensures correct sampling when the output has a transform (rotation).
+// The snapshot texture carries the output transform (for rotated outputs for
+// example), which is why this matrix is necessary.
 uniform mat3 niri_geo_to_tex;
 
 
 // Unclamped progress of the animation.
 //
-// Goes from 0 to 1 but may overshoot and oscillate.
+// Goes from 0 to 1 but may overshoot and oscillate. It stays at 0 during the
+// initial freeze-frame delay before the animation starts.
 uniform float niri_progress;
 
 // Clamped progress of the animation.

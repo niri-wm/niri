@@ -402,9 +402,10 @@ impl Default for ScreenTransitionAnim {
         Self {
             anim: Animation {
                 off: false,
-                kind: Kind::Easing(EasingParams {
-                    duration_ms: 300,
-                    curve: Curve::EaseOutExpo,
+                kind: Kind::Spring(SpringParams {
+                    damping_ratio: 1.,
+                    stiffness: 1000,
+                    epsilon: 0.0001,
                 }),
             },
             custom_shader: None,
