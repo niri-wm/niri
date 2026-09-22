@@ -498,28 +498,12 @@ fn key_name(screen_reader: bool, mod_key: ModKey, key: &Key) -> String {
 
     let has_comp_mod = key.modifiers.contains(Modifiers::COMPOSITOR);
 
+    let mod_key_pretty = mod_key_name(mod_key);
+
     // Compositor mod goes first.
     if has_comp_mod {
-        match mod_key {
-            ModKey::Super => {
-                name.push_str("Super + ");
-            }
-            ModKey::Alt => {
-                name.push_str("Alt + ");
-            }
-            ModKey::Shift => {
-                name.push_str("Shift + ");
-            }
-            ModKey::Ctrl => {
-                name.push_str("Ctrl + ");
-            }
-            ModKey::IsoLevel3Shift => {
-                name.push_str("Mod5 + ");
-            }
-            ModKey::IsoLevel5Shift => {
-                name.push_str("Mod3 + ");
-            }
-        }
+        name.push_str(mod_key_pretty);
+        name.push_str(" + ");
     }
 
     if key.modifiers.contains(Modifiers::SUPER) && !(has_comp_mod && mod_key == ModKey::Super) {
@@ -547,6 +531,8 @@ fn key_name(screen_reader: bool, mod_key: ModKey, key: &Key) -> String {
 
     let pretty = match key.trigger {
         Trigger::Keysym(keysym) => prettify_keysym_name(screen_reader, &keysym_get_name(keysym)),
+        Trigger::CompositorMod => mod_key_pretty.into(),
+        Trigger::Modifier(modifier) => mod_key_name(modifier).into(),
         Trigger::MouseLeft => String::from("Mouse Left"),
         Trigger::MouseRight => String::from("Mouse Right"),
         Trigger::MouseMiddle => String::from("Mouse Middle"),
@@ -567,6 +553,17 @@ fn key_name(screen_reader: bool, mod_key: ModKey, key: &Key) -> String {
     name.push_str(&pretty);
 
     name
+}
+
+fn mod_key_name(modifier: ModKey) -> &'static str {
+    match modifier {
+        ModKey::Super => "Super",
+        ModKey::Alt => "Alt",
+        ModKey::Shift => "Shift",
+        ModKey::Ctrl => "Ctrl",
+        ModKey::IsoLevel3Shift => "Mod5",
+        ModKey::IsoLevel5Shift => "Mod3",
+    }
 }
 
 fn prettify_keysym_name(screen_reader: bool, name: &str) -> String {
@@ -631,6 +628,87 @@ mod tests {
     fn test_format_bind() {
         // Not bound.
         assert_snapshot!(check("", Action::Screenshot(true, None)), @" (not bound) : Take a Screenshot");
+
+        // Bare modifier binds.
+        assert_snapshot!(
+            check(
+                r#"binds {
+                    Alt { close-window; }
+                }"#,
+                Action::CloseWindow,
+            ),
+            @" Alt : Close Focused Window"
+        );
+        assert_snapshot!(
+            check(
+                r#"binds {
+                    Ctrl { close-window; }
+                    Shift { close-window; }
+                }"#,
+                Action::CloseWindow,
+            ),
+            @" Ctrl : Close Focused Window"
+        );
+        assert_snapshot!(
+            check(
+                r#"binds {
+                    Mod5 { close-window; }
+                    Mod3 { close-window; }
+                }"#,
+                Action::CloseWindow,
+            ),
+            @" Mod5 : Close Focused Window"
+        );
+        assert_snapshot!(
+            check(
+                r#"binds {
+                    Super { close-window; }
+                }"#,
+                Action::CloseWindow,
+            ),
+            @" Super : Close Focused Window"
+        );
+
+        // Modifier + modifier binds: a held modifier key with another modifier key as the trigger.
+        assert_snapshot!(
+            check(
+                r#"binds {
+                    Ctrl+Alt_L { close-window; }
+                }"#,
+                Action::CloseWindow,
+            ),
+            @" Ctrl + Alt_L : Close Focused Window"
+        );
+        assert_snapshot!(
+            check(
+                r#"binds {
+                    Alt+Ctrl { close-window; }
+                }"#,
+                Action::CloseWindow,
+            ),
+            @" Alt + Ctrl : Close Focused Window"
+        );
+
+        // A Ctrl keysym names only one side of the keyboard, so it keeps its exact name instead of
+        // being shortened to `Ctrl`.
+        assert_snapshot!(
+            check(
+                r#"binds {
+                    Control_L { close-window; }
+                }"#,
+                Action::CloseWindow,
+            ),
+            @" Control_L : Close Focused Window"
+        );
+        assert_snapshot!(
+            check(
+                r#"binds {
+                    Mod+Control_R { close-window; }
+                }"#,
+                Action::CloseWindow,
+            ),
+            @" Super + Control_R : Close Focused Window"
+        );
 
         // Bound with a default title.
         assert_snapshot!(

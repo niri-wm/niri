@@ -13,6 +13,7 @@ use smithay::input::keyboard::keysyms::KEY_NoSymbol;
 use smithay::input::keyboard::xkb::{keysym_from_name, KEYSYM_CASE_INSENSITIVE, KEYSYM_NO_FLAGS};
 use smithay::input::keyboard::Keysym;
 
+use crate::input::ModKey;
 use crate::recent_windows::{MruDirection, MruFilter, MruScope};
 use crate::utils::{expect_only_children, MergeWith};
 
@@ -39,6 +40,8 @@ pub struct Key {
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub enum Trigger {
     Keysym(Keysym),
+    CompositorMod,
+    Modifier(ModKey),
     MouseLeft,
     MouseRight,
     MouseMiddle,
@@ -55,6 +58,32 @@ pub enum Trigger {
     TabletStylusButton1,
     TabletStylusButton2,
     TabletStylusButton3,
+}
+
+impl Trigger {
+    pub fn is_modifier(&self) -> bool {
+        match self {
+            Self::CompositorMod | Self::Modifier(_) => true,
+            Self::Keysym(keysym) => keysym.is_modifier_key(),
+            _ => false,
+        }
+    }
+
+    /// Whether the same key press can trigger both of these triggers.
+    fn overlaps(self, other: Self) -> bool {
+        match (self, other) {
+            (Self::Modifier(modifier), Self::Keysym(keysym))
+            | (Self::Keysym(keysym), Self::Modifier(modifier)) => modifier.matches_keysym(keysym),
+            (a, b) => a == b,
+        }
+    }
+}
+
+impl Key {
+    /// Whether the two keys are different, but can still be triggered by the same key press.
+    fn conflicts_with(&self, other: &Self) -> bool {
+        *self != *other && self.modifiers == other.modifiers && self.trigger.overlaps(other.trigger)
+    }
 }
 
 bitflags! {
@@ -779,7 +808,7 @@ where
 
         let mut seen_keys: HashMap<Key, &knuffel::ast::SpannedNode<S>> = HashMap::new();
 
-        let mut binds = Vec::new();
+        let mut binds: Vec<Bind> = Vec::new();
 
         for child in node.children() {
             match Bind::decode_node(child, ctx) {
@@ -787,6 +816,29 @@ where
                     ctx.emit_error(e);
                 }
                 Ok(bind) => {
+                    // Two different keybinds can still be triggered by the same key press, since a
+                    // modifier key can be spelled as the modifier itself (`Alt`) or as its keysym
+                    // (`Alt_L`). One of them would always shadow the other, so report it rather
+                    // than leaving it up to the dispatch order.
+                    //
+                    // Exact duplicates are reported below instead.
+                    let conflict = binds
+                        .iter()
+                        .map(|bind| &bind.key)
+                        .find(|key| key.conflicts_with(&bind.key))
+                        .and_then(|key| seen_keys.get(key).copied());
+
+                    if let Some(first) = conflict {
+                        ctx.emit_error(DecodeError::missing(first, "keybind first defined here"));
+
+                        ctx.emit_error(DecodeError::unexpected(
+                            &child.node_name,
+                            "keybind",
+                            "conflicting keybind later defined here",
+                        ));
+                        continue;
+                    }
+
                     match seen_keys.entry(bind.key) {
                         Entry::Occupied(entry) => {
                             // Even though it's technically incorrect, we use
@@ -1013,6 +1065,20 @@ impl FromStr for Key {
             Trigger::TabletStylusButton2
         } else if key.eq_ignore_ascii_case("TabletStylusButton3") {
             Trigger::TabletStylusButton3
+        } else if key.eq_ignore_ascii_case("Mod") {
+            Trigger::CompositorMod
+        } else if key.eq_ignore_ascii_case("Ctrl") || key.eq_ignore_ascii_case("Control") {
+            Trigger::Modifier(ModKey::Ctrl)
+        } else if key.eq_ignore_ascii_case("Shift") {
+            Trigger::Modifier(ModKey::Shift)
+        } else if key.eq_ignore_ascii_case("Alt") {
+            Trigger::Modifier(ModKey::Alt)
+        } else if key.eq_ignore_ascii_case("Super") || key.eq_ignore_ascii_case("Win") {
+            Trigger::Modifier(ModKey::Super)
+        } else if key.eq_ignore_ascii_case("ISO_Level3_Shift") || key.eq_ignore_ascii_case("Mod5") {
+            Trigger::Modifier(ModKey::IsoLevel3Shift)
+        } else if key.eq_ignore_ascii_case("ISO_Level5_Shift") || key.eq_ignore_ascii_case("Mod3") {
+            Trigger::Modifier(ModKey::IsoLevel5Shift)
         } else {
             let mut keysym = keysym_from_name(key, KEYSYM_CASE_INSENSITIVE);
             // The keyboard event handling code can receive either
@@ -1112,5 +1178,137 @@ mod tests {
                 modifiers: Modifiers::ISO_LEVEL5_SHIFT
             },
         );
+    }
+
+    #[test]
+    fn parse_bare_modifier_aliases() {
+        // Each modifier can be spelled with its canonical name or an alias. A bare modifier key
+        // parses to `Trigger::Modifier`, while spelling out a single keysym parses to
+        // `Trigger::Keysym`.
+        for (text, modifier) in [
+            ("Ctrl", ModKey::Ctrl),
+            ("Control", ModKey::Ctrl),
+            ("Shift", ModKey::Shift),
+            ("Alt", ModKey::Alt),
+            ("Super", ModKey::Super),
+            ("Win", ModKey::Super),
+            ("Mod5", ModKey::IsoLevel3Shift),
+            ("ISO_Level3_Shift", ModKey::IsoLevel3Shift),
+            ("Mod3", ModKey::IsoLevel5Shift),
+            ("ISO_Level5_Shift", ModKey::IsoLevel5Shift),
+        ] {
+            assert_eq!(
+                text.parse::<Key>().unwrap(),
+                Key {
+                    trigger: Trigger::Modifier(modifier),
+                    modifiers: Modifiers::empty(),
+                },
+                "parsing `{text}`",
+            );
+        }
+
+        // The mod key keeps its own trigger.
+        assert_eq!(
+            "Mod".parse::<Key>().unwrap(),
+            Key {
+                trigger: Trigger::CompositorMod,
+                modifiers: Modifiers::empty(),
+            },
+        );
+
+        // A modifier can also be used as a held modifier of another trigger.
+        assert_eq!(
+            "Ctrl+Alt_L".parse::<Key>().unwrap(),
+            Key {
+                trigger: Trigger::Keysym(Keysym::Alt_L),
+                modifiers: Modifiers::CTRL,
+            },
+        );
+        assert_eq!(
+            "Alt+Ctrl".parse::<Key>().unwrap(),
+            Key {
+                trigger: Trigger::Modifier(ModKey::Ctrl),
+                modifiers: Modifiers::ALT,
+            },
+        );
+    }
+
+    #[test]
+    fn parse_mod() {
+        assert_eq!(
+            "Mod".parse::<Key>().unwrap(),
+            Key {
+                trigger: Trigger::CompositorMod,
+                modifiers: Modifiers::empty(),
+            },
+        );
+
+        assert_eq!(
+            "Ctrl+Mod".parse::<Key>().unwrap(),
+            Key {
+                trigger: Trigger::CompositorMod,
+                modifiers: Modifiers::CTRL,
+            },
+        );
+
+        assert_eq!(
+            "Mod+Control_L".parse::<Key>().unwrap(),
+            Key {
+                trigger: Trigger::Keysym(Keysym::Control_L),
+                modifiers: Modifiers::COMPOSITOR,
+            },
+        );
+    }
+
+    #[test]
+    fn key_conflicts() {
+        let key = |trigger, modifiers| Key { trigger, modifiers };
+
+        // A modifier key is triggered by either of its key's keysyms, so these two spellings are
+        // the same key press.
+        let alt = key(Trigger::Modifier(ModKey::Alt), Modifiers::CTRL);
+        let alt_l = key(Trigger::Keysym(Keysym::Alt_L), Modifiers::CTRL);
+        assert!(alt.conflicts_with(&alt_l));
+        assert!(alt.conflicts_with(&key(Trigger::Keysym(Keysym::Alt_R), Modifiers::CTRL)));
+        // Symmetric.
+        assert!(alt_l.conflicts_with(&alt));
+
+        // Single-keysym modifiers work the same way: `Mod5` is `ISO_Level3_Shift`.
+        let mod5 = key(
+            Trigger::Modifier(ModKey::IsoLevel3Shift),
+            Modifiers::empty(),
+        );
+        let iso_level3_shift = key(
+            Trigger::Keysym(Keysym::ISO_Level3_Shift),
+            Modifiers::empty(),
+        );
+        assert!(mod5.conflicts_with(&iso_level3_shift));
+
+        // Different modifiers are different key presses.
+        let bare_alt_l = key(Trigger::Keysym(Keysym::Alt_L), Modifiers::empty());
+        assert!(!alt.conflicts_with(&bare_alt_l));
+        assert!(!alt.conflicts_with(&key(Trigger::Modifier(ModKey::Ctrl), Modifiers::CTRL)));
+
+        // The left and right keysyms are different keys.
+        assert!(
+            !bare_alt_l.conflicts_with(&key(Trigger::Keysym(Keysym::Alt_R), Modifiers::empty()))
+        );
+
+        // Non-modifier keys don't overlap with anything else.
+        let q = key(Trigger::Keysym(Keysym::q), Modifiers::empty());
+        assert!(!q.conflicts_with(&key(Trigger::Keysym(Keysym::l), Modifiers::empty())));
+        assert!(!q.conflicts_with(&alt));
+
+        // Identical keys are duplicates, reported separately.
+        assert!(!q.conflicts_with(&q));
+        assert!(!alt.conflicts_with(&alt));
+
+        // The compositor mod key is only resolved at dispatch, so `Mod` isn't compared against the
+        // mod key's own spellings.
+        let compositor_mod = key(Trigger::CompositorMod, Modifiers::empty());
+        let super_l = key(Trigger::Keysym(Keysym::Super_L), Modifiers::empty());
+        let super_modifier = key(Trigger::Modifier(ModKey::Super), Modifiers::empty());
+        assert!(!compositor_mod.conflicts_with(&super_l));
+        assert!(!compositor_mod.conflicts_with(&super_modifier));
     }
 }

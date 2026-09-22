@@ -15,7 +15,8 @@ binds {
 }
 ```
 
-The hotkey consists of modifiers separated by `+` signs, followed by an XKB key name in the end.
+The hotkey consists of modifiers separated by `+` signs, followed by a trigger key in the end.
+The trigger key can be either an XKB key name or <sup>Since: next release</sup> a modifier.
 
 Valid modifiers are:
 
