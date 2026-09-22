@@ -3944,6 +3944,15 @@ impl State {
                 _ => None,
             };
 
+            // Handle release binds.
+            if button_state == ButtonState::Released {
+                if let Some(bind) = self.niri.pending_tablet_release_binds.remove(&button) {
+                    self.niri.suppressed_buttons.remove(&button);
+                    self.handle_bind(bind, false);
+                    return;
+                }
+            }
+
             if self.niri.suppressed_buttons.remove(&button) {
                 return;
             }
@@ -3961,15 +3970,23 @@ impl State {
                     if self.niri.mods_with_tablet_stylus_binds.contains(&modifiers) {
                         let bind = {
                             let config = self.niri.config.borrow();
-                            let bindings = config.binds.0.iter();
-                            find_configured_bind(bindings, mod_key, trigger, mods, true)
+                            find_bind_for_trigger(config.binds.0.iter(), mod_key, trigger, mods)
                         }
                         .filter(|bind| {
                             !self.niri.screenshot_ui.is_open()
-                                || allowed_during_screenshot(bind.action_for(bind.has_press()))
+                                || bind_allowed_during_screenshot(bind)
                         });
                         if let Some(bind) = bind {
                             self.niri.suppressed_buttons.insert(button);
+                            if should_record_release_bind(
+                                &bind,
+                                self.niri.is_locked(),
+                                &self.niri.bind_cooldown_timers,
+                            ) {
+                                self.niri
+                                    .pending_tablet_release_binds
+                                    .insert(button, bind.clone());
+                            }
                             if bind.has_press() {
                                 self.handle_bind(bind.clone(), true);
                             }
