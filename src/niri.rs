@@ -347,6 +347,8 @@ pub struct Niri {
     pub suppressed_buttons: HashSet<u32>,
     /// Binds whose release action is pending, keyed by the key code.
     pub pending_release_binds: HashMap<Keycode, Bind>,
+    /// Same as `pending_release_binds`, but for mouse buttons, keyed by the button code.
+    pub pending_mouse_release_binds: HashMap<u32, Bind>,
     pub bind_cooldown_timers: HashMap<Key, RegistrationToken>,
     pub bind_repeat_timer: Option<RegistrationToken>,
     pub keyboard_focus: KeyboardFocus,
@@ -2707,6 +2709,7 @@ impl Niri {
             suppressed_keys: HashSet::new(),
             suppressed_buttons: HashSet::new(),
             pending_release_binds: HashMap::new(),
+            pending_mouse_release_binds: HashMap::new(),
             bind_cooldown_timers: HashMap::new(),
             bind_repeat_timer: Option::default(),
             presentation_state,

@@ -2843,6 +2843,22 @@ impl State {
         self.niri.queue_redraw_all();
     }
 
+    fn find_pointer_bind(
+        &mut self,
+        mod_key: ModKey,
+        trigger: Trigger,
+        mods: ModifiersState,
+    ) -> Option<Bind> {
+        let modifiers = modifiers_from_state(mods);
+
+        let config = self.niri.config.borrow();
+        let bindings = make_binds_iter(&config, &mut self.niri.window_mru_ui, modifiers);
+
+        find_bind_for_trigger(bindings, mod_key, trigger, mods).filter(|bind| {
+            !self.niri.screenshot_ui.is_open() || bind_allowed_during_screenshot(bind)
+        })
+    }
+
     fn on_pointer_button<I: InputBackend>(&mut self, event: I::PointerButtonEvent) {
         let pointer = self.niri.seat.get_pointer().unwrap();
 
@@ -2859,6 +2875,14 @@ impl State {
         let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
         let modifiers = modifiers_from_state(mods);
         let mod_down = modifiers.contains(mod_key.to_modifiers());
+
+        if ButtonState::Released == button_state {
+            if let Some(bind) = self.niri.pending_mouse_release_binds.remove(&button_code) {
+                self.niri.suppressed_buttons.remove(&button_code);
+                self.handle_bind(bind, false);
+                return;
+            }
+        }
 
         if self.niri.suppressed_buttons.remove(&button_code) {
             return;
@@ -2898,17 +2922,18 @@ impl State {
                     Some(MouseButton::Forward) => Some(Trigger::MouseForward),
                     _ => None,
                 }
-                .and_then(|trigger| {
-                    let config = self.niri.config.borrow();
-                    let bindings =
-                        make_binds_iter(&config, &mut self.niri.window_mru_ui, modifiers);
-                    find_configured_bind(bindings, mod_key, trigger, mods, true)
-                })
-                .filter(|bind| {
-                    !self.niri.screenshot_ui.is_open()
-                        || allowed_during_screenshot(bind.action_for(bind.has_press()))
-                }) {
+                .and_then(|trigger| self.find_pointer_bind(mod_key, trigger, mods))
+                {
                     self.niri.suppressed_buttons.insert(button_code);
+                    if should_record_release_bind(
+                        &bind,
+                        self.niri.is_locked(),
+                        &self.niri.bind_cooldown_timers,
+                    ) {
+                        self.niri
+                            .pending_mouse_release_binds
+                            .insert(button_code, bind.clone());
+                    }
                     if bind.has_press() {
                         self.handle_bind(bind.clone(), true);
                     }
@@ -3257,30 +3282,10 @@ impl State {
                             });
                             (bind_left, bind_right)
                         } else {
-                            let config = self.niri.config.borrow();
-                            let bindings =
-                                make_binds_iter(&config, &mut self.niri.window_mru_ui, modifiers);
-                            let bind_left = find_bind_for_trigger(
-                                bindings.clone(),
-                                mod_key,
-                                Trigger::WheelScrollLeft,
-                                mods,
+                            (
+                                self.find_pointer_bind(mod_key, Trigger::WheelScrollLeft, mods),
+                                self.find_pointer_bind(mod_key, Trigger::WheelScrollRight, mods),
                             )
-                            .filter(|bind| {
-                                !self.niri.screenshot_ui.is_open()
-                                    || bind_allowed_during_screenshot(bind)
-                            });
-                            let bind_right = find_bind_for_trigger(
-                                bindings,
-                                mod_key,
-                                Trigger::WheelScrollRight,
-                                mods,
-                            )
-                            .filter(|bind| {
-                                !self.niri.screenshot_ui.is_open()
-                                    || bind_allowed_during_screenshot(bind)
-                            });
-                            (bind_left, bind_right)
                         };
 
                     if let Some(right) = bind_right {
@@ -3352,30 +3357,10 @@ impl State {
                         });
                         (bind_up, bind_down)
                     } else {
-                        let config = self.niri.config.borrow();
-                        let bindings =
-                            make_binds_iter(&config, &mut self.niri.window_mru_ui, modifiers);
-                        let bind_up = find_bind_for_trigger(
-                            bindings.clone(),
-                            mod_key,
-                            Trigger::WheelScrollUp,
-                            mods,
+                        (
+                            self.find_pointer_bind(mod_key, Trigger::WheelScrollUp, mods),
+                            self.find_pointer_bind(mod_key, Trigger::WheelScrollDown, mods),
                         )
-                        .filter(|bind| {
-                            !self.niri.screenshot_ui.is_open()
-                                || bind_allowed_during_screenshot(bind)
-                        });
-                        let bind_down = find_bind_for_trigger(
-                            bindings,
-                            mod_key,
-                            Trigger::WheelScrollDown,
-                            mods,
-                        )
-                        .filter(|bind| {
-                            !self.niri.screenshot_ui.is_open()
-                                || bind_allowed_during_screenshot(bind)
-                        });
-                        (bind_up, bind_down)
                     };
 
                     if let Some(down) = bind_down {
@@ -3511,28 +3496,10 @@ impl State {
                     .horizontal_finger_scroll_tracker
                     .accumulate(horizontal);
                 if ticks != 0 {
-                    let config = self.niri.config.borrow();
-                    let bindings =
-                        make_binds_iter(&config, &mut self.niri.window_mru_ui, modifiers);
-                    let bind_left = find_bind_for_trigger(
-                        bindings.clone(),
-                        mod_key,
-                        Trigger::TouchpadScrollLeft,
-                        mods,
-                    )
-                    .filter(|bind| {
-                        !self.niri.screenshot_ui.is_open() || bind_allowed_during_screenshot(bind)
-                    });
-                    let bind_right = find_bind_for_trigger(
-                        bindings,
-                        mod_key,
-                        Trigger::TouchpadScrollRight,
-                        mods,
-                    )
-                    .filter(|bind| {
-                        !self.niri.screenshot_ui.is_open() || bind_allowed_during_screenshot(bind)
-                    });
-                    drop(config);
+                    let (bind_left, bind_right) = (
+                        self.find_pointer_bind(mod_key, Trigger::TouchpadScrollLeft, mods),
+                        self.find_pointer_bind(mod_key, Trigger::TouchpadScrollRight, mods),
+                    );
 
                     if let Some(right) = bind_right {
                         for _ in 0..ticks {
@@ -3551,28 +3518,10 @@ impl State {
                     .vertical_finger_scroll_tracker
                     .accumulate(vertical);
                 if ticks != 0 {
-                    let config = self.niri.config.borrow();
-                    let bindings =
-                        make_binds_iter(&config, &mut self.niri.window_mru_ui, modifiers);
-                    let bind_up = find_bind_for_trigger(
-                        bindings.clone(),
-                        mod_key,
-                        Trigger::TouchpadScrollUp,
-                        mods,
-                    )
-                    .filter(|bind| {
-                        !self.niri.screenshot_ui.is_open() || bind_allowed_during_screenshot(bind)
-                    });
-                    let bind_down = find_bind_for_trigger(
-                        bindings,
-                        mod_key,
-                        Trigger::TouchpadScrollDown,
-                        mods,
-                    )
-                    .filter(|bind| {
-                        !self.niri.screenshot_ui.is_open() || bind_allowed_during_screenshot(bind)
-                    });
-                    drop(config);
+                    let (bind_up, bind_down) = (
+                        self.find_pointer_bind(mod_key, Trigger::TouchpadScrollUp, mods),
+                        self.find_pointer_bind(mod_key, Trigger::TouchpadScrollDown, mods),
+                    );
 
                     if let Some(down) = bind_down {
                         for _ in 0..ticks {
