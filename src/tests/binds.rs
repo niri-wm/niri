@@ -1,7 +1,7 @@
 use std::fmt::Write as _;
 
 use insta::assert_snapshot;
-use niri_config::{Action, Config};
+use niri_config::{Action, BoundAction, Config};
 use smithay::backend::input::{InputEvent, InputTime, KeyState, Keycode};
 use smithay::input::keyboard::xkb::Keymap;
 use wayland_client::protocol::wl_surface::WlSurface;
@@ -39,7 +39,14 @@ fn set_up(config: &str) -> (Fixture, ClientId, WlSurface) {
     let mut config = Config::parse_mem(config).unwrap();
     // knuffel doesn't understand #[cfg(test)]...
     for bind in &mut config.binds.0 {
-        bind.action = Action::TestAction;
+        bind.action = match &bind.action {
+            BoundAction::Press(_) => BoundAction::Press(Action::TestAction),
+            BoundAction::Release(_) => BoundAction::Release(Action::TestAction),
+            BoundAction::Both { .. } => BoundAction::Both {
+                press: Action::TestAction,
+                release: Action::TestAction,
+            },
+        };
     }
 
     let mut f = Fixture::with_config(config);

@@ -23,12 +23,51 @@ pub struct Binds(pub Vec<Bind>);
 #[derive(Debug, Clone, PartialEq)]
 pub struct Bind {
     pub key: Key,
-    pub action: Action,
+    pub action: BoundAction,
     pub repeat: bool,
     pub cooldown: Option<Duration>,
     pub allow_when_locked: bool,
     pub allow_inhibiting: bool,
     pub hotkey_overlay_title: Option<Option<String>>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum BoundAction {
+    Press(Action),
+    Release(Action),
+    Both { press: Action, release: Action },
+}
+
+impl Bind {
+    pub fn has_press(&self) -> bool {
+        matches!(
+            self.action,
+            BoundAction::Press(_) | BoundAction::Both { .. }
+        )
+    }
+
+    pub fn has_release(&self) -> bool {
+        matches!(
+            self.action,
+            BoundAction::Release(_) | BoundAction::Both { .. }
+        )
+    }
+
+    pub fn press_action(&self) -> Option<&Action> {
+        match &self.action {
+            BoundAction::Press(action) => Some(action),
+            BoundAction::Both { press, .. } => Some(press),
+            BoundAction::Release(_) => None,
+        }
+    }
+
+    pub fn release_action(&self) -> Option<&Action> {
+        match &self.action {
+            BoundAction::Release(action) => Some(action),
+            BoundAction::Both { release, .. } => Some(release),
+            BoundAction::Press(_) => None,
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
@@ -897,16 +936,19 @@ where
             .parse::<Key>()
             .map_err(|e| DecodeError::conversion(&node.node_name, e.wrap_err("invalid keybind")))?;
 
-        let mut repeat = true;
+        let mut repeat = None;
+        let mut repeat_node = None;
         let mut cooldown = None;
         let mut allow_when_locked = false;
         let mut allow_when_locked_node = None;
         let mut allow_inhibiting = true;
         let mut hotkey_overlay_title = None;
+
         for (name, val) in &node.properties {
             match &***name {
                 "repeat" => {
-                    repeat = knuffel::traits::DecodeScalar::decode(val, ctx)?;
+                    repeat = Some(knuffel::traits::DecodeScalar::decode(val, ctx)?);
+                    repeat_node = Some(name);
                 }
                 "cooldown-ms" => {
                     cooldown = Some(Duration::from_millis(
@@ -933,14 +975,12 @@ where
             }
         }
 
-        let mut children = node.children();
-
         // If the action is invalid but the key is fine, we still want to return something.
         // That way, the parent can handle the existence of duplicate keybinds,
         // even if their contents are not valid.
         let dummy = Self {
             key,
-            action: Action::Spawn(vec![]),
+            action: BoundAction::Press(Action::Spawn(vec![])),
             repeat: true,
             cooldown: None,
             allow_when_locked: false,
@@ -948,54 +988,184 @@ where
             hotkey_overlay_title: None,
         };
 
-        if let Some(child) = children.next() {
-            for unwanted_child in children {
-                ctx.emit_error(DecodeError::unexpected(
-                    unwanted_child,
-                    "node",
-                    "only one action is allowed per keybind",
-                ));
-            }
+        // direct_action is an action node that is not wrapped in a press or release section
+        let mut direct_action: Option<Action> = None;
+        let mut press_action: Option<Action> = None;
+        let mut release_action: Option<Action> = None;
+
+        let decode_action = |ctx: &mut knuffel::decode::Context<S>,
+                             child: &knuffel::ast::SpannedNode<S>| {
             match Action::decode_node(child, ctx) {
-                Ok(action) => {
-                    if !matches!(action, Action::Spawn(_) | Action::SpawnSh(_)) {
-                        if let Some(node) = allow_when_locked_node {
-                            ctx.emit_error(DecodeError::unexpected(
-                                node,
-                                "property",
-                                "allow-when-locked can only be set on spawn binds",
-                            ));
-                        }
-                    }
-
-                    // The toggle-inhibit action must always be uninhibitable.
-                    // Otherwise, it would be impossible to trigger it.
-                    if matches!(action, Action::ToggleKeyboardShortcutsInhibit) {
-                        allow_inhibiting = false;
-                    }
-
-                    Ok(Self {
-                        key,
-                        action,
-                        repeat,
-                        cooldown,
-                        allow_when_locked,
-                        allow_inhibiting,
-                        hotkey_overlay_title,
-                    })
-                }
+                Ok(action) => Some(action),
                 Err(e) => {
                     ctx.emit_error(e);
-                    Ok(dummy)
+                    None
                 }
             }
-        } else {
-            ctx.emit_error(DecodeError::missing(
-                node,
-                "expected an action for this keybind",
-            ));
-            Ok(dummy)
+        };
+
+        for child in node.children() {
+            let child_name = &*child.node_name;
+            let child_name: &str = child_name.as_ref();
+
+            if child_name == "press" || child_name == "release" {
+                let is_press = child_name == "press";
+                let slot = if is_press {
+                    &mut press_action
+                } else {
+                    &mut release_action
+                };
+
+                if slot.is_some() {
+                    ctx.emit_error(DecodeError::unexpected(
+                        &child.node_name,
+                        "section",
+                        format!("duplicate `{child_name}` section"),
+                    ));
+                    continue;
+                }
+
+                // A direct action node binds to the press phase too,
+                // so a `press` section conflicts with it
+                if is_press && direct_action.is_some() {
+                    ctx.emit_error(DecodeError::unexpected(
+                        &child.node_name,
+                        "section",
+                        "cannot mix direct actions with press/release sections",
+                    ));
+                    continue;
+                }
+
+                // The action is the section's single child node.
+                let mut children = child.children();
+                let Some(action_child) = children.next() else {
+                    ctx.emit_error(DecodeError::missing(
+                        child,
+                        format!("expected an action for this {child_name} section"),
+                    ));
+                    continue;
+                };
+
+                for unwanted_child in children {
+                    ctx.emit_error(DecodeError::unexpected(
+                        unwanted_child,
+                        "node",
+                        "only one action is allowed per keybind",
+                    ));
+                }
+
+                *slot = decode_action(ctx, action_child);
+            } else {
+                if direct_action.is_some() {
+                    ctx.emit_error(DecodeError::unexpected(
+                        &child.node_name,
+                        "node",
+                        "only one action is allowed per keybind",
+                    ));
+                    continue;
+                }
+
+                if press_action.is_some() || release_action.is_some() {
+                    ctx.emit_error(DecodeError::unexpected(
+                        &child.node_name,
+                        "node",
+                        "cannot mix direct actions with press/release sections",
+                    ));
+                    continue;
+                }
+
+                direct_action = decode_action(ctx, child);
+            }
         }
+
+        let press_action = press_action.or(direct_action);
+
+        if release_action.is_some()
+            && matches!(
+                key.trigger,
+                Trigger::WheelScrollDown
+                    | Trigger::WheelScrollUp
+                    | Trigger::WheelScrollLeft
+                    | Trigger::WheelScrollRight
+                    | Trigger::TouchpadScrollDown
+                    | Trigger::TouchpadScrollUp
+                    | Trigger::TouchpadScrollLeft
+                    | Trigger::TouchpadScrollRight
+            )
+        {
+            ctx.emit_error(DecodeError::unexpected(
+                node,
+                "bind",
+                "release sections are not supported for scroll binds",
+            ));
+            release_action = None;
+        }
+
+        if let Some(node) = repeat_node {
+            if repeat == Some(true) && press_action.is_none() && release_action.is_some() {
+                ctx.emit_error(DecodeError::unexpected(
+                    node,
+                    "property",
+                    "repeat has no effect on release-only binds",
+                ));
+            }
+        }
+
+        if let Some(node) = allow_when_locked_node {
+            for action in press_action.iter().chain(release_action.iter()) {
+                if !matches!(action, Action::Spawn(_) | Action::SpawnSh(_)) {
+                    ctx.emit_error(DecodeError::unexpected(
+                        node,
+                        "property",
+                        "allow-when-locked can only be set on spawn binds",
+                    ));
+                }
+            }
+        }
+
+        // The toggle-inhibit action must always be uninhibitable.
+        // Otherwise, it would be impossible to trigger it.
+        if matches!(press_action, Some(Action::ToggleKeyboardShortcutsInhibit))
+            || matches!(release_action, Some(Action::ToggleKeyboardShortcutsInhibit))
+        {
+            allow_inhibiting = false;
+        }
+
+        let repeat = match repeat {
+            Some(value) => value,
+            None => release_action.is_none(),
+        };
+
+        let action = match (press_action, release_action) {
+            (Some(press), Some(release)) => BoundAction::Both { press, release },
+            (Some(press), None) => BoundAction::Press(press),
+            (None, Some(release)) => BoundAction::Release(release),
+            (None, None) => {
+                // If a press or release section was present, an error about its missing or
+                // invalid action was already emitted above.
+                let has_section = node.children().any(|child| {
+                    let name = child.node_name.as_ref();
+                    name == "press" || name == "release"
+                });
+                if !has_section {
+                    ctx.emit_error(DecodeError::missing(
+                        node,
+                        "expected an action for this keybind",
+                    ));
+                }
+                return Ok(dummy);
+            }
+        };
+
+        Ok(Self {
+            key,
+            action,
+            repeat,
+            cooldown,
+            allow_when_locked,
+            allow_inhibiting,
+            hotkey_overlay_title,
+        })
     }
 }
 
