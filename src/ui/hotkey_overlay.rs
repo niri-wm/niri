@@ -736,6 +736,33 @@ mod tests {
             @" Super + Control_R : Close Focused Window"
         );
 
+        // A release bind is shown too.
+        assert_snapshot!(
+            check(
+                r#"binds {
+                    Mod {
+                        release { toggle-overview; }
+                    }
+                }"#,
+                Action::ToggleOverview,
+            ),
+            @" Super : Open the Overview"
+        );
+
+        // Same for the release action of a bind with both actions.
+        assert_snapshot!(
+            check(
+                r#"binds {
+                    Mod+Shift+Q {
+                        press { close-window; }
+                        release { toggle-overview; }
+                    }
+                }"#,
+                Action::ToggleOverview,
+            ),
+            @" Super + Shift + Q : Open the Overview"
+        );
+
         // Bound with a default title.
         assert_snapshot!(
             check(
@@ -817,5 +844,51 @@ mod tests {
             ),
             @" Super + P : Hello"
         );
+    }
+
+    #[test]
+    fn test_collect_actions_release_binds() {
+        // Release binds count as bound, both for the actions that are always listed and for the
+        // ones that are only listed when bound.
+        let config = Config::parse_mem(
+            r#"binds {
+                Alt {
+                    release { screenshot; }
+                }
+                Mod {
+                    release { spawn "foot"; }
+                }
+            }"#,
+        )
+        .unwrap();
+
+        let actions = collect_actions(&config);
+        assert!(actions.contains(&&Action::Screenshot(true, None)));
+        assert!(actions.contains(&&Action::Spawn(vec![String::from("foot")])));
+
+        // Release binds keep actions in the list with hide-not-bound.
+        let config = Config::parse_mem(
+            r#"binds {
+                Mod {
+                    release { toggle-overview; }
+                }
+            }
+            hotkey-overlay { hide-not-bound; }"#,
+        )
+        .unwrap();
+
+        assert!(collect_actions(&config).contains(&&Action::ToggleOverview));
+
+        // A release bind with a custom title adds its action to the list.
+        let config = Config::parse_mem(
+            r#"binds {
+                Mod+Q hotkey-overlay-title="Custom" {
+                    release { center-column; }
+                }
+            }"#,
+        )
+        .unwrap();
+
+        assert!(collect_actions(&config).contains(&&Action::CenterColumn));
     }
 }
