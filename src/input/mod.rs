@@ -19,7 +19,7 @@ use smithay::backend::input::{
 };
 use smithay::backend::libinput::LibinputInputBackend;
 use smithay::input::dnd::DnDGrab;
-use smithay::input::keyboard::{keysyms, FilterResult, Keysym, Layout, ModifiersState};
+use smithay::input::keyboard::{keysyms, Keysym, Layout, ModifiersState};
 use smithay::input::pointer::{
     AxisFrame, ButtonEvent, CursorIcon, CursorImageStatus, Focus, GestureHoldBeginEvent,
     GestureHoldEndEvent, GesturePinchBeginEvent, GesturePinchEndEvent, GesturePinchUpdateEvent,
@@ -129,6 +129,17 @@ impl<D: SeatHandler + TabletSeatHandler> AnyStartData<D> {
     pub fn is_tablet_tool(&self) -> bool {
         matches!(self, Self::TabletTool(_))
     }
+}
+
+/// What to do with a key event that the keyboard filter looked at.
+#[derive(Debug)]
+enum ShouldInterceptResult {
+    /// Forward the event to the focused client.
+    Forward,
+    /// Do not forward the event, and handle the given bind.
+    InterceptAndHandle(Bind),
+    /// Do not forward the event, and do nothing else.
+    InterceptOnly,
 }
 
 impl State {
@@ -464,12 +475,14 @@ impl State {
         #[cfg(not(feature = "dbus"))]
         let _ = consumed_by_a11y;
 
-        let Some(Some(bind)) = self.niri.seat.get_keyboard().unwrap().input(
+        // We can't use smithay's `input` here because we want to forward _and_ handle
+        // events for modifier keys. This lets us do things like bind Control_L to an
+        // action without confusing applications about its state.
+        let keyboard = self.niri.seat.get_keyboard().unwrap();
+        let (result, mods_changed): (ShouldInterceptResult, bool) = keyboard.input_intercept(
             self,
             event.key_code(),
             event.state(),
-            serial,
-            time,
             |this, mods, keysym| {
                 let key_code = event.key_code();
                 let modified = keysym.modified_sym();
@@ -508,9 +521,9 @@ impl State {
                                 | Keysym::Alt_R
                         )
                     {
-                        return FilterResult::Forward;
+                        return ShouldInterceptResult::Forward;
                     } else {
-                        return FilterResult::Intercept(None);
+                        return ShouldInterceptResult::InterceptOnly;
                     }
                 }
 
@@ -522,7 +535,7 @@ impl State {
 
                     // Don't send this press to any clients.
                     this.niri.suppressed_keys.insert(key_code);
-                    return FilterResult::Intercept(None);
+                    return ShouldInterceptResult::InterceptOnly;
                 }
 
                 // Check if all modifiers were released while the MRU UI was open. If so, close the
@@ -531,9 +544,9 @@ impl State {
                     this.do_action(Action::MruConfirm, false);
 
                     if this.niri.suppressed_keys.remove(&key_code) {
-                        return FilterResult::Intercept(None);
+                        return ShouldInterceptResult::InterceptOnly;
                     } else {
-                        return FilterResult::Forward;
+                        return ShouldInterceptResult::Forward;
                     }
                 }
 
@@ -546,7 +559,7 @@ impl State {
                     {
                         pointer.unset_grab(this, serial, time);
                         this.niri.suppressed_keys.insert(key_code);
-                        return FilterResult::Intercept(None);
+                        return ShouldInterceptResult::InterceptOnly;
                     }
                 }
 
@@ -574,13 +587,13 @@ impl State {
                     )
                 };
 
-                if matches!(res, FilterResult::Forward) {
+                if matches!(res, ShouldInterceptResult::Forward) {
                     // If we didn't find any bind, try other hardcoded keys.
                     if this.niri.keyboard_focus.is_overview() && pressed {
                         if let Some(bind) = raw.and_then(|raw| hardcoded_overview_bind(raw, *mods))
                         {
                             this.niri.suppressed_keys.insert(key_code);
-                            return FilterResult::Intercept(Some(bind));
+                            return ShouldInterceptResult::InterceptAndHandle(bind);
                         }
                     }
 
@@ -591,17 +604,27 @@ impl State {
 
                 res
             },
-        ) else {
-            return;
-        };
+        );
 
-        if !pressed {
-            return;
+        match result {
+            ShouldInterceptResult::Forward => {
+                keyboard.input_forward(
+                    self,
+                    event.key_code(),
+                    event.state(),
+                    serial,
+                    time,
+                    mods_changed,
+                );
+            }
+            ShouldInterceptResult::InterceptAndHandle(bind) => {
+                if pressed {
+                    self.handle_bind(bind.clone());
+                    self.start_key_repeat(bind);
+                }
+            }
+            ShouldInterceptResult::InterceptOnly => {}
         }
-
-        self.handle_bind(bind.clone());
-
-        self.start_key_repeat(bind);
     }
 
     fn start_key_repeat(&mut self, bind: Bind) {
@@ -4555,12 +4578,12 @@ fn should_intercept_key<'a>(
     screenshot_ui: &ScreenshotUi,
     disable_power_key_handling: bool,
     is_inhibiting_shortcuts: bool,
-) -> FilterResult<Option<Bind>> {
+) -> ShouldInterceptResult {
     // Actions are only triggered on presses, release of the key
     // shouldn't try to intercept anything unless we have marked
     // the key to suppress.
     if !pressed && !suppressed_keys.contains(&key_code) {
-        return FilterResult::Forward;
+        return ShouldInterceptResult::Forward;
     }
 
     let mut final_bind = find_bind(
@@ -4608,10 +4631,10 @@ fn should_intercept_key<'a>(
     match (final_bind, pressed) {
         (Some(bind), true) => {
             if is_inhibiting_shortcuts && bind.allow_inhibiting {
-                FilterResult::Forward
+                ShouldInterceptResult::Forward
             } else {
                 suppressed_keys.insert(key_code);
-                FilterResult::Intercept(Some(bind))
+                ShouldInterceptResult::InterceptAndHandle(bind)
             }
         }
         (_, false) => {
@@ -4621,9 +4644,9 @@ fn should_intercept_key<'a>(
             // if it was inhibited on press (forwarded to the client), it wouldn't be suppressed,
             // so the release would already have been forwarded at the start of this function.
             suppressed_keys.remove(&key_code);
-            FilterResult::Intercept(None)
+            ShouldInterceptResult::InterceptOnly
         }
-        (None, true) => FilterResult::Forward,
+        (None, true) => ShouldInterceptResult::Forward,
     }
 }
 
