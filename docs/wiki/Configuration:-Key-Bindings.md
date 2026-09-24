@@ -393,6 +393,28 @@ binds {
 }
 ```
 
+#### `focus-window-previous`
+
+<sup>Since: 25.01</sup>
+
+Focus the previously focused window.
+
+```kdl
+binds {
+    Mod+Grave { focus-window-previous; }
+}
+```
+
+<sup>Since: next release</sup> You can restrict the action to the current output or workspace with the `scope` property.
+It takes the same values as the [recent windows switcher scope](./Configuration:-Recent-Windows.md): `all` (the default), `output`, `workspace`.
+
+```kdl
+binds {
+    // Focus the previously focused window on the current workspace.
+    Mod+Grave { focus-window-previous scope="workspace"; }
+}
+```
+
 #### `toggle-keyboard-shortcuts-inhibit`
 
 <sup>Since: 25.02</sup>
