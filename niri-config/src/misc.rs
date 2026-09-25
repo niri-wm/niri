@@ -65,6 +65,23 @@ impl Default for ScreenshotPath {
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct ScreenshotNotification {
+    pub disable: bool,
+}
+
+#[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct ScreenshotNotificationPart {
+    #[knuffel(child)]
+    pub disable: Option<Flag>,
+}
+
+impl MergeWith<ScreenshotNotificationPart> for ScreenshotNotification {
+    fn merge_with(&mut self, part: &ScreenshotNotificationPart) {
+        merge!((self, part), disable);
+    }
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct HotkeyOverlay {
     pub skip_at_startup: bool,
     pub hide_not_bound: bool,
