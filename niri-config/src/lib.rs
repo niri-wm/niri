@@ -1671,6 +1671,19 @@ mod tests {
                         ),
                     },
                 ),
+                screen_transition: ScreenTransitionAnim {
+                    anim: Animation {
+                        off: false,
+                        kind: Spring(
+                            SpringParams {
+                                damping_ratio: 1.0,
+                                stiffness: 1000,
+                                epsilon: 0.0001,
+                            },
+                        ),
+                    },
+                    custom_shader: None,
+                },
             },
             blur: Blur {
                 off: false,
