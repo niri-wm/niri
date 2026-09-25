@@ -103,6 +103,7 @@ input {
     }
 
     // disable-power-key-handling
+    // disable-vt-handling
     // warp-mouse-to-focus
     // focus-follows-mouse max-scroll-amount="0%"
     // workspace-auto-back-and-forth
@@ -308,6 +309,17 @@ Set this if you would like to configure the power button elsewhere (i.e. `logind
 ```kdl
 input {
     disable-power-key-handling
+}
+```
+
+#### `disable-vt-handling`
+
+By default, niri will handle VT switch (Ctrl+Alt+F<N>). You can disable VT switching if you want to configure something else, or just let apps have these key events.
+You can still switch to another VT with `sudo chvt N`.
+
+```kdl
+input {
+    disable-vt-handling
 }
 ```
 
