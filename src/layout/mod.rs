@@ -1462,6 +1462,84 @@ impl<W: LayoutElement> Layout<W> {
         None
     }
 
+    pub fn find_window_and_output_by(
+        &self,
+        mut f: impl FnMut(&W, Option<&Output>) -> bool,
+    ) -> Option<(&W, Option<&Output>)> {
+        if let Some(InteractiveMoveState::Moving(move_)) = &self.interactive_move {
+            let win = move_.tile.window();
+            let out = Some(&move_.output);
+            if f(win, out) {
+                return Some((win, out));
+            }
+        }
+
+        match &self.monitor_set {
+            MonitorSet::Normal { monitors, .. } => {
+                for mon in monitors {
+                    let out = Some(&mon.output);
+                    for ws in &mon.workspaces {
+                        for win in ws.windows() {
+                            if f(win, out) {
+                                return Some((win, out));
+                            }
+                        }
+                    }
+                }
+            }
+            MonitorSet::NoOutputs { workspaces } => {
+                for ws in workspaces {
+                    for win in ws.windows() {
+                        if f(win, None) {
+                            return Some((win, None));
+                        }
+                    }
+                }
+            }
+        }
+
+        None
+    }
+
+    pub fn find_window_and_output_mut_by(
+        &mut self,
+        mut f: impl FnMut(&W, Option<&Output>) -> bool,
+    ) -> Option<(&mut W, Option<&Output>)> {
+        if let Some(InteractiveMoveState::Moving(move_)) = &mut self.interactive_move {
+            let win = move_.tile.window_mut();
+            let out = Some(&move_.output);
+            if f(win, out) {
+                return Some((win, out));
+            }
+        }
+
+        match &mut self.monitor_set {
+            MonitorSet::Normal { monitors, .. } => {
+                for mon in monitors {
+                    let out = Some(&mon.output);
+                    for ws in &mut mon.workspaces {
+                        for win in ws.windows_mut() {
+                            if f(win, out) {
+                                return Some((win, out));
+                            }
+                        }
+                    }
+                }
+            }
+            MonitorSet::NoOutputs { workspaces } => {
+                for ws in workspaces {
+                    for win in ws.windows_mut() {
+                        if f(win, None) {
+                            return Some((win, None));
+                        }
+                    }
+                }
+            }
+        }
+
+        None
+    }
+
     /// Computes the window-geometry-relative target rect for popup unconstraining.
     ///
     /// We will try to fit popups inside this rect.
