@@ -180,13 +180,13 @@ impl Winit {
 
         let config = self.config.borrow();
         if let Some(src) = config.animations.window_resize.custom_shader.as_deref() {
-            shaders::set_custom_resize_program(renderer, Some(src));
+            shaders::set_custom_window_resize_program(renderer, Some(src));
         }
         if let Some(src) = config.animations.window_close.custom_shader.as_deref() {
-            shaders::set_custom_close_program(renderer, Some(src));
+            shaders::set_custom_window_close_program(renderer, Some(src));
         }
         if let Some(src) = config.animations.window_open.custom_shader.as_deref() {
-            shaders::set_custom_open_program(renderer, Some(src));
+            shaders::set_custom_window_open_program(renderer, Some(src));
         }
         drop(config);
 
