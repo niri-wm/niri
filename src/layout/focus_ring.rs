@@ -29,6 +29,18 @@ niri_render_elements! {
     }
 }
 
+impl FocusRingRenderElement {
+    pub fn with_alpha(self, alpha: f32) -> Self {
+        match self {
+            Self::SolidColor(e) => Self::SolidColor(e.with_alpha(alpha)),
+            Self::Gradient(e) => {
+                let alpha = e.alpha() * alpha;
+                Self::Gradient(e.with_alpha(alpha))
+            }
+        }
+    }
+}
+
 impl FocusRing {
     pub fn new(config: niri_config::FocusRing) -> Self {
         Self {

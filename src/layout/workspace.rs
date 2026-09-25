@@ -18,6 +18,7 @@ use smithay::wayland::compositor::with_states;
 use smithay::wayland::shell::xdg::SurfaceCachedState;
 
 use super::floating::{FloatingSpace, FloatingSpaceRenderElement};
+use super::focus_ring::{FocusRing, FocusRingRenderElement};
 use super::scrolling::{
     Column, ColumnWidth, ScrollDirection, ScrollingSpace, ScrollingSpaceRenderElement,
 };
@@ -91,6 +92,9 @@ pub struct Workspace<W: LayoutElement> {
 
     /// This workspace's shadow in the overview.
     shadow: Shadow,
+
+    /// This workspace's border in the overview.
+    border: FocusRing,
 
     /// This workspace's background.
     background_buffer: SolidColorBuffer,
@@ -268,6 +272,7 @@ impl<W: LayoutElement> Workspace<W> {
             view_size,
             working_area,
             shadow: Shadow::new(shadow_config),
+            border: FocusRing::new(options.overview.workspace_border.into()),
             background_buffer: SolidColorBuffer::new(view_size, options.layout.background_color),
             output: Some(output),
             clock,
@@ -331,6 +336,7 @@ impl<W: LayoutElement> Workspace<W> {
             view_size,
             working_area,
             shadow: Shadow::new(shadow_config),
+            border: FocusRing::new(options.overview.workspace_border.into()),
             background_buffer: SolidColorBuffer::new(view_size, options.layout.background_color),
             clock,
             base_options,
@@ -378,13 +384,18 @@ impl<W: LayoutElement> Workspace<W> {
         self.scrolling.are_transitions_ongoing() || self.floating.are_transitions_ongoing()
     }
 
-    pub fn update_render_elements(&mut self, is_active: bool, layer: RenderLayer) {
+    pub fn update_render_elements(
+        &mut self,
+        is_active_monitor: bool,
+        is_active_workspace: bool,
+        layer: RenderLayer,
+    ) {
         self.scrolling
-            .update_render_elements(is_active && !self.floating_is_active.get(), layer);
+            .update_render_elements(is_active_monitor && !self.floating_is_active.get(), layer);
 
         let view_rect = Rectangle::from_size(self.view_size);
         self.floating.update_render_elements(
-            is_active && self.floating_is_active.get(),
+            is_active_monitor && self.floating_is_active.get(),
             view_rect,
             layer,
         );
@@ -396,6 +407,17 @@ impl<W: LayoutElement> Workspace<W> {
                 CornerRadius::default(),
                 self.scale.fractional_scale(),
                 1.,
+            );
+
+            self.border.update_render_elements(
+                self.view_size,
+                is_active_monitor && is_active_workspace,
+                true,
+                self.is_urgent(),
+                view_rect,
+                CornerRadius::default(),
+                self.scale.fractional_scale(),
+                1.0,
             );
         }
     }
@@ -426,6 +448,9 @@ impl<W: LayoutElement> Workspace<W> {
             compute_workspace_shadow_config(options.overview.workspace_shadow, self.view_size);
         self.shadow.update_config(shadow_config);
 
+        self.border
+            .update_config(options.overview.workspace_border.into());
+
         self.background_buffer
             .set_color(options.layout.background_color);
 
@@ -446,6 +471,7 @@ impl<W: LayoutElement> Workspace<W> {
         self.scrolling.update_shaders();
         self.floating.update_shaders();
         self.shadow.update_shaders();
+        self.border.update_shaders();
     }
 
     pub fn windows(&self) -> impl Iterator<Item = &W> + '_ {
@@ -1700,6 +1726,14 @@ impl<W: LayoutElement> Workspace<W> {
         push: &mut dyn FnMut(ShadowRenderElement),
     ) {
         self.shadow.render(renderer, Point::from((0., 0.)), push);
+    }
+
+    pub fn render_border<R: NiriRenderer>(
+        &self,
+        renderer: &mut R,
+        push: &mut dyn FnMut(FocusRingRenderElement),
+    ) {
+        self.border.render(renderer, Point::from((0., 0.)), push);
     }
 
     pub fn render_background(&self) -> SolidColorRenderElement {

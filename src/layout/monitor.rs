@@ -20,6 +20,7 @@ use super::workspace::{
 use super::{compute_overview_zoom, ActivateWindow, HitType, LayoutElement, Options};
 use crate::animation::{Animation, Clock};
 use crate::input::swipe_tracker::SwipeTracker;
+use crate::layout::focus_ring::FocusRingRenderElement;
 use crate::layout::RenderLayer;
 use crate::niri_render_elements;
 use crate::render_helpers::renderer::NiriRenderer;
@@ -188,7 +189,7 @@ niri_render_elements! {
     MonitorInnerRenderElement<R> => {
         Workspace = CropRenderElement<WorkspaceRenderElement<R>>,
         InsertHint = CropRenderElement<InsertHintRenderElement>,
-        UncroppedInsertHint = InsertHintRenderElement,
+        FocusRing = FocusRingRenderElement,
         Shadow = ShadowRenderElement,
         SolidColor = SolidColorRenderElement,
     }
@@ -1092,12 +1093,20 @@ impl<W: LayoutElement> Monitor<W> {
             .as_ref()
             .and_then(|hint| hint.workspace.existing_id());
 
+        let active_ws_id = self.workspaces[self.active_workspace_idx].id();
+
         for ws in &mut self.workspaces {
-            ws.update_render_elements(is_active, RenderLayer::MovingBetweenWorkspaces);
+            let is_active_ws = ws.id() == active_ws_id;
+            ws.update_render_elements(
+                is_active,
+                is_active_ws,
+                RenderLayer::MovingBetweenWorkspaces,
+            );
         }
 
         for (ws, geo) in self.workspaces_with_render_geo_mut(true) {
-            ws.update_render_elements(is_active, RenderLayer::Normal);
+            let is_active_ws = ws.id() == active_ws_id;
+            ws.update_render_elements(is_active, is_active_ws, RenderLayer::Normal);
 
             if Some(ws.id()) == insert_hint_ws_id {
                 insert_hint_ws_geo = Some(geo);
@@ -1668,7 +1677,7 @@ impl<W: LayoutElement> Monitor<W> {
 
         self.insert_hint_element
             .render(renderer, render_loc.location, &mut |elem| {
-                let elem = MonitorInnerRenderElement::UncroppedInsertHint(elem);
+                let elem = MonitorInnerRenderElement::FocusRing(elem);
                 let elem = RescaleRenderElement::from_element(elem, Point::default(), 1.);
                 let elem =
                     RelocateRenderElement::from_element(elem, Point::default(), Relocate::Relative);
@@ -1839,6 +1848,36 @@ impl<W: LayoutElement> Monitor<W> {
                     Relocate::Relative,
                 );
                 push(elem);
+            });
+        }
+    }
+
+    pub fn render_workspace_borders<R: NiriRenderer>(
+        &self,
+        renderer: &mut R,
+        push: &mut dyn FnMut(MonitorRenderElement<R>),
+    ) {
+        let Some(progress) = self.overview_progress.as_ref().map(|p| p.clamped_value()) else {
+            return;
+        };
+        let alpha = progress.clamp(0., 1.) as f32;
+
+        let _span = tracy_client::span!("Monitor::render_workspace_borders");
+
+        let scale = self.scale.fractional_scale();
+        let zoom = self.overview_zoom();
+
+        for (ws, geo) in self.workspaces_with_render_geo() {
+            ws.render_border(renderer, &mut |elem| {
+                let elem = elem.with_alpha(alpha);
+                let elem = MonitorInnerRenderElement::FocusRing(elem);
+                let elem = RescaleRenderElement::from_element(elem, Point::from((0, 0)), zoom);
+                let elem = RelocateRenderElement::from_element(
+                    elem,
+                    geo.loc.to_physical_precise_round(scale),
+                    Relocate::Relative,
+                );
+                push(elem)
             });
         }
     }
