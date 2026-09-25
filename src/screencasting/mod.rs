@@ -387,6 +387,22 @@ impl State {
 
     pub fn on_screen_cast_msg(&mut self, msg: ScreenCastToNiri) {
         match msg {
+            ScreenCastToNiri::GetWindowSize { id, reply } => {
+                let size = match self.niri.layout.windows().find(|(_, m)| m.id().get() == id) {
+                    Some((_, mapped)) => {
+                        let size = mapped.window.bbox_with_popups().size;
+                        if size.is_empty() {
+                            Err(zbus::fdo::Error::Failed("window is empty".to_owned()))
+                        } else {
+                            Ok(Some(size))
+                        }
+                    }
+                    None if id == self.niri.casting.dynamic_cast_id_for_portal.get() => Ok(None),
+                    None => Err(zbus::fdo::Error::Failed("no such window".to_owned())),
+                };
+                // The requesting D-Bus call may have been cancelled.
+                let _ = reply.try_send(size);
+            }
             ScreenCastToNiri::StartCast {
                 session_id,
                 stream_id,
