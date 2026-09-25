@@ -1,23 +1,33 @@
+use std::cell::{Ref, RefCell};
+use std::sync::Arc;
+
+use niri_config::animations::LayerOpenAnim;
 use niri_config::utils::MergeWith as _;
-use niri_config::{Config, LayerRule};
+use niri_config::{Config, LayerRule, ResolvedPopupsRules};
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::element::Kind;
+use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::desktop::{LayerSurface, PopupKind, PopupManager};
+use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Size};
 use smithay::wayland::compositor::{remove_pre_commit_hook, HookId};
 use smithay::wayland::shell::wlr_layer::{ExclusiveZone, Layer};
 
 use super::ResolvedLayerRules;
-use crate::animation::Clock;
+use crate::animation::{Animation, Clock};
+use crate::layer::closing_layer::ClosingLayerRenderElement;
+use crate::layer::opening_layer::{OpenAnimation, OpeningLayerRenderElement};
 use crate::layout::shadow::Shadow;
 use crate::niri_render_elements;
 use crate::render_helpers::background_effect::BackgroundEffectElement;
+use crate::render_helpers::offscreen::OffscreenData;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::shadow::ShadowRenderElement;
+use crate::render_helpers::snapshot::RenderSnapshot;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
 use crate::render_helpers::surface::push_elements_from_surface_tree;
 use crate::render_helpers::xray::XrayPos;
-use crate::render_helpers::{background_effect, RenderCtx};
+use crate::render_helpers::{background_effect, encompassing_geo, RenderCtx, RenderTarget};
 use crate::utils::{baba_is_float_offset, round_logical_in_physical};
 
 #[derive(Debug)]
@@ -51,6 +61,15 @@ pub struct MappedLayer {
     /// Scale of the output the layer surface is on (and rounds its sizes to).
     scale: f64,
 
+    /// The animation upon opening a layer.
+    open_animation: Option<OpenAnimation>,
+
+    /// Offscreen state from the current frame's opening animation render.
+    offscreen_data: RefCell<Option<OffscreenData>>,
+
+    /// Snapshot of the last committed frame, used for the close animation.
+    unmap_snapshot: Option<LayerSurfaceRenderSnapshot>,
+
     /// Clock for driving animations.
     clock: Clock,
 }
@@ -61,7 +80,34 @@ niri_render_elements! {
         SolidColor = SolidColorRenderElement,
         Shadow = ShadowRenderElement,
         BackgroundEffect = BackgroundEffectElement,
+        Opening = OpeningLayerRenderElement,
+        Closing = ClosingLayerRenderElement,
     }
+}
+
+pub type LayerSurfaceRenderSnapshot = RenderSnapshot<
+    LayerSurfaceRenderElement<GlesRenderer>,
+    LayerSurfaceRenderElement<GlesRenderer>,
+>;
+
+/// A popup surface with rule-resolved parameters.
+///
+/// Shared by the open-animation offscreen collection and live popup rendering so both
+/// always cover the same set, like `Tile::render` does for windows.
+struct LayerPopup<'a> {
+    surface: &'a WlSurface,
+    /// Surface location relative to the layer origin.
+    surface_offset: Point<f64, Logical>,
+    /// Popup offset relative to the layer origin, for geometry and xray.
+    origin_offset: Point<f64, Logical>,
+    /// Popup size.
+    size: Size<f64, Logical>,
+    /// Negated popup geometry origin, for background effects.
+    surface_off: Point<f64, Logical>,
+    /// Resolved rules for this popup.
+    rules: ResolvedPopupsRules,
+    /// Effective alpha including the layer opacity.
+    alpha: f32,
 }
 
 impl MappedLayer {
@@ -88,6 +134,9 @@ impl MappedLayer {
             view_size,
             scale,
             shadow: Shadow::new(shadow_config),
+            open_animation: None,
+            offscreen_data: RefCell::new(None),
+            unmap_snapshot: None,
             blur_config: config.blur,
             clock,
         }
@@ -126,8 +175,166 @@ impl MappedLayer {
             .update_render_elements(size, true, radius, self.scale, 1.);
     }
 
+    pub fn store_unmap_snapshot(
+        &mut self,
+        renderer: &mut GlesRenderer,
+        geo_size: Size<f64, Logical>,
+    ) {
+        let _span = tracy_client::span!("MappedLayer::store_unmap_snapshot");
+        let mut contents = Vec::new();
+        self.render_normal_inner(
+            RenderCtx {
+                renderer,
+                target: RenderTarget::Output,
+                xray: None,
+            },
+            None,
+            Point::from((0., 0.)),
+            XrayPos::default(),
+            RenderTarget::Output.should_block_out(self.rules.block_out_from),
+            &mut |elem| contents.push(elem),
+        );
+        self.render_popups(
+            RenderCtx {
+                renderer,
+                target: RenderTarget::Output,
+                xray: None,
+            },
+            None,
+            Point::from((0., 0.)),
+            XrayPos::default(),
+            &mut |elem| contents.push(elem),
+        );
+
+        let mut contents_with_blocked_out_bg = None;
+        if self.rules.block_out_from.is_some() {
+            let mut with_blocked_out_bg = Vec::new();
+            self.render_normal_inner(
+                RenderCtx {
+                    renderer,
+                    target: RenderTarget::Output,
+                    xray: None,
+                },
+                None,
+                Point::from((0., 0.)),
+                XrayPos::default(),
+                true,
+                &mut |elem| with_blocked_out_bg.push(elem),
+            );
+            self.render_popups(
+                RenderCtx {
+                    renderer,
+                    target: RenderTarget::Output,
+                    xray: None,
+                },
+                None,
+                Point::from((0., 0.)),
+                XrayPos::default(),
+                &mut |elem| with_blocked_out_bg.push(elem),
+            );
+
+            contents_with_blocked_out_bg = Some(with_blocked_out_bg);
+        }
+
+        // A bit of a hack to render blocked out as for screencast, but I think it's fine here as
+        // well.
+        let mut blocked_out_contents = Vec::new();
+        self.render_normal_inner(
+            RenderCtx {
+                renderer,
+                target: RenderTarget::Screencast,
+                xray: None,
+            },
+            None,
+            Point::from((0., 0.)),
+            XrayPos::default(),
+            RenderTarget::Screencast.should_block_out(self.rules.block_out_from),
+            &mut |elem| blocked_out_contents.push(elem),
+        );
+        self.render_popups(
+            RenderCtx {
+                renderer,
+                target: RenderTarget::Screencast,
+                xray: None,
+            },
+            None,
+            Point::from((0., 0.)),
+            XrayPos::default(),
+            &mut |elem| blocked_out_contents.push(elem),
+        );
+
+        let is_empty = contents.is_empty() && blocked_out_contents.is_empty();
+        if is_empty {
+            // Preserve the last live snapshot if the surface tree has already started tearing
+            // down. A late empty capture must not erase a usable close frame.
+            return;
+        }
+
+        self.unmap_snapshot = Some(LayerSurfaceRenderSnapshot {
+            contents,
+            blocked_out_contents,
+            contents_with_blocked_out_bg,
+            block_out_from: self.rules.block_out_from,
+            size: geo_size,
+            texture: Default::default(),
+            texture_with_blocked_out_bg: Default::default(),
+            blocked_out_texture: Default::default(),
+        });
+    }
+
+    pub fn store_unmap_snapshot_if_empty(
+        &mut self,
+        renderer: &mut GlesRenderer,
+        geo_size: Size<f64, Logical>,
+    ) {
+        if self.unmap_snapshot.is_none() {
+            self.store_unmap_snapshot(renderer, geo_size);
+        }
+    }
+
+    pub fn take_unmap_snapshot(&mut self) -> Option<LayerSurfaceRenderSnapshot> {
+        self.unmap_snapshot.take()
+    }
+
+    pub fn offscreen_data(&self) -> Ref<'_, Option<OffscreenData>> {
+        self.offscreen_data.borrow()
+    }
+
+    pub fn advance_animations(&mut self) {
+        if self
+            .open_animation
+            .as_ref()
+            .is_some_and(|open_anim| open_anim.is_done())
+        {
+            self.open_animation = None;
+        }
+    }
+
+    pub fn start_open_animation(
+        &mut self,
+        anim_config: &LayerOpenAnim,
+        custom_shader: Option<Arc<str>>,
+    ) {
+        if self.open_animation.is_some() {
+            return;
+        }
+
+        self.open_animation = Some(OpenAnimation::new(
+            Animation::new(self.clock.clone(), 0., 1., 0., anim_config.anim),
+            custom_shader.clone(),
+        ));
+    }
+
+    pub fn open_animation_is_active(&self) -> bool {
+        self.open_animation.is_some()
+    }
+
     pub fn are_animations_ongoing(&self) -> bool {
         self.rules.baba_is_float
+            || self
+                .open_animation
+                .as_ref()
+                .is_some_and(|open| !open.is_done())
     }
 
     pub fn surface(&self) -> &LayerSurface {
@@ -186,22 +393,118 @@ impl MappedLayer {
 
     pub fn render_normal<R: NiriRenderer>(
         &self,
-        mut ctx: RenderCtx<R>,
+        ctx: RenderCtx<R>,
         ns: Option<usize>,
         location: Point<f64, Logical>,
         xray_pos: XrayPos,
+        geo_size: Size<f64, Logical>,
         push: &mut dyn FnMut(LayerSurfaceRenderElement<R>),
     ) {
         let scale = Scale::from(self.scale);
         let alpha = self.rules.opacity.unwrap_or(1.).clamp(0., 1.);
-
         let bob_offset = self.bob_offset();
         let location = location + bob_offset;
         let xray_pos = xray_pos.offset(bob_offset);
+        let should_block_out = ctx.target.should_block_out(self.rules.block_out_from);
 
+        self.set_offscreen_data(None);
+
+        // When should_block_out (screencast privacy), skip the open animation
+        // entirely and fall through to render_normal_inner which renders a
+        // solid-color block-out instead of real surface contents.
+        if let Some(open) = &self.open_animation {
+            if !should_block_out {
+                let mut elements: Vec<WaylandSurfaceRenderElement<GlesRenderer>> = Vec::new();
+                push_elements_from_surface_tree(
+                    ctx.renderer.as_gles_renderer(),
+                    self.surface.wl_surface(),
+                    Point::from((0, 0)),
+                    scale,
+                    alpha,
+                    Kind::ScanoutCandidate,
+                    &mut |elem| elements.push(elem),
+                );
+
+                // Collect popup elements so they animate together with the
+                // main surface rather than popping in at full opacity.
+                self.for_each_popup(alpha, |entry| {
+                    let surface_loc = entry.surface_offset.to_physical_precise_round(scale);
+
+                    push_elements_from_surface_tree(
+                        ctx.renderer.as_gles_renderer(),
+                        entry.surface,
+                        surface_loc,
+                        scale,
+                        entry.alpha,
+                        Kind::ScanoutCandidate,
+                        &mut |elem| elements.push(elem),
+                    );
+                });
+
+                if !elements.is_empty() {
+                    // Prefer the compositor-arranged geometry so the animation origin stays
+                    // stable even if content changes mid-animation. Fall back to the content
+                    // bounds for zero-size arranged geometry.
+                    let geo_size = if geo_size.w > 0. && geo_size.h > 0. {
+                        geo_size
+                    } else {
+                        encompassing_geo(scale, elements.iter())
+                            .size
+                            .to_f64()
+                            .to_logical(scale)
+                    };
+
+                    if geo_size.w > 0. && geo_size.h > 0. {
+                        let render_result = open.render(
+                            ctx.renderer.as_gles_renderer(),
+                            &elements,
+                            geo_size,
+                            location,
+                            scale,
+                            alpha,
+                        );
+                        match render_result {
+                            Ok((elem, data)) => {
+                                self.set_offscreen_data(Some(data));
+                                push(elem.into());
+                                // Push shadow and background_effect during the
+                                // open animation so they don't snap in when the
+                                // anim ends.
+                                self.push_shadow_and_background_effect(
+                                    ctx,
+                                    ns,
+                                    location,
+                                    xray_pos,
+                                    should_block_out,
+                                    push,
+                                );
+                                return;
+                            }
+                            Err(err) => {
+                                warn!("error rendering layer opening animation: {err:?}");
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        self.render_normal_inner(ctx, ns, location, xray_pos, should_block_out, push);
+    }
+
+    fn render_normal_inner<R: NiriRenderer>(
+        &self,
+        ctx: RenderCtx<R>,
+        ns: Option<usize>,
+        location: Point<f64, Logical>,
+        xray_pos: XrayPos,
+        should_block_out: bool,
+        push: &mut dyn FnMut(LayerSurfaceRenderElement<R>),
+    ) {
+        let scale = Scale::from(self.scale);
+        let alpha = self.rules.opacity.unwrap_or(1.).clamp(0., 1.);
         let surface = self.surface.wl_surface();
 
-        let should_block_out = ctx.target.should_block_out(self.rules.block_out_from);
         if should_block_out {
             // Round to physical pixels.
             let location = location.to_physical_precise_round(scale).to_logical(scale);
@@ -216,18 +519,32 @@ impl MappedLayer {
             push(elem.into());
         } else {
             // Layer surfaces don't have extra geometry like windows.
-            let buf_pos = location;
-
             push_elements_from_surface_tree(
                 ctx.renderer,
                 surface,
-                buf_pos.to_physical_precise_round(scale),
+                location.to_physical_precise_round(scale),
                 scale,
                 alpha,
                 Kind::ScanoutCandidate,
                 &mut |elem| push(elem.into()),
             );
         }
+
+        self.push_shadow_and_background_effect(ctx, ns, location, xray_pos, should_block_out, push);
+    }
+
+    /// Push shadow and background_effect elements for this layer surface.
+    fn push_shadow_and_background_effect<R: NiriRenderer>(
+        &self,
+        mut ctx: RenderCtx<R>,
+        ns: Option<usize>,
+        location: Point<f64, Logical>,
+        xray_pos: XrayPos,
+        should_block_out: bool,
+        push: &mut dyn FnMut(LayerSurfaceRenderElement<R>),
+    ) {
+        let scale = Scale::from(self.scale);
+        let surface = self.surface.wl_surface();
 
         let location = location.to_physical_precise_round(scale).to_logical(scale);
         self.shadow
@@ -255,6 +572,30 @@ impl MappedLayer {
         );
     }
 
+    fn for_each_popup(&self, base_alpha: f32, mut f: impl FnMut(LayerPopup<'_>)) {
+        let surface = self.surface.wl_surface();
+        for (popup, offset) in PopupManager::popups_for_surface(surface) {
+            let popup_rules = match popup {
+                PopupKind::Xdg(_) => self.rules.popups,
+                // IME popups aren't affected by rules for regular popups.
+                PopupKind::InputMethod(_) => ResolvedPopupsRules::default(),
+            };
+            let alpha = base_alpha * popup_rules.opacity.unwrap_or(1.).clamp(0., 1.);
+
+            let popup_surface = popup.wl_surface();
+            let popup_geo = popup.geometry();
+            f(LayerPopup {
+                surface: popup_surface,
+                surface_offset: (offset - popup_geo.loc).to_f64(),
+                origin_offset: offset.to_f64(),
+                size: popup_geo.size.to_f64(),
+                surface_off: popup_geo.loc.upscale(-1).to_f64(),
+                rules: popup_rules,
+                alpha,
+            });
+        }
+    }
+
     pub fn render_popups<R: NiriRenderer>(
         &self,
         mut ctx: RenderCtx<R>,
@@ -274,54 +615,61 @@ impl MappedLayer {
         let location = location + bob_offset;
         let xray_pos = xray_pos.offset(bob_offset);
 
-        let surface = self.surface.wl_surface();
-        for (popup, offset) in PopupManager::popups_for_surface(surface) {
-            let popup_rules = match popup {
-                PopupKind::Xdg(_) => self.rules.popups,
-                // IME popups aren't affected by rules for regular popups.
-                PopupKind::InputMethod(_) => niri_config::ResolvedPopupsRules::default(),
-            };
-            let alpha = alpha * popup_rules.opacity.unwrap_or(1.).clamp(0., 1.);
-
-            let surface = popup.wl_surface();
-            let popup_geo = popup.geometry();
-            let surface_loc = location + (offset - popup_geo.loc).to_f64();
+        self.for_each_popup(alpha, |entry| {
+            let surface_loc = location + entry.surface_offset;
 
             push_elements_from_surface_tree(
                 ctx.renderer,
-                surface,
+                entry.surface,
                 surface_loc.to_physical_precise_round(scale),
                 scale,
-                alpha,
+                entry.alpha,
                 Kind::ScanoutCandidate,
                 &mut |elem| push(elem.into()),
             );
 
-            let geometry = Rectangle::new(location + offset.to_f64(), popup_geo.size.to_f64());
-            let surface_off = popup_geo.loc.upscale(-1).to_f64();
+            let geometry = Rectangle::new(location + entry.origin_offset, entry.size);
             let surface_anim_scale = Scale::from(1.);
-            let mut effect = popup_rules.background_effect;
+            let mut effect = entry.rules.background_effect;
             // Default xray to false for pop-ups since they're always on top of something.
             if effect.xray.is_none() {
                 effect.xray = Some(false);
             }
-            let xray_pos = xray_pos.offset(offset.to_f64());
+            let xray_pos = xray_pos.offset(entry.origin_offset);
             background_effect::render_for_tile(
                 ctx.as_gles(),
                 ns,
                 geometry,
                 self.scale,
                 false,
-                surface,
-                surface_off,
+                entry.surface,
+                entry.surface_off,
                 surface_anim_scale,
                 self.blur_config,
-                popup_rules.geometry_corner_radius.unwrap_or_default(),
+                entry.rules.geometry_corner_radius.unwrap_or_default(),
                 effect,
                 false,
                 xray_pos,
                 &mut |elem| push(elem.into()),
             );
+        });
+    }
+
+    fn set_offscreen_data(&self, data: Option<OffscreenData>) {
+        let Some(data) = data else {
+            self.offscreen_data.replace(None);
+            return;
+        };
+
+        let mut offscreen_data = self.offscreen_data.borrow_mut();
+        match &mut *offscreen_data {
+            None => {
+                *offscreen_data = Some(data);
+            }
+            Some(existing) => {
+                existing.id = data.id;
+                existing.states.states.extend(data.states.states);
+            }
         }
     }
 }

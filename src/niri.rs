@@ -145,6 +145,7 @@ use crate::input::{
     mods_with_tablet_stylus_binds, mods_with_wheel_binds, TabletData,
 };
 use crate::ipc::server::IpcServer;
+use crate::layer::closing_layer::ClosingLayer;
 use crate::layer::mapped::LayerSurfaceRenderElement;
 use crate::layer::MappedLayer;
 use crate::layout::tile::TileRenderElement;
@@ -252,6 +253,10 @@ pub struct Niri {
 
     /// Extra data for mapped layer surfaces.
     pub mapped_layer_surfaces: HashMap<LayerSurface, MappedLayer>,
+
+    /// Layer surfaces in closing animations, scoped by output, layer level,
+    /// and backdrop rendering, mirroring how spaces own their closing windows.
+    pub closing_layers: HashMap<(Output, u8, bool), Vec<ClosingLayer>>,
 
     // Cached root surface for every surface, so that we can access it in destroyed() where the
     // normal get_parent() is cleared out.
@@ -1675,12 +1680,30 @@ impl State {
             layer_rules_changed = true;
         }
 
+        let new_layer_close_shader = config.animations.layer_close.custom_shader.as_deref();
+        let old_layer_close_shader = old_config.animations.layer_close.custom_shader.as_deref();
+        if new_layer_close_shader != old_layer_close_shader {
+            self.backend.with_primary_renderer(|renderer| {
+                shaders::set_custom_layer_close_program(renderer, new_layer_close_shader);
+            });
+            shaders_changed = true;
+        }
+
+        let new_layer_open_shader = config.animations.layer_open.custom_shader.as_deref();
+        let old_layer_open_shader = old_config.animations.layer_open.custom_shader.as_deref();
+        if new_layer_open_shader != old_layer_open_shader {
+            self.backend.with_primary_renderer(|renderer| {
+                shaders::set_custom_layer_open_program(renderer, new_layer_open_shader);
+            });
+            shaders_changed = true;
+        }
+
         if config.animations.window_resize.custom_shader
             != old_config.animations.window_resize.custom_shader
         {
             let src = config.animations.window_resize.custom_shader.as_deref();
             self.backend.with_primary_renderer(|renderer| {
-                shaders::set_custom_resize_program(renderer, src);
+                shaders::set_custom_window_resize_program(renderer, src);
             });
             shaders_changed = true;
         }
@@ -1690,7 +1713,7 @@ impl State {
         {
             let src = config.animations.window_close.custom_shader.as_deref();
             self.backend.with_primary_renderer(|renderer| {
-                shaders::set_custom_close_program(renderer, src);
+                shaders::set_custom_window_close_program(renderer, src);
             });
             shaders_changed = true;
         }
@@ -1700,9 +1723,16 @@ impl State {
         {
             let src = config.animations.window_open.custom_shader.as_deref();
             self.backend.with_primary_renderer(|renderer| {
-                shaders::set_custom_open_program(renderer, src);
+                shaders::set_custom_window_open_program(renderer, src);
             });
             shaders_changed = true;
+        }
+
+        if window_rules_changed || shaders_changed {
+            let live_sources = config.custom_shader_sources();
+            self.backend.with_primary_renderer(|renderer| {
+                shaders::prune_custom_program_caches(renderer, &live_sources);
+            });
         }
 
         if config.cursor.hide_after_inactive_ms != old_config.cursor.hide_after_inactive_ms {
@@ -2651,6 +2681,7 @@ impl Niri {
             unmapped_windows: HashMap::new(),
             unmapped_layer_surfaces: HashSet::new(),
             mapped_layer_surfaces: HashMap::new(),
+            closing_layers: HashMap::new(),
             root_surface: HashMap::new(),
             dmabuf_pre_commit_hook: HashMap::new(),
             blocker_cleared_tx,
@@ -4218,6 +4249,16 @@ impl Niri {
         self.exit_confirm_dialog.advance_animations();
         self.screenshot_ui.advance_animations();
         self.window_mru_ui.advance_animations();
+        self.mapped_layer_surfaces.values_mut().for_each(|mapped| {
+            mapped.advance_animations();
+        });
+        self.closing_layers.retain(|_, closings| {
+            closings.retain_mut(|closing| {
+                closing.advance_animations();
+                closing.are_animations_ongoing()
+            });
+            !closings.is_empty()
+        });
 
         for state in self.output_state.values_mut() {
             if let Some(transition) = &mut state.screen_transition {
@@ -4491,6 +4532,7 @@ impl Niri {
                 self.render_layer_normal(
                     ctx.r(),
                     $ns,
+                    output,
                     &layer_map,
                     $layer,
                     $xray_pos,
@@ -4498,18 +4540,16 @@ impl Niri {
                     $push,
                 );
             }};
-            ($layer:expr, true) => {{
-                push_normal_from_layer!($layer, None, XrayPos::default(), true, &mut |elem| {
-                    push(elem.into())
-                });
-            }};
             ($layer:expr, $ns:expr, $xray_pos:expr, $push:expr) => {{
                 push_normal_from_layer!($layer, $ns, $xray_pos, false, $push);
             }};
-            ($layer:expr) => {{
-                push_normal_from_layer!($layer, None, XrayPos::default(), false, &mut |elem| {
+            ($layer:expr, $backdrop:expr) => {{
+                push_normal_from_layer!($layer, None, XrayPos::default(), $backdrop, &mut |elem| {
                     push(elem.into())
                 });
+            }};
+            ($layer:expr) => {{
+                push_normal_from_layer!($layer, false);
             }};
         }
 
@@ -4624,6 +4664,7 @@ impl Niri {
             self.render_layer_normal(
                 ctx.r(),
                 None,
+                output,
                 &layer_map,
                 Layer::Background,
                 XrayPos::default(),
@@ -4641,6 +4682,7 @@ impl Niri {
             self.render_layer_normal(
                 ctx.r(),
                 None,
+                output,
                 &layer_map,
                 Layer::Background,
                 XrayPos::default(),
@@ -4705,6 +4747,7 @@ impl Niri {
         &self,
         mut ctx: RenderCtx<R>,
         ns: Option<usize>,
+        output: &Output,
         layer_map: &LayerMap,
         layer: Layer,
         xray_pos: XrayPos,
@@ -4714,7 +4757,20 @@ impl Niri {
         for (mapped, geo) in self.layers_in_render_order(layer_map, layer, for_backdrop) {
             let loc = geo.loc.to_f64();
             let xray_pos = xray_pos.offset(loc);
-            mapped.render_normal(ctx.r(), ns, loc, xray_pos, push);
+            mapped.render_normal(ctx.r(), ns, loc, xray_pos, geo.size.to_f64(), push);
+        }
+
+        let scale = Scale::from(output.current_scale().fractional_scale());
+        let view_rect = Rectangle::from_size(output_size(output));
+        if let Some(closings) = self.closing_layers.get(&(
+            output.clone(),
+            ClosingLayer::level_index(layer),
+            for_backdrop,
+        )) {
+            for closing in closings.iter().rev() {
+                let elem = closing.render(ctx.as_gles(), view_rect, scale);
+                push(elem.into());
+            }
         }
     }
 
@@ -4730,6 +4786,10 @@ impl Niri {
         push: &mut dyn FnMut(LayerSurfaceRenderElement<R>),
     ) {
         for (mapped, geo) in self.layers_in_render_order(layer_map, layer, for_backdrop) {
+            if mapped.open_animation_is_active() {
+                continue;
+            }
+
             let loc = geo.loc.to_f64();
             let xray_pos = xray_pos.offset(loc);
             mapped.render_popups(ctx.r(), ns, loc, xray_pos, push);
@@ -4770,12 +4830,17 @@ impl Niri {
                 .is_current_cursor_animated(output.current_scale().integer_scale());
 
             // Also check layer surfaces.
-            if !state.unfinished_animations_remain {
-                state.unfinished_animations_remain |= layer_map_for_output(output)
-                    .layers()
-                    .filter_map(|surface| self.mapped_layer_surfaces.get(surface))
-                    .any(|mapped| mapped.are_animations_ongoing());
-            }
+            state.unfinished_animations_remain |= layer_map_for_output(output)
+                .layers()
+                .filter_map(|surface| self.mapped_layer_surfaces.get(surface))
+                .any(|mapped| mapped.are_animations_ongoing());
+            state.unfinished_animations_remain |=
+                self.closing_layers
+                    .iter()
+                    .any(|((closing_output, _, _), closings)| {
+                        closing_output == output
+                            && closings.iter().any(|c| c.are_animations_ongoing())
+                    });
 
             // Render.
             res = backend.render(self, output, target_presentation_time);
@@ -5009,6 +5074,10 @@ impl Niri {
         for layer in layer_map_for_output(output).layers() {
             let surface = layer.wl_surface();
             let is_background = layer.layer() == Layer::Background;
+            let offscreen_data = self
+                .mapped_layer_surfaces
+                .get(layer)
+                .map(MappedLayer::offscreen_data);
 
             with_surfaces_surface_tree(surface, |surface, states| {
                 let primary_scanout_output = states
@@ -5017,13 +5086,24 @@ impl Niri {
                 let mut primary_scanout_output = primary_scanout_output.lock().unwrap();
                 let mut id = Id::from_wayland_resource(surface);
 
+                let mut offscreen_hit = false;
+                if let Some(data) = offscreen_data.as_ref().and_then(|data| data.as_ref()) {
+                    if data.states.element_was_presented(id.clone()) {
+                        id = data.id.clone();
+                        offscreen_hit = true;
+                    }
+                }
+
                 // Background layers may be invisible normally but visible through an xray
                 // background effect. Try to find it and use the xray element's id in this case.
                 //
                 // FIXME: this won't work if there's another layer of offscreen (e.g. window with
                 // an xray background during its opening animation). But hopefully with the
                 // refactor to draw background effects outside offscreens it won't be a problem.
-                if is_background && !render_element_states.element_was_presented(id.clone()) {
+                if !offscreen_hit
+                    && is_background
+                    && !render_element_states.element_was_presented(id.clone())
+                {
                     // A layer may be present either in background or backdrop, never in both.
                     if xray_bg
                         .render_element_states()
@@ -5049,7 +5129,7 @@ impl Niri {
             });
 
             // Popups never go into xray buffers.
-            for (popup, _) in PopupManager::popups_for_surface(surface) {
+            for (popup, _) in PopupManager::popups_for_surface(layer.wl_surface()) {
                 let surface = popup.wl_surface();
                 with_surfaces_surface_tree(surface, |surface, states| {
                     update_surface_primary_scanout_output(
