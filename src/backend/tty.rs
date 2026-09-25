@@ -395,10 +395,23 @@ pub struct SurfaceDmabufFeedback {
     pub scanout: DmabufFeedback,
 }
 
-struct GammaProps {
-    crtc: crtc::Handle,
+/// GAMMA_LUT information
+struct GammaDRM {
     gamma_lut: property::Handle,
     gamma_lut_size: property::Handle,
+}
+
+/// Gamma support handled by the device.
+enum GammaMode {
+    /// The device supports Gamma 3Dx1LUTs
+    Normal(GammaDRM),
+    /// The device only supports CTM
+    Degraded(property::Handle),
+}
+
+struct GammaProps {
+    crtc: crtc::Handle,
+    gamma_mode: GammaMode,
     previous_blob: Option<NonZeroU64>,
 }
 
@@ -2624,6 +2637,7 @@ impl Tty {
 
 impl GammaProps {
     fn new(device: &DrmDevice, crtc: crtc::Handle) -> anyhow::Result<Self> {
+        let mut ctm = None;
         let mut gamma_lut = None;
         let mut gamma_lut_size = None;
 
@@ -2640,6 +2654,13 @@ impl GammaProps {
             };
 
             match name {
+                "CTM" => {
+                    ensure!(
+                        matches!(info.value_type(), property::ValueType::Blob),
+                        "wrong CTM value type"
+                    );
+                    ctm = Some(prop)
+                }
                 "GAMMA_LUT" => {
                     ensure!(
                         matches!(info.value_type(), property::ValueType::Blob),
@@ -2658,21 +2679,33 @@ impl GammaProps {
             }
         }
 
-        let gamma_lut = gamma_lut.context("missing GAMMA_LUT property")?;
-        let gamma_lut_size = gamma_lut_size.context("missing GAMMA_LUT_SIZE property")?;
+        let gamma_mode = match (gamma_lut, gamma_lut_size) {
+            (Some(gamma_lut), Some(gamma_lut_size)) => GammaMode::Normal(GammaDRM {
+                gamma_lut,
+                gamma_lut_size,
+            }),
+            _ => {
+                warn!("missing GAMMA_LUT or GAMMA_LUT_SIZE property");
+                GammaMode::Degraded(ctm.expect("missing CTM property"))
+            }
+        };
 
         Ok(Self {
             crtc,
-            gamma_lut,
-            gamma_lut_size,
+            gamma_mode,
             previous_blob: None,
         })
     }
 
     fn gamma_size(&self, device: &DrmDevice) -> anyhow::Result<u32> {
-        let value = get_drm_property(device, self.crtc, self.gamma_lut_size)
-            .context("missing GAMMA_LUT_SIZE property")?;
-        Ok(value as u32)
+        match &self.gamma_mode {
+            GammaMode::Normal(gamma_drm) => {
+                let value = get_drm_property(device, self.crtc, gamma_drm.gamma_lut_size)
+                    .context("missing GAMMA_LUT_SIZE property")?;
+                Ok(value as u32)
+            }
+            GammaMode::Degraded(_) => Ok(256),
+        }
     }
 
     fn set_gamma(&mut self, device: &DrmDevice, gamma: Option<&[u16]>) -> anyhow::Result<()> {
@@ -2694,21 +2727,59 @@ impl GammaProps {
                 pub blue: u16,
                 pub reserved: u16,
             }
+            #[allow(non_camel_case_types)]
+            #[repr(C)]
+            #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+            pub struct drm_color_ctm {
+                pub matrix: [u64; 9],
+            }
 
             let (red, rest) = gamma.split_at(gamma_size);
             let (blue, green) = rest.split_at(gamma_size);
-            let mut data = zip(zip(red, blue), green)
-                .map(|((&red, &green), &blue)| drm_color_lut {
-                    red,
-                    green,
-                    blue,
-                    reserved: 0,
-                })
-                .collect::<Vec<_>>();
-            let data = cast_slice_mut(&mut data);
+            let blob = match self.gamma_mode {
+                GammaMode::Normal(_) => {
+                    let mut data = zip(zip(red, blue), green)
+                        .map(|((&red, &green), &blue)| drm_color_lut {
+                            red,
+                            green,
+                            blue,
+                            reserved: 0,
+                        })
+                        .collect::<Vec<_>>();
 
-            let blob = drm_ffi::mode::create_property_blob(device.as_fd(), data)
-                .context("error creating property blob")?;
+                    drm_ffi::mode::create_property_blob(device.as_fd(), cast_slice_mut(&mut data))
+                        .context("error creating property blob")?
+                }
+                GammaMode::Degraded(_) => {
+                    /// Transforms a u16 GAMMA_LUT value into a Q31.32 value for CTM matrix.
+                    fn from_u16_to_q31_32(value: u16) -> u64 {
+                        let normalized = value as f64 / u16::MAX as f64;
+
+                        (normalized * (1u64 << 32) as f64) as u64
+                    }
+
+                    let mut data = drm_color_ctm {
+                        matrix: [
+                            from_u16_to_q31_32(red[gamma_size - 1]),
+                            0,
+                            0,
+                            0,
+                            from_u16_to_q31_32(blue[gamma_size - 1]),
+                            0,
+                            0,
+                            0,
+                            from_u16_to_q31_32(green[gamma_size - 1]),
+                        ],
+                    };
+
+                    drm_ffi::mode::create_property_blob(
+                        device.as_fd(),
+                        cast_slice_mut(&mut data.matrix),
+                    )
+                    .context("error creating property blob")?
+                }
+            };
+
             NonZeroU64::new(u64::from(blob.blob_id))
         } else {
             None
@@ -2718,26 +2789,43 @@ impl GammaProps {
             let _span = tracy_client::span!("set_property");
 
             let blob = blob.map(NonZeroU64::get).unwrap_or(0);
-            device
-                .set_property(
-                    self.crtc,
-                    self.gamma_lut,
-                    property::Value::Blob(blob).into(),
-                )
-                .context("error setting GAMMA_LUT")
-                .inspect_err(|_| {
-                    if blob != 0 {
-                        // Destroy the blob we just allocated.
-                        if let Err(err) = device.destroy_property_blob(blob) {
-                            warn!("error destroying GAMMA_LUT property blob: {err:?}");
-                        }
-                    }
-                })?;
+            match &self.gamma_mode {
+                GammaMode::Normal(gamma_drm) => {
+                    device
+                        .set_property(
+                            self.crtc,
+                            gamma_drm.gamma_lut,
+                            property::Value::Blob(blob).into(),
+                        )
+                        .context("error setting GAMMA_LUT")
+                        .inspect_err(|_| {
+                            if blob != 0 {
+                                // Destroy the blob we just allocated.
+                                if let Err(err) = device.destroy_property_blob(blob) {
+                                    warn!("error destroying GAMMA_LUT property blob: {err:?}");
+                                }
+                            }
+                        })?;
+                }
+                GammaMode::Degraded(ctm) => {
+                    device
+                        .set_property(self.crtc, *ctm, property::Value::Blob(blob).into())
+                        .context("error setting GAMMA_LUT")
+                        .inspect_err(|_| {
+                            if blob != 0 {
+                                // Destroy the blob we just allocated.
+                                if let Err(err) = device.destroy_property_blob(blob) {
+                                    warn!("error destroying CTM property blob: {err:?}");
+                                }
+                            }
+                        })?;
+                }
+            }
         }
 
         if let Some(blob) = mem::replace(&mut self.previous_blob, blob) {
             if let Err(err) = device.destroy_property_blob(blob.get()) {
-                warn!("error destroying previous GAMMA_LUT blob: {err:?}");
+                warn!("error destroying previous property blob: {err:?}");
             }
         }
 
@@ -2748,13 +2836,22 @@ impl GammaProps {
         let _span = tracy_client::span!("GammaProps::restore_gamma");
 
         let blob = self.previous_blob.map(NonZeroU64::get).unwrap_or(0);
-        device
-            .set_property(
-                self.crtc,
-                self.gamma_lut,
-                property::Value::Blob(blob).into(),
-            )
-            .context("error setting GAMMA_LUT")?;
+        match &self.gamma_mode {
+            GammaMode::Normal(gamma_drm) => {
+                device
+                    .set_property(
+                        self.crtc,
+                        gamma_drm.gamma_lut,
+                        property::Value::Blob(blob).into(),
+                    )
+                    .context("error setting GAMMA_LUT")?;
+            }
+            GammaMode::Degraded(ctm) => {
+                device
+                    .set_property(self.crtc, *ctm, property::Value::Blob(blob).into())
+                    .context("error setting CTM")?;
+            }
+        }
 
         Ok(())
     }
