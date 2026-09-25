@@ -38,9 +38,11 @@ const FONT: &str = "sans 14px";
 const BORDER: i32 = 4;
 const TEXT_HIDE_P: &str =
     "Press <span face='mono' bgcolor='#2C2C2C'> Space </span> to save the screenshot.\n\
+     Press <span face='mono' bgcolor='#2C2C2C'> Ctrl+C </span> to save the screenshot to the clipboard only.\n\
      Press <span face='mono' bgcolor='#2C2C2C'> P </span> to hide the pointer.";
 const TEXT_SHOW_P: &str =
     "Press <span face='mono' bgcolor='#2C2C2C'> Space </span> to save the screenshot.\n\
+     Press <span face='mono' bgcolor='#2C2C2C'> Ctrl+C </span> to save the screenshot to the clipboard only.\n\
      Press <span face='mono' bgcolor='#2C2C2C'> P </span> to show the pointer.";
 
 // Ideally the screenshot UI should support cross-output selections. However, that poses some
