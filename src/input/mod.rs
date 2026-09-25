@@ -2926,48 +2926,67 @@ impl State {
                 let window = mapped.window.clone();
 
                 // Check if we need to start an interactive move.
-                if button == Some(MouseButton::Left) && !pointer.is_grabbed() {
-                    if is_overview_open || mod_down {
-                        let location = pointer.current_location();
+                if button == Some(MouseButton::Left)
+                    && !pointer.is_grabbed()
+                    && (is_overview_open || mod_down)
+                {
+                    let location = pointer.current_location();
 
+                    if !is_overview_open {
+                        self.niri.layout.activate_window(&window);
+                    }
+
+                    let start_data = PointerGrabStartData {
+                        focus: None,
+                        button: button_code,
+                        location,
+                    };
+                    let start_data = AnyStartData::Pointer(start_data);
+                    let icon = CursorIcon::Grabbing;
+                    if let Some(grab) =
+                        MoveGrab::new(self, start_data, window.clone(), false, Some(icon))
+                    {
+                        pointer.set_grab(self, grab, serial, Focus::Clear);
+
+                        // Set the cursor to Grabbing right away for Mod+LMB since it doesn't
+                        // do any other gesture.
+                        //
+                        // In the overview, we click to activate window and close the overview,
+                        // in this case setting the cursor right away would be distracting.
                         if !is_overview_open {
-                            self.niri.layout.activate_window(&window);
-                        }
-
-                        let start_data = PointerGrabStartData {
-                            focus: None,
-                            button: button_code,
-                            location,
-                        };
-                        let start_data = AnyStartData::Pointer(start_data);
-                        let icon = CursorIcon::Grabbing;
-                        if let Some(grab) =
-                            MoveGrab::new(self, start_data, window.clone(), false, Some(icon))
-                        {
-                            pointer.set_grab(self, grab, serial, Focus::Clear);
-
-                            // Set the cursor to Grabbing right away for Mod+LMB since it doesn't
-                            // do any other gesture.
-                            //
-                            // In the overview, we click to activate window and close the overview,
-                            // in this case setting the cursor right away would be distracting.
-                            if !is_overview_open {
-                                self.niri
-                                    .cursor_manager
-                                    .set_cursor_image(CursorImageStatus::Named(icon));
-                            }
+                            self.niri
+                                .cursor_manager
+                                .set_cursor_image(CursorImageStatus::Named(icon));
                         }
                     }
                 }
                 // Check if we need to start an interactive resize.
-                else if button == Some(MouseButton::Right) && !pointer.is_grabbed() && mod_down {
+                else if !pointer.is_grabbed()
+                    && ((button == Some(MouseButton::Right) && mod_down)
+                        || (button == Some(MouseButton::Left)
+                            && !is_overview_open
+                            && modifiers.is_empty()
+                            && mapped.is_floating()))
+                {
                     let location = pointer.current_location();
                     let (output, pos_within_output) = self.niri.output_under(location).unwrap();
-                    let edges = self
-                        .niri
-                        .layout
-                        .resize_edges_under(output, pos_within_output)
-                        .unwrap_or(ResizeEdge::empty());
+                    let edges = if button == Some(MouseButton::Right) {
+                        self.niri
+                            .layout
+                            .resize_edges_under(output, pos_within_output)
+                    } else {
+                        self.niri
+                            .layout
+                            .window_under(output, pos_within_output)
+                            .and_then(|(hit_window, hit)| {
+                                (hit_window.id() == mapped.id()).then_some(hit)
+                            })
+                            .and_then(|hit| match hit {
+                                crate::layout::HitType::ResizeBorder { edges } => Some(edges),
+                                _ => None,
+                            })
+                    }
+                    .unwrap_or(ResizeEdge::empty());
 
                     if !edges.is_empty() {
                         // See if we got a double resize-click gesture.

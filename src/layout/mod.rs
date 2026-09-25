@@ -532,6 +532,15 @@ pub enum AddWindowTarget<'a, W: LayoutElement> {
     NextTo(&'a W::Id),
 }
 
+/// How to use a client's input region when hit testing a tile.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InputRegion {
+    /// Respect input region holes and return input hits where events can be forwarded.
+    Honor,
+    /// Use the entire tile geometry for activation, without forwarding input events.
+    Ignore,
+}
+
 /// Type of the window hit from `window_under()`.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum HitType {
@@ -540,9 +549,12 @@ pub enum HitType {
         /// Position of the window's buffer.
         win_pos: Point<f64, Logical>,
     },
-    /// The hit can activate a window, but it is not in the input region so cannot send events.
+    /// A visible compositor border that can start an interactive resize.
+    ResizeBorder { edges: ResizeEdge },
+    /// The hit can activate a window, but cannot be used for sending input events.
     ///
-    /// For example, this could be clicking on a tile border outside the window.
+    /// For example, this could be clicking a focus-ring background or a transformed overview
+    /// window.
     Activate {
         /// Whether the hit was on the tab indicator.
         is_tab_indicator: bool,
@@ -636,7 +648,7 @@ impl HitType {
     pub fn offset_win_pos(mut self, offset: Point<f64, Logical>) -> Self {
         match &mut self {
             HitType::Input { win_pos } => *win_pos += offset,
-            HitType::Activate { .. } => (),
+            HitType::ResizeBorder { .. } | HitType::Activate { .. } => (),
         }
         self
     }
@@ -645,15 +657,17 @@ impl HitType {
         tile: &Tile<W>,
         tile_pos: Point<f64, Logical>,
         point: Point<f64, Logical>,
+        input_region: InputRegion,
+        focus_ring: bool,
     ) -> Option<(&W, Self)> {
         let pos_within_tile = point - tile_pos;
-        tile.hit(pos_within_tile)
+        tile.hit(pos_within_tile, input_region, focus_ring)
             .map(|hit| (tile.window(), hit.offset_win_pos(tile_pos)))
     }
 
     pub fn to_activate(self) -> Self {
         match self {
-            HitType::Input { .. } => HitType::Activate {
+            HitType::Input { .. } | HitType::ResizeBorder { .. } => HitType::Activate {
                 is_tab_indicator: false,
             },
             HitType::Activate { .. } => self,
@@ -2354,14 +2368,25 @@ impl<W: LayoutElement> Layout<W> {
                     let zoom = self.overview_zoom();
                     let tile_pos = move_.tile_render_location(zoom);
                     let pos_within_tile = (pos_within_output - tile_pos).downscale(zoom);
-                    // During the overview animation, we cannot do input hits because we cannot
-                    // really represent scaled windows properly.
-                    let (win, hit) =
-                        HitType::hit_tile(&move_.tile, Point::from((0., 0.)), pos_within_tile)?;
+                    // Input cannot be forwarded to transformed overview windows, but activation
+                    // hit testing still respects their input regions.
+                    let (win, hit) = HitType::hit_tile(
+                        &move_.tile,
+                        Point::from((0., 0.)),
+                        pos_within_tile,
+                        InputRegion::Honor,
+                        true,
+                    )?;
                     Some((win, hit.to_activate()))
                 } else {
                     let tile_pos = move_.tile_render_location(1.);
-                    HitType::hit_tile(&move_.tile, tile_pos, pos_within_output)
+                    HitType::hit_tile(
+                        &move_.tile,
+                        tile_pos,
+                        pos_within_output,
+                        InputRegion::Honor,
+                        true,
+                    )
                 }
             } else {
                 None
@@ -2378,7 +2403,8 @@ impl<W: LayoutElement> Layout<W> {
         pos_within_output: Point<f64, Logical>,
     ) -> Option<(&W, HitType)> {
         let mon = self.monitor_for_output(output)?;
-        mon.window_under(pos_within_output)
+        let focus_ring = !self.interactive_move_is_moving_above_output(output);
+        mon.window_under(pos_within_output, focus_ring)
     }
 
     pub fn resize_edges_under(
@@ -2387,7 +2413,8 @@ impl<W: LayoutElement> Layout<W> {
         pos_within_output: Point<f64, Logical>,
     ) -> Option<ResizeEdge> {
         let mon = self.monitor_for_output(output)?;
-        mon.resize_edges_under(pos_within_output)
+        let focus_ring = !self.interactive_move_is_moving_above_output(output);
+        mon.resize_edges_under(pos_within_output, focus_ring)
     }
 
     pub fn workspace_under(
@@ -2643,6 +2670,7 @@ impl<W: LayoutElement> Layout<W> {
 
         // Scroll the view if needed.
         if let Some((output, pos_within_output, is_scrolling)) = dnd_scroll {
+            let focus_ring = !self.interactive_move_is_moving_above_output(&output);
             if let Some(mon) = self.monitor_for_output_mut(&output) {
                 let mut scrolled = false;
 
@@ -2668,7 +2696,7 @@ impl<W: LayoutElement> Layout<W> {
                     }
                 } else if is_dnd {
                     let target = mon
-                        .window_under(pos_within_output)
+                        .window_under(pos_within_output, focus_ring)
                         .map(|(win, _)| DndHoldTarget::Window(win.id().clone()))
                         .or_else(|| {
                             mon.workspace_under_narrow(pos_within_output)
