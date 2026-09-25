@@ -4796,6 +4796,16 @@ impl<W: LayoutElement> Layout<W> {
 
                 let output = move_.output.clone();
                 let pointer_pos_within_output = move_.pointer_pos_within_output;
+
+                let anim_config = move_
+                    .tile
+                    .window()
+                    .rules()
+                    .window_close
+                    .as_ref()
+                    .unwrap_or(&self.options.animations.window_close)
+                    .clone();
+
                 let Some(mon) = self.monitor_for_output_mut(&output) else {
                     return;
                 };
@@ -4806,7 +4816,15 @@ impl<W: LayoutElement> Layout<W> {
                 let ws = &mut mon.workspaces[idx];
 
                 let tile_pos = tile_pos - ws_geo.loc;
-                ws.start_close_animation_for_tile(renderer, snapshot, tile_size, tile_pos, blocker);
+
+                ws.start_close_animation_for_tile(
+                    renderer,
+                    snapshot,
+                    tile_size,
+                    tile_pos,
+                    blocker,
+                    &anim_config,
+                );
                 return;
             }
         }
