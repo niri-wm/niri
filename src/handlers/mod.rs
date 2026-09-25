@@ -21,6 +21,7 @@ use smithay::input::tablet::TabletSeatHandler;
 use smithay::input::{keyboard, Seat, SeatHandler, SeatState};
 use smithay::output::Output;
 use smithay::reexports::rustix::fs::{fcntl_setfl, OFlags};
+use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::XdgToplevel;
 use smithay::reexports::wayland_protocols_wlr::screencopy::v1::server::zwlr_screencopy_manager_v1::ZwlrScreencopyManagerV1;
 use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
@@ -64,6 +65,7 @@ use smithay::wayland::session_lock::{
 use smithay::wayland::xdg_activation::{
     XdgActivationHandler, XdgActivationState, XdgActivationToken, XdgActivationTokenData,
 };
+use smithay::wayland::xdg_toplevel_tag::XdgToplevelTagHandler;
 
 pub use crate::handlers::xdg_shell::KdeDecorationsModeState;
 use crate::input::click_grab::ClickGrab;
@@ -841,6 +843,16 @@ impl XdgActivationHandler for State {
 
         self.niri.activation_state.remove_token(&token);
     }
+}
+
+impl XdgToplevelTagHandler for State {
+    fn set_tag(&mut self, toplevel: XdgToplevel, _tag: String) {
+        let Some(toplevel) = self.niri.xdg_shell_state.get_toplevel(&toplevel) else {
+            return;
+        };
+        self.update_window_rules(&toplevel);
+    }
+    // no set_description because window rules only match on the tag
 }
 
 impl FractionalScaleHandler for State {}
