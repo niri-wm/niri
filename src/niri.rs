@@ -2057,6 +2057,27 @@ impl State {
                 }
             }
             niri_ipc::OutputAction::MaxBpc { max_bpc } => config.max_bpc = Some(MaxBpc(max_bpc)),
+            niri_ipc::OutputAction::ColorMatrix { matrix } => match matrix {
+                niri_ipc::ColorMatrixToSet::Reset => config.color_matrix = None,
+                niri_ipc::ColorMatrixToSet::Set { matrix } => {
+                    match <[f64; 9]>::try_from(matrix) {
+                        Ok([
+                            a, b, c, //
+                            d, e, f, //
+                            g, h, i,
+                        ]) => {
+                            config.color_matrix = Some(niri_config::output::ColorMatrix([
+                                [a, b, c], //
+                                [d, e, f], //
+                                [g, h, i],
+                            ]));
+                        }
+                        Err(matrix) => {
+                            warn!("ignoring invalid color matrix: expected 9 coefficients, got {}", matrix.len());
+                        }
+                    }
+                }
+            },
         });
 
         self.reload_output_config();
