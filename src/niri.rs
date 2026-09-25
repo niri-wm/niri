@@ -106,7 +106,7 @@ use smithay::wayland::shell::kde::decoration::KdeDecorationState;
 use smithay::wayland::shell::wlr_layer::{self, Layer, WlrLayerShellState};
 use smithay::wayland::shell::xdg::decoration::XdgDecorationState;
 use smithay::wayland::shell::xdg::XdgShellState;
-use smithay::wayland::shm::ShmState;
+use smithay::wayland::shm::{self, ShmState};
 #[cfg(test)]
 use smithay::wayland::single_pixel_buffer::SinglePixelBufferState;
 use smithay::wayland::socket::ListeningSocketSource;
@@ -190,7 +190,7 @@ use crate::utils::{
     logical_output, make_screenshot_path, output_matches_name, output_size, panel_orientation,
     send_scale_transform, winit_scale, write_png_rgba8, xwayland,
 };
-use crate::window::mapped::MappedId;
+use crate::window::mapped::{MappedId, WindowCastRenderElements};
 use crate::window::{InitialConfigureState, Mapped, ResolvedWindowRules, Unmapped, WindowRef};
 
 const CLEAR_COLOR_LOCKED: [f32; 4] = [0.3, 0.1, 0.1, 1.];
@@ -883,8 +883,38 @@ impl State {
 
         let mut sessions = mem::take(&mut self.niri.image_copy_sessions);
         sessions.retain_mut(|s| {
-            let Some(output) = live_output(&self.niri, &s.session.source()) else {
-                return false;
+            let source = s.session.source();
+
+            let Some(output) = live_output(&self.niri, &source) else {
+                let Some((mapped, output)) =
+                    image_copy_capture_impl::source_window(&self.niri, &source)
+                else {
+                    return false;
+                };
+                if !self.niri.output_state.contains_key(&output) {
+                    return false;
+                }
+                let size = image_copy_capture_impl::window_capture_bbox(mapped, &output).size;
+                let size = Size::<i32, BufferCoords>::from((size.w, size.h));
+                if s.session
+                    .current_constraints()
+                    .is_some_and(|c| c.size == size)
+                {
+                    return true;
+                }
+                let render_node = self.backend.primary_render_node();
+                return image_copy_capture_impl::refresh_session_constraints(
+                    &mut self.backend,
+                    s,
+                    |renderer| {
+                        Some(image_copy_capture_impl::window_capture_constraints(
+                            renderer,
+                            render_node,
+                            mapped,
+                            &output,
+                        ))
+                    },
+                );
             };
 
             // This runs once per event loop iteration, and building the full
@@ -901,29 +931,9 @@ impl State {
 
             // The size changed, so build the full constraints and send them to the client below.
             let render_node = self.backend.primary_render_node();
-            let constraints = self
-                .backend
-                .with_primary_renderer(|renderer| {
-                    image_copy_capture_impl::output_capture_constraints(
-                        renderer,
-                        render_node,
-                        &output,
-                    )
-                })
-                .flatten();
-            let Some(constraints) = constraints else {
-                return false;
-            };
-
-            // Cannot capture a frame for outdated constraints, so fail it
-            // before sending the new constraints (otherwise clients which
-            // re-negotiate on failure may miss the new `done`).
-            if let Some(frame) = s.pending_frame.take() {
-                frame.fail(CaptureFailureReason::BufferConstraints);
-            }
-            s.session.update_constraints(constraints);
-
-            true
+            image_copy_capture_impl::refresh_session_constraints(&mut self.backend, s, |renderer| {
+                image_copy_capture_impl::output_capture_constraints(renderer, render_node, &output)
+            })
         });
         // This shouldn't be possible since sessions are only added from the
         // ImageCopyCaptureHandler callbacks, which run in dispatch_clients()
@@ -936,7 +946,11 @@ impl State {
 
         // Cursor session constraints are refreshed in refresh_image_copy_cursor_sessions().
         let mut cursor_sessions = mem::take(&mut self.niri.image_copy_cursor_sessions);
-        cursor_sessions.retain(|s| live_output(&self.niri, &s.session.source()).is_some());
+        cursor_sessions.retain(|s| {
+            let source = s.session.source();
+            live_output(&self.niri, &source).is_some()
+                || image_copy_capture_impl::source_window(&self.niri, &source).is_some()
+        });
         // This shouldn't be possible since sessions are only added from the
         // ImageCopyCaptureHandler callbacks, which run in dispatch_clients()
         // (i.e., not in here), but append just in case it ever changes...
@@ -2357,6 +2371,38 @@ impl State {
         self.set_xkb_config(xkb.to_xkb_config());
         self.ipc_keyboard_layouts_changed();
     }
+}
+
+fn reset_damage_tracker_if_changed(
+    tracker: &mut OutputDamageTracker,
+    size: Size<i32, Physical>,
+    scale: Scale<f64>,
+    transform: Transform,
+) {
+    let OutputModeSource::Static {
+        size: last_size,
+        scale: last_scale,
+        transform: last_transform,
+    } = tracker.mode().clone()
+    else {
+        unreachable!("damage tracker must have static mode");
+    };
+
+    if size != last_size || scale != last_scale || transform != last_transform {
+        *tracker = OutputDamageTracker::new(size, scale, transform);
+    }
+}
+
+fn reset_damage_tracker(tracker: &mut OutputDamageTracker) {
+    let OutputModeSource::Static {
+        size,
+        scale,
+        transform,
+    } = tracker.mode().clone()
+    else {
+        unreachable!("damage tracker must have static mode");
+    };
+    *tracker = OutputDamageTracker::new(size, scale, transform);
 }
 
 impl Niri {
@@ -5544,6 +5590,67 @@ impl Niri {
         res
     }
 
+    /// Renders the elements into the frame's buffer and completes the frame.
+    #[allow(clippy::too_many_arguments)]
+    fn capture_image_copy_frame<E: RenderElement<GlesRenderer>>(
+        &self,
+        renderer: &mut GlesRenderer,
+        s: &mut ImageCopySession,
+        damage: Vec<Rectangle<i32, BufferCoords>>,
+        transform: Transform,
+        buffer_size: Size<i32, BufferCoords>,
+        shm_format: wl_shm::Format,
+        elements: &[E],
+        states: RenderElementStates,
+        target_presentation_time: Duration,
+    ) {
+        let frame = s.pending_frame.take().unwrap();
+        let buffer = frame.buffer();
+        let Some(capture_buffer) =
+            image_copy_capture_impl::capture_buffer(&buffer, buffer_size, shm_format)
+        else {
+            frame.fail(CaptureFailureReason::BufferConstraints);
+            // Report full damage next time.
+            reset_damage_tracker(&mut s.damage_tracker);
+            return;
+        };
+
+        let res = match capture_buffer {
+            CaptureBuffer::Dma(dmabuf) => {
+                render_to_dmabuf(renderer, &mut s.damage_tracker, dmabuf, elements, states)
+                    .map(Some)
+            }
+            CaptureBuffer::Shm => render_to_shm(
+                renderer,
+                &mut s.damage_tracker,
+                &buffer,
+                shm_format,
+                elements,
+                states,
+            )
+            .map(|()| None),
+        };
+
+        match res {
+            Ok(sync) => {
+                image_copy_capture_impl::frame_success_after_sync(
+                    frame,
+                    transform,
+                    damage,
+                    target_presentation_time,
+                    sync,
+                    &self.event_loop,
+                );
+            }
+            Err(err) => {
+                warn!("error rendering for image copy capture: {err:?}");
+                frame.fail(CaptureFailureReason::Unknown);
+                // Report full damage next time.
+                reset_damage_tracker(&mut s.damage_tracker);
+            }
+        }
+    }
+
     pub fn render_for_image_copy_capture(
         &mut self,
         renderer: &mut GlesRenderer,
@@ -5580,17 +5687,7 @@ impl Niri {
             }
 
             // Recreate the damage tracker if the output changed.
-            let OutputModeSource::Static {
-                size: last_size,
-                scale: last_scale,
-                transform: last_transform,
-            } = s.damage_tracker.mode().clone()
-            else {
-                unreachable!("damage tracker must have static mode");
-            };
-            if size != last_size || scale != last_scale || transform != last_transform {
-                s.damage_tracker = OutputDamageTracker::new(size, scale, transform);
-            }
+            reset_damage_tracker_if_changed(&mut s.damage_tracker, size, scale, transform);
 
             let draw_cursor = s.session.draw_cursor();
             let cached = &mut cached_elements[usize::from(draw_cursor)];
@@ -5623,55 +5720,98 @@ impl Niri {
                 })
                 .collect();
 
-            let frame = s.pending_frame.take().unwrap();
-            let buffer = frame.buffer();
             let buffer_size = Size::<i32, BufferCoords>::from((size.w, size.h));
-            let capture_buffer = image_copy_capture_impl::capture_buffer(
-                &buffer,
+            self.capture_image_copy_frame(
+                renderer,
+                s,
+                damage,
+                transform,
                 buffer_size,
                 wl_shm::Format::Xrgb8888,
+                elements,
+                states,
+                target_presentation_time,
             );
-            let Some(capture_buffer) = capture_buffer else {
+        }
+
+        for s in &mut sessions {
+            if s.pending_frame.is_none() {
+                continue;
+            }
+
+            let source = s.session.source();
+            let Some((mapped, win_output)) = image_copy_capture_impl::source_window(self, &source)
+            else {
+                continue;
+            };
+            if win_output != *output {
+                continue;
+            }
+
+            let Some(constraints) = s.session.current_constraints() else {
+                let frame = s.pending_frame.take().unwrap();
                 frame.fail(CaptureFailureReason::BufferConstraints);
-                // Report full damage next time.
-                s.damage_tracker = OutputDamageTracker::new(size, scale, transform);
+                continue;
+            };
+            let size = Size::<_, Physical>::from((constraints.size.w, constraints.size.h));
+
+            let scale = Scale::from(output.current_scale().fractional_scale());
+
+            // Recreate the damage tracker if the window size or output scale changed.
+            reset_damage_tracker_if_changed(&mut s.damage_tracker, size, scale, Transform::Normal);
+
+            let mut elements = Vec::new();
+            if s.session.draw_cursor() && self.pointer_visibility.is_visible() {
+                if let Some(win_pos) = self
+                    .layout
+                    .window_render_location(mapped.toplevel().wl_surface())
+                {
+                    let bbox = image_copy_capture_impl::window_capture_bbox(mapped, output);
+                    let buf_pos = win_pos + bbox.loc.to_f64().to_logical(scale);
+                    let pos = buf_pos.to_physical_precise_round(scale).upscale(-1);
+                    self.render_pointer(renderer, output, &mut |elem| {
+                        elements.push(WindowCaptureRenderElement::Pointer(
+                            RelocateRenderElement::from_element(elem, pos, Relocate::Relative),
+                        ));
+                    });
+                }
+            }
+            mapped.render_for_screen_cast(renderer, scale, &mut |elem| {
+                elements.push(WindowCaptureRenderElement::Window(elem));
+            });
+
+            let (damage, states) = s.damage_tracker.damage_output(1, &elements).unwrap();
+            let Some(damage) = damage else {
+                // No damage, capture the frame later.
                 continue;
             };
 
-            let res = match capture_buffer {
-                CaptureBuffer::Dma(dmabuf) => {
-                    render_to_dmabuf(renderer, &mut s.damage_tracker, dmabuf, elements, states)
-                        .map(Some)
-                }
-                CaptureBuffer::Shm => render_to_shm(
-                    renderer,
-                    &mut s.damage_tracker,
-                    &buffer,
-                    wl_shm::Format::Xrgb8888,
-                    elements,
-                    states,
-                )
-                .map(|()| None),
-            };
+            let damage: Vec<Rectangle<_, BufferCoords>> = damage
+                .iter()
+                .map(|dmg| {
+                    Rectangle::new(
+                        (dmg.loc.x, dmg.loc.y).into(),
+                        (dmg.size.w, dmg.size.h).into(),
+                    )
+                })
+                .collect();
 
-            match res {
-                Ok(sync) => {
-                    image_copy_capture_impl::frame_success_after_sync(
-                        frame,
-                        transform,
-                        damage,
-                        target_presentation_time,
-                        sync,
-                        &self.event_loop,
-                    );
-                }
-                Err(err) => {
-                    warn!("error rendering for image copy capture: {err:?}");
-                    frame.fail(CaptureFailureReason::Unknown);
-                    // Report full damage next time.
-                    s.damage_tracker = OutputDamageTracker::new(size, scale, transform);
-                }
-            }
+            // The client may have picked either of the two advertised shm formats.
+            let buffer = s.pending_frame.as_ref().unwrap().buffer();
+            let shm_format = shm::with_buffer_contents(&buffer, |_, _, data| data.format)
+                .unwrap_or(wl_shm::Format::Xrgb8888);
+
+            self.capture_image_copy_frame(
+                renderer,
+                s,
+                damage,
+                Transform::Normal,
+                constraints.size,
+                shm_format,
+                &elements,
+                states,
+                target_presentation_time,
+            );
         }
 
         // This shouldn't be possible since sessions are only added from the
@@ -5702,7 +5842,10 @@ impl Niri {
             if s.pending_frame.is_none() {
                 continue;
             }
-            let Some(s_output) = image_copy_capture_impl::source_output(&s.session.source()) else {
+
+            let Some(s_output) =
+                image_copy_capture_impl::source_session_output(self, &s.session.source())
+            else {
                 continue;
             };
             if s_output != *output {
@@ -5719,17 +5862,7 @@ impl Niri {
             let size = Size::<i32, Physical>::from((constraints.size.w, constraints.size.h));
 
             // Recreate the damage tracker if the cursor buffer size or output scale changed.
-            let OutputModeSource::Static {
-                size: last_size,
-                scale: last_scale,
-                ..
-            } = s.damage_tracker.mode().clone()
-            else {
-                unreachable!("damage tracker must have static mode");
-            };
-            if size != last_size || scale != last_scale {
-                s.damage_tracker = OutputDamageTracker::new(size, scale, Transform::Normal);
-            }
+            reset_damage_tracker_if_changed(&mut s.damage_tracker, size, scale, Transform::Normal);
 
             let elements = cached_elements
                 .get_or_insert_with(|| self.render_cursor_for_capture(renderer, output));
@@ -5857,8 +5990,43 @@ impl Niri {
 
         let mut sessions = mem::take(&mut self.image_copy_cursor_sessions);
         for s in &mut sessions {
-            let Some(output) = image_copy_capture_impl::source_output(&s.session.source()) else {
-                s.session.set_cursor_pos(None);
+            let source = s.session.source();
+
+            let Some(output) = image_copy_capture_impl::source_output(&source) else {
+                let Some((mapped, output)) = image_copy_capture_impl::source_window(self, &source)
+                else {
+                    s.session.set_cursor_pos(None);
+                    continue;
+                };
+                let Some(geo) = self.global_space.output_geometry(&output) else {
+                    s.session.set_cursor_pos(None);
+                    continue;
+                };
+
+                let scale = Scale::from(output.current_scale().fractional_scale());
+
+                image_copy_capture_impl::update_cursor_constraints(self, s, &output);
+
+                let hotspot = image_copy_capture_impl::cursor_capture_hotspot(self, &output);
+                s.session.set_cursor_hotspot((hotspot.x, hotspot.y));
+
+                let pos = if !self.pointer_visibility.is_visible() {
+                    None
+                } else {
+                    let bbox = image_copy_capture_impl::window_capture_bbox(mapped, &output);
+                    self.layout
+                        .window_render_location(mapped.toplevel().wl_surface())
+                        .and_then(|win_pos| {
+                            let ipos = (pointer_pos
+                                - geo.loc.to_f64()
+                                - (win_pos + bbox.loc.to_f64().to_logical(scale)))
+                            .to_physical_precise_round(scale);
+                            Rectangle::from_size(bbox.size)
+                                .contains(ipos)
+                                .then(|| Point::from((ipos.x, ipos.y)))
+                        })
+                };
+                s.session.set_cursor_pos(pos);
                 continue;
             };
             let Some(geo) = self.global_space.output_geometry(&output) else {
@@ -5873,21 +6041,7 @@ impl Niri {
             let scale = Scale::from(output.current_scale().fractional_scale());
 
             // Update the constraints if the cursor image size changed.
-            let constraints = image_copy_capture_impl::cursor_capture_constraints(self, &output);
-            let cursor_size = constraints.size;
-            let size_changed = s
-                .session
-                .current_constraints()
-                .is_none_or(|c| (c.size.w, c.size.h) != (constraints.size.w, constraints.size.h));
-            if size_changed {
-                // Cannot capture a frame for outdated constraints, so fail it
-                // before sending the new constraints (otherwise clients which
-                // re-negotiate on failure may miss the new `done`).
-                if let Some(frame) = s.pending_frame.take() {
-                    frame.fail(CaptureFailureReason::BufferConstraints);
-                }
-                s.session.update_constraints(constraints);
-            }
+            let cursor_size = image_copy_capture_impl::update_cursor_constraints(self, s, &output);
 
             let hotspot = image_copy_capture_impl::cursor_capture_hotspot(self, &output);
             s.session.set_cursor_hotspot((hotspot.x, hotspot.y));
@@ -5940,22 +6094,11 @@ impl Niri {
         Option<&'a Vec<Rectangle<i32, Physical>>>,
         RenderElementStates,
     ) {
-        let OutputModeSource::Static {
-            size: last_size,
-            scale: last_scale,
-            transform: last_transform,
-        } = damage_tracker.mode().clone()
-        else {
-            unreachable!("damage tracker must have static mode");
-        };
-
         let size = screencopy.buffer_size();
         let scale: Scale<f64> = output.current_scale().fractional_scale().into();
         let transform = output.current_transform();
 
-        if size != last_size || scale != last_scale || transform != last_transform {
-            *damage_tracker = OutputDamageTracker::new(size, scale, transform);
-        }
+        reset_damage_tracker_if_changed(damage_tracker, size, scale, transform);
 
         // Just checked damage tracker has static mode
         damage_tracker.damage_output(1, elements).unwrap()
@@ -7111,6 +7254,13 @@ niri_render_elements! {
     PointerRenderElements<R> => {
         Wayland = WaylandSurfaceRenderElement<R>,
         NamedPointer = MemoryRenderBufferRenderElement<R>,
+    }
+}
+
+niri_render_elements! {
+    WindowCaptureRenderElement<R> => {
+        Window = WindowCastRenderElements<R>,
+        Pointer = RelocateRenderElement<PointerRenderElements<R>>,
     }
 }
 

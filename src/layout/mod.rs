@@ -1430,6 +1430,31 @@ impl<W: LayoutElement> Layout<W> {
         None
     }
 
+    pub fn window_render_location(&self, wl_surface: &WlSurface) -> Option<Point<f64, Logical>> {
+        if self.overview_progress.is_some() {
+            return None;
+        }
+
+        if let Some(InteractiveMoveState::Moving(m)) = &self.interactive_move {
+            if m.tile.window().is_wl_surface(wl_surface) {
+                return Some(m.tile_render_location(1.) + m.tile.buf_loc() + m.tile.bob_offset());
+            }
+        }
+
+        match &self.monitor_set {
+            MonitorSet::Normal { monitors, .. } => {
+                for mon in monitors {
+                    if let Some(loc) = mon.window_render_location(wl_surface) {
+                        return Some(loc);
+                    }
+                }
+            }
+            MonitorSet::NoOutputs { .. } => (),
+        }
+
+        None
+    }
+
     pub fn find_window_and_output_mut(
         &mut self,
         wl_surface: &WlSurface,
