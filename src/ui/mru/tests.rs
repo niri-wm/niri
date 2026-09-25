@@ -9,6 +9,7 @@ fn create_thumbnail() -> Thumbnail {
         timestamp: None,
         on_current_output: false,
         on_current_workspace: false,
+        is_urgent: false,
         app_id: None,
         size: Size::new(100, 100),
         clock: Clock::with_time(Duration::ZERO),
@@ -42,6 +43,7 @@ fn arbitrary_scope() -> impl Strategy<Value = MruScope> {
         Just(MruScope::All),
         Just(MruScope::Output),
         Just(MruScope::Workspace),
+        Just(MruScope::Urgent),
     ]
 }
 
