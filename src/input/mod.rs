@@ -2437,6 +2437,34 @@ impl State {
         }
     }
 
+    fn clamp_pointer_to_lock_cursor_window(&self, pos: Point<f64, Logical>) -> Point<f64, Logical> {
+        if !self.niri.keyboard_focus.is_layout() {
+            return pos;
+        }
+
+        let Some(win) = self.niri.layout.focus() else {
+            return pos;
+        };
+        if win.rules().lock_cursor_when_focused != Some(true) {
+            return pos;
+        }
+        let Some((output, mut rect)) = self
+            .niri
+            .layout
+            .window_rect(crate::layout::LayoutElement::id(win))
+        else {
+            return pos;
+        };
+        let scale = 1. / output.current_scale().fractional_scale();
+        let output_geo = self.niri.global_space.output_geometry(output).unwrap();
+        rect.loc += output_geo.loc.to_f64();
+
+        Point::from((
+            pos.x.clamp(rect.loc.x, rect.loc.x + rect.size.w - scale),
+            pos.y.clamp(rect.loc.y, rect.loc.y + rect.size.h - scale),
+        ))
+    }
+
     fn on_pointer_motion<I: InputBackend>(&mut self, event: I::PointerMotionEvent) {
         let was_inside_hot_corner = self.niri.pointer_inside_hot_corner;
         // Any of the early returns here mean that the pointer is not inside the hot corner.
@@ -2570,6 +2598,8 @@ impl State {
             }
         }
 
+        new_pos = self.clamp_pointer_to_lock_cursor_window(new_pos);
+
         if let Some(output) = self.niri.screenshot_ui.selection_output() {
             let geom = self.niri.global_space.output_geometry(output).unwrap();
             let point = (new_pos - geom.loc.to_f64())
@@ -2700,6 +2730,8 @@ impl State {
         }) else {
             return;
         };
+
+        let pos = self.clamp_pointer_to_lock_cursor_window(pos);
 
         let serial = SERIAL_COUNTER.next_serial();
 
