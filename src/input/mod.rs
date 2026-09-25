@@ -6,7 +6,8 @@ use std::time::Duration;
 use calloop::timer::{TimeoutAction, Timer};
 use input::event::gesture::GestureEventCoordinates as _;
 use niri_config::{
-    Action, Bind, Binds, Config, Key, ModKey, Modifiers, MruDirection, SwitchBinds, Trigger,
+    Action, Bind, Binds, Config, Key, MagnifierZoomModifier, ModKey, Modifiers, MruDirection,
+    SwitchBinds, Trigger,
 };
 use niri_ipc::LayoutSwitchTarget;
 use smithay::backend::input::{
@@ -2305,6 +2306,11 @@ impl State {
                     self.niri.queue_redraw_all();
                 }
             }
+            Action::ToggleMagnifier => {
+                self.niri.magnifier_active = !self.niri.magnifier_active;
+                self.niri.magnifier.damage();
+                self.niri.queue_redraw_all();
+            }
             Action::ToggleWindowUrgent(id) => {
                 let window = self
                     .niri
@@ -3154,8 +3160,16 @@ impl State {
             // Wayland. If there's no bind, reset the accumulator.
             let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
             let modifiers = modifiers_from_state(mods);
+            let is_magnifier_zoom_scroll = match self.niri.config.borrow().magnifier.zoom_modifier {
+                MagnifierZoomModifier::Mod => modifiers == mod_key.to_modifiers(),
+                MagnifierZoomModifier::ModCtrl => {
+                    modifiers == mod_key.to_modifiers() | Modifiers::CTRL
+                }
+                MagnifierZoomModifier::None => modifiers.is_empty(),
+            };
             let should_handle = should_handle_in_overview
                 || is_mru_open
+                || is_magnifier_zoom_scroll
                 || self.niri.mods_with_wheel_binds.contains(&modifiers);
             if should_handle {
                 let horizontal = horizontal_amount_v120.unwrap_or(0.);
@@ -3283,6 +3297,19 @@ impl State {
                             hotkey_overlay_title: None,
                         });
                         (bind_up, bind_down)
+                    } else if is_magnifier_zoom_scroll {
+                        // Scroll (with the configured zoom-modifier held, if any) zooms the
+                        // magnifier directly, rather than going through the bind system — this
+                        // isn't a navigation action, just a live numeric adjustment. It also
+                        // activates the magnifier on first use, so no separate toggle press is
+                        // needed. Scroll up (ticks < 0) zooms in, scroll down (ticks > 0) zooms
+                        // out.
+                        self.niri.magnifier_active = true;
+                        let zoom_speed = self.niri.config.borrow().magnifier.zoom_speed;
+                        let target = self.niri.magnifier_zoom_target - ticks as f64 * zoom_speed;
+                        self.niri.set_magnifier_zoom_target(target);
+                        self.niri.queue_redraw_all();
+                        (None, None)
                     } else {
                         let config = self.niri.config.borrow();
                         let bindings =

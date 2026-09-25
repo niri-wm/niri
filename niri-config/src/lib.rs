@@ -83,6 +83,7 @@ pub struct Config {
     pub blur: Blur,
     pub gestures: Gestures,
     pub overview: Overview,
+    pub magnifier: Magnifier,
     pub environment: Environment,
     pub xwayland_satellite: XwaylandSatellite,
     pub window_rules: Vec<WindowRule>,
@@ -204,6 +205,7 @@ where
                 "blur" => m_merge!(blur),
                 "gestures" => m_merge!(gestures),
                 "overview" => m_merge!(overview),
+                "magnifier" => m_merge!(magnifier),
                 "xwayland-satellite" => m_merge!(xwayland_satellite),
                 "switch-events" => m_merge!(switch_events),
                 "debug" => m_merge!(debug),
@@ -1671,6 +1673,18 @@ mod tests {
                         ),
                     },
                 ),
+                magnifier_zoom: MagnifierZoomAnim(
+                    Animation {
+                        off: false,
+                        kind: Spring(
+                            SpringParams {
+                                damping_ratio: 1.0,
+                                stiffness: 800,
+                                epsilon: 0.0001,
+                            },
+                        ),
+                    },
+                ),
             },
             blur: Blur {
                 off: false,
@@ -1725,6 +1739,13 @@ mod tests {
                         a: 0.3137255,
                     },
                 },
+            },
+            magnifier: Magnifier {
+                zoom: 2.0,
+                max_zoom: 10.0,
+                zoom_speed: 0.25,
+                zoom_modifier: Mod,
+                hide_mouse: false,
             },
             environment: Environment(
                 [
