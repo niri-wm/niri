@@ -1468,8 +1468,8 @@ impl State {
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
-            Action::FocusWorkspaceDown => {
-                self.niri.layout.switch_workspace_down();
+            Action::FocusWorkspaceDown(output_ref) => {
+                self.niri.switch_workspace_down(output_ref);
                 self.maybe_warp_cursor_to_focus();
                 self.niri.layer_shell_on_demand_focus = None;
                 // FIXME: granular
@@ -1485,8 +1485,8 @@ impl State {
                     }
                 }
             }
-            Action::FocusWorkspaceUp => {
-                self.niri.layout.switch_workspace_up();
+            Action::FocusWorkspaceUp(output_ref) => {
+                self.niri.switch_workspace_up(output_ref);
                 self.maybe_warp_cursor_to_focus();
                 self.niri.layer_shell_on_demand_focus = None;
                 // FIXME: granular
@@ -1540,13 +1540,13 @@ impl State {
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
-            Action::MoveWorkspaceDown => {
-                self.niri.layout.move_workspace_down();
+            Action::MoveWorkspaceDown(output_ref) => {
+                self.niri.move_workspace_down(output_ref);
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
-            Action::MoveWorkspaceUp => {
-                self.niri.layout.move_workspace_up();
+            Action::MoveWorkspaceUp(output_ref) => {
+                self.niri.move_workspace_up(output_ref);
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
