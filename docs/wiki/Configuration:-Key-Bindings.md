@@ -15,7 +15,8 @@ binds {
 }
 ```
 
-The hotkey consists of modifiers separated by `+` signs, followed by an XKB key name in the end.
+The hotkey consists of modifiers separated by `+` signs, followed by a trigger key in the end.
+The trigger key can be either an XKB key name or <sup>Since: next release</sup> a modifier.
 
 Valid modifiers are:
 
@@ -80,6 +81,90 @@ binds {
 ```
 
 This is mostly useful for the scroll bindings.
+
+### Press and Release bindings
+
+<sup>Since: next release</sup>
+
+Binds can be set to trigger on key press, on key release, or both.
+By default, binds trigger on key press.
+You can change it using `press {}` and `release {}` blocks:
+
+```kdl
+binds {
+    // Trigger on press (default behavior).
+    Mod+T { spawn "alacritty"; }
+
+    // Trigger on release.
+    Mod { release { toggle-overview; }; }
+
+    // Trigger on both press and release with different actions.
+    Mod+Shift+Q {
+        press { spawn "notify-send" "Pressed"; }
+        release { spawn "notify-send" "Released"; }
+    }
+
+    // Toggleable behavior like push-to-talk can be implemented
+    // by putting the same toggle command on the press and release action.
+    Control_R {
+        press { spawn "toggle-command"; }
+        release { spawn "toggle-command"; }
+    }
+
+    // For multi-key modifier-only bindings,
+    // use Ctrl/Alt/etc. for the modifier keys and
+    // Control_L/Control_R/Alt_L/Alt_R/etc. for the trigger key.
+    Ctrl+Alt_L {
+        press { spawn "notify-send" "Pressed"; }
+        release { spawn "notify-send" "Released"; }
+    }
+}
+```
+
+Any modifier key can be bound by itself, using the same names as the `mod-key` setting: `Mod`, `Ctrl`, `Shift`, `Alt`, `Super`, `Mod5` (ISO Level 3 Shift), and `Mod3` (ISO Level 5 Shift):
+
+```kdl
+binds {
+    // Press and release Alt by itself to open a launcher.
+    Alt { release { spawn "wofi"; }; }
+}
+```
+
+A release-only bind whose key consists only of modifiers like this only triggers if the modifiers were not used for anything else in between.
+So if you press `Mod`, then press `Q` to trigger a `Mod+Q` bind, releasing `Mod` will not trigger the `Mod` bind.
+The same goes for a bind like `Ctrl+Alt_L`: use `Ctrl+Alt+L` for something else, and releasing `Alt` will not trigger it.
+This makes it safe to bind modifier keys by themselves, since using them in other shortcuts will not trigger them.
+
+Modifier keys and their keysyms are the same key: `Alt` triggers on `Alt_L` and `Alt_R` too, so binding both `Alt` and `Alt_L` is an error—one of them would always shadow the other.
+`Alt_L` and `Alt_R` are different keys, though, so those can be bound separately.
+
+Release bindings are useful when you want to bind a modifier key to an action.
+Modifiers usually participate in other bindings, so a press binding would trigger every time you try to input another binding.
+
+In bindings with both press and release, the release action is guaranteed to trigger if the press action triggers.
+So your push-to-talk press-release binding will never get stuck pressed, no matter how you release the keys.
+For example, a `Mod { press { ...; } release { ...; }; }` binding triggers its release action even when you use `Mod` in another shortcut while holding it.
+This also holds if the session gets locked while you hold the key.
+
+On the lock screen, as well as while the screenshot UI is open, a binding with both actions only runs if both of them are allowed there.
+Otherwise its press could start something that its release would never undo.
+
+By default, any key binding that includes a release action will have repeat turned off for its press action.
+This can be overridden with `repeat=true` if desired:
+
+```kdl
+binds {
+    Mod+Shift+Q repeat=true {
+        press { spawn "notify-send" "Pressed (repeating)"; }
+        release { spawn "notify-send" "Released"; }
+    }
+}
+```
+
+The modifiers of the bind itself (e.g. `Mod` in `Mod+T`) must be held when the key is pressed.
+When they are, the key press is intercepted and the release action triggers when the key is released, regardless of the modifiers held at that point or any other input in between.
+If the modifiers did not match when the key was pressed, the release action never triggers.
+The exception is a bind whose key consists only of modifiers (like `Mod` or `Ctrl+Alt_L`), since modifier key presses are forwarded to the focused window rather than intercepted: such binds are only kept if the modifiers were not used for anything else, as described above.
 
 ### Scroll Bindings
 

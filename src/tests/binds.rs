@@ -1,7 +1,7 @@
 use std::fmt::Write as _;
 
 use insta::assert_snapshot;
-use niri_config::{Action, Config};
+use niri_config::{Action, BoundAction, Config};
 use smithay::backend::input::{InputEvent, InputTime, KeyState, Keycode};
 use smithay::input::keyboard::xkb::Keymap;
 use wayland_client::protocol::wl_surface::WlSurface;
@@ -39,7 +39,14 @@ fn set_up(config: &str) -> (Fixture, ClientId, WlSurface) {
     let mut config = Config::parse_mem(config).unwrap();
     // knuffel doesn't understand #[cfg(test)]...
     for bind in &mut config.binds.0 {
-        bind.action = Action::TestAction;
+        bind.action = match &bind.action {
+            BoundAction::Press(_) => BoundAction::Press(Action::TestAction),
+            BoundAction::Release(_) => BoundAction::Release(Action::TestAction),
+            BoundAction::Both { .. } => BoundAction::Both {
+                press: Action::TestAction,
+                release: Action::TestAction,
+            },
+        };
     }
 
     let mut f = Fixture::with_config(config);
@@ -501,4 +508,488 @@ fn layouts() {
         surface key released: 42
     "
     );
+}
+
+#[test]
+fn release_binds() {
+    let c = "
+    binds {
+        Mod {
+            release { toggle-overview; }
+        }
+        Mod+Q {
+            release { close-window; }
+        }
+        Mod+L { center-column; }
+        Ctrl+Alt_L {
+            release { switch-layout \"next\"; }
+        }
+        Ctrl+Alt+L { close-window; }
+    }
+    ";
+
+    // Releasing Mod by itself runs its release action.
+    assert_snapshot!(run(c, "+LWIN -LWIN"), @"
+    +LWIN 133 XK_Super_L
+        surface modifiers: depressed=64, latched=0, locked=0, group=0
+        surface key pressed: 125
+    -LWIN 133 XK_Super_L
+        niri test-action
+        surface modifiers: depressed=0, latched=0, locked=0, group=0
+        surface key released: 125
+    ");
+
+    // Pressing another key in between cancels a modifier-only release bind.
+    assert_snapshot!(run(c, "+LWIN +LatA -LatA -LWIN"), @"
+    +LWIN 133 XK_Super_L
+        surface modifiers: depressed=64, latched=0, locked=0, group=0
+        surface key pressed: 125
+    +AC01  38 XK_a
+        surface key pressed: 30
+    -AC01  38 XK_a
+        surface key released: 30
+    -LWIN 133 XK_Super_L
+        surface modifiers: depressed=0, latched=0, locked=0, group=0
+        surface key released: 125
+    ");
+
+    // The same applies if the other key triggered a bind.
+    assert_snapshot!(run(c, "+LWIN +LatL -LatL -LWIN"), @"
+    +LWIN 133 XK_Super_L
+        surface modifiers: depressed=64, latched=0, locked=0, group=0
+        surface key pressed: 125
+    +AC09  46 XK_l
+        niri test-action
+    -AC09  46 XK_l
+    -LWIN 133 XK_Super_L
+        surface modifiers: depressed=0, latched=0, locked=0, group=0
+        surface key released: 125
+    ");
+
+    // Release-only binds on regular keys are not cancelled by other input, and they run even if
+    // the modifiers are released first.
+    assert_snapshot!(run(c, "+LWIN +LatQ +LatA -LatA -LWIN -LatQ"), @"
+    +LWIN 133 XK_Super_L
+        surface modifiers: depressed=64, latched=0, locked=0, group=0
+        surface key pressed: 125
+    +AD01  24 XK_q
+    +AC01  38 XK_a
+        surface key pressed: 30
+    -AC01  38 XK_a
+        surface key released: 30
+    -LWIN 133 XK_Super_L
+        surface modifiers: depressed=0, latched=0, locked=0, group=0
+        surface key released: 125
+    -AD01  24 XK_q
+        niri test-action
+    ");
+
+    // Ctrl+Alt_L is a modifier-only bind too: its whole key consists of modifiers, so releasing the
+    // combo on its own runs its release action.
+    assert_snapshot!(run(c, "+LCTL +LALT -LALT -LCTL"), @"
+    +LCTL  37 XK_Control_L
+        surface modifiers: depressed=4, latched=0, locked=0, group=0
+        surface key pressed: 29
+    +LALT  64 XK_Alt_L
+        surface modifiers: depressed=12, latched=0, locked=0, group=0
+        surface key pressed: 56
+    -LALT  64 XK_Alt_L
+        niri test-action
+        surface modifiers: depressed=4, latched=0, locked=0, group=0
+        surface key released: 56
+    -LCTL  37 XK_Control_L
+        surface modifiers: depressed=0, latched=0, locked=0, group=0
+        surface key released: 29
+    ");
+
+    // Pressing another key in between cancels it, just like for a bare modifier bind, so using
+    // Ctrl+Alt+L as an app shortcut does not additionally switch the layout.
+    assert_snapshot!(run(c, "+LCTL +LALT +LatA -LatA -LALT -LCTL"), @"
+    +LCTL  37 XK_Control_L
+        surface modifiers: depressed=4, latched=0, locked=0, group=0
+        surface key pressed: 29
+    +LALT  64 XK_Alt_L
+        surface modifiers: depressed=12, latched=0, locked=0, group=0
+        surface key pressed: 56
+    +AC01  38 XK_a
+        surface key pressed: 30
+    -AC01  38 XK_a
+        surface key released: 30
+    -LALT  64 XK_Alt_L
+        surface modifiers: depressed=4, latched=0, locked=0, group=0
+        surface key released: 56
+    -LCTL  37 XK_Control_L
+        surface modifiers: depressed=0, latched=0, locked=0, group=0
+        surface key released: 29
+    ");
+
+    // The same applies if the other key triggered a bind of its own.
+    assert_snapshot!(run(c, "+LCTL +LALT +LatL -LatL -LALT -LCTL"), @"
+    +LCTL  37 XK_Control_L
+        surface modifiers: depressed=4, latched=0, locked=0, group=0
+        surface key pressed: 29
+    +LALT  64 XK_Alt_L
+        surface modifiers: depressed=12, latched=0, locked=0, group=0
+        surface key pressed: 56
+    +AC09  46 XK_l
+        niri test-action
+    -AC09  46 XK_l
+    -LALT  64 XK_Alt_L
+        surface modifiers: depressed=4, latched=0, locked=0, group=0
+        surface key released: 56
+    -LCTL  37 XK_Control_L
+        surface modifiers: depressed=0, latched=0, locked=0, group=0
+        surface key released: 29
+    ");
+}
+
+#[test]
+fn press_and_release_binds() {
+    let c = "
+    binds {
+        Mod+Q {
+            press { close-window; }
+            release { center-column; }
+        }
+    }
+    ";
+
+    // Both actions run, and the key never reaches the surface.
+    assert_snapshot!(run(c, "+LWIN +LatQ -LatQ -LWIN"), @"
+    +LWIN 133 XK_Super_L
+        surface modifiers: depressed=64, latched=0, locked=0, group=0
+        surface key pressed: 125
+    +AD01  24 XK_q
+        niri test-action
+    -AD01  24 XK_q
+        niri test-action
+    -LWIN 133 XK_Super_L
+        surface modifiers: depressed=0, latched=0, locked=0, group=0
+        surface key released: 125
+    ");
+
+    // The release action runs even if the modifiers are released first.
+    assert_snapshot!(run(c, "+LWIN +LatQ -LWIN -LatQ"), @"
+    +LWIN 133 XK_Super_L
+        surface modifiers: depressed=64, latched=0, locked=0, group=0
+        surface key pressed: 125
+    +AD01  24 XK_q
+        niri test-action
+    -LWIN 133 XK_Super_L
+        surface modifiers: depressed=0, latched=0, locked=0, group=0
+        surface key released: 125
+    -AD01  24 XK_q
+        niri test-action
+    ");
+
+    // And even if extra modifiers are held when the key is released.
+    assert_snapshot!(run(c, "+LWIN +LatQ +LCTL +LFSH -LatQ -LFSH -LCTL -LWIN"), @"
+    +LWIN 133 XK_Super_L
+        surface modifiers: depressed=64, latched=0, locked=0, group=0
+        surface key pressed: 125
+    +AD01  24 XK_q
+        niri test-action
+    +LCTL  37 XK_Control_L
+        surface modifiers: depressed=68, latched=0, locked=0, group=0
+        surface key pressed: 29
+    +LFSH  50 XK_Shift_L
+        surface modifiers: depressed=69, latched=0, locked=0, group=0
+        surface key pressed: 42
+    -AD01  24 XK_Q
+        niri test-action
+    -LFSH  50 XK_Shift_L
+        surface modifiers: depressed=68, latched=0, locked=0, group=0
+        surface key released: 42
+    -LCTL  37 XK_Control_L
+        surface modifiers: depressed=64, latched=0, locked=0, group=0
+        surface key released: 29
+    -LWIN 133 XK_Super_L
+        surface modifiers: depressed=0, latched=0, locked=0, group=0
+        surface key released: 125
+    ");
+
+    // Push-to-talk: other input in between doesn't cancel the release action.
+    assert_snapshot!(run(c, "+LWIN +LatQ +LatA -LatA -LatQ -LWIN"), @"
+    +LWIN 133 XK_Super_L
+        surface modifiers: depressed=64, latched=0, locked=0, group=0
+        surface key pressed: 125
+    +AD01  24 XK_q
+        niri test-action
+    +AC01  38 XK_a
+        surface key pressed: 30
+    -AC01  38 XK_a
+        surface key released: 30
+    -AD01  24 XK_q
+        niri test-action
+    -LWIN 133 XK_Super_L
+        surface modifiers: depressed=0, latched=0, locked=0, group=0
+        surface key released: 125
+    ");
+
+    // Pressing the key without the mod key held doesn't run either action.
+    assert_snapshot!(run(c, "+LatQ +LWIN -LatQ -LWIN"), @"
+    +AD01  24 XK_q
+        surface key pressed: 16
+    +LWIN 133 XK_Super_L
+        surface modifiers: depressed=64, latched=0, locked=0, group=0
+        surface key pressed: 125
+    -AD01  24 XK_q
+        surface key released: 16
+    -LWIN 133 XK_Super_L
+        surface modifiers: depressed=0, latched=0, locked=0, group=0
+        surface key released: 125
+    ");
+}
+
+#[test]
+fn mod_key_press_and_release_bind() {
+    let c = "
+    binds {
+        Mod {
+            press { close-window; }
+            release { center-column; }
+        }
+    }
+    ";
+
+    // Both actions run, and Mod is still forwarded so that apps see the modifier.
+    assert_snapshot!(run(c, "+LWIN -LWIN"), @"
+    +LWIN 133 XK_Super_L
+        niri test-action
+        surface modifiers: depressed=64, latched=0, locked=0, group=0
+        surface key pressed: 125
+    -LWIN 133 XK_Super_L
+        niri test-action
+        surface modifiers: depressed=0, latched=0, locked=0, group=0
+        surface key released: 125
+    ");
+
+    // Other input in between doesn't cancel the release action.
+    assert_snapshot!(run(c, "+LWIN +LatA -LatA -LWIN"), @"
+    +LWIN 133 XK_Super_L
+        niri test-action
+        surface modifiers: depressed=64, latched=0, locked=0, group=0
+        surface key pressed: 125
+    +AC01  38 XK_a
+        surface key pressed: 30
+    -AC01  38 XK_a
+        surface key released: 30
+    -LWIN 133 XK_Super_L
+        niri test-action
+        surface modifiers: depressed=0, latched=0, locked=0, group=0
+        surface key released: 125
+    ");
+}
+
+#[test]
+fn modifier_key_trigger_binds() {
+    let c = "
+    binds {
+        Mod+Control_L {
+            press { close-window; }
+            release { center-column; }
+        }
+        Alt+Control_L { close-window; }
+    }
+    ";
+
+    // A modifier key used as the trigger is still forwarded so that apps see the modifier, and both
+    // actions run.
+    assert_snapshot!(run(c, "+LWIN +LCTL -LCTL -LWIN"), @"
+    +LWIN 133 XK_Super_L
+        surface modifiers: depressed=64, latched=0, locked=0, group=0
+        surface key pressed: 125
+    +LCTL  37 XK_Control_L
+        niri test-action
+        surface modifiers: depressed=68, latched=0, locked=0, group=0
+        surface key pressed: 29
+    -LCTL  37 XK_Control_L
+        niri test-action
+        surface modifiers: depressed=64, latched=0, locked=0, group=0
+        surface key released: 29
+    -LWIN 133 XK_Super_L
+        surface modifiers: depressed=0, latched=0, locked=0, group=0
+        surface key released: 125
+    ");
+
+    // Without the mod key held the bind doesn't match.
+    assert_snapshot!(run(c, "+LCTL -LCTL"), @"
+    +LCTL  37 XK_Control_L
+        surface modifiers: depressed=4, latched=0, locked=0, group=0
+        surface key pressed: 29
+    -LCTL  37 XK_Control_L
+        surface modifiers: depressed=0, latched=0, locked=0, group=0
+        surface key released: 29
+    ");
+
+    // Alt works as a held modifier the same way.
+    assert_snapshot!(run(c, "+LALT +LCTL -LCTL -LALT"), @"
+    +LALT  64 XK_Alt_L
+        surface modifiers: depressed=8, latched=0, locked=0, group=0
+        surface key pressed: 56
+    +LCTL  37 XK_Control_L
+        niri test-action
+        surface modifiers: depressed=12, latched=0, locked=0, group=0
+        surface key pressed: 29
+    -LCTL  37 XK_Control_L
+        surface modifiers: depressed=8, latched=0, locked=0, group=0
+        surface key released: 29
+    -LALT  64 XK_Alt_L
+        surface modifiers: depressed=0, latched=0, locked=0, group=0
+        surface key released: 56
+    ");
+}
+
+#[test]
+fn release_bind_on_modifier_key() {
+    let c = "
+    binds {
+        Mod+Control_L {
+            release { close-window; }
+        }
+    }
+    ";
+
+    // The press is forwarded so that apps see the modifier, and the release action runs when the
+    // modifier is released on its own.
+    assert_snapshot!(run(c, "+LWIN +LCTL -LCTL -LWIN"), @"
+    +LWIN 133 XK_Super_L
+        surface modifiers: depressed=64, latched=0, locked=0, group=0
+        surface key pressed: 125
+    +LCTL  37 XK_Control_L
+        surface modifiers: depressed=68, latched=0, locked=0, group=0
+        surface key pressed: 29
+    -LCTL  37 XK_Control_L
+        niri test-action
+        surface modifiers: depressed=64, latched=0, locked=0, group=0
+        surface key released: 29
+    -LWIN 133 XK_Super_L
+        surface modifiers: depressed=0, latched=0, locked=0, group=0
+        surface key released: 125
+    ");
+
+    // Pressing another key in between cancels it, just like for a bare modifier bind.
+    assert_snapshot!(run(c, "+LWIN +LCTL +LFSH -LCTL -LFSH -LWIN"), @"
+    +LWIN 133 XK_Super_L
+        surface modifiers: depressed=64, latched=0, locked=0, group=0
+        surface key pressed: 125
+    +LCTL  37 XK_Control_L
+        surface modifiers: depressed=68, latched=0, locked=0, group=0
+        surface key pressed: 29
+    +LFSH  50 XK_Shift_L
+        surface modifiers: depressed=69, latched=0, locked=0, group=0
+        surface key pressed: 42
+    -LCTL  37 XK_Control_L
+        surface modifiers: depressed=65, latched=0, locked=0, group=0
+        surface key released: 29
+    -LFSH  50 XK_Shift_L
+        surface modifiers: depressed=64, latched=0, locked=0, group=0
+        surface key released: 42
+    -LWIN 133 XK_Super_L
+        surface modifiers: depressed=0, latched=0, locked=0, group=0
+        surface key released: 125
+    ");
+}
+
+#[test]
+fn bare_modifier_release_bind() {
+    let c = "
+    binds {
+        Ctrl {
+            release { close-window; }
+        }
+    }
+    ";
+
+    // Control_L is not the mod key, so `Ctrl` matches its keysym directly.
+    assert_snapshot!(run(c, "+LCTL -LCTL"), @"
+    +LCTL  37 XK_Control_L
+        surface modifiers: depressed=4, latched=0, locked=0, group=0
+        surface key pressed: 29
+    -LCTL  37 XK_Control_L
+        niri test-action
+        surface modifiers: depressed=0, latched=0, locked=0, group=0
+        surface key released: 29
+    ");
+}
+
+#[test]
+fn release_bind_requires_matching_modifiers_on_press() {
+    let c = "
+    binds {
+        Mod+Ctrl+Q {
+            release { close-window; }
+        }
+    }
+    ";
+
+    // Pressing Q without the mod key held forwards it and doesn't arm the release action, even if
+    // the mod key is held by the time Q is released.
+    assert_snapshot!(run(c, "+LCTL +LatQ +LWIN -LatQ -LWIN -LCTL"), @"
+    +LCTL  37 XK_Control_L
+        surface modifiers: depressed=4, latched=0, locked=0, group=0
+        surface key pressed: 29
+    +AD01  24 XK_q
+        surface key pressed: 16
+    +LWIN 133 XK_Super_L
+        surface modifiers: depressed=68, latched=0, locked=0, group=0
+        surface key pressed: 125
+    -AD01  24 XK_q
+        surface key released: 16
+    -LWIN 133 XK_Super_L
+        surface modifiers: depressed=4, latched=0, locked=0, group=0
+        surface key released: 125
+    -LCTL  37 XK_Control_L
+        surface modifiers: depressed=0, latched=0, locked=0, group=0
+        surface key released: 29
+    ");
+}
+
+#[test]
+fn inhibiting_release_binds() {
+    let config = "
+    binds {
+        Mod {
+            release { toggle-overview; }
+        }
+        Mod+Q {
+            release { close-window; }
+        }
+    }
+    ";
+
+    let (mut f, id, surface) = set_up(config);
+
+    let inhibitor = f.client(id).state.inhibit_shortcuts(&surface);
+    f.roundtrip(id);
+
+    // While inhibiting, release binds don't run.
+    assert_snapshot!(run_f(&mut f, id, &surface, "+LWIN +LatQ -LatQ -LWIN"), @"
+    +LWIN 133 XK_Super_L
+        surface modifiers: depressed=64, latched=0, locked=0, group=0
+        surface key pressed: 125
+    +AD01  24 XK_q
+        surface key pressed: 16
+    -AD01  24 XK_q
+        surface key released: 16
+    -LWIN 133 XK_Super_L
+        surface modifiers: depressed=0, latched=0, locked=0, group=0
+        surface key released: 125
+    ");
+
+    inhibitor.destroy();
+    f.roundtrip(id);
+
+    // Once the inhibitor is gone, they do.
+    assert_snapshot!(run_f(&mut f, id, &surface, "+LWIN +LatQ -LatQ -LWIN"), @"
+    +LWIN 133 XK_Super_L
+        surface modifiers: depressed=64, latched=0, locked=0, group=0
+        surface key pressed: 125
+    +AD01  24 XK_q
+    -AD01  24 XK_q
+        niri test-action
+    -LWIN 133 XK_Super_L
+        surface modifiers: depressed=0, latched=0, locked=0, group=0
+        surface key released: 125
+    ");
 }

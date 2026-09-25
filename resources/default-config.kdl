@@ -400,6 +400,16 @@ binds {
     // or do a four-finger swipe up on a touchpad.
     Mod+O repeat=false { toggle-overview; }
 
+    // If you want to bind Mod to an action you can use a release binding
+    // Mod { release { toggle-overview; }; }
+
+    // Toggleable behavior like push-to-talk can be implemented
+    // by putting the same toggle command on the press and release action.
+    // Alt {
+    //     press { spawn "toggle-command"; }
+    //     release { spawn "toggle-command"; }
+    // }
+
     Mod+Q repeat=false { close-window; }
 
     Mod+Left  { focus-column-left; }
