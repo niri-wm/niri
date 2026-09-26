@@ -24,9 +24,11 @@ impl GradientArea {
             active_color: Color::from_rgba8_unpremul(255, 255, 255, 128),
             inactive_color: Color::default(),
             urgent_color: Color::default(),
+            view_lock_color: Color::default(),
             active_gradient: None,
             inactive_gradient: None,
             urgent_gradient: None,
+            view_lock_gradient: None,
         });
 
         Self {
@@ -83,6 +85,7 @@ impl TestCase for GradientArea {
             g_size,
             true,
             true,
+            false,
             false,
             Rectangle::default(),
             CornerRadius::default(),
