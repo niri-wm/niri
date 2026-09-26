@@ -532,12 +532,13 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         };
 
         let working_size = self.working_area.size;
+        let border_width = border.width.outset();
 
         let width = if let Some(size) = width {
             let size = match resolve_preset_size(size, &self.options, working_size.w, extra.w) {
                 ResolvedSize::Tile(mut size) => {
                     if !border.off {
-                        size -= border.width * 2.;
+                        size -= border_width * 2.;
                     }
                     size
                 }
@@ -551,14 +552,14 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
         let mut full_height = self.working_area.size.h - self.options.layout.gaps * 2.;
         if !border.off {
-            full_height -= border.width * 2.;
+            full_height -= border_width * 2.;
         }
 
         let height = if let Some(height) = height {
             let height = match resolve_preset_size(height, &self.options, working_size.h, extra.h) {
                 ResolvedSize::Tile(mut size) => {
                     if !border.off {
-                        size -= border.width * 2.;
+                        size -= border_width * 2.;
                     }
                     size
                 }
@@ -5657,7 +5658,7 @@ fn compute_toplevel_bounds(
 ) -> Size<i32, Logical> {
     let mut border = 0.;
     if !border_config.off {
-        border = border_config.width * 2.;
+        border = border_config.width.outset() * 2.;
     }
 
     Size::from((
