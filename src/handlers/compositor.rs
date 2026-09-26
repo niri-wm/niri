@@ -61,6 +61,8 @@ impl CompositorHandler for State {
         on_commit_buffer_handler::<Self>(surface);
         self.backend.early_import(surface);
 
+        self.niri.surface_committed = true;
+
         let mut root_surface = surface.clone();
         while let Some(parent) = get_parent(&root_surface) {
             root_surface = parent;
