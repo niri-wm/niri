@@ -1,4 +1,6 @@
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::Ordering;
+
+use portable_atomic::AtomicU64;
 
 /// Counter that returns unique IDs.
 pub struct IdCounter {

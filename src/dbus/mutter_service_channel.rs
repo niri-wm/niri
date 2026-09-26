@@ -44,7 +44,7 @@ impl ServiceChannel {
 }
 
 impl Start for ServiceChannel {
-    fn start(self) -> anyhow::Result<zbus::blocking::Connection> {
+    fn start(self, _monitor: bool) -> anyhow::Result<zbus::blocking::Connection> {
         let conn = zbus::blocking::connection::Builder::session()?
             .name("org.gnome.Mutter.ServiceChannel")?
             .serve_at("/org/gnome/Mutter/ServiceChannel", self)?

@@ -34,6 +34,8 @@ pub struct WindowRule {
     pub open_floating: Option<bool>,
     #[knuffel(child, unwrap(argument))]
     pub open_focused: Option<bool>,
+    #[knuffel(child, unwrap(argument))]
+    pub on_xdg_activate: Option<OnXdgActivate>,
 
     // Rules applied dynamically.
     #[knuffel(child, unwrap(argument))]
@@ -73,6 +75,8 @@ pub struct WindowRule {
     pub default_floating_position: Option<FloatingPosition>,
     #[knuffel(child, unwrap(argument))]
     pub scroll_factor: Option<FloatOrInt<0, 100>>,
+    #[knuffel(child, unwrap(argument))]
+    pub pinch_sensitivity: Option<FloatOrInt<0, 100>>,
     #[knuffel(child, unwrap(argument))]
     pub tiled_state: Option<bool>,
     #[knuffel(child, default)]
@@ -147,6 +151,13 @@ pub struct FloatingPosition {
     pub y: FloatOrInt<-65535, 65535>,
     #[knuffel(property, default)]
     pub relative_to: RelativeTo,
+}
+
+#[derive(knuffel::DecodeScalar, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OnXdgActivate {
+    Ignore,
+    SetUrgent,
+    Focus,
 }
 
 #[derive(knuffel::DecodeScalar, Debug, Default, Clone, Copy, PartialEq, Eq)]

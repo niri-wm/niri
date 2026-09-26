@@ -181,7 +181,7 @@ jobs:
           sudo apt-get update -y
           sudo apt-get install -y ${{ env.DEPS_APT }} libadwaita-1-dev
 
-      - uses: dtolnay/rust-toolchain@1.85.0
+      - uses: dtolnay/rust-toolchain@1.87.0
 
       - uses: Swatinem/rust-cache@v2
 
@@ -268,13 +268,41 @@ jobs:
             pkg update -f
             pkg install -y ${{ env.DEPS_PKG }}
           run: |
-            curl -o patch-pipewire_init 'https://cgit.freebsd.org/ports/plain/x11-wm/niri/files/patch-pipewire_init?id=cadf6784d264cf780b6e0ad59bd15b831d36cf80'
-
             export CARGO_HOME="$PWD/cargo-home"
 
             cargo fetch
 
-            ( cd $CARGO_HOME/registry/src/index.crates.io-*/; patch -p1 < $CARGO_HOME/../patch-pipewire_init; )
+            (
+              cd $CARGO_HOME/registry/src/index.crates.io-*/
+              patch -p0 <<'PATCH'
+            --- pipewire-sys-0.10.1/build.rs
+            +++ pipewire-sys-0.10.1/build.rs
+            @@ -23,6 +23,8 @@
+                     .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
+                     .size_t_is_usize(true)
+                     .allowlist_function("pw_.*")
+            +        .allowlist_function("pipewire_init")
+            +        .allowlist_function("pipewire_deinit")
+                     .allowlist_type("pw_.*")
+                     .allowlist_var("pw_.*")
+                     .allowlist_var("PW_.*")
+            --- pipewire-sys-0.10.1/src/lib.rs
+            +++ pipewire-sys-0.10.1/src/lib.rs
+            @@ -13,0 +14,7 @@
+            +
+            +// On FreeBSD, pw_init and pw_deinit are macros aliasing pipewire_init/pipewire_deinit,
+            +// so bindgen generates the underlying symbol names. Re-export them under the expected names.
+            +#[cfg(target_os = "freebsd")]
+            +pub use bindings::pipewire_init as pw_init;
+            +#[cfg(target_os = "freebsd")]
+            +pub use bindings::pipewire_deinit as pw_deinit;
+            --- libdisplay-info-sys-0.3.0/Cargo.toml
+            +++ libdisplay-info-sys-0.3.0/Cargo.toml
+            @@ -45 +45 @@
+            -version = ">= 0.1.0, < 0.4.0"
+            +version = ">= 0.1.0"
+            PATCH
+            )
 
             cargo build \
               --offline \
@@ -301,7 +329,7 @@ jobs:
         continue-on-error: true
 
   publish-wiki:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'niri-wm/niri'
     needs:
       - publish-docs
     permissions:
@@ -318,7 +346,7 @@ jobs:
           path: docs/wiki/
 
   publish-docs:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'niri-wm/niri'
     needs:
       - test
     permissions:

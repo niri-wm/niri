@@ -1,7 +1,7 @@
 use std::cmp::{max, min};
 
 use niri_config::utils::MergeWith as _;
-use niri_config::window_rule::{Match, WindowRule};
+use niri_config::window_rule::{Match, OnXdgActivate, WindowRule};
 use niri_config::{
     BackgroundEffect, BlockOutFrom, BorderRule, CornerRadius, FloatingPosition, PresetSize,
     ResolvedPopupsRules, ShadowRule, TabIndicatorRule,
@@ -73,6 +73,9 @@ pub struct ResolvedWindowRules {
     /// Whether the window should open focused.
     pub open_focused: Option<bool>,
 
+    /// What to do on xdg-activation requests.
+    pub on_xdg_activate: Option<OnXdgActivate>,
+
     /// Extra bound on the minimum window width.
     pub min_width: Option<u16>,
     /// Extra bound on the minimum window height.
@@ -116,6 +119,9 @@ pub struct ResolvedWindowRules {
 
     /// Multiplier for all scroll events sent to this window.
     pub scroll_factor: Option<f64>,
+
+    /// Pinch gesture sensitivity for this window.
+    pub pinch_sensitivity: Option<f64>,
 
     /// Override whether to set the Tiled xdg-toplevel state on the window.
     pub tiled_state: Option<bool>,
@@ -257,6 +263,10 @@ impl ResolvedWindowRules {
                     resolved.open_focused = Some(x);
                 }
 
+                if let Some(x) = rule.on_xdg_activate {
+                    resolved.on_xdg_activate = Some(x);
+                }
+
                 if let Some(x) = rule.min_width {
                     resolved.min_width = Some(x);
                 }
@@ -298,6 +308,9 @@ impl ResolvedWindowRules {
                 }
                 if let Some(x) = rule.scroll_factor {
                     resolved.scroll_factor = Some(x.0);
+                }
+                if let Some(x) = rule.pinch_sensitivity {
+                    resolved.pinch_sensitivity = Some(x.0);
                 }
                 if let Some(x) = rule.tiled_state {
                     resolved.tiled_state = Some(x);

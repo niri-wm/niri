@@ -70,23 +70,20 @@ use crate::render_helpers::renderer::AsGlesRenderer;
 use crate::render_helpers::{resources, shaders, RenderCtx, RenderTarget};
 use crate::utils::{get_monotonic_time, is_laptop_panel, logical_output, PanelOrientation};
 
-// specific 10-bit formats for multigpu setup,
-// i.e. copying from rendering Nvidia dGPU to target iGPU.
-const SUPPORTED_COLOR_FORMATS: [Fourcc; 6] = [
-    Fourcc::Xbgr2101010,
-    Fourcc::Abgr2101010,
-    Fourcc::Xrgb8888,
-    Fourcc::Xbgr8888,
-    Fourcc::Argb8888,
-    Fourcc::Abgr8888,
-];
+// When copying from rendering Nvidia dGPU to target iGPU,
+// it only understands X/Abgr and not X/Argb.
+const SUPPORTED_COLOR_FORMATS_10BIT: [Fourcc; 3] =
+    [Fourcc::Abgr2101010, Fourcc::Argb8888, Fourcc::Abgr8888];
+
+// Smithay should fall back to Xrgb/Xbgr automatically if needed.
+const SUPPORTED_COLOR_FORMATS: [Fourcc; 2] = [Fourcc::Argb8888, Fourcc::Abgr8888];
 
 pub struct Tty {
     config: Rc<RefCell<Config>>,
     session: LibSeatSession,
     udev_dispatcher: Dispatcher<'static, UdevBackend, State>,
     libinput: Libinput,
-    gpu_manager: GpuManager<GbmGlesBackend<GlesRenderer, DrmDeviceFd>>,
+    gpu_manager: GpuManager<GbmGlesBackend<GlesRenderer, DeviceFd>>,
     // DRM node corresponding to the primary GPU. May or may not be the same as
     // primary_render_node.
     primary_node: DrmNode,
@@ -109,8 +106,8 @@ pub struct Tty {
 pub type TtyRenderer<'render> = MultiRenderer<
     'render,
     'render,
-    GbmGlesBackend<GlesRenderer, DrmDeviceFd>,
-    GbmGlesBackend<GlesRenderer, DrmDeviceFd>,
+    GbmGlesBackend<GlesRenderer, DeviceFd>,
+    GbmGlesBackend<GlesRenderer, DeviceFd>,
 >;
 
 pub type TtyFrame<'render, 'frame, 'buffer> = MultiFrame<
@@ -118,17 +115,17 @@ pub type TtyFrame<'render, 'frame, 'buffer> = MultiFrame<
     'render,
     'frame,
     'buffer,
-    GbmGlesBackend<GlesRenderer, DrmDeviceFd>,
-    GbmGlesBackend<GlesRenderer, DrmDeviceFd>,
+    GbmGlesBackend<GlesRenderer, DeviceFd>,
+    GbmGlesBackend<GlesRenderer, DeviceFd>,
 >;
 
 pub type TtyRendererError<'render> = <TtyRenderer<'render> as RendererSuper>::Error;
 
 type GbmDrmCompositor = DrmCompositor<
-    GbmAllocator<DrmDeviceFd>,
-    GbmFramebufferExporter<DrmDeviceFd>,
+    GbmAllocator<DeviceFd>,
+    GbmFramebufferExporter<DeviceFd>,
     (OutputPresentationFeedback, Duration),
-    DrmDeviceFd,
+    DeviceFd,
 >;
 
 pub struct OutputDevice {
@@ -141,9 +138,9 @@ pub struct OutputDevice {
     // SAFETY: drop after all the objects used with them are dropped.
     // See https://github.com/Smithay/smithay/issues/1102.
     drm: DrmDevice,
-    gbm: GbmDevice<DrmDeviceFd>,
+    gbm: GbmDevice<DeviceFd>,
     // For display-only devices this will be the allocator from the primary device.
-    allocator: GbmAllocator<DrmDeviceFd>,
+    allocator: GbmAllocator<DeviceFd>,
 
     pub drm_lease_state: Option<DrmLeaseState>,
     non_desktop_connectors: HashSet<(connector::Handle, crtc::Handle)>,
@@ -783,7 +780,7 @@ impl Tty {
         }?;
         let gbm = {
             let _span = tracy_client::span!("GbmDevice::new");
-            GbmDevice::new(device_fd)
+            GbmDevice::new(device_fd.device_fd())
         }?;
 
         let mut try_initialize_gpu = || {
@@ -1440,6 +1437,14 @@ impl Tty {
             })
             .collect::<FormatSet>();
 
+        let color_formats = if self.config.borrow().debug.disable_10bit_output {
+            &SUPPORTED_COLOR_FORMATS[..]
+        } else {
+            &SUPPORTED_COLOR_FORMATS_10BIT[..]
+        }
+        .iter()
+        .copied();
+
         // Create the compositor.
         let res = DrmCompositor::new(
             OutputModeSource::Auto(output.downgrade()),
@@ -1447,7 +1452,7 @@ impl Tty {
             None,
             device.allocator.clone(),
             GbmFramebufferExporter::new(device.gbm.clone(), device.render_node.into()),
-            SUPPORTED_COLOR_FORMATS,
+            color_formats.clone(),
             // This is only used to pick a good internal format, so it can use the surface's render
             // formats, even though we only ever render on the primary GPU.
             render_formats.clone(),
@@ -1477,7 +1482,7 @@ impl Tty {
                     None,
                     device.allocator.clone(),
                     GbmFramebufferExporter::new(device.gbm.clone(), device.render_node.into()),
-                    SUPPORTED_COLOR_FORMATS,
+                    color_formats,
                     render_formats,
                     device.drm.cursor_size(),
                     Some(device.gbm.clone()),
@@ -1846,6 +1851,14 @@ impl Tty {
         Some(f(renderer.as_gles_renderer()))
     }
 
+    pub fn primary_render_node(&mut self) -> Option<DrmNode> {
+        // Only meaningful while the primary renderer exists.
+        self.gpu_manager
+            .single_renderer(&self.primary_render_node)
+            .ok()
+            .map(|_| self.primary_render_node)
+    }
+
     pub fn render(
         &mut self,
         niri: &mut Niri,
@@ -2047,7 +2060,9 @@ impl Tty {
 
         match renderer.import_dmabuf(dmabuf, None) {
             Ok(_texture) => {
-                dmabuf.set_node(Some(self.primary_render_node));
+                if dmabuf.node().is_none() {
+                    dmabuf.set_node(Some(self.primary_render_node));
+                }
                 true
             }
             Err(err) => {
@@ -2238,7 +2253,7 @@ impl Tty {
     }
 
     #[cfg(feature = "xdp-gnome-screencast")]
-    pub fn primary_gbm_device(&self) -> Option<GbmDevice<DrmDeviceFd>> {
+    pub fn primary_gbm_device(&self) -> Option<GbmDevice<DeviceFd>> {
         // Try to find a device corresponding to the primary render node.
         let device = self
             .devices
@@ -2853,13 +2868,15 @@ fn surface_dmabuf_feedback(
         .clone()
         .add_preference_tranche(
             surface_scanout_node.dev_id(),
-            Some(TrancheFlags::Scanout),
+            TrancheFlags::Scanout,
             primary_scanout_formats,
+            4..=6,
         )
         .add_preference_tranche(
             surface_scanout_node.dev_id(),
-            Some(TrancheFlags::Scanout),
+            TrancheFlags::Scanout,
             primary_or_overlay_scanout_formats,
+            4..=6,
         )
         .build()?;
 
@@ -3103,13 +3120,13 @@ pub fn calculate_mode_cvt(width: u16, height: u16, refresh: f64) -> DrmMode {
     };
     let cvt_timing = libdisplay_info::cvt::Timing::compute(options);
 
-    let hsync_start = width + cvt_timing.h_front_porch as u16;
+    let hsync_start = width.saturating_add(cvt_timing.h_front_porch as u16);
     let vsync_start = (cvt_timing.v_lines_rnd + cvt_timing.v_front_porch) as u16;
-    let hsync_end = hsync_start + cvt_timing.h_sync as u16;
-    let vsync_end = vsync_start + cvt_timing.v_sync as u16;
+    let hsync_end = hsync_start.saturating_add(cvt_timing.h_sync as u16);
+    let vsync_end = vsync_start.saturating_add(cvt_timing.v_sync as u16);
 
-    let htotal = hsync_end + cvt_timing.h_back_porch as u16;
-    let vtotal = vsync_end + cvt_timing.v_back_porch as u16;
+    let htotal = hsync_end.saturating_add(cvt_timing.h_back_porch as u16);
+    let vtotal = vsync_end.saturating_add(cvt_timing.v_back_porch as u16);
 
     let clock = f64::round(cvt_timing.act_pixel_freq * 1000f64) as u32;
     let vrefresh = f64::round(cvt_timing.act_frame_rate) as u32;
@@ -3661,5 +3678,14 @@ mod tests {
             ),
         }
         "#);
+    }
+
+    #[test]
+    fn test_calc_cvt_extreme_size() {
+        // Width and height come from the client through set_custom_mode, so the timing sums must
+        // not overflow u16.
+        for (width, height) in [(u16::MAX, u16::MAX), (u16::MAX, 1), (1, u16::MAX)] {
+            calculate_mode_cvt(width, height, 60.0);
+        }
     }
 }
