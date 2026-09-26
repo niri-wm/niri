@@ -247,6 +247,11 @@ Settings specific to `touchpad`s:
 
 - `tap`: tap-to-click.
 - `dwt`: disable-when-typing.
+
+  > [!TIP]
+  > <sup>Since: next release</sup> You can also toggle DWT on/off at runtime
+  > using the [`toggle-dwt` action](./Configuration:-Key-Bindings.md#toggle-dwt),
+  > without editing the config.
 - `dwtp`: disable-when-trackpointing.
 - `drag`: <sup>Since: 25.05</sup> can be `true` or `false`, controls if tap-and-drag is enabled.
 - `drag-lock`: <sup>Since: 25.02</sup> if set, lifting the finger off for a short time while dragging will not drop the dragged item. See the [libinput documentation](https://wayland.freedesktop.org/libinput/doc/latest/tapping.html#tap-and-drag).
