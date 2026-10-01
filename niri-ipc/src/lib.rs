@@ -202,6 +202,12 @@ pub enum Action {
     PowerOffMonitors {},
     /// Power on all monitors via DPMS.
     PowerOnMonitors {},
+    /// Set the idle timer, ignoring inhibitors.
+    ForceIdle {
+        /// Idle duration in seconds.
+        #[cfg_attr(feature = "clap", arg(default_value_t = 0))]
+        duration: u64,
+    },
     /// Spawn a command.
     Spawn {
         /// Command to spawn.

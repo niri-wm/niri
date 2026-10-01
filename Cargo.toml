@@ -27,8 +27,8 @@ tracy-client = { version = "0.18.5", default-features = false }
 
 [workspace.dependencies.smithay]
 # version = "0.4.1"
-git = "https://github.com/Smithay/smithay.git"
-rev = "79bbed5e1199090d787115614847a79c76607181"
+git = "https://github.com/MithicSpirit/smithay.git"
+rev = "1685ad1f384e9e80a1a8181e4805840d59642ee8"
 default-features = false
 
 [workspace.dependencies.smithay-drm-extras]
