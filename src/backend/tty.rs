@@ -11,7 +11,7 @@ use std::time::Duration;
 use std::{io, mem};
 
 use anyhow::{anyhow, bail, ensure, Context};
-use bytemuck::{bytes_of_mut, cast_slice_mut};
+use bytemuck::cast_slice_mut;
 use drm_ffi::drm_mode_modeinfo;
 use libc::dev_t;
 use niri_config::output::{MaxBpc, Modeline};
@@ -379,6 +379,9 @@ struct Surface {
     gamma_props: Option<GammaProps>,
     /// Gamma change to apply upon session resume.
     pending_gamma_change: Option<Option<Vec<u16>>>,
+    ctm_props: Option<CtmProps>,
+    /// Color matrix currently applied to the surface.
+    current_ctm: Option<[[f64; 3]; 3]>,
     /// Tracy frame that goes from vblank to vblank.
     vblank_frame: Option<tracy_client::Frame>,
     /// Frame name for the VBlank frame.
@@ -417,10 +420,10 @@ enum GammaMode {
     /// This is both less accurate (3×3 matrix instead of a LUT), and I think applies per-plane
     /// pre-blending on some drivers, as opposed to the post-blending gamma transform. So it's used
     /// only as the last resort fallback for Asahi.
-    Ctm {
-        ctm: property::Handle,
-        previous_blob: Option<NonZeroU64>,
-    },
+    ///
+    /// The CTM property itself is only ever written through CtmProps, which owns the blob.
+    /// Here we just remember the requested ramp so it can be turned into a color matrix.
+    Ctm { previous_ramp: Option<Vec<u16>> },
 }
 
 struct ConnectorProperties<'a> {
@@ -714,14 +717,20 @@ impl Tty {
                             warn!("failed to get connector properties");
                         }
 
-                        if let Some(gamma_props) = &mut surface.gamma_props {
-                            if let Some(ramp) = surface.pending_gamma_change.take() {
-                                if let Err(err) = gamma_props.set_gamma(&device.drm, ramp) {
-                                    warn!("error applying pending gamma change: {err:?}");
-                                }
-                            } else if let Err(err) = gamma_props.restore_gamma(&device.drm) {
-                                warn!("error restoring gamma: {err:?}");
+                        // Apply pending gamma changes and restore our existing gamma.
+                        let config_ctm = self
+                            .config
+                            .borrow()
+                            .outputs
+                            .find(&surface.name)
+                            .and_then(|o| o.color_matrix)
+                            .map(|m| m.0);
+                        if let Some(ramp) = surface.pending_gamma_change.take() {
+                            if let Err(err) = surface.set_gamma(&device.drm, config_ctm, ramp) {
+                                warn!("error applying pending gamma change: {err:?}");
                             }
+                        } else if let Err(err) = surface.restore_gamma(&device.drm) {
+                            warn!("error restoring gamma: {err:?}");
                         }
                     }
                 }
@@ -1336,7 +1345,11 @@ impl Tty {
             warn!("failed to get connector properties");
         }
 
-        let mut gamma_props = GammaProps::new(&device.drm, crtc)
+        let ctm_props = CtmProps::new(&device.drm, crtc)
+            .map_err(|err| debug!("couldn't get CTM properties: {err:?}"))
+            .ok();
+
+        let mut gamma_props = GammaProps::new(&device.drm, crtc, ctm_props.is_some())
             .map_err(|err| debug!("couldn't get gamma properties: {err:?}"))
             .ok();
 
@@ -1548,19 +1561,27 @@ impl Tty {
         let sequence_delta_plot_name =
             tracy_client::PlotName::new_leak(format!("{connector_name} sequence delta"));
 
-        let surface = Surface {
+        let mut surface = Surface {
             name: output_name,
             connector: connector.handle(),
             compositor,
             dmabuf_feedback,
             gamma_props,
             pending_gamma_change: None,
+            ctm_props,
+            current_ctm: None,
             vblank_frame: None,
             vblank_frame_name,
             time_since_presentation_plot_name,
             presentation_misprediction_plot_name,
             sequence_delta_plot_name,
         };
+
+        // Apply the configured color matrix, or reset it in case it was set before.
+        let ctm = config.color_matrix.map(|m| m.0);
+        if let Err(err) = surface.apply_ctm(&device.drm, ctm) {
+            debug!("couldn't set color matrix: {err:?}");
+        }
 
         let res = device.surfaces.insert(crtc, surface);
         assert!(res.is_none(), "crtc must not have already existed");
@@ -2128,11 +2149,18 @@ impl Tty {
             return Ok(());
         }
 
-        let gamma_props = surface
-            .gamma_props
-            .as_mut()
-            .context("setting gamma is not supported")?;
-        gamma_props.set_gamma(&device.drm, ramp)
+        if !surface.gamma_props.is_some() {
+            bail!("setting gamma is not supported");
+        }
+
+        let config_ctm = self
+            .config
+            .borrow()
+            .outputs
+            .find(&surface.name)
+            .and_then(|o| o.color_matrix)
+            .map(|m| m.0);
+        surface.set_gamma(&device.drm, config_ctm, ramp)
     }
 
     fn refresh_ipc_outputs(&self, niri: &mut Niri) {
@@ -2468,6 +2496,15 @@ impl Tty {
                     warn!("failed to get connector properties");
                 }
 
+                // Apply the configured color matrix, if it changed.
+                let ctm = config.color_matrix.map(|m| m.0);
+                if let Err(err) = surface.apply_ctm(&device.drm, ctm) {
+                    warn!(
+                        "error applying color matrix to output {:?}: {err:?}",
+                        surface.name.connector
+                    );
+                }
+
                 let change_mode = surface.compositor.pending_mode() != mode;
 
                 let vrr_enabled = surface.compositor.vrr_enabled();
@@ -2631,10 +2668,11 @@ impl Tty {
 }
 
 impl GammaProps {
-    fn new(device: &DrmDevice, crtc: crtc::Handle) -> anyhow::Result<Self> {
+    /// `ctm_available` tells whether the CRTC has a usable CTM property. It's queried separately
+    /// because CtmProps owns the property; see CtmProps::new.
+    fn new(device: &DrmDevice, crtc: crtc::Handle, ctm_available: bool) -> anyhow::Result<Self> {
         let mut gamma_lut = None;
         let mut gamma_lut_size = None;
-        let mut ctm = None;
 
         let props = device
             .get_properties(crtc)
@@ -2663,13 +2701,6 @@ impl GammaProps {
                         debug!("wrong GAMMA_LUT_SIZE value type");
                     }
                 }
-                "CTM" => {
-                    if matches!(info.value_type(), property::ValueType::Blob) {
-                        ctm = Some(prop);
-                    } else {
-                        debug!("wrong CTM value type");
-                    }
-                }
                 _ => (),
             }
         }
@@ -2690,13 +2721,12 @@ impl GammaProps {
                     previous_ramp: None,
                 }
             } else {
-                let ctm = ctm.context("setting gamma is not supported")?;
+                ensure!(ctm_available, "setting gamma is not supported");
                 debug!(
                     "missing GAMMA_LUT and legacy gamma; using less accurate CTM for gamma control"
                 );
                 GammaMode::Ctm {
-                    ctm,
-                    previous_blob: None,
+                    previous_ramp: None,
                 }
             }
         };
@@ -2717,12 +2747,17 @@ impl GammaProps {
 
         let (prop, prop_name) = match &mut self.mode {
             GammaMode::Lut { gamma_lut, .. } => (*gamma_lut, "GAMMA_LUT"),
-            GammaMode::Ctm { ctm, .. } => (*ctm, "CTM"),
             GammaMode::Legacy {
                 gamma_size,
                 previous_ramp,
             } => {
                 set_gamma_for_crtc(device, self.crtc, *gamma_size, gamma.as_deref())?;
+                *previous_ramp = gamma;
+                return Ok(());
+            }
+            GammaMode::Ctm { previous_ramp } => {
+                // The CTM property is owned by CtmProps. The caller applies the color matrix;
+                // here we only remember the ramp so that it can be converted to a matrix.
                 *previous_ramp = gamma;
                 return Ok(());
             }
@@ -2742,55 +2777,21 @@ impl GammaProps {
                 pub blue: u16,
                 pub reserved: u16,
             }
-            #[allow(non_camel_case_types)]
-            #[repr(C)]
-            #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-            pub struct drm_color_ctm {
-                pub matrix: [u64; 9],
-            }
 
             let (red, rest) = gamma.split_at(gamma_size);
             let (green, blue) = rest.split_at(gamma_size);
-            let blob = if let GammaMode::Lut { .. } = self.mode {
-                let mut data = zip(zip(red, green), blue)
-                    .map(|((&red, &green), &blue)| drm_color_lut {
-                        red,
-                        green,
-                        blue,
-                        reserved: 0,
-                    })
-                    .collect::<Vec<_>>();
+            let mut data = zip(zip(red, green), blue)
+                .map(|((&red, &green), &blue)| drm_color_lut {
+                    red,
+                    green,
+                    blue,
+                    reserved: 0,
+                })
+                .collect::<Vec<_>>();
 
+            let blob =
                 drm_ffi::mode::create_property_blob(device.as_fd(), cast_slice_mut(&mut data))
-                    .context("error creating property blob")?
-            } else {
-                /// Transforms a u16 gamma value into a S31.32 value for the CTM matrix.
-                fn from_u16_to_s31_32(value: u16) -> u64 {
-                    let normalized = value as f64 / u16::MAX as f64;
-                    (normalized * (1u64 << 32) as f64) as u64
-                }
-
-                // See https://invent.kde.org/plasma/kwin/-/commit/f2417a85233e1b7c1c68039230c45554f1069694
-                // and https://melissawen.github.io/blog/2023/08/21/amd-steamdeck-colors
-                // for context. Create an approximation for color conversion based on
-                // a linear interpretation of the gamma ramp received.
-                let mut data = drm_color_ctm {
-                    matrix: [
-                        from_u16_to_s31_32(red[gamma_size - 1]),
-                        0,
-                        0,
-                        0,
-                        from_u16_to_s31_32(green[gamma_size - 1]),
-                        0,
-                        0,
-                        0,
-                        from_u16_to_s31_32(blue[gamma_size - 1]),
-                    ],
-                };
-
-                drm_ffi::mode::create_property_blob(device.as_fd(), bytes_of_mut(&mut data))
-                    .context("error creating property blob")?
-            };
+                    .context("error creating property blob")?;
             NonZeroU64::new(u64::from(blob.blob_id))
         } else {
             None
@@ -2813,17 +2814,13 @@ impl GammaProps {
                 })?;
         }
 
-        if let GammaMode::Lut { previous_blob, .. } | GammaMode::Ctm { previous_blob, .. } =
-            &mut self.mode
-        {
-            if let Some(blob) = mem::replace(previous_blob, blob) {
-                if let Err(err) = device.destroy_property_blob(blob.get()) {
-                    warn!("error destroying previous {prop_name} blob: {err:?}");
-                }
+        let GammaMode::Lut { previous_blob, .. } = &mut self.mode else {
+            unreachable!("legacy and CTM modes return above");
+        };
+        if let Some(blob) = mem::replace(previous_blob, blob) {
+            if let Err(err) = device.destroy_property_blob(blob.get()) {
+                warn!("error destroying previous {prop_name} blob: {err:?}");
             }
-        } else {
-            // Legacy early-returns at the start of the function.
-            unreachable!();
         }
 
         Ok(())
@@ -2843,18 +2840,240 @@ impl GammaProps {
                     .set_property(self.crtc, *gamma_lut, property::Value::Blob(blob).into())
                     .context("error setting GAMMA_LUT")?;
             }
-            GammaMode::Ctm { ctm, previous_blob } => {
-                let blob = previous_blob.map(NonZeroU64::get).unwrap_or(0);
-                device
-                    .set_property(self.crtc, *ctm, property::Value::Blob(blob).into())
-                    .context("error setting CTM")?;
-            }
             GammaMode::Legacy {
                 gamma_size,
                 previous_ramp,
             } => {
                 set_gamma_for_crtc(device, self.crtc, *gamma_size, previous_ramp.as_deref())?;
             }
+            // Restoring the CTM is CtmProps' job; see CtmProps::restore_ctm.
+            GammaMode::Ctm { .. } => (),
+        }
+
+        Ok(())
+    }
+
+    /// The diagonal color matrix approximating the current gamma ramp, if gamma is controlled
+    /// through the CTM property.
+    fn ctm_for_gamma(&self) -> Option<[[f64; 3]; 3]> {
+        let GammaMode::Ctm {
+            previous_ramp: Some(ramp),
+        } = &self.mode
+        else {
+            return None;
+        };
+
+        let gamma_size = self.gamma_size() as usize;
+        if ramp.len() != gamma_size * 3 {
+            return None;
+        }
+
+        let (red, rest) = ramp.split_at(gamma_size);
+        let (green, blue) = rest.split_at(gamma_size);
+
+        // See https://invent.kde.org/plasma/kwin/-/commit/f2417a85233e1b7c1c68039230c45554f1069694
+        // and https://melissawen.github.io/blog/2023/08/21/amd-steamdeck-colors for context.
+        // Create an approximation for color conversion based on a linear interpretation of
+        // the gamma ramp received.
+        let scale = |channel: &[u16]| channel[gamma_size - 1] as f64 / u16::MAX as f64;
+        let (r, g, b) = (scale(red), scale(green), scale(blue));
+
+        Some([[r, 0., 0.], [0., g, 0.], [0., 0., b]])
+    }
+}
+
+/// The DRM color transformation matrix blob format.
+///
+/// Coefficients are in S31.32 sign-magnitude, see drm_ctm_s31_32().
+#[allow(non_camel_case_types)]
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct drm_color_ctm {
+    matrix: [u64; 9],
+}
+
+const _: () = assert!(mem::size_of::<drm_color_ctm>() == 72);
+
+/// Converts a color matrix coefficient into the S31.32 sign-magnitude fixed-point format
+/// that drm_color_ctm stores.
+///
+/// This is sign-magnitude and not two's complement: bit 63 is a flag telling the sign, and
+/// the remaining bits hold the magnitude. See drm_color_ctm_s31_32_to_qm_n() in the kernel,
+/// which converts it into the two's complement fixed-point format a driver wants.
+fn drm_ctm_s31_32(coefficient: f64) -> u64 {
+    // The largest magnitude S31.32 can store is 2^63 - 1. Clamping the coefficient to 2^31
+    // first keeps the scaled value inside u64, and also keeps NaN and infinity out of the
+    // conversion, since f64::min() returns the non-NaN operand. 2^31 is not exactly
+    // representable together with a fractional part in f64, so clamp once more after scaling.
+    const MAX_MAGNITUDE: u64 = (1 << 63) - 1;
+    let scaled = coefficient.abs().min((1u64 << 31) as f64) * ((1u64 << 32) as f64);
+    let magnitude = (scaled.round() as u64).min(MAX_MAGNITUDE);
+
+    // is_sign_negative() is also true for -0.0, which has no sign in sign-magnitude.
+    if coefficient.is_sign_negative() && coefficient != 0.0 {
+        (1 << 63) | magnitude
+    } else {
+        magnitude
+    }
+}
+
+struct CtmProps {
+    crtc: crtc::Handle,
+    ctm: property::Handle,
+    previous_blob: Option<NonZeroU64>,
+}
+
+impl CtmProps {
+    fn new(device: &DrmDevice, crtc: crtc::Handle) -> anyhow::Result<Self> {
+        let mut ctm = None;
+
+        let props = device
+            .get_properties(crtc)
+            .context("error getting properties")?;
+        for (prop, _) in props {
+            let Ok(info) = device.get_property(prop) else {
+                continue;
+            };
+
+            let Ok(name) = info.name().to_str() else {
+                continue;
+            };
+
+            if name == "CTM" {
+                ensure!(
+                    matches!(info.value_type(), property::ValueType::Blob),
+                    "wrong CTM value type"
+                );
+                ctm = Some(prop);
+            }
+        }
+
+        let ctm = ctm.context("missing CTM property")?;
+
+        Ok(Self {
+            crtc,
+            ctm,
+            previous_blob: None,
+        })
+    }
+
+    fn set_ctm(&mut self, device: &DrmDevice, ctm: Option<[[f64; 3]; 3]>) -> anyhow::Result<()> {
+        let _span = tracy_client::span!("CtmProps::set_ctm");
+
+        let blob = if let Some(ctm) = ctm {
+            // Convert the coefficients to S31.32 fixed-point.
+            let mut matrix = [0u64; 9];
+            for (coeff, cell) in ctm.as_flattened().iter().zip(&mut matrix) {
+                *cell = drm_ctm_s31_32(*coeff);
+            }
+            let mut data = [drm_color_ctm { matrix }];
+            let data = cast_slice_mut(&mut data);
+
+            let blob = drm_ffi::mode::create_property_blob(device.as_fd(), data)
+                .context("error creating property blob")?;
+            NonZeroU64::new(u64::from(blob.blob_id))
+        } else {
+            None
+        };
+
+        {
+            let _span = tracy_client::span!("set_property");
+
+            let blob = blob.map(NonZeroU64::get).unwrap_or(0);
+            device
+                .set_property(self.crtc, self.ctm, property::Value::Blob(blob).into())
+                .context("error setting CTM")
+                .inspect_err(|_| {
+                    if blob != 0 {
+                        // Destroy the blob we just allocated.
+                        if let Err(err) = device.destroy_property_blob(blob) {
+                            warn!("error destroying CTM property blob: {err:?}");
+                        }
+                    }
+                })?;
+        }
+
+        if let Some(blob) = mem::replace(&mut self.previous_blob, blob) {
+            if let Err(err) = device.destroy_property_blob(blob.get()) {
+                warn!("error destroying previous CTM blob: {err:?}");
+            }
+        }
+
+        Ok(())
+    }
+
+    fn restore_ctm(&self, device: &DrmDevice) -> anyhow::Result<()> {
+        let _span = tracy_client::span!("CtmProps::restore_ctm");
+
+        let blob = self.previous_blob.map(NonZeroU64::get).unwrap_or(0);
+        device
+            .set_property(self.crtc, self.ctm, property::Value::Blob(blob).into())
+            .context("error setting CTM")?;
+
+        Ok(())
+    }
+}
+
+impl Surface {
+    /// The color matrix that should currently be programmed into the CTM property.
+    ///
+    /// An explicit `color-matrix` from the config takes precedence over the diagonal matrix
+    /// derived from the gamma ramp, which is only used when gamma itself is controlled through
+    /// the CTM property.
+    fn desired_ctm(&self, config_ctm: Option<[[f64; 3]; 3]>) -> Option<[[f64; 3]; 3]> {
+        config_ctm.or_else(|| {
+            self.gamma_props
+                .as_ref()
+                .and_then(GammaProps::ctm_for_gamma)
+        })
+    }
+
+    /// Applies a gamma change, then programs the resulting color matrix.
+    ///
+    /// When gamma is controlled through the CTM property, the ramp is only remembered here; the
+    /// matrix is always written by CtmProps.
+    fn set_gamma(
+        &mut self,
+        device: &DrmDevice,
+        config_ctm: Option<[[f64; 3]; 3]>,
+        ramp: Option<Vec<u16>>,
+    ) -> anyhow::Result<()> {
+        if let Some(gamma_props) = &mut self.gamma_props {
+            gamma_props.set_gamma(device, ramp)?;
+        }
+
+        self.apply_ctm(device, config_ctm)
+    }
+
+    /// Programs the color matrix, unless it already matches the applied one.
+    fn apply_ctm(
+        &mut self,
+        device: &DrmDevice,
+        config_ctm: Option<[[f64; 3]; 3]>,
+    ) -> anyhow::Result<()> {
+        let ctm = self.desired_ctm(config_ctm);
+        if self.current_ctm == ctm {
+            return Ok(());
+        }
+
+        if let Some(ctm_props) = &mut self.ctm_props {
+            ctm_props.set_ctm(device, ctm)?;
+            self.current_ctm = ctm;
+        } else if ctm.is_some() {
+            bail!("the CTM property is not supported");
+        }
+
+        Ok(())
+    }
+
+    /// Restores the gamma and color matrix state saved before a TTY switch.
+    fn restore_gamma(&mut self, device: &DrmDevice) -> anyhow::Result<()> {
+        if let Some(gamma_props) = &self.gamma_props {
+            gamma_props.restore_gamma(device)?;
+        }
+
+        if let Some(ctm_props) = &self.ctm_props {
+            ctm_props.restore_ctm(device)?;
         }
 
         Ok(())
@@ -3620,7 +3839,9 @@ mod tests {
     use niri_config::output::Modeline;
     use niri_ipc::{HSyncPolarity, VSyncPolarity};
 
-    use crate::backend::tty::{calculate_drm_mode_from_modeline, calculate_mode_cvt};
+    use crate::backend::tty::{
+        calculate_drm_mode_from_modeline, calculate_mode_cvt, drm_ctm_s31_32,
+    };
 
     #[test]
     fn test_calculate_drmmode_from_modeline() {
@@ -3768,5 +3989,36 @@ mod tests {
         for (width, height) in [(u16::MAX, u16::MAX), (u16::MAX, 1), (1, u16::MAX)] {
             calculate_mode_cvt(width, height, 60.0);
         }
+    }
+
+    #[test]
+    fn test_drm_ctm_s31_32() {
+        // drm_color_ctm is sign-magnitude: bit 63 is the sign and the rest is the magnitude.
+        // Encoding a negative coefficient as two's complement instead would make the driver see a
+        // huge negative coefficient rather than the small one asked for.
+        assert_eq!(drm_ctm_s31_32(0.0), 0);
+        assert_eq!(drm_ctm_s31_32(-0.0), 0, "negative zero has no sign");
+        assert_eq!(drm_ctm_s31_32(1.0), 1 << 32);
+        assert_eq!(drm_ctm_s31_32(-1.0), (1 << 63) | (1 << 32));
+        assert_eq!(drm_ctm_s31_32(0.5), 1 << 31);
+        assert_eq!(drm_ctm_s31_32(-0.5), (1 << 63) | (1 << 31));
+        assert_eq!(
+            drm_ctm_s31_32(0.2126),
+            (0.2126 * (1u64 << 32) as f64).round() as u64
+        );
+        assert_eq!(
+            drm_ctm_s31_32(-0.0722),
+            (1 << 63) | (0.0722 * (1u64 << 32) as f64).round() as u64
+        );
+
+        // S31.32 only has 31 integer bits, so the magnitude must be clamped.
+        let max = ((1u64 << 31) - 1) << 32 | u64::from(u32::MAX);
+        assert_eq!(drm_ctm_s31_32(f64::INFINITY), max);
+        assert_eq!(drm_ctm_s31_32(f64::NEG_INFINITY), (1 << 63) | max);
+        assert_eq!(
+            drm_ctm_s31_32(f64::NAN),
+            max,
+            "NaN must not set the sign bit"
+        );
     }
 }
