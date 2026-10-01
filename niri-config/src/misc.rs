@@ -1,4 +1,6 @@
-use crate::appearance::{Color, WorkspaceShadow, WorkspaceShadowPart, DEFAULT_BACKDROP_COLOR};
+use crate::appearance::{
+    Border, BorderRule, Color, WorkspaceShadow, WorkspaceShadowPart, DEFAULT_BACKDROP_COLOR,
+};
 use crate::utils::{Flag, MergeWith};
 use crate::FloatOrInt;
 
@@ -123,6 +125,7 @@ pub struct Overview {
     pub zoom: f64,
     pub backdrop_color: Color,
     pub workspace_shadow: WorkspaceShadow,
+    pub workspace_border: Border,
 }
 
 impl Default for Overview {
@@ -131,6 +134,7 @@ impl Default for Overview {
             zoom: 0.5,
             backdrop_color: DEFAULT_BACKDROP_COLOR,
             workspace_shadow: WorkspaceShadow::default(),
+            workspace_border: Border::default(),
         }
     }
 }
@@ -143,11 +147,13 @@ pub struct OverviewPart {
     pub backdrop_color: Option<Color>,
     #[knuffel(child)]
     pub workspace_shadow: Option<WorkspaceShadowPart>,
+    #[knuffel(child)]
+    pub workspace_border: Option<BorderRule>,
 }
 
 impl MergeWith<OverviewPart> for Overview {
     fn merge_with(&mut self, part: &OverviewPart) {
-        merge!((self, part), zoom, workspace_shadow);
+        merge!((self, part), zoom, workspace_shadow, workspace_border);
         merge_clone!((self, part), backdrop_color);
     }
 }
