@@ -1,0 +1,172 @@
+use std::sync::Arc;
+
+use smithay::backend::renderer::element::utils::{RelocateRenderElement, RescaleRenderElement};
+use smithay::backend::renderer::element::RenderElement;
+use smithay::backend::renderer::gles::GlesRenderer;
+use smithay::backend::renderer::Texture;
+use smithay::desktop::LayerSurface;
+use smithay::utils::{Logical, Point, Rectangle, Scale, Size};
+use smithay::wayland::shell::wlr_layer::Layer;
+
+use crate::animation::Animation;
+use crate::niri_render_elements;
+use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
+use crate::render_helpers::shader_element::{ShaderProgram, ShaderRenderElement};
+use crate::render_helpers::shaders::{layer_close_program_for_source, ProgramType, Shaders};
+use crate::render_helpers::snapshot::{
+    render_close_fallback, render_close_shader, BakedSnapshot, RenderSnapshot,
+};
+use crate::render_helpers::RenderCtx;
+
+#[derive(Debug)]
+pub struct ClosingLayer {
+    /// The layer surface, used to cancel the animation if the surface remaps.
+    surface: LayerSurface,
+
+    /// Baked snapshot textures.
+    snapshot: BakedSnapshot,
+
+    /// Size of the layer geometry.
+    geo_size: Size<f64, Logical>,
+
+    /// Position in the workspace.
+    pos: Point<f64, Logical>,
+
+    /// The closing animation.
+    anim: Animation,
+
+    /// Random seed for the shader.
+    random_seed: f32,
+
+    /// Optional custom shader source from layer rules.
+    custom_shader: Option<Arc<str>>,
+}
+
+niri_render_elements! {
+    ClosingLayerRenderElement => {
+        Texture = RelocateRenderElement<RescaleRenderElement<PrimaryGpuTextureRenderElement>>,
+        Shader = ShaderRenderElement,
+    }
+}
+
+impl ClosingLayer {
+    /// Stable index for a layer level, for keying closing animations.
+    ///
+    /// `smithay::wayland::shell::wlr_layer::Layer` does not implement `Hash`, so the
+    /// scoped closing-layer storage keys on this instead.
+    pub fn level_index(layer: Layer) -> u8 {
+        match layer {
+            Layer::Background => 0,
+            Layer::Bottom => 1,
+            Layer::Top => 2,
+            Layer::Overlay => 3,
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn new<E: RenderElement<GlesRenderer>>(
+        renderer: &mut GlesRenderer,
+        snapshot: RenderSnapshot<E, E>,
+        scale: Scale<f64>,
+        mut geo_size: Size<f64, Logical>,
+        pos: Point<f64, Logical>,
+        anim: Animation,
+        custom_shader: Option<Arc<str>>,
+        surface: LayerSurface,
+    ) -> anyhow::Result<Self> {
+        let _span = tracy_client::span!("ClosingLayer::new");
+
+        let baked = snapshot.bake(renderer, scale)?;
+
+        // Some layer-shell clients can race unmap/teardown such that close-time geometry becomes
+        // invalid or no longer matches the captured snapshot. The custom shader path relies on
+        // geometry transforms, so keep it stable by falling back to snapshot-derived size.
+        if geo_size.w <= 0. || geo_size.h <= 0. {
+            geo_size = baked.snapshot_size;
+        }
+
+        if geo_size.w <= 0. || geo_size.h <= 0. {
+            let tex_size = baked.buffer.texture().size().to_f64();
+            geo_size = Size::new(
+                (tex_size.w / scale.x).max(1.),
+                (tex_size.h / scale.y).max(1.),
+            );
+        }
+
+        Ok(Self {
+            surface,
+            snapshot: baked,
+            geo_size,
+            pos,
+            anim,
+            custom_shader,
+            random_seed: fastrand::f32(),
+        })
+    }
+
+    /// Whether this closing layer matches the given surface.
+    pub fn matches_surface(&self, surface: &LayerSurface) -> bool {
+        self.surface == *surface
+    }
+
+    pub fn advance_animations(&mut self) {
+        // We don't need to do anything here since the animation is time-based, but we still want to
+        // call this to trigger the end of the animation when it finishes.
+        self.anim.value();
+    }
+
+    pub fn are_animations_ongoing(&self) -> bool {
+        !self.anim.is_done()
+    }
+
+    pub fn render(
+        &self,
+        ctx: RenderCtx<GlesRenderer>,
+        view_rect: Rectangle<f64, Logical>,
+        scale: Scale<f64>,
+    ) -> ClosingLayerRenderElement {
+        let (buffer, offset) = self.snapshot.pick_buffer(ctx.target);
+
+        let anim = &self.anim;
+
+        let progress = anim.value();
+        let clamped_progress = anim.clamped_value().clamp(0., 1.);
+        if let Some(shader) = self.resolve_shader(ctx.renderer) {
+            // ClosingLayer uses the picked buffer for tex coord calculation (same as the
+            // texture buffer), unlike ClosingWindow which uses the normal buffer.
+            let elem = render_close_shader(
+                shader,
+                buffer,
+                buffer,
+                offset,
+                self.geo_size,
+                self.pos,
+                progress as f32,
+                clamped_progress as f32,
+                self.random_seed,
+                view_rect,
+                scale,
+            );
+            return elem.into();
+        }
+
+        render_close_fallback(
+            buffer,
+            offset,
+            self.geo_size,
+            self.pos,
+            clamped_progress,
+            view_rect,
+            scale,
+        )
+        .into()
+    }
+
+    fn resolve_shader(&self, renderer: &mut GlesRenderer) -> Option<ShaderProgram> {
+        if let Some(src) = self.custom_shader.clone() {
+            return layer_close_program_for_source(renderer, &src);
+        }
+
+        Shaders::get(renderer).program(ProgramType::LayerClose)
+    }
+}

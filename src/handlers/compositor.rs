@@ -2,6 +2,7 @@ use std::collections::hash_map::Entry;
 
 use niri_ipc::PositionChange;
 use smithay::backend::renderer::utils::on_commit_buffer_handler;
+use smithay::desktop::{layer_map_for_output, WindowSurfaceType};
 use smithay::input::pointer::{CursorImageStatus, CursorImageSurfaceData};
 use smithay::reexports::calloop::Interest;
 use smithay::reexports::wayland_server::protocol::wl_buffer;
@@ -489,11 +490,32 @@ impl CompositorHandler for State {
         // This is still not perfect, as this function is called already after the (first)
         // subsurface is destroyed; in the case of alacritty, this is the top CSD shadow. But, it
         // gets most of the job done.
-        if let Some(root) = self.niri.root_surface.get(surface) {
-            if let Some((mapped, output)) = self.niri.layout.find_window_and_output(root) {
+        if let Some(root) = self.niri.root_surface.get(surface).cloned() {
+            if let Some((mapped, output)) = self.niri.layout.find_window_and_output(&root) {
                 let window = mapped.window.clone();
                 let output = output.cloned();
                 self.store_unmap_snapshot(&window, output.as_ref());
+            }
+
+            // Clients may also destroy their layer surfaces before the main surface. So we have to
+            // do the same as above. Capture the last live frame while the layer is still mapped;
+            // first-wins, like windows.
+            //
+            // Test client(s): wofi, fuzzel, and walker
+            let found = self.niri.layout.outputs().find_map(|o| {
+                let map = layer_map_for_output(o);
+                let layer = map
+                    .layer_for_surface(&root, WindowSurfaceType::TOPLEVEL)?
+                    .clone();
+                let geo = map.layer_geometry(&layer)?;
+                Some((layer, geo.size.to_f64()))
+            });
+            if let Some((layer, geo_size)) = found {
+                if let Some(mapped) = self.niri.mapped_layer_surfaces.get_mut(&layer) {
+                    self.backend.with_primary_renderer(|renderer| {
+                        mapped.store_unmap_snapshot_if_empty(renderer, geo_size);
+                    });
+                }
             }
         }
 

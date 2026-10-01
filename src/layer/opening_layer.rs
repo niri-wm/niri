@@ -17,7 +17,7 @@ use crate::niri_render_elements;
 use crate::render_helpers::offscreen::{OffscreenBuffer, OffscreenData, OffscreenRenderElement};
 use crate::render_helpers::shader_element::{ShaderProgram, ShaderRenderElement};
 use crate::render_helpers::shaders::{
-    mat3_uniform, window_open_program_for_source, ProgramType, Shaders,
+    layer_open_program_for_source, mat3_uniform, ProgramType, Shaders,
 };
 
 #[derive(Debug)]
@@ -29,7 +29,7 @@ pub struct OpenAnimation {
 }
 
 niri_render_elements! {
-    OpeningWindowRenderElement => {
+    OpeningLayerRenderElement => {
         Offscreen = RelocateRenderElement<RescaleRenderElement<OffscreenRenderElement>>,
         Shader = ShaderRenderElement,
     }
@@ -59,7 +59,7 @@ impl OpenAnimation {
         location: Point<f64, Logical>,
         scale: Scale<f64>,
         alpha: f32,
-    ) -> anyhow::Result<(OpeningWindowRenderElement, OffscreenData)> {
+    ) -> anyhow::Result<(OpeningLayerRenderElement, OffscreenData)> {
         let progress = self.anim.value();
         let clamped_progress = self.anim.clamped_value().clamp(0., 1.);
 
@@ -68,7 +68,8 @@ impl OpenAnimation {
             .render(renderer, scale, elements)
             .context("error rendering to offscreen buffer")?;
 
-        if let Some(shader) = self.resolve_shader(renderer) {
+        let shader = self.resolve_shader(renderer);
+        if let Some(shader) = shader {
             // OffscreenBuffer renders with Transform::Normal and the scale that we passed, so we
             // can assume that below.
             let offset = elem.offset();
@@ -146,10 +147,10 @@ impl OpenAnimation {
     }
 
     fn resolve_shader(&self, renderer: &mut GlesRenderer) -> Option<ShaderProgram> {
-        if let Some(src) = self.custom_shader.clone() {
-            return window_open_program_for_source(renderer, &src);
+        if let Some(src) = self.custom_shader.as_deref() {
+            return layer_open_program_for_source(renderer, src);
         }
 
-        Shaders::get(renderer).program(ProgramType::WindowOpen)
+        Shaders::get(renderer).program(ProgramType::LayerOpen)
     }
 }
