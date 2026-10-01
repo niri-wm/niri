@@ -18,5 +18,7 @@ serde.workspace = true
 serde_json.workspace = true
 
 [features]
+default = ["non_exhaustive"]
 clap = ["dep:clap"]
 json-schema = ["dep:schemars"]
+non_exhaustive = []
