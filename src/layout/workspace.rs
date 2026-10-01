@@ -24,8 +24,8 @@ use super::scrolling::{
 use super::shadow::Shadow;
 use super::tile::{Tile, TileRenderSnapshot};
 use super::{
-    ActivateWindow, HitType, InsertPosition, InteractiveResizeData, LayoutElement, Options,
-    RemovedTile, SizeFrac,
+    ActivateWindow, HitType, InputRegion, InsertPosition, InteractiveResizeData, LayoutElement,
+    Options, RemovedTile, SizeFrac,
 };
 use crate::animation::Clock;
 use crate::layout::RenderLayer;
@@ -1789,22 +1789,37 @@ impl<W: LayoutElement> Workspace<W> {
         self.scrolling.start_open_animation(id) || self.floating.start_open_animation(id)
     }
 
-    pub fn window_under(&self, pos: Point<f64, Logical>) -> Option<(&W, HitType)> {
+    pub fn window_under(
+        &self,
+        pos: Point<f64, Logical>,
+        input_region: InputRegion,
+        focus_ring: bool,
+    ) -> Option<(&W, HitType)> {
         // This logic is consistent with tiles_with_render_positions().
         if self.is_floating_visible() {
-            if let Some(rv) = self
-                .floating
-                .tiles_with_render_positions()
-                .find_map(|(tile, tile_pos)| HitType::hit_tile(tile, tile_pos, pos))
+            let active = self.active_window().map(|window| window.id());
+            if let Some(rv) =
+                self.floating
+                    .tiles_with_render_positions()
+                    .find_map(|(tile, tile_pos)| {
+                        let focus_ring = focus_ring && active == Some(tile.window().id());
+                        HitType::hit_tile(tile, tile_pos, pos, input_region, focus_ring)
+                    })
             {
                 return Some(rv);
             }
         }
 
-        self.scrolling.window_under(pos)
+        let focus_ring = focus_ring && !self.floating_is_active();
+        self.scrolling.window_under(pos, input_region, focus_ring)
     }
 
-    pub fn resize_edges_under(&self, pos: Point<f64, Logical>) -> Option<ResizeEdge> {
+    pub fn resize_edges_under(
+        &self,
+        pos: Point<f64, Logical>,
+        focus_ring: bool,
+    ) -> Option<ResizeEdge> {
+        let active = self.active_window().map(|window| window.id());
         self.tiles_with_render_positions()
             .find_map(|(tile, tile_pos, visible)| {
                 // This logic should be consistent with window_under() in when it returns Some vs.
@@ -1815,7 +1830,11 @@ impl<W: LayoutElement> Workspace<W> {
 
                 let pos_within_tile = pos - tile_pos;
 
-                if tile.hit(pos_within_tile).is_some() {
+                let focus_ring = focus_ring && active == Some(tile.window().id());
+                if tile
+                    .hit(pos_within_tile, InputRegion::Honor, focus_ring)
+                    .is_some()
+                {
                     let size = tile.tile_size().to_f64();
 
                     let mut edges = ResizeEdge::empty();
