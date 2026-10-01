@@ -126,6 +126,10 @@ pub struct ResolvedWindowRules {
     /// Override whether to set the Tiled xdg-toplevel state on the window.
     pub tiled_state: Option<bool>,
 
+    /// Whether to disable Mod+Left Click drag for move
+    /// and Mod+Right Click Drag for resize for this window.
+    pub disable_mod_mouse_actions: Option<bool>,
+
     /// Background effect configuration.
     pub background_effect: BackgroundEffect,
 
@@ -314,6 +318,9 @@ impl ResolvedWindowRules {
                 }
                 if let Some(x) = rule.tiled_state {
                     resolved.tiled_state = Some(x);
+                }
+                if let Some(x) = rule.disable_mod_mouse_actions {
+                    resolved.disable_mod_mouse_actions = Some(x);
                 }
 
                 resolved
