@@ -12,7 +12,8 @@ use smithay::reexports::calloop::{Interest, LoopHandle, Mode, PostAction};
 use smithay::reexports::wayland_server::protocol::wl_buffer::WlBuffer;
 use smithay::reexports::wayland_server::protocol::wl_pointer::WlPointer;
 use smithay::reexports::wayland_server::protocol::wl_shm;
-use smithay::reexports::wayland_server::{Client, DisplayHandle};
+use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
+use smithay::reexports::wayland_server::{Client, DisplayHandle, Weak};
 use smithay::utils::{
     Buffer as BufferCoords, Logical, Physical, Point, Rectangle, Scale, Size, Transform,
 };
@@ -28,9 +29,11 @@ use smithay::wayland::image_copy_capture::{
 use smithay::wayland::shm;
 use wayland_backend::server::Credentials;
 
+use crate::backend::Backend;
 use crate::cursor::{RenderCursor, XCursor};
 use crate::niri::{Niri, State};
 use crate::utils::{get_credentials_for_client, CastSessionId, CastStreamId};
+use crate::window::mapped::Mapped;
 
 /// Output capture session.
 pub struct ImageCopySession {
@@ -85,6 +88,25 @@ pub fn source_output(source: &ImageCaptureSource) -> Option<Output> {
     source.user_data().get::<WeakOutput>()?.upgrade()
 }
 
+/// Window captured by a session, and the output it is currently on.
+pub fn source_window<'a>(
+    niri: &'a Niri,
+    source: &ImageCaptureSource,
+) -> Option<(&'a Mapped, Output)> {
+    let surface = source
+        .user_data()
+        .get::<Weak<WlSurface>>()?
+        .upgrade()
+        .ok()?;
+    let (mapped, output) = niri.layout.find_window_and_output(&surface)?;
+    Some((mapped, output.cloned()?))
+}
+
+/// Output of a session's source.
+pub fn source_session_output(niri: &Niri, source: &ImageCaptureSource) -> Option<Output> {
+    source_output(source).or_else(|| source_window(niri, source).map(|(_, o)| o))
+}
+
 /// Buffer constraints for capturing an output.
 ///
 /// `render_node` is the primary renderer's DRM render node (see
@@ -102,40 +124,110 @@ pub fn output_capture_constraints(
     let mode = output.current_mode()?;
     let size = Size::<i32, BufferCoords>::from((mode.size.w, mode.size.h));
 
-    let dma = (|| {
-        let node = render_node?;
-        let egl = renderer.egl_context();
-
-        // Offer all formats the renderer can draw into to avoid unnecessary
-        // conversions, preserving the original order (many clients depend on
-        // the order being stable to select the same format when renegotiating).
-        let mut formats: Vec<(Fourcc, Vec<Modifier>)> = Vec::new();
-        for format in egl.dmabuf_render_formats().iter() {
-            match formats.iter_mut().find(|(code, _)| *code == format.code) {
-                Some((_, modifiers)) => modifiers.push(format.modifier),
-                None => formats.push((format.code, vec![format.modifier])),
-            }
-        }
-        if formats.is_empty() {
-            return None;
-        }
-
-        // Put Xrgb8888 and Argb8888 first since some clients always take the
-        // first advertised format (e.g. wl-mirror, grim).
-        formats.sort_by_key(|(code, _)| match code {
-            Fourcc::Xrgb8888 => 0,
-            Fourcc::Argb8888 => 1,
-            _ => 2,
-        });
-
-        Some(DmabufConstraints { node, formats })
-    })();
-
     Some(BufferConstraints {
         size,
         shm: vec![wl_shm::Format::Xrgb8888],
-        dma,
+        dma: capture_dmabuf_constraints(renderer, render_node),
     })
+}
+
+/// Buffer constraints for capturing a window.
+pub fn window_capture_constraints(
+    renderer: &GlesRenderer,
+    render_node: Option<DrmNode>,
+    mapped: &Mapped,
+    output: &Output,
+) -> BufferConstraints {
+    let size = window_capture_bbox(mapped, output).size;
+
+    BufferConstraints {
+        size: Size::from((size.w, size.h)),
+        shm: vec![wl_shm::Format::Xrgb8888, wl_shm::Format::Argb8888],
+        dma: capture_dmabuf_constraints(renderer, render_node),
+    }
+}
+
+/// Bounding box of the window's own content excluding popups.
+pub fn window_capture_bbox(mapped: &Mapped, output: &Output) -> Rectangle<i32, Physical> {
+    let scale = Scale::from(output.current_scale().fractional_scale());
+    mapped.window.bbox().to_physical_precise_up(scale)
+}
+
+/// Dmabuf constraints of the capture source.
+fn capture_dmabuf_constraints(
+    renderer: &GlesRenderer,
+    render_node: Option<DrmNode>,
+) -> Option<DmabufConstraints> {
+    let node = render_node?;
+    let egl = renderer.egl_context();
+
+    // Offer all formats the renderer can draw into to avoid unnecessary conversions, preserving the
+    // original order (many clients depend on the order being stable to select the same format when
+    // renegotiating).
+    let mut formats: Vec<(Fourcc, Vec<Modifier>)> = Vec::new();
+    for format in egl.dmabuf_render_formats().iter() {
+        if let Some((_, modifiers)) = formats.iter_mut().find(|(code, _)| *code == format.code) {
+            modifiers.push(format.modifier)
+        } else {
+            formats.push((format.code, vec![format.modifier]))
+        }
+    }
+    if formats.is_empty() {
+        return None;
+    }
+
+    // Put Xrgb8888 and Argb8888 first since some clients always take the first advertised format
+    // (e.g. wl-mirror, grim).
+    formats.sort_by_key(|(code, _)| match code {
+        Fourcc::Xrgb8888 => 0,
+        Fourcc::Argb8888 => 1,
+        _ => 2,
+    });
+
+    Some(DmabufConstraints { node, formats })
+}
+
+/// Refresh the session constraints and sends them to the client.
+pub fn refresh_session_constraints(
+    backend: &mut Backend,
+    s: &mut ImageCopySession,
+    build: impl FnOnce(&mut GlesRenderer) -> Option<BufferConstraints>,
+) -> bool {
+    let Some(constraints) = backend.with_primary_renderer(build).flatten() else {
+        return false;
+    };
+
+    // Cannot capture a frame for outdated constraints, so fail it before sending the new
+    // constraints (otherwise clients which re-negotiate on failure may miss the new `done`).
+    if let Some(frame) = s.pending_frame.take() {
+        frame.fail(CaptureFailureReason::BufferConstraints);
+    }
+    s.session.update_constraints(constraints);
+
+    true
+}
+
+/// Updates the cursor session constraints if the cursor size has changed, returning the current
+/// cursor size.
+pub fn update_cursor_constraints(
+    niri: &Niri,
+    s: &mut ImageCopyCursorSession,
+    output: &Output,
+) -> Size<i32, BufferCoords> {
+    let constraints = cursor_capture_constraints(niri, output);
+    let size = constraints.size;
+    if s.session
+        .current_constraints()
+        .is_none_or(|c| (c.size.w, c.size.h) != (size.w, size.h))
+    {
+        // Cannot capture a frame for outdated constraints, so fail it before sending the new
+        // constraints (otherwise clients which re-negotiate on failure may miss the new `done`).
+        if let Some(frame) = s.pending_frame.take() {
+            frame.fail(CaptureFailureReason::BufferConstraints);
+        }
+        s.session.update_constraints(constraints);
+    }
+    size
 }
 
 /// Buffer constraints for capturing the cursor of an output. Argb8888 since it has alpha.
@@ -296,6 +388,17 @@ impl ImageCopyCaptureHandler for State {
     }
 
     fn capture_constraints(&mut self, source: &ImageCaptureSource) -> Option<BufferConstraints> {
+        if let Some((mapped, output)) = source_window(&self.niri, source) {
+            if !self.niri.output_state.contains_key(&output) {
+                return None;
+            }
+
+            let render_node = self.backend.primary_render_node();
+            return self.backend.with_primary_renderer(|renderer| {
+                window_capture_constraints(renderer, render_node, mapped, &output)
+            });
+        }
+
         let output = source_output(source)?;
         if !self.niri.output_state.contains_key(&output) {
             return None;
@@ -314,7 +417,7 @@ impl ImageCopyCaptureHandler for State {
         source: &ImageCaptureSource,
         _pointer: &WlPointer,
     ) -> Option<BufferConstraints> {
-        let output = source_output(source)?;
+        let output = source_session_output(&self.niri, source)?;
         if !self.niri.output_state.contains_key(&output) {
             return None;
         }
@@ -380,7 +483,7 @@ impl ImageCopyCaptureHandler for State {
         s.pending_frame = Some(frame);
 
         // The frame is captured on the next redraw with damage.
-        if let Some(output) = source_output(&session.source()) {
+        if let Some(output) = source_session_output(&self.niri, &session.source()) {
             // The output may be gone already (the global lingers).
             if self.niri.output_exists(&output) {
                 self.niri.queue_redraw(&output);
@@ -408,7 +511,7 @@ impl ImageCopyCaptureHandler for State {
         s.pending_frame = Some(frame);
 
         // The frame is captured on the next redraw when the cursor image changes.
-        if let Some(output) = source_output(&session.source()) {
+        if let Some(output) = source_session_output(&self.niri, &session.source()) {
             // The output may be gone already (the global lingers).
             if self.niri.output_exists(&output) {
                 self.niri.queue_redraw(&output);
