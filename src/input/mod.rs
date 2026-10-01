@@ -3965,7 +3965,14 @@ impl State {
             return;
         }
 
-        if event.fingers() == 3 {
+        let gesture_swipe_fingers = self
+            .niri
+            .config
+            .borrow()
+            .input
+            .gesture_swipe_fingers
+            .unwrap_or(3);
+        if event.fingers() == gesture_swipe_fingers {
             self.niri.gesture_swipe_3f_cumulative = Some((0., 0.));
 
             // We handled this event.
@@ -4936,6 +4943,13 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
         } else {
             let default = device.config_tap_default_drag_enabled();
             let _ = device.config_tap_set_drag_enabled(default);
+        }
+
+        if let Some(three_finger_drag) = c.three_finger_drag {
+            let _ = device.config_3fg_drag_set_enabled(three_finger_drag.into());
+        } else {
+            let default = device.config_3fg_drag_get_default_enabled();
+            let _ = device.config_3fg_drag_set_enabled(default);
         }
 
         if let Some(accel_profile) = c.accel_profile {
