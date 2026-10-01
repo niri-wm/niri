@@ -36,6 +36,8 @@ recent-windows {
         Mod+grave       { next-window     filter="app-id"; }
         Mod+Shift+grave { previous-window filter="app-id"; }
     }
+
+    // disable-mouse
 }
 ```
 
@@ -191,3 +193,10 @@ For example, if you have <kbd>Mod</kbd><kbd>Shift</kbd><kbd>C</kbd> bound to `cl
 
 This way we don't need to hardcode things like HJKL directional movements.
 If you have, say, Colemak-DH MNEI binds instead, they will work for you in the window switcher (as long as they don't conflict with the hardcoded ones).
+
+### disable-mouse
+
+<sup>Since: next release</sup>
+
+This setting lets you disable your mouse from interacting with the window switcher.
+This option might be useful if you have a graphic tablet, and the pointer messes with the switcher
