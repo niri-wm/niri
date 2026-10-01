@@ -728,6 +728,9 @@ impl State {
             Action::PowerOnMonitors => {
                 self.niri.activate_monitors(&mut self.backend);
             }
+            Action::ToggleMonitorsPower => {
+                self.niri.toggle_monitors(&mut self.backend);
+            }
             Action::ToggleDebugTint => {
                 self.backend.toggle_debug_tint();
                 self.niri.queue_redraw_all();
