@@ -1,7 +1,9 @@
 use std::cell::{Cell, Ref, RefCell};
 use std::time::Duration;
 
-use niri_config::{Color, Config, CornerRadius, GradientInterpolation, WindowRule};
+use niri_config::{
+    Color, Config, CornerRadius, GradientInterpolation, WindowRule, DEFAULT_CORNER_RADIUS_EXPONENT,
+};
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::element::Kind;
 use smithay::backend::renderer::gles::GlesRenderer;
@@ -532,6 +534,9 @@ impl Mapped {
                         Rectangle::from_size(geo.size),
                         0.,
                         radius,
+                        self.rules
+                            .geometry_corner_radius_exponent
+                            .unwrap_or(DEFAULT_CORNER_RADIUS_EXPONENT),
                         scale.x as f32,
                         1.,
                     )
@@ -729,6 +734,9 @@ impl LayoutElement for Mapped {
                 surface_anim_scale,
                 self.blur_config,
                 popup_rules.geometry_corner_radius.unwrap_or_default(),
+                popup_rules
+                    .geometry_corner_radius_exponent
+                    .unwrap_or(DEFAULT_CORNER_RADIUS_EXPONENT),
                 effect,
                 false,
                 xray_pos,
@@ -745,6 +753,7 @@ impl LayoutElement for Mapped {
         clip_to_geometry: bool,
         surface_anim_scale: Scale<f64>,
         radius: CornerRadius,
+        exponent: f32,
         xray_pos: XrayPos,
         push: &mut dyn FnMut(BackgroundEffectElement),
     ) {
@@ -760,6 +769,7 @@ impl LayoutElement for Mapped {
             surface_anim_scale,
             self.blur_config,
             radius,
+            exponent,
             self.rules.background_effect,
             should_block_out,
             xray_pos,

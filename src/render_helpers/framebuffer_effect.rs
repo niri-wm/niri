@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 
 use glam::{Mat3, Vec2};
-use niri_config::CornerRadius;
+use niri_config::{CornerRadius, DEFAULT_CORNER_RADIUS_EXPONENT};
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::element::{Element, Id, RenderElement};
 use smithay::backend::renderer::gles::{
@@ -33,6 +33,7 @@ pub struct FramebufferEffectElement {
     geometry: Rectangle<f64, Logical>,
     clip_geo: Rectangle<f64, Logical>,
     corner_radius: CornerRadius,
+    corner_exponent: f32,
     subregion: Option<TransformedRegion>,
     scale: f32,
     blur_options: Option<BlurOptions>,
@@ -69,9 +70,11 @@ impl FramebufferEffect {
         noise: f32,
         saturation: f32,
     ) -> FramebufferEffectElement {
-        let (clip_geo, corner_radius) = params
-            .clip
-            .unwrap_or((params.geometry, CornerRadius::default()));
+        let (clip_geo, corner_radius, corner_exponent) = params.clip.unwrap_or((
+            params.geometry,
+            CornerRadius::default(),
+            DEFAULT_CORNER_RADIUS_EXPONENT,
+        ));
 
         let mut id = self.id.clone();
         if let Some(ns) = ns {
@@ -84,6 +87,7 @@ impl FramebufferEffect {
             geometry: params.geometry,
             clip_geo,
             corner_radius,
+            corner_exponent,
             subregion: params.subregion,
             scale: params.scale as f32,
             blur_options,
@@ -98,7 +102,7 @@ impl FramebufferEffectElement {
         &self,
         crop: Rectangle<f64, Logical>,
         transform: Transform,
-    ) -> [Uniform<'static>; 7] {
+    ) -> [Uniform<'static>; 8] {
         let offset = crop.loc - (self.clip_geo.loc - self.geometry.loc);
         let offset = Vec2::new(offset.x as f32, offset.y as f32);
         let crop_size = Vec2::new(crop.size.w as f32, crop.size.h as f32);
@@ -120,6 +124,7 @@ impl FramebufferEffectElement {
             Uniform::new("niri_scale", self.scale),
             Uniform::new("geo_size", clip_geo_size),
             Uniform::new("corner_radius", <[f32; 4]>::from(self.corner_radius)),
+            Uniform::new("corner_exponent", self.corner_exponent),
             mat3_uniform("input_to_geo", input_to_clip_geo),
             Uniform::new("noise", self.noise),
             Uniform::new("saturation", self.saturation),
