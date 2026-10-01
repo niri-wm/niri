@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use niri_config::utils::MergeWith as _;
 use niri_config::{CenterFocusedColumn, PresetSize, Struts};
-use niri_ipc::{ColumnDisplay, SizeChange, WindowLayout};
+use niri_ipc::{ColumnDisplay, HorizontalAlignment, SizeChange, VerticalAlignment, WindowLayout};
 use ordered_float::NotNan;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Serial, Size};
@@ -237,6 +237,9 @@ pub struct Column<W: LayoutElement> {
 
     /// Configurable properties of the layout.
     options: Rc<Options>,
+
+    /// Preferred alignment. None -> left as default
+    alignment: Option<HorizontalAlignment>,
 
     /// Unique ID of this column.
     id: ColumnId,
@@ -603,29 +606,29 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         new_offset - area.loc.x
     }
 
-    fn compute_new_view_offset_centered(
+    fn compute_new_view_offset_aligned(
         &self,
         target_x: Option<f64>,
         col_x: f64,
         width: f64,
         mode: SizingMode,
+        alignment: HorizontalAlignment,
     ) -> f64 {
         if mode.is_fullscreen() {
             return self.compute_new_view_offset_fit(target_x, col_x, width, mode);
         }
 
-        let area = if mode.is_maximized() {
-            self.parent_area
+        let (area, padding) = if mode.is_maximized() {
+            (self.parent_area, 0.)
         } else {
-            self.working_area
+            (self.working_area, self.options.layout.gaps)
         };
 
-        // Columns wider than the view are left-aligned (the fit code can deal with that).
-        if area.size.w <= width {
-            return self.compute_new_view_offset_fit(target_x, col_x, width, mode);
+        match alignment {
+            HorizontalAlignment::Left => -area.loc.x - padding,
+            HorizontalAlignment::Center => -(area.size.w - width) / 2. - area.loc.x,
+            HorizontalAlignment::Right => -(area.size.w - width) - area.loc.x + padding,
         }
-
-        -(area.size.w - width) / 2. - area.loc.x
     }
 
     fn compute_new_view_offset_for_column_fit(&self, target_x: Option<f64>, idx: usize) -> f64 {
@@ -638,17 +641,19 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         )
     }
 
-    fn compute_new_view_offset_for_column_centered(
+    fn compute_new_view_offset_for_column_aligned(
         &self,
         target_x: Option<f64>,
         idx: usize,
+        alignment: HorizontalAlignment,
     ) -> f64 {
         let col = &self.columns[idx];
-        self.compute_new_view_offset_centered(
+        self.compute_new_view_offset_aligned(
             target_x,
             self.column_x(idx),
             col.width(),
             col.sizing_mode(),
+            alignment,
         )
     }
 
@@ -658,14 +663,24 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         idx: usize,
         prev_idx: Option<usize>,
     ) -> f64 {
+        if let Some(horizontal) = self.columns[idx].alignment {
+            return self.compute_new_view_offset_for_column_aligned(target_x, idx, horizontal);
+        }
+
         if self.is_centering_focused_column() {
-            return self.compute_new_view_offset_for_column_centered(target_x, idx);
+            return self.compute_new_view_offset_for_column_aligned(
+                target_x,
+                idx,
+                HorizontalAlignment::Center,
+            );
         }
 
         match self.options.layout.center_focused_column {
-            CenterFocusedColumn::Always => {
-                self.compute_new_view_offset_for_column_centered(target_x, idx)
-            }
+            CenterFocusedColumn::Always => self.compute_new_view_offset_for_column_aligned(
+                target_x,
+                idx,
+                HorizontalAlignment::Center,
+            ),
             CenterFocusedColumn::OnOverflow => {
                 let Some(prev_idx) = prev_idx else {
                     return self.compute_new_view_offset_for_column_fit(target_x, idx);
@@ -703,7 +718,11 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                 if total_width <= self.working_area.size.w {
                     self.compute_new_view_offset_for_column_fit(target_x, idx)
                 } else {
-                    self.compute_new_view_offset_for_column_centered(target_x, idx)
+                    self.compute_new_view_offset_for_column_aligned(
+                        target_x,
+                        idx,
+                        HorizontalAlignment::Center,
+                    )
                 }
             }
             CenterFocusedColumn::Never => {
@@ -766,13 +785,15 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         }
     }
 
-    fn animate_view_offset_to_column_centered(
+    fn animate_view_offset_to_column_aligned(
         &mut self,
         target_x: Option<f64>,
         idx: usize,
         config: niri_config::Animation,
+        alignment: HorizontalAlignment,
     ) {
-        let new_view_offset = self.compute_new_view_offset_for_column_centered(target_x, idx);
+        let new_view_offset =
+            self.compute_new_view_offset_for_column_aligned(target_x, idx, alignment);
         self.animate_view_offset_with_config(idx, new_view_offset, config);
     }
 
@@ -839,7 +860,6 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         }
 
         let x = pos.x + self.view_pos();
-
         // Aim for the center of the gap.
         let x = x + self.options.layout.gaps / 2.;
         let y = pos.y + self.options.layout.gaps / 2.;
@@ -2226,15 +2246,24 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     }
 
     pub fn center_column(&mut self) {
+        self.align_column(Some(HorizontalAlignment::Center))
+    }
+
+    pub fn align_column(&mut self, alignment: Option<HorizontalAlignment>) {
         if self.columns.is_empty() {
             return;
         }
-
-        self.animate_view_offset_to_column_centered(
-            None,
-            self.active_column_idx,
-            self.options.animations.horizontal_view_movement.0,
-        );
+        self.columns[self.active_column_idx].alignment = alignment;
+        if let Some(alignment) = alignment {
+            self.animate_view_offset_to_column_aligned(
+                None,
+                self.active_column_idx,
+                self.options.animations.horizontal_view_movement.0,
+                alignment,
+            );
+        } else {
+            self.animate_view_offset_to_column(None, self.active_column_idx, None)
+        }
 
         let col = &mut self.columns[self.active_column_idx];
         cancel_resize_for_column(&mut self.interactive_resize, col);
@@ -2260,6 +2289,39 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         }
 
         self.center_column();
+    }
+
+    pub fn align_window(
+        &mut self,
+        window: Option<&W::Id>,
+        horizontal: Option<HorizontalAlignment>,
+        vertical: Option<VerticalAlignment>,
+    ) {
+        if self.columns.is_empty() {
+            return;
+        }
+
+        if vertical.is_some() && horizontal.is_none() {
+            // The user seems to be trying to change the vertical alignment without resetting
+            // horizontal
+            return;
+        }
+
+        let col_idx = if let Some(window) = window {
+            self.columns
+                .iter()
+                .position(|col| col.contains(window))
+                .unwrap()
+        } else {
+            self.active_column_idx
+        };
+
+        // only align the active column
+        if col_idx != self.active_column_idx {
+            return;
+        }
+
+        self.align_column(horizontal);
     }
 
     pub fn center_visible_columns(&mut self) {
@@ -2564,15 +2626,14 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             InsertPosition::Floating => return None,
         };
 
-        // First window on an empty workspace will cancel out any view offset. Replicate this
-        // effect here.
         if self.columns.is_empty() {
             let view_offset = if self.is_centering_focused_column() {
-                self.compute_new_view_offset_centered(
+                self.compute_new_view_offset_aligned(
                     Some(0.),
                     0.,
                     hint_area.size.w,
                     SizingMode::Normal,
+                    HorizontalAlignment::Center,
                 )
             } else {
                 self.compute_new_view_offset_fit(Some(0.), 0., hint_area.size.w, SizingMode::Normal)
@@ -3584,6 +3645,14 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             original_window_size,
             data: InteractiveResizeData { edges },
         };
+
+        let col_idx = self
+            .columns
+            .iter()
+            .position(|col| col.contains(&resize.window))
+            .unwrap();
+        self.columns[col_idx].alignment = None;
+
         self.interactive_resize = Some(resize);
 
         self.view_offset.stop_anim_and_gesture();
@@ -4020,6 +4089,7 @@ impl<W: LayoutElement> Column<W> {
             scale,
             clock: tile.clock.clone(),
             options,
+            alignment: None,
             id: ColumnId::next(),
         };
 
