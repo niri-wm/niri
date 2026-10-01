@@ -5,7 +5,7 @@ use std::fmt::Write as _;
 use std::iter::zip;
 use std::rc::Rc;
 
-use niri_config::{Action, Bind, Config, Key, ModKey, Modifiers, Trigger};
+use niri_config::{Action, Bind, Config, Key, ModKey, Modifiers, OutputReference, Trigger};
 use pangocairo::cairo::{self, ImageSurface};
 use pangocairo::pango::{AttrColor, AttrInt, AttrList, AttrString, FontDescription, Weight};
 use smithay::backend::renderer::element::Kind;
@@ -216,8 +216,8 @@ fn collect_actions(config: &Config) -> Vec<&Action> {
         &Action::FocusColumnRight,
         &Action::MoveColumnLeft,
         &Action::MoveColumnRight,
-        &Action::FocusWorkspaceDown,
-        &Action::FocusWorkspaceUp,
+        &Action::FocusWorkspaceDown(OutputReference::Active),
+        &Action::FocusWorkspaceUp(OutputReference::Active),
     ]);
 
     // Prefer move-column-to-workspace-down, but fall back to move-window-to-workspace-down.
@@ -464,8 +464,8 @@ fn action_name(action: &Action) -> String {
         Action::FocusColumnRight => String::from("Focus Column to the Right"),
         Action::MoveColumnLeft => String::from("Move Column Left"),
         Action::MoveColumnRight => String::from("Move Column Right"),
-        Action::FocusWorkspaceDown => String::from("Switch Workspace Down"),
-        Action::FocusWorkspaceUp => String::from("Switch Workspace Up"),
+        Action::FocusWorkspaceDown(_) => String::from("Switch Workspace Down"),
+        Action::FocusWorkspaceUp(_) => String::from("Switch Workspace Up"),
         Action::MoveColumnToWorkspaceDown(_) => String::from("Move Column to Workspace Down"),
         Action::MoveColumnToWorkspaceUp(_) => String::from("Move Column to Workspace Up"),
         Action::MoveWindowToWorkspaceDown(_) => String::from("Move Window to Workspace Down"),
