@@ -702,6 +702,8 @@ impl State {
             touch.cancel(self);
         }
 
+        let previous_output = self.niri.layout.active_output().cloned();
+
         match action {
             Action::Quit(skip_confirmation) => {
                 if !skip_confirmation && self.niri.exit_confirm_dialog.show() {
@@ -974,7 +976,7 @@ impl State {
                     self.niri.screenshot_ui.move_left();
                 } else if let Some(output) = self.niri.output_left() {
                     if self.niri.layout.move_column_left_or_to_output(&output)
-                        && !self.maybe_warp_cursor_to_focus_centered()
+                        && !self.maybe_warp_cursor_to_focus_centered(previous_output.as_ref())
                     {
                         self.move_cursor_to_output(&output);
                     } else {
@@ -993,7 +995,7 @@ impl State {
                     self.niri.screenshot_ui.move_right();
                 } else if let Some(output) = self.niri.output_right() {
                     if self.niri.layout.move_column_right_or_to_output(&output)
-                        && !self.maybe_warp_cursor_to_focus_centered()
+                        && !self.maybe_warp_cursor_to_focus_centered(previous_output.as_ref())
                     {
                         self.move_cursor_to_output(&output);
                     } else {
@@ -1161,7 +1163,7 @@ impl State {
             Action::FocusWindowOrMonitorUp => {
                 if let Some(output) = self.niri.output_up() {
                     if self.niri.layout.focus_window_up_or_output(&output)
-                        && !self.maybe_warp_cursor_to_focus_centered()
+                        && !self.maybe_warp_cursor_to_focus_centered(previous_output.as_ref())
                     {
                         self.move_cursor_to_output(&output);
                     } else {
@@ -1179,7 +1181,7 @@ impl State {
             Action::FocusWindowOrMonitorDown => {
                 if let Some(output) = self.niri.output_down() {
                     if self.niri.layout.focus_window_down_or_output(&output)
-                        && !self.maybe_warp_cursor_to_focus_centered()
+                        && !self.maybe_warp_cursor_to_focus_centered(previous_output.as_ref())
                     {
                         self.move_cursor_to_output(&output);
                     } else {
@@ -1197,7 +1199,7 @@ impl State {
             Action::FocusColumnOrMonitorLeft => {
                 if let Some(output) = self.niri.output_left() {
                     if self.niri.layout.focus_column_left_or_output(&output)
-                        && !self.maybe_warp_cursor_to_focus_centered()
+                        && !self.maybe_warp_cursor_to_focus_centered(previous_output.as_ref())
                     {
                         self.move_cursor_to_output(&output);
                     } else {
@@ -1215,7 +1217,7 @@ impl State {
             Action::FocusColumnOrMonitorRight => {
                 if let Some(output) = self.niri.output_right() {
                     if self.niri.layout.focus_column_right_or_output(&output)
-                        && !self.maybe_warp_cursor_to_focus_centered()
+                        && !self.maybe_warp_cursor_to_focus_centered(previous_output.as_ref())
                     {
                         self.move_cursor_to_output(&output);
                     } else {
@@ -1350,7 +1352,7 @@ impl State {
                             .move_to_output(None, &output, Some(index), activate);
 
                         if focus {
-                            if !self.maybe_warp_cursor_to_focus_centered() {
+                            if !self.maybe_warp_cursor_to_focus_centered(previous_output.as_ref()) {
                                 self.move_cursor_to_output(&output);
                             }
                         } else {
@@ -1401,7 +1403,9 @@ impl State {
                             if !target_was_active
                                 && self.niri.layout.active_output() == Some(&output)
                             {
-                                if !self.maybe_warp_cursor_to_focus_centered() {
+                                if !self
+                                    .maybe_warp_cursor_to_focus_centered(previous_output.as_ref())
+                                {
                                     self.move_cursor_to_output(&output);
                                 }
                             }
@@ -1448,7 +1452,9 @@ impl State {
                         self.niri
                             .layout
                             .move_column_to_output(&output, Some(index), focus);
-                        if focus && !self.maybe_warp_cursor_to_focus_centered() {
+                        if focus
+                            && !self.maybe_warp_cursor_to_focus_centered(previous_output.as_ref())
+                        {
                             self.move_cursor_to_output(&output);
                         }
                     } else {
@@ -1515,7 +1521,7 @@ impl State {
                     if let Some(output) = output {
                         self.niri.layout.focus_output(&output);
                         self.niri.layout.switch_workspace(index);
-                        if !self.maybe_warp_cursor_to_focus_centered() {
+                        if !self.maybe_warp_cursor_to_focus_centered(previous_output.as_ref()) {
                             self.move_cursor_to_output(&output);
                         }
                     } else {
@@ -1710,7 +1716,7 @@ impl State {
             Action::FocusMonitorLeft => {
                 if let Some(output) = self.niri.output_left() {
                     self.niri.layout.focus_output(&output);
-                    if !self.maybe_warp_cursor_to_focus_centered() {
+                    if !self.maybe_warp_cursor_to_focus_centered(previous_output.as_ref()) {
                         self.move_cursor_to_output(&output);
                     }
                     self.niri.layer_shell_on_demand_focus = None;
@@ -1719,7 +1725,7 @@ impl State {
             Action::FocusMonitorRight => {
                 if let Some(output) = self.niri.output_right() {
                     self.niri.layout.focus_output(&output);
-                    if !self.maybe_warp_cursor_to_focus_centered() {
+                    if !self.maybe_warp_cursor_to_focus_centered(previous_output.as_ref()) {
                         self.move_cursor_to_output(&output);
                     }
                     self.niri.layer_shell_on_demand_focus = None;
@@ -1728,7 +1734,7 @@ impl State {
             Action::FocusMonitorDown => {
                 if let Some(output) = self.niri.output_down() {
                     self.niri.layout.focus_output(&output);
-                    if !self.maybe_warp_cursor_to_focus_centered() {
+                    if !self.maybe_warp_cursor_to_focus_centered(previous_output.as_ref()) {
                         self.move_cursor_to_output(&output);
                     }
                     self.niri.layer_shell_on_demand_focus = None;
@@ -1737,7 +1743,7 @@ impl State {
             Action::FocusMonitorUp => {
                 if let Some(output) = self.niri.output_up() {
                     self.niri.layout.focus_output(&output);
-                    if !self.maybe_warp_cursor_to_focus_centered() {
+                    if !self.maybe_warp_cursor_to_focus_centered(previous_output.as_ref()) {
                         self.move_cursor_to_output(&output);
                     }
                     self.niri.layer_shell_on_demand_focus = None;
@@ -1746,7 +1752,7 @@ impl State {
             Action::FocusMonitorPrevious => {
                 if let Some(output) = self.niri.output_previous() {
                     self.niri.layout.focus_output(&output);
-                    if !self.maybe_warp_cursor_to_focus_centered() {
+                    if !self.maybe_warp_cursor_to_focus_centered(previous_output.as_ref()) {
                         self.move_cursor_to_output(&output);
                     }
                     self.niri.layer_shell_on_demand_focus = None;
@@ -1755,7 +1761,7 @@ impl State {
             Action::FocusMonitorNext => {
                 if let Some(output) = self.niri.output_next() {
                     self.niri.layout.focus_output(&output);
-                    if !self.maybe_warp_cursor_to_focus_centered() {
+                    if !self.maybe_warp_cursor_to_focus_centered(previous_output.as_ref()) {
                         self.move_cursor_to_output(&output);
                     }
                     self.niri.layer_shell_on_demand_focus = None;
@@ -1764,7 +1770,7 @@ impl State {
             Action::FocusMonitor(output) => {
                 if let Some(output) = self.niri.output_by_name_match(&output).cloned() {
                     self.niri.layout.focus_output(&output);
-                    if !self.maybe_warp_cursor_to_focus_centered() {
+                    if !self.maybe_warp_cursor_to_focus_centered(previous_output.as_ref()) {
                         self.move_cursor_to_output(&output);
                     }
                     self.niri.layer_shell_on_demand_focus = None;
@@ -1781,7 +1787,7 @@ impl State {
                         .layout
                         .move_to_output(None, &output, None, ActivateWindow::Smart);
                     self.niri.layout.focus_output(&output);
-                    if !self.maybe_warp_cursor_to_focus_centered() {
+                    if !self.maybe_warp_cursor_to_focus_centered(previous_output.as_ref()) {
                         self.move_cursor_to_output(&output);
                     }
                 }
@@ -1797,7 +1803,7 @@ impl State {
                         .layout
                         .move_to_output(None, &output, None, ActivateWindow::Smart);
                     self.niri.layout.focus_output(&output);
-                    if !self.maybe_warp_cursor_to_focus_centered() {
+                    if !self.maybe_warp_cursor_to_focus_centered(previous_output.as_ref()) {
                         self.move_cursor_to_output(&output);
                     }
                 }
@@ -1813,7 +1819,7 @@ impl State {
                         .layout
                         .move_to_output(None, &output, None, ActivateWindow::Smart);
                     self.niri.layout.focus_output(&output);
-                    if !self.maybe_warp_cursor_to_focus_centered() {
+                    if !self.maybe_warp_cursor_to_focus_centered(previous_output.as_ref()) {
                         self.move_cursor_to_output(&output);
                     }
                 }
@@ -1829,7 +1835,7 @@ impl State {
                         .layout
                         .move_to_output(None, &output, None, ActivateWindow::Smart);
                     self.niri.layout.focus_output(&output);
-                    if !self.maybe_warp_cursor_to_focus_centered() {
+                    if !self.maybe_warp_cursor_to_focus_centered(previous_output.as_ref()) {
                         self.move_cursor_to_output(&output);
                     }
                 }
@@ -1845,7 +1851,7 @@ impl State {
                         .layout
                         .move_to_output(None, &output, None, ActivateWindow::Smart);
                     self.niri.layout.focus_output(&output);
-                    if !self.maybe_warp_cursor_to_focus_centered() {
+                    if !self.maybe_warp_cursor_to_focus_centered(previous_output.as_ref()) {
                         self.move_cursor_to_output(&output);
                     }
                 }
@@ -1861,7 +1867,7 @@ impl State {
                         .layout
                         .move_to_output(None, &output, None, ActivateWindow::Smart);
                     self.niri.layout.focus_output(&output);
-                    if !self.maybe_warp_cursor_to_focus_centered() {
+                    if !self.maybe_warp_cursor_to_focus_centered(previous_output.as_ref()) {
                         self.move_cursor_to_output(&output);
                     }
                 }
@@ -1876,7 +1882,7 @@ impl State {
                             .layout
                             .move_to_output(None, &output, None, ActivateWindow::Smart);
                         self.niri.layout.focus_output(&output);
-                        if !self.maybe_warp_cursor_to_focus_centered() {
+                        if !self.maybe_warp_cursor_to_focus_centered(previous_output.as_ref()) {
                             self.move_cursor_to_output(&output);
                         }
                     }
@@ -1904,7 +1910,7 @@ impl State {
                         // If the active output changed (window was moved and focused).
                         #[allow(clippy::collapsible_if)]
                         if !target_was_active && self.niri.layout.active_output() == Some(&output) {
-                            if !self.maybe_warp_cursor_to_focus_centered() {
+                            if !self.maybe_warp_cursor_to_focus_centered(previous_output.as_ref()) {
                                 self.move_cursor_to_output(&output);
                             }
                         }
@@ -1920,7 +1926,7 @@ impl State {
                 } else if let Some(output) = self.niri.output_left() {
                     self.niri.layout.move_column_to_output(&output, None, true);
                     self.niri.layout.focus_output(&output);
-                    if !self.maybe_warp_cursor_to_focus_centered() {
+                    if !self.maybe_warp_cursor_to_focus_centered(previous_output.as_ref()) {
                         self.move_cursor_to_output(&output);
                     }
                 }
@@ -1934,7 +1940,7 @@ impl State {
                 } else if let Some(output) = self.niri.output_right() {
                     self.niri.layout.move_column_to_output(&output, None, true);
                     self.niri.layout.focus_output(&output);
-                    if !self.maybe_warp_cursor_to_focus_centered() {
+                    if !self.maybe_warp_cursor_to_focus_centered(previous_output.as_ref()) {
                         self.move_cursor_to_output(&output);
                     }
                 }
@@ -1948,7 +1954,7 @@ impl State {
                 } else if let Some(output) = self.niri.output_down() {
                     self.niri.layout.move_column_to_output(&output, None, true);
                     self.niri.layout.focus_output(&output);
-                    if !self.maybe_warp_cursor_to_focus_centered() {
+                    if !self.maybe_warp_cursor_to_focus_centered(previous_output.as_ref()) {
                         self.move_cursor_to_output(&output);
                     }
                 }
@@ -1962,7 +1968,7 @@ impl State {
                 } else if let Some(output) = self.niri.output_up() {
                     self.niri.layout.move_column_to_output(&output, None, true);
                     self.niri.layout.focus_output(&output);
-                    if !self.maybe_warp_cursor_to_focus_centered() {
+                    if !self.maybe_warp_cursor_to_focus_centered(previous_output.as_ref()) {
                         self.move_cursor_to_output(&output);
                     }
                 }
@@ -1976,7 +1982,7 @@ impl State {
                 } else if let Some(output) = self.niri.output_previous() {
                     self.niri.layout.move_column_to_output(&output, None, true);
                     self.niri.layout.focus_output(&output);
-                    if !self.maybe_warp_cursor_to_focus_centered() {
+                    if !self.maybe_warp_cursor_to_focus_centered(previous_output.as_ref()) {
                         self.move_cursor_to_output(&output);
                     }
                 }
@@ -1990,7 +1996,7 @@ impl State {
                 } else if let Some(output) = self.niri.output_next() {
                     self.niri.layout.move_column_to_output(&output, None, true);
                     self.niri.layout.focus_output(&output);
-                    if !self.maybe_warp_cursor_to_focus_centered() {
+                    if !self.maybe_warp_cursor_to_focus_centered(previous_output.as_ref()) {
                         self.move_cursor_to_output(&output);
                     }
                 }
@@ -2003,7 +2009,7 @@ impl State {
                     } else {
                         self.niri.layout.move_column_to_output(&output, None, true);
                         self.niri.layout.focus_output(&output);
-                        if !self.maybe_warp_cursor_to_focus_centered() {
+                        if !self.maybe_warp_cursor_to_focus_centered(previous_output.as_ref()) {
                             self.move_cursor_to_output(&output);
                         }
                     }
@@ -2077,7 +2083,7 @@ impl State {
             Action::MoveWorkspaceToMonitorLeft => {
                 if let Some(output) = self.niri.output_left() {
                     self.niri.layout.move_workspace_to_output(&output);
-                    if !self.maybe_warp_cursor_to_focus_centered() {
+                    if !self.maybe_warp_cursor_to_focus_centered(previous_output.as_ref()) {
                         self.move_cursor_to_output(&output);
                     }
                 }
@@ -2085,7 +2091,7 @@ impl State {
             Action::MoveWorkspaceToMonitorRight => {
                 if let Some(output) = self.niri.output_right() {
                     self.niri.layout.move_workspace_to_output(&output);
-                    if !self.maybe_warp_cursor_to_focus_centered() {
+                    if !self.maybe_warp_cursor_to_focus_centered(previous_output.as_ref()) {
                         self.move_cursor_to_output(&output);
                     }
                 }
@@ -2093,7 +2099,7 @@ impl State {
             Action::MoveWorkspaceToMonitorDown => {
                 if let Some(output) = self.niri.output_down() {
                     self.niri.layout.move_workspace_to_output(&output);
-                    if !self.maybe_warp_cursor_to_focus_centered() {
+                    if !self.maybe_warp_cursor_to_focus_centered(previous_output.as_ref()) {
                         self.move_cursor_to_output(&output);
                     }
                 }
@@ -2101,7 +2107,7 @@ impl State {
             Action::MoveWorkspaceToMonitorUp => {
                 if let Some(output) = self.niri.output_up() {
                     self.niri.layout.move_workspace_to_output(&output);
-                    if !self.maybe_warp_cursor_to_focus_centered() {
+                    if !self.maybe_warp_cursor_to_focus_centered(previous_output.as_ref()) {
                         self.move_cursor_to_output(&output);
                     }
                 }
@@ -2109,7 +2115,7 @@ impl State {
             Action::MoveWorkspaceToMonitorPrevious => {
                 if let Some(output) = self.niri.output_previous() {
                     self.niri.layout.move_workspace_to_output(&output);
-                    if !self.maybe_warp_cursor_to_focus_centered() {
+                    if !self.maybe_warp_cursor_to_focus_centered(previous_output.as_ref()) {
                         self.move_cursor_to_output(&output);
                     }
                 }
@@ -2117,7 +2123,7 @@ impl State {
             Action::MoveWorkspaceToMonitorNext => {
                 if let Some(output) = self.niri.output_next() {
                     self.niri.layout.move_workspace_to_output(&output);
-                    if !self.maybe_warp_cursor_to_focus_centered() {
+                    if !self.maybe_warp_cursor_to_focus_centered(previous_output.as_ref()) {
                         self.move_cursor_to_output(&output);
                     }
                 }
@@ -2125,7 +2131,7 @@ impl State {
             Action::MoveWorkspaceToMonitor(new_output) => {
                 if let Some(new_output) = self.niri.output_by_name_match(&new_output).cloned() {
                     if self.niri.layout.move_workspace_to_output(&new_output)
-                        && !self.maybe_warp_cursor_to_focus_centered()
+                        && !self.maybe_warp_cursor_to_focus_centered(previous_output.as_ref())
                     {
                         self.move_cursor_to_output(&new_output);
                     }
@@ -2146,7 +2152,7 @@ impl State {
                             &new_output,
                         ) {
                             // Cursor warp already calls `queue_redraw_all`
-                            if !self.maybe_warp_cursor_to_focus_centered() {
+                            if !self.maybe_warp_cursor_to_focus_centered(previous_output.as_ref()) {
                                 self.move_cursor_to_output(&new_output);
                             }
                         }
