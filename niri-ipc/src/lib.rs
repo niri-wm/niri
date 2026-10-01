@@ -454,6 +454,8 @@ pub enum Action {
         #[cfg_attr(feature = "clap", arg())]
         display: ColumnDisplay,
     },
+    /// Toggle whether the current workspace centers columns by default.
+    ToggleCenterColumn {},
     /// Center the focused column on the screen.
     CenterColumn {},
     /// Center a window on the screen.
