@@ -23,6 +23,7 @@ pub struct Input {
     pub workspace_auto_back_and_forth: bool,
     pub mod_key: Option<ModKey>,
     pub mod_key_nested: Option<ModKey>,
+    pub button_scroll_factor: Option<ScrollFactor>,
 }
 
 #[derive(knuffel::Decode, Debug, Default, PartialEq)]
@@ -53,6 +54,8 @@ pub struct InputPart {
     pub mod_key: Option<ModKey>,
     #[knuffel(child, unwrap(argument, str))]
     pub mod_key_nested: Option<ModKey>,
+    #[knuffel(child)]
+    pub button_scroll_factor: Option<ScrollFactor>,
 }
 
 impl MergeWith<InputPart> for Input {
@@ -80,6 +83,7 @@ impl MergeWith<InputPart> for Input {
             focus_follows_mouse,
             mod_key,
             mod_key_nested,
+            button_scroll_factor,
         );
     }
 }
