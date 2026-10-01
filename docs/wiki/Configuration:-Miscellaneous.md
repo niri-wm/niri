@@ -11,6 +11,10 @@ prefer-no-csd
 
 screenshot-path "~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png"
 
+screenshot-notification {
+    disable
+}
+
 environment {
     QT_QPA_PLATFORM "wayland"
     DISPLAY null
@@ -133,6 +137,21 @@ You can also set this option to `null` to disable saving screenshots to disk.
 
 ```kdl
 screenshot-path null
+```
+
+### `screenshot-notification`
+
+<sup>Since: 26.05</sup>
+
+Settings for the screenshot taken notification.
+
+By default, niri shows a notification when a screenshot is taken.
+Set the `disable` flag to turn it off.
+
+```kdl
+screenshot-notification {
+    disable
+}
 ```
 
 ### `environment`
