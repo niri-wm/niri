@@ -20,6 +20,7 @@ use std::fs::{self, File};
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use std::sync::Arc;
 
 use knuffel::errors::DecodeError;
 use knuffel::Decode as _;
@@ -526,6 +527,40 @@ impl Config {
     pub fn parse_mem(text: &str) -> Result<Self, ConfigIncludeError> {
         Self::parse(Path::new("config.kdl"), text).config
     }
+
+    /// Collects every custom-shader source referenced by the config.
+    ///
+    /// Used to prune per-rule compiled shader caches on reload: any cached
+    /// program whose source is absent here is stranded and can be freed.
+    pub fn custom_shader_sources(&self) -> HashSet<Arc<str>> {
+        let mut out = HashSet::new();
+
+        let global = [
+            self.animations.window_open.custom_shader.clone(),
+            self.animations.window_close.custom_shader.clone(),
+            self.animations.window_resize.custom_shader.clone(),
+        ];
+        out.extend(global.into_iter().flatten());
+
+        for rule in &self.window_rules {
+            let Some(anims) = &rule.animations else {
+                continue;
+            };
+            let rule_sources = [
+                anims
+                    .window_open
+                    .as_ref()
+                    .and_then(|anim| anim.custom_shader.clone()),
+                anims
+                    .window_close
+                    .as_ref()
+                    .and_then(|anim| anim.custom_shader.clone()),
+            ];
+            out.extend(rule_sources.into_iter().flatten());
+        }
+
+        out
+    }
 }
 
 impl ConfigPath {
@@ -638,6 +673,38 @@ mod tests {
         let config = Config::parse_mem("").unwrap();
         assert_eq!(config.input.keyboard.repeat_delay, 600);
         assert_eq!(config.input.keyboard.repeat_rate, 25);
+    }
+
+    #[test]
+    fn custom_shader_sources_collects_global_and_rule_sources() {
+        let config = do_parse(
+            r#"
+            animations {
+                window-open { custom-shader "global-open"; }
+                window-resize { custom-shader "global-resize"; }
+            }
+
+            window-rule {
+                match app-id="foo"
+
+                animations {
+                    window-open { custom-shader "rule-open"; }
+                    window-close { custom-shader "rule-close"; }
+                }
+            }
+
+            window-rule {
+                match app-id="bar"
+            }
+            "#,
+        );
+
+        let sources = config.custom_shader_sources();
+        assert_eq!(sources.len(), 4);
+        assert!(sources.contains("global-open"));
+        assert!(sources.contains("global-resize"));
+        assert!(sources.contains("rule-open"));
+        assert!(sources.contains("rule-close"));
     }
 
     #[track_caller]
@@ -925,6 +992,17 @@ mod tests {
                 }
 
                 pinch-sensitivity 1.2
+
+                animations {
+                    window-open {
+                        duration-ms 150
+                        curve "ease-out-expo"
+                    }
+                    window-close {
+                        duration-ms 150
+                        curve "ease-out-expo"
+                    }
+                }
             }
 
             layer-rule {
@@ -1932,6 +2010,38 @@ mod tests {
                             saturation: None,
                         },
                     },
+                    animations: Some(
+                        WindowAnimationsRule {
+                            window_open: Some(
+                                WindowOpenAnim {
+                                    anim: Animation {
+                                        off: false,
+                                        kind: Easing(
+                                            EasingParams {
+                                                duration_ms: 150,
+                                                curve: EaseOutExpo,
+                                            },
+                                        ),
+                                    },
+                                    custom_shader: None,
+                                },
+                            ),
+                            window_close: Some(
+                                WindowCloseAnim {
+                                    anim: Animation {
+                                        off: false,
+                                        kind: Easing(
+                                            EasingParams {
+                                                duration_ms: 150,
+                                                curve: EaseOutExpo,
+                                            },
+                                        ),
+                                    },
+                                    custom_shader: None,
+                                },
+                            ),
+                        },
+                    ),
                 },
             ],
             layer_rules: [
@@ -1947,6 +2057,10 @@ mod tests {
                             ),
                             at_startup: None,
                             layer: None,
+                            anchors: None,
+                            anchor_sides: None,
+                            exclusive_zone: None,
+                            keyboard_interactivity: None,
                         },
                     ],
                     excludes: [],

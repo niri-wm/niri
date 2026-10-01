@@ -2,7 +2,7 @@ use niri_config::layer_rule::{LayerRule, Match};
 use niri_config::utils::MergeWith as _;
 use niri_config::{BackgroundEffect, BlockOutFrom, CornerRadius, ResolvedPopupsRules, ShadowRule};
 use smithay::desktop::LayerSurface;
-use smithay::wayland::shell::wlr_layer::Layer;
+use smithay::wayland::shell::wlr_layer::{ExclusiveZone, Layer};
 
 pub mod mapped;
 pub use mapped::MappedLayer;
@@ -104,6 +104,64 @@ fn surface_matches(surface: &LayerSurface, m: &Match) -> bool {
             Layer::Overlay => niri_ipc::Layer::Overlay,
         };
         if layer != surface_layer {
+            return false;
+        }
+    }
+
+    if let Some(anchors) = m.anchors {
+        let surface_anchors = surface.cached_state().anchor;
+        let same = anchors.contains(niri_config::layer_rule::Anchors::TOP)
+            == surface_anchors.contains(smithay::wayland::shell::wlr_layer::Anchor::TOP)
+            && anchors.contains(niri_config::layer_rule::Anchors::BOTTOM)
+                == surface_anchors.contains(smithay::wayland::shell::wlr_layer::Anchor::BOTTOM)
+            && anchors.contains(niri_config::layer_rule::Anchors::LEFT)
+                == surface_anchors.contains(smithay::wayland::shell::wlr_layer::Anchor::LEFT)
+            && anchors.contains(niri_config::layer_rule::Anchors::RIGHT)
+                == surface_anchors.contains(smithay::wayland::shell::wlr_layer::Anchor::RIGHT);
+        if !same {
+            return false;
+        }
+    }
+
+    if let Some(anchor_sides) = m.anchor_sides {
+        let surface_anchor_sides = surface.cached_state().anchor.bits().count_ones() as u8;
+        if anchor_sides != surface_anchor_sides {
+            return false;
+        }
+    }
+
+    if let Some(exclusive_zone) = m.exclusive_zone {
+        let surface_exclusive = matches!(
+            surface.cached_state().exclusive_zone,
+            ExclusiveZone::Exclusive(_)
+        );
+        let matches = match exclusive_zone {
+            niri_config::layer_rule::ExclusiveZone::Exclusive => surface_exclusive,
+            niri_config::layer_rule::ExclusiveZone::Neutral => !surface_exclusive,
+        };
+        if !matches {
+            return false;
+        }
+    }
+
+    if let Some(keyboard_interactivity) = m.keyboard_interactivity {
+        let matches = matches!(
+            (
+                keyboard_interactivity,
+                surface.cached_state().keyboard_interactivity
+            ),
+            (
+                niri_config::layer_rule::LayerKeyboardInteractivity::None,
+                smithay::wayland::shell::wlr_layer::KeyboardInteractivity::None
+            ) | (
+                niri_config::layer_rule::LayerKeyboardInteractivity::Exclusive,
+                smithay::wayland::shell::wlr_layer::KeyboardInteractivity::Exclusive
+            ) | (
+                niri_config::layer_rule::LayerKeyboardInteractivity::OnDemand,
+                smithay::wayland::shell::wlr_layer::KeyboardInteractivity::OnDemand
+            )
+        );
+        if !matches {
             return false;
         }
     }
