@@ -114,7 +114,7 @@ Here are some other projects which implement a similar workflow:
 - [karousel]: scrollable tiling on top of KDE.
 - [scroll](https://github.com/dawsers/scroll) and [papersway]: scrollable tiling on top of sway/i3.
 - Hyprland has a built-in [scrolling layout](https://wiki.hypr.land/Configuring/Layouts/Scrolling-Layout/).
-- [Paneru] and [PaperWM.spoon]: scrollable tiling on top of macOS.
+- [Paneru], [PaperWM.spoon], and [rift]: scrollable tiling on top of macOS.
 
 ## Contact
 
@@ -130,6 +130,7 @@ We also have a community Discord server: https://discord.gg/vT8Sfjy7sx
 [papersway]: https://spwhitton.name/tech/code/papersway/
 [Paneru]: https://github.com/karinushka/paneru
 [PaperWM.spoon]: https://github.com/mogenson/PaperWM.spoon
+[rift]: https://github.com/acsandmann/rift
 [Matrix channel]: https://matrix.to/#/#niri:matrix.org
 [OpenTabletDriver]: https://opentabletdriver.net/
 [DankMaterialShell]: https://danklinux.com/
