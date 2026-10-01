@@ -2900,6 +2900,41 @@ impl GammaProps {
     }
 }
 
+/// The DRM color transformation matrix blob format.
+///
+/// Coefficients are in S31.32 sign-magnitude, see drm_ctm_s31_32().
+#[allow(non_camel_case_types)]
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct drm_color_ctm {
+    matrix: [u64; 9],
+}
+
+const _: () = assert!(mem::size_of::<drm_color_ctm>() == 72);
+
+/// Converts a color matrix coefficient into the S31.32 sign-magnitude fixed-point format
+/// that drm_color_ctm stores.
+///
+/// This is sign-magnitude and not two's complement: bit 63 is a flag telling the sign, and
+/// the remaining bits hold the magnitude. See drm_color_ctm_s31_32_to_qm_n() in the kernel,
+/// which converts it into the two's complement fixed-point format a driver wants.
+fn drm_ctm_s31_32(coefficient: f64) -> u64 {
+    // The largest magnitude S31.32 can store is 2^63 - 1. Clamping the coefficient to 2^31
+    // first keeps the scaled value inside u64, and also keeps NaN and infinity out of the
+    // conversion, since f64::min() returns the non-NaN operand. 2^31 is not exactly
+    // representable together with a fractional part in f64, so clamp once more after scaling.
+    const MAX_MAGNITUDE: u64 = (1 << 63) - 1;
+    let scaled = coefficient.abs().min((1u64 << 31) as f64) * ((1u64 << 32) as f64);
+    let magnitude = (scaled.round() as u64).min(MAX_MAGNITUDE);
+
+    // is_sign_negative() is also true for -0.0, which has no sign in sign-magnitude.
+    if coefficient.is_sign_negative() && coefficient != 0.0 {
+        (1 << 63) | magnitude
+    } else {
+        magnitude
+    }
+}
+
 struct CtmProps {
     crtc: crtc::Handle,
     ctm: property::Handle,
@@ -2944,17 +2979,10 @@ impl CtmProps {
         let _span = tracy_client::span!("CtmProps::set_ctm");
 
         let blob = if let Some(ctm) = ctm {
-            #[allow(non_camel_case_types)]
-            #[repr(C)]
-            #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-            pub struct drm_color_ctm {
-                pub matrix: [u64; 9],
-            }
-
             // Convert the coefficients to S31.32 fixed-point.
             let mut matrix = [0u64; 9];
             for (coeff, cell) in ctm.as_flattened().iter().zip(&mut matrix) {
-                *cell = (coeff * (1u64 << 32) as f64).round() as i64 as u64;
+                *cell = drm_ctm_s31_32(*coeff);
             }
             let mut data = [drm_color_ctm { matrix }];
             let data = cast_slice_mut(&mut data);
@@ -2971,11 +2999,7 @@ impl CtmProps {
 
             let blob = blob.map(NonZeroU64::get).unwrap_or(0);
             device
-                .set_property(
-                    self.crtc,
-                    self.ctm,
-                    property::Value::Blob(blob).into(),
-                )
+                .set_property(self.crtc, self.ctm, property::Value::Blob(blob).into())
                 .context("error setting CTM")
                 .inspect_err(|_| {
                     if blob != 0 {
@@ -3767,7 +3791,9 @@ mod tests {
     use niri_config::output::Modeline;
     use niri_ipc::{HSyncPolarity, VSyncPolarity};
 
-    use crate::backend::tty::{calculate_drm_mode_from_modeline, calculate_mode_cvt};
+    use crate::backend::tty::{
+        calculate_drm_mode_from_modeline, calculate_mode_cvt, drm_ctm_s31_32,
+    };
 
     #[test]
     fn test_calculate_drmmode_from_modeline() {
@@ -3915,5 +3941,36 @@ mod tests {
         for (width, height) in [(u16::MAX, u16::MAX), (u16::MAX, 1), (1, u16::MAX)] {
             calculate_mode_cvt(width, height, 60.0);
         }
+    }
+
+    #[test]
+    fn test_drm_ctm_s31_32() {
+        // drm_color_ctm is sign-magnitude: bit 63 is the sign and the rest is the magnitude.
+        // Encoding a negative coefficient as two's complement instead would make the driver see a
+        // huge negative coefficient rather than the small one asked for.
+        assert_eq!(drm_ctm_s31_32(0.0), 0);
+        assert_eq!(drm_ctm_s31_32(-0.0), 0, "negative zero has no sign");
+        assert_eq!(drm_ctm_s31_32(1.0), 1 << 32);
+        assert_eq!(drm_ctm_s31_32(-1.0), (1 << 63) | (1 << 32));
+        assert_eq!(drm_ctm_s31_32(0.5), 1 << 31);
+        assert_eq!(drm_ctm_s31_32(-0.5), (1 << 63) | (1 << 31));
+        assert_eq!(
+            drm_ctm_s31_32(0.2126),
+            (0.2126 * (1u64 << 32) as f64).round() as u64
+        );
+        assert_eq!(
+            drm_ctm_s31_32(-0.0722),
+            (1 << 63) | (0.0722 * (1u64 << 32) as f64).round() as u64
+        );
+
+        // S31.32 only has 31 integer bits, so the magnitude must be clamped.
+        let max = ((1u64 << 31) - 1) << 32 | u64::from(u32::MAX);
+        assert_eq!(drm_ctm_s31_32(f64::INFINITY), max);
+        assert_eq!(drm_ctm_s31_32(f64::NEG_INFINITY), (1 << 63) | max);
+        assert_eq!(
+            drm_ctm_s31_32(f64::NAN),
+            max,
+            "NaN must not set the sign bit"
+        );
     }
 }
