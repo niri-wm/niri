@@ -60,6 +60,7 @@ window-rule {
     scroll-factor 0.75
     pinch-sensitivity 1.25
     on-xdg-activate "focus"
+    lock-cursor-when-focused false
 
     focus-ring {
         // off
@@ -1095,3 +1096,17 @@ window-rule {
     min-width 876
 }
 ```
+
+#### `lock-cursor-when-focused`
+
+Forces your cursor to stay within the window while the window is in focus.
+Primarily intended for use with games that do not properly keep the cursor grabbed.
+
+```kdl
+window-rule {
+    match app-id=r#"^com\.faultygrab\.game$"#
+
+    lock-cursor-when-focused true
+}
+```
+
