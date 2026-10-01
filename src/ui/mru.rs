@@ -7,8 +7,8 @@ use std::time::Duration;
 
 use anyhow::ensure;
 use niri_config::{
-    Action, Bind, Color, Config, CornerRadius, GradientInterpolation, Key, Modifiers, MruDirection,
-    MruFilter, MruScope, Trigger,
+    Action, Bind, BorderWidth, Color, Config, CornerRadius, GradientInterpolation, Key, Modifiers,
+    MruDirection, MruFilter, MruScope, Trigger,
 };
 use pango::FontDescription;
 use pangocairo::cairo::{self, ImageSurface};
@@ -235,7 +235,7 @@ impl Thumbnail {
 
         let background = FocusRing::new(niri_config::FocusRing {
             off: false,
-            width: 0.,
+            width: BorderWidth::Outset(0.),
             active_gradient: None,
             ..Default::default()
         });
@@ -546,7 +546,8 @@ impl Thumbnail {
             let mut border = self.border.borrow_mut();
             let mut config = *border.config();
             config.off = !is_active;
-            config.width = round(BORDER);
+            let width = round(BORDER);
+            config.width = BorderWidth::Outset(width);
             config.active_color = color;
             border.update_config(config);
             border.set_thicken_corners(false);
@@ -556,7 +557,7 @@ impl Thumbnail {
                 true,
                 false,
                 Rectangle::default(),
-                radius.expanded_by(config.width as f32),
+                radius.expanded_by(width as f32),
                 scale,
                 1.,
             );
