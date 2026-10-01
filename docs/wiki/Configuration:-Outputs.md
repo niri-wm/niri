@@ -301,6 +301,31 @@ output "HDMI-A-1" {
 }
 ```
 
+### `color-matrix`
+
+<sup>Since: next release</sup>
+
+Apply a hardware 3×3 color transformation matrix to this output.
+
+This is useful for color transforms that gamma adjustments can't express, since gamma can only scale each channel independently.
+For example, true grayscale (BT.709 luminance) or a single-channel monochrome mode.
+
+The nine coefficients are given in row-major order.
+Values are converted to the S31.32 fixed-point format required by the CRTC `CTM` property.
+
+```kdl
+// Convert HDMI-A-1 to grayscale using the BT.709 luminance coefficients.
+output "HDMI-A-1" {
+    color-matrix 0.2126 0.7152 0.0722  0.2126 0.7152 0.0722  0.2126 0.7152 0.0722
+}
+```
+
+Setting `color-matrix` overrides any color transformation that gamma would otherwise apply on displays where gamma is implemented through `CTM`.
+It has no effect on displays that support a proper `GAMMA_LUT` or legacy gamma, where the two compose.
+
+This option requires hardware support for the CRTC `CTM` property.
+It's ignored on displays without it.
+
 ### `hot-corners`
 
 <sup>Since: 25.11</sup>
