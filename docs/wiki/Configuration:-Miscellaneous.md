@@ -248,6 +248,57 @@ overview {
 }
 ```
 
+### `magnifier`
+
+Settings for the live cursor-following screen magnifier. Scrolling with the [`zoom-modifier`](#zoom-modifier) held turns the magnifier on and zooms it, so no `toggle-magnifier` bind is required; that action remains available for turning the magnifier off, or on without zooming.
+
+```kdl
+magnifier {
+    zoom 2.0
+    max-zoom 10.0
+    zoom-speed 0.25
+    zoom-modifier "mod"
+    // hide-mouse
+}
+```
+
+#### `zoom`
+
+The zoom level the magnifier starts at when toggled on. `zoom` ranges from 1 to 10.
+
+#### `max-zoom`
+
+The upper bound for the zoom level while scrolling to adjust it with the magnifier open.
+
+#### `zoom-speed`
+
+How much the zoom level changes for every scroll tick while the magnifier is open.
+
+The zoom level change itself is animated; see the [`magnifier-zoom` animation](./Configuration:-Animations.md#magnifier-zoom) to control that.
+
+#### `zoom-modifier`
+
+Controls which modifier, if any, you need to hold to zoom by scrolling. Scrolling like this turns the magnifier on if it isn't already.
+
+Set to `"mod"` (the default) to require holding the [`Mod` key](./Configuration:-Key-Bindings.md#overview) while scrolling, `"mod-ctrl"` to require Mod and Ctrl together, or `"none"` for plain scroll (no modifier) to zoom.
+
+```kdl
+magnifier {
+    // Zoom with plain scroll, no modifier needed.
+    zoom-modifier "none"
+}
+```
+
+#### `hide-mouse`
+
+Hides the real mouse cursor while the magnifier is active, rather than showing it (zoomed in along with everything else).
+
+```kdl
+magnifier {
+    hide-mouse
+}
+```
+
 ### `xwayland-satellite`
 
 <sup>Since: 25.08</sup>

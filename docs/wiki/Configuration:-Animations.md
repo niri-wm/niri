@@ -62,6 +62,10 @@ animations {
     recent-windows-close {
         spring damping-ratio=1.0 stiffness=800 epsilon=0.001
     }
+
+    magnifier-zoom {
+        spring damping-ratio=1.0 stiffness=800 epsilon=0.0001
+    }
 }
 ```
 
@@ -440,16 +444,14 @@ animations {
 }
 ```
 
-### Specifying `custom-shader` by Path
+#### `magnifier-zoom`
 
-<sup>Since: next release</sup>
+The zoom level change animation of the magnifier when adjusting it (e.g. by scrolling while it's open).
 
-For animations that accept a `custom-shader`, you can also attach the shader by path, rather than writing it out inline.
-
-```kdl,must-fail
+```kdl
 animations {
-    window-open {
-        custom-shader path="./my-shader.glsl"
+    magnifier-zoom {
+        spring damping-ratio=1.0 stiffness=800 epsilon=0.0001
     }
 }
 ```
