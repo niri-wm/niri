@@ -414,24 +414,21 @@ impl<S: ErrorSpan> knuffel::Decode<S> for ColorMatrix {
         }
 
         let mut coefficients: [f64; 9] = [0.0; 9];
-        let mut valid = true;
         for (i, value) in node.arguments.iter().take(9).enumerate() {
             match &*value.literal {
-                knuffel::ast::Literal::Int(_) => match <i64 as knuffel::traits::DecodeScalar<S>>::decode(value, ctx) {
-                    Ok(v) => coefficients[i] = v as f64,
-                    Err(_) => valid = false,
-                },
-                knuffel::ast::Literal::Decimal(_) => match knuffel::traits::DecodeScalar::decode(value, ctx) {
-                    Ok(v) => coefficients[i] = v,
-                    Err(_) => valid = false,
-                },
+                knuffel::ast::Literal::Int(_) => {
+                    coefficients[i] =
+                        <i64 as knuffel::traits::DecodeScalar<S>>::decode(value, ctx)? as f64
+                }
+                knuffel::ast::Literal::Decimal(_) => {
+                    coefficients[i] = knuffel::traits::DecodeScalar::decode(value, ctx)?;
+                }
                 _ => {
-                    ctx.emit_error(DecodeError::unexpected(
+                    return Err(DecodeError::unexpected(
                         &value.literal,
                         "argument",
                         "expected a number (integer or decimal)",
                     ));
-                    valid = false;
                 }
             }
         }
@@ -449,19 +446,11 @@ impl<S: ErrorSpan> knuffel::Decode<S> for ColorMatrix {
             ));
         }
 
-        if valid && node.arguments.len() == 9 {
-            Ok(ColorMatrix([
-                [coefficients[0], coefficients[1], coefficients[2]],
-                [coefficients[3], coefficients[4], coefficients[5]],
-                [coefficients[6], coefficients[7], coefficients[8]],
-            ]))
-        } else {
-            Ok(ColorMatrix([
-                [1.0, 0.0, 0.0],
-                [0.0, 1.0, 0.0],
-                [0.0, 0.0, 1.0],
-            ]))
-        }
+        Ok(ColorMatrix([
+            [coefficients[0], coefficients[1], coefficients[2]],
+            [coefficients[3], coefficients[4], coefficients[5]],
+            [coefficients[6], coefficients[7], coefficients[8]],
+        ]))
     }
 }
 
