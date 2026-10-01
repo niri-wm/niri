@@ -1251,19 +1251,24 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
                 self.activate_column_with_anim_config(self.active_column_idx - 1, view_config);
 
-                // Restore the view offset but make sure to scroll the view in case the
-                // previous window had resized.
-                self.animate_view_offset_with_config(
-                    self.active_column_idx,
-                    prev_offset,
-                    view_config,
-                );
-                self.animate_view_offset_to_column_with_config(
-                    None,
-                    self.active_column_idx,
-                    None,
-                    view_config,
-                );
+                // Restore the view offset, unless all remaining columns are already fully visible.
+                let content_right = self.column_x(self.columns.len()) - self.options.layout.gaps;
+                let view_x = self.target_view_pos() + self.working_area.loc.x;
+                if view_x > 0. || view_x + self.working_area.size.w < content_right {
+                    self.animate_view_offset_with_config(
+                        self.active_column_idx,
+                        prev_offset,
+                        view_config,
+                    );
+
+                    // Make sure to scroll the view in case the previous window had resized.
+                    self.animate_view_offset_to_column_with_config(
+                        None,
+                        self.active_column_idx,
+                        None,
+                        view_config,
+                    );
+                }
             }
         } else {
             self.activate_column_with_anim_config(
