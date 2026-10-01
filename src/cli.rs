@@ -82,6 +82,21 @@ pub enum Msg {
     PickWindow,
     /// Pick a color from the screen with the mouse.
     PickColor,
+    /// Capture a screenshot.
+    Screenshot {
+        /// Target to capture.
+        #[arg(long, value_enum, default_value = "selection")]
+        target: ScreenshotTarget,
+        /// Window id to capture. Only valid with `--target window`.
+        #[arg(long)]
+        id: Option<u64>,
+        /// Whether to include the mouse pointer.
+        #[arg(long, action = clap::ArgAction::Set)]
+        show_pointer: Option<bool>,
+        /// Write PNG data to stdout.
+        #[arg(long, required = true)]
+        stdout: bool,
+    },
     /// Perform an action.
     Action {
         #[command(subcommand)]
@@ -114,6 +129,13 @@ pub enum Msg {
     Casts,
     /// Send a raw JSON request to the compositor, reading from stdin.
     RawRequest,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
+pub enum ScreenshotTarget {
+    Selection,
+    Screen,
+    Window,
 }
 
 #[derive(Clone, Debug, clap::ValueEnum)]

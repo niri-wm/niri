@@ -772,22 +772,14 @@ impl State {
                 self.confirm_screenshot(write_to_disk);
             }
             Action::CancelScreenshot => {
-                if !self.niri.screenshot_ui.is_open() {
-                    return;
-                }
-
-                self.niri.screenshot_ui.close();
-                self.niri
-                    .cursor_manager
-                    .set_cursor_image(CursorImageStatus::default_named());
-                self.niri.queue_redraw_all();
+                self.niri.close_screenshot_ui();
             }
             Action::ScreenshotTogglePointer => {
                 self.niri.screenshot_ui.toggle_pointer();
                 self.niri.queue_redraw_all();
             }
             Action::Screenshot(show_cursor, path) => {
-                self.open_screenshot_ui(show_cursor, path);
+                let _ = self.open_screenshot_ui(show_cursor, path);
                 self.niri.cancel_mru();
             }
             Action::ScreenshotWindow(write_to_disk, show_pointer, path) => {
