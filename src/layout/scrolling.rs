@@ -4,7 +4,7 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use niri_config::utils::MergeWith as _;
-use niri_config::{CenterFocusedColumn, PresetSize, Struts};
+use niri_config::{CenterFocusedColumn, FloatOrInt, PresetSize, Struts};
 use niri_ipc::{ColumnDisplay, SizeChange, WindowLayout};
 use ordered_float::NotNan;
 use smithay::backend::renderer::gles::GlesRenderer;
@@ -347,7 +347,8 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         scale: f64,
         options: Rc<Options>,
     ) {
-        let working_area = compute_working_area(parent_area, scale, options.layout.struts);
+        let struts = self.struts_for_column(self.active_column_idx);
+        let working_area = compute_working_area(parent_area, scale, struts);
 
         for (column, data) in zip(&mut self.columns, &mut self.data) {
             column.update_config(view_size, working_area, parent_area, scale, options.clone());
@@ -801,6 +802,25 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         )
     }
 
+    fn struts_for_column(&self, idx: usize) -> Struts {
+        if !self.options.layout.struts.overflow {
+            return self.options.layout.struts;
+        }
+        if self.columns.len() == idx + 1 {
+            Struts {
+                right: FloatOrInt(0.),
+                ..self.options.layout.struts
+            }
+        } else if idx == 0 {
+            Struts {
+                left: FloatOrInt(0.),
+                ..self.options.layout.struts
+            }
+        } else {
+            self.options.layout.struts
+        }
+    }
+
     fn activate_column(&mut self, idx: usize) {
         self.activate_column_with_anim_config(
             idx,
@@ -815,6 +835,10 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         {
             return;
         }
+
+        let struts = self.struts_for_column(idx);
+        let working_area = compute_working_area(self.parent_area, self.scale, struts);
+        self.working_area = working_area;
 
         self.animate_view_offset_to_column_with_config(
             None,
@@ -5710,6 +5734,7 @@ mod tests {
             right: FloatOrInt(1.),
             top: FloatOrInt(0.75),
             bottom: FloatOrInt(1.),
+            overflow: true,
         };
 
         let parent_area = Rectangle::from_size(Size::from((1280., 720.)));
@@ -5726,6 +5751,7 @@ mod tests {
             right: FloatOrInt(0.),
             top: FloatOrInt(50000.5),
             bottom: FloatOrInt(0.),
+            overflow: true,
         };
 
         let parent_area = Rectangle::from_size(Size::from((1280., 720.)));
