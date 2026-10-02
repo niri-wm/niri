@@ -110,6 +110,8 @@ pub enum Msg {
     RequestError,
     /// Print the overview state.
     OverviewState,
+    /// Print the screenshot state.
+    ScreenshotState,
     /// List screencasts.
     Casts,
     /// Send a raw JSON request to the compositor, reading from stdin.
