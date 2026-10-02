@@ -111,7 +111,16 @@ impl TabIndicator {
         let floored_length = count as f64 * (px_per_tab + gaps_between) - gaps_between;
         let mut ones_left = ((length - floored_length) / pixel).round() as usize;
 
-        let mut shader_loc = Point::from((-gap - width, round((side - length) / 2.)));
+        let flip = self.config.flip;
+        let offset = round((side - length) / 2.);
+        let mut shader_loc = Point::from((
+            -gap - width,
+            if flip {
+                side - offset - px_per_tab
+            } else {
+                offset
+            },
+        ));
         match position {
             TabIndicatorPosition::Left => (),
             TabIndicatorPosition::Right => shader_loc.x = area.size.w + gap,
@@ -132,13 +141,15 @@ impl TabIndicator {
 
             let loc = shader_loc;
 
+            let delta = if flip {
+                -(px_per_tab + gaps_between)
+            } else {
+                px_per_tab + gaps_between
+            };
+
             match position {
-                TabIndicatorPosition::Left | TabIndicatorPosition::Right => {
-                    shader_loc.y += px_per_tab + gaps_between
-                }
-                TabIndicatorPosition::Top | TabIndicatorPosition::Bottom => {
-                    shader_loc.x += px_per_tab + gaps_between
-                }
+                TabIndicatorPosition::Left | TabIndicatorPosition::Right => shader_loc.y += delta,
+                TabIndicatorPosition::Top | TabIndicatorPosition::Bottom => shader_loc.x += delta,
             }
 
             let size = match position {
