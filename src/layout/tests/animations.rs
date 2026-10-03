@@ -68,6 +68,59 @@ fn set_up_two_in_column() -> Layout<TestWindow> {
     check_ops_with_options(make_options(), ops)
 }
 
+fn window_render_geometries(layout: &Layout<TestWindow>) -> Vec<Rectangle<f64, Logical>> {
+    let mut geometries = Vec::new();
+    layout.with_window_render_geometries(|_, _, geometry| {
+        geometries.push(geometry);
+    });
+    geometries
+}
+
+#[test]
+fn window_render_geometries_follow_overview_and_interactive_move() {
+    let mut layout = check_ops([
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams {
+                rules: Some(ResolvedWindowRules {
+                    baba_is_float: Some(true),
+                    ..ResolvedWindowRules::default()
+                }),
+                ..TestWindowParams::new(1)
+            },
+        },
+        Op::Communicate(1),
+        Op::CompleteAnimations,
+    ]);
+
+    let normal = window_render_geometries(&layout);
+    assert_eq!(normal.len(), 1);
+    let workspace_pos = layout
+        .active_workspace()
+        .unwrap()
+        .tiles_with_render_positions()
+        .next()
+        .unwrap()
+        .1;
+    assert_ne!(normal[0].loc, workspace_pos);
+
+    check_ops_on_layout(&mut layout, [Op::ToggleOverview, Op::CompleteAnimations]);
+    let overview = window_render_geometries(&layout);
+    assert_eq!(overview.len(), 1);
+    assert_eq!(
+        overview[0].size,
+        normal[0].size.upscale(layout.overview_zoom())
+    );
+
+    let output = layout.outputs().next().unwrap().clone();
+    assert!(layout.interactive_move_begin(1, &output, (50., 100.).into()));
+    assert!(layout.interactive_move_update(&1, (1000., 0.).into(), output, (400., 300.).into(),));
+
+    let moving = window_render_geometries(&layout);
+    assert_eq!(moving.len(), 1);
+    assert_ne!(moving[0].loc, overview[0].loc);
+}
+
 #[test]
 fn height_resize_animates_next_y() {
     let mut layout = set_up_two_in_column();
