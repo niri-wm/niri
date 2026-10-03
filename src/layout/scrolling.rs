@@ -1992,23 +1992,31 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         }
     }
 
-    pub fn consume_into_column(&mut self) {
+    pub fn consume_into_column(&mut self, direction: ScrollDirection) {
         if self.columns.len() < 2 {
             return;
         }
 
-        if self.active_column_idx == self.columns.len() - 1 {
-            return;
+        match direction {
+            ScrollDirection::Right if self.active_column_idx == self.columns.len() - 1 => return,
+            ScrollDirection::Left if self.active_column_idx == 0 => return,
+            _ => {}
         }
 
-        let target_column_idx = self.active_column_idx;
-        let source_column_idx = self.active_column_idx + 1;
+        let mut target_column_idx = self.active_column_idx;
+        let source_column_idx = match direction {
+            ScrollDirection::Right => self.active_column_idx + 1,
+            ScrollDirection::Left => self.active_column_idx - 1,
+        };
 
         let mut offset = self.columns[source_column_idx].render_offset();
         offset.x += self.column_x(source_column_idx);
         offset.x -= self.column_x(target_column_idx);
         let prev_off = self.columns[source_column_idx].tile_offset(0);
 
+        if direction == ScrollDirection::Left && self.columns[source_column_idx].tiles.len() == 1 {
+            target_column_idx -= 1;
+        }
         let removed = self.remove_tile_by_idx(source_column_idx, 0, Transaction::new(), None);
         self.add_tile_to_column(target_column_idx, None, removed.tile, false);
 
@@ -2020,13 +2028,16 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         new_tile.animate_move_from(offset);
     }
 
-    pub fn expel_from_column(&mut self) {
+    pub fn expel_from_column(&mut self, direction: ScrollDirection) {
         if self.columns.is_empty() {
             return;
         }
 
         let source_col_idx = self.active_column_idx;
-        let target_col_idx = self.active_column_idx + 1;
+        let target_col_idx = match direction {
+            ScrollDirection::Right => self.active_column_idx + 1,
+            ScrollDirection::Left => self.active_column_idx,
+        };
         let cur_x = self.column_x(source_col_idx);
 
         let source_column = &self.columns[self.active_column_idx];
@@ -2051,7 +2062,62 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             Some(self.options.animations.window_movement.0),
         );
 
-        offset.x += cur_x - self.column_x(target_col_idx);
+        match direction {
+            ScrollDirection::Right => {
+                offset.x += cur_x - self.column_x(target_col_idx);
+            }
+            ScrollDirection::Left => {
+                offset.x += self.column_x(source_col_idx + 1) - self.column_x(target_col_idx);
+            }
+        }
+
+        let new_col = &mut self.columns[target_col_idx];
+        offset += prev_off - new_col.tile_offset(0);
+        new_col.tiles[0].animate_move_from(offset);
+    }
+
+    pub fn expel_focused_from_column(&mut self, direction: ScrollDirection) {
+        if self.columns.is_empty() {
+            return;
+        }
+
+        let source_col_idx = self.active_column_idx;
+        let target_col_idx = match direction {
+            ScrollDirection::Right => self.active_column_idx + 1,
+            ScrollDirection::Left => self.active_column_idx,
+        };
+        let cur_x = self.column_x(source_col_idx);
+
+        let source_column = &self.columns[self.active_column_idx];
+        if source_column.tiles.len() == 1 {
+            return;
+        }
+
+        let source_tile_idx = source_column.active_tile_idx;
+
+        let mut offset = Point::from((source_column.render_offset().x, 0.));
+        let prev_off = source_column.tile_offset(source_tile_idx);
+
+        let removed =
+            self.remove_tile_by_idx(source_col_idx, source_tile_idx, Transaction::new(), None);
+
+        self.add_tile(
+            Some(target_col_idx),
+            removed.tile,
+            true,
+            removed.width,
+            removed.is_full_width,
+            Some(self.options.animations.window_movement.0),
+        );
+
+        match direction {
+            ScrollDirection::Right => {
+                offset.x += cur_x - self.column_x(target_col_idx);
+            }
+            ScrollDirection::Left => {
+                offset.x += self.column_x(source_col_idx + 1) - self.column_x(target_col_idx);
+            }
+        }
 
         let new_col = &mut self.columns[target_col_idx];
         offset += prev_off - new_col.tile_offset(0);
