@@ -1158,7 +1158,7 @@ pub enum ScaleToSet {
 }
 
 /// Output position to set.
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "clap", derive(clap::Subcommand))]
 #[cfg_attr(feature = "clap", command(subcommand_value_name = "POSITION"))]
 #[cfg_attr(feature = "clap", command(subcommand_help_heading = "Position Values"))]
@@ -1170,6 +1170,18 @@ pub enum PositionToSet {
     /// Set a specific position.
     #[cfg_attr(feature = "clap", command(name = "set"))]
     Specific(ConfiguredPosition),
+    /// Position the output to the left of another output.
+    #[cfg_attr(feature = "clap", command(name = "left-of"))]
+    LeftOf(RelativeTo),
+    /// Position the output to the right of another output.
+    #[cfg_attr(feature = "clap", command(name = "right-of"))]
+    RightOf(RelativeTo),
+    /// Position the output above another output.
+    #[cfg_attr(feature = "clap", command(name = "above"))]
+    Above(RelativeTo),
+    /// Position the output below another output.
+    #[cfg_attr(feature = "clap", command(name = "below"))]
+    Below(RelativeTo),
 }
 
 /// Output position as set in the config file.
@@ -1181,6 +1193,32 @@ pub struct ConfiguredPosition {
     pub x: i32,
     /// Logical Y position.
     pub y: i32,
+}
+
+/// Anchor output for a position relative to another output.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "clap", derive(clap::Args))]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct RelativeTo {
+    /// Anchor output: connector name or "make model serial".
+    pub output: String,
+    /// Alignment along the edge shared with the anchor.
+    #[cfg_attr(feature = "clap", arg(long, default_value = "beginning"))]
+    pub align: Align,
+}
+
+/// Alignment of a relatively-positioned output along the edge shared with its anchor.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum Align {
+    /// Align the start of the shared edge: top for a vertical edge, left for a horizontal one.
+    #[default]
+    Beginning,
+    /// Align the midpoints of the shared edge.
+    Center,
+    /// Align the end of the shared edge: bottom for a vertical edge, right for a horizontal one.
+    End,
 }
 
 /// Output VRR to set.

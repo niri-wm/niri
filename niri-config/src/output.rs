@@ -6,6 +6,7 @@ use knuffel::errors::DecodeError;
 use knuffel::traits::ErrorSpan;
 use knuffel::Decode;
 use niri_ipc::{ConfiguredMode, HSyncPolarity, Transform, VSyncPolarity};
+pub use niri_ipc::Align;
 
 use crate::gestures::HotCorners;
 use crate::{Color, FloatOrInt, LayoutPart};
@@ -123,12 +124,34 @@ pub struct OutputName {
     pub serial: Option<String>,
 }
 
-#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Position {
-    #[knuffel(property)]
-    pub x: i32,
-    #[knuffel(property)]
-    pub y: i32,
+/// Configured position of an output.
+///
+/// One of:
+///  - an absolute position (logical)
+///  - a position relative to another output
+/// The two forms are mutually exclusive.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Position {
+    Fixed {
+        x: i32,
+        y: i32,
+    },
+    Relative {
+        /// Name of the anchor output.
+        relative_to: String,
+        /// Which side to attach to.
+        direction: Direction,
+        /// Alignment along the shared edge.
+        align: Align,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Direction {
+    LeftOf,
+    RightOf,
+    Above,
+    Below,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -532,6 +555,120 @@ impl<S: ErrorSpan> Decode<S> for Modeline {
             hsync_polarity,
             vsync_polarity,
         })
+    }
+}
+
+impl<S: ErrorSpan> Decode<S> for Position {
+    fn decode_node(node: &SpannedNode<S>, ctx: &mut Context<S>) -> Result<Self, DecodeError<S>> {
+        if let Some(type_name) = &node.type_name {
+            ctx.emit_error(DecodeError::unexpected(
+                type_name,
+                "type name",
+                "no type name expected for this node",
+            ));
+        }
+
+        for child in node.children() {
+            ctx.emit_error(DecodeError::unexpected(
+                child,
+                "node",
+                format!("unexpected node `{}`", child.node_name.escape_default()),
+            ));
+        }
+
+        for arg in &node.arguments {
+            ctx.emit_error(DecodeError::unexpected(
+                &arg.literal,
+                "argument",
+                "the position node takes no arguments; use properties like `x=` and `y=`, \
+                 or `left-of=`/`right-of=`/`above=`/`below=`",
+            ));
+        }
+
+        let mut x: Option<i32> = None;
+        let mut y: Option<i32> = None;
+        let mut direction: Option<(Direction, String)> = None;
+        let mut align: Option<Align> = None;
+
+        for (name, val) in &node.properties {
+            match &***name {
+                "x" => x = Some(knuffel::traits::DecodeScalar::decode(val, ctx)?),
+                "y" => y = Some(knuffel::traits::DecodeScalar::decode(val, ctx)?),
+                "align" => {
+                    let value: String = knuffel::traits::DecodeScalar::decode(val, ctx)?;
+                    align = Some(match value.as_str() {
+                        "beginning" => Align::Beginning,
+                        "center" => Align::Center,
+                        "end" => Align::End,
+                        _ => {
+                            ctx.emit_error(DecodeError::conversion(
+                                &val.literal,
+                                "expected `beginning`, `center`, or `end`",
+                            ));
+                            Align::Beginning
+                        }
+                    });
+                }
+                dir @ ("left-of" | "right-of" | "above" | "below") => {
+                    let parsed = match dir {
+                        "left-of" => Direction::LeftOf,
+                        "right-of" => Direction::RightOf,
+                        "above" => Direction::Above,
+                        _ => Direction::Below,
+                    };
+                    let anchor: String = knuffel::traits::DecodeScalar::decode(val, ctx)?;
+                    if direction.is_some() {
+                        ctx.emit_error(DecodeError::unexpected(
+                            name,
+                            "property",
+                            "only one direction may be given \
+                             (left-of, right-of, above, or below)",
+                        ));
+                    } else {
+                        direction = Some((parsed, anchor));
+                    }
+                }
+                name_str => ctx.emit_error(DecodeError::unexpected(
+                    name,
+                    "property",
+                    format!("unexpected property `{}`", name_str.escape_default()),
+                )),
+            }
+        }
+
+        match (x, y, direction) {
+            (Some(x), Some(y), None) if align.is_none() => Ok(Position::Fixed { x, y }),
+            (Some(_), Some(_), None) => Err(DecodeError::unexpected(
+                node,
+                "property",
+                "`align` is only valid together with a direction \
+                 (left-of/right-of/above/below)",
+            )),
+            (None, None, Some((direction, relative_to))) => Ok(Position::Relative {
+                relative_to,
+                direction,
+                align: align.unwrap_or_default(),
+            }),
+            (_, _, Some(_)) => Err(DecodeError::unexpected(
+                node,
+                "property",
+                "position cannot combine absolute coordinates (x/y) with a direction \
+                 (left-of/right-of/above/below)",
+            )),
+            (None, None, None) => Err(DecodeError::missing(
+                node,
+                "position requires either `x` and `y`, or a direction \
+                 (left-of/right-of/above/below)",
+            )),
+            // Exactly one of `x`/`y` given, with no direction.
+            (x, _, None) => {
+                let missing = if x.is_none() { "x" } else { "y" };
+                Err(DecodeError::missing(
+                    node,
+                    format!("absolute position requires both `x` and `y`; missing `{missing}`"),
+                ))
+            }
+        }
     }
 }
 
