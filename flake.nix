@@ -17,7 +17,7 @@
           cairo,
           dbus,
           libGL,
-          libdisplay-info,
+          libdisplay-info_0_3,
           libinput,
           seatd,
           libxkbcommon,
@@ -49,6 +49,7 @@
               ./src
               ./Cargo.toml
               ./Cargo.lock
+              ./build.rs
             ];
           };
 
@@ -77,7 +78,7 @@
               cairo
               dbus
               libGL
-              libdisplay-info
+              libdisplay-info_0_3
               libinput
               seatd
               libxkbcommon

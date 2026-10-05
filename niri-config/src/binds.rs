@@ -394,6 +394,10 @@ pub enum Action {
     MruSetScope(MruScope),
     #[knuffel(skip)]
     MruCycleScope,
+
+    // Doesn't look like knuffel allows gating on #[cfg(test)]...
+    #[knuffel(skip)]
+    TestAction,
 }
 
 impl From<niri_ipc::Action> for Action {

@@ -110,7 +110,7 @@ impl FramebufferEffectElement {
 
         // Revert the effect of the texture transform.
         let transform_mat = Mat3::from_translation(Vec2::new(0.5, 0.5))
-            * Mat3::from_cols_array(transform.matrix().as_ref())
+            * transform.matrix()
             * Mat3::from_translation(Vec2::new(-0.5, -0.5));
         let input_to_clip_geo = input_to_clip_geo * transform_mat;
 

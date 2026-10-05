@@ -130,6 +130,20 @@ Mouse clicks operate on the window that was focused at the time of the click, no
 
 Note that binding `Mod+MouseLeft` or `Mod+MouseRight` will override the corresponding gesture (moving or resizing the window).
 
+### Tablet Stylus Bindings
+
+<sup>Since: next release</sup>
+
+You can bind tablet stylus buttons using the following syntax.
+
+```kdl
+binds {
+    Mod+TabletStylusButton1 { close-window; }
+    Mod+TabletStylusButton2 { close-window; }
+    Mod+TabletStylusButton3 { close-window; }
+}
+```
+
 ### Custom Hotkey Overlay Titles
 
 <sup>Since: 25.02</sup>
