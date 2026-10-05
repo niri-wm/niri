@@ -10,6 +10,8 @@ use std::time::Duration;
 use calloop::EventLoop;
 use calloop_wayland_source::WaylandSource;
 use single_pixel_buffer::v1::client::wp_single_pixel_buffer_manager_v1::WpSinglePixelBufferManagerV1;
+use smithay::reexports::wayland_protocols::wp::keyboard_shortcuts_inhibit::zv1::client::zwp_keyboard_shortcuts_inhibit_manager_v1::ZwpKeyboardShortcutsInhibitManagerV1;
+use smithay::reexports::wayland_protocols::wp::keyboard_shortcuts_inhibit::zv1::client::zwp_keyboard_shortcuts_inhibitor_v1::{self, ZwpKeyboardShortcutsInhibitorV1};
 use smithay::reexports::wayland_protocols::wp::single_pixel_buffer;
 use smithay::reexports::wayland_protocols::wp::viewporter::client::wp_viewport::WpViewport;
 use smithay::reexports::wayland_protocols::wp::viewporter::client::wp_viewporter::WpViewporter;
@@ -30,8 +32,10 @@ use wayland_client::protocol::wl_buffer::{self, WlBuffer};
 use wayland_client::protocol::wl_callback::{self, WlCallback};
 use wayland_client::protocol::wl_compositor::WlCompositor;
 use wayland_client::protocol::wl_display::WlDisplay;
+use wayland_client::protocol::wl_keyboard::{self, WlKeyboard};
 use wayland_client::protocol::wl_output::{self, WlOutput};
 use wayland_client::protocol::wl_registry::{self, WlRegistry};
+use wayland_client::protocol::wl_seat::{self, WlSeat};
 use wayland_client::protocol::wl_surface::{self, WlSurface};
 use wayland_client::{Connection, Dispatch, Proxy as _, QueueHandle};
 
@@ -51,6 +55,8 @@ pub struct State {
 
     pub globals: Vec<Global>,
     pub outputs: HashMap<WlOutput, String>,
+    pub surfaces: HashMap<WlSurface, Surface>,
+    pub seats: HashMap<WlSeat, Seat>,
 
     pub compositor: Option<WlCompositor>,
     pub xdg_wm_base: Option<XdgWmBase>,
@@ -58,6 +64,7 @@ pub struct State {
     pub virtual_pointer_manager: Option<ZwlrVirtualPointerManagerV1>,
     pub spbm: Option<WpSinglePixelBufferManagerV1>,
     pub viewporter: Option<WpViewporter>,
+    pub ksim: Option<ZwpKeyboardShortcutsInhibitManagerV1>,
 
     pub windows: Vec<Window>,
     pub layers: Vec<LayerSurface>,
@@ -89,6 +96,41 @@ pub struct LayerSurface {
     pub close_requested: bool,
 
     pub configures_looked_at: usize,
+}
+
+#[derive(Debug, Default)]
+pub struct Seat {
+    pub keyboard: Option<Keyboard>,
+}
+
+#[derive(Debug)]
+pub struct Surface {
+    pub keyboard_events_received: Vec<KeyboardEvent>,
+    pub keyboard_events_looked_at: usize,
+}
+
+#[derive(Debug)]
+pub struct Keyboard {
+    pub proxy: WlKeyboard,
+    pub surface: Option<WlSurface>,
+}
+
+#[derive(Debug)]
+pub enum KeyboardEvent {
+    Enter {
+        keys: Vec<u8>,
+    },
+    Leave,
+    Key {
+        key: u32,
+        state: wl_keyboard::KeyState,
+    },
+    Modifiers {
+        depressed: u32,
+        latched: u32,
+        locked: u32,
+        group: u32,
+    },
 }
 
 #[derive(Debug, Clone, Default)]
@@ -138,6 +180,41 @@ impl ClientId {
     }
 }
 
+impl fmt::Display for KeyboardEvent {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            KeyboardEvent::Enter { keys } => {
+                write!(f, "enter: {keys:?}")?;
+            }
+            KeyboardEvent::Leave => {
+                write!(f, "leave")?;
+            }
+            KeyboardEvent::Key { key, state } => {
+                let action = match state {
+                    wl_keyboard::KeyState::Released => "released",
+                    wl_keyboard::KeyState::Pressed => "pressed",
+                    wl_keyboard::KeyState::Repeated => "repeated",
+                    _ => unreachable!(),
+                };
+                write!(f, "key {action}: {key}")?;
+            }
+            KeyboardEvent::Modifiers {
+                depressed,
+                latched,
+                locked,
+                group,
+            } => {
+                write!(
+                    f,
+                    "modifiers: depressed={depressed}, latched={latched}, \
+                     locked={locked}, group={group}"
+                )?;
+            }
+        }
+        Ok(())
+    }
+}
+
 impl fmt::Display for Configure {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "size: {} × {}, ", self.size.0, self.size.1)?;
@@ -179,12 +256,15 @@ impl Client {
             qh: qh.clone(),
             globals: Vec::new(),
             outputs: HashMap::new(),
+            surfaces: HashMap::new(),
+            seats: HashMap::new(),
             compositor: None,
             xdg_wm_base: None,
             layer_shell: None,
             virtual_pointer_manager: None,
             spbm: None,
             viewporter: None,
+            ksim: None,
             windows: Vec::new(),
             layers: Vec::new(),
         };
@@ -249,12 +329,25 @@ impl Client {
 }
 
 impl State {
-    pub fn create_window(&mut self) -> &mut Window {
+    pub fn create_surface(&mut self) -> WlSurface {
         let compositor = self.compositor.as_ref().unwrap();
+        let surface = compositor.create_surface(&self.qh, ());
+        self.surfaces.insert(
+            surface.clone(),
+            Surface {
+                keyboard_events_received: Vec::new(),
+                keyboard_events_looked_at: 0,
+            },
+        );
+        surface
+    }
+
+    pub fn create_window(&mut self) -> &mut Window {
+        let surface = self.create_surface();
+
         let xdg_wm_base = self.xdg_wm_base.as_ref().unwrap();
         let viewporter = self.viewporter.as_ref().unwrap();
 
-        let surface = compositor.create_surface(&self.qh, ());
         let xdg_surface = xdg_wm_base.get_xdg_surface(&surface, &self.qh, ());
         let xdg_toplevel = xdg_surface.get_toplevel(&self.qh, ());
         let viewport = viewporter.get_viewport(&surface, &self.qh, ());
@@ -291,11 +384,11 @@ impl State {
         layer: zwlr_layer_shell_v1::Layer,
         namespace: String,
     ) -> &mut LayerSurface {
-        let compositor = self.compositor.as_ref().unwrap();
+        let surface = self.create_surface();
+
         let layer_shell = self.layer_shell.as_ref().unwrap();
         let viewporter = self.viewporter.as_ref().unwrap();
 
-        let surface = compositor.create_surface(&self.qh, ());
         let layer_surface =
             layer_shell.get_layer_surface(&surface, output, layer, namespace, &self.qh, ());
         let viewport = viewporter.get_viewport(&surface, &self.qh, ());
@@ -322,6 +415,20 @@ impl State {
             .iter_mut()
             .find(|w| w.surface == *surface)
             .unwrap()
+    }
+
+    pub fn recent_keyboard_events(
+        &mut self,
+        surface: &WlSurface,
+    ) -> impl Iterator<Item = &KeyboardEvent> + '_ {
+        let surface = self.surfaces.get_mut(surface).unwrap();
+        surface.recent_keyboard_events()
+    }
+
+    pub fn inhibit_shortcuts(&self, surface: &WlSurface) -> ZwpKeyboardShortcutsInhibitorV1 {
+        let ksim = self.ksim.as_ref().unwrap();
+        let seat = self.seats.keys().next().unwrap();
+        ksim.inhibit_shortcuts(surface, seat, &self.qh, ())
     }
 }
 
@@ -476,6 +583,14 @@ impl LayerSurface {
     }
 }
 
+impl Surface {
+    pub fn recent_keyboard_events(&mut self) -> impl Iterator<Item = &KeyboardEvent> {
+        let start = self.keyboard_events_looked_at;
+        self.keyboard_events_looked_at = self.keyboard_events_received.len();
+        self.keyboard_events_received[start..].iter()
+    }
+}
+
 impl Dispatch<WlCallback, Arc<SyncData>> for State {
     fn event(
         _state: &mut Self,
@@ -529,6 +644,17 @@ impl Dispatch<WlRegistry, ()> for State {
                     let version = min(version, WlOutput::interface().version);
                     let output = registry.bind(name, version, qh, ());
                     state.outputs.insert(output, String::new());
+                } else if interface == WlSeat::interface().name {
+                    let version = min(version, WlSeat::interface().version);
+                    state
+                        .seats
+                        .insert(registry.bind(name, version, qh, ()), Seat::default());
+                } else if interface == ZwpKeyboardShortcutsInhibitManagerV1::interface().name {
+                    let version = min(
+                        version,
+                        ZwpKeyboardShortcutsInhibitManagerV1::interface().version,
+                    );
+                    state.ksim = Some(registry.bind(name, version, qh, ()));
                 }
 
                 let global = Global {
@@ -562,6 +688,107 @@ impl Dispatch<WlOutput, ()> for State {
                 *state.outputs.get_mut(output).unwrap() = name;
             }
             wl_output::Event::Description { .. } => (),
+            _ => unreachable!(),
+        }
+    }
+}
+
+impl Dispatch<WlSeat, ()> for State {
+    fn event(
+        state: &mut Self,
+        seat: &WlSeat,
+        event: <WlSeat as wayland_client::Proxy>::Event,
+        _data: &(),
+        _conn: &Connection,
+        qh: &QueueHandle<Self>,
+    ) {
+        match event {
+            wl_seat::Event::Capabilities { capabilities } => {
+                let capabilities = capabilities.into_result().unwrap();
+                let data = state.seats.get_mut(seat).unwrap();
+
+                if capabilities.contains(wl_seat::Capability::Keyboard) {
+                    if data.keyboard.is_none() {
+                        let keyboard = Keyboard {
+                            proxy: seat.get_keyboard(qh, seat.clone()),
+                            surface: None,
+                        };
+                        data.keyboard = Some(keyboard);
+                    }
+                } else {
+                    if let Some(keyboard) = data.keyboard.take() {
+                        keyboard.proxy.release();
+                    }
+                }
+            }
+            wl_seat::Event::Name { .. } => (),
+            _ => unreachable!(),
+        }
+    }
+}
+
+impl Dispatch<WlKeyboard, WlSeat> for State {
+    fn event(
+        state: &mut Self,
+        _keyboard: &WlKeyboard,
+        event: <WlKeyboard as wayland_client::Proxy>::Event,
+        seat: &WlSeat,
+        _conn: &Connection,
+        _qhandle: &QueueHandle<Self>,
+    ) {
+        let seat = state.seats.get_mut(seat).unwrap();
+        let keyboard = seat.keyboard.as_mut().unwrap();
+
+        match event {
+            wl_keyboard::Event::Keymap { .. } => (),
+            wl_keyboard::Event::Enter { surface, keys, .. } => {
+                keyboard.surface = Some(surface.clone());
+
+                let event = KeyboardEvent::Enter { keys };
+                let surface = state.surfaces.get_mut(&surface).unwrap();
+                surface.keyboard_events_received.push(event);
+            }
+            wl_keyboard::Event::Leave { .. } => {
+                let surface = keyboard.surface.take().unwrap();
+
+                let event = KeyboardEvent::Leave;
+                let surface = state.surfaces.get_mut(&surface).unwrap();
+                surface.keyboard_events_received.push(event);
+            }
+            wl_keyboard::Event::Key {
+                key,
+                state: key_state,
+                ..
+            } => {
+                let key_state = key_state.into_result().unwrap();
+                let surface = keyboard.surface.clone().unwrap();
+
+                let event = KeyboardEvent::Key {
+                    key,
+                    state: key_state,
+                };
+                let surface = state.surfaces.get_mut(&surface).unwrap();
+                surface.keyboard_events_received.push(event);
+            }
+            wl_keyboard::Event::Modifiers {
+                mods_depressed,
+                mods_latched,
+                mods_locked,
+                group,
+                ..
+            } => {
+                let surface = keyboard.surface.clone().unwrap();
+
+                let event = KeyboardEvent::Modifiers {
+                    depressed: mods_depressed,
+                    latched: mods_latched,
+                    locked: mods_locked,
+                    group,
+                };
+                let surface = state.surfaces.get_mut(&surface).unwrap();
+                surface.keyboard_events_received.push(event);
+            }
+            wl_keyboard::Event::RepeatInfo { .. } => (),
             _ => unreachable!(),
         }
     }
@@ -783,5 +1010,35 @@ impl Dispatch<WpViewport, ()> for State {
         _qhandle: &QueueHandle<Self>,
     ) {
         unreachable!()
+    }
+}
+
+impl Dispatch<ZwpKeyboardShortcutsInhibitManagerV1, ()> for State {
+    fn event(
+        _state: &mut Self,
+        _proxy: &ZwpKeyboardShortcutsInhibitManagerV1,
+        _event: <ZwpKeyboardShortcutsInhibitManagerV1 as wayland_client::Proxy>::Event,
+        _data: &(),
+        _conn: &Connection,
+        _qhandle: &QueueHandle<Self>,
+    ) {
+        unreachable!()
+    }
+}
+
+impl Dispatch<ZwpKeyboardShortcutsInhibitorV1, ()> for State {
+    fn event(
+        _state: &mut Self,
+        _proxy: &ZwpKeyboardShortcutsInhibitorV1,
+        event: <ZwpKeyboardShortcutsInhibitorV1 as wayland_client::Proxy>::Event,
+        _data: &(),
+        _conn: &Connection,
+        _qhandle: &QueueHandle<Self>,
+    ) {
+        match event {
+            zwp_keyboard_shortcuts_inhibitor_v1::Event::Active => (),
+            zwp_keyboard_shortcuts_inhibitor_v1::Event::Inactive => (),
+            _ => unreachable!(),
+        }
     }
 }
