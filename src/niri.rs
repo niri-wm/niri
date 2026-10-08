@@ -1680,7 +1680,7 @@ impl State {
         {
             let src = config.animations.window_resize.custom_shader.as_deref();
             self.backend.with_primary_renderer(|renderer| {
-                shaders::set_custom_resize_program(renderer, src);
+                shaders::set_custom_window_resize_program(renderer, src);
             });
             shaders_changed = true;
         }
@@ -1690,7 +1690,7 @@ impl State {
         {
             let src = config.animations.window_close.custom_shader.as_deref();
             self.backend.with_primary_renderer(|renderer| {
-                shaders::set_custom_close_program(renderer, src);
+                shaders::set_custom_window_close_program(renderer, src);
             });
             shaders_changed = true;
         }
@@ -1700,9 +1700,16 @@ impl State {
         {
             let src = config.animations.window_open.custom_shader.as_deref();
             self.backend.with_primary_renderer(|renderer| {
-                shaders::set_custom_open_program(renderer, src);
+                shaders::set_custom_window_open_program(renderer, src);
             });
             shaders_changed = true;
+        }
+
+        if window_rules_changed || shaders_changed {
+            let live_sources = config.custom_shader_sources();
+            self.backend.with_primary_renderer(|renderer| {
+                shaders::prune_custom_program_caches(renderer, &live_sources);
+            });
         }
 
         if config.cursor.hide_after_inactive_ms != old_config.cursor.hide_after_inactive_ms {
