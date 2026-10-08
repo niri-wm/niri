@@ -140,20 +140,20 @@ fn combos() {
         run(c, "+LWIN +LCTL +LatQ -LatQ -LCTL -LWIN"),
         @"
     +LWIN 133 XK_Super_L
-        surface modifiers: depressed=64, latched=0, locked=0, group=0
         surface key pressed: 125
+        surface modifiers: depressed=64, latched=0, locked=0, group=0
     +LCTL  37 XK_Control_L
-        surface modifiers: depressed=68, latched=0, locked=0, group=0
         surface key pressed: 29
+        surface modifiers: depressed=68, latched=0, locked=0, group=0
     +AD01  24 XK_q
         niri test-action
     -AD01  24 XK_q
     -LCTL  37 XK_Control_L
-        surface modifiers: depressed=64, latched=0, locked=0, group=0
         surface key released: 29
+        surface modifiers: depressed=64, latched=0, locked=0, group=0
     -LWIN 133 XK_Super_L
-        surface modifiers: depressed=0, latched=0, locked=0, group=0
         surface key released: 125
+        surface modifiers: depressed=0, latched=0, locked=0, group=0
     "
     );
 
@@ -162,11 +162,11 @@ fn combos() {
         run(c, "+LWIN +LCTL +LatQ +LatW -LatQ -LatW -LCTL -LWIN"),
         @"
     +LWIN 133 XK_Super_L
-        surface modifiers: depressed=64, latched=0, locked=0, group=0
         surface key pressed: 125
+        surface modifiers: depressed=64, latched=0, locked=0, group=0
     +LCTL  37 XK_Control_L
-        surface modifiers: depressed=68, latched=0, locked=0, group=0
         surface key pressed: 29
+        surface modifiers: depressed=68, latched=0, locked=0, group=0
     +AD01  24 XK_q
         niri test-action
     +AD02  25 XK_w
@@ -174,11 +174,11 @@ fn combos() {
     -AD01  24 XK_q
     -AD02  25 XK_w
     -LCTL  37 XK_Control_L
-        surface modifiers: depressed=64, latched=0, locked=0, group=0
         surface key released: 29
+        surface modifiers: depressed=64, latched=0, locked=0, group=0
     -LWIN 133 XK_Super_L
-        surface modifiers: depressed=0, latched=0, locked=0, group=0
         surface key released: 125
+        surface modifiers: depressed=0, latched=0, locked=0, group=0
     "
     );
 
@@ -187,27 +187,27 @@ fn combos() {
         run(c, "+LWIN +LCTL +LALT +LatQ -LALT -LatQ -LCTL -LWIN"),
         @"
     +LWIN 133 XK_Super_L
-        surface modifiers: depressed=64, latched=0, locked=0, group=0
         surface key pressed: 125
+        surface modifiers: depressed=64, latched=0, locked=0, group=0
     +LCTL  37 XK_Control_L
-        surface modifiers: depressed=68, latched=0, locked=0, group=0
         surface key pressed: 29
+        surface modifiers: depressed=68, latched=0, locked=0, group=0
     +LALT  64 XK_Alt_L
-        surface modifiers: depressed=76, latched=0, locked=0, group=0
         surface key pressed: 56
+        surface modifiers: depressed=76, latched=0, locked=0, group=0
     +AD01  24 XK_q
         surface key pressed: 16
     -LALT  64 XK_Alt_L
-        surface modifiers: depressed=68, latched=0, locked=0, group=0
         surface key released: 56
+        surface modifiers: depressed=68, latched=0, locked=0, group=0
     -AD01  24 XK_q
         surface key released: 16
     -LCTL  37 XK_Control_L
-        surface modifiers: depressed=64, latched=0, locked=0, group=0
         surface key released: 29
+        surface modifiers: depressed=64, latched=0, locked=0, group=0
     -LWIN 133 XK_Super_L
-        surface modifiers: depressed=0, latched=0, locked=0, group=0
         surface key released: 125
+        surface modifiers: depressed=0, latched=0, locked=0, group=0
     "
     );
 
@@ -216,21 +216,21 @@ fn combos() {
         run(c, "+LWIN +LCTL +LatA -LatA -LCTL -LWIN"),
         @"
     +LWIN 133 XK_Super_L
-        surface modifiers: depressed=64, latched=0, locked=0, group=0
         surface key pressed: 125
+        surface modifiers: depressed=64, latched=0, locked=0, group=0
     +LCTL  37 XK_Control_L
-        surface modifiers: depressed=68, latched=0, locked=0, group=0
         surface key pressed: 29
+        surface modifiers: depressed=68, latched=0, locked=0, group=0
     +AC01  38 XK_a
         surface key pressed: 30
     -AC01  38 XK_a
         surface key released: 30
     -LCTL  37 XK_Control_L
-        surface modifiers: depressed=64, latched=0, locked=0, group=0
         surface key released: 29
+        surface modifiers: depressed=64, latched=0, locked=0, group=0
     -LWIN 133 XK_Super_L
-        surface modifiers: depressed=0, latched=0, locked=0, group=0
         surface key released: 125
+        surface modifiers: depressed=0, latched=0, locked=0, group=0
     "
     );
 
@@ -239,11 +239,11 @@ fn combos() {
         run(c, "+LWIN +LCTL +LatQ +LatA -LatQ -LatA -LCTL -LWIN"),
         @"
     +LWIN 133 XK_Super_L
-        surface modifiers: depressed=64, latched=0, locked=0, group=0
         surface key pressed: 125
+        surface modifiers: depressed=64, latched=0, locked=0, group=0
     +LCTL  37 XK_Control_L
-        surface modifiers: depressed=68, latched=0, locked=0, group=0
         surface key pressed: 29
+        surface modifiers: depressed=68, latched=0, locked=0, group=0
     +AD01  24 XK_q
         niri test-action
     +AC01  38 XK_a
@@ -252,11 +252,11 @@ fn combos() {
     -AC01  38 XK_a
         surface key released: 30
     -LCTL  37 XK_Control_L
-        surface modifiers: depressed=64, latched=0, locked=0, group=0
         surface key released: 29
+        surface modifiers: depressed=64, latched=0, locked=0, group=0
     -LWIN 133 XK_Super_L
-        surface modifiers: depressed=0, latched=0, locked=0, group=0
         surface key released: 125
+        surface modifiers: depressed=0, latched=0, locked=0, group=0
     "
     );
 
@@ -265,11 +265,11 @@ fn combos() {
         run(c, "+LWIN +LCTL +LatA +LatQ -LatA -LatQ -LCTL -LWIN"),
         @"
     +LWIN 133 XK_Super_L
-        surface modifiers: depressed=64, latched=0, locked=0, group=0
         surface key pressed: 125
+        surface modifiers: depressed=64, latched=0, locked=0, group=0
     +LCTL  37 XK_Control_L
-        surface modifiers: depressed=68, latched=0, locked=0, group=0
         surface key pressed: 29
+        surface modifiers: depressed=68, latched=0, locked=0, group=0
     +AC01  38 XK_a
         surface key pressed: 30
     +AD01  24 XK_q
@@ -278,11 +278,11 @@ fn combos() {
         surface key released: 30
     -AD01  24 XK_q
     -LCTL  37 XK_Control_L
-        surface modifiers: depressed=64, latched=0, locked=0, group=0
         surface key released: 29
+        surface modifiers: depressed=64, latched=0, locked=0, group=0
     -LWIN 133 XK_Super_L
-        surface modifiers: depressed=0, latched=0, locked=0, group=0
         surface key released: 125
+        surface modifiers: depressed=0, latched=0, locked=0, group=0
     "
     );
 
@@ -291,19 +291,19 @@ fn combos() {
         run(c, "+LWIN +LCTL +LatQ -LCTL -LWIN -LatQ"),
         @"
     +LWIN 133 XK_Super_L
-        surface modifiers: depressed=64, latched=0, locked=0, group=0
         surface key pressed: 125
+        surface modifiers: depressed=64, latched=0, locked=0, group=0
     +LCTL  37 XK_Control_L
-        surface modifiers: depressed=68, latched=0, locked=0, group=0
         surface key pressed: 29
+        surface modifiers: depressed=68, latched=0, locked=0, group=0
     +AD01  24 XK_q
         niri test-action
     -LCTL  37 XK_Control_L
-        surface modifiers: depressed=64, latched=0, locked=0, group=0
         surface key released: 29
+        surface modifiers: depressed=64, latched=0, locked=0, group=0
     -LWIN 133 XK_Super_L
-        surface modifiers: depressed=0, latched=0, locked=0, group=0
         surface key released: 125
+        surface modifiers: depressed=0, latched=0, locked=0, group=0
     -AD01  24 XK_q
     "
     );
@@ -313,21 +313,21 @@ fn combos() {
         run(c, "+LWIN +LatQ +LCTL -LCTL -LatQ -LWIN"),
         @"
     +LWIN 133 XK_Super_L
-        surface modifiers: depressed=64, latched=0, locked=0, group=0
         surface key pressed: 125
+        surface modifiers: depressed=64, latched=0, locked=0, group=0
     +AD01  24 XK_q
         surface key pressed: 16
     +LCTL  37 XK_Control_L
-        surface modifiers: depressed=68, latched=0, locked=0, group=0
         surface key pressed: 29
+        surface modifiers: depressed=68, latched=0, locked=0, group=0
     -LCTL  37 XK_Control_L
-        surface modifiers: depressed=64, latched=0, locked=0, group=0
         surface key released: 29
+        surface modifiers: depressed=64, latched=0, locked=0, group=0
     -AD01  24 XK_q
         surface key released: 16
     -LWIN 133 XK_Super_L
-        surface modifiers: depressed=0, latched=0, locked=0, group=0
         surface key released: 125
+        surface modifiers: depressed=0, latched=0, locked=0, group=0
     "
     );
 }
@@ -430,8 +430,8 @@ fn layouts() {
         run(c, "+LALT -LALT +LatQ -LatQ"),
         @"
     +LALT  64 XK_ISO_Next_Group
-        surface modifiers: depressed=0, latched=0, locked=0, group=1
         surface key pressed: 56
+        surface modifiers: depressed=0, latched=0, locked=0, group=1
     -LALT  64 XK_ISO_Next_Group
         surface key released: 56
     +AD01  24 XK_Cyrillic_shorti
@@ -452,29 +452,29 @@ fn layouts() {
         ),
         @"
     +LFSH  50 XK_Shift_L
-        surface modifiers: depressed=1, latched=0, locked=0, group=0
         surface key pressed: 42
+        surface modifiers: depressed=1, latched=0, locked=0, group=0
     +AB10  61 XK_question
         niri test-action
     -AB10  61 XK_question
     -LFSH  50 XK_Shift_L
-        surface modifiers: depressed=0, latched=0, locked=0, group=0
         surface key released: 42
+        surface modifiers: depressed=0, latched=0, locked=0, group=0
     +LALT  64 XK_ISO_Next_Group
-        surface modifiers: depressed=0, latched=0, locked=0, group=1
         surface key pressed: 56
+        surface modifiers: depressed=0, latched=0, locked=0, group=1
     -LALT  64 XK_ISO_Next_Group
         surface key released: 56
     +LFSH  50 XK_Shift_L
-        surface modifiers: depressed=1, latched=0, locked=0, group=1
         surface key pressed: 42
+        surface modifiers: depressed=1, latched=0, locked=0, group=1
     +AB10  61 XK_comma
         surface key pressed: 53
     -AB10  61 XK_comma
         surface key released: 53
     -LFSH  50 XK_Shift_L
-        surface modifiers: depressed=0, latched=0, locked=0, group=1
         surface key released: 42
+        surface modifiers: depressed=0, latched=0, locked=0, group=1
     "
     );
 
@@ -485,20 +485,20 @@ fn layouts() {
         run(c, "+LALT -LALT +LFSH +BKSL -BKSL -LFSH"),
         @"
     +LALT  64 XK_ISO_Next_Group
-        surface modifiers: depressed=0, latched=0, locked=0, group=1
         surface key pressed: 56
+        surface modifiers: depressed=0, latched=0, locked=0, group=1
     -LALT  64 XK_ISO_Next_Group
         surface key released: 56
     +LFSH  50 XK_Shift_L
-        surface modifiers: depressed=1, latched=0, locked=0, group=1
         surface key pressed: 42
+        surface modifiers: depressed=1, latched=0, locked=0, group=1
     +BKSL  51 XK_slash
         surface key pressed: 43
     -BKSL  51 XK_slash
         surface key released: 43
     -LFSH  50 XK_Shift_L
-        surface modifiers: depressed=0, latched=0, locked=0, group=1
         surface key released: 42
+        surface modifiers: depressed=0, latched=0, locked=0, group=1
     "
     );
 }

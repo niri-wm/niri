@@ -262,7 +262,7 @@ jobs:
       - name: Build
         uses: vmactions/freebsd-vm@v1
         with:
-          release: "15.0"
+          release: "15.1"
           copyback: false
           prepare: |
             pkg update -f
