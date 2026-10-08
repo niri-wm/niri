@@ -537,6 +537,32 @@ impl State {
                     }
                 }
 
+                // Allows keyboard navigation when a modifier is held down not to affect
+                // the recent windows list, thereby skipping any intermediate windows
+                // to a particular destination window from affecting the list.
+                if !this.niri.window_mru_ui.is_open()
+                    && this
+                        .niri
+                        .config
+                        .borrow()
+                        .recent_windows
+                        .commit_on_modifier_release
+                {
+                    let mod_down = modifiers.contains(mod_key.to_modifiers());
+                    if mod_down {
+                        if this.niri.mru_nav_anchor.is_none() {
+                            if let Some(focus) = this.niri.layout.focus() {
+                                let id = focus.id();
+                                this.niri.mru_nav_anchor = Some(id);
+                            }
+                        }
+                    } else if this.niri.mru_nav_anchor.is_some() {
+                        // Modifier key released: commit the anchor window, i.e. the
+                        // window that was focused when the modifier was first pressed
+                        this.niri.mru_nav_commit_anchor();
+                    }
+                }
+
                 if pressed && raw == Some(Keysym::Escape) {
                     // Cancel certain grabs on Escape.
                     let pointer = this.niri.seat.get_pointer().unwrap();
@@ -586,7 +612,11 @@ impl State {
 
                     // Interaction with the active window, immediately update the active window's
                     // focus timestamp without waiting for a possible pending MRU lock-in delay.
-                    this.niri.mru_apply_keyboard_commit();
+                    // This is not applied when using commit-on-modifier-release and the modifier
+                    // key is currently held down.
+                    if this.niri.mru_nav_anchor.is_none() {
+                        this.niri.mru_apply_keyboard_commit();
+                    }
                 }
 
                 res
@@ -914,8 +944,11 @@ impl State {
                     .max_by_key(|win| win.get_focus_timestamp())
                     .map(|win| win.window.clone())
                 {
-                    // Commit current focus so repeated focus-window-previous works as expected.
-                    self.niri.mru_apply_keyboard_commit();
+                    // Only commit the window if we are not currently navigating
+                    // between windows
+                    if self.niri.mru_nav_anchor.is_none() {
+                        self.niri.mru_apply_keyboard_commit();
+                    }
 
                     self.focus_window(&window);
                 }
@@ -2359,7 +2392,14 @@ impl State {
                     self.niri.window_mru_ui.advance(direction, filter);
                     self.niri.queue_redraw_mru_output();
                 } else if self.niri.config.borrow().recent_windows.on {
-                    self.niri.mru_apply_keyboard_commit();
+                    // The picker UI is it's own self-contained navigation session,
+                    // so we should commit any in-progress modifier-held navigation
+                    // at this point.
+                    if self.niri.mru_nav_anchor.is_some() {
+                        self.niri.mru_nav_commit_anchor();
+                    } else {
+                        self.niri.mru_apply_keyboard_commit();
+                    }
 
                     let config = self.niri.config.borrow();
                     let scope = scope.unwrap_or(self.niri.window_mru_ui.scope());

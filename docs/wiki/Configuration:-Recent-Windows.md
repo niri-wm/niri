@@ -10,6 +10,7 @@ Here is an outline of the available settings and their default values:
 recent-windows {
     // off
     debounce-ms 750
+    // commit-on-modifier-release
 
     open-delay-ms 150
 
@@ -62,6 +63,20 @@ recent-windows {
     // Commit windows to the recent windows list as soon as they're focused,
     // with no debounce delay.
     debounce-ms 0
+}
+```
+
+### `commit-on-modifier-release`
+
+<sup>Since: next release</sup>
+
+When set, releasing modifier keys becomes the signal for committing a pending window to the recent windows list, and is used instead of `debounce-ms`.
+
+This is meant for keyboard navigation under a held modifier, e.g. <kbd>Mod</kbd><kbd>L</kbd> bound to `focus-column-right`. With this option on, you can hold <kbd>Mod</kbd> and tap through several windows or change direction freely, and nothing gets committed to the recent windows list until you let go of <kbd>Mod</kbd>. `debounce-ms` still applies as a fallback for focus changes that aren't accompanied by a held modifier, such as [`focus-follows-mouse`](./Configuration:-Input.md#focus-follows-mouse) or focus changes requested over IPC.
+
+```kdl
+recent-windows {
+    commit-on-modifier-release
 }
 ```
 
