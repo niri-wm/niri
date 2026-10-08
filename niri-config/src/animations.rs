@@ -1,6 +1,7 @@
 use std::cell::RefCell;
 use std::fs;
 use std::rc::Rc;
+use std::sync::Arc;
 
 use knuffel::ast::SpannedNode;
 use knuffel::errors::DecodeError;
@@ -159,7 +160,7 @@ impl Default for WorkspaceSwitchAnim {
 fn parse_custom_shader_path<S: knuffel::traits::ErrorSpan>(
     spanned: &SpannedNode<S>,
     ctx: &mut knuffel::decode::Context<S>,
-) -> Result<String, DecodeError<S>> {
+) -> Result<Arc<str>, DecodeError<S>> {
     let mut shader_text = None;
 
     for (name, val) in &spanned.properties {
@@ -173,7 +174,7 @@ fn parse_custom_shader_path<S: knuffel::traits::ErrorSpan>(
             includes.borrow_mut().0.push(path.to_path_buf());
 
             match fs::read_to_string(&path) {
-                Ok(text) => shader_text = Some(text),
+                Ok(text) => shader_text = Some(text.as_str().into()),
                 Err(e) => ctx.emit_error(DecodeError::missing(
                     spanned,
                     format!("failed to read custom shader from {path:?}: {e}"),
@@ -210,7 +211,7 @@ fn parse_custom_shader_path<S: knuffel::traits::ErrorSpan>(
 #[derive(Debug, Clone, PartialEq)]
 pub struct WindowOpenAnim {
     pub anim: Animation,
-    pub custom_shader: Option<String>,
+    pub custom_shader: Option<Arc<str>>,
 }
 
 impl Default for WindowOpenAnim {
@@ -231,7 +232,7 @@ impl Default for WindowOpenAnim {
 #[derive(Debug, Clone, PartialEq)]
 pub struct WindowCloseAnim {
     pub anim: Animation,
-    pub custom_shader: Option<String>,
+    pub custom_shader: Option<Arc<str>>,
 }
 
 impl Default for WindowCloseAnim {
@@ -284,7 +285,7 @@ impl Default for WindowMovementAnim {
 #[derive(Debug, Clone, PartialEq)]
 pub struct WindowResizeAnim {
     pub anim: Animation,
-    pub custom_shader: Option<String>,
+    pub custom_shader: Option<Arc<str>>,
 }
 
 impl Default for WindowResizeAnim {
