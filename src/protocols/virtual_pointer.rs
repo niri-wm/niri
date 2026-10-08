@@ -3,7 +3,7 @@ use std::sync::Mutex;
 
 use smithay::backend::input::{
     AbsolutePositionEvent, Axis, AxisRelativeDirection, AxisSource, ButtonState, Device,
-    DeviceCapability, Event, InputBackend, PointerAxisEvent, PointerButtonEvent,
+    DeviceCapability, Event, InputBackend, InputTime, PointerAxisEvent, PointerButtonEvent,
     PointerMotionAbsoluteEvent, PointerMotionEvent, UnusedEvent,
 };
 use smithay::input::pointer::AxisFrame;
@@ -69,7 +69,9 @@ impl VirtualPointer {
     fn mutate_axis_frame(&self, time: Option<u32>, f: impl FnOnce(AxisFrame) -> AxisFrame) {
         let mut frame = self.data().axis_frame.lock().unwrap();
 
-        *frame = frame.or(time.map(AxisFrame::new)).map(f);
+        *frame = frame
+            .or(time.map(InputTime::from_millis).map(AxisFrame::new))
+            .map(f);
     }
 }
 
@@ -103,8 +105,8 @@ pub struct VirtualPointerMotionEvent {
 }
 
 impl Event<VirtualPointerInputBackend> for VirtualPointerMotionEvent {
-    fn time(&self) -> u64 {
-        self.time as u64 * 1000 // millis to micros
+    fn time(&self) -> InputTime {
+        InputTime::from_millis(self.time)
     }
 
     fn device(&self) -> VirtualPointer {
@@ -140,8 +142,8 @@ pub struct VirtualPointerMotionAbsoluteEvent {
 }
 
 impl Event<VirtualPointerInputBackend> for VirtualPointerMotionAbsoluteEvent {
-    fn time(&self) -> u64 {
-        self.time as u64 * 1000 // millis to micros
+    fn time(&self) -> InputTime {
+        InputTime::from_millis(self.time)
     }
 
     fn device(&self) -> VirtualPointer {
@@ -175,8 +177,8 @@ pub struct VirtualPointerButtonEvent {
 }
 
 impl Event<VirtualPointerInputBackend> for VirtualPointerButtonEvent {
-    fn time(&self) -> u64 {
-        self.time as u64 * 1000 // millis to micros
+    fn time(&self) -> InputTime {
+        InputTime::from_millis(self.time)
     }
 
     fn device(&self) -> VirtualPointer {
@@ -200,8 +202,8 @@ pub struct VirtualPointerAxisEvent {
 }
 
 impl Event<VirtualPointerInputBackend> for VirtualPointerAxisEvent {
-    fn time(&self) -> u64 {
-        self.frame.time as u64 * 1000 // millis to micros
+    fn time(&self) -> InputTime {
+        self.frame.time
     }
 
     fn device(&self) -> VirtualPointer {
@@ -514,7 +516,9 @@ where
                     }
                 };
                 pointer.mutate_axis_frame(Some(time), |frame| {
-                    frame.value(axis, value).v120(axis, discrete * 120)
+                    frame
+                        .value(axis, value)
+                        .v120(axis, discrete.saturating_mul(120))
                 });
             }
             zwlr_virtual_pointer_v1::Request::Destroy => {}

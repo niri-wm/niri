@@ -2,6 +2,7 @@ use std::cell::Cell;
 
 use calloop::Interest;
 use niri_config::PresetSize;
+use smithay::backend::input::InputTime;
 use smithay::desktop::{
     find_popup_root_surface, get_popup_toplevel_coords, layer_map_for_output, utils, LayerSurface,
     PopupKeyboardGrab, PopupKind, PopupManager, PopupPointerGrab, PopupUngrabStrategy, Window,
@@ -113,33 +114,32 @@ impl XdgShellHandler for State {
 
         // See if this comes from a tablet tool grab.
         let mut tablet_tool = None;
-        self.niri.seat.tablet_seat().with_tools(|tools| {
-            for tool in tools.values() {
-                let found = tool.with_grab(|grab_serial, grab| {
-                    if grab_serial == serial {
-                        let start_data = grab.start_data();
-                        if let Some((focus, _)) = &start_data.focus {
-                            if focus.id().same_client_as(&wl_surface.id()) {
-                                // Deny move requests from DnD grabs to work around
-                                // https://gitlab.gnome.org/GNOME/gtk/-/issues/7113
-                                let is_dnd_grab = Self::is_dnd_grab(grab.as_any());
+        let tools = self.niri.seat.tablet_seat().get_tools();
+        for tool in tools.values() {
+            let found = tool.with_grab(|grab_serial, grab| {
+                if grab_serial == serial {
+                    let start_data = grab.start_data();
+                    if let Some((focus, _)) = &start_data.focus {
+                        if focus.id().same_client_as(&wl_surface.id()) {
+                            // Deny move requests from DnD grabs to work around
+                            // https://gitlab.gnome.org/GNOME/gtk/-/issues/7113
+                            let is_dnd_grab = Self::is_dnd_grab(grab.as_any());
 
-                                if !is_dnd_grab {
-                                    grab_start_data =
-                                        Some(AnyStartData::TabletTool(start_data.clone()));
-                                    tablet_tool = Some(tool.clone());
-                                    return true;
-                                }
+                            if !is_dnd_grab {
+                                grab_start_data =
+                                    Some(AnyStartData::TabletTool(start_data.clone()));
+                                tablet_tool = Some(tool.clone());
+                                return true;
                             }
                         }
                     }
-                    false
-                });
-                if found == Some(true) {
-                    break;
                 }
+                false
+            });
+            if found == Some(true) {
+                break;
             }
-        });
+        }
 
         let Some(start_data) = grab_start_data else {
             return;
@@ -170,7 +170,7 @@ impl XdgShellHandler for State {
             }
             AnyStartData::TabletTool(_) => {
                 if let Some(grab) = MoveGrab::new(self, start_data, window.clone(), true, None) {
-                    let time = get_monotonic_time().as_millis() as u32;
+                    let time = InputTime::now();
                     tablet_tool
                         .unwrap()
                         .set_grab(self, grab, time, serial, Focus::Clear);
@@ -219,21 +219,20 @@ impl XdgShellHandler for State {
 
         // See if this comes from a tablet tool grab.
         let mut tablet_tool = None;
-        self.niri.seat.tablet_seat().with_tools(|tools| {
-            'outer: for tool in tools.values() {
-                if tool.has_grab(serial) {
-                    if let Some(start_data) = tool.grab_start_data() {
-                        if let Some((focus, _)) = &start_data.focus {
-                            if focus.id().same_client_as(&wl_surface.id()) {
-                                grab_start_data = Some(AnyStartData::TabletTool(start_data));
-                                tablet_tool = Some(tool.clone());
-                                break 'outer;
-                            }
+        let tools = self.niri.seat.tablet_seat().get_tools();
+        'outer: for tool in tools.values() {
+            if tool.has_grab(serial) {
+                if let Some(start_data) = tool.grab_start_data() {
+                    if let Some((focus, _)) = &start_data.focus {
+                        if focus.id().same_client_as(&wl_surface.id()) {
+                            grab_start_data = Some(AnyStartData::TabletTool(start_data));
+                            tablet_tool = Some(tool.clone());
+                            break 'outer;
                         }
                     }
                 }
             }
-        });
+        }
 
         let Some(start_data) = grab_start_data else {
             return;
@@ -301,7 +300,7 @@ impl XdgShellHandler for State {
             }
             AnyStartData::TabletTool(_) => {
                 let grab = ResizeGrab::new(start_data, window);
-                let time = get_monotonic_time().as_millis() as u32;
+                let time = InputTime::now();
                 tablet_tool
                     .unwrap()
                     .set_grab(self, grab, time, serial, Focus::Clear);

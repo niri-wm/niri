@@ -4,12 +4,11 @@ use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
 use smithay::utils::Size;
-use zbus::fdo::RequestNameFlags;
 use zbus::object_server::SignalEmitter;
 use zbus::zvariant::{self, OwnedValue, Type};
 use zbus::{fdo, interface};
 
-use super::Start;
+use super::{request_name, Start};
 use crate::backend::IpcOutputMap;
 use crate::utils::is_laptop_panel;
 use crate::utils::scale::supported_scales;
@@ -294,15 +293,11 @@ impl DisplayConfig {
 }
 
 impl Start for DisplayConfig {
-    fn start(self) -> anyhow::Result<zbus::blocking::Connection> {
+    fn start(self, monitor: bool) -> anyhow::Result<zbus::blocking::Connection> {
         let conn = zbus::blocking::Connection::session()?;
-        let flags = RequestNameFlags::AllowReplacement
-            | RequestNameFlags::ReplaceExisting
-            | RequestNameFlags::DoNotQueue;
-
         conn.object_server()
             .at("/org/gnome/Mutter/DisplayConfig", self)?;
-        conn.request_name_with_flags("org.gnome.Mutter.DisplayConfig", flags)?;
+        request_name(&conn, "org.gnome.Mutter.DisplayConfig", monitor)?;
 
         Ok(conn)
     }

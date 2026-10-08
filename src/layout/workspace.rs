@@ -54,11 +54,11 @@ pub struct Workspace<W: LayoutElement> {
     /// Whether the floating layout is active instead of the scrolling layout.
     floating_is_active: FloatingActive,
 
-    /// The original output of this workspace.
+    /// The original outputs of this workspace, in preference order.
     ///
     /// Most of the time this will be the workspace's current output, however, after an output
-    /// disconnection, it may remain pointing to the disconnected output.
-    pub(super) original_output: OutputId,
+    /// disconnection, they may remain pointing to disconnected outputs.
+    pub(super) original_outputs: Vec<OutputId>,
 
     /// Current output of this workspace.
     output: Option<Output>,
@@ -114,7 +114,7 @@ pub struct Workspace<W: LayoutElement> {
     id: WorkspaceId,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OutputId(String);
 
 impl OutputId {
@@ -217,11 +217,15 @@ impl<W: LayoutElement> Workspace<W> {
         clock: Clock,
         base_options: Rc<Options>,
     ) -> Self {
-        let original_output = config
+        let mut original_outputs: Vec<OutputId> = config
             .as_ref()
-            .and_then(|c| c.open_on_output.clone())
-            .map(OutputId)
-            .unwrap_or(OutputId::new(&output));
+            .map(|c| c.open_on_output.iter().cloned().map(OutputId).collect())
+            .unwrap_or_default();
+        if original_outputs.is_empty() {
+            original_outputs.push(OutputId::new(&output));
+        } else {
+            Self::normalize_original_outputs(&mut original_outputs, &output);
+        }
 
         let layout_config = config.as_mut().and_then(|c| c.layout.take().map(|x| x.0));
 
@@ -258,7 +262,7 @@ impl<W: LayoutElement> Workspace<W> {
             scrolling,
             floating,
             floating_is_active: FloatingActive::No,
-            original_output,
+            original_outputs,
             scale,
             transform: output.current_transform(),
             view_size,
@@ -280,12 +284,10 @@ impl<W: LayoutElement> Workspace<W> {
         clock: Clock,
         base_options: Rc<Options>,
     ) -> Self {
-        let original_output = OutputId(
-            config
-                .as_ref()
-                .and_then(|c| c.open_on_output.clone())
-                .unwrap_or_default(),
-        );
+        let original_outputs = config
+            .as_ref()
+            .map(|c| c.open_on_output.iter().cloned().map(OutputId).collect())
+            .unwrap_or_default();
 
         let layout_config = config.as_mut().and_then(|c| c.layout.take().map(|x| x.0));
 
@@ -325,7 +327,7 @@ impl<W: LayoutElement> Workspace<W> {
             output: None,
             scale,
             transform: Transform::Normal,
-            original_output,
+            original_outputs,
             view_size,
             working_area,
             shadow: Shadow::new(shadow_config),
@@ -474,6 +476,15 @@ impl<W: LayoutElement> Workspace<W> {
         self.output.as_ref()
     }
 
+    pub(super) fn find_preferred_output<'a>(
+        &self,
+        outputs: impl Iterator<Item = &'a Output> + Clone,
+    ) -> Option<usize> {
+        self.original_outputs
+            .iter()
+            .find_map(|id| outputs.clone().position(|output| id.matches(output)))
+    }
+
     pub fn active_window(&self) -> Option<&W> {
         if self.floating_is_active.get() {
             self.floating.active_window()
@@ -508,15 +519,32 @@ impl<W: LayoutElement> Workspace<W> {
         self.output = output;
 
         if let Some(output) = &self.output {
-            // Normalize original output: possibly replace connector with make/model/serial.
-            if self.original_output.matches(output) {
-                self.original_output = OutputId::new(output);
+            if self.original_outputs.is_empty() {
+                self.original_outputs.push(OutputId::new(output));
+            } else {
+                // Normalize original outputs: possibly replace connectors with make/model/serial.
+                Self::normalize_original_outputs(&mut self.original_outputs, output);
             }
 
             self.update_output_size();
 
             for win in self.windows() {
                 self.enter_output_for_window(win);
+            }
+        }
+    }
+
+    fn normalize_original_outputs(outputs: &mut Vec<OutputId>, output: &Output) {
+        for id in &mut *outputs {
+            if id.matches(output) {
+                *id = OutputId::new(output);
+            }
+        }
+
+        // Connector and make/model/serial candidates may resolve to the same output.
+        for idx in (0..outputs.len()).rev() {
+            if outputs[..idx].contains(&outputs[idx]) {
+                outputs.remove(idx);
             }
         }
     }
