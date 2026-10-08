@@ -914,6 +914,12 @@ pub enum Action {
     OpenOverview {},
     /// Close the Overview.
     CloseOverview {},
+    /// Toggle (lock/unlock) the view lock.
+    ToggleViewLock {},
+    /// Lock the view lock.
+    LockViewLock {},
+    /// Unlock the view lock.
+    UnlockViewLock {},
     /// Toggle urgent status of a window.
     ToggleWindowUrgent {
         /// Id of the window to toggle urgent.
