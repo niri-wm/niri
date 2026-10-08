@@ -193,6 +193,25 @@ layer-rule {
 }
 ```
 
+#### `geometry-corner-radius-exponent`
+
+<sup>Since: next release</sup>
+
+Sets the exponent used for corner rounding, using the superellipse equation `x^n + y^n = 1`.
+
+- 2 is the default circular rounding.
+- Values greater than 2 produce "squircle" corners.
+- Values closer to 1 produce chamfer-like corners.
+
+```kdl
+layer-rule {
+    match namespace="^launcher$"
+
+    geometry-corner-radius 12
+    geometry-corner-radius-exponent 4
+}
+```
+
 #### `place-within-backdrop`
 
 <sup>Since: 25.05</sup>
