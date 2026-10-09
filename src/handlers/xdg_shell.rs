@@ -1307,6 +1307,16 @@ impl State {
         // The target geometry for the positioner should be relative to its parent's geometry, so
         // we will compute that here.
         let mut target = self.niri.layout.popup_target_rect(window);
+
+        // Let input-method popups overflow the window, clamping them to the output
+        // working area instead, so they only get squeezed at the screen edge.
+        if matches!(popup, PopupKind::InputMethod(_)) {
+            if let Some(ime_target) = self.niri.layout.ime_popup_target_rect(window) {
+                target.loc.x = ime_target.loc.x;
+                target.size.w = ime_target.size.w;
+            }
+        }
+
         target.loc -= get_popup_toplevel_coords(popup).to_f64();
 
         self.position_popup_within_rect(popup, target, true);
@@ -1377,7 +1387,7 @@ impl State {
                     bbox.loc.x -= overflow_x;
                 }
 
-                // Ensure that the popup starts within the window.
+                // Ensure that the popup starts within the target rect.
                 bbox.loc.x = f64::max(bbox.loc.x, target.loc.x);
 
                 // Try to position IME popup below the text input rectangle.

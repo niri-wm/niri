@@ -1486,6 +1486,35 @@ impl<W: LayoutElement> Layout<W> {
             .unwrap()
     }
 
+    /// Computes the output working area in toplevel-surface-local coordinates
+    /// for the given window.
+    ///
+    /// Unlike [`Self::popup_target_rect`], the rect spans the whole working
+    /// area horizontally, so input-method popups may overflow the window while
+    /// staying on-screen. Returns `None` if the window is not found.
+    pub fn ime_popup_target_rect(&self, window: &W::Id) -> Option<Rectangle<f64, Logical>> {
+        let MonitorSet::Normal { monitors, .. } = &self.monitor_set else {
+            return None;
+        };
+
+        for mon in monitors {
+            let working_area = mon.working_area();
+            for (ws, geo) in mon.workspaces_with_render_geo_cull(false) {
+                for (tile, pos, _visible) in ws.tiles_with_render_positions() {
+                    if tile.window().id() == window {
+                        // Window position on the output, in output-local coordinates.
+                        let win_pos = geo.loc + pos + tile.window_loc();
+                        let mut rect = working_area;
+                        rect.loc -= win_pos;
+                        return Some(rect);
+                    }
+                }
+            }
+        }
+
+        None
+    }
+
     pub fn update_output_size(&mut self, output: &Output) {
         let _span = tracy_client::span!("Layout::update_output_size");
 
