@@ -5,8 +5,16 @@ use std::time::Duration;
 
 use calloop::timer::{TimeoutAction, Timer};
 use input::event::gesture::GestureEventCoordinates as _;
+use niri_config::touch_binds::{continuous_gesture_kind, ContinuousGestureKind};
+
+use crate::niri::ActiveSwipeBind;
+
+/// Default sensitivity for touchpad gestures.
+/// Higher than touchscreen (0.4) because touchpad deltas are smaller libinput units.
+const TOUCHPAD_DEFAULT_SENSITIVITY: f64 = 1.0;
 use niri_config::{
-    Action, Bind, Binds, Config, Key, ModKey, Modifiers, MruDirection, SwitchBinds, Trigger,
+    Action, Bind, Binds, Config, Key, ModKey, Modifiers, MruDirection, PinchDirection,
+    SwipeDirection, SwitchBinds, Trigger, MAX_FINGERS, MIN_FINGERS,
 };
 use niri_ipc::LayoutSwitchTarget;
 use smithay::backend::input::{
@@ -15,7 +23,7 @@ use smithay::backend::input::{
     InputEvent, KeyState, KeyboardKeyEvent, Keycode, MouseButton, PointerAxisEvent,
     PointerButtonEvent, PointerMotionEvent, ProximityState, Switch, SwitchState, SwitchToggleEvent,
     TabletToolButtonEvent, TabletToolEvent, TabletToolProximityEvent, TabletToolTipEvent,
-    TabletToolTipState, TouchEvent,
+    TabletToolTipState,
 };
 use smithay::backend::libinput::LibinputInputBackend;
 use smithay::input::dnd::DnDGrab;
@@ -28,9 +36,7 @@ use smithay::input::pointer::{
 };
 use smithay::input::tablet::tool::GrabStartData as TabletToolGrabStartData;
 use smithay::input::tablet::{TabletDescriptor, TabletSeatHandler, TabletSeatTrait};
-use smithay::input::touch::{
-    DownEvent, GrabStartData as TouchGrabStartData, MotionEvent as TouchMotionEvent, UpEvent,
-};
+use smithay::input::touch::GrabStartData as TouchGrabStartData;
 use smithay::input::{tablet, SeatHandler};
 use smithay::output::Output;
 use smithay::reexports::wayland_server::protocol::wl_data_source::WlDataSource;
@@ -65,6 +71,7 @@ pub mod scroll_swipe_gesture;
 pub mod scroll_tracker;
 pub mod spatial_movement_grab;
 pub mod swipe_tracker;
+pub mod touch_gesture;
 pub mod touch_overview_grab;
 
 use backend_ext::{NiriInputBackend as InputBackend, NiriInputDevice as _};
@@ -2434,6 +2441,9 @@ impl State {
                     self.niri.test_action_count += 1;
                 }
             }
+            Action::Noop => {
+                // Intentionally does nothing. Used with tag for IPC-only binds.
+            }
         }
     }
 
@@ -3174,6 +3184,8 @@ impl State {
                                 allow_when_locked: false,
                                 allow_inhibiting: false,
                                 hotkey_overlay_title: None,
+                                sensitivity: None,
+                                natural_scroll: false,
                             });
                             let bind_right = Some(Bind {
                                 key: Key {
@@ -3186,6 +3198,8 @@ impl State {
                                 allow_when_locked: false,
                                 allow_inhibiting: false,
                                 hotkey_overlay_title: None,
+                                sensitivity: None,
+                                natural_scroll: false,
                             });
                             (bind_left, bind_right)
                         } else {
@@ -3243,6 +3257,8 @@ impl State {
                             allow_when_locked: false,
                             allow_inhibiting: false,
                             hotkey_overlay_title: None,
+                            sensitivity: None,
+                            natural_scroll: false,
                         });
                         let bind_down = Some(Bind {
                             key: Key {
@@ -3255,6 +3271,8 @@ impl State {
                             allow_when_locked: false,
                             allow_inhibiting: false,
                             hotkey_overlay_title: None,
+                            sensitivity: None,
+                            natural_scroll: false,
                         });
                         (bind_up, bind_down)
                     } else if should_handle_in_overview && modifiers == Modifiers::SHIFT {
@@ -3269,6 +3287,8 @@ impl State {
                             allow_when_locked: false,
                             allow_inhibiting: false,
                             hotkey_overlay_title: None,
+                            sensitivity: None,
+                            natural_scroll: false,
                         });
                         let bind_down = Some(Bind {
                             key: Key {
@@ -3281,6 +3301,8 @@ impl State {
                             allow_when_locked: false,
                             allow_inhibiting: false,
                             hotkey_overlay_title: None,
+                            sensitivity: None,
+                            natural_scroll: false,
                         });
                         (bind_up, bind_down)
                     } else {
@@ -3960,21 +3982,98 @@ impl State {
     }
 
     fn on_gesture_swipe_begin<I: InputBackend>(&mut self, event: I::GestureSwipeBeginEvent) {
+        // Swipe starting means hold → swipe transition; no tap-hold.
+        self.niri.touchpad_hold_begin = None;
+
+        // Check for tap-hold-drag: a hold preceded this swipe.
+        if let Some(drag_fingers) = self.niri.touchpad_drag_pending.take() {
+            let trigger = Trigger::TouchpadTapHoldDrag {
+                fingers: drag_fingers,
+            };
+            let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
+            let mod_key = self.backend.mod_key(&self.niri.config.borrow());
+            let config = self.niri.config.borrow();
+            let modifiers = modifiers_from_state(mods);
+            let bindings = make_binds_iter(&config, &mut self.niri.window_mru_ui, modifiers);
+            let bind = find_configured_bind(bindings, mod_key, trigger, mods);
+            drop(config);
+
+            if let Some(bind) = bind {
+                let kind = continuous_gesture_kind(&bind.action);
+                let sensitivity = bind.sensitivity.unwrap_or(TOUCHPAD_DEFAULT_SENSITIVITY);
+
+                if let Some(kind) = kind {
+                    // Continuous gesture — begin animation. Reuses the
+                    // existing swipe bind infrastructure so swipe updates
+                    // and end events feed into the animation automatically.
+                    let is_overview_open = self.niri.layout.is_overview_open();
+                    match kind {
+                        ContinuousGestureKind::OverviewToggle => {
+                            self.niri.layout.overview_gesture_begin();
+                            self.niri.queue_redraw_all();
+                        }
+                        ContinuousGestureKind::WorkspaceSwitch => {
+                            if let Some(output) = self.niri.output_under_cursor() {
+                                self.niri
+                                    .layout
+                                    .workspace_switch_gesture_begin(&output, true);
+                            }
+                        }
+                        ContinuousGestureKind::ViewScroll => {
+                            if self.niri.output_under_cursor().is_some() {
+                                let output_ws = if is_overview_open {
+                                    self.niri.workspace_under_cursor(true)
+                                } else {
+                                    self.niri.output_under_cursor().and_then(|output| {
+                                        let mon = self.niri.layout.monitor_for_output(&output)?;
+                                        Some((output, mon.active_workspace_ref()))
+                                    })
+                                };
+                                if let Some((output, ws)) = output_ws {
+                                    let ws_idx =
+                                        self.niri.layout.find_workspace_by_id(ws.id()).unwrap().0;
+                                    self.niri.layout.view_offset_gesture_begin(
+                                        &output,
+                                        Some(ws_idx),
+                                        true,
+                                    );
+                                }
+                            }
+                        }
+                        ContinuousGestureKind::Noop => {
+                            // No compositor animation.
+                        }
+                    }
+                    // No travel direction yet: swiping up performs the action.
+                    let sign = overview_action_sign(&bind.action, is_overview_open);
+                    self.niri.gesture_swipe_bind = Some(ActiveSwipeBind {
+                        kind,
+                        sensitivity,
+                        overview_forward: (0., -sign),
+                    });
+                } else {
+                    // Discrete action — fire once.
+                    self.do_action(bind.action, bind.allow_when_locked);
+                }
+
+                // Tap-hold-drag claimed this swipe — don't enter normal
+                // swipe handling.
+                return;
+            }
+            // No bind found for TouchpadTapHoldDrag — fall through to
+            // normal swipe handling below.
+        }
+
         if self.niri.window_mru_ui.is_open() {
             // Don't start swipe gestures while in the MRU.
             return;
         }
 
-        if event.fingers() == 3 {
-            self.niri.gesture_swipe_3f_cumulative = Some((0., 0.));
+        let fingers = event.fingers() as usize;
 
-            // We handled this event.
-            return;
-        } else if event.fingers() == 4 {
-            self.niri.layout.overview_gesture_begin();
-            self.niri.queue_redraw_all();
-
-            // We handled this event.
+        // Accumulate for 3-5 finger swipes; bind lookup happens at threshold.
+        if (3..=5).contains(&fingers) {
+            self.niri.gesture_swipe_3f_cumulative = Some((0., 0., fingers));
             return;
         }
 
@@ -4011,11 +4110,21 @@ impl State {
             delta_y = libinput_event.dy_unaccelerated();
         }
 
-        let uninverted_delta_y = delta_y;
+        let (physical_delta_x, physical_delta_y) = (delta_x, delta_y);
 
+        // Read swipe trigger distance from touchpad config.
+        let threshold = {
+            let config = self.niri.config.borrow();
+            config.input.touchpad.swipe_trigger_distance()
+        };
+
+        // Apply natural scroll from device: it steers the workspace and view
+        // animations, like upstream.
         let device = event.device();
+        let mut natural_scroll = false;
         if let Some(device) = (&device as &dyn Any).downcast_ref::<input::Device>() {
             if device.config_scroll_natural_scroll_enabled() {
+                natural_scroll = true;
                 delta_x = -delta_x;
                 delta_y = -delta_y;
             }
@@ -4023,38 +4132,91 @@ impl State {
 
         let is_overview_open = self.niri.layout.is_overview_open();
 
-        if let Some((cx, cy)) = &mut self.niri.gesture_swipe_3f_cumulative {
+        if let Some((cx, cy, fingers)) = &mut self.niri.gesture_swipe_3f_cumulative {
             *cx += delta_x;
             *cy += delta_y;
 
-            // Check if the gesture moved far enough to decide. Threshold copied from GNOME Shell.
-            let (cx, cy) = (*cx, *cy);
-            if cx * cx + cy * cy >= 16. * 16. {
+            let (cx, cy, fingers) = (*cx, *cy, *fingers);
+            if cx * cx + cy * cy >= threshold * threshold {
                 self.niri.gesture_swipe_3f_cumulative = None;
 
-                if let Some(output) = self.niri.output_under_cursor() {
-                    if cx.abs() > cy.abs() {
-                        let output_ws = if is_overview_open {
-                            self.niri.workspace_under_cursor(true)
-                        } else {
-                            // We don't want to accidentally "catch" the wrong workspace during
-                            // animations.
-                            self.niri.output_under_cursor().and_then(|output| {
-                                let mon = self.niri.layout.monitor_for_output(&output)?;
-                                Some((output, mon.active_workspace_ref()))
-                            })
-                        };
+                // Look up bind for this swipe direction + finger count. Bind
+                // directions name physical finger travel, so undo natural scroll.
+                let (cx, cy) = if natural_scroll { (-cx, -cy) } else { (cx, cy) };
+                let is_horizontal = cx.abs() > cy.abs();
+                let trigger = swipe_trigger(fingers, is_horizontal, cx, cy);
+                if let Some(trigger) = trigger {
+                    let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
+                    let mod_key = self.backend.mod_key(&self.niri.config.borrow());
+                    let config = self.niri.config.borrow();
+                    let modifiers = modifiers_from_state(mods);
+                    let bindings =
+                        make_binds_iter(&config, &mut self.niri.window_mru_ui, modifiers);
+                    let bind = find_configured_bind(bindings, mod_key, trigger, mods);
+                    drop(config);
 
-                        if let Some((output, ws)) = output_ws {
-                            let ws_idx = self.niri.layout.find_workspace_by_id(ws.id()).unwrap().0;
-                            self.niri
-                                .layout
-                                .view_offset_gesture_begin(&output, Some(ws_idx), true);
+                    if let Some(bind) = bind {
+                        let kind = continuous_gesture_kind(&bind.action);
+                        let sensitivity = bind.sensitivity.unwrap_or(TOUCHPAD_DEFAULT_SENSITIVITY);
+
+                        if let Some(kind) = kind {
+                            // Continuous gesture — begin animation.
+                            match kind {
+                                ContinuousGestureKind::OverviewToggle => {
+                                    self.niri.layout.overview_gesture_begin();
+                                    self.niri.queue_redraw_all();
+                                }
+                                ContinuousGestureKind::WorkspaceSwitch => {
+                                    if let Some(output) = self.niri.output_under_cursor() {
+                                        self.niri
+                                            .layout
+                                            .workspace_switch_gesture_begin(&output, true);
+                                    }
+                                }
+                                ContinuousGestureKind::ViewScroll => {
+                                    if self.niri.output_under_cursor().is_some() {
+                                        let output_ws = if is_overview_open {
+                                            self.niri.workspace_under_cursor(true)
+                                        } else {
+                                            self.niri.output_under_cursor().and_then(|output| {
+                                                let mon =
+                                                    self.niri.layout.monitor_for_output(&output)?;
+                                                Some((output, mon.active_workspace_ref()))
+                                            })
+                                        };
+                                        if let Some((output, ws)) = output_ws {
+                                            let ws_idx = self
+                                                .niri
+                                                .layout
+                                                .find_workspace_by_id(ws.id())
+                                                .unwrap()
+                                                .0;
+                                            self.niri.layout.view_offset_gesture_begin(
+                                                &output,
+                                                Some(ws_idx),
+                                                true,
+                                            );
+                                        }
+                                    }
+                                }
+                                ContinuousGestureKind::Noop => {
+                                    // No compositor animation.
+                                }
+                            }
+                            let sign = overview_action_sign(&bind.action, is_overview_open);
+                            let (fx, fy) = dominant_axis(cx, cy);
+                            self.niri.gesture_swipe_bind = Some(ActiveSwipeBind {
+                                kind,
+                                sensitivity,
+                                overview_forward: (fx * sign, fy * sign),
+                            });
+                        } else {
+                            // Discrete action — fire once.
+                            if !matches!(bind.action, Action::Noop) {
+                                self.handle_bind(bind);
+                            }
                         }
-                    } else {
-                        self.niri
-                            .layout
-                            .workspace_switch_gesture_begin(&output, true);
+                        return;
                     }
                 }
             }
@@ -4062,43 +4224,60 @@ impl State {
 
         let timestamp = Duration::from_micros(event.time().micros());
 
-        let mut handled = false;
-        let res = self
-            .niri
-            .layout
-            .workspace_switch_gesture_update(delta_y, timestamp, true);
-        if let Some(output) = res {
-            if let Some(output) = output {
-                self.niri.queue_redraw(&output);
+        // Feed continuous gesture with bind sensitivity.
+        if let Some(ref bind) = self.niri.gesture_swipe_bind {
+            let kind = bind.kind;
+            let sensitivity = bind.sensitivity;
+            let (forward_x, forward_y) = bind.overview_forward;
+            let mut handled = false;
+            match kind {
+                ContinuousGestureKind::WorkspaceSwitch => {
+                    let res = self.niri.layout.workspace_switch_gesture_update(
+                        delta_y * sensitivity,
+                        timestamp,
+                        true,
+                    );
+                    if let Some(output) = res {
+                        if let Some(output) = output {
+                            self.niri.queue_redraw(&output);
+                        }
+                        handled = true;
+                    }
+                }
+                ContinuousGestureKind::ViewScroll => {
+                    let res = self.niri.layout.view_offset_gesture_update(
+                        delta_x * sensitivity,
+                        timestamp,
+                        true,
+                    );
+                    if let Some(output) = res {
+                        if let Some(output) = output {
+                            self.niri.queue_redraw(&output);
+                        }
+                        handled = true;
+                    }
+                }
+                ContinuousGestureKind::OverviewToggle => {
+                    let travel = physical_delta_x * forward_x + physical_delta_y * forward_y;
+                    let res = self
+                        .niri
+                        .layout
+                        .overview_gesture_update(travel * sensitivity, timestamp);
+                    if let Some(redraw) = res {
+                        if redraw {
+                            self.niri.queue_redraw_all();
+                        }
+                        handled = true;
+                    }
+                }
+                ContinuousGestureKind::Noop => {
+                    // No compositor animation.
+                    handled = true;
+                }
             }
-            handled = true;
-        }
-
-        let res = self
-            .niri
-            .layout
-            .view_offset_gesture_update(delta_x, timestamp, true);
-        if let Some(output) = res {
-            if let Some(output) = output {
-                self.niri.queue_redraw(&output);
+            if handled {
+                return;
             }
-            handled = true;
-        }
-
-        let res = self
-            .niri
-            .layout
-            .overview_gesture_update(-uninverted_delta_y, timestamp);
-        if let Some(redraw) = res {
-            if redraw {
-                self.niri.queue_redraw_all();
-            }
-            handled = true;
-        }
-
-        if handled {
-            // We handled this event.
-            return;
         }
 
         let pointer = self.niri.seat.get_pointer().unwrap();
@@ -4118,6 +4297,7 @@ impl State {
 
     fn on_gesture_swipe_end<I: InputBackend>(&mut self, event: I::GestureSwipeEndEvent) {
         self.niri.gesture_swipe_3f_cumulative = None;
+        self.niri.gesture_swipe_bind = None;
 
         let mut handled = false;
         let res = self.niri.layout.workspace_switch_gesture_end(Some(true));
@@ -4161,6 +4341,16 @@ impl State {
     }
 
     fn on_gesture_pinch_begin<I: InputBackend>(&mut self, event: I::GesturePinchBeginEvent) {
+        // Pinch starting means hold → pinch transition; no tap or drag.
+        self.niri.touchpad_hold_begin = None;
+        self.niri.touchpad_drag_pending = None;
+
+        // Arm the touchpad-pinch classifier. libinput reports fingers as
+        // u32 but the MIN..=MAX range is small; clamp defensively.
+        let fingers = u8::try_from(event.fingers()).unwrap_or(u8::MAX);
+        self.niri.touchpad_pinch_fingers = Some(fingers);
+        self.niri.touchpad_pinch_latched = false;
+
         let serial = SERIAL_COUNTER.next_serial();
         let pointer = self.niri.seat.get_pointer().unwrap();
 
@@ -4179,6 +4369,46 @@ impl State {
     }
 
     fn on_gesture_pinch_update<I: InputBackend>(&mut self, event: I::GesturePinchUpdateEvent) {
+        // Classify pinch for discrete TouchpadPinch bind. libinput's
+        // scale() is normalized to gesture-start (1.0 = no change); we
+        // fire once per gesture when |scale - 1.0| crosses the
+        // threshold. Raw events still forward to clients below so
+        // app-level pinch-to-zoom keeps working.
+        if !self.niri.touchpad_pinch_latched {
+            if let Some(fingers) = self.niri.touchpad_pinch_fingers {
+                let scale = event.scale();
+                let threshold = self
+                    .niri
+                    .config
+                    .borrow()
+                    .input
+                    .touchpad
+                    .pinch_trigger_scale();
+                if (scale - 1.0).abs() > threshold {
+                    let direction = if scale > 1.0 {
+                        PinchDirection::Out
+                    } else {
+                        PinchDirection::In
+                    };
+                    self.niri.touchpad_pinch_latched = true;
+
+                    let trigger = Trigger::TouchpadPinch { fingers, direction };
+                    let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
+                    let mod_key = self.backend.mod_key(&self.niri.config.borrow());
+                    let config = self.niri.config.borrow();
+                    let modifiers = modifiers_from_state(mods);
+                    let bindings =
+                        make_binds_iter(&config, &mut self.niri.window_mru_ui, modifiers);
+                    let bind = find_configured_bind(bindings, mod_key, trigger, mods);
+                    drop(config);
+
+                    if let Some(bind) = bind {
+                        self.do_action(bind.action, bind.allow_when_locked);
+                    }
+                }
+            }
+        }
+
         let pointer = self.niri.seat.get_pointer().unwrap();
 
         if self.update_pointer_contents() {
@@ -4214,6 +4444,9 @@ impl State {
     }
 
     fn on_gesture_pinch_end<I: InputBackend>(&mut self, event: I::GesturePinchEndEvent) {
+        self.niri.touchpad_pinch_fingers = None;
+        self.niri.touchpad_pinch_latched = false;
+
         let serial = SERIAL_COUNTER.next_serial();
         let pointer = self.niri.seat.get_pointer().unwrap();
 
@@ -4232,6 +4465,13 @@ impl State {
     }
 
     fn on_gesture_hold_begin<I: InputBackend>(&mut self, event: I::GestureHoldBeginEvent) {
+        let fingers = event.fingers();
+
+        // Track 3+ finger holds for touchpad tap detection.
+        if fingers >= 3 {
+            self.niri.touchpad_hold_begin = Some(fingers as u8);
+        }
+
         let serial = SERIAL_COUNTER.next_serial();
         let pointer = self.niri.seat.get_pointer().unwrap();
 
@@ -4244,12 +4484,39 @@ impl State {
             &GestureHoldBeginEvent {
                 serial,
                 time: event.time(),
-                fingers: event.fingers(),
+                fingers,
             },
         );
     }
 
     fn on_gesture_hold_end<I: InputBackend>(&mut self, event: I::GestureHoldEndEvent) {
+        // Touchpad tap detection: if the hold ended cleanly (fingers lifted
+        // without moving) and we were tracking a 3+ finger hold, fire the
+        // TouchpadTapHold bind.
+        if !event.cancelled() {
+            if let Some(fingers) = self.niri.touchpad_hold_begin.take() {
+                let trigger = Trigger::TouchpadTapHold { fingers };
+                let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
+                let mod_key = self.backend.mod_key(&self.niri.config.borrow());
+                let config = self.niri.config.borrow();
+                let modifiers = modifiers_from_state(mods);
+                let bindings = make_binds_iter(&config, &mut self.niri.window_mru_ui, modifiers);
+                let bind = find_configured_bind(bindings, mod_key, trigger, mods);
+                drop(config);
+
+                if let Some(bind) = bind {
+                    self.do_action(bind.action, bind.allow_when_locked);
+                }
+            }
+        } else {
+            // Fingers moved — libinput promoted to swipe/pinch.
+            // Carry the finger count forward as a drag pending signal
+            // for the next SwipeBegin.
+            if let Some(fingers) = self.niri.touchpad_hold_begin.take() {
+                self.niri.touchpad_drag_pending = Some(fingers);
+            }
+        }
+
         let serial = SERIAL_COUNTER.next_serial();
         let pointer = self.niri.seat.get_pointer().unwrap();
 
@@ -4294,215 +4561,8 @@ impl State {
         self.compute_absolute_location(evt, self.niri.output_for_touch())
     }
 
-    fn on_touch_down<I: InputBackend>(&mut self, evt: I::TouchDownEvent) {
-        let Some(handle) = self.niri.seat.get_touch() else {
-            return;
-        };
-        let Some(pos) = self.compute_touch_location(&evt) else {
-            return;
-        };
-        let slot = evt.slot();
-
-        let serial = SERIAL_COUNTER.next_serial();
-
-        let under = self.niri.contents_under(pos);
-
-        let mod_key = self.backend.mod_key(&self.niri.config.borrow());
-        let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
-        let mods = modifiers_from_state(mods);
-        let mod_down = mods.contains(mod_key.to_modifiers());
-
-        if self.niri.screenshot_ui.is_open() {
-            // If we'll be moving the existing selection, use the selection output.
-            let output = if mod_down {
-                self.niri.screenshot_ui.selection_output()
-            } else {
-                under.output.as_ref()
-            };
-
-            if let Some(output) = output.cloned() {
-                let geom = self.niri.global_space.output_geometry(&output).unwrap();
-                let point = (pos - geom.loc.to_f64())
-                    .to_physical(output.current_scale().fractional_scale())
-                    .to_i32_round();
-
-                if self
-                    .niri
-                    .screenshot_ui
-                    .pointer_down(output, point, Some(slot), mod_down)
-                {
-                    self.niri.queue_redraw_all();
-                }
-            }
-        } else if let Some(mru_output) = self.niri.window_mru_ui.output() {
-            if let Some((output, pos_within_output)) = self.niri.output_under(pos) {
-                if mru_output == output {
-                    let id = self.niri.window_mru_ui.pointer_motion(pos_within_output);
-                    if id.is_some() {
-                        self.confirm_mru();
-                    } else {
-                        self.niri.cancel_mru();
-                    }
-                } else {
-                    self.niri.cancel_mru();
-                }
-            }
-        } else if !handle.is_grabbed() {
-            if self.niri.layout.is_overview_open()
-                && !mod_down
-                && under.layer.is_none()
-                && under.output.is_some()
-            {
-                let (output, pos_within_output) = self.niri.output_under(pos).unwrap();
-                let output = output.clone();
-
-                let mut matched_narrow = true;
-                let mut ws = self.niri.workspace_under(false, pos);
-                if ws.is_none() {
-                    matched_narrow = false;
-                    ws = self.niri.workspace_under(true, pos);
-                }
-                let ws_id = ws.map(|(_, ws)| ws.id());
-
-                let mapped = self.niri.window_under(pos);
-                let window = mapped.map(|mapped| mapped.window.clone());
-
-                let start_data = TouchGrabStartData {
-                    focus: None,
-                    slot,
-                    location: pos,
-                };
-                let start_data = AnyStartData::Touch(start_data);
-                let start_timestamp = Duration::from_micros(evt.time().micros());
-                let grab = TouchOverviewGrab::new(
-                    start_data,
-                    start_timestamp,
-                    output,
-                    pos_within_output,
-                    ws_id,
-                    matched_narrow,
-                    window,
-                );
-                handle.set_grab(self, grab, serial);
-            } else if let Some((window, _)) = under.window {
-                self.niri.layout.activate_window(&window);
-
-                // Check if we need to start a touch move grab.
-                if mod_down {
-                    let start_data = TouchGrabStartData {
-                        focus: None,
-                        slot,
-                        location: pos,
-                    };
-                    let start_data = AnyStartData::Touch(start_data);
-                    if let Some(grab) = MoveGrab::new(self, start_data, window.clone(), true, None)
-                    {
-                        handle.set_grab(self, grab, serial);
-                    }
-                }
-
-                // FIXME: granular.
-                self.niri.queue_redraw_all();
-            } else if let Some(output) = under.output {
-                self.niri.layout.focus_output(&output);
-
-                // FIXME: granular.
-                self.niri.queue_redraw_all();
-            }
-            self.niri.focus_layer_surface_if_on_demand(under.layer);
-        };
-
-        handle.down(
-            self,
-            under.surface,
-            &DownEvent {
-                slot,
-                location: pos,
-                serial,
-                time: evt.time(),
-            },
-        );
-
-        // We're using touch, hide the pointer.
-        self.niri.pointer_visibility = PointerVisibility::Disabled;
-    }
-    fn on_touch_up<I: InputBackend>(&mut self, evt: I::TouchUpEvent) {
-        let Some(handle) = self.niri.seat.get_touch() else {
-            return;
-        };
-        let slot = evt.slot();
-
-        if let Some(capture) = self.niri.screenshot_ui.pointer_up(Some(slot)) {
-            if capture {
-                self.confirm_screenshot(true);
-            } else {
-                self.niri.queue_redraw_all();
-            }
-        }
-
-        let serial = SERIAL_COUNTER.next_serial();
-        handle.up(
-            self,
-            &UpEvent {
-                slot,
-                serial,
-                time: evt.time(),
-            },
-        )
-    }
-    fn on_touch_motion<I: InputBackend>(&mut self, evt: I::TouchMotionEvent) {
-        let Some(handle) = self.niri.seat.get_touch() else {
-            return;
-        };
-        let Some(pos) = self.compute_touch_location(&evt) else {
-            return;
-        };
-        let slot = evt.slot();
-
-        if let Some(output) = self.niri.screenshot_ui.selection_output().cloned() {
-            let geom = self.niri.global_space.output_geometry(&output).unwrap();
-            let point = (pos - geom.loc.to_f64())
-                .to_physical(output.current_scale().fractional_scale())
-                .to_i32_round::<i32>();
-
-            self.niri.screenshot_ui.pointer_motion(point, Some(slot));
-            self.niri.queue_redraw(&output);
-        }
-
-        let under = self.niri.contents_under(pos);
-        handle.motion(
-            self,
-            under.surface,
-            &TouchMotionEvent {
-                slot,
-                location: pos,
-                time: evt.time(),
-            },
-        );
-
-        // Inform the layout of an ongoing DnD operation.
-        let is_dnd_grab = handle
-            .with_grab(|_, grab| Self::is_dnd_grab(grab.as_any()))
-            .unwrap_or(false);
-        if is_dnd_grab {
-            if let Some((output, pos_within_output)) = self.niri.output_under(pos) {
-                let output = output.clone();
-                self.niri.layout.dnd_update(output, pos_within_output);
-            }
-        }
-    }
-    fn on_touch_frame<I: InputBackend>(&mut self, _evt: I::TouchFrameEvent) {
-        let Some(handle) = self.niri.seat.get_touch() else {
-            return;
-        };
-        handle.frame(self);
-    }
-    fn on_touch_cancel<I: InputBackend>(&mut self, _evt: I::TouchCancelEvent) {
-        let Some(handle) = self.niri.seat.get_touch() else {
-            return;
-        };
-        handle.cancel(self);
-    }
+    // Touch gesture handlers (on_touch_down, on_touch_up, on_touch_motion,
+    // on_touch_frame, on_touch_cancel) are in touch_gesture.rs.
 
     fn on_switch_toggle<I: InputBackend>(&mut self, evt: I::SwitchToggleEvent) {
         let Some(switch) = evt.switch() else {
@@ -4600,6 +4660,8 @@ fn should_intercept_key<'a>(
                     // inhibited.
                     allow_inhibiting: false,
                     hotkey_overlay_title: None,
+                    sensitivity: None,
+                    natural_scroll: false,
                 });
             }
         }
@@ -4666,6 +4728,8 @@ fn find_bind<'a>(
             // Hardcoded binds must never be inhibited.
             allow_inhibiting: false,
             hotkey_overlay_title: None,
+            sensitivity: None,
+            natural_scroll: false,
         });
     }
 
@@ -4673,7 +4737,7 @@ fn find_bind<'a>(
     find_configured_bind(bindings, mod_key, trigger, mods)
 }
 
-fn find_configured_bind<'a>(
+pub(super) fn find_configured_bind<'a>(
     bindings: impl IntoIterator<Item = &'a Bind>,
     mod_key: ModKey,
     trigger: Trigger,
@@ -4903,7 +4967,58 @@ fn hardcoded_overview_bind(raw: Keysym, mods: ModifiersState) -> Option<Bind> {
         allow_when_locked: false,
         allow_inhibiting: false,
         hotkey_overlay_title: None,
+        sensitivity: None,
+        natural_scroll: false,
     })
+}
+
+// libinput's 3-finger-drag API is `@since 1.27`, but Ubuntu 24.04 (CI) ships 1.25, so the `input`
+// crate's `libinput_1_28` feature can't be enabled. Resolve the symbol at runtime instead, the same
+// way main.rs handles `wl_display_set_default_max_buffer_size`. `None` disables the drag.
+fn set_3fg_drag(device: &input::Device, fingers: Option<u8>) {
+    use std::ffi::{c_int, c_void};
+
+    use input::AsRaw;
+
+    // Values of `enum libinput_config_3fg_drag_state`: DISABLED, ENABLED_3FG, ENABLED_4FG.
+    let state: c_int = match fingers {
+        None => 0,
+        Some(3) => 1,
+        Some(_) => 2,
+    };
+
+    unsafe {
+        // RTLD_NOLOAD: only get a handle to the libinput already loaded by the input crate.
+        let lib = libc::dlopen(
+            c"libinput.so.10".as_ptr(),
+            libc::RTLD_LAZY | libc::RTLD_NOLOAD,
+        );
+        if lib.is_null() {
+            warn!("cannot configure three-finger-drag: libinput.so.10 is not loaded");
+            return;
+        }
+
+        let sym = libc::dlsym(lib, c"libinput_device_config_3fg_drag_set_enabled".as_ptr());
+        if sym.is_null() {
+            // Expected on libinput < 1.27; only worth a warning if the user asked for it.
+            if fingers.is_some() {
+                warn!("three-finger-drag requires libinput >= 1.27; ignoring");
+            }
+        } else {
+            let func: unsafe extern "C" fn(*mut c_void, c_int) -> c_int = std::mem::transmute(sym);
+            // Like the other libinput knobs, don't fail on UNSUPPORTED / INVALID from the device;
+            // just make it visible in the journal (0 = LIBINPUT_CONFIG_STATUS_SUCCESS).
+            let status = func(device.as_raw_mut().cast(), state);
+            if status != 0 {
+                debug!(
+                    "three-finger-drag not applied to {:?}: libinput status {status}",
+                    device.name()
+                );
+            }
+        }
+
+        libc::dlclose(lib);
+    }
 }
 
 pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::Device) {
@@ -4926,6 +5041,7 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
         } else {
             input::DragLockState::Disabled
         });
+        set_3fg_drag(device, c.three_finger_drag.map(|d| d.fingers.0));
         let _ = device.config_scroll_set_natural_scroll_enabled(c.natural_scroll);
         let _ = device.config_accel_set_speed(c.accel_speed.0);
         let _ = device.config_left_handed_set(c.left_handed);
@@ -5173,7 +5289,7 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
 
     let is_touch = device.has_capability(input::DeviceCapability::Touch);
     if is_touch {
-        let c = &config.touch;
+        let c = &config.touchscreen;
         let _ = device.config_send_events_set_mode(if c.off {
             input::SendEventsMode::DISABLED
         } else {
@@ -5267,6 +5383,44 @@ pub fn mods_with_tablet_stylus_binds(mod_key: ModKey, binds: &Binds) -> HashSet<
     )
 }
 
+/// Sign for travel along a bound gesture's direction so that it performs the
+/// overview `action`: `1.` opens the overview, `-1.` closes it.
+fn overview_action_sign(action: &Action, is_overview_open: bool) -> f64 {
+    match action {
+        Action::CloseOverview => -1.,
+        Action::ToggleOverview if is_overview_open => -1.,
+        _ => 1.,
+    }
+}
+
+/// Unit vector along the dominant axis of a swipe, in screen coordinates.
+fn dominant_axis(cx: f64, cy: f64) -> (f64, f64) {
+    if cx.abs() > cy.abs() {
+        (cx.signum(), 0.)
+    } else {
+        (0., cy.signum())
+    }
+}
+
+fn swipe_trigger(fingers: usize, is_horizontal: bool, cx: f64, cy: f64) -> Option<Trigger> {
+    let Ok(fingers_u8) = u8::try_from(fingers) else {
+        return None;
+    };
+    if !(MIN_FINGERS..=MAX_FINGERS).contains(&fingers_u8) {
+        return None;
+    }
+    let direction = match (is_horizontal, cx, cy) {
+        (true, cx, _) if cx > 0. => SwipeDirection::Right,
+        (true, _, _) => SwipeDirection::Left,
+        (false, _, cy) if cy > 0. => SwipeDirection::Down,
+        (false, _, _) => SwipeDirection::Up,
+    };
+    Some(Trigger::TouchpadSwipe {
+        fingers: fingers_u8,
+        direction,
+    })
+}
+
 fn grab_allows_hot_corner(grab: &(dyn PointerGrab<State> + 'static)) -> bool {
     let grab = grab.as_any();
 
@@ -5320,6 +5474,24 @@ mod tests {
     use super::*;
 
     #[test]
+    fn overview_sign_follows_action() {
+        assert_eq!(overview_action_sign(&Action::OpenOverview, false), 1.);
+        assert_eq!(overview_action_sign(&Action::OpenOverview, true), 1.);
+        assert_eq!(overview_action_sign(&Action::CloseOverview, false), -1.);
+        assert_eq!(overview_action_sign(&Action::CloseOverview, true), -1.);
+        assert_eq!(overview_action_sign(&Action::ToggleOverview, false), 1.);
+        assert_eq!(overview_action_sign(&Action::ToggleOverview, true), -1.);
+    }
+
+    #[test]
+    fn dominant_axis_picks_larger_component() {
+        assert_eq!(dominant_axis(3., -1.), (1., 0.));
+        assert_eq!(dominant_axis(-3., 1.), (-1., 0.));
+        assert_eq!(dominant_axis(1., -3.), (0., -1.));
+        assert_eq!(dominant_axis(1., 3.), (0., 1.));
+    }
+
+    #[test]
     fn comp_mod_handling() {
         let bindings = Binds(vec![
             Bind {
@@ -5333,6 +5505,8 @@ mod tests {
                 allow_when_locked: false,
                 allow_inhibiting: true,
                 hotkey_overlay_title: None,
+                sensitivity: None,
+                natural_scroll: false,
             },
             Bind {
                 key: Key {
@@ -5345,6 +5519,8 @@ mod tests {
                 allow_when_locked: false,
                 allow_inhibiting: true,
                 hotkey_overlay_title: None,
+                sensitivity: None,
+                natural_scroll: false,
             },
             Bind {
                 key: Key {
@@ -5357,6 +5533,8 @@ mod tests {
                 allow_when_locked: false,
                 allow_inhibiting: true,
                 hotkey_overlay_title: None,
+                sensitivity: None,
+                natural_scroll: false,
             },
             Bind {
                 key: Key {
@@ -5369,6 +5547,8 @@ mod tests {
                 allow_when_locked: false,
                 allow_inhibiting: true,
                 hotkey_overlay_title: None,
+                sensitivity: None,
+                natural_scroll: false,
             },
             Bind {
                 key: Key {
@@ -5381,6 +5561,8 @@ mod tests {
                 allow_when_locked: false,
                 allow_inhibiting: true,
                 hotkey_overlay_title: None,
+                sensitivity: None,
+                natural_scroll: false,
             },
         ]);
 

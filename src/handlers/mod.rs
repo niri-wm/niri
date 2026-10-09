@@ -815,6 +815,11 @@ impl XdgActivationHandler for State {
         if token_data.timestamp.elapsed() < XDG_ACTIVATION_TOKEN_TIMEOUT {
             if let Some((mapped, _)) = self.niri.layout.find_window_and_output_mut(&surface) {
                 let window = mapped.window.clone();
+                // Deferred tap-to-focus (`focus-on-touch "touch-up"`): skip
+                // activation while this window is pending from an in-progress
+                // touch. Chromium self-activates with the touch-down serial,
+                // which would defeat the deferral; let the pending path decide.
+                let touch_pending = self.niri.touch_pending_activation.as_ref() == Some(&window);
                 match mapped.rules().on_xdg_activate {
                     Some(niri_config::OnXdgActivate::Ignore) => {}
                     Some(niri_config::OnXdgActivate::SetUrgent) => {
@@ -822,15 +827,17 @@ impl XdgActivationHandler for State {
                         self.niri.queue_redraw_all();
                     }
                     Some(niri_config::OnXdgActivate::Focus) => {
-                        self.niri.layout.activate_window(&window);
-                        self.niri.layer_shell_on_demand_focus = None;
-                        self.niri.queue_redraw_all();
+                        if !touch_pending {
+                            self.niri.layout.activate_window(&window);
+                            self.niri.layer_shell_on_demand_focus = None;
+                            self.niri.queue_redraw_all();
+                        }
                     }
                     None => {
                         if token_data.user_data.get::<UrgentOnlyMarker>().is_some() {
                             mapped.set_urgent(true);
                             self.niri.queue_redraw_all();
-                        } else {
+                        } else if !touch_pending {
                             self.niri.layout.activate_window(&window);
                             self.niri.layer_shell_on_demand_focus = None;
                             self.niri.queue_redraw_all();
