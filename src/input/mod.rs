@@ -3046,10 +3046,16 @@ impl State {
                 // FIXME: granular.
                 self.niri.queue_redraw_all();
             } else if let Some(output) = self.niri.output_under_cursor() {
-                self.niri.layout.focus_output(&output);
+                // A passive layer surface (e.g. an on-screen keyboard) was clicked.
+                // Focusing its output would take the keyboard focus away from the focused
+                // window, possibly on another output.
+                let passive_layer = self.niri.pointer_contents.layer.as_ref();
+                if !self.niri.is_passive_layer_surface(passive_layer) {
+                    self.niri.layout.focus_output(&output);
 
-                // FIXME: granular.
-                self.niri.queue_redraw_all();
+                    // FIXME: granular.
+                    self.niri.queue_redraw_all();
+                }
             }
         };
 
@@ -3793,10 +3799,15 @@ impl State {
                             // FIXME: granular.
                             self.niri.queue_redraw_all();
                         } else if let Some(output) = under.output {
-                            self.niri.layout.focus_output(&output);
+                            // A passive layer surface (e.g. an on-screen keyboard) was clicked.
+                            // Focusing its output would take the keyboard focus away from the
+                            // focused window, possibly on another output.
+                            if !self.niri.is_passive_layer_surface(under.layer.as_ref()) {
+                                self.niri.layout.focus_output(&output);
 
-                            // FIXME: granular.
-                            self.niri.queue_redraw_all();
+                                // FIXME: granular.
+                                self.niri.queue_redraw_all();
+                            }
                         }
                         self.niri.focus_layer_surface_if_on_demand(under.layer);
                     }
@@ -4404,10 +4415,15 @@ impl State {
                 // FIXME: granular.
                 self.niri.queue_redraw_all();
             } else if let Some(output) = under.output {
-                self.niri.layout.focus_output(&output);
+                // A passive layer surface (e.g. an on-screen keyboard) was clicked.
+                // Focusing its output would take the keyboard focus away from the focused
+                // window, possibly on another output.
+                if !self.niri.is_passive_layer_surface(under.layer.as_ref()) {
+                    self.niri.layout.focus_output(&output);
 
-                // FIXME: granular.
-                self.niri.queue_redraw_all();
+                    // FIXME: granular.
+                    self.niri.queue_redraw_all();
+                }
             }
             self.niri.focus_layer_surface_if_on_demand(under.layer);
         };

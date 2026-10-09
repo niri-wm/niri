@@ -6708,6 +6708,16 @@ impl Niri {
         });
     }
 
+    /// Returns true if the surface is a layer surface with `keyboard_interactivity=None`,
+    /// i.e. a passive layer surface like an on-screen keyboard or a panel. Clicking such a
+    /// surface sends input to whatever is focused (e.g. typing on an on-screen keyboard), so
+    /// the click must not change any focus state.
+    pub fn is_passive_layer_surface(&self, surface: Option<&LayerSurface>) -> bool {
+        surface.is_some_and(|surface| {
+            surface.cached_state().keyboard_interactivity == wlr_layer::KeyboardInteractivity::None
+        })
+    }
+
     pub fn focus_layer_surface_if_on_demand(&mut self, surface: Option<LayerSurface>) {
         if let Some(surface) = surface {
             if surface.cached_state().keyboard_interactivity
@@ -6720,6 +6730,14 @@ impl Niri {
                     self.queue_redraw_all();
                 }
 
+                return;
+            }
+
+            // A passive layer surface (e.g. an on-screen keyboard) was clicked. It takes no
+            // keyboard focus, so it must not disturb the current keyboard focus either: the
+            // user may be typing into the focused on-demand layer surface (e.g. a launcher
+            // that hides on focus loss) through it.
+            if self.is_passive_layer_surface(Some(&surface)) {
                 return;
             }
         }
