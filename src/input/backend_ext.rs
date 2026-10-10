@@ -2,9 +2,10 @@ use ::input as libinput;
 use smithay::backend::input;
 use smithay::backend::winit::WinitVirtualDevice;
 use smithay::output::Output;
+use smithay::wayland::virtual_keyboard::VirtualKeyboardDevice;
+use smithay::wayland::virtual_pointer::VirtualPointerDevice;
 
 use crate::niri::State;
-use crate::protocols::virtual_pointer::VirtualPointer;
 
 pub trait NiriInputBackend: input::InputBackend<Device = Self::NiriDevice> {
     type NiriDevice: NiriInputDevice;
@@ -21,6 +22,16 @@ pub trait NiriInputDevice: input::Device {
     // but it's not clear that this matters in practice?
     // it might be more obvious once we implement it for libinput
     fn output(&self, state: &State) -> Option<Output>;
+
+    /// Whether absolute positions from this device are already in the output's logical
+    /// (transformed) coordinate space.
+    ///
+    /// Physical devices like touchscreens and tablets report positions relative to the panel, so
+    /// the output transform needs to be applied to them. Virtual pointers give positions relative
+    /// to the output as it appears in the layout (like wlroots treats them).
+    fn absolute_position_is_logical(&self) -> bool {
+        false
+    }
 }
 
 impl NiriInputDevice for libinput::Device {
@@ -44,8 +55,18 @@ impl NiriInputDevice for WinitVirtualDevice {
     }
 }
 
-impl NiriInputDevice for VirtualPointer {
+impl NiriInputDevice for VirtualPointerDevice {
     fn output(&self, _: &State) -> Option<Output> {
-        self.output().cloned()
+        self.output()
+    }
+
+    fn absolute_position_is_logical(&self) -> bool {
+        true
+    }
+}
+
+impl NiriInputDevice for VirtualKeyboardDevice {
+    fn output(&self, _: &State) -> Option<Output> {
+        None
     }
 }

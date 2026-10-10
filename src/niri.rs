@@ -113,7 +113,8 @@ use smithay::wayland::socket::ListeningSocketSource;
 use smithay::wayland::tablet_manager::TabletManagerState;
 use smithay::wayland::text_input::TextInputManagerState;
 use smithay::wayland::viewporter::ViewporterState;
-use smithay::wayland::virtual_keyboard::VirtualKeyboardManagerState;
+use smithay::wayland::virtual_keyboard::{VirtualKeyboardDevice, VirtualKeyboardManagerState};
+use smithay::wayland::virtual_pointer::VirtualPointerManagerState;
 use smithay::wayland::xdg_activation::XdgActivationState;
 use smithay::wayland::xdg_foreign::XdgForeignState;
 use wayland_server::protocol::wl_output::WlOutput;
@@ -159,7 +160,6 @@ use crate::protocols::gamma_control::GammaControlManagerState;
 use crate::protocols::mutter_x11_interop::MutterX11InteropManagerState;
 use crate::protocols::output_management::OutputManagementManagerState;
 use crate::protocols::screencopy::{Screencopy, ScreencopyBuffer, ScreencopyManagerState};
-use crate::protocols::virtual_pointer::VirtualPointerManagerState;
 use crate::render_helpers::blur::BlurOptions;
 use crate::render_helpers::debug::push_opaque_regions;
 use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
@@ -199,6 +199,74 @@ const CLEAR_COLOR_LOCKED: [f32; 4] = [0.3, 0.1, 0.1, 1.];
 // second, so with the worst timing the maximum interval between two frame callbacks for a surface
 // should be ~1.995 seconds.
 const FRAME_CALLBACK_THROTTLE: Option<Duration> = Some(Duration::from_millis(995));
+
+/// Virtual keyboard keymap that replaced the configured one on the seat.
+#[derive(Debug)]
+pub struct VirtualKeyboardKeymap {
+    pub device: VirtualKeyboardDevice,
+    pub keymap: Arc<str>,
+    /// Keyboard state from before the first virtual keyboard keymap was
+    /// activated, to restore along with the configured keymap.
+    pub saved: KeyboardStateToRestore,
+}
+
+/// Lock state that a virtual keyboard sharing the configured keymap changed through its
+/// `modifiers` requests, to undo when it's removed (without affecting modifiers already
+/// set by another keyboard).
+///
+/// This isn't needed for a virtual keyboard using a different keymap from the seat, as
+/// those have their own xkb state.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct VirtualKeyboardLocks {
+    /// Locked modifier bits touched by the device.
+    flipped: u32,
+    /// What those bits were before the device first flipped them.
+    original: u32,
+    /// The locked modifiers as the device last left them.
+    last: u32,
+    /// The locked layout before the device first changed it, and as the device last left it.
+    group: Option<(u32, u32)>,
+}
+
+impl VirtualKeyboardLocks {
+    /// Updates the state from before/after a `modifiers` request.
+    fn update(&mut self, before: (u32, u32), after: (u32, u32)) {
+        let changed = before.0 ^ after.0;
+        let first_time = changed & !self.flipped;
+        self.original = (self.original & !first_time) | (before.0 & first_time);
+        self.flipped |= changed;
+        self.last = after.0;
+
+        if before.1 != after.1 {
+            let original = self.group.map_or(before.1, |(original, _)| original);
+            self.group = Some((original, after.1));
+        } else if let Some((_, last)) = &mut self.group {
+            *last = after.1;
+        }
+    }
+
+    /// Reconciles the locked modifiers and layout after device removal.
+    fn restore(&self, current: (u32, u32)) -> (u32, u32) {
+        // Bits the device flipped that are still as it left them.
+        let revert = self.flipped & !(current.0 ^ self.last);
+        let locked = (current.0 & !revert) | (self.original & revert);
+
+        let group = match self.group {
+            Some((original, last)) if current.1 == last => original,
+            _ => current.1,
+        };
+
+        (locked, group)
+    }
+}
+
+/// Parts of the seat keyboard state that get reset when its keymap is replaced.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct KeyboardStateToRestore {
+    pub layout: Option<KeyboardLayout>,
+    pub caps_lock: Option<bool>,
+    pub num_lock: Option<bool>,
+}
 
 pub struct Niri {
     pub config: Rc<RefCell<Config>>,
@@ -355,6 +423,25 @@ pub struct Niri {
 
     /// Most recent XKB settings from org.freedesktop.locale1.
     pub xkb_from_locale1: Option<Xkb>,
+
+    /// Virtual keyboard for which the keymap is currently active on the seat,
+    /// if any.
+    ///
+    /// Note that the keymap may be changed by the client at any time, and it
+    /// only gets activated on the next key/modifier event from the virtual
+    /// keyboard.
+    pub virtual_keyboard_keymap: Option<VirtualKeyboardKeymap>,
+    /// Locks changed by virtual keyboards sharing the configured keymap, to undo on removal.
+    ///
+    /// Cleared along with `configured_keymap`, since the bits are relative to it.
+    pub virtual_keyboard_locks: HashMap<VirtualKeyboardDevice, VirtualKeyboardLocks>,
+    /// Configured (non-virtual-keyboard) keymap as XKB_KEYMAP_FORMAT_TEXT_V1.
+    ///
+    /// Computed lazily from the seat while no virtual keyboard keymap is
+    /// active, and cleared whenever the configured keymap changes. Used to
+    /// compare against virtual keyboard keymaps, and to switch back to it
+    /// afterwards without going through the config again.
+    pub configured_keymap: Option<Arc<str>>,
 
     pub cursor_manager: CursorManager,
     pub cursor_texture_cache: CursorTextureCache,
@@ -1505,18 +1592,15 @@ impl State {
         let keymap = std::fs::read_to_string(xkb_file).context("failed to read xkb_file")?;
 
         let keyboard = self.niri.seat.get_keyboard().unwrap();
-        let num_lock = keyboard.modifier_state().num_lock;
+        let restore = self.keyboard_state_to_restore();
 
         keyboard
             .set_keymap_from_string(self, keymap)
             .context("failed to set keymap")?;
-
-        // Restore num lock to its previous value.
-        let mut mods_state = keyboard.modifier_state();
-        if mods_state.num_lock != num_lock {
-            mods_state.num_lock = num_lock;
-            keyboard.set_modifier_state(mods_state);
-        }
+        self.niri.virtual_keyboard_keymap = None;
+        self.niri.virtual_keyboard_locks.clear();
+        self.niri.configured_keymap = None;
+        self.restore_keyboard_state(restore);
 
         Ok(())
     }
@@ -1532,18 +1616,284 @@ impl State {
 
     pub fn set_xkb_config(&mut self, xkb: XkbConfig) {
         let keyboard = self.niri.seat.get_keyboard().unwrap();
-        let num_lock = keyboard.modifier_state().num_lock;
+        let restore = self.keyboard_state_to_restore();
         if let Err(err) = keyboard.set_xkb_config(self, xkb) {
             warn!("error updating xkb config: {err:?}");
             return;
         }
+        self.niri.virtual_keyboard_keymap = None;
+        self.niri.virtual_keyboard_locks.clear();
+        self.niri.configured_keymap = None;
+        self.restore_keyboard_state(restore);
+    }
 
-        // Restore num lock to its previous value.
-        let mut mods_state = keyboard.modifier_state();
-        if mods_state.num_lock != num_lock {
-            mods_state.num_lock = num_lock;
-            keyboard.set_modifier_state(mods_state);
+    /// Returns the keyboard state to restore after replacing the seat's keymap (which resets it).
+    ///
+    /// When switching back from a virtual keyboard's keymap, this is the state from before it was
+    /// activated. Otherwise, only Num Lock is carried over.
+    fn keyboard_state_to_restore(&self) -> KeyboardStateToRestore {
+        match &self.niri.virtual_keyboard_keymap {
+            Some(active) => active.saved,
+            None => {
+                let keyboard = self.niri.seat.get_keyboard().unwrap();
+                KeyboardStateToRestore {
+                    num_lock: Some(keyboard.modifier_state().num_lock),
+                    ..Default::default()
+                }
+            }
         }
+    }
+
+    /// Returns the current keyboard state that gets reset by replacing the seat's keymap.
+    fn current_keyboard_state(&mut self) -> KeyboardStateToRestore {
+        let keyboard = self.niri.seat.get_keyboard().unwrap();
+        let mods = keyboard.modifier_state();
+        let layout = keyboard.with_xkb_state(self, |context| {
+            context.xkb().lock().unwrap().active_layout()
+        });
+        KeyboardStateToRestore {
+            layout: Some(layout),
+            caps_lock: Some(mods.caps_lock),
+            num_lock: Some(mods.num_lock),
+        }
+    }
+
+    fn restore_keyboard_state(&mut self, state: KeyboardStateToRestore) {
+        let keyboard = self.niri.seat.get_keyboard().unwrap();
+
+        let mut mods = keyboard.modifier_state();
+        let mut mods_changed = false;
+        if let Some(caps_lock) = state.caps_lock {
+            if mods.caps_lock != caps_lock {
+                mods.caps_lock = caps_lock;
+                mods_changed = true;
+            }
+        }
+        if let Some(num_lock) = state.num_lock {
+            if mods.num_lock != num_lock {
+                mods.num_lock = num_lock;
+                mods_changed = true;
+            }
+        }
+        if mods_changed {
+            keyboard.set_modifier_state(mods);
+            // set_modifier_state() doesn't tell the focused client on its own.
+            keyboard.advertise_modifier_state(self);
+        }
+
+        // set_modifier_state() can reset the layout, so restore it afterwards.
+        if let Some(layout) = state.layout {
+            keyboard.with_xkb_state(self, |mut context| {
+                let (exists, current) = {
+                    let xkb = context.xkb().lock().unwrap();
+                    (xkb.layouts().any(|l| l == layout), xkb.active_layout())
+                };
+                if exists && current != layout {
+                    context.set_layout(layout);
+                }
+            });
+        }
+    }
+
+    /// Loads the configured keymap (xkb file, xkb config, or locale1's) onto the seat, replacing a
+    /// virtual keyboard's if there is one.
+    pub fn load_configured_keymap(&mut self) {
+        let mut xkb = self.niri.config.borrow().input.keyboard.xkb.clone();
+        let mut set_xkb_config = true;
+
+        if let Some(xkb_file) = xkb.file.take() {
+            if let Err(err) = self.set_xkb_file(xkb_file) {
+                warn!("error loading xkb_file: {err:?}");
+            } else {
+                set_xkb_config = false;
+            }
+        }
+
+        if set_xkb_config {
+            // If xkb is unset in the niri config, use settings from locale1.
+            if xkb == Xkb::default() {
+                trace!("using xkb from locale1");
+                xkb = self.niri.xkb_from_locale1.clone().unwrap_or_default();
+            }
+
+            self.set_xkb_config(xkb.to_xkb_config());
+        }
+
+        self.ipc_keyboard_layouts_changed();
+    }
+
+    /// Switches the seat back from a virtual keyboard's keymap to the configured one, if needed.
+    ///
+    /// The configured keymap was saved as text before the virtual keyboard's replaced it, so this
+    /// doesn't re-read the xkb file or recompile the xkb config unnecessarily.
+    pub fn restore_configured_keymap(&mut self) {
+        let Some(active) = self.niri.virtual_keyboard_keymap.take() else {
+            return;
+        };
+
+        let keyboard = self.niri.seat.get_keyboard().unwrap();
+        let restored = self.niri.configured_keymap.clone().is_some_and(|keymap| {
+            keyboard
+                .set_keymap_from_string(self, keymap.to_string())
+                .inspect_err(|err| warn!("error restoring configured keymap: {err:?}"))
+                .is_ok()
+        });
+
+        if !restored {
+            // Shouldn't happen unless there's an xkbcommon bug or configured_keymap somehow ends
+            // up none while a virtual keymap is active, but fall back to loading it from the
+            // config.
+            error!("failed to restore the configured keymap, reloading it from the config");
+            self.niri.virtual_keyboard_keymap = Some(active);
+            self.niri.configured_keymap = None;
+            self.load_configured_keymap();
+            return;
+        }
+
+        self.restore_keyboard_state(active.saved);
+        self.ipc_keyboard_layouts_changed();
+    }
+
+    /// Whether the virtual keyboard's keycodes and modifiers apply to the configured keymap
+    /// (i.e., it used `no_keymap` or an identical one).
+    pub fn virtual_keyboard_shares_keymap(&mut self, device: &VirtualKeyboardDevice) -> bool {
+        match device.keymap() {
+            None => true,
+            Some(keymap) => *self.configured_keymap() == *keymap,
+        }
+    }
+
+    /// Applies a virtual keyboard's `modifiers` request to the seat, tracking modifiers if
+    /// the xkb state is shared.
+    pub fn set_virtual_keyboard_modifiers(
+        &mut self,
+        device: &VirtualKeyboardDevice,
+        mods_depressed: u32,
+        mods_latched: u32,
+        mods_locked: u32,
+        group: u32,
+    ) {
+        self.activate_virtual_keyboard_keymap(device);
+
+        let shared = self.niri.virtual_keyboard_keymap.is_none()
+            && self.virtual_keyboard_shares_keymap(device);
+
+        let keyboard = self.niri.seat.get_keyboard().unwrap();
+        let (before, after) = keyboard.with_xkb_state(self, |mut context| {
+            let before = locked_state(&context);
+            context.set_modifier_mask(mods_depressed, mods_latched, mods_locked, group);
+            let after = locked_state(&context);
+            (before, after)
+        });
+
+        if shared {
+            self.niri
+                .virtual_keyboard_locks
+                .entry(device.clone())
+                .or_default()
+                .update(before, after);
+        }
+    }
+
+    /// Reconciles the seat's modifiers after a virtual keyboard sharing the configured keymap
+    /// is destroyed.
+    ///
+    /// This rebuilds depressed/latched modifiers from the keys actually held, so a destroyed
+    /// device can't leave any stuck, while preserving keys held by other keyboards.
+    pub fn reset_virtual_keyboard_modifiers(&mut self, locks: VirtualKeyboardLocks) {
+        use smithay::input::keyboard::xkb;
+
+        let keyboard = self.niri.seat.get_keyboard().unwrap();
+        let pressed = keyboard.pressed_keys();
+        keyboard.with_xkb_state(self, |mut context| {
+            let (depressed, latched) = {
+                let xkb = context.xkb().lock().unwrap();
+                // SAFETY: the reference doesn't outlive the lock guard.
+                let keymap = unsafe { xkb.keymap() };
+
+                let mut rebuilt = xkb::State::new(keymap);
+                for key in &pressed {
+                    rebuilt.update_key(*key, xkb::KeyDirection::Down);
+                }
+
+                (
+                    rebuilt.serialize_mods(xkb::STATE_MODS_DEPRESSED),
+                    rebuilt.serialize_mods(xkb::STATE_MODS_LATCHED),
+                )
+            };
+            let (locked, group) = locks.restore(locked_state(&context));
+            context.set_modifier_mask(depressed, latched, locked, group);
+        });
+    }
+
+    /// Activates the virtual keyboard's keymap on the current seat, unless it already is.
+    pub fn activate_virtual_keyboard_keymap(&mut self, device: &VirtualKeyboardDevice) {
+        let Some(keymap) = device.keymap() else {
+            // The keycodes are relative to the configured keymap, so make sure
+            // it's the active one.
+            self.restore_configured_keymap();
+            return;
+        };
+
+        if let Some(active) = &mut self.niri.virtual_keyboard_keymap {
+            if active.keymap == keymap {
+                // Another virtual keyboard may have installed an identical
+                // keymap. Take ownership of it anyway, so that removing that
+                // one doesn't take the keymap out from under us.
+                active.device = device.clone();
+                return;
+            }
+        }
+
+        // A keymap identical to the configured one (e.g. from an input method
+        // forwarding keys with the keymap it received from us) doesn't need to
+        // be swapped in, which would needlessly reset the keyboard state.
+        if *self.configured_keymap() == *keymap {
+            self.restore_configured_keymap();
+            return;
+        }
+
+        // Save the state from before the first virtual keyboard keymap, since
+        // swapping keymaps resets it, and a virtual keyboard should neither
+        // affect nor be affected by it.
+        let saved = match &self.niri.virtual_keyboard_keymap {
+            Some(active) => active.saved,
+            None => self.current_keyboard_state(),
+        };
+
+        let keyboard = self.niri.seat.get_keyboard().unwrap();
+        if let Err(err) = keyboard.set_keymap_from_string(self, keymap.to_string()) {
+            warn!("error setting virtual keyboard keymap: {err:?}");
+            return;
+        }
+
+        self.niri.virtual_keyboard_keymap = Some(VirtualKeyboardKeymap {
+            device: device.clone(),
+            keymap,
+            saved,
+        });
+        self.ipc_keyboard_layouts_changed();
+    }
+
+    /// Returns the configured keymap as XKB_KEYMAP_FORMAT_TEXT_V1.
+    fn configured_keymap(&mut self) -> Arc<str> {
+        if let Some(keymap) = &self.niri.configured_keymap {
+            return keymap.clone();
+        }
+
+        // The seat has the configured keymap while no virtual keyboard keymap is active.
+        if self.niri.virtual_keyboard_keymap.is_some() {
+            error!("virtual_keyboard_keymap must be None when resetting configured_keymap");
+        }
+
+        let keyboard = self.niri.seat.get_keyboard().unwrap();
+        let keymap: Arc<str> = keyboard
+            .with_xkb_state(self, |context| {
+                context.xkb().lock().unwrap().keymap_as_string()
+            })
+            .into();
+        self.niri.configured_keymap = Some(keymap.clone());
+        keymap
     }
 
     pub fn reload_config(&mut self, config: Result<Config, ()>) {
@@ -1593,7 +1943,7 @@ impl State {
 
         *CHILD_ENV.write().unwrap() = mem::take(&mut config.environment);
 
-        let mut reload_xkb = None;
+        let mut reload_xkb = false;
         let mut libinput_config_changed = false;
         let mut output_config_changed = false;
         let mut preserved_output_config = None;
@@ -1615,7 +1965,7 @@ impl State {
 
         // We need &mut self to reload the xkb config, so just store it here.
         if config.input.keyboard.xkb != old_config.input.keyboard.xkb {
-            reload_xkb = Some(config.input.keyboard.xkb.clone());
+            reload_xkb = true;
         }
 
         // Reload the repeat info.
@@ -1745,31 +2095,8 @@ impl State {
         drop(old_config);
 
         // Now with a &mut self we can reload the xkb config.
-        if let Some(mut xkb) = reload_xkb {
-            let mut set_xkb_config = true;
-
-            // It's fine to .take() the xkb file, as this is a
-            // clone and the file field is not used in the XkbConfig.
-            if let Some(xkb_file) = xkb.file.take() {
-                if let Err(err) = self.set_xkb_file(xkb_file) {
-                    warn!("error reloading xkb_file: {err:?}");
-                } else {
-                    // We successfully set xkb file so we don't need to fallback to XkbConfig.
-                    set_xkb_config = false;
-                }
-            }
-
-            if set_xkb_config {
-                // If xkb is unset in the niri config, use settings from locale1.
-                if xkb == Xkb::default() {
-                    trace!("using xkb from locale1");
-                    xkb = self.niri.xkb_from_locale1.clone().unwrap_or_default();
-                }
-
-                self.set_xkb_config(xkb.to_xkb_config());
-            }
-
-            self.ipc_keyboard_layouts_changed();
+        if reload_xkb {
+            self.load_configured_keymap();
         }
 
         if libinput_config_changed {
@@ -2721,6 +3048,9 @@ impl Niri {
             is_fdo_idle_inhibited: Arc::new(AtomicBool::new(false)),
             keyboard_shortcuts_inhibiting_surfaces: HashMap::new(),
             xkb_from_locale1: None,
+            virtual_keyboard_keymap: None,
+            virtual_keyboard_locks: HashMap::new(),
+            configured_keymap: None,
             cursor_manager,
             cursor_texture_cache: Default::default(),
             cursor_shape_manager_state,
@@ -7142,4 +7472,17 @@ niri_render_elements! {
         // Used for the CPU-rendered panels.
         RelocatedMemoryBuffer = RelocateRenderElement<MemoryRenderBufferRenderElement<R>>,
     }
+}
+
+/// Returns the seat's locked modifiers and layout.
+fn locked_state(context: &smithay::input::keyboard::XkbContext<'_>) -> (u32, u32) {
+    use smithay::input::keyboard::xkb;
+
+    let xkb = context.xkb().lock().unwrap();
+    // SAFETY: the reference doesn't outlive the lock guard.
+    let state = unsafe { xkb.state() };
+    (
+        state.serialize_mods(xkb::STATE_MODS_LOCKED),
+        state.serialize_layout(xkb::STATE_LAYOUT_LOCKED),
+    )
 }
