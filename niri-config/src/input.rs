@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
 use miette::miette;
-use smithay::input::keyboard::XkbConfig;
+use smithay::input::keyboard::{keysyms, Keysym, XkbConfig};
 use smithay::reexports::input;
 
 use crate::binds::Modifiers;
@@ -415,7 +415,7 @@ impl FromStr for WarpMouseToFocusMode {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub enum ModKey {
     Ctrl,
     Shift,
@@ -435,6 +435,23 @@ impl ModKey {
             ModKey::IsoLevel3Shift => Modifiers::ISO_LEVEL3_SHIFT,
             ModKey::IsoLevel5Shift => Modifiers::ISO_LEVEL5_SHIFT,
         }
+    }
+
+    /// Returns the modifier key for a keysym, if the keysym is a modifier key.
+    pub fn from_keysym(keysym: Keysym) -> Option<Self> {
+        match keysym.raw() {
+            keysyms::KEY_Control_L | keysyms::KEY_Control_R => Some(Self::Ctrl),
+            keysyms::KEY_Shift_L | keysyms::KEY_Shift_R => Some(Self::Shift),
+            keysyms::KEY_Alt_L | keysyms::KEY_Alt_R => Some(Self::Alt),
+            keysyms::KEY_Super_L | keysyms::KEY_Super_R => Some(Self::Super),
+            keysyms::KEY_ISO_Level3_Shift => Some(Self::IsoLevel3Shift),
+            keysyms::KEY_ISO_Level5_Shift => Some(Self::IsoLevel5Shift),
+            _ => None,
+        }
+    }
+
+    pub fn matches_keysym(&self, keysym: Keysym) -> bool {
+        Self::from_keysym(keysym) == Some(*self)
     }
 }
 
@@ -524,6 +541,55 @@ mod tests {
             .map_err(miette::Report::new)
             .unwrap();
         Input::from_part(&part)
+    }
+
+    #[test]
+    fn mod_key_names_are_consistent() {
+        // The X11 `ModN` modifier indices are a separate numbering from the ISO level numbers,
+        // and the two happen to be crossed over: ISO Level 3 Shift is Mod5, and ISO Level 5 Shift
+        // is Mod3. This test guards against "fixing" this apparent mismatch.
+        for (name, modifier, keysym, modifiers) in [
+            (
+                "Mod5",
+                ModKey::IsoLevel3Shift,
+                keysyms::KEY_ISO_Level3_Shift,
+                Modifiers::ISO_LEVEL3_SHIFT,
+            ),
+            (
+                "Mod3",
+                ModKey::IsoLevel5Shift,
+                keysyms::KEY_ISO_Level5_Shift,
+                Modifiers::ISO_LEVEL5_SHIFT,
+            ),
+        ] {
+            // Name -> variant.
+            assert_eq!(
+                name.parse::<ModKey>().unwrap(),
+                modifier,
+                "parsing `{name}`"
+            );
+
+            // Keysym -> variant.
+            assert_eq!(
+                ModKey::from_keysym(Keysym::from(keysym)),
+                Some(modifier),
+                "keysym for `{name}`",
+            );
+            assert!(modifier.matches_keysym(Keysym::from(keysym)));
+
+            // Variant -> held modifiers.
+            assert_eq!(modifier.to_modifiers(), modifiers, "modifiers for `{name}`");
+        }
+
+        // ISO_Level3_Shift and Mod5 are the same modifier, and so are ISO_Level5_Shift and Mod3.
+        assert_eq!(
+            "ISO_Level3_Shift".parse::<ModKey>().unwrap(),
+            "Mod5".parse::<ModKey>().unwrap()
+        );
+        assert_eq!(
+            "ISO_Level5_Shift".parse::<ModKey>().unwrap(),
+            "Mod3".parse::<ModKey>().unwrap()
+        );
     }
 
     #[test]
