@@ -750,6 +750,7 @@ mod tests {
 
                 warp-mouse-to-focus
                 focus-follows-mouse
+                auto-raise-on-focus delay-ms=200
                 workspace-auto-back-and-forth
 
                 mod-key "Mod5"
@@ -1160,6 +1161,13 @@ mod tests {
                 focus_follows_mouse: Some(
                     FocusFollowsMouse {
                         max_scroll_amount: None,
+                    },
+                ),
+                auto_raise_on_focus: Some(
+                    AutoRaiseOnFocus {
+                        delay_ms: Some(
+                            200,
+                        ),
                     },
                 ),
                 workspace_auto_back_and_forth: true,
