@@ -8,6 +8,7 @@ use smithay::backend::renderer::element::utils::{
     CropRenderElement, Relocate, RelocateRenderElement, RescaleRenderElement,
 };
 use smithay::output::Output;
+use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Rectangle, Size};
 
 use super::insert_hint_element::{InsertHintElement, InsertHintRenderElement};
@@ -1581,6 +1582,18 @@ impl<W: LayoutElement> Monitor<W> {
             let (win, hit) = ws.window_under(pos_within_output - geo.loc)?;
             Some((win, hit.offset_win_pos(geo.loc)))
         }
+    }
+
+    pub fn window_render_location(&self, wl_surface: &WlSurface) -> Option<Point<f64, Logical>> {
+        for ((_, ws), geo) in self.workspaces_with_render_geo_idx() {
+            for (tile, tile_pos, visible) in ws.tiles_with_render_positions() {
+                if visible && tile.window().is_wl_surface(wl_surface) {
+                    return Some(geo.loc + tile_pos + tile.buf_loc() + tile.bob_offset());
+                }
+            }
+        }
+
+        None
     }
 
     pub fn resize_edges_under(&self, pos_within_output: Point<f64, Logical>) -> Option<ResizeEdge> {
