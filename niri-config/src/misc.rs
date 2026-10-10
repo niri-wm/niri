@@ -152,6 +152,59 @@ impl MergeWith<OverviewPart> for Overview {
     }
 }
 
+#[derive(knuffel::DecodeScalar, Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum MagnifierZoomModifier {
+    /// Hold the compositor Mod key and scroll to zoom.
+    #[default]
+    Mod,
+    /// Hold Mod and Ctrl together and scroll to zoom.
+    ModCtrl,
+    /// No modifier needed; plain scroll while the magnifier is open zooms it.
+    None,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Magnifier {
+    pub zoom: f64,
+    pub max_zoom: f64,
+    pub zoom_speed: f64,
+    pub zoom_modifier: MagnifierZoomModifier,
+    pub hide_mouse: bool,
+}
+
+impl Default for Magnifier {
+    fn default() -> Self {
+        Self {
+            zoom: 2.,
+            max_zoom: 10.,
+            zoom_speed: 0.25,
+            zoom_modifier: MagnifierZoomModifier::Mod,
+            hide_mouse: false,
+        }
+    }
+}
+
+#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+pub struct MagnifierPart {
+    #[knuffel(child, unwrap(argument))]
+    pub zoom: Option<FloatOrInt<1, 10>>,
+    #[knuffel(child, unwrap(argument))]
+    pub max_zoom: Option<FloatOrInt<1, 100>>,
+    #[knuffel(child, unwrap(argument))]
+    pub zoom_speed: Option<FloatOrInt<0, 10>>,
+    #[knuffel(child, unwrap(argument))]
+    pub zoom_modifier: Option<MagnifierZoomModifier>,
+    #[knuffel(child)]
+    pub hide_mouse: Option<Flag>,
+}
+
+impl MergeWith<MagnifierPart> for Magnifier {
+    fn merge_with(&mut self, part: &MagnifierPart) {
+        merge!((self, part), zoom, max_zoom, zoom_speed, hide_mouse);
+        merge_clone!((self, part), zoom_modifier);
+    }
+}
+
 #[derive(knuffel::Decode, Debug, Default, Clone, PartialEq, Eq)]
 pub struct Environment(#[knuffel(children)] pub Vec<EnvironmentVariable>);
 

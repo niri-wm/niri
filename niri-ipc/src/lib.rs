@@ -914,6 +914,8 @@ pub enum Action {
     OpenOverview {},
     /// Close the Overview.
     CloseOverview {},
+    /// Toggle the live cursor-following screen magnifier.
+    ToggleMagnifier {},
     /// Toggle urgent status of a window.
     ToggleWindowUrgent {
         /// Id of the window to toggle urgent.
