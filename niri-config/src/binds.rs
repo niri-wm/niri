@@ -1,5 +1,6 @@
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::convert::Infallible;
 use std::str::FromStr;
 use std::time::Duration;
 
@@ -7,7 +8,8 @@ use bitflags::bitflags;
 use knuffel::errors::DecodeError;
 use miette::miette;
 use niri_ipc::{
-    ColumnDisplay, LayoutSwitchTarget, PositionChange, SizeChange, WorkspaceReferenceArg,
+    ColumnDisplay, LayoutSwitchTarget, OutputReferenceArg, PositionChange, SizeChange,
+    WorkspaceReferenceArg,
 };
 use smithay::input::keyboard::keysyms::KEY_NoSymbol;
 use smithay::input::keyboard::xkb::{keysym_from_name, KEYSYM_CASE_INSENSITIVE, KEYSYM_NO_FLAGS};
@@ -216,10 +218,14 @@ pub enum Action {
     #[knuffel(skip)]
     CenterWindowById(u64),
     CenterVisibleColumns,
-    FocusWorkspaceDown,
+    FocusWorkspaceDown(
+        #[knuffel(property(name = "output"), default = OutputReference::Active)] OutputReference,
+    ),
     #[knuffel(skip)]
     FocusWorkspaceDownUnderMouse,
-    FocusWorkspaceUp,
+    FocusWorkspaceUp(
+        #[knuffel(property(name = "output"), default = OutputReference::Active)] OutputReference,
+    ),
     #[knuffel(skip)]
     FocusWorkspaceUpUnderMouse,
     FocusWorkspace(#[knuffel(argument)] WorkspaceReference),
@@ -242,8 +248,12 @@ pub enum Action {
         #[knuffel(argument)] WorkspaceReference,
         #[knuffel(property(name = "focus"), default = true)] bool,
     ),
-    MoveWorkspaceDown,
-    MoveWorkspaceUp,
+    MoveWorkspaceDown(
+        #[knuffel(property(name = "output"), default = OutputReference::Active)] OutputReference,
+    ),
+    MoveWorkspaceUp(
+        #[knuffel(property(name = "output"), default = OutputReference::Active)] OutputReference,
+    ),
     MoveWorkspaceToIndex(#[knuffel(argument)] usize),
     #[knuffel(skip)]
     MoveWorkspaceToIndexByRef {
@@ -511,8 +521,10 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::CenterWindow { id: None } => Self::CenterWindow,
             niri_ipc::Action::CenterWindow { id: Some(id) } => Self::CenterWindowById(id),
             niri_ipc::Action::CenterVisibleColumns {} => Self::CenterVisibleColumns,
-            niri_ipc::Action::FocusWorkspaceDown {} => Self::FocusWorkspaceDown,
-            niri_ipc::Action::FocusWorkspaceUp {} => Self::FocusWorkspaceUp,
+            niri_ipc::Action::FocusWorkspaceDown { output } => {
+                Self::FocusWorkspaceDown(output.into())
+            }
+            niri_ipc::Action::FocusWorkspaceUp { output } => Self::FocusWorkspaceUp(output.into()),
             niri_ipc::Action::FocusWorkspace { reference } => {
                 Self::FocusWorkspace(WorkspaceReference::from(reference))
             }
@@ -546,8 +558,10 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::MoveColumnToWorkspace { reference, focus } => {
                 Self::MoveColumnToWorkspace(WorkspaceReference::from(reference), focus)
             }
-            niri_ipc::Action::MoveWorkspaceDown {} => Self::MoveWorkspaceDown,
-            niri_ipc::Action::MoveWorkspaceUp {} => Self::MoveWorkspaceUp,
+            niri_ipc::Action::MoveWorkspaceDown { output } => {
+                Self::MoveWorkspaceDown(output.into())
+            }
+            niri_ipc::Action::MoveWorkspaceUp { output } => Self::MoveWorkspaceUp(output.into()),
             niri_ipc::Action::SetWorkspaceName {
                 name,
                 workspace: None,
@@ -1049,6 +1063,66 @@ impl FromStr for Key {
         };
 
         Ok(Key { trigger, modifiers })
+    }
+}
+
+/// Reference to an output
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum OutputReference {
+    /// refers to the active output
+    Active,
+    /// refers to the output under the cursor
+    UnderCursor,
+    /// refers to the output by name
+    OutputName(String),
+}
+
+impl FromStr for OutputReference {
+    type Err = Infallible;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(OutputReferenceArg::from_str(s).unwrap().into())
+    }
+}
+
+impl From<OutputReferenceArg> for OutputReference {
+    fn from(value: OutputReferenceArg) -> Self {
+        match value {
+            OutputReferenceArg::Active => OutputReference::Active,
+            OutputReferenceArg::UnderCursor => OutputReference::UnderCursor,
+            OutputReferenceArg::OutputName(name) => OutputReference::OutputName(name),
+        }
+    }
+}
+
+impl<S: knuffel::traits::ErrorSpan> knuffel::DecodeScalar<S> for OutputReference {
+    fn type_check(
+        type_name: &Option<knuffel::span::Spanned<knuffel::ast::TypeName, S>>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) {
+        if let Some(type_name) = &type_name {
+            ctx.emit_error(DecodeError::unexpected(
+                type_name,
+                "type name",
+                "no type name expected for this node",
+            ));
+        }
+    }
+
+    fn raw_decode(
+        value: &knuffel::span::Spanned<knuffel::ast::Literal, S>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) -> Result<Self, DecodeError<S>> {
+        match &**value {
+            knuffel::ast::Literal::String(ref s) => Ok(s.parse().unwrap()),
+            _ => {
+                ctx.emit_error(DecodeError::unsupported(
+                    value,
+                    "output reference must be a string",
+                ));
+                Ok(OutputReference::Active)
+            }
+        }
     }
 }
 
