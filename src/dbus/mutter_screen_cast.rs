@@ -4,6 +4,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use serde::Deserialize;
+use smithay::utils::{Logical, Size};
 use zbus::object_server::{InterfaceRef, SignalEmitter};
 use zbus::zvariant::{DeserializeDict, OwnedObjectPath, SerializeDict, Type, Value};
 use zbus::{fdo, interface, ObjectServer};
@@ -72,7 +73,11 @@ pub struct Stream {
 enum StreamTarget {
     // FIXME: update on scale changes and whatnot.
     Output(niri_ipc::Output),
-    Window { id: u64 },
+    Window {
+        id: u64,
+        /// Initial logical size; dynamic targets have no size until a target is selected.
+        size: Option<Size<i32, Logical>>,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -85,12 +90,16 @@ pub enum StreamTargetId {
 #[zvariant(signature = "dict")]
 struct StreamParameters {
     /// Position of the stream in logical coordinates.
-    position: (i32, i32),
+    position: Option<(i32, i32)>,
     /// Size of the stream in logical coordinates.
-    size: (i32, i32),
+    size: Option<(i32, i32)>,
 }
 
 pub enum ScreenCastToNiri {
+    GetWindowSize {
+        id: u64,
+        reply: async_channel::Sender<fdo::Result<Option<Size<i32, Logical>>>>,
+    },
     StartCast {
         session_id: CastSessionId,
         stream_id: CastStreamId,
@@ -241,6 +250,20 @@ impl Session {
     ) -> fdo::Result<OwnedObjectPath> {
         debug!(?properties, "record_window");
 
+        let (reply, rx) = async_channel::bounded(1);
+        let msg = ScreenCastToNiri::GetWindowSize {
+            id: properties.window_id,
+            reply,
+        };
+        self.to_niri.send(msg).map_err(|err| {
+            warn!("error sending GetWindowSize to niri: {err:?}");
+            fdo::Error::Failed("internal error".to_owned())
+        })?;
+        let size = rx.recv().await.map_err(|err| {
+            warn!("error receiving window size from niri: {err:?}");
+            fdo::Error::Failed("internal error".to_owned())
+        })??;
+
         let stream_id = CastStreamId::next();
         let path = format!("/org/gnome/Mutter/ScreenCast/Stream/u{}", stream_id.get());
         let path = OwnedObjectPath::try_from(path).unwrap();
@@ -249,6 +272,7 @@ impl Session {
 
         let target = StreamTarget::Window {
             id: properties.window_id,
+            size,
         };
         let stream = Stream::new(
             stream_id,
@@ -289,15 +313,15 @@ impl Stream {
             StreamTarget::Output(output) => {
                 let logical = output.logical.as_ref().unwrap();
                 StreamParameters {
-                    position: (logical.x, logical.y),
-                    size: (logical.width as i32, logical.height as i32),
+                    position: Some((logical.x, logical.y)),
+                    size: Some((logical.width as i32, logical.height as i32)),
                 }
             }
-            StreamTarget::Window { .. } => {
+            StreamTarget::Window { size, .. } => {
                 // Does any consumer need this?
                 StreamParameters {
-                    position: (0, 0),
-                    size: (1, 1),
+                    position: None,
+                    size: size.map(Into::into),
                 }
             }
         }
@@ -395,7 +419,7 @@ impl StreamTarget {
             StreamTarget::Output(output) => StreamTargetId::Output {
                 name: output.name.clone(),
             },
-            StreamTarget::Window { id } => StreamTargetId::Window { id: *id },
+            StreamTarget::Window { id, .. } => StreamTargetId::Window { id: *id },
         }
     }
 }
