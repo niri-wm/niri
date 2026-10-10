@@ -19,7 +19,9 @@ use smithay::backend::input::{
 };
 use smithay::backend::libinput::LibinputInputBackend;
 use smithay::input::dnd::DnDGrab;
-use smithay::input::keyboard::{keysyms, FilterResult, Keysym, Layout, ModifiersState};
+use smithay::input::keyboard::{
+    keysyms, FilterResult, KeyboardSource, Keysym, Layout, ModifiersState,
+};
 use smithay::input::pointer::{
     AxisFrame, ButtonEvent, CursorIcon, CursorImageStatus, Focus, GestureHoldBeginEvent,
     GestureHoldEndEvent, GesturePinchBeginEvent, GesturePinchEndEvent, GesturePinchUpdateEvent,
@@ -36,8 +38,10 @@ use smithay::output::Output;
 use smithay::reexports::wayland_server::protocol::wl_data_source::WlDataSource;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Rectangle, Transform, SERIAL_COUNTER};
+use smithay::wayland::input_method::InputMethodSeat;
 use smithay::wayland::keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitor;
 use smithay::wayland::pointer_constraints::{with_pointer_constraint, PointerConstraint};
+use smithay::wayland::virtual_keyboard::{VirtualKeyboardDevice, VirtualKeyboardKeyEvent};
 use touch_overview_grab::TouchOverviewGrab;
 
 use self::move_grab::MoveGrab;
@@ -413,7 +417,26 @@ impl State {
         &mut self,
         event: I::KeyboardKeyEvent,
         consumed_by_a11y: &mut bool,
-    ) {
+    ) where
+        I::Device: 'static,
+    {
+        let device = event.device();
+        let virtual_keyboard = (&device as &dyn Any).downcast_ref::<VirtualKeyboardDevice>();
+
+        // Restore the real keymap if required (the virtual keyboard uses its own one).
+        if virtual_keyboard.is_none() {
+            self.restore_configured_keymap();
+        }
+
+        // Keys from a virtual keyboard are tracked separately from the physical
+        // ones, otherwise, a virtual keyboard sending a key already held by
+        // another keyboard (an IME, e.g., fcitx, forwarding keys it got through its
+        // grab) would release it prematurely.
+        //
+        // Note that keyboard shortcuts can still be pressed across multiple
+        // keyboards even with this, as intended.
+        let source = virtual_keyboard.map_or(KeyboardSource::MAIN, |device| device.source());
+
         let mod_key = self.backend.mod_key(&self.niri.config.borrow());
 
         let serial = SERIAL_COUNTER.next_serial();
@@ -464,7 +487,8 @@ impl State {
         #[cfg(not(feature = "dbus"))]
         let _ = consumed_by_a11y;
 
-        let Some(Some(bind)) = self.niri.seat.get_keyboard().unwrap().input(
+        let Some(Some(bind)) = self.niri.seat.get_keyboard().unwrap().input_from_source(
+            source,
             self,
             event.key_code(),
             event.state(),
@@ -602,6 +626,36 @@ impl State {
         self.handle_bind(bind.clone());
 
         self.start_key_repeat(bind);
+    }
+
+    /// Whether the virtual keyboard belongs to the input method that has grabbed the keyboard.
+    pub fn is_input_method_virtual_keyboard(&self, device: &VirtualKeyboardDevice) -> bool {
+        let grab_client = self.niri.seat.input_method().keyboard_grab_client();
+        grab_client.is_some() && grab_client == device.client()
+    }
+
+    /// Forwards a key that the input method is passing through directly to the focused surface.
+    ///
+    /// While an input method holds the keyboard grab, keys go through the binds and then to the
+    /// input method, which sends back unhandled ones through its own virtual keyboard. If we
+    /// handled these normally, they would get sent back to the grab, looping forever.
+    ///
+    /// Note that sway also special-cases this in the same way.
+    pub fn forward_input_method_key(&mut self, event: &VirtualKeyboardKeyEvent) {
+        let serial = SERIAL_COUNTER.next_serial();
+        let time = Event::time(event);
+
+        // The modifiers associated with the physical key went to the input method
+        // rather than to the surface, so always send the current ones.
+        let keyboard = self.niri.seat.get_keyboard().unwrap();
+        keyboard.input_forward_bypassing_grab(
+            self,
+            event.key_code(),
+            event.state(),
+            serial,
+            time,
+            true,
+        );
     }
 
     fn start_key_repeat(&mut self, bind: Bind) {
@@ -4272,10 +4326,16 @@ impl State {
         evt: &impl AbsolutePositionEvent<I>,
         fallback_output: Option<&Output>,
     ) -> Option<Point<f64, Logical>> {
-        let output = evt.device().output(self);
+        let device = evt.device();
+        let output = device.output(self);
         let output = output.filter(|output| self.niri.output_exists(output));
         let output = output.as_ref().or(fallback_output)?;
         let output_geo = self.niri.global_space.output_geometry(output).unwrap();
+
+        if device.absolute_position_is_logical() {
+            return Some(evt.position_transformed(output_geo.size) + output_geo.loc.to_f64());
+        }
+
         let transform = output.current_transform();
         let size = transform.invert().transform_size(output_geo.size);
         Some(
