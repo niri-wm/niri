@@ -107,6 +107,11 @@ impl SolidColorRenderElement {
         }
     }
 
+    pub fn with_alpha(mut self, alpha: f32) -> Self {
+        self.color = self.color * alpha;
+        self
+    }
+
     pub fn color(&self) -> Color32F {
         self.color
     }

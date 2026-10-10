@@ -223,6 +223,11 @@ impl BorderRenderElement {
         self
     }
 
+    pub fn with_alpha(mut self, alpha: f32) -> Self {
+        self.inner = self.inner.with_alpha(alpha);
+        self
+    }
+
     pub fn has_shader(renderer: &mut impl NiriRenderer) -> bool {
         Shaders::get(renderer)
             .program(ProgramType::Border)
