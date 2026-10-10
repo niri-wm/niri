@@ -214,23 +214,6 @@ mod systemd {
     use super::*;
 
     pub fn do_spawn(command: &OsStr, mut process: Command) -> Option<Child> {
-        #[cfg(target_env = "gnu")]
-        use libc::close_range;
-        #[cfg(target_os = "openbsd")]
-        use libc::closefrom;
-
-        #[cfg(not(target_env = "gnu"))] // musl
-        pub fn close_range(first: libc::c_uint, last: libc::c_uint, flags: libc::c_uint) -> i64 {
-            unsafe {
-                libc::syscall(
-                    libc::SYS_close_range,
-                    first as usize,
-                    last as usize,
-                    flags as usize,
-                )
-            }
-        }
-
         // When running as a systemd session, we want to put children into their own transient
         // scopes in order to separate them from the niri process. This is helpful for
         // example to prevent the OOM killer from taking down niri together with a
@@ -289,44 +272,60 @@ mod systemd {
 
                 match libc::fork() {
                     -1 => return Err(io::Error::last_os_error()),
-                    0 => (),
+                    0 => {
+                        // Wait until the parent has set up the scope for us before we exec.
+                        if let Some(pipe) = pipe_wait_read {
+                            let _ = read_all(pipe, &mut [0]);
+                        }
+
+                        restore_nofile_rlimit();
+                        Ok(())
+
+                        // Now that we're ready, we will exec.
+                    }
                     grandchild_pid => {
                         // Send back the PID.
                         if let Some(pipe) = pipe_pid_write {
                             let _ = write_all(pipe, &grandchild_pid.to_ne_bytes());
                         }
-
-                        // Wait until the parent signals us to exit.
-                        if let Some(pipe) = pipe_wait_read {
-                            // We're going to exit afterwards. Close all other FDs to allow
-                            // Command::spawn() to return in the parent process.
-                            #[cfg(not(target_os = "openbsd"))]
-                            {
-                                let raw = pipe.as_raw_fd() as u32;
-                                let _ = close_range(0, raw - 1, 0);
-                                let _ = close_range(raw + 1, !0, 0);
-                            }
-                            #[cfg(target_os = "openbsd")]
-                            {
-                                let raw = pipe.as_raw_fd();
-                                for fd in 0..raw {
-                                    close(fd);
-                                }
-                                closefrom(raw + 1);
-                            }
-
-                            let _ = read_all(pipe, &mut [0]);
-                        }
-
+                        // And then exit immediately, since no one cares about our existence
+                        // anymore. Now only the parent and the grandchild
+                        // will wait for the scope to be set up, in which we
+                        // don't participate.
                         libc::_exit(0)
                     }
                 }
-
-                restore_nofile_rlimit();
-
-                Ok(())
             });
         }
+
+        // Create the scope on a separate thread because `Command::spawn` will block until the child
+        // has exec'd, but the child will wait until after we set up the scope.
+        let command_for_unit = command.to_os_string();
+        std::thread::spawn(move || {
+            // Wait for the grandchild PID.
+            if let Some(pipe) = pipe_pid_read {
+                let mut buf = [0; 4];
+                match read_all(pipe, &mut buf) {
+                    Ok(()) => {
+                        let pid = i32::from_ne_bytes(buf);
+                        trace!("spawned PID: {pid}");
+
+                        // Start a systemd scope for the grandchild.
+                        if let Err(err) = start_systemd_scope(&command_for_unit, pid as u32) {
+                            trace!("error starting systemd scope for spawned command: {err:?}");
+                        }
+                    }
+                    Err(err) => {
+                        warn!("error reading child PID: {err:?}");
+                    }
+                }
+            }
+
+            // Signal the grandchild to exec now that we're done trying to creating a systemd
+            // scope.
+            trace!("signaling grandchild to exec");
+            drop(pipe_wait_write);
+        });
 
         let child = match process.spawn() {
             Ok(child) => child,
@@ -338,30 +337,6 @@ mod systemd {
 
         drop(pipe_pid_write);
         drop(pipe_wait_read);
-
-        // Wait for the grandchild PID.
-        if let Some(pipe) = pipe_pid_read {
-            let mut buf = [0; 4];
-            match read_all(pipe, &mut buf) {
-                Ok(()) => {
-                    let pid = i32::from_ne_bytes(buf);
-                    trace!("spawned PID: {pid}");
-
-                    // Start a systemd scope for the grandchild.
-                    if let Err(err) = start_systemd_scope(command, child.id(), pid as u32) {
-                        trace!("error starting systemd scope for spawned command: {err:?}");
-                    }
-                }
-                Err(err) => {
-                    warn!("error reading child PID: {err:?}");
-                }
-            }
-        }
-
-        // Signal the intermediate child to exit now that we're done trying to creating a systemd
-        // scope.
-        trace!("signaling child to exit");
-        drop(pipe_wait_write);
 
         Some(child)
     }
@@ -400,11 +375,7 @@ mod systemd {
     ///
     /// This separates the pid from the compositor scope, which for example prevents the OOM killer
     /// from bringing down the compositor together with a misbehaving client.
-    fn start_systemd_scope(
-        name: &OsStr,
-        intermediate_pid: u32,
-        child_pid: u32,
-    ) -> anyhow::Result<()> {
+    fn start_systemd_scope(name: &OsStr, child_pid: u32) -> anyhow::Result<()> {
         use std::fmt::Write as _;
         use std::os::unix::ffi::OsStrExt;
         use std::sync::OnceLock;
@@ -457,7 +428,7 @@ mod systemd {
             .receive_signal("JobRemoved")
             .context("error creating a signal iterator")?;
 
-        let pids: &[_] = &[intermediate_pid, child_pid];
+        let pids: &[_] = &[child_pid];
         let properties: &[_] = &[
             ("PIDs", Value::new(pids)),
             ("CollectMode", Value::new("inactive-or-failed")),
@@ -465,10 +436,10 @@ mod systemd {
         let aux: &[(&str, &[(&str, Value)])] = &[];
 
         let job: OwnedObjectPath = proxy
-            .call("StartTransientUnit", &(scope_name, "fail", properties, aux))
+            .call("StartTransientUnit", &(scope_name.clone(), "fail", properties, aux))
             .context("error calling StartTransientUnit")?;
 
-        trace!("waiting for JobRemoved");
+        trace!("created scope {scope_name}, waiting for JobRemoved");
         for message in signals {
             let body = message.body();
             let body: (u32, OwnedObjectPath, &str, &str) =
