@@ -9,7 +9,7 @@
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 
-use crate::{Cast, Event, KeyboardLayouts, Window, Workspace};
+use crate::{Cast, Event, KeyboardLayouts, ScreenshotUiEvent, Window, Workspace};
 
 /// Part of the state communicated via the event stream.
 pub trait EventStreamStatePart {
@@ -49,6 +49,9 @@ pub struct EventStreamState {
 
     /// State of screencasts.
     pub casts: CastsState,
+
+    /// State of the screenshot UI.
+    pub screenshot_ui: ScreenshotUiState,
 }
 
 /// The workspaces state communicated over the event stream.
@@ -93,6 +96,13 @@ pub struct CastsState {
     pub casts: HashMap<u64, Cast>,
 }
 
+/// The screenshot UI state communicated over the event stream.
+#[derive(Debug, Default)]
+pub struct ScreenshotUiState {
+    /// Indicates if the screenshot UI is currently open.
+    pub is_open: bool,
+}
+
 impl EventStreamStatePart for EventStreamState {
     fn replicate(&self) -> Vec<Event> {
         let mut events = Vec::new();
@@ -102,6 +112,7 @@ impl EventStreamStatePart for EventStreamState {
         events.extend(self.overview.replicate());
         events.extend(self.config.replicate());
         events.extend(self.casts.replicate());
+        events.extend(self.screenshot_ui.replicate());
         events
     }
 
@@ -112,6 +123,7 @@ impl EventStreamStatePart for EventStreamState {
         let event = self.overview.apply(event)?;
         let event = self.config.apply(event)?;
         let event = self.casts.apply(event)?;
+        let event = self.screenshot_ui.apply(event)?;
         Some(event)
     }
 }
@@ -316,6 +328,33 @@ impl EventStreamStatePart for CastsState {
                 let cast = self.casts.remove(&stream_id);
                 cast.expect("stopped cast was missing from the map");
             }
+            event => return Some(event),
+        }
+        None
+    }
+}
+
+impl EventStreamStatePart for ScreenshotUiState {
+    fn replicate(&self) -> Vec<Event> {
+        if self.is_open {
+            vec![Event::ScreenshotUiChanged {
+                event: ScreenshotUiEvent::Open,
+            }]
+        } else {
+            vec![Event::ScreenshotUiChanged {
+                event: ScreenshotUiEvent::Cancel,
+            }]
+        }
+    }
+
+    fn apply(&mut self, event: Event) -> Option<Event> {
+        match event {
+            Event::ScreenshotUiChanged { event } => match event {
+                ScreenshotUiEvent::Open => self.is_open = true,
+                ScreenshotUiEvent::Cancel | ScreenshotUiEvent::Confirm { .. } => {
+                    self.is_open = false
+                }
+            },
             event => return Some(event),
         }
         None
