@@ -16,8 +16,8 @@ use calloop::futures::Scheduler;
 use niri_config::debug::PreviewRender;
 use niri_config::output::MaxBpc;
 use niri_config::{
-    Config, FloatOrInt, Key, Modifiers, OutputName, TrackLayout, WarpMouseToFocusMode,
-    WorkspaceReference, Xkb,
+    Config, FloatOrInt, FocusFollowsMouseFocusType, Key, Modifiers, OutputName, TrackLayout,
+    WarpMouseToFocusMode, WorkspaceReference, Xkb,
 };
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::input::{InputTime, Keycode};
@@ -6808,6 +6808,11 @@ impl Niri {
             if current_focus.output.as_ref() != Some(output) {
                 self.layout.focus_output(output);
             }
+        }
+
+        // Skip focusing the window/layer when focus="outputs"
+        if let Some(FocusFollowsMouseFocusType::Outputs) = ffm.focus {
+            return;
         }
 
         if let Some(window) = &new_focus.window {

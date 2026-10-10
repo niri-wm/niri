@@ -386,7 +386,32 @@ pub struct Touch {
 #[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
 pub struct FocusFollowsMouse {
     #[knuffel(property, str)]
+    pub focus: Option<FocusFollowsMouseFocusType>,
+    #[knuffel(property, str)]
     pub max_scroll_amount: Option<Percent>,
+}
+
+#[derive(Debug, Default, PartialEq, Eq, Clone, Copy)]
+pub enum FocusFollowsMouseFocusType {
+    /// Changes focus to windows, outputs and layers.
+    #[default]
+    Windows,
+    /// Changes focus to only outputs.
+    Outputs,
+}
+
+impl FromStr for FocusFollowsMouseFocusType {
+    type Err = miette::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "windows" => Ok(Self::Windows),
+            "outputs" => Ok(Self::Outputs),
+            _ => Err(miette!(
+                r#"invalid focus type for focus-follows-mouse, can be "windows" or "outputs""#
+            )),
+        }
+    }
 }
 
 #[derive(knuffel::Decode, Debug, PartialEq, Eq, Clone, Copy)]

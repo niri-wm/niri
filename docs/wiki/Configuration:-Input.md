@@ -340,11 +340,22 @@ input {
 
 #### `focus-follows-mouse`
 
-Focuses windows and outputs automatically when moving the mouse over them.
+Focuses windows and/or outputs automatically when moving the mouse over them.
 
 ```kdl
 input {
     focus-follows-mouse
+}
+```
+
+<sup>Since: next release</sup> You can optionally configure what gets focused.
+
+- `focus="windows"` (default): Changes focus between windows, outputs and layers.
+- `focus="outputs"`: Changes focus between only outputs (monitors).
+
+```kdl
+input {
+    focus-follows-mouse focus="outputs"
 }
 ```
 
