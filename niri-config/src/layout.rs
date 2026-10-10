@@ -24,6 +24,7 @@ pub struct Layout {
     pub gaps: f64,
     pub struts: Struts,
     pub background_color: Color,
+    pub prefer_focus_tiled: bool,
 }
 
 impl Default for Layout {
@@ -52,6 +53,7 @@ impl Default for Layout {
                 PresetSize::Proportion(2. / 3.),
             ],
             background_color: DEFAULT_BACKGROUND_COLOR,
+            prefer_focus_tiled: false,
         }
     }
 }
@@ -68,6 +70,7 @@ impl MergeWith<LayoutPart> for Layout {
             always_center_single_column,
             empty_workspace_above_first,
             gaps,
+            prefer_focus_tiled,
         );
 
         merge_clone!(
@@ -118,6 +121,8 @@ pub struct LayoutPart {
     pub always_center_single_column: Option<Flag>,
     #[knuffel(child)]
     pub empty_workspace_above_first: Option<Flag>,
+    #[knuffel(child)]
+    pub prefer_focus_tiled: Option<Flag>,
     #[knuffel(child, unwrap(argument, str))]
     pub default_column_display: Option<ColumnDisplay>,
     #[knuffel(child, unwrap(argument))]
