@@ -66,6 +66,7 @@ layout {
         // off
         on
         hide-when-single-tab
+        scroll-to-switch-tabs
         place-within-column
         gap 5
         width 4
@@ -439,6 +440,8 @@ Set `off` to hide the tab indicator.
 
 Set `hide-when-single-tab` to hide the indicator for tabbed columns that only have a single window.
 
+Set `scroll-to-switch-tabs` to switch tabs with by scrolling the mouse-wheel over the tab indicator.
+
 Set `place-within-column` to put the tab indicator "within" the column, rather than outside.
 This will include it in column sizing and avoid overlaying adjacent columns.
 
@@ -478,6 +481,7 @@ layout {
         length total-proportion=1.0
         position "top"
         place-within-column
+        scroll-to-switch-tabs
     }
 }
 ```
