@@ -785,6 +785,10 @@ pub enum Action {
     MoveWorkspaceToMonitorPrevious {},
     /// Move the focused workspace to the next monitor.
     MoveWorkspaceToMonitorNext {},
+    /// Swap the focused workspace with the active workspace on the previous monitor.
+    SwapWorkspacesWithMonitorPrevious {},
+    /// Swap the focused workspace with the active workspace on the next monitor.
+    SwapWorkspacesWithMonitorNext {},
     /// Move a workspace to a specific monitor.
     #[cfg_attr(
         feature = "clap",
