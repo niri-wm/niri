@@ -1453,6 +1453,13 @@ impl CastInner {
                         .context("error allocating dmabuf")?;
 
                     let plane_count = dmabuf.num_planes();
+                    trace!(
+                        ?fourcc,
+                        ?plane_count,
+                        ?size,
+                        ?modifier,
+                        "after dmabuf allocated"
+                    );
                     assert_eq!((*spa_buffer).n_datas as usize, plane_count);
 
                     for (i, (fd, (stride, offset))) in

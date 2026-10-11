@@ -22,6 +22,11 @@ pub mod mutter_screen_cast;
 #[cfg(feature = "xdp-gnome-screencast")]
 use mutter_screen_cast::ScreenCast;
 
+#[cfg(feature = "xdp-gnome-remote-desktop")]
+pub mod mutter_remote_desktop;
+#[cfg(feature = "xdp-gnome-remote-desktop")]
+use mutter_remote_desktop::RemoteDesktop;
+
 use self::freedesktop_screensaver::ScreenSaver;
 use self::gnome_shell_introspect::Introspect;
 use self::mutter_display_config::DisplayConfig;
@@ -43,6 +48,8 @@ pub struct DBusServers {
     pub conn_login1: Option<Connection>,
     pub conn_locale1: Option<Connection>,
     pub conn_a11y_manager: Option<Connection>,
+    #[cfg(feature = "xdp-gnome-remote-desktop")]
+    pub conn_remote_desktop: Option<Connection>,
 }
 
 impl DBusServers {
@@ -120,6 +127,31 @@ impl DBusServers {
             let introspect = Introspect::new(to_niri, from_niri);
             dbus.conn_introspect = try_start(introspect, is_session_instance);
 
+            #[cfg(all(feature = "xdp-gnome-screencast", feature = "xdp-gnome-remote-desktop"))]
+            let remote_desktop_shared =
+                mutter_remote_desktop::shared::RemoteDesktopShared::new_arc_mutex();
+
+            #[cfg(feature = "xdp-gnome-remote-desktop")]
+            {
+                let (to_niri, from_remote_desktop) = calloop::channel::channel();
+                niri.event_loop
+                    .insert_source(from_remote_desktop, {
+                        move |event, _, state| match event {
+                            calloop::channel::Event::Msg(msg) => {
+                                state.on_remote_desktop_msg_from_dbus(msg)
+                            }
+                            calloop::channel::Event::Closed => (),
+                        }
+                    })
+                    .unwrap();
+                let remote_desktop = RemoteDesktop {
+                    to_calloop: to_niri,
+                    #[cfg(feature = "xdp-gnome-screencast")]
+                    shared: remote_desktop_shared.clone(),
+                };
+                dbus.conn_remote_desktop = try_start(remote_desktop, is_session_instance);
+            }
+
             #[cfg(feature = "xdp-gnome-screencast")]
             {
                 let (to_niri, from_screen_cast) = calloop::channel::channel();
@@ -131,7 +163,17 @@ impl DBusServers {
                         }
                     })
                     .unwrap();
-                let screen_cast = ScreenCast::new(backend.ipc_outputs(), to_niri);
+
+                let screen_cast = ScreenCast::new(
+                    backend.ipc_outputs(),
+                    to_niri,
+                    #[cfg(feature = "xdp-gnome-remote-desktop")]
+                    remote_desktop_shared,
+                    #[cfg(feature = "xdp-gnome-remote-desktop")]
+                    dbus.conn_remote_desktop
+                        .as_ref()
+                        .map(|conn| conn.object_server().inner().clone()),
+                );
                 dbus.conn_screen_cast = try_start(screen_cast, is_session_instance);
             }
 
