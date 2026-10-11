@@ -3124,6 +3124,9 @@ impl State {
         let horizontal_amount_v120 = event.amount_v120(Axis::Horizontal);
         let vertical_amount_v120 = event.amount_v120(Axis::Vertical);
 
+        let horizontal_amount = event.amount(Axis::Horizontal);
+        let vertical_amount = event.amount(Axis::Vertical);
+
         let is_overview_open = self.niri.layout.is_overview_open();
 
         // We should only handle scrolling in the overview if the pointer is not over a (top or
@@ -3324,12 +3327,8 @@ impl State {
                 self.niri.vertical_wheel_tracker.reset();
             }
         }
-
-        let horizontal_amount = event.amount(Axis::Horizontal);
-        let vertical_amount = event.amount(Axis::Vertical);
-
         // Handle touchpad and continuous scroll bindings.
-        if source == AxisSource::Finger || source == AxisSource::Continuous {
+        else if source == AxisSource::Finger || source == AxisSource::Continuous {
             let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
             let modifiers = modifiers_from_state(mods);
 
