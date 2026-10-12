@@ -8,7 +8,7 @@ use crate::binds::Modifiers;
 use crate::utils::{Flag, MergeWith, Percent};
 use crate::FloatOrInt;
 
-#[derive(Debug, Default, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct Input {
     pub keyboard: Keyboard,
     pub touchpad: Touchpad,
@@ -18,11 +18,33 @@ pub struct Input {
     pub tablet: Tablet,
     pub touch: Touch,
     pub disable_power_key_handling: bool,
+    pub wake_monitors_on_input: bool,
     pub warp_mouse_to_focus: Option<WarpMouseToFocus>,
     pub focus_follows_mouse: Option<FocusFollowsMouse>,
     pub workspace_auto_back_and_forth: bool,
     pub mod_key: Option<ModKey>,
     pub mod_key_nested: Option<ModKey>,
+}
+
+impl Default for Input {
+    fn default() -> Self {
+        Self {
+            keyboard: Default::default(),
+            touchpad: Default::default(),
+            mouse: Default::default(),
+            trackpoint: Default::default(),
+            trackball: Default::default(),
+            tablet: Default::default(),
+            touch: Default::default(),
+            disable_power_key_handling: false,
+            wake_monitors_on_input: true,
+            warp_mouse_to_focus: None,
+            focus_follows_mouse: None,
+            workspace_auto_back_and_forth: false,
+            mod_key: None,
+            mod_key_nested: None,
+        }
+    }
 }
 
 #[derive(knuffel::Decode, Debug, Default, PartialEq)]
@@ -44,6 +66,8 @@ pub struct InputPart {
     #[knuffel(child)]
     pub disable_power_key_handling: Option<Flag>,
     #[knuffel(child)]
+    pub wake_monitors_on_input: Option<Flag>,
+    #[knuffel(child)]
     pub warp_mouse_to_focus: Option<WarpMouseToFocus>,
     #[knuffel(child)]
     pub focus_follows_mouse: Option<FocusFollowsMouse>,
@@ -61,6 +85,7 @@ impl MergeWith<InputPart> for Input {
             (self, part),
             keyboard,
             disable_power_key_handling,
+            wake_monitors_on_input,
             workspace_auto_back_and_forth,
         );
 
