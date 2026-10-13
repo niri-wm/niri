@@ -19,6 +19,8 @@ use smithay::backend::input::{
 };
 use smithay::backend::libinput::LibinputInputBackend;
 use smithay::input::dnd::DnDGrab;
+#[cfg(feature = "dbus")]
+use smithay::input::keyboard::KeyboardSource;
 use smithay::input::keyboard::{keysyms, FilterResult, Keysym, Layout, ModifiersState};
 use smithay::input::pointer::{
     AxisFrame, ButtonEvent, CursorIcon, CursorImageStatus, Focus, GestureHoldBeginEvent,
@@ -132,6 +134,17 @@ impl<D: SeatHandler + TabletSeatHandler> AnyStartData<D> {
 }
 
 impl State {
+    #[cfg(feature = "dbus")]
+    pub(crate) fn release_physical_keys(&mut self) {
+        if let Some(token) = self.niri.bind_repeat_timer.take() {
+            self.niri.event_loop.remove(token);
+        }
+        self.niri.suppressed_keys.clear();
+
+        let keyboard = self.niri.seat.get_keyboard().unwrap();
+        keyboard.release_source(self, KeyboardSource::MAIN);
+    }
+
     pub fn process_input_event<I: InputBackend + 'static>(&mut self, event: InputEvent<I>)
     where
         I::Device: 'static, // Needed for downcasting.
