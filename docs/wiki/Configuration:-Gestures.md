@@ -23,6 +23,7 @@ gestures {
 
     edge-overscroll {
         // resistance 0   // 0 disables this gesture (the default)
+        // overview
     }
 
     hot-corners {
@@ -95,11 +96,12 @@ The gesture is horizontal only. Pushing past the top or bottom edge does nothing
 
 Unlike `dnd-edge-*`, this works outside drag-and-drop, during normal pointer use. It requires the cursor to reach the *actual* screen boundary (not a proximity band) and keep pushing; the clipped over-travel accumulates and, once it crosses `resistance`, performs a single discrete navigation step. Because the pointer is pinned at a hard edge, incidental edge contact accumulates only a few pixels and cannot trigger it — there is no timer and no heuristic.
 
-It is suppressed while the session is locked, in the overview/screenshot/MRU UIs, during a pointer grab or constraint, and on a fullscreen window (leaving fullscreen must be explicit). It acts on the monitor the cursor is on, fires once per excursion, and re-arms when the cursor returns inside the outputs.
+It is suppressed while the session is locked, in the screenshot/MRU UIs, in the overview (unless `overview` is set), during a pointer grab or constraint, and on a fullscreen window (leaving fullscreen must be explicit). It acts on the monitor the cursor is on, fires once per excursion, and re-arms when the cursor returns inside the outputs.
 
 The option is:
 
 - `resistance`: accumulated over-travel past the edge, in logical pixels, required to trigger. `0` (the default) disables the gesture. Higher values require a firmer, more deliberate shove.
+- `overview`: also pan columns while the overview is open.
 
 This is primarily useful for scrollable layouts run *without* left/right `struts` (combined with `focus-follows-mouse max-scroll-amount="0%"`), where a maximized column leaves no off-screen sliver for ordinary focus-follows-mouse to pan via. Note: with side-by-side monitors of differing height/offset, the L-shaped no-output region next to the shorter monitor is also a true screen edge.
 

@@ -1,4 +1,4 @@
-use crate::utils::MergeWith;
+use crate::utils::{Flag, MergeWith};
 use crate::FloatOrInt;
 
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
@@ -44,17 +44,21 @@ pub struct EdgeOverscroll {
     /// Accumulated overscroll past the edge (logical px) required to trigger.
     /// `0` (the default) disables the gesture entirely.
     pub resistance: f64,
+    /// Also pan columns while the overview is open.
+    pub overview: bool,
 }
 
 #[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq)]
 pub struct EdgeOverscrollPart {
     #[knuffel(child, unwrap(argument))]
     pub resistance: Option<FloatOrInt<0, 65535>>,
+    #[knuffel(child)]
+    pub overview: Option<Flag>,
 }
 
 impl MergeWith<EdgeOverscrollPart> for EdgeOverscroll {
     fn merge_with(&mut self, part: &EdgeOverscrollPart) {
-        merge!((self, part), resistance);
+        merge!((self, part), resistance, overview);
     }
 }
 
@@ -158,6 +162,13 @@ mod tests {
     fn parse_edge_overscroll() {
         let gestures = parse("edge-overscroll {\n    resistance 80\n}\n");
         assert_eq!(gestures.edge_overscroll.resistance, 80.0);
+        assert!(!gestures.edge_overscroll.overview);
+
+        let gestures = parse("edge-overscroll {\n    resistance 80\n    overview\n}\n");
+        assert!(gestures.edge_overscroll.overview);
+
+        let gestures = parse("edge-overscroll {\n    overview true\n}\n");
+        assert!(gestures.edge_overscroll.overview);
 
         // Omitted → 0.0 (disabled), the default — no behavior change.
         let gestures = parse("");

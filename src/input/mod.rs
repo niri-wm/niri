@@ -2600,13 +2600,11 @@ impl State {
         // that can't happen by accident, so there is no time delay and no
         // heuristic.
         {
-            let threshold = self
-                .niri
-                .config
-                .borrow()
-                .gestures
-                .edge_overscroll
-                .resistance;
+            let (threshold, in_overview) = {
+                let config = self.niri.config.borrow();
+                let eo = &config.gestures.edge_overscroll;
+                (eo.resistance, eo.overview)
+            };
 
             // Monitor the pointer is overscrolling (used for the fullscreen
             // check and to act on the right monitor below).
@@ -2642,7 +2640,8 @@ impl State {
 
             // Gate firing on exactly the conditions stock focus-follows-mouse
             // respects, plus pointer grabs and fullscreen: never mutate layout
-            // state while locked, in the overview/screenshot/MRU UIs, mid
+            // state while locked, in the screenshot/MRU UIs, in the overview
+            // unless opted in, mid
             // drag/resize, or on a fullscreen window. The accumulator is still
             // reset in those states so it can't fire stale the instant the
             // state clears.
@@ -2654,7 +2653,7 @@ impl State {
                 && !self.niri.is_locked()
                 && !self.niri.screenshot_ui.is_open()
                 && !self.niri.window_mru_ui.is_open()
-                && !self.niri.layout.is_overview_open()
+                && (in_overview || !self.niri.layout.is_overview_open())
                 && !on_fullscreen
                 && !has_neighbor_in_dir;
 

@@ -1691,6 +1691,7 @@ mod tests {
                 },
                 edge_overscroll: EdgeOverscroll {
                     resistance: 0.0,
+                    overview: false,
                 },
                 hot_corners: HotCorners {
                     off: false,
