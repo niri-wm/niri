@@ -283,6 +283,39 @@ pub enum Action {
         #[cfg_attr(feature = "clap", arg(long, action = clap::ArgAction::Set))]
         path: Option<String>,
     },
+    /// Screenshot a tile (window with its decorations: border, focus ring, shadow, rounded
+    /// corners).
+    ///
+    /// The resulting image includes compositor-drawn decorations with alpha transparency where
+    /// appropriate (behind rounded corners and drop shadows).
+    #[cfg_attr(feature = "clap", clap(about = "Screenshot the focused tile (window with decorations)"))]
+    ScreenshotTile {
+        /// Id of the window to screenshot.
+        ///
+        /// If `None`, uses the focused window.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: Option<u64>,
+        /// Write the screenshot to disk in addition to putting it in your clipboard.
+        ///
+        /// The screenshot is saved according to the `screenshot-path` config setting.
+        #[cfg_attr(feature = "clap", arg(short = 'd', long, action = clap::ArgAction::Set, default_value_t = true))]
+        write_to_disk: bool,
+
+        /// Whether to include the mouse pointer in the screenshot.
+        ///
+        /// The pointer will be included only if the window is currently receiving pointer input
+        /// (usually this means the pointer is on top of the window).
+        #[cfg_attr(feature = "clap", arg(short = 'p', long, action = clap::ArgAction::Set, default_value_t = false))]
+        show_pointer: bool,
+
+        /// Path to save the screenshot to.
+        ///
+        /// The path must be absolute, otherwise an error is returned.
+        ///
+        /// If `None`, the screenshot is saved according to the `screenshot-path` config setting.
+        #[cfg_attr(feature = "clap", arg(long, action = clap::ArgAction::Set))]
+        path: Option<String>,
+    },
     /// Enable or disable the keyboard shortcuts inhibitor (if any) for the focused surface.
     ToggleKeyboardShortcutsInhibit {},
     /// Close a window.
