@@ -66,7 +66,15 @@ impl VirtualKeyboardHandler for State {
             InputEvent::Special(VirtualKeyboardSpecialEvent::KeymapChanged { .. }) => {
                 // The new keymap will be activated by the next key or modifiers event.
             }
+            InputEvent::DeviceAdded { device } => {
+                self.niri.virtual_keyboard_sources.insert(device.source());
+                self.process_input_event(InputEvent::<VirtualKeyboardBackend>::DeviceAdded {
+                    device,
+                });
+            }
             InputEvent::DeviceRemoved { device } => {
+                self.niri.virtual_keyboard_sources.remove(&device.source());
+
                 // Restore the original keymap if this device is active. This is
                 // checked based on the device rather than on the keymap, since
                 // the client may have replaced its keymap after we activated it
@@ -106,6 +114,8 @@ impl VirtualKeyboardHandler for State {
                 //   cleared
                 // - a modifier set only through `modifiers` will stay set until the corresponding
                 //   key is pressed
+                //
+                // The `reset-keyboard` action can be used to work around these issues.
                 //
                 // To handle this properly, we need support for per-device xkb state (and we can
                 // merge the modifier state across the xkb states to keep shortcuts working across

@@ -12,7 +12,7 @@ use niri_ipc::LayoutSwitchTarget;
 use smithay::backend::input::{
     AbsolutePositionEvent, Axis, AxisSource, ButtonState, Device, DeviceCapability, Event,
     GestureBeginEvent, GestureEndEvent, GesturePinchUpdateEvent as _, GestureSwipeUpdateEvent as _,
-    InputEvent, KeyState, KeyboardKeyEvent, Keycode, MouseButton, PointerAxisEvent,
+    InputEvent, InputTime, KeyState, KeyboardKeyEvent, Keycode, MouseButton, PointerAxisEvent,
     PointerButtonEvent, PointerMotionEvent, ProximityState, Switch, SwitchState, SwitchToggleEvent,
     TabletToolButtonEvent, TabletToolEvent, TabletToolProximityEvent, TabletToolTipEvent,
     TabletToolTipState, TouchEvent,
@@ -631,6 +631,98 @@ impl State {
         self.start_key_repeat(bind);
     }
 
+    /// Releases all held keys, resets the active modifiers, and switches to the initial layout.
+    pub fn reset_keyboard(&mut self) {
+        let keyboard = self.niri.seat.get_keyboard().unwrap();
+
+        if let Some(token) = self.niri.bind_repeat_timer.take() {
+            self.niri.event_loop.remove(token);
+        }
+
+        // The same way as a physical release would be handled, so it works for both regular clients
+        // and grabs, and so ones captured by a bind aren't sent to the client.
+        let time = InputTime::now();
+        for keycode in keyboard.pressed_keys() {
+            let serial = SERIAL_COUNTER.next_serial();
+            let suppressed = self.niri.suppressed_keys.remove(&keycode);
+            keyboard.input(
+                self,
+                keycode,
+                KeyState::Released,
+                serial,
+                time,
+                |_, _, _| {
+                    if suppressed {
+                        FilterResult::Intercept(())
+                    } else {
+                        FilterResult::Forward
+                    }
+                },
+            );
+        }
+        self.niri.suppressed_keys.clear();
+
+        // Also virtual keyboards.
+        let sources: Vec<KeyboardSource> =
+            self.niri.virtual_keyboard_sources.iter().copied().collect();
+        for source in sources {
+            keyboard.release_source(self, source);
+        }
+        self.restore_configured_keymap();
+
+        // Reset the state.
+        let num_lock = self.niri.config.borrow().input.keyboard.numlock;
+        let changed = keyboard.set_modifier_state(ModifiersState {
+            num_lock,
+            ..Default::default()
+        });
+        if changed != 0 {
+            keyboard.advertise_modifier_state(self);
+            let seat = self.niri.seat.clone();
+            self.led_state_changed(&seat, keyboard.led_state());
+        }
+    }
+
+    /// Releases all held pointer buttons.
+    pub fn reset_pointer(&mut self) {
+        let pointer = self.niri.seat.get_pointer().unwrap();
+        self.niri.suppressed_buttons.clear();
+
+        let buttons: Vec<u32> = self.niri.pressed_buttons.drain().collect();
+        if buttons.is_empty() {
+            return;
+        }
+
+        let time = InputTime::now();
+        for button in buttons {
+            let serial = SERIAL_COUNTER.next_serial();
+            pointer.button(
+                self,
+                &ButtonEvent {
+                    button,
+                    state: ButtonState::Released,
+                    serial,
+                    time,
+                },
+            );
+        }
+        pointer.frame(self);
+    }
+
+    /// Cancels the active keyboard and pointer grabs, if any.
+    pub fn reset_input_grabs(&mut self) {
+        let keyboard = self.niri.seat.get_keyboard().unwrap();
+        if keyboard.is_grabbed() {
+            keyboard.unset_grab(self);
+        }
+
+        let pointer = self.niri.seat.get_pointer().unwrap();
+        if pointer.is_grabbed() {
+            let serial = SERIAL_COUNTER.next_serial();
+            pointer.unset_grab(self, serial, InputTime::now());
+        }
+    }
+
     fn start_key_repeat(&mut self, bind: Bind) {
         if !bind.repeat {
             return;
@@ -896,6 +988,9 @@ impl State {
                     }
                 }
             }
+            Action::ResetKeyboard => self.reset_keyboard(),
+            Action::ResetPointer => self.reset_pointer(),
+            Action::ResetInputGrabs => self.reset_input_grabs(),
             Action::CloseWindow => {
                 if let Some(mapped) = self.niri.layout.focus() {
                     mapped.toplevel().send_close();
@@ -3151,6 +3246,15 @@ impl State {
             }
         }
 
+        match button_state {
+            ButtonState::Pressed => {
+                self.niri.pressed_buttons.insert(button_code);
+            }
+            ButtonState::Released => {
+                self.niri.pressed_buttons.remove(&button_code);
+            }
+        }
+
         pointer.button(
             self,
             &ButtonEvent {
@@ -4886,6 +4990,9 @@ fn allowed_when_locked(action: &Action) -> bool {
             | Action::SwitchLayout(_)
             | Action::ToggleKeyboardShortcutsInhibit
             | Action::ToggleTouchpad
+            | Action::ResetKeyboard
+            | Action::ResetPointer
+            | Action::ResetInputGrabs
     )
 }
 
@@ -4898,6 +5005,10 @@ fn allowed_during_screenshot(action: &Action) -> bool {
             | Action::PowerOffMonitors
             | Action::PowerOnMonitors
             | Action::ToggleTouchpad
+            // Input state resets.
+            | Action::ResetKeyboard
+            | Action::ResetPointer
+            | Action::ResetInputGrabs
             // Intended for binds such as volume up/down, lock the screen, etc.
             | Action::Spawn(_)
             | Action::SpawnSh(_)

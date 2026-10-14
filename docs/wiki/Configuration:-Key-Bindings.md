@@ -449,3 +449,21 @@ binds {
 
 The toggle state is combined with the [`off` setting](./Configuration:-Input.md#pointing-devices) in the config: both the config and the toggle must allow the touchpad for it to be enabled.
 The toggle state resets when niri restarts, and applies to newly hot-plugged touchpads.
+
+#### `reset-keyboard`, `reset-pointer`, `reset-input-grabs`
+
+<sup>Since: next release</sup>
+
+Resets for broken input state.
+
+- `reset-keyboard` releases all held keys, resets the active modifiers, and switches to the initial layout.
+- `reset-pointer` releases all held pointer buttons.
+- `reset-input-grabs` cancels the active keyboard and pointer grabs, including IME ones.
+
+```kdl
+binds {
+    Mod+Shift+Escape { reset-keyboard; }
+}
+```
+
+They can also be invoked over IPC, e.g. `niri msg action reset-keyboard`, which is probably more useful.
