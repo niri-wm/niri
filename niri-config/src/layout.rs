@@ -15,7 +15,7 @@ pub struct Layout {
     pub tab_indicator: TabIndicator,
     pub insert_hint: InsertHint,
     pub preset_column_widths: Vec<PresetSize>,
-    pub default_column_width: Option<PresetSize>,
+    pub default_column_width: DefaultColumnWidth,
     pub preset_window_heights: Vec<PresetSize>,
     pub center_focused_column: CenterFocusedColumn,
     pub always_center_single_column: bool,
@@ -39,7 +39,10 @@ impl Default for Layout {
                 PresetSize::Proportion(0.5),
                 PresetSize::Proportion(2. / 3.),
             ],
-            default_column_width: Some(PresetSize::Proportion(0.5)),
+            default_column_width: DefaultColumnWidth {
+                size: Some(PresetSize::Proportion(0.5)),
+                maximize: false,
+            },
             center_focused_column: CenterFocusedColumn::Never,
             always_center_single_column: false,
             empty_workspace_above_first: false,
@@ -81,7 +84,7 @@ impl MergeWith<LayoutPart> for Layout {
         );
 
         if let Some(x) = part.default_column_width {
-            self.default_column_width = x.0;
+            self.default_column_width = x;
         }
 
         if self.preset_column_widths.is_empty() {
@@ -109,7 +112,7 @@ pub struct LayoutPart {
     #[knuffel(child, unwrap(children))]
     pub preset_column_widths: Option<Vec<PresetSize>>,
     #[knuffel(child)]
-    pub default_column_width: Option<DefaultPresetSize>,
+    pub default_column_width: Option<DefaultColumnWidth>,
     #[knuffel(child, unwrap(children))]
     pub preset_window_heights: Option<Vec<PresetSize>>,
     #[knuffel(child, unwrap(argument))]
@@ -145,6 +148,12 @@ impl From<PresetSize> for SizeChange {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DefaultPresetSize(pub Option<PresetSize>);
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DefaultColumnWidth {
+    pub size: Option<PresetSize>,
+    pub maximize: bool,
+}
 
 #[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq)]
 pub struct Struts {
@@ -194,5 +203,65 @@ where
         } else {
             Ok(Self(None))
         }
+    }
+}
+
+impl<S> knuffel::Decode<S> for DefaultColumnWidth
+where
+    S: knuffel::traits::ErrorSpan,
+{
+    fn decode_node(
+        node: &knuffel::ast::SpannedNode<S>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) -> Result<Self, DecodeError<S>> {
+        if let Some(type_name) = &node.type_name {
+            ctx.emit_error(DecodeError::unexpected(
+                type_name,
+                "type name",
+                "no type name expected for this node",
+            ));
+        }
+
+        for val in node.arguments.iter() {
+            ctx.emit_error(DecodeError::unexpected(
+                &val.literal,
+                "argument",
+                "no arguments expected for this node",
+            ))
+        }
+
+        let mut maximize = false;
+        for (name, val) in &node.properties {
+            match &***name {
+                "maximize" => {
+                    maximize = knuffel::DecodeScalar::decode(val, ctx)?;
+                }
+                name_str => {
+                    ctx.emit_error(DecodeError::unexpected(
+                        name,
+                        "property",
+                        format!("unexpected property`{}`", name_str.escape_default()),
+                    ));
+                }
+            }
+        }
+
+        let size: Option<PresetSize> = {
+            let mut children = node.children();
+            if let Some(child) = children.next() {
+                if let Some(unwanted_child) = children.next() {
+                    ctx.emit_error(DecodeError::unexpected(
+                        unwanted_child,
+                        "node",
+                        "expected no more than one child",
+                    ));
+                }
+                Some(PresetSize::decode_node(child, ctx)?)
+            } else {
+                None
+            }
+        };
+
+        Ok(Self { size, maximize })
     }
 }
