@@ -1160,6 +1160,7 @@ mod tests {
                 focus_follows_mouse: Some(
                     FocusFollowsMouse {
                         max_scroll_amount: None,
+                        delay_ms: None,
                     },
                 ),
                 workspace_auto_back_and_forth: true,
