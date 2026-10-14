@@ -281,6 +281,8 @@ layout {
 
         // Width of the border in logical pixels.
         width 4
+        // Draw the border inside the window.
+        // is-inset
 
         active-color "#ffc87f"
         inactive-color "#505050"
@@ -297,6 +299,8 @@ layout {
 #### Width
 
 Set the thickness of the border in logical pixels.
+
+You can use `is-inset` to have the border draw into and over the window content instead of outwards. The window and content size remains the same, but the border is composited over the window content. This can be used to, for example, draw a transparent trim around the edge of a window as Adwaita apps do.
 
 <sup>Since: 0.1.7</sup> You can use fractional values.
 The value will be rounded to physical pixels according to the scale factor of every output.
