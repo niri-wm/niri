@@ -1763,6 +1763,7 @@ mod tests {
                             is_window_cast_target: None,
                             is_urgent: None,
                             at_startup: None,
+                            xdg_tag: None,
                         },
                     ],
                     excludes: [
@@ -1782,6 +1783,7 @@ mod tests {
                             is_window_cast_target: None,
                             is_urgent: None,
                             at_startup: None,
+                            xdg_tag: None,
                         },
                         Match {
                             app_id: None,
@@ -1797,6 +1799,7 @@ mod tests {
                             is_window_cast_target: None,
                             is_urgent: None,
                             at_startup: None,
+                            xdg_tag: None,
                         },
                     ],
                     default_column_width: None,
