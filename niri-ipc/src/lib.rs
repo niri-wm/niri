@@ -64,6 +64,7 @@ pub mod state;
 /// Request from client to niri.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "non_exhaustive", non_exhaustive)]
 pub enum Request {
     /// Request the version string for the running niri instance.
     Version,
@@ -134,6 +135,7 @@ pub type Reply = Result<Response, String>;
 /// Successful response from niri to client.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "non_exhaustive", non_exhaustive)]
 pub enum Response {
     /// A request that does not need a response was handled successfully.
     Handled,
@@ -178,6 +180,7 @@ pub struct Overview {
 /// Color picked from the screen.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "non_exhaustive", non_exhaustive)]
 pub struct PickedColor {
     /// Color values as red, green, blue, each ranging from 0.0 to 1.0.
     pub rgb: [f64; 3],
@@ -191,6 +194,7 @@ pub struct PickedColor {
 #[cfg_attr(feature = "clap", command(subcommand_value_name = "ACTION"))]
 #[cfg_attr(feature = "clap", command(subcommand_help_heading = "Actions"))]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "non_exhaustive", non_exhaustive)]
 pub enum Action {
     /// Exit niri.
     Quit {
@@ -950,6 +954,7 @@ pub enum Action {
 /// Change in window or column size.
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "non_exhaustive", non_exhaustive)]
 pub enum SizeChange {
     /// Set the size in logical pixels.
     SetFixed(i32),
@@ -964,6 +969,7 @@ pub enum SizeChange {
 /// Change in floating window position.
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "non_exhaustive", non_exhaustive)]
 pub enum PositionChange {
     /// Set the position in logical pixels.
     SetFixed(f64),
@@ -978,6 +984,7 @@ pub enum PositionChange {
 /// Workspace reference (id, index or name) to operate on.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "non_exhaustive", non_exhaustive)]
 pub enum WorkspaceReferenceArg {
     /// Id of the workspace.
     Id(u64),
@@ -990,6 +997,7 @@ pub enum WorkspaceReferenceArg {
 /// Layout to switch to.
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "non_exhaustive", non_exhaustive)]
 pub enum LayoutSwitchTarget {
     /// The next configured layout.
     Next,
@@ -1002,6 +1010,7 @@ pub enum LayoutSwitchTarget {
 /// How windows display in a column.
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "non_exhaustive", non_exhaustive)]
 pub enum ColumnDisplay {
     /// Windows are tiled vertically across the working area height.
     Normal,
@@ -1017,6 +1026,7 @@ pub enum ColumnDisplay {
 #[cfg_attr(feature = "clap", command(subcommand_value_name = "ACTION"))]
 #[cfg_attr(feature = "clap", command(subcommand_help_heading = "Actions"))]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "non_exhaustive", non_exhaustive)]
 pub enum OutputAction {
     /// Turn off the output.
     Off,
@@ -1110,6 +1120,7 @@ pub enum OutputAction {
 /// Output mode to set.
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "non_exhaustive", non_exhaustive)]
 pub enum ModeToSet {
     /// Niri will pick the mode automatically.
     Automatic,
@@ -1132,6 +1143,7 @@ pub struct ConfiguredMode {
 /// Modeline horizontal syncing polarity.
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "non_exhaustive", non_exhaustive)]
 pub enum HSyncPolarity {
     /// Positive polarity.
     PHSync,
@@ -1142,6 +1154,7 @@ pub enum HSyncPolarity {
 /// Modeline vertical syncing polarity.
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "non_exhaustive", non_exhaustive)]
 pub enum VSyncPolarity {
     /// Positive polarity.
     PVSync,
@@ -1152,6 +1165,7 @@ pub enum VSyncPolarity {
 /// Output scale to set.
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "non_exhaustive", non_exhaustive)]
 pub enum ScaleToSet {
     /// Niri will pick the scale automatically.
     Automatic,
@@ -1165,6 +1179,7 @@ pub enum ScaleToSet {
 #[cfg_attr(feature = "clap", command(subcommand_value_name = "POSITION"))]
 #[cfg_attr(feature = "clap", command(subcommand_help_heading = "Position Values"))]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "non_exhaustive", non_exhaustive)]
 pub enum PositionToSet {
     /// Position the output automatically.
     #[cfg_attr(feature = "clap", command(name = "auto"))]
@@ -1276,6 +1291,7 @@ pub struct LogicalOutput {
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "non_exhaustive", non_exhaustive)]
 pub enum Transform {
     /// Untransformed.
     Normal,
@@ -1305,6 +1321,7 @@ pub enum Transform {
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "non_exhaustive", non_exhaustive)]
 pub enum MaxBpc {
     /// 6-bit.
     #[serde(rename = "6")]
@@ -1431,6 +1448,7 @@ pub struct WindowLayout {
 /// Output configuration change result.
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "non_exhaustive", non_exhaustive)]
 pub enum OutputConfigChanged {
     /// The target output was connected and the change was applied.
     Applied,
@@ -1492,6 +1510,7 @@ pub struct KeyboardLayouts {
 /// A layer-shell layer.
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "non_exhaustive", non_exhaustive)]
 pub enum Layer {
     /// The background layer.
     Background,
@@ -1506,6 +1525,7 @@ pub enum Layer {
 /// Keyboard interactivity modes for a layer-shell surface.
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "non_exhaustive", non_exhaustive)]
 pub enum LayerSurfaceKeyboardInteractivity {
     /// Surface cannot receive keyboard focus.
     None,
@@ -1571,6 +1591,7 @@ pub struct Cast {
 /// Kind of screencast.
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "non_exhaustive", non_exhaustive)]
 pub enum CastKind {
     /// PipeWire screencast, typically via xdg-desktop-portal-gnome.
     PipeWire,
@@ -1593,6 +1614,7 @@ pub enum CastKind {
 /// Target of a screencast.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "non_exhaustive", non_exhaustive)]
 pub enum CastTarget {
     /// The target is not yet set, or was cleared.
     Nothing {},
@@ -1611,6 +1633,7 @@ pub enum CastTarget {
 /// A compositor event.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "non_exhaustive", non_exhaustive)]
 pub enum Event {
     /// The workspace configuration has changed.
     WorkspacesChanged {
