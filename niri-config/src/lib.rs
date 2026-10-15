@@ -1210,6 +1210,7 @@ mod tests {
                                 on_demand: true,
                             },
                         ),
+                        drm_lease: false,
                         focus_at_startup: true,
                         background_color: Some(
                             Color {
@@ -1252,6 +1253,7 @@ mod tests {
                         ),
                         modeline: None,
                         variable_refresh_rate: None,
+                        drm_lease: false,
                         focus_at_startup: false,
                         background_color: None,
                         backdrop_color: None,
@@ -1282,6 +1284,7 @@ mod tests {
                             },
                         ),
                         variable_refresh_rate: None,
+                        drm_lease: false,
                         focus_at_startup: false,
                         background_color: None,
                         backdrop_color: None,
