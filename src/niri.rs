@@ -46,7 +46,7 @@ use smithay::desktop::{
     find_popup_root_surface, layer_map_for_output, LayerMap, LayerSurface, PopupGrab, PopupManager,
     PopupUngrabStrategy, Space, Window, WindowSurfaceType,
 };
-use smithay::input::keyboard::{Layout as KeyboardLayout, XkbConfig};
+use smithay::input::keyboard::{KeyboardSource, Layout as KeyboardLayout, XkbConfig};
 use smithay::input::pointer::{
     CursorIcon, CursorImageStatus, CursorImageSurfaceData, Focus,
     GrabStartData as PointerGrabStartData, MotionEvent,
@@ -358,6 +358,8 @@ pub struct Niri {
     pub suppressed_keys: HashSet<Keycode>,
     /// Button codes of the mouse buttons to suppress.
     pub suppressed_buttons: HashSet<u32>,
+    /// Button codes of the active pointer buttons.
+    pub pressed_buttons: HashSet<u32>,
     pub bind_cooldown_timers: HashMap<Key, RegistrationToken>,
     pub bind_repeat_timer: Option<RegistrationToken>,
     pub keyboard_focus: KeyboardFocus,
@@ -376,6 +378,8 @@ pub struct Niri {
     /// only gets activated on the next key/modifier event from the virtual
     /// keyboard.
     pub virtual_keyboard_keymap: Option<VirtualKeyboardKeymap>,
+    /// Sources of the active virtual keyboards.
+    pub virtual_keyboard_sources: HashSet<KeyboardSource>,
     /// Configured (non-virtual-keyboard) keymap as XKB_KEYMAP_FORMAT_TEXT_V1.
     ///
     /// Computed lazily from the seat while no virtual keyboard keymap is
@@ -2815,6 +2819,7 @@ impl Niri {
             popup_grab: None,
             suppressed_keys: HashSet::new(),
             suppressed_buttons: HashSet::new(),
+            pressed_buttons: HashSet::new(),
             bind_cooldown_timers: HashMap::new(),
             bind_repeat_timer: Option::default(),
             presentation_state,
@@ -2833,6 +2838,7 @@ impl Niri {
             keyboard_shortcuts_inhibiting_surfaces: HashMap::new(),
             xkb_from_locale1: None,
             virtual_keyboard_keymap: None,
+            virtual_keyboard_sources: HashSet::new(),
             configured_keymap: None,
             cursor_manager,
             cursor_texture_cache: Default::default(),

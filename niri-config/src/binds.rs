@@ -149,6 +149,9 @@ pub enum Action {
         path: Option<String>,
     },
     ToggleKeyboardShortcutsInhibit,
+    ResetKeyboard,
+    ResetPointer,
+    ResetInputGrabs,
     CloseWindow,
     #[knuffel(skip)]
     CloseWindowById(u64),
@@ -437,6 +440,9 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::ToggleKeyboardShortcutsInhibit {} => {
                 Self::ToggleKeyboardShortcutsInhibit
             }
+            niri_ipc::Action::ResetKeyboard {} => Self::ResetKeyboard,
+            niri_ipc::Action::ResetPointer {} => Self::ResetPointer,
+            niri_ipc::Action::ResetInputGrabs {} => Self::ResetInputGrabs,
             niri_ipc::Action::CloseWindow { id: None } => Self::CloseWindow,
             niri_ipc::Action::CloseWindow { id: Some(id) } => Self::CloseWindowById(id),
             niri_ipc::Action::FullscreenWindow { id: None } => Self::FullscreenWindow,

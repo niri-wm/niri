@@ -285,6 +285,12 @@ pub enum Action {
     },
     /// Enable or disable the keyboard shortcuts inhibitor (if any) for the focused surface.
     ToggleKeyboardShortcutsInhibit {},
+    /// Release all held keys, resets the active modifiers, and switches to the initial layout.
+    ResetKeyboard {},
+    /// Release all held pointer buttons.
+    ResetPointer {},
+    /// Cancel the active keyboard and pointer grabs, including IME ones.
+    ResetInputGrabs {},
     /// Close a window.
     #[cfg_attr(feature = "clap", clap(about = "Close the focused window"))]
     CloseWindow {
