@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["SOCKET_PATH_ENV"],"struct":["Socket"]};

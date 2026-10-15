@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["CastsState","ConfigState","EventStreamState","KeyboardLayoutsState","OverviewState","TouchpadState","WindowsState","WorkspacesState"],"trait":["EventStreamStatePart"]};
