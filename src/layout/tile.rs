@@ -573,13 +573,16 @@ impl<W: LayoutElement> Tile<W> {
     }
 
     pub fn start_open_animation(&mut self) {
-        self.open_animation = Some(OpenAnimation::new(Animation::new(
-            self.clock.clone(),
-            0.,
-            1.,
-            0.,
-            self.options.animations.window_open.anim,
-        )));
+        let anim_config = if let Some(anim_override) = self.window().rules().window_open.as_ref() {
+            anim_override
+        } else {
+            &self.options.animations.window_open
+        };
+
+        self.open_animation = Some(OpenAnimation::new(
+            Animation::new(self.clock.clone(), 0., 1., 0., anim_config.anim),
+            anim_config.custom_shader.clone(),
+        ));
     }
 
     pub fn resize_animation(&self) -> Option<&Animation> {
