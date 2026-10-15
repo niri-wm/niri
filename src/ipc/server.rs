@@ -962,6 +962,24 @@ impl State {
         }
     }
 
+    pub fn ipc_refresh_touchpad(&mut self) {
+        let Some(server) = &self.niri.ipc_server else {
+            return;
+        };
+
+        let mut state = server.event_stream_state.borrow_mut();
+        let state = &mut state.touchpad;
+        let on = !self.niri.touchpad_disabled_by_toggle;
+
+        if state.on == on {
+            return;
+        }
+
+        let event = Event::TouchpadToggled { on };
+        state.apply(event.clone());
+        server.send_event(event);
+    }
+
     pub fn ipc_config_loaded(&mut self, failed: bool) {
         let Some(server) = &self.niri.ipc_server else {
             return;

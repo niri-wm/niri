@@ -49,6 +49,9 @@ pub struct EventStreamState {
 
     /// State of screencasts.
     pub casts: CastsState,
+
+    /// State of touchpads.
+    pub touchpad: TouchpadState,
 }
 
 /// The workspaces state communicated over the event stream.
@@ -93,6 +96,18 @@ pub struct CastsState {
     pub casts: HashMap<u64, Cast>,
 }
 
+/// The touchpad state communicated over the event stream.
+#[derive(Debug, Default)]
+pub struct TouchpadState {
+    /// Whether the touchpad is currently on.
+    ///
+    /// Note that this only indicates the [`Action::ToggleTouchpad`] state. The touchpad can be
+    /// disabled in hardware, or via `input { touchpad { off; } }`—this is not reflected here.
+    ///
+    /// [`Action::ToggleTouchpad`]: crate::Action::ToggleTouchpad
+    pub on: bool,
+}
+
 impl EventStreamStatePart for EventStreamState {
     fn replicate(&self) -> Vec<Event> {
         let mut events = Vec::new();
@@ -102,6 +117,7 @@ impl EventStreamStatePart for EventStreamState {
         events.extend(self.overview.replicate());
         events.extend(self.config.replicate());
         events.extend(self.casts.replicate());
+        events.extend(self.touchpad.replicate());
         events
     }
 
@@ -112,6 +128,7 @@ impl EventStreamStatePart for EventStreamState {
         let event = self.overview.apply(event)?;
         let event = self.config.apply(event)?;
         let event = self.casts.apply(event)?;
+        let event = self.touchpad.apply(event)?;
         Some(event)
     }
 }
@@ -315,6 +332,22 @@ impl EventStreamStatePart for CastsState {
             Event::CastStopped { stream_id } => {
                 let cast = self.casts.remove(&stream_id);
                 cast.expect("stopped cast was missing from the map");
+            }
+            event => return Some(event),
+        }
+        None
+    }
+}
+
+impl EventStreamStatePart for TouchpadState {
+    fn replicate(&self) -> Vec<Event> {
+        vec![Event::TouchpadToggled { on: self.on }]
+    }
+
+    fn apply(&mut self, event: Event) -> Option<Event> {
+        match event {
+            Event::TouchpadToggled { on } => {
+                self.on = on;
             }
             event => return Some(event),
         }

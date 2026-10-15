@@ -1465,24 +1465,39 @@ impl<W: LayoutElement> Layout<W> {
     /// Computes the window-geometry-relative target rect for popup unconstraining.
     ///
     /// We will try to fit popups inside this rect.
-    pub fn popup_target_rect(&self, window: &W::Id) -> Rectangle<f64, Logical> {
+    ///
+    /// If `overflow` is true, prefer to return the working area region even for the scrolling
+    /// layout where popups are normally kept constrained to the column width. This is used for
+    /// IME popups where this is a more expected behavior.
+    pub fn popup_target_rect(&self, window: &W::Id, overflow: bool) -> Rectangle<f64, Logical> {
         if let Some(InteractiveMoveState::Moving(move_)) = &self.interactive_move {
             if move_.tile.window().id() == window {
-                // Follow the scrolling layout logic and fit the popup horizontally within the
-                // window geometry.
-                let width = move_.tile.window_size().w;
-                let height = output_size(&move_.output).h;
-                let mut target = Rectangle::from_size(Size::from((width, height)));
-                // FIXME: ideally this shouldn't include the tile render offset, but the code
-                // duplication would be a bit annoying for this edge case.
-                target.loc.y -= move_.tile_render_location(1.).y;
-                target.loc.y -= move_.tile.window_loc().y;
+                // Follow the scrolling layout logic.
+                let output_size = output_size(&move_.output);
+                let tile_pos = move_.tile_render_location(1.);
+
+                let target = if overflow {
+                    let mut target = Rectangle::from_size(output_size);
+                    target.loc -= tile_pos;
+                    target.loc -= move_.tile.window_loc();
+                    target
+                } else {
+                    let width = move_.tile.window_size().w;
+                    let height = output_size.h;
+                    let mut target = Rectangle::from_size(Size::from((width, height)));
+                    // FIXME: ideally this shouldn't include the tile render offset, but the code
+                    // duplication would be a bit annoying for this edge case.
+                    target.loc.y -= tile_pos.y;
+                    target.loc.y -= move_.tile.window_loc().y;
+                    target
+                };
+
                 return target;
             }
         }
 
         self.workspaces()
-            .find_map(|(_, _, ws)| ws.popup_target_rect(window))
+            .find_map(|(_, _, ws)| ws.popup_target_rect(window, overflow))
             .unwrap()
     }
 

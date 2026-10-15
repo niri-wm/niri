@@ -19,7 +19,9 @@ use smithay::backend::input::{
 };
 use smithay::backend::libinput::LibinputInputBackend;
 use smithay::input::dnd::DnDGrab;
-use smithay::input::keyboard::{keysyms, FilterResult, Keysym, Layout, ModifiersState};
+use smithay::input::keyboard::{
+    keysyms, FilterResult, KeyboardSource, Keysym, Layout, ModifiersState,
+};
 use smithay::input::pointer::{
     AxisFrame, ButtonEvent, CursorIcon, CursorImageStatus, Focus, GestureHoldBeginEvent,
     GestureHoldEndEvent, GesturePinchBeginEvent, GesturePinchEndEvent, GesturePinchUpdateEvent,
@@ -38,6 +40,7 @@ use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Rectangle, Transform, SERIAL_COUNTER};
 use smithay::wayland::keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitor;
 use smithay::wayland::pointer_constraints::{with_pointer_constraint, PointerConstraint};
+use smithay::wayland::virtual_keyboard::VirtualKeyboardDevice;
 use touch_overview_grab::TouchOverviewGrab;
 
 use self::move_grab::MoveGrab;
@@ -249,7 +252,11 @@ impl State {
                     self.niri.touch.insert(device.clone());
                 }
 
-                apply_libinput_settings(&self.niri.config.borrow().input, device);
+                apply_libinput_settings(
+                    &self.niri.config.borrow().input,
+                    device,
+                    self.niri.touchpad_disabled_by_toggle,
+                );
             }
             InputEvent::DeviceRemoved { device } => {
                 self.niri.touch.remove(device);
@@ -413,7 +420,26 @@ impl State {
         &mut self,
         event: I::KeyboardKeyEvent,
         consumed_by_a11y: &mut bool,
-    ) {
+    ) where
+        I::Device: 'static,
+    {
+        let device = event.device();
+        let virtual_keyboard = (&device as &dyn Any).downcast_ref::<VirtualKeyboardDevice>();
+
+        // Restore the real keymap if required (the virtual keyboard uses its own one).
+        if virtual_keyboard.is_none() {
+            self.restore_configured_keymap();
+        }
+
+        // Keys from a virtual keyboard are tracked separately from the physical
+        // ones, otherwise, a virtual keyboard sending a key already held by
+        // another keyboard (an IME, e.g., fcitx, forwarding keys it got through its
+        // grab) would release it prematurely.
+        //
+        // Note that keyboard shortcuts can still be pressed across multiple
+        // keyboards even with this, as intended.
+        let source = virtual_keyboard.map_or(KeyboardSource::MAIN, |device| device.source());
+
         let mod_key = self.backend.mod_key(&self.niri.config.borrow());
 
         let serial = SERIAL_COUNTER.next_serial();
@@ -464,7 +490,8 @@ impl State {
         #[cfg(not(feature = "dbus"))]
         let _ = consumed_by_a11y;
 
-        let Some(Some(bind)) = self.niri.seat.get_keyboard().unwrap().input(
+        let Some(Some(bind)) = self.niri.seat.get_keyboard().unwrap().input_from_source(
+            source,
             self,
             event.key_code(),
             event.state(),
@@ -722,13 +749,25 @@ impl State {
             }
             Action::ChangeVt(vt) => {
                 self.backend.change_vt(vt);
+
                 // Changing VT may not deliver the key releases, so clear the state.
                 self.niri.suppressed_keys.clear();
+
+                // Stop ongoing key repeat if any.
+                if let Some(token) = self.niri.bind_repeat_timer.take() {
+                    self.niri.event_loop.remove(token);
+                }
             }
             Action::Suspend => {
                 self.backend.suspend();
+
                 // Suspend may not deliver the key releases, so clear the state.
                 self.niri.suppressed_keys.clear();
+
+                // Stop ongoing key repeat if any.
+                if let Some(token) = self.niri.bind_repeat_timer.take() {
+                    self.niri.event_loop.remove(token);
+                }
             }
             Action::PowerOffMonitors => {
                 self.niri.deactivate_monitors(&mut self.backend);
@@ -746,6 +785,19 @@ impl State {
             }
             Action::DebugToggleDamage => {
                 self.niri.debug_toggle_damage();
+            }
+            Action::ToggleTouchpad => {
+                self.niri.touchpad_disabled_by_toggle = !self.niri.touchpad_disabled_by_toggle;
+                let config = self.niri.config.borrow();
+                for mut device in self.niri.devices.iter().cloned() {
+                    if device.config_tap_finger_count() > 0 {
+                        apply_libinput_settings(
+                            &config.input,
+                            &mut device,
+                            self.niri.touchpad_disabled_by_toggle,
+                        );
+                    }
+                }
             }
             Action::Spawn(command) => {
                 let (token, _) = self.niri.activation_state.create_external_token(None);
@@ -2892,7 +2944,12 @@ impl State {
                 }
             }
 
-            if button == Some(MouseButton::Middle) && !pointer.is_grabbed() && mod_down {
+            if button == Some(MouseButton::Middle)
+                && !pointer.is_grabbed()
+                && mod_down
+                && !self.niri.is_locked()
+                && !self.niri.screenshot_ui.is_open()
+            {
                 let output_ws = if is_overview_open {
                     self.niri.workspace_under_cursor(true)
                 } else {
@@ -3132,27 +3189,24 @@ impl State {
         let horizontal_amount_v120 = event.amount_v120(Axis::Horizontal);
         let vertical_amount_v120 = event.amount_v120(Axis::Vertical);
 
-        let is_overview_open = self.niri.layout.is_overview_open();
+        let mut horizontal_amount = event.amount(Axis::Horizontal).unwrap_or_else(|| {
+            // Winit backend, discrete scrolling.
+            horizontal_amount_v120.unwrap_or(0.0) / 120. * 15.
+        });
+        let mut vertical_amount = event.amount(Axis::Vertical).unwrap_or_else(|| {
+            // Winit backend, discrete scrolling.
+            vertical_amount_v120.unwrap_or(0.0) / 120. * 15.
+        });
 
-        // We should only handle scrolling in the overview if the pointer is not over a (top or
-        // overlay) layer surface.
-        let should_handle_in_overview = if is_overview_open {
-            // FIXME: ideally this should happen after updating the pointer contents, which happens
-            // below. However, our pointer actions are supposed to act on the old surface, before
-            // updating the pointer contents.
-            pointer
-                .current_focus()
-                .map(|surface| self.niri.find_root_shell_surface(&surface))
-                .is_none_or(|root| {
-                    !self
-                        .niri
-                        .mapped_layer_surfaces
-                        .keys()
-                        .any(|layer| *layer.wl_surface() == root)
-                })
-        } else {
-            false
-        };
+        // Check the contents before updating them as pointer binds are supposed to act on the
+        // previous focus.
+        //
+        // Recompute rather than using self.niri.pointer_contents in order to take into account
+        // making the pointer visible and unsetting the tablet cursor location.
+        let should_handle_in_overview = self
+            .niri
+            .contents_under(pointer.current_location())
+            .overview;
 
         let is_mru_open = self.niri.window_mru_ui.is_open();
 
@@ -3162,10 +3216,14 @@ impl State {
             // Wayland. If there's no bind, reset the accumulator.
             let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
             let modifiers = modifiers_from_state(mods);
-            let should_handle = should_handle_in_overview
-                || is_mru_open
-                || self.niri.mods_with_wheel_binds.contains(&modifiers);
-            if should_handle {
+            let use_builtin_bindings = should_handle_in_overview || is_mru_open;
+
+            if use_builtin_bindings
+                || self
+                    .niri
+                    .mods_with_horizontal_wheel_binds
+                    .contains(&modifiers)
+            {
                 let horizontal = horizontal_amount_v120.unwrap_or(0.);
                 let ticks = self.niri.horizontal_wheel_tracker.accumulate(horizontal);
                 if ticks != 0 {
@@ -3235,6 +3293,17 @@ impl State {
                     }
                 }
 
+                horizontal_amount = 0.0;
+            } else {
+                self.niri.horizontal_wheel_tracker.reset();
+            }
+
+            if use_builtin_bindings
+                || self
+                    .niri
+                    .mods_with_vertical_wheel_binds
+                    .contains(&modifiers)
+            {
                 let vertical = vertical_amount_v120.unwrap_or(0.);
                 let ticks = self.niri.vertical_wheel_tracker.accumulate(vertical);
                 if ticks != 0 {
@@ -3326,23 +3395,22 @@ impl State {
                     }
                 }
 
-                return;
+                vertical_amount = 0.0;
             } else {
-                self.niri.horizontal_wheel_tracker.reset();
                 self.niri.vertical_wheel_tracker.reset();
             }
+
+            if horizontal_amount == 0.0 && vertical_amount == 0.0 {
+                return;
+            }
         }
-
-        let horizontal_amount = event.amount(Axis::Horizontal);
-        let vertical_amount = event.amount(Axis::Vertical);
-
         // Handle touchpad and continuous scroll bindings.
-        if source == AxisSource::Finger || source == AxisSource::Continuous {
+        else if source == AxisSource::Finger || source == AxisSource::Continuous {
             let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
             let modifiers = modifiers_from_state(mods);
 
-            let horizontal = horizontal_amount.unwrap_or(0.);
-            let vertical = vertical_amount.unwrap_or(0.);
+            let horizontal = event.amount(Axis::Horizontal).unwrap_or(0.);
+            let vertical = event.amount(Axis::Vertical).unwrap_or(0.);
 
             if should_handle_in_overview && modifiers.is_empty() {
                 let mut redraw = false;
@@ -3551,15 +3619,8 @@ impl State {
             vertical_factor * window_scroll_factor,
         );
 
-        let horizontal_amount = horizontal_amount.unwrap_or_else(|| {
-            // Winit backend, discrete scrolling.
-            horizontal_amount_v120.unwrap_or(0.0) / 120. * 15.
-        }) * horizontal_factor;
-
-        let vertical_amount = vertical_amount.unwrap_or_else(|| {
-            // Winit backend, discrete scrolling.
-            vertical_amount_v120.unwrap_or(0.0) / 120. * 15.
-        }) * vertical_factor;
+        let horizontal_amount = horizontal_amount * horizontal_factor;
+        let vertical_amount = vertical_amount * vertical_factor;
 
         let horizontal_amount_v120 = horizontal_amount_v120.map(|x| x * horizontal_factor);
         let vertical_amount_v120 = vertical_amount_v120.map(|x| x * vertical_factor);
@@ -3739,11 +3800,7 @@ impl State {
                             }
                         }
                     } else if !tool.is_grabbed() {
-                        if self.niri.layout.is_overview_open()
-                            && !mod_down
-                            && under.layer.is_none()
-                            && under.output.is_some()
-                        {
+                        if under.overview && !mod_down && under.output.is_some() {
                             let (output, pos_within_output) = self.niri.output_under(pos).unwrap();
                             let output = output.clone();
 
@@ -3968,22 +4025,24 @@ impl State {
     }
 
     fn on_gesture_swipe_begin<I: InputBackend>(&mut self, event: I::GestureSwipeBeginEvent) {
-        if self.niri.window_mru_ui.is_open() {
-            // Don't start swipe gestures while in the MRU.
+        if self.niri.window_mru_ui.is_open() || self.niri.screenshot_ui.is_open() {
+            // Don't start swipe gestures while in the compositor UI.
             return;
         }
 
-        if event.fingers() == 3 {
-            self.niri.gesture_swipe_3f_cumulative = Some((0., 0.));
+        if !self.niri.is_locked() {
+            if event.fingers() == 3 {
+                self.niri.gesture_swipe_3f_cumulative = Some((0., 0.));
 
-            // We handled this event.
-            return;
-        } else if event.fingers() == 4 {
-            self.niri.layout.overview_gesture_begin();
-            self.niri.queue_redraw_all();
+                // We handled this event.
+                return;
+            } else if event.fingers() == 4 {
+                self.niri.layout.overview_gesture_begin();
+                self.niri.queue_redraw_all();
 
-            // We handled this event.
-            return;
+                // We handled this event.
+                return;
+            }
         }
 
         let serial = SERIAL_COUNTER.next_serial();
@@ -4356,11 +4415,7 @@ impl State {
                 }
             }
         } else if !handle.is_grabbed() {
-            if self.niri.layout.is_overview_open()
-                && !mod_down
-                && under.layer.is_none()
-                && under.output.is_some()
-            {
+            if under.overview && !mod_down && under.output.is_some() {
                 let (output, pos_within_output) = self.niri.output_under(pos).unwrap();
                 let output = output.clone();
 
@@ -4664,7 +4719,9 @@ fn find_bind<'a>(
                 modifiers: Modifiers::empty(),
             },
             action,
-            repeat: true,
+            // Repeating VT switches and power off doesn't make sense (and it actually happens on
+            // FreeBSD where it doesn't get released and ends up broken).
+            repeat: false,
             cooldown: None,
             allow_when_locked: false,
             // In a worst-case scenario, the user has no way to unlock the compositor and a
@@ -4836,6 +4893,7 @@ fn allowed_when_locked(action: &Action) -> bool {
             | Action::PowerOnMonitors
             | Action::SwitchLayout(_)
             | Action::ToggleKeyboardShortcutsInhibit
+            | Action::ToggleTouchpad
     )
 }
 
@@ -4847,6 +4905,7 @@ fn allowed_during_screenshot(action: &Action) -> bool {
             | Action::Suspend
             | Action::PowerOffMonitors
             | Action::PowerOnMonitors
+            | Action::ToggleTouchpad
             // Intended for binds such as volume up/down, lock the screen, etc.
             | Action::Spawn(_)
             | Action::SpawnSh(_)
@@ -4914,12 +4973,17 @@ fn hardcoded_overview_bind(raw: Keysym, mods: ModifiersState) -> Option<Bind> {
     })
 }
 
-pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::Device) {
+pub fn apply_libinput_settings(
+    config: &niri_config::Input,
+    device: &mut input::Device,
+    touchpad_disabled_by_toggle: bool,
+) {
     // According to Mutter code, this setting is specific to touchpads.
     let is_touchpad = device.config_tap_finger_count() > 0;
     if is_touchpad {
         let c = &config.touchpad;
-        let _ = device.config_send_events_set_mode(if c.off {
+        let is_off = c.off || touchpad_disabled_by_toggle;
+        let _ = device.config_send_events_set_mode(if is_off {
             input::SendEventsMode::DISABLED
         } else if c.disabled_on_external_mouse {
             input::SendEventsMode::DISABLED_ON_EXTERNAL_MOUSE
@@ -5237,16 +5301,19 @@ pub fn mods_with_mouse_binds(mod_key: ModKey, binds: &Binds) -> HashSet<Modifier
     )
 }
 
-pub fn mods_with_wheel_binds(mod_key: ModKey, binds: &Binds) -> HashSet<Modifiers> {
+pub fn mods_with_horizontal_wheel_binds(mod_key: ModKey, binds: &Binds) -> HashSet<Modifiers> {
     mods_with_binds(
         mod_key,
         binds,
-        &[
-            Trigger::WheelScrollUp,
-            Trigger::WheelScrollDown,
-            Trigger::WheelScrollLeft,
-            Trigger::WheelScrollRight,
-        ],
+        &[Trigger::WheelScrollLeft, Trigger::WheelScrollRight],
+    )
+}
+
+pub fn mods_with_vertical_wheel_binds(mod_key: ModKey, binds: &Binds) -> HashSet<Modifiers> {
+    mods_with_binds(
+        mod_key,
+        binds,
+        &[Trigger::WheelScrollUp, Trigger::WheelScrollDown],
     )
 }
 
