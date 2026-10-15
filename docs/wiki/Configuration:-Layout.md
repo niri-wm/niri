@@ -9,6 +9,7 @@ layout {
     gaps 16
     center-focused-column "never"
     always-center-single-column
+    fill-empty-space
     empty-workspace-above-first
     default-column-display "tabbed"
     background-color "#003300"
@@ -139,6 +140,18 @@ If set, niri will always center a single column on a workspace, regardless of th
 ```kdl
 layout {
     always-center-single-column
+}
+```
+
+### `fill-empty-space`
+
+If set, niri will scroll the view to avoid leaving empty space on screen when there are more columns off-screen. Whenever the content that fills the view shrinks — closing a window, moving it to another workspace or output, floating it, exiting fullscreen or resizing a column narrower — the view scrolls to eliminate empty space.
+
+Note that the `center-focused-column "always"` option takes precedence.
+
+```kdl
+layout {
+    fill-empty-space
 }
 ```
 
