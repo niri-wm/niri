@@ -648,6 +648,27 @@ mod tests {
     }
 
     #[test]
+    fn parse_overview_workspace_corner_radius() {
+        let parsed = do_parse(
+            r#"
+            overview {
+                workspace-corner-radius 3
+            }
+            "#,
+        );
+        assert_eq!(parsed.overview.workspace_corner_radius, 3.);
+
+        let parsed = do_parse(
+            r#"
+            overview {
+                zoom 0.5
+            }
+            "#,
+        );
+        assert_eq!(parsed.overview.workspace_corner_radius, 0.);
+    }
+
+    #[test]
     fn parse_on_xdg_activate() {
         let parsed = do_parse(
             r#"
@@ -1706,6 +1727,7 @@ mod tests {
                     b: 0.15,
                     a: 1.0,
                 },
+                workspace_corner_radius: 0.0,
                 workspace_shadow: WorkspaceShadow {
                     off: false,
                     offset: ShadowOffset {
@@ -1724,6 +1746,31 @@ mod tests {
                         b: 0.0,
                         a: 0.3137255,
                     },
+                },
+                workspace_border: Border {
+                    off: true,
+                    width: 4.0,
+                    active_color: Color {
+                        r: 1.0,
+                        g: 0.78431374,
+                        b: 0.49803922,
+                        a: 1.0,
+                    },
+                    inactive_color: Color {
+                        r: 0.3137255,
+                        g: 0.3137255,
+                        b: 0.3137255,
+                        a: 1.0,
+                    },
+                    urgent_color: Color {
+                        r: 0.60784316,
+                        g: 0.0,
+                        b: 0.0,
+                        a: 1.0,
+                    },
+                    active_gradient: None,
+                    inactive_gradient: None,
+                    urgent_gradient: None,
                 },
             },
             environment: Environment(

@@ -28,12 +28,20 @@ overview {
     zoom 0.5
     backdrop-color "#262626"
 
+    workspace-corner-radius 0
+
     workspace-shadow {
         // off
         softness 40
         spread 10
         offset x=0 y=10
         color "#00000050"
+    }
+
+    workspace-border {
+        // off
+        active-color "#F0F0F0"
+        inactive-color "#606060"
     }
 }
 
@@ -230,6 +238,18 @@ overview {
 
 You can also set the color per-output [in the output config](./Configuration:-Outputs.md#backdrop-color).
 
+#### `workspace-corner-radius`
+
+Round the corners of workspaces visible in the overview.
+The workspace shadow and the workspace border follow this radius.
+
+```kdl
+// Round the workspace corners in the overview.
+overview {
+    workspace-corner-radius 4
+}
+```
+
 #### `workspace-shadow`
 
 Control the shadow behind workspaces visible in the overview.
@@ -243,6 +263,23 @@ Practically, this means that you'll want bigger spread, offset, and softness com
 // Disable workspace shadows in the overview.
 overview {
     workspace-shadow {
+        off
+    }
+}
+```
+
+#### `workspace-border`
+
+Control the border around workspaces visible in the overview.
+
+Settings here mirror the normal [`border` config in the layout section](./Configuration:-Layout.md#border), so check the documentation there.
+
+Workspace borders are configured for a workspace size normalized to 1080 pixels tall, then zoomed out together with the workspace. Practically, this means you'll want thicker borders compare to window borders.
+
+```kdl
+// Disable workspace border in the overview.
+overview {
+    workspace-border {
         off
     }
 }
@@ -375,7 +412,7 @@ You will need to increase `passes` to be able to use a bigger `offset` without a
 
 When configuring blur, try increasing `offset` first (since it doesn't cause any extra GPU load) until you start getting artifacts.
 Then, if you still need smoother blur, increase `passes` by 1.
-Keep doing this until you get the desired visuals. 
+Keep doing this until you get the desired visuals.
 
 ```kdl
 blur {
