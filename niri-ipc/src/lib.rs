@@ -807,6 +807,8 @@ pub enum Action {
     DebugToggleOpaqueRegions {},
     /// Toggle visualization of output damage.
     DebugToggleDamage {},
+    /// Toggle the touchpad on/off at runtime.
+    ToggleTouchpad {},
     /// Move the focused window between the floating and the tiling layout.
     ToggleWindowFloating {
         /// Id of the window to move.
@@ -1769,6 +1771,14 @@ pub enum Event {
     CastStopped {
         /// Stream ID of the stopped screencast.
         stream_id: u64,
+    },
+    /// Touchpad toggled on/off via [`Action::ToggleTouchpad`].
+    TouchpadToggled {
+        /// Whether the touchpad is now enabled.
+        ///
+        /// Note that this only indicates the [`Action::ToggleTouchpad`] state. The touchpad can be
+        /// disabled in hardware, or via `input { touchpad { off; } }`—this is not reflected here.
+        on: bool,
     },
 }
 

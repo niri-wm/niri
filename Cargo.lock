@@ -534,9 +534,9 @@ dependencies = [
 
 [[package]]
 name = "calloop"
-version = "0.14.4"
+version = "0.14.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4dbf9978365bac10f54d1d4b04f7ce4427e51f71d61f2fe15e3fed5166474df7"
+checksum = "43b32313e937c8721c9d17ee9bf60699a6402b4b7c2cb6ac1bee0ffcaa4b4e5e"
 dependencies = [
  "async-task",
  "bitflags",
@@ -3396,7 +3396,7 @@ checksum = "e8e2fb0f499abb4d162f2bedad68f5ef91a1682b5a03596ddb67efd37768d100"
 [[package]]
 name = "smithay"
 version = "0.7.0"
-source = "git+https://github.com/Smithay/smithay.git?rev=19c16d3e34172fcc8fb3d293bcae563b0a19ea70#19c16d3e34172fcc8fb3d293bcae563b0a19ea70"
+source = "git+https://github.com/Smithay/smithay.git?rev=8a270232f1bfc416c781273c98a3f52a812a0bba#8a270232f1bfc416c781273c98a3f52a812a0bba"
 dependencies = [
  "aliasable",
  "appendlist",
@@ -3473,7 +3473,7 @@ dependencies = [
 [[package]]
 name = "smithay-drm-extras"
 version = "0.1.0"
-source = "git+https://github.com/Smithay/smithay.git?rev=19c16d3e34172fcc8fb3d293bcae563b0a19ea70#19c16d3e34172fcc8fb3d293bcae563b0a19ea70"
+source = "git+https://github.com/Smithay/smithay.git?rev=8a270232f1bfc416c781273c98a3f52a812a0bba#8a270232f1bfc416c781273c98a3f52a812a0bba"
 dependencies = [
  "drm",
  "libdisplay-info",

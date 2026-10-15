@@ -522,6 +522,9 @@ pub fn handle_msg(mut msg: Msg, json: bool, print_request: bool) -> anyhow::Resu
                     Event::CastStopped { stream_id } => {
                         println!("Cast stopped: stream id {stream_id}");
                     }
+                    Event::TouchpadToggled { on } => {
+                        println!("Touchpad enabled: {on}");
+                    }
                 }
             }
         }

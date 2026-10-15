@@ -359,7 +359,7 @@ jobs:
           show-progress: false
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@v10.3.0
         with:
             enable-cache: true
 

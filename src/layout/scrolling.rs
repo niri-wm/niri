@@ -2604,21 +2604,36 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         view.intersection(window_rect)
     }
 
-    pub fn popup_target_rect(&self, id: &W::Id) -> Option<Rectangle<f64, Logical>> {
-        for col in &self.columns {
+    pub fn popup_target_rect(&self, id: &W::Id, overflow: bool) -> Option<Rectangle<f64, Logical>> {
+        let view_pos = self.target_view_pos();
+        let col_xs = self.column_xs(self.data.iter().copied());
+        for (col, col_x) in zip(&self.columns, col_xs) {
             for (tile, pos) in col.tiles() {
                 if tile.window().id() == id {
                     // In the scrolling layout, we try to position popups horizontally within the
                     // window geometry (so they remain visible even if the window scrolls flush with
                     // the left/right edge of the screen), and vertically within the whole parent
                     // working area.
-                    let width = tile.window_size().w;
-                    let height = self.parent_area.size.h;
+                    let target = if overflow {
+                        // For IME popups, this is a bit of an unexpected behavior though; people
+                        // are used to them extending to the right. Also, IME popups disappear when
+                        // keyboard focus changes, so changing scroll position is not a problem. So,
+                        // constrain them to the parent area instead.
+                        let mut target = self.parent_area;
+                        target.loc.x -= col_x - view_pos;
+                        target.loc -= pos;
+                        target.loc -= tile.window_loc();
+                        target
+                    } else {
+                        let width = tile.window_size().w;
+                        let height = self.parent_area.size.h;
 
-                    let mut target = Rectangle::from_size(Size::from((width, height)));
-                    target.loc.y += self.parent_area.loc.y;
-                    target.loc.y -= pos.y;
-                    target.loc.y -= tile.window_loc().y;
+                        let mut target = Rectangle::from_size(Size::from((width, height)));
+                        target.loc.y += self.parent_area.loc.y;
+                        target.loc.y -= pos.y;
+                        target.loc.y -= tile.window_loc().y;
+                        target
+                    };
 
                     return Some(target);
                 }

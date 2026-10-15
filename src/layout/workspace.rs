@@ -1647,11 +1647,15 @@ impl<W: LayoutElement> Workspace<W> {
         }
     }
 
-    pub fn popup_target_rect(&self, window: &W::Id) -> Option<Rectangle<f64, Logical>> {
+    pub fn popup_target_rect(
+        &self,
+        window: &W::Id,
+        overflow: bool,
+    ) -> Option<Rectangle<f64, Logical>> {
         if self.floating.has_window(window) {
             self.floating.popup_target_rect(window)
         } else {
-            self.scrolling.popup_target_rect(window)
+            self.scrolling.popup_target_rect(window, overflow)
         }
     }
 
