@@ -121,6 +121,17 @@ window-rule {
         }
     }
 
+    animations {
+        window-open {
+            duration-ms 150
+            curve "ease-out-expo"
+        }
+        window-close {
+            duration-ms 150
+            curve "ease-out-expo"
+        }
+    }
+
     min-width 100
     max-width 200
     min-height 300
@@ -198,7 +209,7 @@ You can find the title and the app ID of a window by running `niri msg pick-wind
 
 > [!TIP]
 > Another way to find the window title and app ID is to configure the `wlr/taskbar` module in [Waybar](https://github.com/Alexays/Waybar) to include them in the tooltip:
-> 
+>
 > ```json
 > "wlr/taskbar": {
 >     "tooltip-format": "{title} | {app_id}",
@@ -1093,5 +1104,53 @@ window-rule {
     match app-id=r#"^com\.obsproject\.Studio$"#
 
     min-width 876
+}
+```
+
+#### `animations`
+
+<sup>Since: next release</sup>
+
+Override the open and close animations for matching window surfaces.
+
+The `window-open` and `window-close` blocks accept the same parameters as the corresponding global [`animations` settings](./Configuration:-Animations.md#window-open), including easing curves, springs, and custom shaders.
+See the [animations page](./Configuration:-Animations.md) for details on animation types and custom shaders.
+
+```kdl
+// Customize the open/close animations for just alacritty.
+window-rule {
+    match app-id="alacritty"
+
+    animations {
+        window-open {
+            duration-ms 200
+            curve "ease-out-expo"
+        }
+        window-close {
+            duration-ms 150
+            curve "ease-out-quad"
+        }
+    }
+}
+```
+
+Custom shaders can also be set per-rule, using inline GLSL (KDL raw string):
+
+```kdl
+window-rule {
+    match app-id="alacritty"
+
+    animations {
+        window-open {
+            duration-ms 250
+            curve "linear"
+
+            custom-shader r"
+                vec4 open_color(vec3 coords_geo, vec3 size_geo) {
+                    return niri_clamped_progress;
+                }
+            "
+        }
+    }
 }
 ```
