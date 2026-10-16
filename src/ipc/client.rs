@@ -34,7 +34,7 @@ pub fn handle_msg(mut msg: Msg, json: bool, print_request: bool) -> anyhow::Resu
         Msg::Outputs => Request::Outputs,
         Msg::FocusedWindow => Request::FocusedWindow,
         Msg::FocusedOutput => Request::FocusedOutput,
-        Msg::PickWindow => Request::PickWindow,
+        Msg::PickWindow { now } => Request::PickWindow { now: *now },
         Msg::PickColor => Request::PickColor,
         Msg::Action { action } => Request::Action(action.clone()),
         Msg::Output { output, action } => Request::Output {
@@ -296,7 +296,7 @@ pub fn handle_msg(mut msg: Msg, json: bool, print_request: bool) -> anyhow::Resu
                 println!("No output is focused.");
             }
         }
-        Msg::PickWindow => {
+        Msg::PickWindow { .. } => {
             let Response::PickedWindow(window) = response else {
                 bail!("unexpected response: expected PickedWindow, got {response:?}");
             };
