@@ -1,5 +1,5 @@
 use glam::{Mat3, Vec2};
-use niri_config::CornerRadius;
+use niri_config::{CornerRadius, DEFAULT_CORNER_RADIUS_EXPONENT};
 use smithay::backend::renderer::buffer_y_inverted;
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::element::{Element, Id, Kind, RenderElement, UnderlyingStorage};
@@ -20,14 +20,26 @@ pub struct ClippedSurfaceRenderElement<R: NiriRenderer> {
     inner: WaylandSurfaceRenderElement<R>,
     program: GlesTexProgram,
     corner_radius: CornerRadius,
+    corner_exponent: f32,
     geometry: Rectangle<f64, Logical>,
     scale: f32,
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone)]
 pub struct RoundedCornerDamage {
     damage: ExtraDamage,
     corner_radius: CornerRadius,
+    corner_exponent: f32,
+}
+
+impl Default for RoundedCornerDamage {
+    fn default() -> Self {
+        Self {
+            damage: Default::default(),
+            corner_radius: Default::default(),
+            corner_exponent: DEFAULT_CORNER_RADIUS_EXPONENT,
+        }
+    }
 }
 
 impl<R: NiriRenderer> ClippedSurfaceRenderElement<R> {
@@ -37,11 +49,13 @@ impl<R: NiriRenderer> ClippedSurfaceRenderElement<R> {
         geometry: Rectangle<f64, Logical>,
         program: GlesTexProgram,
         corner_radius: CornerRadius,
+        corner_exponent: f32,
     ) -> Self {
         Self {
             inner: elem,
             program,
             corner_radius,
+            corner_exponent,
             geometry,
             scale: scale.x as f32,
         }
@@ -95,6 +109,7 @@ impl<R: NiriRenderer> ClippedSurfaceRenderElement<R> {
             Uniform::new("niri_scale", self.scale),
             Uniform::new("geo_size", geo_size),
             Uniform::new("corner_radius", <[f32; 4]>::from(self.corner_radius)),
+            Uniform::new("corner_exponent", self.corner_exponent),
             mat3_uniform("input_to_geo", input_to_geo),
         ]
     }
@@ -297,6 +312,15 @@ impl RoundedCornerDamage {
 
         // FIXME: make the damage granular.
         self.corner_radius = corner_radius;
+        self.damage.damage_all();
+    }
+
+    pub fn set_corner_exponent(&mut self, corner_exponent: f32) {
+        if self.corner_exponent == corner_exponent {
+            return;
+        }
+
+        self.corner_exponent = corner_exponent;
         self.damage.damage_all();
     }
 
