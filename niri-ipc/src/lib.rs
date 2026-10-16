@@ -195,6 +195,7 @@ pub enum Action {
     /// Exit niri.
     Quit {
         /// Skip the "Press Enter to confirm" prompt.
+        #[serde(default)]
         #[cfg_attr(feature = "clap", arg(short, long))]
         skip_confirmation: bool,
     },
@@ -223,6 +224,7 @@ pub enum Action {
     /// Open the screenshot UI.
     Screenshot {
         ///  Whether to show the mouse pointer by default in the screenshot UI.
+        #[serde(default = "default_true")]
         #[cfg_attr(feature = "clap", arg(short = 'p', long, action = clap::ArgAction::Set, default_value_t = true))]
         show_pointer: bool,
 
@@ -239,10 +241,12 @@ pub enum Action {
         /// Write the screenshot to disk in addition to putting it in your clipboard.
         ///
         /// The screenshot is saved according to the `screenshot-path` config setting.
+        #[serde(default = "default_true")]
         #[cfg_attr(feature = "clap", arg(short = 'd', long, action = clap::ArgAction::Set, default_value_t = true))]
         write_to_disk: bool,
 
         /// Whether to include the mouse pointer in the screenshot.
+        #[serde(default = "default_true")]
         #[cfg_attr(feature = "clap", arg(short = 'p', long, action = clap::ArgAction::Set, default_value_t = true))]
         show_pointer: bool,
 
@@ -265,6 +269,7 @@ pub enum Action {
         /// Write the screenshot to disk in addition to putting it in your clipboard.
         ///
         /// The screenshot is saved according to the `screenshot-path` config setting.
+        #[serde(default = "default_true")]
         #[cfg_attr(feature = "clap", arg(short = 'd', long, action = clap::ArgAction::Set, default_value_t = true))]
         write_to_disk: bool,
 
@@ -272,6 +277,7 @@ pub enum Action {
         ///
         /// The pointer will be included only if the window is currently receiving pointer input
         /// (usually this means the pointer is on top of the window).
+        #[serde(default)]
         #[cfg_attr(feature = "clap", arg(short = 'p', long, action = clap::ArgAction::Set, default_value_t = false))]
         show_pointer: bool,
 
@@ -488,6 +494,7 @@ pub enum Action {
         ///
         /// If `true` (the default), the focus will follow the window to the new workspace. If
         /// `false`, the focus will remain on the original workspace.
+        #[serde(default = "default_true")]
         #[cfg_attr(feature = "clap", arg(long, action = clap::ArgAction::Set, default_value_t = true))]
         focus: bool,
     },
@@ -497,6 +504,7 @@ pub enum Action {
         ///
         /// If `true` (the default), the focus will follow the window to the new workspace. If
         /// `false`, the focus will remain on the original workspace.
+        #[serde(default = "default_true")]
         #[cfg_attr(feature = "clap", arg(long, action = clap::ArgAction::Set, default_value_t = true))]
         focus: bool,
     },
@@ -521,6 +529,7 @@ pub enum Action {
         /// If `true` (the default) and the window to move is focused, the focus will follow the
         /// window to the new workspace. If `false`, the focus will remain on the original
         /// workspace.
+        #[serde(default = "default_true")]
         #[cfg_attr(feature = "clap", arg(long, action = clap::ArgAction::Set, default_value_t = true))]
         focus: bool,
     },
@@ -530,6 +539,7 @@ pub enum Action {
         ///
         /// If `true` (the default), the focus will follow the column to the new workspace. If
         /// `false`, the focus will remain on the original workspace.
+        #[serde(default = "default_true")]
         #[cfg_attr(feature = "clap", arg(long, action = clap::ArgAction::Set, default_value_t = true))]
         focus: bool,
     },
@@ -539,6 +549,7 @@ pub enum Action {
         ///
         /// If `true` (the default), the focus will follow the column to the new workspace. If
         /// `false`, the focus will remain on the original workspace.
+        #[serde(default = "default_true")]
         #[cfg_attr(feature = "clap", arg(long, action = clap::ArgAction::Set, default_value_t = true))]
         focus: bool,
     },
@@ -552,6 +563,7 @@ pub enum Action {
         ///
         /// If `true` (the default), the focus will follow the column to the new workspace. If
         /// `false`, the focus will remain on the original workspace.
+        #[serde(default = "default_true")]
         #[cfg_attr(feature = "clap", arg(long, action = clap::ArgAction::Set, default_value_t = true))]
         focus: bool,
     },
@@ -849,6 +861,7 @@ pub enum Action {
         id: Option<u64>,
 
         /// How to change the X position.
+        #[serde(default = "default_position_change")]
         #[cfg_attr(
             feature = "clap",
             arg(short, long, default_value = "+0", allow_hyphen_values = true)
@@ -856,6 +869,7 @@ pub enum Action {
         x: PositionChange,
 
         /// How to change the Y position.
+        #[serde(default = "default_position_change")]
         #[cfg_attr(
             feature = "clap",
             arg(short, long, default_value = "+0", allow_hyphen_values = true)
@@ -1202,6 +1216,7 @@ pub struct VrrToSet {
     )]
     pub vrr: bool,
     /// Only enable when the output shows a window matching the variable-refresh-rate window rule.
+    #[serde(default)]
     #[cfg_attr(feature = "clap", arg(long))]
     pub on_demand: bool,
 }
@@ -2116,9 +2131,169 @@ impl OutputAction {
     }
 }
 
+fn default_true() -> bool {
+    true
+}
+
+fn default_position_change() -> PositionChange {
+    PositionChange::AdjustFixed(0.)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn deserialize_action_bool_defaults() {
+        use serde_json::json;
+
+        let cases = [
+            (
+                "MoveWindowToWorkspace",
+                json!({ "reference": { "Id": 306 } }),
+                json!({ "focus": true }),
+            ),
+            ("Quit", json!({}), json!({ "skip_confirmation": false })),
+            ("Screenshot", json!({}), json!({ "show_pointer": true })),
+            (
+                "ScreenshotScreen",
+                json!({}),
+                json!({ "write_to_disk": true, "show_pointer": true }),
+            ),
+            (
+                "ScreenshotWindow",
+                json!({}),
+                json!({ "write_to_disk": true, "show_pointer": false }),
+            ),
+            (
+                "MoveWindowToWorkspaceDown",
+                json!({}),
+                json!({ "focus": true }),
+            ),
+            (
+                "MoveWindowToWorkspaceUp",
+                json!({}),
+                json!({ "focus": true }),
+            ),
+            (
+                "MoveColumnToWorkspaceDown",
+                json!({}),
+                json!({ "focus": true }),
+            ),
+            (
+                "MoveColumnToWorkspaceUp",
+                json!({}),
+                json!({ "focus": true }),
+            ),
+            (
+                "MoveColumnToWorkspace",
+                json!({ "reference": { "Id": 306 } }),
+                json!({ "focus": true }),
+            ),
+        ];
+
+        for (action, args, defaults) in cases {
+            let request = json!({ "Action": { action: args } });
+            let parsed: Request = serde_json::from_value(request.clone()).unwrap();
+            let actual = serde_json::to_value(parsed).unwrap();
+
+            for (field, default) in defaults.as_object().unwrap() {
+                assert_eq!(
+                    actual["Action"][action][field], *default,
+                    "{action}.{field}"
+                );
+
+                for value in [false, true] {
+                    let mut request = request.clone();
+                    request["Action"][action][field] = json!(value);
+                    let parsed: Request = serde_json::from_value(request).unwrap();
+                    let actual = serde_json::to_value(parsed).unwrap();
+                    assert_eq!(actual["Action"][action][field], value, "{action}.{field}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn deserialize_move_floating_window_defaults() {
+        use serde_json::json;
+
+        for (args, expected_x, expected_y) in [
+            (
+                json!({}),
+                PositionChange::AdjustFixed(0.),
+                PositionChange::AdjustFixed(0.),
+            ),
+            (
+                json!({ "x": { "SetFixed": 100. } }),
+                PositionChange::SetFixed(100.),
+                PositionChange::AdjustFixed(0.),
+            ),
+            (
+                json!({ "y": { "AdjustProportion": 10. } }),
+                PositionChange::AdjustFixed(0.),
+                PositionChange::AdjustProportion(10.),
+            ),
+        ] {
+            let request: Request =
+                serde_json::from_value(json!({ "Action": { "MoveFloatingWindow": args } }))
+                    .unwrap();
+            let Request::Action(Action::MoveFloatingWindow { id, x, y }) = request else {
+                panic!("unexpected request");
+            };
+            assert_eq!(id, None);
+            assert_eq!(x, expected_x);
+            assert_eq!(y, expected_y);
+        }
+    }
+
+    #[test]
+    fn deserialize_action_required_fields() {
+        for action in [
+            "MoveWindowToWorkspace",
+            "MoveColumnToWorkspace",
+            "FocusWindow",
+            "Spawn",
+        ] {
+            let request = serde_json::json!({ "Action": { action: {} } });
+            assert!(
+                serde_json::from_value::<Request>(request).is_err(),
+                "{action}"
+            );
+        }
+    }
+
+    #[test]
+    fn deserialize_vrr_defaults() {
+        use serde_json::json;
+
+        for (args, on_demand) in [
+            (json!({ "vrr": true }), false),
+            (json!({ "vrr": true, "on_demand": false }), false),
+            (json!({ "vrr": true, "on_demand": true }), true),
+        ] {
+            let request: Request = serde_json::from_value(json!({
+                "Output": { "output": "DP-1", "action": { "Vrr": { "vrr": args } } }
+            }))
+            .unwrap();
+            let Request::Output {
+                action: OutputAction::Vrr { vrr },
+                ..
+            } = request
+            else {
+                panic!("unexpected request");
+            };
+            assert_eq!(
+                vrr,
+                VrrToSet {
+                    vrr: true,
+                    on_demand
+                }
+            );
+        }
+
+        assert!(serde_json::from_value::<VrrToSet>(json!({ "on_demand": true })).is_err());
+    }
 
     #[test]
     fn parse_size_change() {
