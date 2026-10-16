@@ -5,13 +5,12 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use anyhow::Context;
 use futures_util::StreamExt;
-use zbus::fdo::{self, RequestNameFlags};
 use zbus::message::Header;
 use zbus::names::{OwnedUniqueName, UniqueName};
 use zbus::zvariant::NoneValue;
-use zbus::{interface, Task};
+use zbus::{fdo, interface, Task};
 
-use super::Start;
+use super::{request_name, Start};
 
 #[derive(Clone)]
 pub struct ScreenSaver {
@@ -129,17 +128,13 @@ async fn monitor_disappeared_clients(
 }
 
 impl Start for ScreenSaver {
-    fn start(self) -> anyhow::Result<zbus::blocking::Connection> {
+    fn start(self, monitor: bool) -> anyhow::Result<zbus::blocking::Connection> {
         let is_inhibited = self.is_inhibited.clone();
         let is_broken = self.is_broken.clone();
         let inhibitors = self.inhibitors.clone();
         let monitor_task = self.monitor_task.clone();
 
         let conn = zbus::blocking::Connection::session()?;
-        let flags = RequestNameFlags::AllowReplacement
-            | RequestNameFlags::ReplaceExisting
-            | RequestNameFlags::DoNotQueue;
-
         let org_fd_ss_registered = conn
             .object_server()
             .at("/org/freedesktop/ScreenSaver", self.clone())?;
@@ -149,7 +144,7 @@ impl Start for ScreenSaver {
             anyhow::bail!("failed to register any org.freedesktop.ScreenSaver interface")
         }
 
-        conn.request_name_with_flags("org.freedesktop.ScreenSaver", flags)?;
+        request_name(&conn, "org.freedesktop.ScreenSaver", monitor)?;
 
         let async_conn = conn.inner();
         let future = {

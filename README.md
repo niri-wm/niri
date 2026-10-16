@@ -94,6 +94,12 @@ We talk about niri development and history, and my experience building and maint
 
 An LWN article with a nice overview and introduction to niri.
 
+[How to test a Wayland compositor?](https://youtu.be/w44fYK5z418?list=PLK4NE4dSsLlw) · *October 2026*
+
+My talk about some testing techniques used in niri: property-based tests, snapshot tests, client-server tests.
+The first half overlaps with my RustCon talk, the second half is new.
+The talk is in Russian, but I prepared full English subtitles that you can find in YouTube's subtitle language selector.
+
 ## Contributing
 
 If you'd like to help with niri, there are plenty of both coding- and non-coding-related ways to do so.

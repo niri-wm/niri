@@ -807,6 +807,8 @@ pub enum Action {
     DebugToggleOpaqueRegions {},
     /// Toggle visualization of output damage.
     DebugToggleDamage {},
+    /// Toggle the touchpad on/off at runtime.
+    ToggleTouchpad {},
     /// Move the focused window between the floating and the tiling layout.
     ToggleWindowFloating {
         /// Id of the window to move.
@@ -1579,6 +1581,13 @@ pub enum CastKind {
     /// Only wlr-screencopy with damage tracking is reported here. Screencopy without damage is
     /// treated as a regular screenshot and not reported as a screencast.
     WlrScreencopy,
+    /// ext-image-copy-capture protocol screencast.
+    ///
+    /// Tools like wayvnc, wl-mirror, and the xdg-desktop-portal-wlr portal.
+    ///
+    /// A client capturing both an output and the cursor creates two sessions, which are reported
+    /// as two `Cast`s sharing one [`session_id`](Cast::session_id).
+    ExtImageCopyCapture,
 }
 
 /// Target of a screencast.
@@ -1738,6 +1747,14 @@ pub enum Event {
     CastStopped {
         /// Stream ID of the stopped screencast.
         stream_id: u64,
+    },
+    /// Touchpad toggled on/off via [`Action::ToggleTouchpad`].
+    TouchpadToggled {
+        /// Whether the touchpad is now enabled.
+        ///
+        /// Note that this only indicates the [`Action::ToggleTouchpad`] state. The touchpad can be
+        /// disabled in hardware, or via `input { touchpad { off; } }`—this is not reflected here.
+        on: bool,
     },
 }
 

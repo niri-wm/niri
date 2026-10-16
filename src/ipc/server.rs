@@ -31,6 +31,7 @@ use smithay::utils::SERIAL_COUNTER;
 use smithay::wayland::shell::wlr_layer::{KeyboardInteractivity, Layer};
 
 use crate::backend::IpcOutputMap;
+use crate::handlers::image_copy_capture;
 use crate::input::pick_window_grab::PickWindowGrab;
 use crate::layout::workspace::WorkspaceId;
 use crate::niri::State;
@@ -906,6 +907,46 @@ impl State {
             }
         }
 
+        // Check ext-image-copy-capture casts.
+        //
+        // Unlike wlr-screencopy, a session is an explicit protocol object, so
+        // the cast lifetime is tied to it. Dead sessions are already dropped by
+        // refresh_image_copy_capture(), which runs before this.
+        let output_sessions = self
+            .niri
+            .image_copy_sessions
+            .iter()
+            .map(|s| (s.session_id, s.stream_id, s.session.source(), s.credentials));
+        let cursor_sessions = self
+            .niri
+            .image_copy_cursor_sessions
+            .iter()
+            .map(|s| (s.session_id, s.stream_id, s.session.source(), s.credentials));
+        for (session_id, stream_id, source, credentials) in output_sessions.chain(cursor_sessions) {
+            let Some(output) = image_copy_capture::source_output(&source) else {
+                continue;
+            };
+
+            let stream_id = stream_id.get();
+            seen.insert(stream_id);
+
+            if !state.casts.contains_key(&stream_id) {
+                let cast = niri_ipc::Cast {
+                    session_id: session_id.get(),
+                    stream_id,
+                    kind: niri_ipc::CastKind::ExtImageCopyCapture,
+                    target: niri_ipc::CastTarget::Output {
+                        name: output.name(),
+                    },
+                    is_dynamic_target: false,
+                    is_active: true,
+                    pid: credentials.map(|creds| creds.pid),
+                    pw_node_id: None,
+                };
+                events.push(Event::CastStartedOrChanged { cast });
+            }
+        }
+
         // Check for stopped casts.
         for stream_id in state.casts.keys() {
             if !seen.contains(stream_id) {
@@ -919,6 +960,24 @@ impl State {
             state.apply(event.clone());
             server.send_event(event);
         }
+    }
+
+    pub fn ipc_refresh_touchpad(&mut self) {
+        let Some(server) = &self.niri.ipc_server else {
+            return;
+        };
+
+        let mut state = server.event_stream_state.borrow_mut();
+        let state = &mut state.touchpad;
+        let on = !self.niri.touchpad_disabled_by_toggle;
+
+        if state.on == on {
+            return;
+        }
+
+        let event = Event::TouchpadToggled { on };
+        state.apply(event.clone());
+        server.send_event(event);
     }
 
     pub fn ipc_config_loaded(&mut self, failed: bool) {

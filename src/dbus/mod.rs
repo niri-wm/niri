@@ -1,5 +1,10 @@
+use anyhow::Context as _;
+use futures_util::StreamExt as _;
 use zbus::blocking::Connection;
+use zbus::fdo::{self, RequestNameFlags, RequestNameReply};
+use zbus::names::{UniqueName, WellKnownName};
 use zbus::object_server::Interface;
+use zbus::zvariant::NoneValue as _;
 
 use crate::niri::State;
 
@@ -23,7 +28,7 @@ use self::mutter_display_config::DisplayConfig;
 use self::mutter_service_channel::ServiceChannel;
 
 trait Start: Interface {
-    fn start(self) -> anyhow::Result<zbus::blocking::Connection>;
+    fn start(self, monitor: bool) -> anyhow::Result<zbus::blocking::Connection>;
 }
 
 #[derive(Default)]
@@ -61,7 +66,7 @@ impl DBusServers {
                     calloop::channel::Event::Closed => (),
                 })
                 .unwrap();
-            dbus.conn_service_channel = try_start(service_channel);
+            dbus.conn_service_channel = try_start(service_channel, false);
         }
 
         if is_session_instance || config.debug.dbus_interfaces_in_non_session_instances {
@@ -84,10 +89,10 @@ impl DBusServers {
                     calloop::channel::Event::Closed => (),
                 })
                 .unwrap();
-            dbus.conn_display_config = try_start(display_config);
+            dbus.conn_display_config = try_start(display_config, is_session_instance);
 
             let screen_saver = ScreenSaver::new(niri.is_fdo_idle_inhibited.clone());
-            dbus.conn_screen_saver = try_start(screen_saver);
+            dbus.conn_screen_saver = try_start(screen_saver, is_session_instance);
 
             let (to_niri, from_screenshot) = calloop::channel::channel();
             let (to_screenshot, from_niri) = async_channel::unbounded();
@@ -100,7 +105,7 @@ impl DBusServers {
                 })
                 .unwrap();
             let screenshot = gnome_shell_screenshot::Screenshot::new(to_niri, from_niri);
-            dbus.conn_screen_shot = try_start(screenshot);
+            dbus.conn_screen_shot = try_start(screenshot, is_session_instance);
 
             let (to_niri, from_introspect) = calloop::channel::channel();
             let (to_introspect, from_niri) = async_channel::unbounded();
@@ -113,7 +118,7 @@ impl DBusServers {
                 })
                 .unwrap();
             let introspect = Introspect::new(to_niri, from_niri);
-            dbus.conn_introspect = try_start(introspect);
+            dbus.conn_introspect = try_start(introspect, is_session_instance);
 
             #[cfg(feature = "xdp-gnome-screencast")]
             {
@@ -127,7 +132,7 @@ impl DBusServers {
                     })
                     .unwrap();
                 let screen_cast = ScreenCast::new(backend.ipc_outputs(), to_niri);
-                dbus.conn_screen_cast = try_start(screen_cast);
+                dbus.conn_screen_cast = try_start(screen_cast, is_session_instance);
             }
 
             let (to_niri, from_a11y) = calloop::channel::channel();
@@ -139,7 +144,7 @@ impl DBusServers {
                 })
                 .unwrap();
             let a11y_manager = freedesktop_a11y::Manager::new(to_niri, from_niri);
-            match a11y_manager.start() {
+            match a11y_manager.start(is_session_instance) {
                 Ok(conn) => {
                     dbus.conn_a11y_manager = Some(conn);
                     niri.a11y_manager = Some(a11y_manager);
@@ -186,8 +191,82 @@ impl DBusServers {
     }
 }
 
-fn try_start<I: Start>(iface: I) -> Option<Connection> {
-    match iface.start() {
+fn request_name(conn: &Connection, name: &'static str, monitor: bool) -> zbus::Result<()> {
+    if monitor {
+        if let Err(err) = start_name_monitor(conn, name) {
+            warn!("error monitoring D-Bus name {name}: {err:?}");
+        }
+    }
+
+    let flags = RequestNameFlags::AllowReplacement
+        | RequestNameFlags::ReplaceExisting
+        | RequestNameFlags::DoNotQueue;
+
+    conn.request_name_with_flags(name, flags)?;
+    Ok(())
+}
+
+fn start_name_monitor(conn: &Connection, name: &'static str) -> anyhow::Result<()> {
+    let conn = conn.inner().clone();
+    let monitor = async_io::block_on(async {
+        let proxy = fdo::DBusProxy::new(&conn)
+            .await
+            .context("error creating a DBusProxy")?;
+        let stream = proxy
+            .receive_name_owner_changed_with_args(&[(0, name), (2, UniqueName::null_value())])
+            .await
+            .context("error creating a NameOwnerChanged stream")?;
+
+        let monitor = async move {
+            if let Err(err) = monitor_name(proxy, stream, name).await {
+                warn!("error monitoring D-Bus name {name}: {err:?}");
+            }
+        };
+        anyhow::Ok(monitor)
+    })?;
+
+    let task = conn.executor().spawn(monitor, "monitor D-Bus name");
+    task.detach();
+
+    Ok(())
+}
+
+async fn monitor_name(
+    proxy: fdo::DBusProxy<'static>,
+    mut stream: fdo::NameOwnerChangedStream,
+    name: &'static str,
+) -> anyhow::Result<()> {
+    let name = WellKnownName::try_from(name).unwrap();
+    let flags = RequestNameFlags::AllowReplacement | RequestNameFlags::DoNotQueue;
+
+    while let Some(signal) = stream.next().await {
+        let args = signal
+            .args()
+            .context("error retrieving NameOwnerChanged args")?;
+
+        if args.new_owner().is_some() {
+            error!("non-null new_owner should've been filtered out");
+            continue;
+        }
+
+        match proxy.request_name(name.clone(), flags).await? {
+            RequestNameReply::PrimaryOwner | RequestNameReply::AlreadyOwner => {
+                debug!("reacquired D-Bus name {name}");
+            }
+            RequestNameReply::Exists => {
+                trace!("another process acquired D-Bus name {name}");
+            }
+            RequestNameReply::InQueue => {
+                error!("D-Bus name request should not have been queued");
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn try_start<I: Start>(iface: I, monitor: bool) -> Option<Connection> {
+    match iface.start(monitor) {
         Ok(conn) => Some(conn),
         Err(err) => {
             warn!("error starting {}: {err:?}", I::name());

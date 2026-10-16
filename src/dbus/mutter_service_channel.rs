@@ -15,7 +15,14 @@ impl ServiceChannel {
         &mut self,
         service_client_type: u32,
     ) -> fdo::Result<zvariant::OwnedFd> {
-        if service_client_type != 1 {
+        // ServiceClientTypes:
+        //    PORTAL_BACKEND: 1
+        //    FILECHOOSER_PORTAL_BACKEND: 2
+        //    GLOBAL_SHORTCUTS_PORTAL_BACKEND: 3
+        //
+        // In mutter, 1 and 2 get access to mutter_x11_interop.
+        // Ours is a stub, so we don't do this filtering.
+        if !matches!(service_client_type, 1..=3) {
             return Err(fdo::Error::InvalidArgs(
                 "Invalid service client type".to_owned(),
             ));
@@ -44,7 +51,7 @@ impl ServiceChannel {
 }
 
 impl Start for ServiceChannel {
-    fn start(self) -> anyhow::Result<zbus::blocking::Connection> {
+    fn start(self, _monitor: bool) -> anyhow::Result<zbus::blocking::Connection> {
         let conn = zbus::blocking::connection::Builder::session()?
             .name("org.gnome.Mutter.ServiceChannel")?
             .serve_at("/org/gnome/Mutter/ServiceChannel", self)?

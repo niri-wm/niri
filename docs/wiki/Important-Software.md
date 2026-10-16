@@ -12,7 +12,7 @@ Portals **require** [running niri as a session](./Getting-Started.md), which mea
 
 * `xdg-desktop-portal-gtk`: implements most of the basic functionality, this is the "default fallback portal".
 * `xdg-desktop-portal-gnome`: required for screencasting support.
-* `gnome-keyring`: implements the Secret portal, required for certain apps to work.
+* `oo7-portal` or `gnome-keyring`: implements the Secret portal, required for certain apps to work.
 
 Then systemd should start them on-demand automatically. These particular portals are configured in `niri-portals.conf` which [must be installed](./Getting-Started.md#manual-installation) in the correct location.
 

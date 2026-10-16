@@ -1,6 +1,8 @@
 pub mod background_effect;
 mod compositor;
+pub mod image_copy_capture;
 mod layer_shell;
+pub mod virtual_keyboard;
 mod xdg_shell;
 
 use std::fs::File;
@@ -39,7 +41,7 @@ use smithay::wayland::keyboard_shortcuts_inhibit::{
 };
 use smithay::wayland::output::OutputHandler;
 use smithay::wayland::pointer_constraints::{
-    with_pointer_constraint, PointerConstraint, PointerConstraintsHandler,
+    with_pointer_constraint, ConstraintRemove, PointerConstraintsHandler,
 };
 use smithay::wayland::security_context::{
     SecurityContext, SecurityContextHandler, SecurityContextListenerSource,
@@ -60,6 +62,8 @@ use smithay::wayland::selection::{SelectionHandler, SelectionTarget};
 use smithay::wayland::session_lock::{
     LockSurface, SessionLockHandler, SessionLockManagerState, SessionLocker,
 };
+use smithay::wayland::text_input::TextInputActivation;
+use smithay::wayland::virtual_pointer::{VirtualPointerBackend, VirtualPointerHandler};
 use smithay::wayland::xdg_activation::{
     XdgActivationHandler, XdgActivationState, XdgActivationToken, XdgActivationTokenData,
 };
@@ -77,11 +81,6 @@ use crate::protocols::gamma_control::{GammaControlHandler, GammaControlManagerSt
 use crate::protocols::mutter_x11_interop::MutterX11InteropHandler;
 use crate::protocols::output_management::{OutputManagementHandler, OutputManagementManagerState};
 use crate::protocols::screencopy::{Screencopy, ScreencopyHandler, ScreencopyManagerState};
-use crate::protocols::virtual_pointer::{
-    VirtualPointerAxisEvent, VirtualPointerButtonEvent, VirtualPointerHandler,
-    VirtualPointerInputBackend, VirtualPointerManagerState, VirtualPointerMotionAbsoluteEvent,
-    VirtualPointerMotionEvent,
-};
 use crate::utils::{output_size, send_scale_transform};
 
 pub const XDG_ACTIVATION_TOKEN_TIMEOUT: Duration = Duration::from_secs(10);
@@ -206,7 +205,7 @@ impl PointerConstraintsHandler for State {
         &mut self,
         _surface: &WlSurface,
         pointer: &PointerHandle<Self>,
-        _constraint: Option<&PointerConstraint>,
+        reason: ConstraintRemove,
     ) {
         // Since a pointer constraint is broken when a surface loses pointer focus, and one surface
         // can only have a single pointer constraint at once, assume there can be only one
@@ -219,11 +218,7 @@ impl PointerConstraintsHandler for State {
 
         // If the constraint was broken by the pointer forcibly leaving the surface (e.g. the user
         // opened the overview), then it doesn't make much sense to warp it.
-        //
-        // Furthermore, when the constraint is removed as part of the pointer leaving the surface,
-        // this call happens with locked pointer data, and calling set_location() will try to lock
-        // it again and deadlock.
-        if pointer.last_enter().is_none() {
+        if matches!(reason, ConstraintRemove::PointerLeave(_)) {
             return;
         }
 
@@ -275,6 +270,8 @@ impl InputMethodHandler for State {
             .unwrap_or_default()
     }
 }
+
+impl TextInputActivation for State {}
 
 impl KeyboardShortcutsInhibitHandler for State {
     fn keyboard_shortcuts_inhibit_state(&mut self) -> &mut KeyboardShortcutsInhibitState {
@@ -660,26 +657,8 @@ impl ScreencopyHandler for State {
 }
 
 impl VirtualPointerHandler for State {
-    fn virtual_pointer_manager_state(&mut self) -> &mut VirtualPointerManagerState {
-        &mut self.niri.virtual_pointer_state
-    }
-
-    fn on_virtual_pointer_motion(&mut self, event: VirtualPointerMotionEvent) {
-        self.process_input_event(InputEvent::<VirtualPointerInputBackend>::PointerMotion { event });
-    }
-
-    fn on_virtual_pointer_motion_absolute(&mut self, event: VirtualPointerMotionAbsoluteEvent) {
-        self.process_input_event(
-            InputEvent::<VirtualPointerInputBackend>::PointerMotionAbsolute { event },
-        );
-    }
-
-    fn on_virtual_pointer_button(&mut self, event: VirtualPointerButtonEvent) {
-        self.process_input_event(InputEvent::<VirtualPointerInputBackend>::PointerButton { event });
-    }
-
-    fn on_virtual_pointer_axis(&mut self, event: VirtualPointerAxisEvent) {
-        self.process_input_event(InputEvent::<VirtualPointerInputBackend>::PointerAxis { event });
+    fn process_virtual_pointer_event(&mut self, event: InputEvent<VirtualPointerBackend>) {
+        self.process_input_event(event);
     }
 }
 

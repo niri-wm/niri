@@ -110,6 +110,9 @@ binds {
 Both mouse wheel and touchpad scroll binds will prevent applications from receiving any scroll events when their modifiers are held down.
 For example, if you have a `Mod+WheelScrollDown` bind, then while holding `Mod`, all mouse wheel scrolling will be consumed by niri.
 
+<sup>Since: next release</sup> Mouse wheel bindings are consumed by niri per axis.
+If you bind just `Mod+WheelScrollDown` and hold `Mod`, niri will consume vertical scrolling, but not horizontal scrolling.
+
 ### Mouse Click Bindings
 
 <sup>Since: 25.01</sup>
@@ -129,6 +132,20 @@ binds {
 Mouse clicks operate on the window that was focused at the time of the click, not the window you're clicking.
 
 Note that binding `Mod+MouseLeft` or `Mod+MouseRight` will override the corresponding gesture (moving or resizing the window).
+
+### Tablet Stylus Bindings
+
+<sup>Since: next release</sup>
+
+You can bind tablet stylus buttons using the following syntax.
+
+```kdl
+binds {
+    Mod+TabletStylusButton1 { close-window; }
+    Mod+TabletStylusButton2 { close-window; }
+    Mod+TabletStylusButton3 { close-window; }
+}
+```
 
 ### Custom Hotkey Overlay Titles
 
@@ -416,3 +433,19 @@ binds {
     Super+Alt+L allow-inhibiting=false { spawn "swaylock"; }
 }
 ```
+
+#### `toggle-touchpad`
+
+<sup>Since: next release</sup>
+
+Toggle the touchpad on or off at runtime.
+This provides a quick way to disable the touchpad without editing the config file.
+
+```kdl
+binds {
+    Mod+F9 { toggle-touchpad; }
+}
+```
+
+The toggle state is combined with the [`off` setting](./Configuration:-Input.md#pointing-devices) in the config: both the config and the toggle must allow the touchpad for it to be enabled.
+The toggle state resets when niri restarts, and applies to newly hot-plugged touchpads.

@@ -106,8 +106,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 info!("config is valid");
                 return Ok(());
             }
-            Sub::Msg { msg, json } => {
-                handle_msg(msg, json)?;
+            Sub::Msg {
+                msg,
+                json,
+                print_request,
+            } => {
+                handle_msg(msg, json, print_request)?;
                 return Ok(());
             }
             Sub::Panic => cause_panic(),

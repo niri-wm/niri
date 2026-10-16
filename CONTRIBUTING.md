@@ -5,6 +5,26 @@ The project has grown quite a bit, and we could use all help that we can.
 
 Make sure to join our Matrix chat if you have any questions or want to discuss anything: https://matrix.to/#/#niri:matrix.org
 
+## LLM policy
+
+You're not allowed to use LLMs to *create*.
+All pull request code, issue descriptions, comments, public reviews, etc. must be human-written.
+You can use LLMs privately (not like I can check or control that), but not to write from scratch.
+You may use LLMs for *translating* your human-written text; in this case you must also provide the original text to reduce the chance of miscommunication.
+
+This policy is motivated by several observations:
+
+- LLM writing is always long and excessive, and wastes time of the reader.
+- LLM issue analysis is not only overly long and excessive, but also frequently wrong.
+- LLM-assisted PRs are usually a bigger chore to review, and the developer frequently struggles to adequately address comments.
+- For code contributions, our goal is to grow contributors with understanding of the niri codebase.
+    Using LLMs to write code sidesteps this learning process.
+- LLMs remove an important *effort barrier* for writing code, even if the result reads fine.
+    The code ends up overly complex to solve non-existing or impractical problems.
+    Such code would not get written in the first place since the effort-benefit ratio is too high.
+    It increases maintenance burden and takes time away from more important PRs.
+- Nobody wants to read AI slop.
+
 ## Issues and discussions
 
 This is a good way to help many new and existing users without programming knowledge.
@@ -77,6 +97,7 @@ When creating pull requests, please keep the following in mind.
 
 - Make sure new features align with niri's design directions. Ideally, there should be an existing issue or discussion where we settled on that solution.
 - Keep pull requests focused on a single feature or bug fix with no unrelated changes.
+- Document unobvious design and architecture decisions. Why you chose one way over the other, which alternatives you tried. This helps to evaluate the code.
 - Try to split your changes into small, self-contained commits. Every commit should build and pass tests. This makes it much easier to review your PR, and bisect for regressions in the future.
     - When addressing PR comments, try to squash the changes straight into the relevant commits.
     - In some cases when the requested changes are big/unclear, you can leave them as separate commits on top, but please squash and otherwise clean up the history when the changes are finalized.
@@ -97,16 +118,6 @@ When creating pull requests, please keep the following in mind.
 - Discuss new features, options, or behavior changes beforehand; make sure there's consensus about the design.
 - When creating the pull request, clearly write what it does, what problem it solves, how to test it.
 - Follow the rest of the advice from this document.
-
-## AI contributions
-
-If you use LLMs for your contribution (issue, comment, pull request), then it is *your job* to check and clean up its output, just like with any other tool.
-*You* have to spend the time doing this.
-Particularly:
-
-- If I can tell that a pull request is mostly LLM-generated, then very likely this pull request will take *significantly more time and effort* than usual to review and finish. This is based on my prior review experience. Therefore, I'm not interested in such pull requests—there's always plenty of human-written ones which take priority.
-- When using an LLM to prepare an issue, the text usually has a lot of unnecessary wording and irrelevant details. Anyone looking at such an issue will quickly lose interest in reading through it (myself certainly). Clean up the text and keep only those details that actually matter.
-- When using an LLM to comment on an issue, *you* have to verify that the comment makes sense, contributes something useful, and doesn't have unnecessary repetition.
 
 
 [cosmic-comp]: https://github.com/pop-os/cosmic-comp
