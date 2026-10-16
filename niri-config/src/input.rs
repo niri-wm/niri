@@ -385,6 +385,8 @@ pub struct Touch {
 
 #[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
 pub struct FocusFollowsMouse {
+    #[knuffel(property)]
+    pub outputs_only: Option<bool>,
     #[knuffel(property, str)]
     pub max_scroll_amount: Option<Percent>,
 }
