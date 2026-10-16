@@ -24,6 +24,7 @@ pub struct Layout {
     pub gaps: f64,
     pub struts: Struts,
     pub background_color: Color,
+    pub auto_tile: Option<AutoTile>,
 }
 
 impl Default for Layout {
@@ -52,6 +53,7 @@ impl Default for Layout {
                 PresetSize::Proportion(2. / 3.),
             ],
             background_color: DEFAULT_BACKGROUND_COLOR,
+            auto_tile: None,
         }
     }
 }
@@ -91,6 +93,10 @@ impl MergeWith<LayoutPart> for Layout {
         if self.preset_window_heights.is_empty() {
             self.preset_window_heights = Layout::default().preset_window_heights;
         }
+
+        if let Some(x) = &part.auto_tile {
+            self.auto_tile = Some(x.clone());
+        }
     }
 }
 
@@ -126,6 +132,16 @@ pub struct LayoutPart {
     pub struts: Option<Struts>,
     #[knuffel(child)]
     pub background_color: Option<Color>,
+    #[knuffel(child)]
+    pub auto_tile: Option<AutoTile>,
+}
+
+#[derive(knuffel::Decode, Debug, Clone, PartialEq)]
+pub struct AutoTile {
+    /// Maximum number of columns to auto-tile before scrolling kicks in.
+    /// Defaults to 2 (full screen, then 50/50, then scroll).
+    #[knuffel(child, unwrap(argument), default = 2)]
+    pub max_columns: u16,
 }
 
 #[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
