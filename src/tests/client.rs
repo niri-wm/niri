@@ -62,6 +62,7 @@ pub struct State {
     pub xdg_wm_base: Option<XdgWmBase>,
     pub layer_shell: Option<ZwlrLayerShellV1>,
     pub virtual_pointer_manager: Option<ZwlrVirtualPointerManagerV1>,
+    pub virtual_pointer: Option<ZwlrVirtualPointerV1>,
     pub spbm: Option<WpSinglePixelBufferManagerV1>,
     pub viewporter: Option<WpViewporter>,
     pub ksim: Option<ZwpKeyboardShortcutsInhibitManagerV1>,
@@ -262,6 +263,7 @@ impl Client {
             xdg_wm_base: None,
             layer_shell: None,
             virtual_pointer_manager: None,
+            virtual_pointer: None,
             spbm: None,
             viewporter: None,
             ksim: None,
@@ -429,6 +431,17 @@ impl State {
         let ksim = self.ksim.as_ref().unwrap();
         let seat = self.seats.keys().next().unwrap();
         ksim.inhibit_shortcuts(surface, seat, &self.qh, ())
+    }
+
+    pub fn virtual_pointer(&mut self) -> ZwlrVirtualPointerV1 {
+        if let Some(pointer) = &self.virtual_pointer {
+            return pointer.clone();
+        }
+
+        let manager = self.virtual_pointer_manager.as_ref().unwrap();
+        let pointer = manager.create_virtual_pointer(None, &self.qh, ());
+        self.virtual_pointer = Some(pointer.clone());
+        pointer
     }
 }
 

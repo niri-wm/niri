@@ -618,6 +618,10 @@ impl Tty {
             SessionEvent::PauseSession => {
                 debug!("pausing session");
 
+                // We won't receive key or button releases for whatever is held down while the
+                // session is paused, so forget about all of it.
+                niri.clear_input_state();
+
                 self.libinput.suspend();
 
                 for device in self.devices.values_mut() {

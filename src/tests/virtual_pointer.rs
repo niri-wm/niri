@@ -8,8 +8,7 @@ fn axis_discrete_overflow() {
     let id = f.add_client();
 
     let client = f.client(id);
-    let manager = client.state.virtual_pointer_manager.as_ref().unwrap();
-    let pointer = manager.create_virtual_pointer(None, &client.qh, ());
+    let pointer = client.state.virtual_pointer();
     pointer.axis_discrete(0, wl_pointer::Axis::VerticalScroll, 0., i32::MAX);
     f.roundtrip(id);
 }
