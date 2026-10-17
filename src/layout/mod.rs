@@ -4398,6 +4398,13 @@ impl<W: LayoutElement> Layout<W> {
         move_.output == *output
     }
 
+    pub fn interactive_move_is_moving(&self) -> bool {
+        matches!(
+            &self.interactive_move,
+            Some(InteractiveMoveState::Moving(_))
+        )
+    }
+
     pub fn dnd_update(&mut self, output: Output, pointer_pos_within_output: Point<f64, Logical>) {
         let begin_gesture = self.dnd.is_none();
 

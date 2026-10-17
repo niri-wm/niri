@@ -2489,6 +2489,43 @@ impl State {
         }
     }
 
+    pub fn maybe_clamp_to_lock_cursor_window(
+        &self,
+        pos: Point<f64, Logical>,
+    ) -> Point<f64, Logical> {
+        if !self.niri.keyboard_focus.is_layout() {
+            return pos;
+        }
+        let Some(win) = self.niri.layout.focus() else {
+            return pos;
+        };
+        if win.rules().grab_mouse_when_focused != Some(true) {
+            return pos;
+        }
+        if self.niri.layout.interactive_move_is_moving() {
+            return pos;
+        }
+        let Some(output) = self.niri.layout.active_output() else {
+            return pos;
+        };
+        let Some(monitor) = self.niri.layout.monitor_for_output(output) else {
+            return pos;
+        };
+        let Some(rect) = monitor.active_window_visual_rectangle() else {
+            return pos;
+        };
+
+        let pixel = 1. / output.current_scale().fractional_scale();
+        let output_geo = self.niri.global_space.output_geometry(output).unwrap();
+        let mut rect = rect;
+        rect.loc += output_geo.loc.to_f64();
+
+        Point::from((
+            pos.x.clamp(rect.loc.x, rect.loc.x + rect.size.w - pixel),
+            pos.y.clamp(rect.loc.y, rect.loc.y + rect.size.h - pixel),
+        ))
+    }
+
     fn on_pointer_motion<I: InputBackend>(&mut self, event: I::PointerMotionEvent) {
         let was_inside_hot_corner = self.niri.pointer_inside_hot_corner;
         // Any of the early returns here mean that the pointer is not inside the hot corner.
@@ -2621,6 +2658,8 @@ impl State {
                 new_pos = center(geom).to_f64();
             }
         }
+
+        new_pos = self.maybe_clamp_to_lock_cursor_window(new_pos);
 
         if let Some(output) = self.niri.screenshot_ui.selection_output() {
             let geom = self.niri.global_space.output_geometry(output).unwrap();
