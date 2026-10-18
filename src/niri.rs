@@ -46,7 +46,7 @@ use smithay::desktop::{
     find_popup_root_surface, layer_map_for_output, LayerMap, LayerSurface, PopupGrab, PopupManager,
     PopupUngrabStrategy, Space, Window, WindowSurfaceType,
 };
-use smithay::input::keyboard::{Layout as KeyboardLayout, XkbConfig};
+use smithay::input::keyboard::{Layout as KeyboardLayout, LedState, XkbConfig};
 use smithay::input::pointer::{
     CursorIcon, CursorImageStatus, CursorImageSurfaceData, Focus,
     GrabStartData as PointerGrabStartData, MotionEvent,
@@ -1620,6 +1620,8 @@ impl State {
         }
         if mods_changed {
             keyboard.set_modifier_state(mods);
+            // set_modifier_state() doesn't update the LED state of physical keyboards.
+            self.update_keyboard_leds(keyboard.led_state());
             // set_modifier_state() doesn't tell the focused client on its own.
             keyboard.advertise_modifier_state(self);
         }
@@ -1635,6 +1637,19 @@ impl State {
                     context.set_layout(layout);
                 }
             });
+        }
+    }
+
+    pub fn update_keyboard_leds(&mut self, led_state: LedState) {
+        let keyboards = self
+            .niri
+            .devices
+            .iter()
+            .filter(|device| device.has_capability(input::DeviceCapability::Keyboard))
+            .cloned();
+
+        for mut keyboard in keyboards {
+            keyboard.led_update(led_state.into());
         }
     }
 
