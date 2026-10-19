@@ -345,12 +345,10 @@ jobs:
         with:
           path: docs/wiki/
 
-  publish-docs:
+  build-docs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'niri-wm/niri'
     needs:
       - test
-    permissions:
-      contents: write
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
@@ -376,14 +374,23 @@ jobs:
       - name: Generate rustdoc documentation
         run: cargo doc --no-deps -p niri-ipc
 
-      - run: mkdir -p publish/niri_ipc
-      - run: cp -r ./target/doc/* ./publish/
-      - run: cp -r ./docs/site/* ./publish/
+      - run: |
+          mkdir -p publish/niri_ipc
+          cp -r ./target/doc/* ./publish/
+          cp -r ./docs/site/* ./publish/
 
-      - name: Deploy documentation
-        if: github.ref == 'refs/heads/main'
-        uses: peaceiris/actions-gh-pages@v4
+      - name: Upload pages artifact
+        uses: actions/upload-pages-artifact@v5
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./publish
-          force_orphan: true
+          path: ./publish
+
+  publish-docs:
+    runs-on: ubuntu-24.04
+    needs:
+      - build-docs
+    permissions:
+      id-token: write
+      pages: write
+    steps:
+      - name: Deploy artifact to GitHub Pages
+        uses: actions/deploy-pages@v5
