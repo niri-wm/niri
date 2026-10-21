@@ -847,6 +847,7 @@ mod tests {
                 xcursor-theme "breeze_cursors"
                 xcursor-size 16
                 hide-when-typing
+                hide-host-cursor
                 hide-after-inactive-ms 3000
             }
 
@@ -1520,6 +1521,7 @@ mod tests {
                 xcursor_theme: "breeze_cursors",
                 xcursor_size: 16,
                 hide_when_typing: true,
+                hide_host_cursor: true,
                 hide_after_inactive_ms: Some(
                     3000,
                 ),
