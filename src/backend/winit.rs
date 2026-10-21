@@ -56,6 +56,11 @@ impl Winit {
             ));
         let (backend, winit) = winit::init_from_attributes(builder)?;
 
+        // allow config flag to tell host compositor not to draw cursor
+        if config.borrow().cursor.hide_host_cursor {
+            backend.window().set_cursor_visible(false);
+        }
+
         let output = Output::new(
             "winit".to_string(),
             PhysicalProperties {
@@ -401,5 +406,9 @@ impl Winit {
 
     pub fn ipc_outputs(&self) -> Arc<Mutex<IpcOutputMap>> {
         self.ipc_outputs.clone()
+    }
+
+    pub fn set_cursor_visible(&self, visible: bool) {
+        self.backend.window().set_cursor_visible(visible);
     }
 }

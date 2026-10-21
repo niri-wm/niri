@@ -1746,6 +1746,10 @@ impl State {
                 .cursor_manager
                 .reload(&config.cursor.xcursor_theme, config.cursor.xcursor_size);
             self.niri.cursor_texture_cache.clear();
+            if config.cursor.hide_host_cursor != old_config.cursor.hide_host_cursor {
+                self.backend
+                    .set_cursor_visible(!config.cursor.hide_host_cursor);
+            }
         }
 
         // We need &mut self to reload the xkb config, so just store it here.

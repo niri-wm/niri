@@ -19,7 +19,8 @@ environment {
 cursor {
     xcursor-theme "breeze_cursors"
     xcursor-size 48
-
+    // When running niri as a nested window, it hides the host window cursor.
+    //hide-host-cursor
     hide-when-typing
     hide-after-inactive-ms 1000
 }
@@ -193,6 +194,20 @@ If set, the cursor will automatically hide once this number of milliseconds pass
 cursor {
     // Hide the cursor after one second of inactivity.
     hide-after-inactive-ms 1000
+}
+```
+
+#### `hide-host-cursor`
+
+<sup>Since: next release</sup>
+
+When running niri in a nested window (such as inside another Wayland compositor or X11 desktop via the winit backend), hide the host compositor's cursor while it is over the niri window.
+
+This prevents showing two overlapping cursors and ensures niri's software cursor is the only one rendered, properly reflecting dynamic cursor shapes (resize handles, text selection, dragging) from clients inside niri.
+
+```kdl
+cursor {
+    hide-host-cursor
 }
 ```
 
