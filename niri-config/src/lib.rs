@@ -911,6 +911,7 @@ mod tests {
                 default-column-display "tabbed"
                 default-floating-position x=100 y=-200 relative-to="bottom-left"
                 on-xdg-activate "ignore"
+                variable-refresh-rate "fullscreen-only"
 
                 focus-ring {
                     off
@@ -1510,6 +1511,12 @@ mod tests {
                     b: 0.25,
                     a: 1.0,
                 },
+                fullscreen_backdrop_color: Color {
+                    r: 0.0,
+                    g: 0.0,
+                    b: 0.0,
+                    a: 1.0,
+                },
             },
             prefer_no_csd: true,
             cursor: Cursor {
@@ -1897,7 +1904,9 @@ mod tests {
                     clip_to_geometry: None,
                     baba_is_float: None,
                     block_out_from: None,
-                    variable_refresh_rate: None,
+                    variable_refresh_rate: Some(
+                        FullscreenOnly,
+                    ),
                     default_column_display: Some(
                         Tabbed,
                     ),

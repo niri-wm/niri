@@ -15,6 +15,7 @@ use anyhow::{bail, ensure, Context};
 use calloop::futures::Scheduler;
 use niri_config::debug::PreviewRender;
 use niri_config::output::MaxBpc;
+use niri_config::window_rule::VrrRule;
 use niri_config::{
     Config, FloatOrInt, Key, Modifiers, OutputName, TrackLayout, WarpMouseToFocusMode,
     WorkspaceReference, Xkb,
@@ -46,7 +47,7 @@ use smithay::desktop::{
     find_popup_root_surface, layer_map_for_output, LayerMap, LayerSurface, PopupGrab, PopupManager,
     PopupUngrabStrategy, Space, Window, WindowSurfaceType,
 };
-use smithay::input::keyboard::{Layout as KeyboardLayout, XkbConfig};
+use smithay::input::keyboard::{Layout as KeyboardLayout, LedState, XkbConfig};
 use smithay::input::pointer::{
     CursorIcon, CursorImageStatus, CursorImageSurfaceData, Focus,
     GrabStartData as PointerGrabStartData, MotionEvent,
@@ -1620,6 +1621,8 @@ impl State {
         }
         if mods_changed {
             keyboard.set_modifier_state(mods);
+            // set_modifier_state() doesn't update the LED state of physical keyboards.
+            self.update_keyboard_leds(keyboard.led_state());
             // set_modifier_state() doesn't tell the focused client on its own.
             keyboard.advertise_modifier_state(self);
         }
@@ -1635,6 +1638,19 @@ impl State {
                     context.set_layout(layout);
                 }
             });
+        }
+    }
+
+    pub fn update_keyboard_leds(&mut self, led_state: LedState) {
+        let keyboards = self
+            .niri
+            .devices
+            .iter()
+            .filter(|device| device.has_capability(input::DeviceCapability::Keyboard))
+            .cloned();
+
+        for mut keyboard in keyboards {
+            keyboard.led_update(led_state.into());
         }
     }
 
@@ -1774,10 +1790,10 @@ impl State {
 
         let binds_changed = config.binds != old_config.binds;
         let new_mod_key = self.backend.mod_key(&config);
+        let mut hotkey_overlay_changed =
+            config.hotkey_overlay.hide_not_bound != old_config.hotkey_overlay.hide_not_bound;
         if new_mod_key != self.backend.mod_key(&old_config) || binds_changed {
-            self.niri
-                .hotkey_overlay
-                .on_hotkey_config_updated(new_mod_key);
+            hotkey_overlay_changed = true;
             self.niri.mods_with_mouse_binds = mods_with_mouse_binds(new_mod_key, &config.binds);
             self.niri.mods_with_horizontal_wheel_binds =
                 mods_with_horizontal_wheel_binds(new_mod_key, &config.binds);
@@ -1787,6 +1803,11 @@ impl State {
                 mods_with_tablet_stylus_binds(new_mod_key, &config.binds);
             self.niri.mods_with_finger_scroll_binds =
                 mods_with_finger_scroll_binds(new_mod_key, &config.binds);
+        }
+        if hotkey_overlay_changed {
+            self.niri
+                .hotkey_overlay
+                .on_hotkey_config_updated(new_mod_key);
         }
 
         if config.window_rules != old_config.window_rules {
@@ -5001,19 +5022,34 @@ impl Niri {
             return;
         }
 
-        let current = self.layout.windows_for_output(output).any(|mapped| {
-            mapped.rules().variable_refresh_rate == Some(true) && {
-                let mut visible = false;
-                mapped.window.with_surfaces(|surface, states| {
-                    if !visible
-                        && surface_primary_scanout_output(surface, states).as_ref() == Some(output)
-                    {
-                        visible = true;
-                    }
-                });
-                visible
-            }
-        });
+        // Check for fullscreen-only VRR first as that's cheaper.
+        let mon = self.layout.monitor_for_output(output).unwrap();
+        // We allow the overlay layer and floating windows for this check
+        // so VRR keeps working with overlays.
+        let current = mon
+            .fullscreen_window_above_top_layer()
+            .is_some_and(|mapped| {
+                mapped.rules().variable_refresh_rate == Some(VrrRule::FullscreenOnly)
+            });
+
+        let current = current
+            || self.layout.windows_for_output(output).any(|mapped| {
+                mapped.rules().variable_refresh_rate == Some(VrrRule::On) && {
+                    let mut visible = false;
+                    mapped.window.with_surfaces(|surface, states| {
+                        if visible {
+                            // Skip checking.
+                            return;
+                        }
+
+                        if surface_primary_scanout_output(surface, states).as_ref() == Some(output)
+                        {
+                            visible = true;
+                        }
+                    });
+                    visible
+                }
+            });
 
         backend.set_output_on_demand_vrr(self, output, current);
     }

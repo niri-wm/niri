@@ -1641,14 +1641,18 @@ impl<W: LayoutElement> Monitor<W> {
         (InsertWorkspace::NewAt(last_idx + 1), dummy)
     }
 
-    pub fn render_above_top_layer(&self) -> bool {
+    pub fn fullscreen_window_above_top_layer(&self) -> Option<&W> {
         // Render above the top layer only if the view is stationary.
         if self.workspace_switch.is_some() || self.overview_progress.is_some() {
-            return false;
+            return None;
         }
 
         let ws = &self.workspaces[self.active_workspace_idx];
-        ws.render_above_top_layer()
+        ws.fullscreen_window_above_top_layer()
+    }
+
+    pub fn render_above_top_layer(&self) -> bool {
+        self.fullscreen_window_above_top_layer().is_some()
     }
 
     pub fn render_insert_hint_between_workspaces<R: NiriRenderer>(

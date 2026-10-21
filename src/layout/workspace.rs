@@ -1715,8 +1715,8 @@ impl<W: LayoutElement> Workspace<W> {
         )
     }
 
-    pub fn render_above_top_layer(&self) -> bool {
-        self.scrolling.render_above_top_layer()
+    pub fn fullscreen_window_above_top_layer(&self) -> Option<&W> {
+        self.scrolling.fullscreen_window_above_top_layer()
     }
 
     pub fn is_floating_visible(&self) -> bool {
@@ -1724,7 +1724,7 @@ impl<W: LayoutElement> Workspace<W> {
         matches!(
             self.floating_is_active,
             FloatingActive::Yes | FloatingActive::NoButRaised
-        ) || !self.render_above_top_layer()
+        ) || self.fullscreen_window_above_top_layer().is_none()
     }
 
     pub fn store_unmap_snapshot_if_empty(

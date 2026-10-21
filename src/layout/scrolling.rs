@@ -2949,19 +2949,22 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         true
     }
 
-    pub fn render_above_top_layer(&self) -> bool {
+    pub fn fullscreen_window_above_top_layer(&self) -> Option<&W> {
         // Render above the top layer if we're on a fullscreen window and the view is stationary.
         if self.columns.is_empty() {
-            return false;
+            return None;
         }
 
         if !self.view_offset.is_static() {
-            return false;
+            return None;
         }
 
-        self.columns[self.active_column_idx]
-            .sizing_mode()
-            .is_fullscreen()
+        let col = &self.columns[self.active_column_idx];
+        if !col.sizing_mode().is_fullscreen() {
+            return None;
+        }
+
+        Some(col.tiles[col.active_tile_idx].window())
     }
 
     pub fn render<R: NiriRenderer>(
