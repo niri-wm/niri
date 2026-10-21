@@ -192,6 +192,10 @@ impl MappedLayer {
         xray_pos: XrayPos,
         push: &mut dyn FnMut(LayerSurfaceRenderElement<R>),
     ) {
+        if ctx.target.should_hide(self.rules.block_out_from) {
+            return;
+        }
+
         let scale = Scale::from(self.scale);
         let alpha = self.rules.opacity.unwrap_or(1.).clamp(0., 1.);
 
@@ -263,7 +267,9 @@ impl MappedLayer {
         xray_pos: XrayPos,
         push: &mut dyn FnMut(LayerSurfaceRenderElement<R>),
     ) {
-        if ctx.target.should_block_out(self.rules.block_out_from) {
+        if ctx.target.should_hide(self.rules.block_out_from)
+            || ctx.target.should_block_out(self.rules.block_out_from)
+        {
             return;
         }
 

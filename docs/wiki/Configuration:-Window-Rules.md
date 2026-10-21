@@ -577,6 +577,24 @@ window-rule {
 }
 ```
 
+<sup>Since: next release</sup>
+
+By default, the window is replaced with a solid black rectangle (`kind="fill"`).
+Set `kind="transparent"` to not draw the window at all instead.
+The screencast will show whatever is underneath, as if the window wasn't there.
+The window's border, focus ring, shadow, pop-ups, and closing animation are hidden too.
+
+```kdl
+// Make password managers invisible on screencasts, rather than a black rectangle.
+window-rule {
+    match app-id=r#"^org\.keepassxc\.KeePassXC$"#
+
+    block-out-from "screencast" kind="transparent"
+}
+```
+
+Keep in mind that the space the window occupies is not filled in: viewers will see the wallpaper or other windows there, so it can be apparent that something is missing in a tiled layout.
+
 > [!WARNING]
 > Be careful when blocking out windows based on a dynamically changing window title.
 >

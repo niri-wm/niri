@@ -3,7 +3,7 @@ use std::cmp::{max, min};
 use niri_config::utils::MergeWith as _;
 use niri_config::window_rule::{Match, OnXdgActivate, VrrRule, WindowRule};
 use niri_config::{
-    BackgroundEffect, BlockOutFrom, BorderRule, CornerRadius, FloatingPosition, PresetSize,
+    BackgroundEffect, BlockOutRule, BorderRule, CornerRadius, FloatingPosition, PresetSize,
     ResolvedPopupsRules, ShadowRule, TabIndicatorRule,
 };
 use niri_ipc::ColumnDisplay;
@@ -112,7 +112,7 @@ pub struct ResolvedWindowRules {
     pub baba_is_float: Option<bool>,
 
     /// Whether to block out this window from certain render targets.
-    pub block_out_from: Option<BlockOutFrom>,
+    pub block_out_from: Option<BlockOutRule>,
 
     /// Whether to enable VRR on this window's primary output if it is on-demand.
     pub variable_refresh_rate: Option<VrrRule>,

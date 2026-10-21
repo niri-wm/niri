@@ -622,6 +622,23 @@ pub enum BlockOutFrom {
     ScreenCapture,
 }
 
+#[derive(knuffel::DecodeScalar, Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum BlockOutKind {
+    /// Replace the content with a solid color.
+    #[default]
+    Fill,
+    /// Don't draw the content at all, showing whatever is underneath.
+    Transparent,
+}
+
+#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlockOutRule {
+    #[knuffel(argument)]
+    pub from: BlockOutFrom,
+    #[knuffel(property, default)]
+    pub kind: BlockOutKind,
+}
+
 #[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq)]
 pub struct BorderRule {
     #[knuffel(child)]

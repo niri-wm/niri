@@ -1,6 +1,6 @@
 use std::cell::OnceCell;
 
-use niri_config::BlockOutFrom;
+use niri_config::BlockOutRule;
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::element::{Kind, RenderElement};
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
@@ -29,7 +29,7 @@ pub struct RenderSnapshot<C, B> {
     pub blocked_out_contents: Vec<B>,
 
     /// Where the contents were blocked out from at the time of the snapshot.
-    pub block_out_from: Option<BlockOutFrom>,
+    pub block_out_from: Option<BlockOutRule>,
 
     /// Visual size of the element at the point of the snapshot.
     pub size: Size<f64, Logical>,

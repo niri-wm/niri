@@ -2975,6 +2975,10 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         if layer.is_normal() {
             let view_rect = Rectangle::new(Point::from((self.view_pos(), 0.)), self.view_size);
             for closing in self.closing_windows.iter().rev() {
+                if closing.should_hide(ctx.target) {
+                    continue;
+                }
+
                 let elem = closing.render(ctx.as_gles(), view_rect, scale);
                 push(elem.into());
             }

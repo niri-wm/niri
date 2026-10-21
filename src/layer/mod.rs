@@ -1,6 +1,6 @@
 use niri_config::layer_rule::{LayerRule, Match};
 use niri_config::utils::MergeWith as _;
-use niri_config::{BackgroundEffect, BlockOutFrom, CornerRadius, ResolvedPopupsRules, ShadowRule};
+use niri_config::{BackgroundEffect, BlockOutRule, CornerRadius, ResolvedPopupsRules, ShadowRule};
 use smithay::desktop::LayerSurface;
 use smithay::wayland::shell::wlr_layer::Layer;
 
@@ -14,7 +14,7 @@ pub struct ResolvedLayerRules {
     pub opacity: Option<f32>,
 
     /// Whether to block out this layer surface from certain render targets.
-    pub block_out_from: Option<BlockOutFrom>,
+    pub block_out_from: Option<BlockOutRule>,
 
     /// Shadow overrides.
     pub shadow: ShadowRule,

@@ -1376,6 +1376,11 @@ impl<W: LayoutElement> Tile<W> {
         let mut pushed = false;
         self.window().set_offscreen_data(None);
 
+        // Draw nothing for tiles hidden from this target, including border, shadow and animations.
+        if ctx.target.should_hide(self.window.rules().block_out_from) {
+            return;
+        }
+
         if let Some(open) = &self.open_animation {
             let mut ctx = ctx.as_gles();
             let mut elements = Vec::new();

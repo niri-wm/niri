@@ -651,6 +651,10 @@ impl LayoutElement for Mapped {
         alpha: f32,
         push: &mut dyn FnMut(LayoutElementRenderElement<R>),
     ) {
+        if ctx.target.should_hide(self.rules.block_out_from) {
+            return;
+        }
+
         if ctx.target.should_block_out(self.rules.block_out_from) {
             let mut buffer = self.block_out_buffer.borrow_mut();
             buffer.resize(self.window.geometry().size.to_f64());
@@ -682,7 +686,9 @@ impl LayoutElement for Mapped {
         xray_pos: XrayPos,
         push: &mut dyn FnMut(LayoutElementRenderElement<R>),
     ) {
-        if ctx.target.should_block_out(self.rules.block_out_from) {
+        if ctx.target.should_hide(self.rules.block_out_from)
+            || ctx.target.should_block_out(self.rules.block_out_from)
+        {
             return;
         }
 

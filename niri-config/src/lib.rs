@@ -672,6 +672,47 @@ mod tests {
     }
 
     #[test]
+    fn parse_block_out_kind() {
+        let parsed = do_parse(
+            r#"
+            window-rule { block-out-from "screencast"; }
+            window-rule { block-out-from "screen-capture" kind="fill"; }
+            window-rule { block-out-from "screen-capture" kind="transparent"; }
+            layer-rule { block-out-from "screencast" kind="transparent"; }
+            "#,
+        );
+
+        assert_eq!(
+            parsed
+                .window_rules
+                .iter()
+                .map(|rule| rule.block_out_from)
+                .collect::<Vec<_>>(),
+            vec![
+                Some(BlockOutRule {
+                    from: BlockOutFrom::Screencast,
+                    kind: BlockOutKind::Fill,
+                }),
+                Some(BlockOutRule {
+                    from: BlockOutFrom::ScreenCapture,
+                    kind: BlockOutKind::Fill,
+                }),
+                Some(BlockOutRule {
+                    from: BlockOutFrom::ScreenCapture,
+                    kind: BlockOutKind::Transparent,
+                }),
+            ]
+        );
+        assert_eq!(
+            parsed.layer_rules[0].block_out_from,
+            Some(BlockOutRule {
+                from: BlockOutFrom::Screencast,
+                kind: BlockOutKind::Transparent,
+            })
+        );
+    }
+
+    #[test]
     fn parse() {
         let parsed = do_parse(
             r##"
@@ -1961,7 +2002,10 @@ mod tests {
                     excludes: [],
                     opacity: None,
                     block_out_from: Some(
-                        Screencast,
+                        BlockOutRule {
+                            from: Screencast,
+                            kind: Fill,
+                        },
                     ),
                     shadow: ShadowRule {
                         off: false,

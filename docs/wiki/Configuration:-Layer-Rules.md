@@ -129,6 +129,19 @@ layer-rule {
 }
 ```
 
+<sup>Since: next release</sup>
+
+Like for windows, you can set `kind="transparent"` to not draw the surface at all instead of a black rectangle, so the screencast shows whatever is underneath.
+
+```kdl
+// Make mako notifications invisible on screencasts.
+layer-rule {
+    match namespace="^notifications$"
+
+    block-out-from "screencast" kind="transparent"
+}
+```
+
 #### `opacity`
 
 Set the opacity of the surface.

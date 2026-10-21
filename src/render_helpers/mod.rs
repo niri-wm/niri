@@ -1,7 +1,7 @@
 use std::ptr;
 
 use anyhow::{bail, ensure, Context as _};
-use niri_config::BlockOutFrom;
+use niri_config::{BlockOutFrom, BlockOutKind, BlockOutRule};
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::allocator::{Buffer, Fourcc};
 use smithay::backend::renderer::damage::OutputDamageTracker;
@@ -117,12 +117,25 @@ pub trait ToRenderElement {
 impl RenderTarget {
     pub const COUNT: usize = 3;
 
-    pub fn should_block_out(self, block_out_from: Option<BlockOutFrom>) -> bool {
-        match block_out_from {
-            None => false,
-            Some(BlockOutFrom::Screencast) => self == RenderTarget::Screencast,
-            Some(BlockOutFrom::ScreenCapture) => self != RenderTarget::Output,
+    fn is_blocked_from(self, from: BlockOutFrom) -> bool {
+        match from {
+            BlockOutFrom::Screencast => self == RenderTarget::Screencast,
+            BlockOutFrom::ScreenCapture => self != RenderTarget::Output,
         }
+    }
+
+    /// Returns whether the content should be replaced with a solid color on this target.
+    pub fn should_block_out(self, block_out: Option<BlockOutRule>) -> bool {
+        block_out.is_some_and(|rule| {
+            rule.kind == BlockOutKind::Fill && self.is_blocked_from(rule.from)
+        })
+    }
+
+    /// Returns whether the content should not be drawn at all on this target.
+    pub fn should_hide(self, block_out: Option<BlockOutRule>) -> bool {
+        block_out.is_some_and(|rule| {
+            rule.kind == BlockOutKind::Transparent && self.is_blocked_from(rule.from)
+        })
     }
 }
 

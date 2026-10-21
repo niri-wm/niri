@@ -3,7 +3,7 @@ use std::rc::Rc;
 
 use anyhow::Context as _;
 use glam::{Mat3, Vec2};
-use niri_config::BlockOutFrom;
+use niri_config::BlockOutRule;
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::element::utils::{
     Relocate, RelocateRenderElement, RescaleRenderElement,
@@ -39,7 +39,7 @@ pub struct ClosingWindow {
     blocked_out_buffer: TextureBuffer<GlesTexture>,
 
     /// Where the window should be blocked out from.
-    block_out_from: Option<BlockOutFrom>,
+    block_out_from: Option<BlockOutRule>,
 
     /// Size of the window geometry.
     geo_size: Size<f64, Logical>,
@@ -139,8 +139,15 @@ impl ClosingWindow {
                 (None, Point::default())
             };
         let (blocked_out_buffer, blocked_out_buffer_offset) =
-            render_to_texture(snapshot.blocked_out_contents)
-                .context("error rendering blocked-out contents")?;
+            if snapshot.blocked_out_contents.is_empty() {
+                // Content hidden from the Screencast target renders nothing there. Such closing
+                // windows are skipped for the targets they're hidden from, so this buffer is
+                // never drawn.
+                (buffer.clone(), buffer_offset)
+            } else {
+                render_to_texture(snapshot.blocked_out_contents)
+                    .context("error rendering blocked-out contents")?
+            };
 
         Ok(Self {
             buffer,
@@ -174,6 +181,10 @@ impl ClosingWindow {
             AnimationState::Waiting { .. } => true,
             AnimationState::Animating(anim) => !anim.is_done(),
         }
+    }
+
+    pub fn should_hide(&self, target: RenderTarget) -> bool {
+        target.should_hide(self.block_out_from)
     }
 
     pub fn render(
