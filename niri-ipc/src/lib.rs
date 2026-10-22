@@ -183,6 +183,10 @@ pub struct PickedColor {
     pub rgb: [f64; 3],
 }
 
+fn default_true() -> bool {
+    true
+}
+
 /// Actions that niri can perform.
 // Variants in this enum should match the spelling of the ones in niri-config. Most, but not all,
 // variants from niri-config should be present here.
@@ -250,6 +254,11 @@ pub enum Action {
         #[cfg_attr(feature = "clap", arg(short = 'p', long, action = clap::ArgAction::Set, default_value_t = true))]
         show_pointer: bool,
 
+        /// Whether to put the screenshot into your clipboard.
+        #[cfg_attr(feature = "clap", arg(short = 'c', long, action = clap::ArgAction::Set, default_value_t = true))]
+        #[serde(default = "default_true")]
+        write_to_clipboard: bool,
+
         /// Path to save the screenshot to.
         ///
         /// The path must be absolute, otherwise an error is returned.
@@ -280,6 +289,11 @@ pub enum Action {
         #[serde(default)]
         #[cfg_attr(feature = "clap", arg(short = 'p', long, action = clap::ArgAction::Set, default_value_t = false))]
         show_pointer: bool,
+
+        /// Whether to put the screenshot into your clipboard.
+        #[cfg_attr(feature = "clap", arg(short = 'c', long, action = clap::ArgAction::Set, default_value_t = true))]
+        #[serde(default = "default_true")]
+        write_to_clipboard: bool,
 
         /// Path to save the screenshot to.
         ///
