@@ -1160,6 +1160,7 @@ mod tests {
                 ),
                 focus_follows_mouse: Some(
                     FocusFollowsMouse {
+                        outputs_only: None,
                         max_scroll_amount: None,
                     },
                 ),

@@ -351,6 +351,15 @@ input {
 }
 ```
 
+<sup>Since: next release</sup> You can optionally set `outputs-only`.
+When true, focus only changes between monitors, instead of individual windows.
+
+```kdl
+input {
+    focus-follows-mouse outputs-only=true
+}
+```
+
 <sup>Since: 0.1.8</sup> You can optionally set `max-scroll-amount`.
 Then, focus-follows-mouse won't focus a window if it will result in the view scrolling more than the set amount.
 The value is a percentage of the working area width.
