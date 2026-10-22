@@ -1,12 +1,12 @@
 //! Helper for blocking communication over the niri socket.
 
 use std::env;
-use std::io::{self, BufRead, BufReader, Write};
+use std::io::{self, BufRead, BufReader, Read, Write};
 use std::net::Shutdown;
 use std::os::unix::net::UnixStream;
 use std::path::Path;
 
-use crate::{Event, Reply, Request};
+use crate::{Event, Reply, Request, Response, ScreenshotRequest};
 
 /// Name of the environment variable containing the niri IPC socket path.
 pub const SOCKET_PATH_ENV: &str = "NIRI_SOCKET";
@@ -49,15 +49,47 @@ impl Socket {
     /// * `Ok(Err(message))`: error message from niri
     /// * `Err(error)`: error communicating with niri
     pub fn send(&mut self, request: Request) -> io::Result<Reply> {
+        self.write_request(request)?;
+        self.read_reply()
+    }
+
+    /// Sends a screenshot request and writes returned PNG data to `output`.
+    ///
+    /// This consumes the connection.
+    pub fn send_screenshot(
+        &mut self,
+        request: ScreenshotRequest,
+        mut output: impl Write,
+    ) -> io::Result<Reply> {
+        self.write_request(Request::Screenshot(request))?;
+        let reply = self.read_reply()?;
+
+        if let Ok(Response::Screenshot(Some(screenshot))) = &reply {
+            let copied = io::copy(
+                &mut self.stream.by_ref().take(screenshot.data_length),
+                &mut output,
+            )?;
+            if copied != screenshot.data_length {
+                return Err(io::Error::new(
+                    io::ErrorKind::UnexpectedEof,
+                    "screenshot data ended early",
+                ));
+            }
+        }
+
+        Ok(reply)
+    }
+
+    fn write_request(&mut self, request: Request) -> io::Result<()> {
         let mut buf = serde_json::to_string(&request).unwrap();
         buf.push('\n');
-        self.stream.get_mut().write_all(buf.as_bytes())?;
+        self.stream.get_mut().write_all(buf.as_bytes())
+    }
 
-        buf.clear();
+    fn read_reply(&mut self) -> io::Result<Reply> {
+        let mut buf = String::new();
         self.stream.read_line(&mut buf)?;
-
-        let reply = serde_json::from_str(&buf)?;
-        Ok(reply)
+        serde_json::from_str(&buf).map_err(Into::into)
     }
 
     /// Starts reading event stream [`Event`]s from the socket.
