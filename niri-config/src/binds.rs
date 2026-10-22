@@ -335,6 +335,8 @@ pub enum Action {
     MoveWorkspaceToMonitorUp,
     MoveWorkspaceToMonitorPrevious,
     MoveWorkspaceToMonitorNext,
+    SwapWorkspacesWithMonitorPrevious,
+    SwapWorkspacesWithMonitorNext,
     ToggleWindowFloating,
     #[knuffel(skip)]
     ToggleWindowFloatingById(u64),
@@ -666,6 +668,12 @@ impl From<niri_ipc::Action> for Action {
                 reference: None,
             } => Self::MoveWorkspaceToMonitor(output),
             niri_ipc::Action::MoveWorkspaceToMonitorNext {} => Self::MoveWorkspaceToMonitorNext,
+            niri_ipc::Action::SwapWorkspacesWithMonitorPrevious {} => {
+                Self::SwapWorkspacesWithMonitorPrevious
+            }
+            niri_ipc::Action::SwapWorkspacesWithMonitorNext {} => {
+                Self::SwapWorkspacesWithMonitorNext
+            }
             niri_ipc::Action::ToggleDebugTint {} => Self::ToggleDebugTint,
             niri_ipc::Action::DebugToggleOpaqueRegions {} => Self::DebugToggleOpaqueRegions,
             niri_ipc::Action::DebugToggleDamage {} => Self::DebugToggleDamage,
