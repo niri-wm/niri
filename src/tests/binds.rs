@@ -4,6 +4,8 @@ use insta::assert_snapshot;
 use niri_config::{Action, Config};
 use smithay::backend::input::{InputEvent, InputTime, KeyState, Keycode};
 use smithay::input::keyboard::xkb::Keymap;
+use smithay::reexports::wayland_protocols_wlr::virtual_pointer::v1::client::zwlr_virtual_pointer_v1::ZwlrVirtualPointerV1;
+use wayland_client::protocol::wl_pointer;
 use wayland_client::protocol::wl_surface::WlSurface;
 
 use crate::tests::client::ClientId;
@@ -405,6 +407,61 @@ fn inhibiting() {
         run_f(&mut f, id, &surface, "-LatQ"),
         @"-AD01  24 XK_q"
     );
+}
+
+#[test]
+fn inhibiting_mouse_binds() {
+    let (mut f, id, surface) = set_up(
+        "
+    binds {
+        Mod+WheelScrollDown { close-window; }
+        Mod+WheelScrollUp allow-inhibiting=false { close-window; }
+    }
+    ",
+    );
+
+    // Send scroll events through a virtual pointer.
+    let client = f.client(id);
+    let manager = client.state.virtual_pointer_manager.as_ref().unwrap();
+    let pointer = manager.create_virtual_pointer(None, &client.qh, ());
+
+    // Hold Mod for the whole test.
+    run_f(&mut f, id, &surface, "+LWIN");
+
+    // `discrete` is a wheel notch count; niri turns it into v120 (one tick == 1).
+    // The source has to be set after an axis event: niri drops it otherwise.
+    fn scroll(f: &mut Fixture, id: ClientId, pointer: &ZwlrVirtualPointerV1, discrete: i32) {
+        pointer.axis_discrete(0, wl_pointer::Axis::VerticalScroll, 0., discrete);
+        pointer.axis_source(wl_pointer::AxisSource::Wheel);
+        pointer.frame();
+        f.roundtrip(id);
+    }
+
+    // Without an inhibitor, the wheel bind runs.
+    let before = f.niri().test_action_count;
+    scroll(&mut f, id, &pointer, 1);
+    assert_eq!(f.niri().test_action_count - before, 1);
+
+    // While the surface inhibits shortcuts, allow-inhibiting binds are skipped.
+    let inhibitor = f.client(id).state.inhibit_shortcuts(&surface);
+    f.roundtrip(id);
+
+    let before = f.niri().test_action_count;
+    scroll(&mut f, id, &pointer, 1);
+    assert_eq!(f.niri().test_action_count - before, 0);
+
+    // ...but allow-inhibiting=false ones still run.
+    let before = f.niri().test_action_count;
+    scroll(&mut f, id, &pointer, -1);
+    assert_eq!(f.niri().test_action_count - before, 1);
+
+    inhibitor.destroy();
+    f.roundtrip(id);
+
+    // Once the inhibitor is gone, binds run again.
+    let before = f.niri().test_action_count;
+    scroll(&mut f, id, &pointer, 1);
+    assert_eq!(f.niri().test_action_count - before, 1);
 }
 
 #[test]

@@ -2941,6 +2941,7 @@ impl State {
                 && mod_down
                 && !self.niri.is_locked()
                 && !self.niri.screenshot_ui.is_open()
+                && !self.is_inhibiting_shortcuts()
             {
                 let output_ws = if is_overview_open {
                     self.niri.workspace_under_cursor(true)
@@ -2984,7 +2985,7 @@ impl State {
 
                 // Check if we need to start an interactive move.
                 if button == Some(MouseButton::Left) && !pointer.is_grabbed() {
-                    if is_overview_open || mod_down {
+                    if is_overview_open || (mod_down && !self.is_inhibiting_shortcuts()) {
                         let location = pointer.current_location();
 
                         if !is_overview_open {
@@ -3017,7 +3018,11 @@ impl State {
                     }
                 }
                 // Check if we need to start an interactive resize.
-                else if button == Some(MouseButton::Right) && !pointer.is_grabbed() && mod_down {
+                else if button == Some(MouseButton::Right)
+                    && !pointer.is_grabbed()
+                    && mod_down
+                    && !self.is_inhibiting_shortcuts()
+                {
                     let location = pointer.current_location();
                     let (output, pos_within_output) = self.niri.output_under(location).unwrap();
                     let edges = self
@@ -3209,6 +3214,9 @@ impl State {
             let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
             let modifiers = modifiers_from_state(mods);
             let use_builtin_bindings = should_handle_in_overview || is_mru_open;
+            // Honor keyboard-shortcuts-inhibit for wheel binds, mirroring the
+            // FilterResult::Forward behavior in the keyboard bind handling.
+            let inhibited = self.is_inhibiting_shortcuts();
 
             if use_builtin_bindings
                 || self
@@ -3216,6 +3224,7 @@ impl State {
                     .mods_with_horizontal_wheel_binds
                     .contains(&modifiers)
             {
+                let mut any_bind_ran = false;
                 let horizontal = horizontal_amount_v120.unwrap_or(0.);
                 let ticks = self.niri.horizontal_wheel_tracker.accumulate(horizontal);
                 if ticks != 0 {
@@ -3274,18 +3283,30 @@ impl State {
                         };
 
                     if let Some(right) = bind_right {
-                        for _ in 0..ticks {
-                            self.handle_bind(right.clone());
+                        if !inhibited || !right.allow_inhibiting {
+                            for _ in 0..ticks {
+                                self.handle_bind(right.clone());
+                                any_bind_ran = true;
+                            }
                         }
                     }
                     if let Some(left) = bind_left {
-                        for _ in ticks..0 {
-                            self.handle_bind(left.clone());
+                        if !inhibited || !left.allow_inhibiting {
+                            for _ in ticks..0 {
+                                self.handle_bind(left.clone());
+                                any_bind_ran = true;
+                            }
                         }
                     }
                 }
 
-                horizontal_amount = 0.0;
+                // Consume the event unless an inhibiting surface asked for shortcuts to be
+                // forwarded and none of the binds were allowed to run.
+                if !inhibited || any_bind_ran {
+                    horizontal_amount = 0.0;
+                } else {
+                    self.niri.horizontal_wheel_tracker.reset();
+                }
             } else {
                 self.niri.horizontal_wheel_tracker.reset();
             }
@@ -3296,6 +3317,7 @@ impl State {
                     .mods_with_vertical_wheel_binds
                     .contains(&modifiers)
             {
+                let mut any_bind_ran = false;
                 let vertical = vertical_amount_v120.unwrap_or(0.);
                 let ticks = self.niri.vertical_wheel_tracker.accumulate(vertical);
                 if ticks != 0 {
@@ -3376,18 +3398,30 @@ impl State {
                     };
 
                     if let Some(down) = bind_down {
-                        for _ in 0..ticks {
-                            self.handle_bind(down.clone());
+                        if !inhibited || !down.allow_inhibiting {
+                            for _ in 0..ticks {
+                                self.handle_bind(down.clone());
+                                any_bind_ran = true;
+                            }
                         }
                     }
                     if let Some(up) = bind_up {
-                        for _ in ticks..0 {
-                            self.handle_bind(up.clone());
+                        if !inhibited || !up.allow_inhibiting {
+                            for _ in ticks..0 {
+                                self.handle_bind(up.clone());
+                                any_bind_ran = true;
+                            }
                         }
                     }
                 }
 
-                vertical_amount = 0.0;
+                // Consume the event unless an inhibiting surface asked for shortcuts to be
+                // forwarded and none of the binds were allowed to run.
+                if !inhibited || any_bind_ran {
+                    vertical_amount = 0.0;
+                } else {
+                    self.niri.vertical_wheel_tracker.reset();
+                }
             } else {
                 self.niri.vertical_wheel_tracker.reset();
             }
@@ -3500,6 +3534,11 @@ impl State {
             }
 
             if is_mru_open || self.niri.mods_with_finger_scroll_binds.contains(&modifiers) {
+                // Honor keyboard-shortcuts-inhibit for touchpad scroll binds, mirroring the
+                // wheel bind handling above.
+                let inhibited = self.is_inhibiting_shortcuts();
+                let mut any_bind_ran = false;
+
                 let ticks = self
                     .niri
                     .horizontal_finger_scroll_tracker
@@ -3527,13 +3566,19 @@ impl State {
                     drop(config);
 
                     if let Some(right) = bind_right {
-                        for _ in 0..ticks {
-                            self.handle_bind(right.clone());
+                        if !inhibited || !right.allow_inhibiting {
+                            for _ in 0..ticks {
+                                self.handle_bind(right.clone());
+                                any_bind_ran = true;
+                            }
                         }
                     }
                     if let Some(left) = bind_left {
-                        for _ in ticks..0 {
-                            self.handle_bind(left.clone());
+                        if !inhibited || !left.allow_inhibiting {
+                            for _ in ticks..0 {
+                                self.handle_bind(left.clone());
+                                any_bind_ran = true;
+                            }
                         }
                     }
                 }
@@ -3565,18 +3610,30 @@ impl State {
                     drop(config);
 
                     if let Some(down) = bind_down {
-                        for _ in 0..ticks {
-                            self.handle_bind(down.clone());
+                        if !inhibited || !down.allow_inhibiting {
+                            for _ in 0..ticks {
+                                self.handle_bind(down.clone());
+                                any_bind_ran = true;
+                            }
                         }
                     }
                     if let Some(up) = bind_up {
-                        for _ in ticks..0 {
-                            self.handle_bind(up.clone());
+                        if !inhibited || !up.allow_inhibiting {
+                            for _ in ticks..0 {
+                                self.handle_bind(up.clone());
+                                any_bind_ran = true;
+                            }
                         }
                     }
                 }
 
-                return;
+                // Consume the event unless an inhibiting surface asked for shortcuts to be
+                // forwarded and none of the binds were allowed to run.
+                if !inhibited || any_bind_ran {
+                    return;
+                }
+                self.niri.horizontal_finger_scroll_tracker.reset();
+                self.niri.vertical_finger_scroll_tracker.reset();
             } else {
                 self.niri.horizontal_finger_scroll_tracker.reset();
                 self.niri.vertical_finger_scroll_tracker.reset();
