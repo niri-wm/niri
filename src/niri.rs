@@ -4727,6 +4727,7 @@ impl Niri {
             }
         }
 
+        mon.render_workspace_borders(ctx.renderer, &mut |elem| push(elem.into()));
         mon.render_workspace_shadows(ctx.renderer, &mut |elem| push(elem.into()));
 
         // Then the backdrop.
