@@ -1153,6 +1153,7 @@ mod tests {
                     ),
                 },
                 disable_power_key_handling: true,
+                bind_to_keysyms: false,
                 warp_mouse_to_focus: Some(
                     WarpMouseToFocus {
                         mode: None,

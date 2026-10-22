@@ -18,6 +18,7 @@ pub struct Input {
     pub tablet: Tablet,
     pub touch: Touch,
     pub disable_power_key_handling: bool,
+    pub bind_to_keysyms: bool,
     pub warp_mouse_to_focus: Option<WarpMouseToFocus>,
     pub focus_follows_mouse: Option<FocusFollowsMouse>,
     pub workspace_auto_back_and_forth: bool,
@@ -44,6 +45,8 @@ pub struct InputPart {
     #[knuffel(child)]
     pub disable_power_key_handling: Option<Flag>,
     #[knuffel(child)]
+    pub bind_to_keysyms: Option<Flag>,
+    #[knuffel(child)]
     pub warp_mouse_to_focus: Option<WarpMouseToFocus>,
     #[knuffel(child)]
     pub focus_follows_mouse: Option<FocusFollowsMouse>,
@@ -61,6 +64,7 @@ impl MergeWith<InputPart> for Input {
             (self, part),
             keyboard,
             disable_power_key_handling,
+            bind_to_keysyms,
             workspace_auto_back_and_forth,
         );
 
