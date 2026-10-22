@@ -1119,6 +1119,12 @@ pub enum OutputAction {
         #[cfg_attr(feature = "clap", arg())]
         max_bpc: MaxBpc,
     },
+    /// Set a hardware color matrix (DRM CTM) on the output.
+    ColorMatrix {
+        /// Color matrix to set, or "reset" to remove.
+        #[cfg_attr(feature = "clap", command(subcommand))]
+        matrix: ColorMatrixToSet,
+    },
 }
 
 /// Output mode to set.
@@ -1219,6 +1225,24 @@ pub struct VrrToSet {
     #[serde(default)]
     #[cfg_attr(feature = "clap", arg(long))]
     pub on_demand: bool,
+}
+
+/// Output color matrix to set.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "clap", derive(clap::Subcommand))]
+#[cfg_attr(feature = "clap", command(subcommand_value_name = "MATRIX"))]
+#[cfg_attr(feature = "clap", command(subcommand_help_heading = "Matrix Values"))]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum ColorMatrixToSet {
+    /// Reset the color matrix to identity (remove it from the output).
+    Reset,
+    /// Set the given 3x3 row-major color matrix coefficients.
+    #[cfg_attr(feature = "clap", command(name = "set"))]
+    Set {
+        /// The 9 coefficients of the 3x3 row-major matrix.
+        #[cfg_attr(feature = "clap", arg(num_args = 9))]
+        matrix: Vec<f64>,
+    },
 }
 
 /// Connected output.
