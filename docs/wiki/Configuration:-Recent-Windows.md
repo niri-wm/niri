@@ -28,13 +28,13 @@ recent-windows {
     binds {
         Alt+Tab         { next-window; }
         Alt+Shift+Tab   { previous-window; }
-        Alt+grave       { next-window     filter="app-id"; }
-        Alt+Shift+grave { previous-window filter="app-id"; }
+        Alt+Grave       { next-window     filter="app-id"; }
+        Alt+Shift+Grave { previous-window filter="app-id"; }
 
-        Mod+Tab         { next-window; }
-        Mod+Shift+Tab   { previous-window; }
-        Mod+grave       { next-window     filter="app-id"; }
-        Mod+Shift+grave { previous-window filter="app-id"; }
+        Mod+Tab         { next-window     scope="output"; }
+        Mod+Shift+Tab   { previous-window scope="output"; }
+        Mod+Grave       { next-window     scope="output" filter="app-id"; }
+        Mod+Shift+Grave { previous-window scope="output" filter="app-id"; }
     }
 }
 ```
@@ -158,8 +158,8 @@ recent-windows {
     binds {
         Mod+Tab         { next-window     scope="output"; }
         Mod+Shift+Tab   { previous-window scope="output"; }
-        Mod+grave       { next-window     scope="output" filter="app-id"; }
-        Mod+Shift+grave { previous-window scope="output" filter="app-id"; }
+        Mod+Grave       { next-window     scope="output" filter="app-id"; }
+        Mod+Shift+Grave { previous-window scope="output" filter="app-id"; }
     }
 }
 ```
