@@ -1,6 +1,7 @@
 use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
 use std::ffi::OsString;
+use std::hash::{DefaultHasher, Hasher};
 use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -14,6 +15,7 @@ use _server_decoration::server::org_kde_kwin_server_decoration_manager::Mode as 
 use anyhow::{bail, ensure, Context};
 use calloop::futures::Scheduler;
 use niri_config::debug::PreviewRender;
+use niri_config::input::XkbFile;
 use niri_config::output::MaxBpc;
 use niri_config::window_rule::VrrRule;
 use niri_config::{
@@ -189,8 +191,8 @@ use crate::utils::vblank_throttle::VBlankThrottle;
 use crate::utils::watcher::Watcher;
 use crate::utils::xwayland::satellite::Satellite;
 use crate::utils::{
-    center, center_f64, expand_home, get_monotonic_time, ipc_transform_to_smithay, is_mapped,
-    logical_output, make_screenshot_path, output_matches_name, output_size, panel_orientation,
+    center, center_f64, get_monotonic_time, ipc_transform_to_smithay, is_mapped, logical_output,
+    make_screenshot_path, output_matches_name, output_size, panel_orientation,
     send_scale_transform, winit_scale, write_png_rgba8, xwayland,
 };
 use crate::window::mapped::MappedId;
@@ -384,6 +386,10 @@ pub struct Niri {
     /// compare against virtual keyboard keymaps, and to switch back to it
     /// afterwards without going through the config again.
     pub configured_keymap: Option<Arc<str>>,
+    /// The hash of the current xkb config file's content.
+    ///
+    /// If the xkb config is set via any other method, this value would be reset to `None`.
+    pub xkb_file_hash: Option<u64>,
 
     pub cursor_manager: CursorManager,
     pub cursor_texture_cache: CursorTextureCache,
@@ -1529,13 +1535,16 @@ impl State {
     }
 
     /// Loads the xkb keymap from a file config setting.
-    fn set_xkb_file(&mut self, xkb_file: String) -> anyhow::Result<()> {
-        let xkb_file = PathBuf::from(xkb_file);
-        let xkb_file = expand_home(&xkb_file)
-            .context("failed to expand ~")?
-            .unwrap_or(xkb_file);
-
+    fn set_xkb_file(&mut self, xkb_file: PathBuf) -> anyhow::Result<()> {
         let keymap = std::fs::read_to_string(xkb_file).context("failed to read xkb_file")?;
+
+        let mut hasher = DefaultHasher::new();
+        hasher.write(keymap.as_bytes());
+        let hash = hasher.finish();
+
+        if self.niri.xkb_file_hash.is_some_and(|h| h == hash) {
+            return Ok(());
+        }
 
         let keyboard = self.niri.seat.get_keyboard().unwrap();
         let restore = self.keyboard_state_to_restore();
@@ -1545,6 +1554,7 @@ impl State {
             .context("failed to set keymap")?;
         self.niri.virtual_keyboard_keymap = None;
         self.niri.configured_keymap = None;
+        self.niri.xkb_file_hash = Some(hash);
         self.restore_keyboard_state(restore);
 
         Ok(())
@@ -1552,8 +1562,8 @@ impl State {
 
     fn load_xkb_file(&mut self) {
         let xkb_file = self.niri.config.borrow().input.keyboard.xkb.file.clone();
-        if let Some(xkb_file) = xkb_file {
-            if let Err(err) = self.set_xkb_file(xkb_file) {
+        if let Some(XkbFile(Some(p))) = xkb_file {
+            if let Err(err) = self.set_xkb_file(p) {
                 warn!("error loading xkb_file: {err:?}");
             }
         }
@@ -1568,6 +1578,7 @@ impl State {
         }
         self.niri.virtual_keyboard_keymap = None;
         self.niri.configured_keymap = None;
+        self.niri.xkb_file_hash = None;
         self.restore_keyboard_state(restore);
     }
 
@@ -1660,8 +1671,8 @@ impl State {
         let mut xkb = self.niri.config.borrow().input.keyboard.xkb.clone();
         let mut set_xkb_config = true;
 
-        if let Some(xkb_file) = xkb.file.take() {
-            if let Err(err) = self.set_xkb_file(xkb_file) {
+        if let Some(XkbFile(Some(p))) = xkb.file.take() {
+            if let Err(err) = self.set_xkb_file(p) {
                 warn!("error loading xkb_file: {err:?}");
             } else {
                 set_xkb_config = false;
@@ -1749,7 +1760,13 @@ impl State {
         }
 
         // We need &mut self to reload the xkb config, so just store it here.
-        if config.input.keyboard.xkb != old_config.input.keyboard.xkb {
+        //
+        // When an xkb config file is specified, we reload unconditionally here and rely on the xkb
+        // config file hash check down the line to ensure the xkb config file's content actually
+        // changes.
+        if config.input.keyboard.xkb != old_config.input.keyboard.xkb
+            || config.input.keyboard.xkb.file.is_some()
+        {
             reload_xkb = true;
         }
 
@@ -2856,6 +2873,7 @@ impl Niri {
             xkb_from_locale1: None,
             virtual_keyboard_keymap: None,
             configured_keymap: None,
+            xkb_file_hash: None,
             cursor_manager,
             cursor_texture_cache: Default::default(),
             cursor_shape_manager_state,

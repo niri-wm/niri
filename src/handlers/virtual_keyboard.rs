@@ -222,6 +222,7 @@ impl State {
             error!("failed to restore the configured keymap, reloading it from the config");
             self.niri.virtual_keyboard_keymap = Some(active);
             self.niri.configured_keymap = None;
+            self.niri.xkb_file_hash = None;
             self.load_configured_keymap();
             return;
         }

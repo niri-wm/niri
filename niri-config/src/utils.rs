@@ -2,7 +2,6 @@ use std::env::home_dir;
 use std::path::PathBuf;
 use std::str::FromStr;
 
-use knuffel::ast::SpannedNode;
 use knuffel::errors::DecodeError;
 use miette::miette;
 use regex::Regex;
@@ -211,22 +210,21 @@ pub fn parse_arg_node<S: knuffel::traits::ErrorSpan, T: knuffel::traits::DecodeS
     Ok(value)
 }
 
-pub fn expand_home_path<S: knuffel::traits::ErrorSpan>(
+pub fn expand_home_path<T, S: knuffel::traits::ErrorSpan>(
     path: PathBuf,
-    spanned: &SpannedNode<S>,
+    spanned: &knuffel::span::Spanned<T, S>,
     ctx: &mut knuffel::decode::Context<S>,
-) -> Option<PathBuf> {
+) -> Result<PathBuf, DecodeError<S>> {
     if let Ok(rest) = path.strip_prefix("~") {
         let Some(home) = home_dir() else {
-            ctx.emit_error(DecodeError::missing(
+            return Err(DecodeError::conversion(
                 spanned,
                 format!("error retrieving home directory to expand {:?}", path),
             ));
-            return None;
         };
-        home.join(rest).into()
+        Ok(home.join(rest))
     } else {
         let base = ctx.get::<BasePath>().unwrap();
-        base.0.join(path).into()
+        Ok(base.0.join(path))
     }
 }

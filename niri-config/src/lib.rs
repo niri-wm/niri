@@ -348,8 +348,12 @@ where
                     let decoded_path = knuffel::traits::DecodeScalar::decode(path_val, ctx)?;
 
                     // Expand ~ into the home dir
-                    let Some(path) = expand_home_path(decoded_path, node, ctx) else {
-                        continue;
+                    let path = match expand_home_path(decoded_path, node, ctx) {
+                        Ok(p) => p,
+                        Err(e) => {
+                            ctx.emit_error(e);
+                            continue;
+                        }
                     };
 
                     let recursion = ctx.get::<Recursion>().unwrap().0 + 1;

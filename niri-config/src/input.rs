@@ -1,12 +1,17 @@
+use std::cell::RefCell;
+use std::path::PathBuf;
+use std::rc::Rc;
 use std::str::FromStr;
 
+use knuffel::errors::DecodeError;
+use knuffel::DecodeScalar;
 use miette::miette;
 use smithay::input::keyboard::XkbConfig;
 use smithay::reexports::input;
 
 use crate::binds::Modifiers;
-use crate::utils::{Flag, MergeWith, Percent};
-use crate::FloatOrInt;
+use crate::utils::{expand_home_path, Flag, MergeWith, Percent};
+use crate::{FloatOrInt, Includes};
 
 #[derive(Debug, Default, PartialEq)]
 pub struct Input {
@@ -140,7 +145,7 @@ pub struct Xkb {
     #[knuffel(child, unwrap(argument))]
     pub options: Option<String>,
     #[knuffel(child, unwrap(argument))]
-    pub file: Option<String>,
+    pub file: Option<XkbFile>,
 }
 
 impl Xkb {
@@ -154,6 +159,9 @@ impl Xkb {
         }
     }
 }
+
+#[derive(PartialEq, Eq, Clone, Debug)]
+pub struct XkbFile(pub Option<PathBuf>);
 
 #[derive(knuffel::DecodeScalar, Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum TrackLayout {
@@ -508,6 +516,48 @@ impl FromStr for TapButtonMap {
             _ => Err(miette!(
                 r#"invalid tap button map, can be "left-right-middle" or "left-middle-right""#
             )),
+        }
+    }
+}
+
+impl<S> DecodeScalar<S> for XkbFile
+where
+    S: knuffel::traits::ErrorSpan,
+{
+    fn type_check(
+        type_name: &Option<knuffel::span::Spanned<knuffel::ast::TypeName, S>>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) {
+        if let Some(type_name) = &type_name {
+            ctx.emit_error(DecodeError::unexpected(
+                type_name,
+                "type name",
+                "no type name expected for this node",
+            ));
+        }
+    }
+
+    fn raw_decode(
+        value: &knuffel::span::Spanned<knuffel::ast::Literal, S>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) -> Result<Self, DecodeError<S>> {
+        let path = PathBuf::raw_decode(value, ctx)?;
+        match expand_home_path(path, value, ctx) {
+            Ok(p) => {
+                let includes = ctx.get::<Rc<RefCell<Includes>>>().unwrap();
+                includes.borrow_mut().0.push(p.to_path_buf());
+
+                if p.exists() {
+                    Ok(Self(p.into()))
+                } else {
+                    warn!("xkb config file not found: {:?}", p);
+                    Ok(Self(None))
+                }
+            }
+            Err(e) => {
+                warn!("failed to expand xkb config path: {:?}", e);
+                Ok(Self(None))
+            }
         }
     }
 }
