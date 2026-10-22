@@ -1,4 +1,4 @@
-use niri_config::CornerRadius;
+use niri_config::{BorderWidth, CornerRadius};
 use smithay::utils::{Logical, Point, Rectangle, Size};
 
 use super::focus_ring::{FocusRing, FocusRingRenderElement};
@@ -16,7 +16,7 @@ impl InsertHintElement {
         Self {
             inner: FocusRing::new(niri_config::FocusRing {
                 off: config.off,
-                width: 0.,
+                width: BorderWidth::Outset(0.),
                 active_color: config.color,
                 inactive_color: config.color,
                 urgent_color: config.color,
@@ -30,7 +30,7 @@ impl InsertHintElement {
     pub fn update_config(&mut self, config: niri_config::InsertHint) {
         self.inner.update_config(niri_config::FocusRing {
             off: config.off,
-            width: 0.,
+            width: BorderWidth::Outset(0.),
             active_color: config.color,
             inactive_color: config.color,
             urgent_color: config.color,

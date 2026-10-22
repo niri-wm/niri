@@ -191,7 +191,7 @@ fn unfullscreen_with_large_border() {
         layout: niri_config::Layout {
             border: niri_config::Border {
                 off: false,
-                width: 10000.,
+                width: BorderWidth::Outset(10000.),
                 ..Default::default()
             },
             ..Default::default()

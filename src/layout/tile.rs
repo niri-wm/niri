@@ -246,7 +246,7 @@ impl<W: LayoutElement> Tile<W> {
         let rules = self.window.rules();
 
         let mut border_config = self.options.layout.border.merged_with(&rules.border);
-        border_config.width = round_max1(border_config.width);
+        border_config.width = border_config.width.map(round_max1);
         self.border.update_config(border_config.into());
 
         let mut focus_ring_config = self
@@ -254,7 +254,7 @@ impl<W: LayoutElement> Tile<W> {
             .layout
             .focus_ring
             .merged_with(&rules.focus_ring);
-        focus_ring_config.width = round_max1(focus_ring_config.width);
+        focus_ring_config.width = focus_ring_config.width.map(round_max1);
         self.focus_ring.update_config(focus_ring_config);
 
         let shadow_config = self.options.layout.shadow.merged_with(&rules.shadow);
@@ -291,7 +291,7 @@ impl<W: LayoutElement> Tile<W> {
                     tile_size.w = f64::max(tile_size.w, self.view_size.w);
                     tile_size.h = f64::max(tile_size.h, self.view_size.h);
                 } else if prev_sizing_mode.is_normal() && !self.border.is_off() {
-                    let width = self.border.width();
+                    let width = self.border.width().outset();
                     tile_size.w += width * 2.;
                     tile_size.h += width * 2.;
                 }
@@ -330,7 +330,7 @@ impl<W: LayoutElement> Tile<W> {
                     tile_size.w = f64::max(tile_size.w, self.view_size.w);
                     tile_size.h = f64::max(tile_size.h, self.view_size.h);
                 } else if prev_sizing_mode.is_normal() && !self.border.is_off() {
-                    let width = self.border.width();
+                    let width = self.border.width().outset();
                     tile_size.w += width * 2.;
                     tile_size.h += width * 2.;
                 }
@@ -396,7 +396,7 @@ impl<W: LayoutElement> Tile<W> {
 
         let rules = self.window.rules();
         let mut border_config = self.options.layout.border.merged_with(&rules.border);
-        border_config.width = round_max1(border_config.width);
+        border_config.width = border_config.width.map(round_max1);
         self.border.update_config(border_config.into());
 
         let mut focus_ring_config = self
@@ -404,7 +404,7 @@ impl<W: LayoutElement> Tile<W> {
             .layout
             .focus_ring
             .merged_with(&rules.focus_ring);
-        focus_ring_config.width = round_max1(focus_ring_config.width);
+        focus_ring_config.width = focus_ring_config.width.map(round_max1);
         self.focus_ring.update_config(focus_ring_config);
 
         let shadow_config = self.options.layout.shadow.merged_with(&rules.shadow);
@@ -542,7 +542,7 @@ impl<W: LayoutElement> Tile<W> {
         } else {
             false
         };
-        let radius = radius.expanded_by(self.focus_ring.width() as f32);
+        let radius = radius.expanded_by(self.focus_ring.width().outset() as f32);
         self.focus_ring.update_render_elements(
             animated_tile_size,
             is_active,
@@ -756,7 +756,7 @@ impl<W: LayoutElement> Tile<W> {
             return None;
         }
 
-        Some(self.border.width())
+        Some(self.border.width().outset())
     }
 
     fn visual_border_width(&self) -> Option<f64> {
@@ -775,7 +775,7 @@ impl<W: LayoutElement> Tile<W> {
         // fullscreening, but the rest of the code isn't quite ready for that yet. It needs to
         // handle things like computing intermediate tile size when an animated resize starts during
         // an animated unfullscreen resize.
-        Some(self.border.width())
+        Some(self.border.width().outset())
     }
 
     /// Returns the location of the window's visual geometry within this Tile.
@@ -947,7 +947,7 @@ impl<W: LayoutElement> Tile<W> {
     ) {
         // Can't go through effective_border_width() because we might be fullscreen.
         if !self.border.is_off() {
-            let width = self.border.width();
+            let width = self.border.width().outset();
             size.w = f64::max(1., size.w - width * 2.);
             size.h = f64::max(1., size.h - width * 2.);
         }
@@ -967,7 +967,7 @@ impl<W: LayoutElement> Tile<W> {
         if self.border.is_off() {
             size
         } else {
-            size + self.border.width() * 2.
+            size + self.border.width().outset() * 2.
         }
     }
 
@@ -975,7 +975,7 @@ impl<W: LayoutElement> Tile<W> {
         if self.border.is_off() {
             size
         } else {
-            size + self.border.width() * 2.
+            size + self.border.width().outset() * 2.
         }
     }
 
@@ -983,7 +983,7 @@ impl<W: LayoutElement> Tile<W> {
         if self.border.is_off() {
             size
         } else {
-            size - self.border.width() * 2.
+            size - self.border.width().outset() * 2.
         }
     }
 
@@ -991,7 +991,7 @@ impl<W: LayoutElement> Tile<W> {
         if self.border.is_off() {
             size
         } else {
-            size - self.border.width() * 2.
+            size - self.border.width().outset() * 2.
         }
     }
 
@@ -1023,7 +1023,7 @@ impl<W: LayoutElement> Tile<W> {
 
         // Can't go through effective_border_width() because we might be fullscreen.
         if !self.border.is_off() {
-            let width = self.border.width();
+            let width = self.border.width().outset();
 
             size.w = f64::max(1., size.w);
             size.h = f64::max(1., size.h);
@@ -1040,7 +1040,7 @@ impl<W: LayoutElement> Tile<W> {
 
         // Can't go through effective_border_width() because we might be fullscreen.
         if !self.border.is_off() {
-            let width = self.border.width();
+            let width = self.border.width().outset();
 
             if size.w > 0. {
                 size.w += width * 2.;
@@ -1125,6 +1125,17 @@ impl<W: LayoutElement> Tile<W> {
             xray_pos,
             &mut |elem| push(elem.into()),
         );
+
+        // If border/focus ring are inset, then they render after window contents
+        // (so that they're overlaid on top)
+        if self.border.width().is_inset() && self.visual_border_width().is_some() {
+            self.border
+                .render(ctx.renderer, location, &mut |elem| push(elem.into()));
+        }
+        if focus_ring && expanded_progress < 1. && self.focus_ring.width().is_inset() {
+            self.focus_ring
+                .render(ctx.renderer, location, &mut |elem| push(elem.into()));
+        }
 
         // If we're resizing, try to render a shader, or a fallback.
         let mut pushed_resize = false;
@@ -1321,7 +1332,14 @@ impl<W: LayoutElement> Tile<W> {
             }
         }
 
-        if let Some(width) = self.visual_border_width() {
+        // Border/focus ring only render at this point if they're outsets, so
+        // that they render below the content; if they're insets, they sit
+        // on top.
+        // TODO: replace with let-chain in Rust 2024
+        if let Some(width) = self
+            .visual_border_width()
+            .filter(|_| self.border.width().is_outset())
+        {
             self.border.render(
                 ctx.renderer,
                 location + Point::from((width, width)),
@@ -1333,7 +1351,7 @@ impl<W: LayoutElement> Tile<W> {
         // being outside the monitor or obscured by a solid colored bar, but it is visible under
         // semitransparent bars in maximized state (which is a bit weird) and in the overview (also
         // a bit weird).
-        if focus_ring && expanded_progress < 1. {
+        if focus_ring && expanded_progress < 1. && self.focus_ring.width().is_outset() {
             self.focus_ring
                 .render(ctx.renderer, location, &mut |elem| push(elem.into()));
         }
