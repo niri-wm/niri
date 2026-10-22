@@ -966,7 +966,9 @@ mod tests {
                 open-on-output "eDP-1"
                 open-on-output "DP-1"
             }
-            workspace "workspace-2"
+            workspace "workspace-2" {
+                active-at-startup
+            }
             workspace "workspace-3"
 
             recent-windows {
@@ -2327,6 +2329,7 @@ mod tests {
                         "DP-1",
                     ],
                     layout: None,
+                    active_at_startup: false,
                 },
                 Workspace {
                     name: WorkspaceName(
@@ -2334,6 +2337,7 @@ mod tests {
                     ),
                     open_on_output: [],
                     layout: None,
+                    active_at_startup: true,
                 },
                 Workspace {
                     name: WorkspaceName(
@@ -2341,6 +2345,7 @@ mod tests {
                     ),
                     open_on_output: [],
                     layout: None,
+                    active_at_startup: false,
                 },
             ],
             recent_windows: RecentWindows {
