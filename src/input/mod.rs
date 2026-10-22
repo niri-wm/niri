@@ -53,6 +53,7 @@ use crate::dbus::freedesktop_a11y::KbMonBlock;
 use crate::layout::scrolling::ScrollDirection;
 use crate::layout::{ActivateWindow, LayoutElement as _};
 use crate::niri::{CastTarget, PointerVisibility, State};
+use crate::protocols::xx_hotkey::HeldInput;
 use crate::ui::mru::{WindowMru, WindowMruUi};
 use crate::ui::screenshot_ui::ScreenshotUi;
 use crate::utils::spawning::{spawn, spawn_sh};
@@ -601,7 +602,22 @@ impl State {
                     )
                 };
 
+                let is_locked = this.niri.is_locked();
+                let hotkeys = &mut this.niri.xx_hotkey_state;
+                let hotkey_fired = if !pressed {
+                    hotkeys.on_release(HeldInput::Key(key_code), serial.into(), time.millis())
+                } else if !is_inhibiting_shortcuts && !is_locked {
+                    let xkb = keysym.xkb().lock().unwrap();
+                    hotkeys.on_key_press(&xkb, key_code, modifiers, serial.into(), time.millis())
+                } else {
+                    false
+                };
+
                 if matches!(res, FilterResult::Forward) {
+                    if hotkey_fired {
+                        return FilterResult::Intercept(None);
+                    }
+
                     // If we didn't find any bind, try other hardcoded keys.
                     if this.niri.keyboard_focus.is_overview() && pressed {
                         if let Some(bind) = raw.and_then(|raw| hardcoded_overview_bind(raw, *mods))
@@ -2846,6 +2862,17 @@ impl State {
 
         let mod_key = self.backend.mod_key(&self.niri.config.borrow());
 
+        if button_state == ButtonState::Released
+            && self.niri.xx_hotkey_state.on_release(
+                HeldInput::Button(button_code),
+                serial.into(),
+                event.time().millis(),
+            )
+        {
+            self.niri.suppressed_buttons.remove(&button_code);
+            return;
+        }
+
         // Ignore release events for mouse clicks that triggered a bind.
         if self.niri.suppressed_buttons.remove(&button_code) {
             return;
@@ -2878,6 +2905,14 @@ impl State {
                 }
             }
 
+            let hotkey_fired = !self.niri.is_locked()
+                && self.niri.xx_hotkey_state.on_button_press(
+                    button_code,
+                    modifiers,
+                    serial.into(),
+                    event.time().millis(),
+                );
+
             if is_mru_open || self.niri.mods_with_mouse_binds.contains(&modifiers) {
                 if let Some(bind) = match button {
                     Some(MouseButton::Left) => Some(Trigger::MouseLeft),
@@ -2900,6 +2935,10 @@ impl State {
                     self.handle_bind(bind.clone());
                     return;
                 };
+            }
+
+            if hotkey_fired {
+                return;
             }
 
             // We received an event for the regular pointer, so show it now.
