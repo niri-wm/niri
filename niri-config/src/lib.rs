@@ -1925,6 +1925,7 @@ mod tests {
                         ),
                     ),
                     tiled_state: None,
+                    grab_mouse_when_focused: None,
                     background_effect: BackgroundEffectRule {
                         xray: None,
                         blur: None,
