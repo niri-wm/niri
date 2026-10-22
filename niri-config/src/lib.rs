@@ -1412,6 +1412,7 @@ mod tests {
                     position: Top,
                     gaps_between_tabs: 0.0,
                     corner_radius: 0.0,
+                    corner_radius_exponent: 2.0,
                     active_color: None,
                     inactive_color: None,
                     urgent_color: None,
@@ -1881,6 +1882,7 @@ mod tests {
                         inactive_color: None,
                     },
                     tab_indicator: TabIndicatorRule {
+                        corner_radius_exponent: None,
                         active_color: Some(
                             Color {
                                 r: 1.0,
@@ -1898,6 +1900,7 @@ mod tests {
                     draw_border_with_background: None,
                     opacity: None,
                     geometry_corner_radius: None,
+                    geometry_corner_radius_exponent: None,
                     clip_to_geometry: None,
                     baba_is_float: None,
                     block_out_from: None,
@@ -1934,6 +1937,7 @@ mod tests {
                     popups: PopupsRule {
                         opacity: None,
                         geometry_corner_radius: None,
+                        geometry_corner_radius_exponent: None,
                         background_effect: BackgroundEffectRule {
                             xray: None,
                             blur: None,
@@ -1974,6 +1978,7 @@ mod tests {
                         inactive_color: None,
                     },
                     geometry_corner_radius: None,
+                    geometry_corner_radius_exponent: None,
                     place_within_backdrop: None,
                     baba_is_float: None,
                     background_effect: BackgroundEffectRule {
@@ -1985,6 +1990,7 @@ mod tests {
                     popups: PopupsRule {
                         opacity: None,
                         geometry_corner_radius: None,
+                        geometry_corner_radius_exponent: None,
                         background_effect: BackgroundEffectRule {
                             xray: None,
                             blur: None,

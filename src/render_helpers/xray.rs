@@ -3,7 +3,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use glam::{Mat3, Vec2};
-use niri_config::CornerRadius;
+use niri_config::{CornerRadius, DEFAULT_CORNER_RADIUS_EXPONENT};
 use smithay::backend::renderer::element::{Element, Id, RenderElement};
 use smithay::backend::renderer::gles::{
     GlesError, GlesFrame, GlesRenderer, GlesTexProgram, Uniform,
@@ -75,6 +75,7 @@ pub struct XrayElement {
     input_to_clip_geo: Mat3,
     clip_geo_size: Vec2,
     corner_radius: CornerRadius,
+    corner_exponent: f32,
     scale: f32,
     blur: bool,
     noise: f32,
@@ -109,9 +110,11 @@ impl Xray {
         let zoom = xray_pos.zoom;
         let pos_in_backdrop = xray_pos.pos_in_backdrop.upscale(zoom);
 
-        let (clip_geo, corner_radius) = params
-            .clip
-            .unwrap_or((params.geometry, CornerRadius::default()));
+        let (clip_geo, corner_radius, corner_exponent) = params.clip.unwrap_or((
+            params.geometry,
+            CornerRadius::default(),
+            DEFAULT_CORNER_RADIUS_EXPONENT,
+        ));
 
         let clip_offset = clip_geo.loc - params.geometry.loc;
         let clip_pos_in_backdrop = pos_in_backdrop + clip_offset.upscale(zoom);
@@ -196,6 +199,7 @@ impl Xray {
                     input_to_clip_geo,
                     clip_geo_size,
                     corner_radius,
+                    corner_exponent,
                     scale: params.scale as f32,
                     blur,
                     noise,
@@ -246,6 +250,7 @@ impl Xray {
                 input_to_clip_geo,
                 clip_geo_size,
                 corner_radius: corner_radius.scaled_by(zoom as f32),
+                corner_exponent,
                 scale: params.scale as f32,
                 blur,
                 noise,
@@ -259,11 +264,12 @@ impl Xray {
 }
 
 impl XrayElement {
-    fn compute_uniforms(&self) -> [Uniform<'static>; 7] {
+    fn compute_uniforms(&self) -> [Uniform<'static>; 8] {
         [
             Uniform::new("niri_scale", self.scale),
             Uniform::new("geo_size", <[f32; 2]>::from(self.clip_geo_size)),
             Uniform::new("corner_radius", <[f32; 4]>::from(self.corner_radius)),
+            Uniform::new("corner_exponent", self.corner_exponent),
             mat3_uniform("input_to_geo", self.input_to_clip_geo),
             Uniform::new("noise", self.noise),
             Uniform::new("saturation", self.saturation),
