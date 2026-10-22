@@ -27,6 +27,11 @@ gestures {
         // top-right
         // bottom-left
         // bottom-right
+
+        // You can also run a custom action instead of toggling the overview.
+        // top-right {
+        //     power-off-monitors
+        // }
     }
 }
 ```
@@ -85,8 +90,9 @@ gestures {
 
 <sup>Since: 25.05</sup>
 
-Put your mouse at the very top-left corner of a monitor to toggle the overview.
+Put your mouse at a hot corner of a monitor to run an action.
 Also works during drag-and-dropping something.
+By default, the top-left hot corner toggles the overview.
 
 `off` disables the hot corners.
 
@@ -101,6 +107,7 @@ gestures {
 
 <sup>Since: 25.11</sup> You can choose specific hot corners by name: `top-left`, `top-right`, `bottom-left`, `bottom-right`.
 If no corners are explicitly set, the top-left corner will be active by default.
+Bare corner names toggle the overview for compatibility with previous versions.
 
 ```kdl
 // Enable the top-right and bottom-right hot corners.
@@ -108,6 +115,19 @@ gestures {
     hot-corners {
         top-right
         bottom-right
+    }
+}
+```
+
+You can set a hot corner to run any bind action by putting exactly one action inside its block.
+
+```kdl
+// Power off monitors when the pointer enters the top-right hot corner.
+gestures {
+    hot-corners {
+        top-right {
+            power-off-monitors
+        }
     }
 }
 ```
