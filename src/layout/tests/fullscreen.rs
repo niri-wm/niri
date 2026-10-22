@@ -541,8 +541,17 @@ fn unfullscreen_of_tabbed_preserves_view_pos() {
     ];
     check_ops_on_layout(&mut layout, ops);
 
-    // View pos is still on the second column because the second tile hasn't unfullscreened yet.
-    assert_snapshot!(layout.active_workspace().unwrap().scrolling().view_pos(), @"116");
+    // View pos is back to showing the first window; inactive fullscreen tabs must not keep the
+    // visible tab at the fullscreen origin.
+    assert_snapshot!(layout.active_workspace().unwrap().scrolling().view_pos(), @"-16");
+    let focused = *layout.focus().unwrap().id();
+    let (_, pos, _) = layout
+        .active_workspace()
+        .unwrap()
+        .tiles_with_render_positions()
+        .find(|(tile, _, _)| tile.window().id() == &focused)
+        .unwrap();
+    assert_eq!(pos.y, 16.);
 
     let ops = [Op::Communicate(2), Op::CompleteAnimations];
     check_ops_on_layout(&mut layout, ops);
@@ -643,8 +652,8 @@ fn removing_only_fullscreen_tile_updates_view_offset() {
     ];
     check_ops_on_layout(&mut layout, ops);
 
-    // View pos without gap because other tile is still fullscreen.
-    assert_snapshot!(layout.active_workspace().unwrap().scrolling().view_pos(), @"0");
+    // View pos includes the gap because the active tab has unfullscreened.
+    assert_snapshot!(layout.active_workspace().unwrap().scrolling().view_pos(), @"-16");
 
     let ops = [
         // Expel the fullscreen window from the column, changing the column to non-fullscreen.
@@ -653,7 +662,6 @@ fn removing_only_fullscreen_tile_updates_view_offset() {
     ];
     check_ops_on_layout(&mut layout, ops);
 
-    // View pos should include gap now that the column is no longer fullscreen.
-    // FIXME: currently, removing a tile doesn't cause the view offset to update.
-    assert_snapshot!(layout.active_workspace().unwrap().scrolling().view_pos(), @"0");
+    // View pos still includes the gap now that the column is no longer fullscreen.
+    assert_snapshot!(layout.active_workspace().unwrap().scrolling().view_pos(), @"-16");
 }
