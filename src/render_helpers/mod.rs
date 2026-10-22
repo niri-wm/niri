@@ -126,9 +126,8 @@ impl RenderTarget {
 
     /// Returns whether the content should be replaced with a solid color on this target.
     pub fn should_block_out(self, block_out: Option<BlockOutRule>) -> bool {
-        block_out.is_some_and(|rule| {
-            rule.kind == BlockOutKind::Fill && self.is_blocked_from(rule.from)
-        })
+        block_out
+            .is_some_and(|rule| rule.kind == BlockOutKind::Fill && self.is_blocked_from(rule.from))
     }
 
     /// Returns whether the content should not be drawn at all on this target.
