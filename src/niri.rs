@@ -184,7 +184,7 @@ use crate::ui::mru::{MruCloseRequest, WindowMruUi, WindowMruUiRenderElement};
 use crate::ui::screen_transition::{self, ScreenTransition};
 use crate::ui::screenshot_ui::{OutputScreenshot, ScreenshotUi, ScreenshotUiRenderElement};
 use crate::utils::scale::{closest_representable_scale, guess_monitor_scale};
-use crate::utils::spawning::{CHILD_DISPLAY, CHILD_ENV};
+use crate::utils::spawning::{self, CHILD_DISPLAY, CHILD_ENV};
 use crate::utils::vblank_throttle::VBlankThrottle;
 use crate::utils::watcher::Watcher;
 use crate::utils::xwayland::satellite::Satellite;
@@ -754,6 +754,7 @@ impl KeyboardFocus {
 pub struct State {
     pub backend: Backend,
     pub niri: Niri,
+    pub spawner: spawning::Spawner,
 }
 
 impl State {
@@ -786,6 +787,8 @@ impl State {
             Backend::Tty(tty)
         };
 
+        let spawner = spawning::Spawner::new();
+
         let mut niri = Niri::new(
             config.clone(),
             event_loop,
@@ -797,7 +800,11 @@ impl State {
         );
         backend.init(&mut niri);
 
-        let mut state = Self { backend, niri };
+        let mut state = Self {
+            backend,
+            niri,
+            spawner,
+        };
 
         // Load the xkb_file config option if set by the user.
         state.load_xkb_file();
