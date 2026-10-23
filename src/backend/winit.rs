@@ -13,6 +13,7 @@ use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::renderer::{DebugFlags, ImportDma, ImportEgl, Renderer};
 use smithay::backend::winit::{self, WinitEvent, WinitGraphicsBackend};
+use smithay::input::keyboard::KeyboardSource;
 use smithay::output::{Mode, Output, PhysicalProperties, Subpixel};
 use smithay::reexports::calloop::LoopHandle;
 use smithay::reexports::wayland_protocols::wp::presentation_time::server::wp_presentation_feedback;
@@ -147,7 +148,18 @@ impl Winit {
                     state.niri.output_resized(&output);
                 }
                 WinitEvent::Input(event) => state.process_input_event(event),
-                WinitEvent::Focus(_) => (),
+                WinitEvent::Focus(false) => {
+                    // Lost focus. Reset key pressed (like alt or windows key).
+                    state.niri.suppressed_keys.clear();
+
+                    if let Some(token) = state.niri.bind_repeat_timer.take() {
+                        state.niri.event_loop.remove(token);
+                    }
+                    if let Some(keyboard) = state.niri.seat.get_keyboard() {
+                        keyboard.release_source(state, KeyboardSource::MAIN);
+                    }
+                }
+                WinitEvent::Focus(true) => (),
                 WinitEvent::Redraw => state.niri.queue_redraw(&state.backend.winit().output),
                 WinitEvent::CloseRequested => state.niri.stop_signal.stop(),
             })
