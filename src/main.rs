@@ -21,7 +21,7 @@ use niri::dbus;
 use niri::ipc::client::handle_msg;
 use niri::niri::State;
 use niri::utils::spawning::{
-    spawn, spawn_sh, store_and_increase_nofile_rlimit, CHILD_DISPLAY, CHILD_ENV,
+    spawnserver, store_and_increase_nofile_rlimit, CHILD_DISPLAY, CHILD_ENV,
     REMOVE_ENV_RUST_BACKTRACE, REMOVE_ENV_RUST_LIB_BACKTRACE,
 };
 use niri::utils::{cause_panic, version, watcher, xwayland, IS_SYSTEMD_SERVICE};
@@ -39,6 +39,18 @@ static GLOBAL: tracy_client::ProfiledAllocator<std::alloc::System> =
     tracy_client::ProfiledAllocator::new(std::alloc::System, 100);
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    if env::var_os("NOTIFY_SOCKET").is_some() {
+        IS_SYSTEMD_SERVICE.store(true, Ordering::Relaxed);
+    }
+    // Want minimal overhead for spawnserver, so handle this early on before any other work setting
+    // up the process is done.
+    if std::env::args_os()
+        .nth(1)
+        .is_some_and(|a| a == "spawnserver")
+    {
+        return spawnserver().map_err(Into::into);
+    }
+
     // Set backtrace defaults if not set.
     if env::var_os("RUST_BACKTRACE").is_none() {
         env::set_var("RUST_BACKTRACE", "1");
@@ -58,10 +70,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_ansi_sanitization(false)
         .init();
 
-    if env::var_os("NOTIFY_SOCKET").is_some() {
-        IS_SYSTEMD_SERVICE.store(true, Ordering::Relaxed);
-
-        #[cfg(not(feature = "systemd"))]
+    #[cfg(not(feature = "systemd"))]
+    if IS_SYSTEMD_SERVICE.load(Ordering::Relaxed) {
         warn!(
             "running as a systemd service, but systemd support is compiled out. \
              Are you sure you did not forget to set `--features systemd`?"
@@ -257,13 +267,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     watcher::setup(&mut state, &config_path, config_includes);
 
     // Spawn commands from cli and auto-start.
-    spawn(cli.command, None);
+    state.spawner.spawn(cli.command, None);
 
     for elem in spawn_at_startup {
-        spawn(elem.command, None);
+        state.spawner.spawn(elem.command, None);
     }
     for elem in spawn_sh_at_startup {
-        spawn_sh(elem.command, None);
+        state.spawner.spawn_sh(elem.command, None);
     }
 
     // Show the config error notification right away if needed.
