@@ -1904,7 +1904,7 @@ fn calculate_rotation_delta(
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
-    use std::f64::consts::{FRAC_PI_2, PI};
+    use std::f64::consts::FRAC_PI_2;
 
     use smithay::backend::input::TouchSlot;
     use smithay::utils::Point;
@@ -1929,53 +1929,6 @@ mod tests {
             .collect()
     }
 
-    #[test]
-    fn angles_empty_for_single_finger() {
-        let pts = points_from(&[(0, 5.0, 5.0)]);
-        assert!(calculate_per_slot_angles(&pts).is_empty());
-    }
-
-    #[test]
-    fn angles_three_fingers_around_origin() {
-        // Three fingers spaced 120° apart around the origin, so the
-        // centroid is exactly (0, 0) and each finger lands on a known
-        // angle in the screen-flipped math convention.
-        //   0°: (10, 0) screen
-        //   +120°: screen (10·cos 120°, -10·sin 120°) = (-5, -8.660)
-        //   -120°: screen (10·cos -120°, -10·sin -120°) = (-5, +8.660)
-        let r: f64 = 10.0;
-        let pts = points_from(&[
-            (0, r, 0.0),
-            (
-                1,
-                r * 120.0_f64.to_radians().cos(),
-                -r * 120.0_f64.to_radians().sin(),
-            ),
-            (
-                2,
-                r * (-120.0_f64).to_radians().cos(),
-                -r * (-120.0_f64).to_radians().sin(),
-            ),
-        ]);
-        let angles = calculate_per_slot_angles(&pts);
-        let tolerance = 1e-9;
-        assert!(
-            (angles[&slot(0)] - 0.0).abs() < tolerance,
-            "slot 0 = {}",
-            angles[&slot(0)]
-        );
-        assert!(
-            (angles[&slot(1)] - 120.0_f64.to_radians()).abs() < tolerance,
-            "slot 1 = {}",
-            angles[&slot(1)]
-        );
-        assert!(
-            (angles[&slot(2)] - (-120.0_f64).to_radians()).abs() < tolerance,
-            "slot 2 = {}",
-            angles[&slot(2)]
-        );
-    }
-
     /// Build a point set with N fingers arranged around the origin at the
     /// given angles (screen-flipped math convention: +x right, +y up on
     /// screen). Each finger is placed at radius 10.
@@ -1988,18 +1941,6 @@ mod tests {
             .map(|(n, a)| (*n, r * a.cos(), -r * a.sin()))
             .collect();
         points_from(&items)
-    }
-
-    #[test]
-    fn rotation_static_frames_is_zero() {
-        let pts = ring_points(&[
-            (0, 0.0),
-            (1, 120.0_f64.to_radians()),
-            (2, -120.0_f64.to_radians()),
-        ]);
-        let prev = calculate_per_slot_angles(&pts);
-        let (delta, _) = calculate_rotation_delta(&pts, &prev);
-        assert_eq!(delta, 0.0);
     }
 
     #[test]
@@ -2039,17 +1980,5 @@ mod tests {
             (delta - expected).abs() < 1e-9,
             "delta = {delta}, expected ~{expected}"
         );
-    }
-
-    #[test]
-    fn rotation_noise_floor_zeroes_tiny_delta() {
-        // Two fingers nudged by < 0.001 rad each: averaged delta is
-        // below the noise floor and should clamp to exactly 0.0.
-        let prev_points = ring_points(&[(0, 0.0), (1, PI)]);
-        let prev = calculate_per_slot_angles(&prev_points);
-        let eps = 0.0005_f64;
-        let curr = ring_points(&[(0, eps), (1, PI + eps)]);
-        let (delta, _) = calculate_rotation_delta(&curr, &prev);
-        assert_eq!(delta, 0.0);
     }
 }

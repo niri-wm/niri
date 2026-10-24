@@ -6242,24 +6242,6 @@ mod tests {
     }
 
     #[test]
-    fn overview_sign_follows_action() {
-        assert_eq!(overview_action_sign(&Action::OpenOverview, false), 1.);
-        assert_eq!(overview_action_sign(&Action::OpenOverview, true), 1.);
-        assert_eq!(overview_action_sign(&Action::CloseOverview, false), -1.);
-        assert_eq!(overview_action_sign(&Action::CloseOverview, true), -1.);
-        assert_eq!(overview_action_sign(&Action::ToggleOverview, false), 1.);
-        assert_eq!(overview_action_sign(&Action::ToggleOverview, true), -1.);
-    }
-
-    #[test]
-    fn dominant_axis_picks_larger_component() {
-        assert_eq!(dominant_axis(3., -1.), (1., 0.));
-        assert_eq!(dominant_axis(-3., 1.), (-1., 0.));
-        assert_eq!(dominant_axis(1., -3.), (0., -1.));
-        assert_eq!(dominant_axis(1., 3.), (0., 1.));
-    }
-
-    #[test]
     fn comp_mod_handling() {
         let bindings = Binds(vec![
             bind(

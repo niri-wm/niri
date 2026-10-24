@@ -1043,17 +1043,6 @@ mod tests {
             })
         );
 
-        let parsed = do_parse("touchpad { three-finger-drag fingers=4; }");
-        assert_eq!(
-            parsed.touchpad.three_finger_drag,
-            Some(ThreeFingerDrag {
-                fingers: DragFingers(4)
-            })
-        );
-
-        let parsed = do_parse("touchpad { tap; }");
-        assert_eq!(parsed.touchpad.three_finger_drag, None);
-
         assert!(parse_fails("touchpad { three-finger-drag fingers=2; }"));
         assert!(parse_fails("touchpad { three-finger-drag fingers=5; }"));
         assert!(parse_fails("touchpad { three-finger-drag fingers=\"4\"; }"));

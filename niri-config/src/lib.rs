@@ -647,32 +647,6 @@ mod tests {
         assert_eq!(config.input.keyboard.repeat_rate, 25);
     }
 
-    #[test]
-    fn touchscreen_flick_defaults() {
-        let config = Config::parse_mem("").unwrap();
-        assert!(config.input.touchscreen.flick_to_monitor());
-        assert_eq!(config.input.touchscreen.flick_velocity_threshold(), 800.0);
-    }
-
-    #[test]
-    fn touchscreen_flick_overrides() {
-        let config = Config::parse_mem(
-            r##"
-            input {
-                touchscreen {
-                    gestures {
-                        flick-to-monitor false
-                        flick-velocity-threshold 1200.0
-                    }
-                }
-            }
-            "##,
-        )
-        .unwrap();
-        assert!(!config.input.touchscreen.flick_to_monitor());
-        assert_eq!(config.input.touchscreen.flick_velocity_threshold(), 1200.0);
-    }
-
     #[track_caller]
     fn do_parse(text: &str) -> Config {
         Config::parse_mem(text)
@@ -1203,6 +1177,10 @@ mod tests {
                     disabled-on-external-mouse
                     scroll-factor 0.9
                     pinch-sensitivity 1.8
+                    gestures {
+                        swipe-trigger-distance 30.0
+                        pinch-trigger-scale 0.2
+                    }
                 }
 
                 mouse {
@@ -1247,6 +1225,13 @@ mod tests {
                 touchscreen {
                     map-to-output "eDP-1"
                     focus-on-touch "touch-up"
+                    gestures {
+                        swipe-trigger-distance 80.0
+                        edge-start-distance 20.0
+                        tap-timeout-ms 400
+                        flick-to-monitor false
+                        flick-velocity-threshold 1200.0
+                    }
                 }
 
                 disable-power-key-handling
@@ -1402,6 +1387,7 @@ mod tests {
                 match app-id=".*alacritty"
                 exclude title="~"
                 exclude is-active=true is-focused=false
+                touchscreen-gesture-passthrough true
 
                 open-on-output "eDP-1"
                 open-maximized true
@@ -1458,6 +1444,18 @@ mod tests {
                 Shift+Mod {
                     release { toggle-window-floating; }
                 }
+                TouchSwipe fingers=3 direction="up" natural-scroll=true { focus-workspace-up; }
+                Mod+Shift+TouchSwipe fingers=10 direction="left" sensitivity=0.5 { focus-column-right; }
+                touchpinch fingers=4 direction="out" { close-overview; }
+                TouchRotate fingers=3 direction="ccw" cooldown-ms=300 { focus-column-left; }
+                TouchTap fingers=5 { screenshot; }
+                TouchTapHoldDrag fingers=3 direction="down" { noop; }
+                TouchEdge edge="left" { focus-column-right; }
+                Mod+TouchEdge edge="top" zone="right" { toggle-overview; }
+                TouchpadSwipe fingers=4 direction="right" { focus-column-left; }
+                TouchpadPinch fingers=2 direction="in" { open-overview; }
+                TouchpadTapHold fingers=3 { screenshot; }
+                TouchpadTapHoldDrag fingers=4 { move-window-down; }
             }
 
             switch-events {
@@ -1573,7 +1571,20 @@ mod tests {
                             1.8,
                         ),
                     ),
-                    gestures: None,
+                    gestures: Some(
+                        TouchpadGesturesConfig {
+                            swipe_trigger_distance: Some(
+                                FloatOrInt(
+                                    30.0,
+                                ),
+                            ),
+                            pinch_trigger_scale: Some(
+                                FloatOrInt(
+                                    0.2,
+                                ),
+                            ),
+                        },
+                    ),
                 },
                 mouse: Mouse {
                     off: false,
@@ -1672,7 +1683,41 @@ mod tests {
                     focus_on_touch: Some(
                         TouchUp,
                     ),
-                    gestures: None,
+                    gestures: Some(
+                        TouchscreenGesturesConfig {
+                            swipe_trigger_distance: Some(
+                                FloatOrInt(
+                                    80.0,
+                                ),
+                            ),
+                            edge_start_distance: Some(
+                                FloatOrInt(
+                                    20.0,
+                                ),
+                            ),
+                            pinch_trigger_distance: None,
+                            pinch_dominance_ratio: None,
+                            pinch_sensitivity: None,
+                            swipe_multi_finger_scale: None,
+                            rotation_trigger_angle: None,
+                            rotation_dominance_ratio: None,
+                            tap_wobble_threshold: None,
+                            tap_timeout_ms: Some(
+                                FloatOrInt(
+                                    400.0,
+                                ),
+                            ),
+                            tap_hold_trigger_delay_ms: None,
+                            flick_to_monitor: Some(
+                                false,
+                            ),
+                            flick_velocity_threshold: Some(
+                                FloatOrInt(
+                                    1200.0,
+                                ),
+                            ),
+                        },
+                    ),
                 },
                 disable_power_key_handling: true,
                 warp_mouse_to_focus: Some(
@@ -2467,7 +2512,9 @@ mod tests {
                             saturation: None,
                         },
                     },
-                    touchscreen_gesture_passthrough: None,
+                    touchscreen_gesture_passthrough: Some(
+                        true,
+                    ),
                 },
             ],
             layer_rules: [
@@ -2900,6 +2947,283 @@ mod tests {
                             ToggleWindowFloating,
                         ),
                         repeat: false,
+                        pass_through: None,
+                        cooldown: None,
+                        allow_when_locked: false,
+                        allow_inhibiting: true,
+                        hotkey_overlay_title: None,
+                        sensitivity: None,
+                        natural_scroll: false,
+                    },
+                    Bind {
+                        key: Key {
+                            trigger: TouchSwipe {
+                                fingers: 3,
+                                direction: Up,
+                            },
+                            modifiers: Modifiers(
+                                0x0,
+                            ),
+                        },
+                        action: Press(
+                            FocusWorkspaceUp,
+                        ),
+                        repeat: true,
+                        pass_through: None,
+                        cooldown: None,
+                        allow_when_locked: false,
+                        allow_inhibiting: true,
+                        hotkey_overlay_title: None,
+                        sensitivity: None,
+                        natural_scroll: true,
+                    },
+                    Bind {
+                        key: Key {
+                            trigger: TouchSwipe {
+                                fingers: 10,
+                                direction: Left,
+                            },
+                            modifiers: Modifiers(
+                                SHIFT | COMPOSITOR,
+                            ),
+                        },
+                        action: Press(
+                            FocusColumnRight,
+                        ),
+                        repeat: true,
+                        pass_through: None,
+                        cooldown: None,
+                        allow_when_locked: false,
+                        allow_inhibiting: true,
+                        hotkey_overlay_title: None,
+                        sensitivity: Some(
+                            0.5,
+                        ),
+                        natural_scroll: false,
+                    },
+                    Bind {
+                        key: Key {
+                            trigger: TouchPinch {
+                                fingers: 4,
+                                direction: Out,
+                            },
+                            modifiers: Modifiers(
+                                0x0,
+                            ),
+                        },
+                        action: Press(
+                            CloseOverview,
+                        ),
+                        repeat: true,
+                        pass_through: None,
+                        cooldown: None,
+                        allow_when_locked: false,
+                        allow_inhibiting: true,
+                        hotkey_overlay_title: None,
+                        sensitivity: None,
+                        natural_scroll: false,
+                    },
+                    Bind {
+                        key: Key {
+                            trigger: TouchRotate {
+                                fingers: 3,
+                                direction: Ccw,
+                            },
+                            modifiers: Modifiers(
+                                0x0,
+                            ),
+                        },
+                        action: Press(
+                            FocusColumnLeft,
+                        ),
+                        repeat: true,
+                        pass_through: None,
+                        cooldown: Some(
+                            300ms,
+                        ),
+                        allow_when_locked: false,
+                        allow_inhibiting: true,
+                        hotkey_overlay_title: None,
+                        sensitivity: None,
+                        natural_scroll: false,
+                    },
+                    Bind {
+                        key: Key {
+                            trigger: TouchTap {
+                                fingers: 5,
+                            },
+                            modifiers: Modifiers(
+                                0x0,
+                            ),
+                        },
+                        action: Press(
+                            Screenshot(
+                                true,
+                                None,
+                            ),
+                        ),
+                        repeat: true,
+                        pass_through: None,
+                        cooldown: None,
+                        allow_when_locked: false,
+                        allow_inhibiting: true,
+                        hotkey_overlay_title: None,
+                        sensitivity: None,
+                        natural_scroll: false,
+                    },
+                    Bind {
+                        key: Key {
+                            trigger: TouchTapHoldDrag {
+                                fingers: 3,
+                                direction: Some(
+                                    Down,
+                                ),
+                            },
+                            modifiers: Modifiers(
+                                0x0,
+                            ),
+                        },
+                        action: Press(
+                            Noop,
+                        ),
+                        repeat: true,
+                        pass_through: None,
+                        cooldown: None,
+                        allow_when_locked: false,
+                        allow_inhibiting: true,
+                        hotkey_overlay_title: None,
+                        sensitivity: None,
+                        natural_scroll: false,
+                    },
+                    Bind {
+                        key: Key {
+                            trigger: TouchEdge {
+                                edge: Left,
+                                zone: None,
+                            },
+                            modifiers: Modifiers(
+                                0x0,
+                            ),
+                        },
+                        action: Press(
+                            FocusColumnRight,
+                        ),
+                        repeat: true,
+                        pass_through: None,
+                        cooldown: None,
+                        allow_when_locked: false,
+                        allow_inhibiting: true,
+                        hotkey_overlay_title: None,
+                        sensitivity: None,
+                        natural_scroll: false,
+                    },
+                    Bind {
+                        key: Key {
+                            trigger: TouchEdge {
+                                edge: Top,
+                                zone: Some(
+                                    End,
+                                ),
+                            },
+                            modifiers: Modifiers(
+                                COMPOSITOR,
+                            ),
+                        },
+                        action: Press(
+                            ToggleOverview,
+                        ),
+                        repeat: true,
+                        pass_through: None,
+                        cooldown: None,
+                        allow_when_locked: false,
+                        allow_inhibiting: true,
+                        hotkey_overlay_title: None,
+                        sensitivity: None,
+                        natural_scroll: false,
+                    },
+                    Bind {
+                        key: Key {
+                            trigger: TouchpadSwipe {
+                                fingers: 4,
+                                direction: Right,
+                            },
+                            modifiers: Modifiers(
+                                0x0,
+                            ),
+                        },
+                        action: Press(
+                            FocusColumnLeft,
+                        ),
+                        repeat: true,
+                        pass_through: None,
+                        cooldown: None,
+                        allow_when_locked: false,
+                        allow_inhibiting: true,
+                        hotkey_overlay_title: None,
+                        sensitivity: None,
+                        natural_scroll: false,
+                    },
+                    Bind {
+                        key: Key {
+                            trigger: TouchpadPinch {
+                                fingers: 2,
+                                direction: In,
+                            },
+                            modifiers: Modifiers(
+                                0x0,
+                            ),
+                        },
+                        action: Press(
+                            OpenOverview,
+                        ),
+                        repeat: true,
+                        pass_through: None,
+                        cooldown: None,
+                        allow_when_locked: false,
+                        allow_inhibiting: true,
+                        hotkey_overlay_title: None,
+                        sensitivity: None,
+                        natural_scroll: false,
+                    },
+                    Bind {
+                        key: Key {
+                            trigger: TouchpadTapHold {
+                                fingers: 3,
+                            },
+                            modifiers: Modifiers(
+                                0x0,
+                            ),
+                        },
+                        action: Press(
+                            Screenshot(
+                                true,
+                                None,
+                            ),
+                        ),
+                        repeat: true,
+                        pass_through: None,
+                        cooldown: None,
+                        allow_when_locked: false,
+                        allow_inhibiting: true,
+                        hotkey_overlay_title: None,
+                        sensitivity: None,
+                        natural_scroll: false,
+                    },
+                    Bind {
+                        key: Key {
+                            trigger: TouchpadTapHoldDrag {
+                                fingers: 4,
+                            },
+                            modifiers: Modifiers(
+                                0x0,
+                            ),
+                        },
+                        action: Press(
+                            MoveWindowDown(
+                                true,
+                            ),
+                        ),
+                        repeat: true,
                         pass_through: None,
                         cooldown: None,
                         allow_when_locked: false,
