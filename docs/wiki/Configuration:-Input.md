@@ -116,6 +116,7 @@ input {
         gestures {
             // swipe-trigger-distance 100.0     // px of centroid motion before swipe latches
             // edge-start-distance 30.0         // px-wide edge start zone
+            // edge-trigger-distance 50.0       // px an edge swipe travels before it fires
             // pinch-trigger-distance 100.0     // px of spread change before pinch latches
             // pinch-dominance-ratio 1.0        // spread must beat swipe × this (higher = stricter pinch)
             // pinch-sensitivity 1.0
@@ -331,6 +332,7 @@ All knobs are grouped as: **trigger** (classifier commit gates), **dominance** (
 **Edge:**
 
 - `edge-start-distance <float>`: width in pixels of the screen-edge start zone. A touch must *begin* within this distance from an edge to count as a `TouchEdge` gesture; touches starting farther in are treated as regular swipes. Default: `30.0`.
+- `edge-trigger-distance <float>`: <sup>Since: next</sup> pixels an edge swipe must travel before it fires. Separate from `swipe-trigger-distance` because a one-finger swipe in from the edge is usually shorter than a multi-finger swipe. Default: `50.0`.
 
 **Flick to throw:**
 

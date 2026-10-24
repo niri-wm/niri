@@ -964,7 +964,7 @@ impl State {
                         let edge_slot = *edge_slot;
                         let threshold = {
                             let config = self.niri.config.borrow();
-                            config.input.touchscreen.swipe_trigger_distance()
+                            config.input.touchscreen.edge_trigger_distance()
                         };
 
                         // Only travel away from the edge counts; a drag along the edge is not

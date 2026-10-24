@@ -109,6 +109,7 @@ input {
     //     //     // Classifier commit gates. Higher = harder to trigger.
     //     //     swipe-trigger-distance 100.0   // px of centroid motion before swipe latches
     //     //     edge-start-distance 30.0       // px-wide edge start zone
+    //     //     edge-trigger-distance 50.0     // px an edge swipe travels before it fires
     //     //     pinch-trigger-distance 100.0   // px of spread change before pinch latches
     //     //     pinch-dominance-ratio 1.0      // spread must equal-or-beat swipe (higher = stricter pinch)
     //     //     // Multiplier from finger spread to continuous pinch animation

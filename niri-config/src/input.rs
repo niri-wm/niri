@@ -502,6 +502,14 @@ impl Touchscreen {
             .map_or(12.0, |v| v.0)
     }
 
+    /// Travel (in pixels) before an edge swipe fires. Default 50.
+    pub fn edge_trigger_distance(&self) -> f64 {
+        self.gestures
+            .as_ref()
+            .and_then(|g| g.edge_trigger_distance)
+            .map_or(50.0, |v| v.0)
+    }
+
     /// Pinch commit gate: `|spread_change|` must exceed this many pixels
     /// before a pinch can latch. Default 100.
     pub fn pinch_trigger_distance(&self) -> f64 {
@@ -694,6 +702,9 @@ pub struct TouchscreenGesturesConfig {
     /// treated as regular swipes. Default: 12.0.
     #[knuffel(child, unwrap(argument))]
     pub edge_start_distance: Option<FloatOrInt<0, 10000>>,
+    /// Pixels an edge swipe must travel inward before it fires. Default: 50.0.
+    #[knuffel(child, unwrap(argument))]
+    pub edge_trigger_distance: Option<FloatOrInt<0, 10000>>,
     /// Pinch commit gate: pixels of `|spread_change|` required before a
     /// pinch gesture latches. Default: 100.0.
     #[knuffel(child, unwrap(argument))]

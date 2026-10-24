@@ -1228,6 +1228,7 @@ mod tests {
                     gestures {
                         swipe-trigger-distance 80.0
                         edge-start-distance 20.0
+                        edge-trigger-distance 40
                         tap-timeout-ms 400
                         flick-to-monitor false
                         flick-velocity-threshold 1200.0
@@ -1693,6 +1694,11 @@ mod tests {
                             edge_start_distance: Some(
                                 FloatOrInt(
                                     20.0,
+                                ),
+                            ),
+                            edge_trigger_distance: Some(
+                                FloatOrInt(
+                                    40.0,
                                 ),
                             ),
                             pinch_trigger_distance: None,
