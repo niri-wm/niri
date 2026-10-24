@@ -4499,8 +4499,23 @@ impl State {
                 if let Some(trigger) = trigger {
                     let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
                     let mod_key = self.backend.mod_key(&self.niri.config.borrow());
-                    let bind = self
-                        .find_pointer_bind(mod_key, trigger, mods)
+                    let bind = self.find_pointer_bind(mod_key, trigger, mods);
+                    let has_swipe_binds = self
+                        .niri
+                        .config
+                        .borrow()
+                        .binds
+                        .0
+                        .iter()
+                        .any(|bind| matches!(bind.key.trigger, Trigger::TouchpadSwipe { .. }));
+                    let bind = bind
+                        .or_else(|| {
+                            if has_swipe_binds {
+                                None
+                            } else {
+                                builtin_touchpad_swipe_bind(trigger)
+                            }
+                        })
                         .and_then(with_press_action);
 
                     if let Some((bind, action)) = bind {
@@ -5985,6 +6000,39 @@ fn swipe_trigger(fingers: usize, is_horizontal: bool, cx: f64, cy: f64) -> Optio
 fn with_press_action(bind: Bind) -> Option<(Bind, Action)> {
     let action = bind.press_action()?.clone();
     Some((bind, action))
+}
+
+/// The touchpad swipes niri has without any `TouchpadSwipe` binds, so configs that predate
+/// gesture binds keep them. Defining any `TouchpadSwipe` bind replaces all of them.
+fn builtin_touchpad_swipe_bind(trigger: Trigger) -> Option<Bind> {
+    let Trigger::TouchpadSwipe { fingers, direction } = trigger else {
+        return None;
+    };
+    let action = match (fingers, direction) {
+        (3, SwipeDirection::Up) => Action::FocusWorkspaceUp,
+        (3, SwipeDirection::Down) => Action::FocusWorkspaceDown,
+        (3, SwipeDirection::Left) => Action::FocusColumnRight,
+        (3, SwipeDirection::Right) => Action::FocusColumnLeft,
+        (4, SwipeDirection::Up) => Action::OpenOverview,
+        (4, SwipeDirection::Down) => Action::CloseOverview,
+        _ => return None,
+    };
+
+    Some(Bind {
+        key: Key {
+            trigger,
+            modifiers: Modifiers::empty(),
+        },
+        action: BoundAction::Press(action),
+        repeat: false,
+        pass_through: None,
+        cooldown: None,
+        allow_when_locked: false,
+        allow_inhibiting: false,
+        hotkey_overlay_title: None,
+        sensitivity: None,
+        natural_scroll: false,
+    })
 }
 
 fn grab_allows_hot_corner(grab: &(dyn PointerGrab<State> + 'static)) -> bool {

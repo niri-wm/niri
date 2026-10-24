@@ -54,7 +54,7 @@ Switch workspaces by holding <kbd>Mod</kbd> and the middle mouse button (or the 
 
 <sup>Since: next</sup> Touchpad gestures are configured as binds in the main `binds {}` block, the same way keyboard shortcuts are. The trigger is `TouchpadSwipe` with `fingers=N` (integer in `3..=10`) and `direction="up|down|left|right"` properties.
 
-The defaults below reproduce the built-in behavior; you can rebind them to any other action or disable them entirely.
+Without any `TouchpadSwipe` binds, niri uses the built-in swipes below. Once you define a `TouchpadSwipe` bind, only your binds apply, so include the ones from this list that you want to keep. To turn the built-in swipes off entirely, bind any one of them to `noop`.
 
 ```kdl
 binds {

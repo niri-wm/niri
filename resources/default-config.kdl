@@ -48,7 +48,9 @@ input {
         // properties, e.g.
         //   TouchpadSwipe fingers=3 direction="up"   { focus-workspace-up; }
         //   TouchpadSwipe fingers=4 direction="left" { focus-column-right; }
-        // `fingers=` accepts any integer in 3..=10.
+        // `fingers=` accepts any integer in 3..=10. Without any TouchpadSwipe
+        // binds, 3-finger swipes switch workspaces and columns and 4-finger
+        // swipes open and close the overview.
         // See the wiki page "Gestures" for the full list.
         //
         // gestures {
