@@ -305,7 +305,7 @@ impl Touchpad {
         self.gestures
             .as_ref()
             .and_then(|g| g.swipe_trigger_distance)
-            .unwrap_or(16.0)
+            .map_or(16.0, |v| v.0)
     }
 
     /// Pinch commit gate in scale-ratio units (from
@@ -315,7 +315,7 @@ impl Touchpad {
         self.gestures
             .as_ref()
             .and_then(|g| g.pinch_trigger_scale)
-            .unwrap_or(0.15)
+            .map_or(0.15, |v| v.0)
     }
 }
 
@@ -490,7 +490,7 @@ impl Touchscreen {
         self.gestures
             .as_ref()
             .and_then(|g| g.swipe_trigger_distance)
-            .unwrap_or(100.0)
+            .map_or(100.0, |v| v.0)
     }
 
     /// Width (in pixels) of the screen-edge start zone within which a
@@ -499,7 +499,7 @@ impl Touchscreen {
         self.gestures
             .as_ref()
             .and_then(|g| g.edge_start_distance)
-            .unwrap_or(12.0)
+            .map_or(12.0, |v| v.0)
     }
 
     /// Pinch commit gate: `|spread_change|` must exceed this many pixels
@@ -508,7 +508,7 @@ impl Touchscreen {
         self.gestures
             .as_ref()
             .and_then(|g| g.pinch_trigger_distance)
-            .unwrap_or(100.0)
+            .map_or(100.0, |v| v.0)
     }
 
     /// Pinch dominance ratio: `|spread_change|` must exceed
@@ -518,14 +518,14 @@ impl Touchscreen {
         self.gestures
             .as_ref()
             .and_then(|g| g.pinch_dominance_ratio)
-            .unwrap_or(1.0)
+            .map_or(1.0, |v| v.0)
     }
 
     pub fn pinch_sensitivity(&self) -> f64 {
         self.gestures
             .as_ref()
             .and_then(|g| g.pinch_sensitivity)
-            .unwrap_or(1.0)
+            .map_or(1.0, |v| v.0)
     }
 
     /// Multi-finger scaling applied to `swipe_trigger_distance` for
@@ -536,7 +536,7 @@ impl Touchscreen {
         self.gestures
             .as_ref()
             .and_then(|g| g.swipe_multi_finger_scale)
-            .unwrap_or(1.2)
+            .map_or(1.2, |v| v.0)
     }
 
     /// Rotation commit gate: cumulative rotation must exceed this many
@@ -547,7 +547,7 @@ impl Touchscreen {
             .gestures
             .as_ref()
             .and_then(|g| g.rotation_trigger_angle)
-            .unwrap_or(20.0);
+            .map_or(20.0, |v| v.0);
         deg.to_radians()
     }
 
@@ -566,7 +566,7 @@ impl Touchscreen {
         self.gestures
             .as_ref()
             .and_then(|g| g.rotation_dominance_ratio)
-            .unwrap_or(0.5)
+            .map_or(0.5, |v| v.0)
     }
 
     /// Returns the swipe trigger distance scaled for a given finger
@@ -585,7 +585,7 @@ impl Touchscreen {
         self.gestures
             .as_ref()
             .and_then(|g| g.tap_wobble_threshold)
-            .unwrap_or(15.0)
+            .map_or(15.0, |v| v.0)
     }
 
     /// Maximum tap duration in milliseconds. Default 500.
@@ -593,7 +593,7 @@ impl Touchscreen {
         self.gestures
             .as_ref()
             .and_then(|g| g.tap_timeout_ms)
-            .unwrap_or(500.0)
+            .map_or(500.0, |v| v.0)
     }
 
     /// Minimum hold duration (ms) before a wobble-kill can activate a
@@ -603,7 +603,7 @@ impl Touchscreen {
         self.gestures
             .as_ref()
             .and_then(|g| g.tap_hold_trigger_delay_ms)
-            .unwrap_or(200.0)
+            .map_or(200.0, |v| v.0)
     }
 
     /// Whether flick-to-throw is enabled. Default on; an explicit
@@ -622,7 +622,7 @@ impl Touchscreen {
         self.gestures
             .as_ref()
             .and_then(|g| g.flick_velocity_threshold)
-            .unwrap_or(800.0)
+            .map_or(800.0, |v| v.0)
     }
 }
 
@@ -687,24 +687,24 @@ pub struct TouchscreenGesturesConfig {
     /// swipe gesture latches. Lower values feel more responsive but risk
     /// triggering on incidental finger drift. Default: 100.0.
     #[knuffel(child, unwrap(argument))]
-    pub swipe_trigger_distance: Option<f64>,
+    pub swipe_trigger_distance: Option<FloatOrInt<0, 10000>>,
     /// Width (in pixels) of the screen-edge start zone. A touch must
     /// *begin* within this distance from an edge for it to count as a
     /// `TouchEdge edge="..."` gesture; touches starting farther in are
     /// treated as regular swipes. Default: 12.0.
     #[knuffel(child, unwrap(argument))]
-    pub edge_start_distance: Option<f64>,
+    pub edge_start_distance: Option<FloatOrInt<0, 10000>>,
     /// Pinch commit gate: pixels of `|spread_change|` required before a
     /// pinch gesture latches. Default: 100.0.
     #[knuffel(child, unwrap(argument))]
-    pub pinch_trigger_distance: Option<f64>,
+    pub pinch_trigger_distance: Option<FloatOrInt<0, 10000>>,
     /// Pinch dominance ratio: `|spread_change|` must exceed
     /// `swipe_distance × this` for pinch to beat swipe in the race.
     /// Higher values make pinch stricter — the fingers really have to
     /// move apart/together rather than glide across the screen.
     /// Default: 1.0.
     #[knuffel(child, unwrap(argument))]
-    pub pinch_dominance_ratio: Option<f64>,
+    pub pinch_dominance_ratio: Option<FloatOrInt<0, 100>>,
     /// Multiplier mapping finger spread change (in screen pixels) to
     /// continuous pinch animation delta. Applies to all pinch-bound
     /// continuous actions — the bind's own `sensitivity` property is
@@ -713,7 +713,7 @@ pub struct TouchscreenGesturesConfig {
     /// of spread change contributes one pixel to the underlying gesture
     /// accumulator (same scale swipes use). Default: 1.0.
     #[knuffel(child, unwrap(argument))]
-    pub pinch_sensitivity: Option<f64>,
+    pub pinch_sensitivity: Option<FloatOrInt<0, 100>>,
     /// Scaling applied to `swipe_trigger_distance` for gestures with
     /// more than 3 fingers. The formula is
     /// `base * (1 + (fingers − 3) * (scale − 1))`, so with a base of 100
@@ -722,12 +722,12 @@ pub struct TouchscreenGesturesConfig {
     /// high finger counts so ambiguous 4/5-finger motions resolve as
     /// pinch rather than swipe. Set 1.0 to disable the bias entirely.
     #[knuffel(child, unwrap(argument))]
-    pub swipe_multi_finger_scale: Option<f64>,
+    pub swipe_multi_finger_scale: Option<FloatOrInt<0, 100>>,
     /// Rotation commit gate: cumulative rotation (in **degrees**)
     /// required before a rotation gesture latches. Converted to radians
     /// internally. Default: 20°.
     #[knuffel(child, unwrap(argument))]
-    pub rotation_trigger_angle: Option<f64>,
+    pub rotation_trigger_angle: Option<FloatOrInt<0, 360>>,
     /// Rotation dominance ratio: `rotation_arc` must exceed
     /// `swipe_distance × this` AND `|spread_change| × this` for rotation
     /// to beat swipe and pinch in the race. Higher = stricter, matching
@@ -736,25 +736,25 @@ pub struct TouchscreenGesturesConfig {
     /// so requiring arc to strictly exceed translation would reject
     /// nearly all real-world rotations).
     #[knuffel(child, unwrap(argument))]
-    pub rotation_dominance_ratio: Option<f64>,
+    pub rotation_dominance_ratio: Option<FloatOrInt<0, 100>>,
     /// Maximum per-finger displacement (in pixels) allowed during a tap
     /// gesture. If any single finger moves more than this distance from
     /// its initial landing position, the tap candidate is killed and the
     /// gesture can only resolve as swipe/pinch/rotate. Default: 15.0.
     #[knuffel(child, unwrap(argument))]
-    pub tap_wobble_threshold: Option<f64>,
+    pub tap_wobble_threshold: Option<FloatOrInt<0, 10000>>,
     /// Maximum duration (in milliseconds) from the third finger landing
     /// to all fingers lifting for a tap to fire. Taps slower than this
     /// are discarded — acts as a tap-vs-hold safety cap. Default: 500.
     #[knuffel(child, unwrap(argument))]
-    pub tap_timeout_ms: Option<f64>,
+    pub tap_timeout_ms: Option<FloatOrInt<0, 10000>>,
     /// Minimum hold duration (in milliseconds) before a wobble-kill can
     /// activate a `TouchTapHoldDrag` bind. If fingers move before this
     /// delay elapses, normal swipe/pinch/rotate recognition continues
     /// instead. Prevents fast swipes from accidentally triggering
     /// hold-drag. Default: 200.
     #[knuffel(child, unwrap(argument))]
-    pub tap_hold_trigger_delay_ms: Option<f64>,
+    pub tap_hold_trigger_delay_ms: Option<FloatOrInt<0, 10000>>,
     /// Flick-to-throw toggle. When enabled, releasing a single-finger
     /// window move (`Mod+touch` drag, or dragging a window by its
     /// titlebar) with a release speed above `flick_velocity_threshold`
@@ -768,7 +768,7 @@ pub struct TouchscreenGesturesConfig {
     /// single-finger move-release to count as a flick/throw rather than a
     /// normal positional drop. Default: 800.0.
     #[knuffel(child, unwrap(argument))]
-    pub flick_velocity_threshold: Option<f64>,
+    pub flick_velocity_threshold: Option<FloatOrInt<0, 100000>>,
 }
 
 /// Tuning parameters for touchpad gesture recognition.
@@ -782,7 +782,7 @@ pub struct TouchpadGesturesConfig {
     /// a swipe gesture latches. These are unaccelerated deltas normalized
     /// to 1000 dpi, not comparable to touchscreen pixels. Default: 16.0.
     #[knuffel(child, unwrap(argument))]
-    pub swipe_trigger_distance: Option<f64>,
+    pub swipe_trigger_distance: Option<FloatOrInt<0, 10000>>,
     /// Pinch commit gate: `|scale - 1.0|` must exceed this unitless scale
     /// ratio before a `TouchpadPinch` bind fires. libinput normalizes
     /// pinch scale (1.0 = no change, 1.5 = 50% spread out, 0.5 = 50%
@@ -791,7 +791,7 @@ pub struct TouchpadGesturesConfig {
     /// gesture when the threshold is crossed; direction is picked from
     /// the sign of the scale change. Default: 0.15.
     #[knuffel(child, unwrap(argument))]
-    pub pinch_trigger_scale: Option<f64>,
+    pub pinch_trigger_scale: Option<FloatOrInt<0, 100>>,
 }
 
 #[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
