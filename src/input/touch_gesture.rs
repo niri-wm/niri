@@ -84,6 +84,11 @@ impl State {
         let was_single = self.niri.touch_gesture_points.len() == 1;
         self.niri.touch_gesture_points.insert(Some(slot), pos);
 
+        // The screenshot UI and the lock screen get the whole sequence as plain touches.
+        if was_empty && (self.niri.screenshot_ui.is_open() || self.niri.is_locked()) {
+            self.niri.touchscreen_gesture_passthrough = true;
+        }
+
         // When ANY new finger arrives, reset cumulative and spread so
         // detection is based on movement with the current finger count.
         // If the gesture was already locked (direction decided with fewer
@@ -151,7 +156,10 @@ impl State {
         }
 
         // First finger: check if it's in a screen edge zone for edge swipe detection.
-        if was_empty && self.niri.touch_edge_swipe.is_none() {
+        if was_empty
+            && self.niri.touch_edge_swipe.is_none()
+            && !self.niri.touchscreen_gesture_passthrough
+        {
             if let Some((output, pos_within_output)) = self.niri.output_under(pos) {
                 let size = self.niri.global_space.output_geometry(output).unwrap().size;
                 let config = self.niri.config.borrow();

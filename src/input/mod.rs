@@ -4710,10 +4710,12 @@ impl State {
         self.niri.touchpad_hold_begin = None;
         self.niri.touchpad_drag_pending = None;
 
-        // Arm the touchpad-pinch classifier. libinput reports fingers as
-        // u32 but the MIN..=MAX range is small; clamp defensively.
+        // Arm the touchpad-pinch classifier, except for the screenshot UI and
+        // the lock screen. libinput reports fingers as u32 but the MIN..=MAX
+        // range is small; clamp defensively.
         let fingers = u8::try_from(event.fingers()).unwrap_or(u8::MAX);
-        self.niri.touchpad_pinch_fingers = Some(fingers);
+        let ui_open = self.niri.screenshot_ui.is_open() || self.niri.is_locked();
+        self.niri.touchpad_pinch_fingers = (!ui_open).then_some(fingers);
         self.niri.touchpad_pinch_latched = false;
 
         let serial = SERIAL_COUNTER.next_serial();
@@ -4832,7 +4834,8 @@ impl State {
         let fingers = event.fingers();
 
         // Track 3+ finger holds for touchpad tap detection.
-        if fingers >= 3 {
+        let ui_open = self.niri.screenshot_ui.is_open() || self.niri.is_locked();
+        if fingers >= 3 && !ui_open {
             self.niri.touchpad_hold_begin = Some(fingers as u8);
         }
 

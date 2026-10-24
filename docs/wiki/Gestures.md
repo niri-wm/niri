@@ -4,6 +4,8 @@ There are several gestures in niri.
 
 Also see the [gestures configuration](./Configuration:-Gestures.md) wiki page.
 
+Touchpad and touchscreen gesture binds don't trigger while the screenshot UI is open or the screen is locked; the touches go to the screenshot UI or the lock screen instead.
+
 ### Mouse
 
 #### Interactive Move
