@@ -347,6 +347,20 @@ window-rule {
     clip-to-geometry true
 }
 
+// Example: override animation settings for a specific app.
+// (This example rule is commented out with a "/-" in front.)
+/-window-rule {
+    match app-id=r#"^org\.wezfurlong\.wezterm$"#
+    animations {
+        window-open {
+            curve "ease-in-expo"
+        }
+        window-close {
+            curve "ease-out-expo"
+        }
+    }
+}
+
 binds {
     // Keys consist of modifiers separated by + signs, followed by an XKB key name
     // in the end. To find an XKB name for a particular key, you may use a program
