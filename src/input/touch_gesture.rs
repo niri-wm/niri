@@ -451,10 +451,18 @@ impl State {
         if let Some(ref state) = self.niri.touch_edge_swipe {
             match state {
                 TouchEdgeSwipeState::Pending {
-                    slot: edge_slot, ..
+                    edge,
+                    cumulative: (cx, cy),
+                    slot: edge_slot,
+                    ..
                 } => {
                     if Some(slot) == *edge_slot {
                         // Finger lifted before threshold — normal tap, clear state.
+                        tracing::debug!(
+                            target: "niri::input::touch_gesture",
+                            "TOUCH-DBG EDGE released edge={edge:?} travel={:.0}",
+                            cx.hypot(*cy),
+                        );
                         self.niri.touch_edge_swipe = None;
                     }
                 }
@@ -968,6 +976,11 @@ impl State {
                         let past_threshold = cx * cx + cy * cy >= threshold * threshold;
 
                         if past_threshold && inward <= along {
+                            tracing::debug!(
+                                target: "niri::input::touch_gesture",
+                                "TOUCH-DBG EDGE dropped edge={edge:?} inward={inward:.0} \
+                                 along={along:.0}",
+                            );
                             self.niri.touch_edge_swipe = None;
                         } else if past_threshold {
                             let trigger = Trigger::TouchEdge {
@@ -981,6 +994,11 @@ impl State {
                                 find_configured_bind(config.binds.0.iter(), mod_key, trigger, mods)
                             };
                             let bind_info = bind_info.and_then(extract_bind_info);
+                            tracing::debug!(
+                                target: "niri::input::touch_gesture",
+                                "TOUCH-DBG EDGE fired trigger={trigger:?} bind={}",
+                                if bind_info.is_some() { "yes" } else { "no" },
+                            );
 
                             if let Some((kind, sensitivity, natural_scroll, action, bind)) =
                                 bind_info
