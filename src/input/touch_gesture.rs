@@ -51,20 +51,21 @@ use crate::utils::with_toplevel_role;
 const TOUCH_DEFAULT_SENSITIVITY: f64 = 0.4;
 
 /// Extract gesture info from a matched bind: continuous kind, sensitivity,
-/// natural scroll, and action.
+/// natural scroll, action, and the bind itself (to run through `handle_bind`).
 fn extract_bind_info(
     bind: niri_config::Bind,
-) -> Option<(Option<ContinuousGestureKind>, f64, bool, Action)> {
+) -> Option<(
+    Option<ContinuousGestureKind>,
+    f64,
+    bool,
+    Action,
+    niri_config::Bind,
+)> {
     let sensitivity = bind.sensitivity.unwrap_or(TOUCH_DEFAULT_SENSITIVITY);
-    let natural_scroll = bind.natural_scroll;
     // Gesture binds are press-only; the parser rejects release sections for them.
-    let action = bind.into_action(true)?;
-    Some((
-        continuous_gesture_kind(&action),
-        sensitivity,
-        natural_scroll,
-        action,
-    ))
+    let action = bind.press_action()?.clone();
+    let kind = continuous_gesture_kind(&action);
+    Some((kind, sensitivity, bind.natural_scroll, action, bind))
 }
 
 impl State {
@@ -576,9 +577,9 @@ impl State {
                             if bind_matched { "yes" } else { "no" },
                             elapsed_ms,
                         );
-                        if let Some(action) = bind_info.and_then(|b| b.into_action(true)) {
-                            if !matches!(action, Action::Noop) {
-                                self.do_action(action, false, evt.time());
+                        if let Some(bind) = bind_info {
+                            if !matches!(bind.press_action(), None | Some(Action::Noop)) {
+                                self.handle_bind(bind, true, evt.time());
                             }
                         }
                     } else {
@@ -806,7 +807,7 @@ impl State {
                             None
                         };
 
-                        if let Some(((kind, sensitivity, natural_scroll, action), trigger)) =
+                        if let Some(((kind, sensitivity, natural_scroll, action, bind), trigger)) =
                             bind_info
                         {
                             tracing::debug!(
@@ -839,7 +840,7 @@ impl State {
                                 };
                                 self.niri.touch_active_bind = Some(active);
                             } else if !matches!(action, Action::Noop) {
-                                self.do_action(action, false, evt.time());
+                                self.handle_bind(bind, true, evt.time());
                             }
                         } else {
                             tracing::debug!(
@@ -981,7 +982,9 @@ impl State {
                             };
                             let bind_info = bind_info.and_then(extract_bind_info);
 
-                            if let Some((kind, sensitivity, natural_scroll, action)) = bind_info {
+                            if let Some((kind, sensitivity, natural_scroll, action, bind)) =
+                                bind_info
+                            {
                                 if let Some(kind) = kind {
                                     let sign = overview_action_sign(
                                         &action,
@@ -1005,7 +1008,7 @@ impl State {
                                 } else {
                                     handle.cancel(self);
                                     if !matches!(action, Action::Noop) {
-                                        self.do_action(action, false, evt.time());
+                                        self.handle_bind(bind, true, evt.time());
                                     }
                                     self.niri.touch_edge_swipe = None;
                                 }
@@ -1246,7 +1249,7 @@ impl State {
                             let trigger =
                                 touch_gesture_to_trigger(gesture_type, finger_count as u8);
                             let (bind_matched, kind_str) = match bind_info.as_ref() {
-                                Some((kind, _, _, _)) => (
+                                Some((kind, _, _, _, _)) => (
                                     "yes",
                                     kind.map(|k| format!("{:?}", k))
                                         .unwrap_or_else(|| "discrete".to_string()),
@@ -1265,7 +1268,7 @@ impl State {
                             );
                         }
 
-                        if let Some((kind, sensitivity, natural_scroll, action)) = bind_info {
+                        if let Some((kind, sensitivity, natural_scroll, action, bind)) = bind_info {
                             if let Some(kind) = kind {
                                 // Continuing the gesture as it locked performs
                                 // the bound overview action.
@@ -1296,7 +1299,7 @@ impl State {
                                 };
                                 self.niri.touch_active_bind = Some(active);
                             } else if !matches!(action, Action::Noop) {
-                                self.do_action(action, false, evt.time());
+                                self.handle_bind(bind, true, evt.time());
                             }
                         }
                     }

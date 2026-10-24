@@ -4409,7 +4409,7 @@ impl State {
                     });
                 } else {
                     // Discrete action — fire once.
-                    self.do_action(action, bind.allow_when_locked, event.time());
+                    self.handle_bind(bind, true, event.time());
                 }
 
                 // Tap-hold-drag claimed this swipe — don't enter normal
@@ -4762,12 +4762,8 @@ impl State {
                     let trigger = Trigger::TouchpadPinch { fingers, direction };
                     let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
                     let mod_key = self.backend.mod_key(&self.niri.config.borrow());
-                    let bind = self
-                        .find_pointer_bind(mod_key, trigger, mods)
-                        .and_then(with_press_action);
-
-                    if let Some((bind, action)) = bind {
-                        self.do_action(action, bind.allow_when_locked, event.time());
+                    if let Some(bind) = self.find_pointer_bind(mod_key, trigger, mods) {
+                        self.handle_bind(bind, true, event.time());
                     }
                 }
             }
@@ -4865,12 +4861,8 @@ impl State {
                 let trigger = Trigger::TouchpadTapHold { fingers };
                 let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
                 let mod_key = self.backend.mod_key(&self.niri.config.borrow());
-                let bind = self
-                    .find_pointer_bind(mod_key, trigger, mods)
-                    .and_then(with_press_action);
-
-                if let Some((bind, action)) = bind {
-                    self.do_action(action, bind.allow_when_locked, event.time());
+                if let Some(bind) = self.find_pointer_bind(mod_key, trigger, mods) {
+                    self.handle_bind(bind, true, event.time());
                 }
             }
         } else {
