@@ -187,7 +187,7 @@ pub struct ScrollFactor {
 
 impl ScrollFactor {
     pub fn h_v_factors(&self) -> (f64, f64) {
-        let base_value = self.base.map(|f| f.0).unwrap_or(0.4);
+        let base_value = self.base.map(|f| f.0).unwrap_or(1.0);
         let h = self.horizontal.map(|f| f.0).unwrap_or(base_value);
         let v = self.vertical.map(|f| f.0).unwrap_or(base_value);
         (h, v)
@@ -1327,6 +1327,18 @@ mod tests {
         (
             1.0,
             2.0,
+        )
+        ");
+
+        let sf = ScrollFactor {
+            base: None,
+            horizontal: Some(FloatOrInt(2.0)),
+            vertical: None,
+        };
+        assert_debug_snapshot!(sf.h_v_factors(), @r"
+        (
+            2.0,
+            1.0,
         )
         ");
     }
