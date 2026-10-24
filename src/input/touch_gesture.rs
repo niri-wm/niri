@@ -958,7 +958,17 @@ impl State {
                             config.input.touchscreen.swipe_trigger_distance()
                         };
 
-                        if cx * cx + cy * cy >= threshold * threshold {
+                        // Only travel away from the edge counts; a drag along the edge is not
+                        // an edge swipe.
+                        let (ix, iy) = edge_inward(edge);
+                        let inward = cx * ix + cy * iy;
+                        let along = (cx * iy - cy * ix).abs();
+
+                        let past_threshold = cx * cx + cy * cy >= threshold * threshold;
+
+                        if past_threshold && inward <= along {
+                            self.niri.touch_edge_swipe = None;
+                        } else if past_threshold {
                             let trigger = Trigger::TouchEdge {
                                 edge,
                                 zone: if zoned { Some(zone) } else { None },
