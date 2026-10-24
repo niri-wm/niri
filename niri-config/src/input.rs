@@ -494,12 +494,12 @@ impl Touchscreen {
     }
 
     /// Width (in pixels) of the screen-edge start zone within which a
-    /// touch must begin to count as a `TouchEdge`. Default 12.
+    /// touch must begin to count as a `TouchEdge`. Default 30.
     pub fn edge_start_distance(&self) -> f64 {
         self.gestures
             .as_ref()
             .and_then(|g| g.edge_start_distance)
-            .map_or(12.0, |v| v.0)
+            .map_or(30.0, |v| v.0)
     }
 
     /// Travel (in pixels) before an edge swipe fires. Default 50.
@@ -699,7 +699,7 @@ pub struct TouchscreenGesturesConfig {
     /// Width (in pixels) of the screen-edge start zone. A touch must
     /// *begin* within this distance from an edge for it to count as a
     /// `TouchEdge edge="..."` gesture; touches starting farther in are
-    /// treated as regular swipes. Default: 12.0.
+    /// treated as regular swipes. Default: 30.0.
     #[knuffel(child, unwrap(argument))]
     pub edge_start_distance: Option<FloatOrInt<0, 10000>>,
     /// Pixels an edge swipe must travel inward before it fires. Default: 50.0.
