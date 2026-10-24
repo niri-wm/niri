@@ -4,7 +4,7 @@ use knuffel::errors::DecodeError;
 use smithay::input::keyboard::Keysym;
 
 use crate::utils::{expect_only_children, MergeWith};
-use crate::{Action, Bind, Color, FloatOrInt, Key, Modifiers, Trigger};
+use crate::{Action, Bind, BoundAction, Color, FloatOrInt, Key, Modifiers, Trigger};
 
 #[derive(Debug, PartialEq)]
 pub struct RecentWindows {
@@ -59,8 +59,9 @@ impl MergeWith<RecentWindowsPart> for RecentWindows {
 
         if let Some(part) = &part.binds {
             // Remove existing binds matching any new bind.
+            let matches = |a: &MruBind, b: &Bind| a.key == b.key || a.key.conflicts_with(&b.key);
             self.binds
-                .retain(|bind| !part.0.iter().any(|new| new.key == bind.key));
+                .retain(|bind| !part.0.iter().any(|new| matches(new, bind)));
             // Add all new binds.
             self.binds.extend(part.0.iter().cloned().map(Bind::from));
         }
@@ -148,7 +149,7 @@ impl From<MruBind> for Bind {
     fn from(x: MruBind) -> Self {
         Self {
             key: x.key,
-            action: Action::from(x.action),
+            action: BoundAction::Press(Action::from(x.action)),
             repeat: true,
             cooldown: None,
             allow_when_locked: false,
@@ -264,11 +265,24 @@ where
 
         let mut seen_keys = HashSet::new();
 
-        let mut binds = Vec::new();
+        let mut binds: Vec<MruBind> = Vec::new();
 
         for child in node.children() {
             match MruBind::decode_node(child, ctx) {
                 Ok(bind) => {
+                    let conflict = binds
+                        .iter()
+                        .map(|bind| &bind.key)
+                        .any(|key| key.conflicts_with(&bind.key));
+                    if conflict {
+                        ctx.emit_error(DecodeError::unexpected(
+                            &child.node_name,
+                            "keybind",
+                            "conflicting keybind",
+                        ));
+                        continue;
+                    }
+
                     if !seen_keys.insert(bind.key) {
                         ctx.emit_error(DecodeError::unexpected(
                             &child.node_name,
@@ -319,8 +333,11 @@ where
             .parse::<Key>()
             .map_err(|e| DecodeError::conversion(&node.node_name, e.wrap_err("invalid keybind")))?;
 
+        let mut modifiers = key.modifiers;
+        modifiers &= !key.trigger.implied_modifier();
+
         // A modifier is required because MRU remains on screen as long as any modifier is held.
-        if key.modifiers.is_empty() {
+        if modifiers.is_empty() {
             ctx.emit_error(DecodeError::unexpected(
                 &node.node_name,
                 "keybind",
@@ -330,7 +347,7 @@ where
 
         // FIXME: To support this, all the mods_with_mouse_binds()/mods_with_*wheel_binds()/etc.
         // will need to learn about recent-windows bindings.
-        if !matches!(key.trigger, Trigger::Keysym(_)) {
+        if !key.trigger.is_keyboard() {
             ctx.emit_error(DecodeError::unexpected(
                 &node.node_name,
                 "key",

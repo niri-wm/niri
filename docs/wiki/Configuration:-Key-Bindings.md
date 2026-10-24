@@ -15,7 +15,8 @@ binds {
 }
 ```
 
-The hotkey consists of modifiers separated by `+` signs, followed by an XKB key name in the end.
+The hotkey consists of modifiers separated by `+` signs, followed by a trigger key in the end.
+The trigger key can be either an XKB key name or <sup>Since: next release</sup> a modifier.
 
 Valid modifiers are:
 
@@ -30,6 +31,38 @@ Valid modifiers are:
 `Mod` is a special modifier that is equal to `Super` when running niri on a TTY, and to `Alt` when running niri as a nested winit window.
 This way, you can test niri in a window without causing too many conflicts with the host compositor's key bindings.
 For this reason, most of the default keys use the `Mod` modifier.
+
+Specific left or right modifier keys like `Alt_L` or `Alt_R` can be used as triggers, but not as modifiers:
+
+```kdl
+binds {
+    // Valid:
+    Ctrl+Alt_L { spawn "alacritty"; }
+
+    // Invalid:
+    // Alt_L+Ctrl { spawn "alacritty"; }
+
+    // Also, this is equivalent to just Alt_L
+    // because Alt_L implies the Alt modifier:
+    Alt+Alt_L { spawn "the Alt here is unnecessary but allowed"; }
+    // This is the same:
+    // Alt_L { spawn "alacritty"; }
+}
+```
+
+<sup>Since: next release</sup> Generic modifiers like `Shift` or `Alt` can be used as trigger keys.
+Binds consisting only of generic modifiers do not depend on the order that you press them:
+
+```kdl
+binds {
+    // Will trigger both when pressing Alt then Shift, and Shift then Alt.
+    Alt+Shift { spawn "alacritty"; }
+
+    // The trigger is not a generic modifier, so
+    // you need to press it last. Only Ctrl then Left Shift will work.
+    Ctrl+Shift_L { spawn "alacritty"; }
+}
+```
 
 <sup>Since: 25.05</sup> You can customize the `Mod` key [in the `input` section of the config](./Configuration:-Input.md#mod-key-mod-key-nested).
 
@@ -80,6 +113,67 @@ binds {
 ```
 
 This is mostly useful for the scroll bindings.
+
+### Press and Release Bindings
+
+<sup>Since: next release</sup>
+
+Binds can be set to trigger on key press, on key release, or both.
+By default, binds trigger on key press.
+You can change it using `press {}` and `release {}` blocks:
+
+```kdl
+binds {
+    // Trigger on press (default behavior).
+    Mod+T { spawn "alacritty"; }
+
+    // Trigger on release.
+    // Press and release Mod by itself to open the overview.
+    Mod {
+        release { toggle-overview; }
+    }
+
+    // Trigger on both press and release with different actions.
+    //
+    // If the press action runs, the release action is guaranteed to run,
+    // no matter how you release the keys.
+    // You can safely use these binds for things like push-to-talk.
+    Control_R {
+        press { spawn "notify-send" "Enable push-to-talk"; }
+        release { spawn "notify-send" "Disable push-to-talk"; }
+    }
+
+    // Release binds trigger only if you don't press anything else in between.
+    // So, an Alt+Shift bind like this still lets you hit
+    // Alt+Shift+arrows and other shortcuts in applications.
+    Alt+Shift {
+        release { switch-layout "next"; }
+    }
+}
+```
+
+Release bindings are especially useful when you want to bind a modifier key.
+A normal press bind would effectively prevent you from having any other bind containing that modifier.
+
+Release-only binds only trigger when you don't press anything else while holding it.
+If you have a release-only `Mod` bind from the example above, and press any other key or mouse button while holding `Mod`, the bind will not trigger (the overview won't open).
+
+In bindings with both press and release, the release action is guaranteed to trigger if the press action triggers.
+So, your push-to-talk press-release binding will never get stuck pressed, no matter how you release the keys.
+
+By default, any bind with both press and release action does not repeat.
+You can explicitly set `repeat=true` if needed:
+
+```kdl
+binds {
+    // Doesn't repeat automatically
+    // because it has a release {} section.
+    Mod+Shift+Q repeat=true {
+        press { spawn "notify-send" "Pressed (repeating)"; }
+        release { spawn "notify-send" "Released"; }
+    }
+}
+```
 
 ### Scroll Bindings
 

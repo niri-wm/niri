@@ -618,6 +618,14 @@ impl Tty {
             SessionEvent::PauseSession => {
                 debug!("pausing session");
 
+                // We won't receive key or button releases for whatever is held down while the
+                // session is paused, so forget about all of it.
+                //
+                // Slightly cursed to do from an idle... But we don't have State here conveniently,
+                // and it should be fine to delay this until the loop callback.
+                niri.event_loop
+                    .insert_idle(|state| state.release_held_inputs());
+
                 self.libinput.suspend();
 
                 for device in self.devices.values_mut() {

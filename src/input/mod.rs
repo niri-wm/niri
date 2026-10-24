@@ -1,12 +1,14 @@
 use std::any::Any;
 use std::collections::hash_map::Entry;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 
 use calloop::timer::{TimeoutAction, Timer};
+use calloop::RegistrationToken;
 use input::event::gesture::GestureEventCoordinates as _;
 use niri_config::{
-    Action, Bind, Binds, Config, Key, ModKey, Modifiers, MruDirection, SwitchBinds, Trigger,
+    is_keysym_modifier, Action, Bind, Binds, BoundAction, Config, Key, ModKey, Modifiers,
+    MruDirection, SwitchBinds, Trigger,
 };
 use niri_ipc::LayoutSwitchTarget;
 use smithay::backend::input::{
@@ -19,9 +21,7 @@ use smithay::backend::input::{
 };
 use smithay::backend::libinput::LibinputInputBackend;
 use smithay::input::dnd::DnDGrab;
-use smithay::input::keyboard::{
-    keysyms, FilterResult, KeyboardSource, Keysym, Layout, ModifiersState,
-};
+use smithay::input::keyboard::{keysyms, KeyboardSource, Keysym, Layout, ModifiersState};
 use smithay::input::pointer::{
     AxisFrame, ButtonEvent, CursorIcon, CursorImageStatus, Focus, GestureHoldBeginEvent,
     GestureHoldEndEvent, GesturePinchBeginEvent, GesturePinchEndEvent, GesturePinchUpdateEvent,
@@ -52,7 +52,7 @@ use self::spatial_movement_grab::SpatialMovementGrab;
 use crate::dbus::freedesktop_a11y::KbMonBlock;
 use crate::layout::scrolling::ScrollDirection;
 use crate::layout::{ActivateWindow, LayoutElement as _};
-use crate::niri::{CastTarget, PointerVisibility, State};
+use crate::niri::{CastTarget, Niri, PointerVisibility, State};
 use crate::ui::mru::{WindowMru, WindowMruUi};
 use crate::ui::screenshot_ui::ScreenshotUi;
 use crate::utils::spawning::{spawn, spawn_sh};
@@ -132,6 +132,19 @@ impl<D: SeatHandler + TabletSeatHandler> AnyStartData<D> {
     pub fn is_tablet_tool(&self) -> bool {
         matches!(self, Self::TabletTool(_))
     }
+}
+
+/// What to do with a key event that the keyboard filter looked at.
+#[derive(Debug)]
+enum ShouldInterceptResult {
+    /// Forward the event to the focused client.
+    Forward,
+    /// Forward the event to the focused client, and handle the given bind.
+    ForwardAndHandle(Bind),
+    /// Do not forward the event, and handle the given bind.
+    InterceptAndHandle(Bind),
+    /// Do not forward the event, and do nothing else.
+    InterceptOnly,
 }
 
 impl State {
@@ -483,6 +496,13 @@ impl State {
             // The accessibility modifier first press must not change XKB state, so we return
             // early here.
             if block == KbMonBlock::ModifierFirstPress {
+                // A pending release action recorded for the key must still run.
+                if !pressed {
+                    if let Some(bind) = self.niri.pending_release_binds.remove(&event.key_code()) {
+                        self.niri.suppressed_keys.remove(&event.key_code());
+                        self.handle_bind(bind, false);
+                    }
+                }
                 return;
             }
             block
@@ -490,13 +510,15 @@ impl State {
         #[cfg(not(feature = "dbus"))]
         let _ = consumed_by_a11y;
 
-        let Some(Some(bind)) = self.niri.seat.get_keyboard().unwrap().input_from_source(
+        // We can't use smithay's `input` here because we want to forward _and_ handle
+        // events for modifier keys. This lets us do things like bind Control_L to an
+        // action without confusing applications about its state.
+        let keyboard = self.niri.seat.get_keyboard().unwrap();
+        let Some((result, mods_changed)) = keyboard.input_intercept(
             source,
             self,
             event.key_code(),
             event.state(),
-            serial,
-            time,
             |this, mods, keysym| {
                 let key_code = event.key_code();
                 let modified = keysym.modified_sym();
@@ -522,8 +544,13 @@ impl State {
                     // modifiers without accidentally leaking them to wl_keyboard.enter. So for now
                     // let's forward modifier releases to the clients here to deal with the most
                     // common case.
-                    if !pressed
-                        && matches!(
+                    if !pressed {
+                        // The accessibility handler consumes the release.
+                        // So, make sure to run any pending release actions.
+                        let bind = this.niri.pending_release_binds.remove(&key_code);
+                        this.niri.suppressed_keys.remove(&key_code);
+
+                        let forward = matches!(
                             modified,
                             Keysym::Shift_L
                                 | Keysym::Shift_R
@@ -533,12 +560,11 @@ impl State {
                                 | Keysym::Super_R
                                 | Keysym::Alt_L
                                 | Keysym::Alt_R
-                        )
-                    {
-                        return FilterResult::Forward;
-                    } else {
-                        return FilterResult::Intercept(None);
+                        );
+                        return bind_intercept_result(bind, forward);
                     }
+
+                    return ShouldInterceptResult::InterceptOnly;
                 }
 
                 if this.niri.exit_confirm_dialog.is_open() && pressed {
@@ -549,7 +575,7 @@ impl State {
 
                     // Don't send this press to any clients.
                     this.niri.suppressed_keys.insert(key_code);
-                    return FilterResult::Intercept(None);
+                    return ShouldInterceptResult::InterceptOnly;
                 }
 
                 // Check if all modifiers were released while the MRU UI was open. If so, close the
@@ -557,11 +583,13 @@ impl State {
                 if this.niri.window_mru_ui.is_open() && !pressed && modifiers.is_empty() {
                     this.do_action(Action::MruConfirm, false);
 
-                    if this.niri.suppressed_keys.remove(&key_code) {
-                        return FilterResult::Intercept(None);
-                    } else {
-                        return FilterResult::Forward;
-                    }
+                    // A pending release action recorded for the key must still run if it
+                    // closed the MRU instead of going through the regular bind lookup.
+                    return released_key_intercept_result(
+                        &mut this.niri.suppressed_keys,
+                        &mut this.niri.pending_release_binds,
+                        key_code,
+                    );
                 }
 
                 if pressed && raw == Some(Keysym::Escape) {
@@ -573,7 +601,7 @@ impl State {
                     {
                         pointer.unset_grab(this, serial, time);
                         this.niri.suppressed_keys.insert(key_code);
-                        return FilterResult::Intercept(None);
+                        return ShouldInterceptResult::InterceptOnly;
                     }
                 }
 
@@ -581,6 +609,11 @@ impl State {
                     this.niri.screenshot_ui.set_space_down(pressed);
                 }
 
+                if pressed {
+                    this.niri.cancel_interrupted_release_binds();
+                }
+
+                let is_locked = this.niri.is_locked();
                 let res = {
                     let config = this.niri.config.borrow();
                     let bindings =
@@ -588,6 +621,8 @@ impl State {
 
                     should_intercept_key(
                         &mut this.niri.suppressed_keys,
+                        &mut this.niri.pending_release_binds,
+                        &this.niri.bind_cooldown_timers,
                         bindings,
                         mod_key,
                         key_code,
@@ -598,16 +633,17 @@ impl State {
                         &this.niri.screenshot_ui,
                         this.niri.config.borrow().input.disable_power_key_handling,
                         is_inhibiting_shortcuts,
+                        is_locked,
                     )
                 };
 
-                if matches!(res, FilterResult::Forward) {
+                if matches!(res, ShouldInterceptResult::Forward) {
                     // If we didn't find any bind, try other hardcoded keys.
                     if this.niri.keyboard_focus.is_overview() && pressed {
                         if let Some(bind) = raw.and_then(|raw| hardcoded_overview_bind(raw, *mods))
                         {
                             this.niri.suppressed_keys.insert(key_code);
-                            return FilterResult::Intercept(Some(bind));
+                            return ShouldInterceptResult::InterceptAndHandle(bind);
                         }
                     }
 
@@ -622,13 +658,36 @@ impl State {
             return;
         };
 
-        if !pressed {
-            return;
+        // Forward the event to the client, unless the key was intercepted.
+        match &result {
+            ShouldInterceptResult::Forward | ShouldInterceptResult::ForwardAndHandle(_) => {
+                keyboard.input_forward(
+                    self,
+                    event.key_code(),
+                    event.state(),
+                    serial,
+                    time,
+                    mods_changed,
+                );
+            }
+            ShouldInterceptResult::InterceptAndHandle(_) | ShouldInterceptResult::InterceptOnly => {
+                if mods_changed {
+                    keyboard.advertise_modifier_state(self);
+                }
+            }
         }
 
-        self.handle_bind(bind.clone());
-
-        self.start_key_repeat(bind);
+        // Handle the bind, if the result came with one.
+        match result {
+            ShouldInterceptResult::ForwardAndHandle(bind)
+            | ShouldInterceptResult::InterceptAndHandle(bind) => {
+                if pressed && bind.repeat {
+                    self.start_key_repeat(bind.clone());
+                }
+                self.handle_bind(bind, pressed);
+            }
+            ShouldInterceptResult::Forward | ShouldInterceptResult::InterceptOnly => {}
+        }
     }
 
     fn start_key_repeat(&mut self, bind: Bind) {
@@ -657,7 +716,7 @@ impl State {
             .niri
             .event_loop
             .insert_source(repeat_timer, move |_, _, state| {
-                state.handle_bind(bind.clone());
+                state.handle_bind(bind.clone(), true);
                 TimeoutAction::ToDuration(repeat_duration)
             })
             .unwrap();
@@ -687,36 +746,81 @@ impl State {
         self.niri.queue_redraw_all();
     }
 
-    pub fn handle_bind(&mut self, bind: Bind) {
-        let Some(cooldown) = bind.cooldown else {
-            self.do_action(bind.action, bind.allow_when_locked);
-            return;
-        };
+    pub fn handle_bind(&mut self, bind: Bind, pressed: bool) {
+        let allowed_when_locked = bind_allowed_when_locked(&bind, pressed);
+        let allowed_during_screenshot = bind_allowed_during_screenshot(&bind, pressed);
 
         // Check this first so that it doesn't trigger the cooldown.
-        if self.niri.is_locked() && !(bind.allow_when_locked || allowed_when_locked(&bind.action)) {
+        if self.niri.is_locked() && !allowed_when_locked {
             return;
         }
 
-        match self.niri.bind_cooldown_timers.entry(bind.key) {
-            // The bind is on cooldown.
-            Entry::Occupied(_) => (),
-            Entry::Vacant(entry) => {
-                let timer = Timer::from_duration(cooldown);
-                let token = self
-                    .niri
-                    .event_loop
-                    .insert_source(timer, move |_, _, state| {
-                        if state.niri.bind_cooldown_timers.remove(&bind.key).is_none() {
-                            error!("bind cooldown timer entry disappeared");
-                        }
-                        TimeoutAction::Drop
-                    })
-                    .unwrap();
-                entry.insert(token);
+        // The bind lookup already substitutes the screenshot UI's own
+        // actions for presses, so only releases need to be filtered here.
+        if !pressed && self.niri.screenshot_ui.is_open() && !allowed_during_screenshot {
+            return;
+        }
 
-                self.do_action(bind.action, bind.allow_when_locked);
+        // Check to see if we are under a cooldown.
+        // We apply the cooldown to the press action for press-only and press/release.
+        // We apply the cooldown to the release action for release-only.
+        if pressed == bind.has_press() {
+            if let Some(cooldown) = bind.cooldown {
+                match self.niri.bind_cooldown_timers.entry(bind.key) {
+                    // The bind is on cooldown, so don't run its action.
+                    Entry::Occupied(_) => return,
+                    Entry::Vacant(entry) => {
+                        let timer = Timer::from_duration(cooldown);
+                        let token = self
+                            .niri
+                            .event_loop
+                            .insert_source(timer, move |_, _, state| {
+                                if state.niri.bind_cooldown_timers.remove(&bind.key).is_none() {
+                                    error!("bind cooldown timer entry disappeared");
+                                }
+                                TimeoutAction::Drop
+                            })
+                            .unwrap();
+                        entry.insert(token);
+                    }
+                }
             }
+        }
+
+        let Some(action) = bind.into_action(pressed) else {
+            return;
+        };
+
+        self.do_action(action, allowed_when_locked);
+    }
+
+    /// Forgets all held inputs, running the release actions of anything that was still held.
+    pub fn release_held_inputs(&mut self) {
+        let mut binds = Vec::new();
+        binds.extend(
+            self.niri
+                .pending_release_binds
+                .drain()
+                .map(|(_, bind)| bind),
+        );
+        binds.extend(
+            self.niri
+                .pending_mouse_release_binds
+                .drain()
+                .map(|(_, bind)| bind),
+        );
+        binds.extend(
+            self.niri
+                .pending_tablet_release_binds
+                .drain()
+                .map(|(_, bind)| bind),
+        );
+
+        // Forget the rest of the input state: the releases will never arrive.
+        self.niri.clear_input_state();
+
+        for bind in binds {
+            self.handle_bind(bind, false);
         }
     }
 
@@ -740,26 +844,18 @@ impl State {
                 self.niri.stop_signal.stop()
             }
             Action::ChangeVt(vt) => {
+                // Changing VT may not deliver the key releases, so treat the held binds as
+                // released while the session is still usable.
+                self.release_held_inputs();
+
                 self.backend.change_vt(vt);
-
-                // Changing VT may not deliver the key releases, so clear the state.
-                self.niri.suppressed_keys.clear();
-
-                // Stop ongoing key repeat if any.
-                if let Some(token) = self.niri.bind_repeat_timer.take() {
-                    self.niri.event_loop.remove(token);
-                }
             }
             Action::Suspend => {
+                // Suspend may not deliver the key releases, so treat the held binds as
+                // released before suspending.
+                self.release_held_inputs();
+
                 self.backend.suspend();
-
-                // Suspend may not deliver the key releases, so clear the state.
-                self.niri.suppressed_keys.clear();
-
-                // Stop ongoing key repeat if any.
-                if let Some(token) = self.niri.bind_repeat_timer.take() {
-                    self.niri.event_loop.remove(token);
-                }
             }
             Action::PowerOffMonitors => {
                 self.niri.deactivate_monitors(&mut self.backend);
@@ -2833,6 +2929,22 @@ impl State {
         self.niri.queue_redraw_all();
     }
 
+    fn find_pointer_bind(
+        &mut self,
+        mod_key: ModKey,
+        trigger: Trigger,
+        mods: ModifiersState,
+    ) -> Option<Bind> {
+        let modifiers = modifiers_from_state(mods);
+
+        let config = self.niri.config.borrow();
+        let bindings = make_binds_iter(&config, &mut self.niri.window_mru_ui, modifiers);
+
+        find_configured_bind(bindings, mod_key, trigger, mods).filter(|bind| {
+            !self.niri.screenshot_ui.is_open() || bind_allowed_during_screenshot(bind, true)
+        })
+    }
+
     fn on_pointer_button<I: InputBackend>(&mut self, event: I::PointerButtonEvent) {
         let pointer = self.niri.seat.get_pointer().unwrap();
 
@@ -2846,16 +2958,25 @@ impl State {
 
         let mod_key = self.backend.mod_key(&self.niri.config.borrow());
 
-        // Ignore release events for mouse clicks that triggered a bind.
-        if self.niri.suppressed_buttons.remove(&button_code) {
-            return;
-        }
-
         let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
         let modifiers = modifiers_from_state(mods);
         let mod_down = modifiers.contains(mod_key.to_modifiers());
 
+        if ButtonState::Released == button_state {
+            if let Some(bind) = self.niri.pending_mouse_release_binds.remove(&button_code) {
+                self.niri.suppressed_buttons.remove(&button_code);
+                self.handle_bind(bind, false);
+                return;
+            }
+        }
+
+        if self.niri.suppressed_buttons.remove(&button_code) {
+            return;
+        }
+
         if ButtonState::Pressed == button_state {
+            self.niri.cancel_interrupted_release_binds();
+
             let mut is_mru_open = false;
             if let Some(mru_output) = self.niri.window_mru_ui.output() {
                 is_mru_open = true;
@@ -2887,19 +3008,23 @@ impl State {
                     Some(MouseButton::Forward) => Some(Trigger::MouseForward),
                     _ => None,
                 }
-                .and_then(|trigger| {
-                    let config = self.niri.config.borrow();
-                    let bindings =
-                        make_binds_iter(&config, &mut self.niri.window_mru_ui, modifiers);
-                    find_configured_bind(bindings, mod_key, trigger, mods)
-                })
-                .filter(|bind| {
-                    !self.niri.screenshot_ui.is_open() || allowed_during_screenshot(&bind.action)
-                }) {
+                .and_then(|trigger| self.find_pointer_bind(mod_key, trigger, mods))
+                {
                     self.niri.suppressed_buttons.insert(button_code);
-                    self.handle_bind(bind.clone());
+                    if should_record_release_bind(
+                        &bind,
+                        self.niri.is_locked(),
+                        &self.niri.bind_cooldown_timers,
+                    ) {
+                        self.niri
+                            .pending_mouse_release_binds
+                            .insert(button_code, bind.clone());
+                    }
+                    if bind.has_press() {
+                        self.handle_bind(bind.clone(), true);
+                    }
                     return;
-                };
+                }
             }
 
             // We received an event for the regular pointer, so show it now.
@@ -3164,6 +3289,8 @@ impl State {
     }
 
     fn on_pointer_axis<I: InputBackend>(&mut self, event: I::PointerAxisEvent) {
+        self.niri.cancel_interrupted_release_binds();
+
         let pointer = &self.niri.seat.get_pointer().unwrap();
 
         let source = event.source();
@@ -3226,7 +3353,7 @@ impl State {
                                     trigger: Trigger::WheelScrollLeft,
                                     modifiers: Modifiers::empty(),
                                 },
-                                action: Action::FocusColumnLeftUnderMouse,
+                                action: BoundAction::Press(Action::FocusColumnLeftUnderMouse),
                                 repeat: true,
                                 cooldown: None,
                                 allow_when_locked: false,
@@ -3238,7 +3365,7 @@ impl State {
                                     trigger: Trigger::WheelScrollRight,
                                     modifiers: Modifiers::empty(),
                                 },
-                                action: Action::FocusColumnRightUnderMouse,
+                                action: BoundAction::Press(Action::FocusColumnRightUnderMouse),
                                 repeat: true,
                                 cooldown: None,
                                 allow_when_locked: false,
@@ -3247,40 +3374,20 @@ impl State {
                             });
                             (bind_left, bind_right)
                         } else {
-                            let config = self.niri.config.borrow();
-                            let bindings =
-                                make_binds_iter(&config, &mut self.niri.window_mru_ui, modifiers);
-                            let bind_left = find_configured_bind(
-                                bindings.clone(),
-                                mod_key,
-                                Trigger::WheelScrollLeft,
-                                mods,
+                            (
+                                self.find_pointer_bind(mod_key, Trigger::WheelScrollLeft, mods),
+                                self.find_pointer_bind(mod_key, Trigger::WheelScrollRight, mods),
                             )
-                            .filter(|bind| {
-                                !self.niri.screenshot_ui.is_open()
-                                    || allowed_during_screenshot(&bind.action)
-                            });
-                            let bind_right = find_configured_bind(
-                                bindings,
-                                mod_key,
-                                Trigger::WheelScrollRight,
-                                mods,
-                            )
-                            .filter(|bind| {
-                                !self.niri.screenshot_ui.is_open()
-                                    || allowed_during_screenshot(&bind.action)
-                            });
-                            (bind_left, bind_right)
                         };
 
                     if let Some(right) = bind_right {
                         for _ in 0..ticks {
-                            self.handle_bind(right.clone());
+                            self.handle_bind(right.clone(), true);
                         }
                     }
                     if let Some(left) = bind_left {
                         for _ in ticks..0 {
-                            self.handle_bind(left.clone());
+                            self.handle_bind(left.clone(), true);
                         }
                     }
                 }
@@ -3306,7 +3413,7 @@ impl State {
                                 trigger: Trigger::WheelScrollUp,
                                 modifiers: Modifiers::empty(),
                             },
-                            action: Action::FocusWorkspaceUpUnderMouse,
+                            action: BoundAction::Press(Action::FocusWorkspaceUpUnderMouse),
                             repeat: true,
                             cooldown: Some(Duration::from_millis(50)),
                             allow_when_locked: false,
@@ -3318,7 +3425,7 @@ impl State {
                                 trigger: Trigger::WheelScrollDown,
                                 modifiers: Modifiers::empty(),
                             },
-                            action: Action::FocusWorkspaceDownUnderMouse,
+                            action: BoundAction::Press(Action::FocusWorkspaceDownUnderMouse),
                             repeat: true,
                             cooldown: Some(Duration::from_millis(50)),
                             allow_when_locked: false,
@@ -3332,7 +3439,7 @@ impl State {
                                 trigger: Trigger::WheelScrollUp,
                                 modifiers: Modifiers::empty(),
                             },
-                            action: Action::FocusColumnLeftUnderMouse,
+                            action: BoundAction::Press(Action::FocusColumnLeftUnderMouse),
                             repeat: true,
                             cooldown: Some(Duration::from_millis(50)),
                             allow_when_locked: false,
@@ -3344,7 +3451,7 @@ impl State {
                                 trigger: Trigger::WheelScrollDown,
                                 modifiers: Modifiers::empty(),
                             },
-                            action: Action::FocusColumnRightUnderMouse,
+                            action: BoundAction::Press(Action::FocusColumnRightUnderMouse),
                             repeat: true,
                             cooldown: Some(Duration::from_millis(50)),
                             allow_when_locked: false,
@@ -3353,36 +3460,20 @@ impl State {
                         });
                         (bind_up, bind_down)
                     } else {
-                        let config = self.niri.config.borrow();
-                        let bindings =
-                            make_binds_iter(&config, &mut self.niri.window_mru_ui, modifiers);
-                        let bind_up = find_configured_bind(
-                            bindings.clone(),
-                            mod_key,
-                            Trigger::WheelScrollUp,
-                            mods,
+                        (
+                            self.find_pointer_bind(mod_key, Trigger::WheelScrollUp, mods),
+                            self.find_pointer_bind(mod_key, Trigger::WheelScrollDown, mods),
                         )
-                        .filter(|bind| {
-                            !self.niri.screenshot_ui.is_open()
-                                || allowed_during_screenshot(&bind.action)
-                        });
-                        let bind_down =
-                            find_configured_bind(bindings, mod_key, Trigger::WheelScrollDown, mods)
-                                .filter(|bind| {
-                                    !self.niri.screenshot_ui.is_open()
-                                        || allowed_during_screenshot(&bind.action)
-                                });
-                        (bind_up, bind_down)
                     };
 
                     if let Some(down) = bind_down {
                         for _ in 0..ticks {
-                            self.handle_bind(down.clone());
+                            self.handle_bind(down.clone(), true);
                         }
                     }
                     if let Some(up) = bind_up {
                         for _ in ticks..0 {
-                            self.handle_bind(up.clone());
+                            self.handle_bind(up.clone(), true);
                         }
                     }
                 }
@@ -3505,35 +3596,19 @@ impl State {
                     .horizontal_finger_scroll_tracker
                     .accumulate(horizontal);
                 if ticks != 0 {
-                    let config = self.niri.config.borrow();
-                    let bindings =
-                        make_binds_iter(&config, &mut self.niri.window_mru_ui, modifiers);
-                    let bind_left = find_configured_bind(
-                        bindings.clone(),
-                        mod_key,
-                        Trigger::TouchpadScrollLeft,
-                        mods,
-                    )
-                    .filter(|bind| {
-                        !self.niri.screenshot_ui.is_open()
-                            || allowed_during_screenshot(&bind.action)
-                    });
-                    let bind_right =
-                        find_configured_bind(bindings, mod_key, Trigger::TouchpadScrollRight, mods)
-                            .filter(|bind| {
-                                !self.niri.screenshot_ui.is_open()
-                                    || allowed_during_screenshot(&bind.action)
-                            });
-                    drop(config);
+                    let (bind_left, bind_right) = (
+                        self.find_pointer_bind(mod_key, Trigger::TouchpadScrollLeft, mods),
+                        self.find_pointer_bind(mod_key, Trigger::TouchpadScrollRight, mods),
+                    );
 
                     if let Some(right) = bind_right {
                         for _ in 0..ticks {
-                            self.handle_bind(right.clone());
+                            self.handle_bind(right.clone(), true);
                         }
                     }
                     if let Some(left) = bind_left {
                         for _ in ticks..0 {
-                            self.handle_bind(left.clone());
+                            self.handle_bind(left.clone(), true);
                         }
                     }
                 }
@@ -3543,35 +3618,19 @@ impl State {
                     .vertical_finger_scroll_tracker
                     .accumulate(vertical);
                 if ticks != 0 {
-                    let config = self.niri.config.borrow();
-                    let bindings =
-                        make_binds_iter(&config, &mut self.niri.window_mru_ui, modifiers);
-                    let bind_up = find_configured_bind(
-                        bindings.clone(),
-                        mod_key,
-                        Trigger::TouchpadScrollUp,
-                        mods,
-                    )
-                    .filter(|bind| {
-                        !self.niri.screenshot_ui.is_open()
-                            || allowed_during_screenshot(&bind.action)
-                    });
-                    let bind_down =
-                        find_configured_bind(bindings, mod_key, Trigger::TouchpadScrollDown, mods)
-                            .filter(|bind| {
-                                !self.niri.screenshot_ui.is_open()
-                                    || allowed_during_screenshot(&bind.action)
-                            });
-                    drop(config);
+                    let (bind_up, bind_down) = (
+                        self.find_pointer_bind(mod_key, Trigger::TouchpadScrollUp, mods),
+                        self.find_pointer_bind(mod_key, Trigger::TouchpadScrollDown, mods),
+                    );
 
                     if let Some(down) = bind_down {
                         for _ in 0..ticks {
-                            self.handle_bind(down.clone());
+                            self.handle_bind(down.clone(), true);
                         }
                     }
                     if let Some(up) = bind_up {
                         for _ in ticks..0 {
-                            self.handle_bind(up.clone());
+                            self.handle_bind(up.clone(), true);
                         }
                     }
                 }
@@ -3748,6 +3807,8 @@ impl State {
 
         match tip_state {
             TabletToolTipState::Down => {
+                self.niri.cancel_interrupted_release_binds();
+
                 if let Some(pos) = self.niri.tablet_cursor_location {
                     let under = self.niri.contents_under(pos);
 
@@ -3963,10 +4024,9 @@ impl State {
 
         if let Some(tool) = tool {
             let button = event.button();
+            let button_state = event.button_state();
 
-            if self.niri.suppressed_buttons.remove(&button) {
-                return;
-            }
+            let mod_key = self.backend.mod_key(&self.niri.config.borrow());
 
             let trigger = match button {
                 BTN_STYLUS => Some(Trigger::TabletStylusButton1),
@@ -3975,25 +4035,44 @@ impl State {
                 _ => None,
             };
 
+            // Handle release binds.
+            if button_state == ButtonState::Released {
+                if let Some(bind) = self.niri.pending_tablet_release_binds.remove(&button) {
+                    self.niri.suppressed_buttons.remove(&button);
+                    self.handle_bind(bind, false);
+                    return;
+                }
+            }
+
+            if self.niri.suppressed_buttons.remove(&button) {
+                return;
+            }
+
+            if button_state == ButtonState::Pressed {
+                self.niri.cancel_interrupted_release_binds();
+            }
+
+            // Handle press binds.
             if let Some(trigger) = trigger {
-                if event.button_state() == ButtonState::Pressed {
-                    let mod_key = self.backend.mod_key(&self.niri.config.borrow());
+                if button_state == ButtonState::Pressed {
                     let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
                     let modifiers = modifiers_from_state(mods);
 
                     if self.niri.mods_with_tablet_stylus_binds.contains(&modifiers) {
-                        let bind = {
-                            let config = self.niri.config.borrow();
-                            let bindings = config.binds.0.iter();
-                            find_configured_bind(bindings, mod_key, trigger, mods)
-                        }
-                        .filter(|bind| {
-                            !self.niri.screenshot_ui.is_open()
-                                || allowed_during_screenshot(&bind.action)
-                        });
-                        if let Some(bind) = bind {
+                        if let Some(bind) = self.find_pointer_bind(mod_key, trigger, mods) {
                             self.niri.suppressed_buttons.insert(button);
-                            self.handle_bind(bind.clone());
+                            if should_record_release_bind(
+                                &bind,
+                                self.niri.is_locked(),
+                                &self.niri.bind_cooldown_timers,
+                            ) {
+                                self.niri
+                                    .pending_tablet_release_binds
+                                    .insert(button, bind.clone());
+                            }
+                            if bind.has_press() {
+                                self.handle_bind(bind.clone(), true);
+                            }
                             return;
                         }
                     }
@@ -4007,7 +4086,7 @@ impl State {
                 &tablet::tool::ButtonEvent {
                     serial: SERIAL_COUNTER.next_serial(),
                     button,
-                    state: event.button_state(),
+                    state: button_state,
                     time,
                 },
             );
@@ -4017,6 +4096,8 @@ impl State {
     }
 
     fn on_gesture_swipe_begin<I: InputBackend>(&mut self, event: I::GestureSwipeBeginEvent) {
+        self.niri.cancel_interrupted_release_binds();
+
         if self.niri.window_mru_ui.is_open() || self.niri.screenshot_ui.is_open() {
             // Don't start swipe gestures while in the compositor UI.
             return;
@@ -4220,6 +4301,8 @@ impl State {
     }
 
     fn on_gesture_pinch_begin<I: InputBackend>(&mut self, event: I::GesturePinchBeginEvent) {
+        self.niri.cancel_interrupted_release_binds();
+
         let serial = SERIAL_COUNTER.next_serial();
         let pointer = self.niri.seat.get_pointer().unwrap();
 
@@ -4291,6 +4374,8 @@ impl State {
     }
 
     fn on_gesture_hold_begin<I: InputBackend>(&mut self, event: I::GestureHoldBeginEvent) {
+        self.niri.cancel_interrupted_release_binds();
+
         let serial = SERIAL_COUNTER.next_serial();
         let pointer = self.niri.seat.get_pointer().unwrap();
 
@@ -4361,6 +4446,8 @@ impl State {
             return;
         };
         let slot = evt.slot();
+
+        self.niri.cancel_interrupted_release_binds();
 
         let serial = SERIAL_COUNTER.next_serial();
 
@@ -4594,12 +4681,61 @@ impl State {
     }
 }
 
-/// Check whether the key should be intercepted and mark intercepted
-/// pressed keys as `suppressed`, thus preventing `releases` corresponding
-/// to them from being delivered.
+impl Niri {
+    fn cancel_interrupted_release_binds(&mut self) {
+        retain_press_binds(&mut self.pending_release_binds);
+        retain_press_binds(&mut self.pending_mouse_release_binds);
+        retain_press_binds(&mut self.pending_tablet_release_binds);
+    }
+}
+
+fn retain_press_binds<K>(binds: &mut HashMap<K, Bind>) {
+    binds.retain(|_, bind| bind.has_press());
+}
+
+fn released_key_intercept_result(
+    suppressed_keys: &mut HashSet<Keycode>,
+    pending_release_binds: &mut HashMap<Keycode, Bind>,
+    key_code: Keycode,
+) -> ShouldInterceptResult {
+    let bind = pending_release_binds.remove(&key_code);
+    let suppressed = suppressed_keys.remove(&key_code);
+
+    bind_intercept_result(bind, !suppressed)
+}
+
+fn bind_intercept_result(bind: Option<Bind>, forward: bool) -> ShouldInterceptResult {
+    match (bind, forward) {
+        (Some(bind), true) => ShouldInterceptResult::ForwardAndHandle(bind),
+        (Some(bind), false) => ShouldInterceptResult::InterceptAndHandle(bind),
+        (None, true) => ShouldInterceptResult::Forward,
+        (None, false) => ShouldInterceptResult::InterceptOnly,
+    }
+}
+
+fn is_bind_on_cooldown(bind: &Bind, cooldown_timers: &HashMap<Key, RegistrationToken>) -> bool {
+    bind.cooldown.is_some() && cooldown_timers.contains_key(&bind.key)
+}
+
+/// Checks whether the key should be intercepted, and tracks the presses of intercepted keys.
+///
+/// An intercepted key press is recorded in `suppressed_keys`, which prevents its release from
+/// being forwarded to clients. If the matching bind has a release action, the bind is also
+/// recorded in `pending_release_binds`, so that its release action triggers when the key is
+/// released, regardless of the modifiers held at that point.
+///
+/// A release action only triggers if the bind's modifiers matched when the key was pressed.
+///
+/// A release-only bind is cancelled by other input before this runs; see
+/// `cancel_interrupted_release_binds()`. A bind with a press action always runs its release action.
+///
+/// A bind whose press action is rate-limited by its cooldown is skipped entirely:
+/// No action runs, and no release action is recorded.
 #[allow(clippy::too_many_arguments)]
 fn should_intercept_key<'a>(
     suppressed_keys: &mut HashSet<Keycode>,
+    pending_release_binds: &mut HashMap<Keycode, Bind>,
+    cooldown_timers: &HashMap<Key, RegistrationToken>,
     bindings: impl IntoIterator<Item = &'a Bind>,
     mod_key: ModKey,
     key_code: Keycode,
@@ -4610,12 +4746,12 @@ fn should_intercept_key<'a>(
     screenshot_ui: &ScreenshotUi,
     disable_power_key_handling: bool,
     is_inhibiting_shortcuts: bool,
-) -> FilterResult<Option<Bind>> {
-    // Actions are only triggered on presses, release of the key
-    // shouldn't try to intercept anything unless we have marked
-    // the key to suppress.
-    if !pressed && !suppressed_keys.contains(&key_code) {
-        return FilterResult::Forward;
+    is_locked: bool,
+) -> ShouldInterceptResult {
+    // A release never runs a press action, so its result depends only on the bind recorded when
+    // the key was pressed, and on whether that press was suppressed.
+    if !pressed {
+        return released_key_intercept_result(suppressed_keys, pending_release_binds, key_code);
     }
 
     let mut final_bind = find_bind(
@@ -4633,7 +4769,7 @@ fn should_intercept_key<'a>(
         let mut use_screenshot_ui_action = true;
 
         if let Some(bind) = &final_bind {
-            if allowed_during_screenshot(&bind.action) {
+            if bind_allowed_during_screenshot(bind, true) {
                 use_screenshot_ui_action = false;
             }
         }
@@ -4646,7 +4782,7 @@ fn should_intercept_key<'a>(
                         // Not entirely correct but it doesn't matter in how we currently use it.
                         modifiers: Modifiers::empty(),
                     },
-                    action,
+                    action: BoundAction::Press(action),
                     repeat: true,
                     cooldown: None,
                     allow_when_locked: false,
@@ -4660,25 +4796,46 @@ fn should_intercept_key<'a>(
         }
     }
 
-    match (final_bind, pressed) {
-        (Some(bind), true) => {
+    match final_bind {
+        Some(bind) => {
             if is_inhibiting_shortcuts && bind.allow_inhibiting {
-                FilterResult::Forward
-            } else {
+                ShouldInterceptResult::Forward
+            } else if bind.has_press() && is_bind_on_cooldown(&bind, cooldown_timers) {
+                // If on cooldown, do not run the press action, record a release action,
+                // or forward the press.
                 suppressed_keys.insert(key_code);
-                FilterResult::Intercept(Some(bind))
+                ShouldInterceptResult::InterceptOnly
+            } else if is_keysym_modifier(modified) {
+                if should_record_release_bind(&bind, is_locked, cooldown_timers) {
+                    pending_release_binds.insert(key_code, bind.clone());
+                }
+                if bind.has_press() {
+                    suppressed_keys.insert(key_code);
+                    // A bind with a press action takes the key press. Applications will still learn
+                    // about the modifier state via `advertise_modifier_state()`.
+                    ShouldInterceptResult::InterceptAndHandle(bind)
+                } else {
+                    // This is to ensure that, if you have a modifier-triggered release bind like
+                    // Ctrl+Alt, We still forward the Ctrl and Alt presses to the application
+                    // to use for its own shortcuts.
+                    ShouldInterceptResult::Forward
+                }
+            } else {
+                if should_record_release_bind(&bind, is_locked, cooldown_timers) {
+                    pending_release_binds.insert(key_code, bind.clone());
+                }
+                suppressed_keys.insert(key_code);
+                if bind.has_press() {
+                    ShouldInterceptResult::InterceptAndHandle(bind)
+                } else {
+                    // Release-only bind: intercept the key press so that it doesn't reach the
+                    // client, and remember to trigger the release action when the key is
+                    // released.
+                    ShouldInterceptResult::InterceptOnly
+                }
             }
         }
-        (_, false) => {
-            // By this point, we know that the key was suppressed on press. Even if we're inhibiting
-            // shortcuts, we should still suppress the release.
-            // But we don't need to check for shortcuts inhibition here, because
-            // if it was inhibited on press (forwarded to the client), it wouldn't be suppressed,
-            // so the release would already have been forwarded at the start of this function.
-            suppressed_keys.remove(&key_code);
-            FilterResult::Intercept(None)
-        }
-        (None, true) => FilterResult::Forward,
+        None => ShouldInterceptResult::Forward,
     }
 }
 
@@ -4710,7 +4867,7 @@ fn find_bind<'a>(
                 trigger: Trigger::Keysym(modified),
                 modifiers: Modifiers::empty(),
             },
-            action,
+            action: BoundAction::Press(action),
             // Repeating VT switches and power off doesn't make sense (and it actually happens on
             // FreeBSD where it doesn't get released and ends up broken).
             repeat: false,
@@ -4726,42 +4883,120 @@ fn find_bind<'a>(
         });
     }
 
-    let trigger = Trigger::Keysym(raw?);
-    find_configured_bind(bindings, mod_key, trigger, mods)
+    let raw = raw?;
+
+    let modifiers = modifiers_from_state(mods);
+
+    // A modifier key can trigger binds bound as the compositor mod key (`Mod`), by its own keysym
+    // (like `Alt_L`), or as the modifier itself (like `Alt`). Return the first bind that matches.
+    bindings
+        .into_iter()
+        .find(|bind| {
+            let bind_trigger = bind.key.trigger;
+            // Check that the bind modifiers match the held modifiers.
+            //
+            // Pass the bind's trigger itself since we'll check the trigger match below.
+            // (Note that this means mod_key is not properly checked when it matches the trigger.)
+            if !bind_matches_trigger(bind, bind_trigger, mod_key, modifiers) {
+                return false;
+            }
+
+            // Binds that consist only of generic modifiers can be hit in any order (trigger key
+            // does not have to be the last). This is consistent with how these types of binds work
+            // elsewhere.
+            //
+            // For example:
+            // - Alt + Shift to switch keyboard layout on Windows
+            // - Ctrl + Alt to show inlay hints in VSCode
+            if bind_trigger.is_generic_modifier() {
+                // Bind trigger matching compositor mod isn't properly checked above.
+                // Check it here.
+                if (bind_trigger == Trigger::CompositorMod
+                    || bind_trigger == Trigger::Modifier(mod_key))
+                    && !modifiers.contains(mod_key.to_modifiers())
+                {
+                    return false;
+                }
+
+                // Check that the key we pressed is one of the bind modifiers.
+                let mut raw_mods = Trigger::Keysym(raw).implied_modifier();
+                if mod_key.matches_keysym(raw) {
+                    raw_mods |= Modifiers::COMPOSITOR;
+                }
+                return !raw_mods.is_empty() && bind.key.modifiers.intersects(raw_mods);
+            }
+
+            // Modifier-only binds can be written in several ways:
+            // - `Mod { quit; }` - Trigger::CompositorMod
+            // - `Super { quit; }` - Trigger::Modifier(_)
+            // - `Super_L { quit; }` - Trigger::Keysym(_)
+            //
+            // These only matter for keyboard keys and not for mouse or others. So, check them here.
+            trigger_matches_keysym(bind_trigger, raw, mod_key)
+        })
+        .cloned()
 }
 
+fn trigger_matches_keysym(trigger: Trigger, raw: Keysym, mod_key: ModKey) -> bool {
+    match trigger {
+        Trigger::CompositorMod => mod_key.matches_keysym(raw),
+        Trigger::Keysym(keysym) => keysym == raw,
+        Trigger::Modifier(modifier) => modifier.matches_keysym(raw),
+        _ => false,
+    }
+}
+
+/// Finds the configured bind for a trigger and held modifiers.
+///
+/// Returns the first bind with this exact trigger whose modifiers match, so overlapping binds
+/// like `Mod+Q` and `Super+Q` are resolved by definition order.
 fn find_configured_bind<'a>(
     bindings: impl IntoIterator<Item = &'a Bind>,
     mod_key: ModKey,
     trigger: Trigger,
     mods: ModifiersState,
 ) -> Option<Bind> {
-    // Handle configured binds.
-    let mut modifiers = modifiers_from_state(mods);
+    let modifiers = modifiers_from_state(mods);
 
-    let mod_down = modifiers_from_state(mods).contains(mod_key.to_modifiers());
-    if mod_down {
-        modifiers |= Modifiers::COMPOSITOR;
+    bindings
+        .into_iter()
+        .find(|bind| bind_matches_trigger(bind, trigger, mod_key, modifiers))
+        .cloned()
+}
+
+fn bind_matches_trigger(bind: &Bind, trigger: Trigger, mod_key: ModKey, mods: Modifiers) -> bool {
+    if bind.key.trigger != trigger {
+        return false;
     }
 
-    for bind in bindings {
-        if bind.key.trigger != trigger {
-            continue;
-        }
+    let mut held_modifiers = mods;
+    let mut required_modifiers = bind.key.modifiers;
 
-        let mut bind_modifiers = bind.key.modifiers;
-        if bind_modifiers.contains(Modifiers::COMPOSITOR) {
-            bind_modifiers |= mod_key.to_modifiers();
-        } else if bind_modifiers.contains(mod_key.to_modifiers()) {
-            bind_modifiers |= Modifiers::COMPOSITOR;
-        }
+    // Check if the trigger is the mod key itself, either as `Mod`, as its own keysym (like
+    // `Super_L`), or as the modifier itself (like `Super`). If so, normalize the modifiers not
+    // to need it.
+    let trigger_is_mod_key = match trigger {
+        Trigger::CompositorMod => true,
+        Trigger::Modifier(modifier) => modifier == mod_key,
+        Trigger::Keysym(keysym) => mod_key.matches_keysym(keysym),
+        _ => false,
+    };
 
-        if bind_modifiers == modifiers {
-            return Some(bind.clone());
+    if trigger_is_mod_key {
+        held_modifiers.remove(mod_key.to_modifiers());
+        required_modifiers.remove(trigger.implied_modifier());
+    } else {
+        if held_modifiers.contains(mod_key.to_modifiers()) {
+            held_modifiers |= Modifiers::COMPOSITOR;
+        }
+        if required_modifiers.contains(Modifiers::COMPOSITOR) {
+            required_modifiers |= mod_key.to_modifiers();
+        } else if required_modifiers.contains(mod_key.to_modifiers()) {
+            required_modifiers |= Modifiers::COMPOSITOR;
         }
     }
 
-    None
+    required_modifiers == held_modifiers
 }
 
 fn find_configured_switch_action(
@@ -4889,6 +5124,36 @@ fn allowed_when_locked(action: &Action) -> bool {
     )
 }
 
+fn bind_allowed_when_locked(bind: &Bind, pressed: bool) -> bool {
+    if bind.allow_when_locked {
+        return true;
+    }
+
+    match &bind.action {
+        BoundAction::Press(action) | BoundAction::Release(action) => allowed_when_locked(action),
+        BoundAction::Both { press, release } => {
+            if pressed {
+                allowed_when_locked(press) && allowed_when_locked(release)
+            } else {
+                // The press ran, so the release must run too.
+                true
+            }
+        }
+    }
+}
+
+fn should_record_release_bind(
+    bind: &Bind,
+    is_locked: bool,
+    cooldown_timers: &HashMap<Key, RegistrationToken>,
+) -> bool {
+    if bind.has_press() && is_bind_on_cooldown(bind, cooldown_timers) {
+        return false;
+    }
+
+    bind.has_release() && (!is_locked || bind_allowed_when_locked(bind, true))
+}
+
 fn allowed_during_screenshot(action: &Action) -> bool {
     matches!(
         action,
@@ -4930,6 +5195,22 @@ fn allowed_during_screenshot(action: &Action) -> bool {
     )
 }
 
+fn bind_allowed_during_screenshot(bind: &Bind, pressed: bool) -> bool {
+    match &bind.action {
+        BoundAction::Press(action) | BoundAction::Release(action) => {
+            allowed_during_screenshot(action)
+        }
+        BoundAction::Both { press, release } => {
+            if pressed {
+                allowed_during_screenshot(press) && allowed_during_screenshot(release)
+            } else {
+                // The press ran, so the release must run too.
+                true
+            }
+        }
+    }
+}
+
 fn hardcoded_overview_bind(raw: Keysym, mods: ModifiersState) -> Option<Bind> {
     let mods = modifiers_from_state(mods);
     if !mods.is_empty() {
@@ -4956,7 +5237,7 @@ fn hardcoded_overview_bind(raw: Keysym, mods: ModifiersState) -> Option<Bind> {
             trigger: Trigger::Keysym(raw),
             modifiers: Modifiers::empty(),
         },
-        action,
+        action: BoundAction::Press(action),
         repeat,
         cooldown: None,
         allow_when_locked: false,
@@ -5366,7 +5647,7 @@ fn make_binds_iter<'a>(
     config: &'a Config,
     mru: &'a mut WindowMruUi,
     mods: Modifiers,
-) -> impl Iterator<Item = &'a Bind> + Clone {
+) -> impl Iterator<Item = &'a Bind> {
     // Figure out the binds to use depending on whether the MRU is enabled and/or open.
     let general_binds = (!mru.is_open()).then_some(config.binds.0.iter());
     let general_binds = general_binds.into_iter().flatten();
@@ -5385,70 +5666,150 @@ fn make_binds_iter<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::animation::Clock;
+
+    const CLOSE_KEYSYM: Keysym = Keysym::q;
+    const CLOSE_KEY_CODE: Keycode = Keycode::new(CLOSE_KEYSYM.raw());
+    struct TestState {
+        screenshot_ui: ScreenshotUi,
+        disable_power_key_handling: bool,
+        is_inhibiting: bool,
+        is_locked: bool,
+        suppressed_keys: HashSet<Keycode>,
+        pending_release_binds: HashMap<Keycode, Bind>,
+        cooldown_timers: HashMap<Key, RegistrationToken>,
+    }
+
+    fn create_test_state() -> TestState {
+        TestState {
+            screenshot_ui: ScreenshotUi::new(Clock::default(), Default::default()),
+            disable_power_key_handling: false,
+            is_inhibiting: false,
+            is_locked: false,
+            suppressed_keys: HashSet::new(),
+            pending_release_binds: HashMap::new(),
+            cooldown_timers: HashMap::new(),
+        }
+    }
+
+    /// Returns a bind with the given trigger, modifiers, and action, and default flags.
+    fn bind(trigger: Trigger, modifiers: Modifiers, action: BoundAction) -> Bind {
+        Bind {
+            key: Key { trigger, modifiers },
+            action,
+            repeat: false,
+            cooldown: None,
+            allow_when_locked: false,
+            allow_inhibiting: true,
+            hotkey_overlay_title: None,
+        }
+    }
+
+    /// Returns a `Mod+Q` bind with the given action and default flags.
+    fn close_bind(action: BoundAction) -> Bind {
+        bind(Trigger::Keysym(CLOSE_KEYSYM), Modifiers::COMPOSITOR, action)
+    }
+
+    fn mod_held() -> ModifiersState {
+        ModifiersState {
+            logo: true,
+            ..Default::default()
+        }
+    }
+
+    /// Processes a press of the `Mod+Q` bind that the tests are written with.
+    fn press_close_key(
+        state: &mut TestState,
+        bindings: &Binds,
+        mods: ModifiersState,
+    ) -> ShouldInterceptResult {
+        process_close_key(state, bindings, mods, KeyState::Pressed)
+    }
+
+    /// Processes a release of the `Mod+Q` bind that the tests are written with.
+    fn release_close_key(
+        state: &mut TestState,
+        bindings: &Binds,
+        mods: ModifiersState,
+    ) -> ShouldInterceptResult {
+        process_close_key(state, bindings, mods, KeyState::Released)
+    }
+
+    fn process_close_key(
+        state: &mut TestState,
+        bindings: &Binds,
+        mods: ModifiersState,
+        key_state: KeyState,
+    ) -> ShouldInterceptResult {
+        let pressed = key_state == KeyState::Pressed;
+
+        if pressed {
+            retain_press_binds(&mut state.pending_release_binds);
+        }
+
+        should_intercept_key(
+            &mut state.suppressed_keys,
+            &mut state.pending_release_binds,
+            &state.cooldown_timers,
+            &bindings.0,
+            ModKey::Super,
+            CLOSE_KEY_CODE,
+            CLOSE_KEYSYM,
+            Some(CLOSE_KEYSYM),
+            pressed,
+            mods,
+            &state.screenshot_ui,
+            state.disable_power_key_handling,
+            state.is_inhibiting,
+            state.is_locked,
+        )
+    }
+
+    macro_rules! assert_matches {
+        ($expression:expr, $pattern:pat) => {
+            let value = $expression;
+            assert!(
+                matches!(value, $pattern),
+                "Expected {:?} to match {}",
+                value,
+                stringify!($pattern)
+            );
+        };
+    }
 
     #[test]
     fn comp_mod_handling() {
         let bindings = Binds(vec![
-            Bind {
-                key: Key {
-                    trigger: Trigger::Keysym(Keysym::q),
-                    modifiers: Modifiers::COMPOSITOR,
-                },
-                action: Action::CloseWindow,
-                repeat: true,
-                cooldown: None,
-                allow_when_locked: false,
-                allow_inhibiting: true,
-                hotkey_overlay_title: None,
-            },
-            Bind {
-                key: Key {
-                    trigger: Trigger::Keysym(Keysym::h),
-                    modifiers: Modifiers::SUPER,
-                },
-                action: Action::FocusColumnLeft,
-                repeat: true,
-                cooldown: None,
-                allow_when_locked: false,
-                allow_inhibiting: true,
-                hotkey_overlay_title: None,
-            },
-            Bind {
-                key: Key {
-                    trigger: Trigger::Keysym(Keysym::j),
-                    modifiers: Modifiers::empty(),
-                },
-                action: Action::FocusWindowDown,
-                repeat: true,
-                cooldown: None,
-                allow_when_locked: false,
-                allow_inhibiting: true,
-                hotkey_overlay_title: None,
-            },
-            Bind {
-                key: Key {
-                    trigger: Trigger::Keysym(Keysym::k),
-                    modifiers: Modifiers::COMPOSITOR | Modifiers::SUPER,
-                },
-                action: Action::FocusWindowUp,
-                repeat: true,
-                cooldown: None,
-                allow_when_locked: false,
-                allow_inhibiting: true,
-                hotkey_overlay_title: None,
-            },
-            Bind {
-                key: Key {
-                    trigger: Trigger::Keysym(Keysym::l),
-                    modifiers: Modifiers::SUPER | Modifiers::ALT,
-                },
-                action: Action::FocusColumnRight,
-                repeat: true,
-                cooldown: None,
-                allow_when_locked: false,
-                allow_inhibiting: true,
-                hotkey_overlay_title: None,
-            },
+            bind(
+                Trigger::Keysym(Keysym::q),
+                Modifiers::COMPOSITOR,
+                BoundAction::Press(Action::CloseWindow),
+            ),
+            bind(
+                Trigger::Keysym(Keysym::h),
+                Modifiers::SUPER,
+                BoundAction::Press(Action::FocusColumnLeft),
+            ),
+            bind(
+                Trigger::Keysym(Keysym::j),
+                Modifiers::empty(),
+                BoundAction::Press(Action::FocusWindowDown),
+            ),
+            bind(
+                Trigger::Keysym(Keysym::k),
+                Modifiers::COMPOSITOR | Modifiers::SUPER,
+                BoundAction::Press(Action::FocusWindowUp),
+            ),
+            bind(
+                Trigger::Keysym(Keysym::l),
+                Modifiers::SUPER | Modifiers::ALT,
+                BoundAction::Press(Action::FocusColumnRight),
+            ),
+            bind(
+                Trigger::Keysym(Keysym::Super_L),
+                Modifiers::empty(),
+                BoundAction::Release(Action::ToggleOverview),
+            ),
         ]);
 
         assert_eq!(
@@ -5459,7 +5820,7 @@ mod tests {
                 ModifiersState {
                     logo: true,
                     ..Default::default()
-                }
+                },
             )
             .as_ref(),
             Some(&bindings.0[0])
@@ -5482,7 +5843,7 @@ mod tests {
                 ModifiersState {
                     logo: true,
                     ..Default::default()
-                }
+                },
             )
             .as_ref(),
             Some(&bindings.0[1])
@@ -5505,7 +5866,7 @@ mod tests {
                 ModifiersState {
                     logo: true,
                     ..Default::default()
-                }
+                },
             ),
             None,
         );
@@ -5528,7 +5889,7 @@ mod tests {
                 ModifiersState {
                     logo: true,
                     ..Default::default()
-                }
+                },
             )
             .as_ref(),
             Some(&bindings.0[3])
@@ -5552,7 +5913,7 @@ mod tests {
                     logo: true,
                     alt: true,
                     ..Default::default()
-                }
+                },
             )
             .as_ref(),
             Some(&bindings.0[4])
@@ -5569,5 +5930,262 @@ mod tests {
             ),
             None,
         );
+
+        // A release-only bind is found the same as any other: what to do with it depends on the
+        // event, not on the lookup.
+        assert_eq!(
+            find_configured_bind(
+                &bindings.0,
+                ModKey::Super,
+                Trigger::Keysym(Keysym::Super_L),
+                ModifiersState::default(),
+            )
+            .as_ref(),
+            Some(&bindings.0[5])
+        );
+    }
+
+    #[test]
+    fn bind_allowed_when_locked_requires_both_actions_of_a_both_bind() {
+        // A press could start something that its release would never undo, so both actions must be
+        // allowed while locked.
+        let both = |press, release| close_bind(BoundAction::Both { press, release });
+        assert!(!bind_allowed_when_locked(
+            &both(Action::Suspend, Action::CloseWindow),
+            true
+        ));
+        assert!(!bind_allowed_when_locked(
+            &both(Action::CloseWindow, Action::Suspend),
+            true
+        ));
+        assert!(bind_allowed_when_locked(
+            &both(Action::Suspend, Action::PowerOffMonitors),
+            true
+        ));
+    }
+
+    #[test]
+    fn bind_allowed_when_locked_requires_only_the_single_action() {
+        assert!(bind_allowed_when_locked(
+            &close_bind(BoundAction::Press(Action::Suspend)),
+            true
+        ));
+        assert!(!bind_allowed_when_locked(
+            &close_bind(BoundAction::Press(Action::CloseWindow)),
+            true
+        ));
+        assert!(bind_allowed_when_locked(
+            &close_bind(BoundAction::Release(Action::Suspend)),
+            false
+        ));
+        assert!(!bind_allowed_when_locked(
+            &close_bind(BoundAction::Release(Action::CloseWindow)),
+            false
+        ));
+    }
+
+    #[test]
+    fn bind_allowed_when_locked_always_allows_a_both_bind_release() {
+        // The release only happens if its press ran, and the press required both actions to be
+        // allowed, so the release is never blocked separately.
+        let both = close_bind(BoundAction::Both {
+            press: Action::Suspend,
+            release: Action::CloseWindow,
+        });
+        assert!(bind_allowed_when_locked(&both, false));
+    }
+
+    #[test]
+    fn allow_when_locked_allows_the_whole_bind() {
+        let bind = |action| Bind {
+            allow_when_locked: true,
+            ..close_bind(action)
+        };
+        assert!(bind_allowed_when_locked(
+            &bind(BoundAction::Press(Action::CloseWindow)),
+            true
+        ));
+        assert!(bind_allowed_when_locked(
+            &bind(BoundAction::Release(Action::CloseWindow)),
+            false
+        ));
+
+        let both = bind(BoundAction::Both {
+            press: Action::CloseWindow,
+            release: Action::CenterColumn,
+        });
+        assert!(bind_allowed_when_locked(&both, true));
+        assert!(bind_allowed_when_locked(&both, false));
+    }
+
+    #[test]
+    fn locked_both_bind_does_not_run_its_press_when_its_release_is_not_allowed() {
+        // `Mod+Q { press { suspend; } release { close-window; } }`: the press is allowed while
+        // locked but the release isn't, so the press must not run, since nothing could undo it.
+        let bindings = Binds(vec![close_bind(BoundAction::Both {
+            press: Action::Suspend,
+            release: Action::CloseWindow,
+        })]);
+
+        let mut state = TestState {
+            is_locked: true,
+            ..create_test_state()
+        };
+        let result = press_close_key(&mut state, &bindings, mod_held());
+
+        // `handle_bind()` drops the press while locked, and nothing is recorded to undo.
+        assert_matches!(result, ShouldInterceptResult::InterceptAndHandle(_));
+        assert!(state.pending_release_binds.is_empty());
+
+        let result = release_close_key(&mut state, &bindings, mod_held());
+        assert_matches!(result, ShouldInterceptResult::InterceptOnly);
+    }
+
+    #[test]
+    fn both_bind_release_recorded_while_unlocked_runs_while_locked() {
+        // Its press action ran while unlocked, so the release must run later even if the screen got
+        // locked in between.
+        let bindings = Binds(vec![close_bind(BoundAction::Both {
+            press: Action::Suspend,
+            release: Action::CloseWindow,
+        })]);
+
+        let mut state = create_test_state();
+        let result = press_close_key(&mut state, &bindings, mod_held());
+        assert_matches!(result, ShouldInterceptResult::InterceptAndHandle(_));
+        assert!(state.pending_release_binds.contains_key(&CLOSE_KEY_CODE));
+
+        state.is_locked = true;
+        let result = release_close_key(&mut state, &bindings, mod_held());
+        assert_matches!(
+            result,
+            ShouldInterceptResult::InterceptAndHandle(Bind {
+                action: BoundAction::Both {
+                    release: Action::CloseWindow,
+                    ..
+                },
+                ..
+            })
+        );
+        assert!(state.pending_release_binds.is_empty());
+    }
+
+    #[test]
+    fn release_only_bind_is_recorded_on_press_and_runs_on_release() {
+        let bindings = Binds(vec![close_bind(BoundAction::Release(Action::CloseWindow))]);
+
+        let mut state = create_test_state();
+        let result = press_close_key(&mut state, &bindings, mod_held());
+        assert_matches!(result, ShouldInterceptResult::InterceptOnly);
+        assert!(state.pending_release_binds.contains_key(&CLOSE_KEY_CODE));
+
+        let result = release_close_key(&mut state, &bindings, mod_held());
+        assert_matches!(
+            result,
+            ShouldInterceptResult::InterceptAndHandle(Bind {
+                action: BoundAction::Release(Action::CloseWindow),
+                ..
+            })
+        );
+        assert!(state.pending_release_binds.is_empty());
+    }
+
+    #[test]
+    fn release_only_bind_allowed_while_locked_is_recorded_and_runs_while_locked() {
+        let bindings = Binds(vec![Bind {
+            allow_when_locked: true,
+            ..close_bind(BoundAction::Release(Action::CloseWindow))
+        }]);
+
+        let mut state = TestState {
+            is_locked: true,
+            ..create_test_state()
+        };
+        let result = press_close_key(&mut state, &bindings, mod_held());
+        assert_matches!(result, ShouldInterceptResult::InterceptOnly);
+        assert!(state.pending_release_binds.contains_key(&CLOSE_KEY_CODE));
+
+        let result = release_close_key(&mut state, &bindings, mod_held());
+        assert_matches!(
+            result,
+            ShouldInterceptResult::InterceptAndHandle(Bind {
+                action: BoundAction::Release(Action::CloseWindow),
+                ..
+            })
+        );
+        assert!(state.pending_release_binds.is_empty());
+    }
+
+    #[test]
+    fn release_only_bind_not_allowed_while_locked_is_not_recorded_while_locked() {
+        let bindings = Binds(vec![close_bind(BoundAction::Release(Action::CloseWindow))]);
+
+        let mut state = TestState {
+            is_locked: true,
+            ..create_test_state()
+        };
+        let result = press_close_key(&mut state, &bindings, mod_held());
+        assert_matches!(result, ShouldInterceptResult::InterceptOnly);
+        assert!(state.pending_release_binds.is_empty());
+
+        let result = release_close_key(&mut state, &bindings, mod_held());
+        assert_matches!(result, ShouldInterceptResult::InterceptOnly);
+        assert!(state.pending_release_binds.is_empty());
+    }
+
+    #[test]
+    fn bind_allowed_during_screenshot_requires_both_actions_of_a_both_bind() {
+        // A press could start something that its release would never undo, so both actions must be
+        // allowed while the screenshot UI is open.
+        let both = |press, release| close_bind(BoundAction::Both { press, release });
+        assert!(!bind_allowed_during_screenshot(
+            &both(Action::MoveColumnLeft, Action::CloseWindow),
+            true
+        ));
+        assert!(!bind_allowed_during_screenshot(
+            &both(Action::CloseWindow, Action::MoveColumnLeft),
+            true
+        ));
+        assert!(bind_allowed_during_screenshot(
+            &both(Action::MoveColumnLeft, Action::MoveWindowUp),
+            true
+        ));
+    }
+
+    #[test]
+    fn bind_allowed_during_screenshot_requires_only_the_single_action() {
+        assert!(bind_allowed_during_screenshot(
+            &close_bind(BoundAction::Press(Action::MoveColumnLeft)),
+            true
+        ));
+        assert!(!bind_allowed_during_screenshot(
+            &close_bind(BoundAction::Press(Action::CloseWindow)),
+            true
+        ));
+    }
+
+    #[test]
+    fn bind_allowed_during_screenshot_always_allows_a_both_bind_release() {
+        // The release only happens if its press ran, so the screenshot UI opening in between must
+        // not block it.
+        let both = |press, release| close_bind(BoundAction::Both { press, release });
+        assert!(bind_allowed_during_screenshot(
+            &both(Action::MoveColumnLeft, Action::CloseWindow),
+            false
+        ));
+        assert!(bind_allowed_during_screenshot(
+            &both(Action::CloseWindow, Action::MoveColumnLeft),
+            false
+        ));
+
+        // A release-only bind has no press to undo, so its own action must be allowed.
+        assert!(bind_allowed_during_screenshot(
+            &close_bind(BoundAction::Release(Action::MoveColumnLeft)),
+            false
+        ));
+        assert!(!bind_allowed_during_screenshot(
+            &close_bind(BoundAction::Release(Action::CloseWindow)),
+            false
+        ));
     }
 }
