@@ -30,11 +30,12 @@ use niri_config::binds::{
 use niri_config::input::{EdgeZone, FocusOnTouch, ScreenEdge};
 use niri_config::touch_binds::{continuous_gesture_kind, ContinuousGestureKind, TouchGestureType};
 use niri_config::Action;
-use smithay::backend::input::{Event as _, TouchEvent};
+use smithay::backend::input::{Event as _, InputTime, TouchEvent, TouchSlot};
 use smithay::input::touch::{
-    DownEvent, GrabStartData as TouchGrabStartData, MotionEvent as TouchMotionEvent, UpEvent,
+    DownEvent, GrabStartData as TouchGrabStartData, MotionEvent as TouchMotionEvent, TouchHandle,
+    UpEvent,
 };
-use smithay::utils::SERIAL_COUNTER;
+use smithay::utils::{Logical, Point, SERIAL_COUNTER};
 
 use super::backend_ext::NiriInputBackend as InputBackend;
 use super::move_grab::MoveGrab;
@@ -193,6 +194,7 @@ impl State {
                             edge,
                             zone,
                             zoned: zoned_hit,
+                            start: pos,
                             cumulative: (0., 0.),
                             slot: Some(slot),
                         });
@@ -452,18 +454,29 @@ impl State {
             match state {
                 TouchEdgeSwipeState::Pending {
                     edge,
+                    start,
                     cumulative: (cx, cy),
                     slot: edge_slot,
                     ..
                 } => {
                     if Some(slot) == *edge_slot {
-                        // Finger lifted before threshold — normal tap, clear state.
+                        let (start, travel) = (*start, cx.hypot(*cy));
                         tracing::debug!(
                             target: "niri::input::touch_gesture",
-                            "TOUCH-DBG EDGE released edge={edge:?} travel={:.0}",
-                            cx.hypot(*cy),
+                            "TOUCH-DBG EDGE released edge={edge:?} travel={travel:.0}",
                         );
                         self.niri.touch_edge_swipe = None;
+
+                        let wobble = self
+                            .niri
+                            .config
+                            .borrow()
+                            .input
+                            .touchscreen
+                            .tap_wobble_threshold();
+                        if travel <= wobble {
+                            self.replay_edge_tap(&handle, slot, start, evt.time());
+                        }
                     }
                 }
                 TouchEdgeSwipeState::Active { kind, .. } => {
@@ -659,6 +672,39 @@ impl State {
                 },
             )
         }
+    }
+
+    /// A touch in the edge strip is held back from the client until it is known not to be an edge
+    /// swipe. When it lifts as a tap, deliver the touch-down it never got, so the following
+    /// touch-up completes a normal tap.
+    fn replay_edge_tap(
+        &mut self,
+        handle: &TouchHandle<State>,
+        slot: TouchSlot,
+        start: Point<f64, Logical>,
+        time: InputTime,
+    ) {
+        let under = self.niri.contents_under(start);
+        if under.overview || self.niri.window_mru_ui.is_open() {
+            return;
+        }
+
+        if let Some((window, _)) = &under.window {
+            self.niri.layout.activate_window(window);
+            self.niri.queue_redraw_all();
+        }
+        self.niri.focus_layer_surface_if_on_demand(under.layer);
+
+        handle.down(
+            self,
+            under.surface,
+            &DownEvent {
+                slot,
+                location: start,
+                serial: SERIAL_COUNTER.next_serial(),
+                time,
+            },
+        );
     }
 
     pub(super) fn on_touch_motion<I: InputBackend>(&mut self, evt: I::TouchMotionEvent) {

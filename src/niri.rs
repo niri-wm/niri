@@ -246,6 +246,8 @@ pub enum TouchEdgeSwipeState {
         /// unzoned parent trigger was the one that matched (fallback path).
         /// Determines which Trigger name to emit for IPC events.
         zoned: bool,
+        /// Where the finger landed, to replay the touch as a tap on early release.
+        start: Point<f64, Logical>,
         cumulative: (f64, f64),
         slot: Option<TouchSlot>,
     },

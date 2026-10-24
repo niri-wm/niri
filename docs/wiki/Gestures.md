@@ -300,7 +300,7 @@ binds {
 - `zone=` — optional third-of-the-edge qualifier (see Edge Zones below).
 - No `fingers=` — edge swipes are always single-finger. Including `fingers=` is an error.
 
-The edge trigger zone width is set by `edge-start-distance` in the `touchscreen { gestures { } }` block, and the distance the finger travels before the bind fires by `edge-trigger-distance`. The finger has to travel mostly inward, away from the edge; a drag along the edge doesn't trigger the bind.
+The edge trigger zone width is set by `edge-start-distance` in the `touchscreen { gestures { } }` block, and the distance the finger travels before the bind fires by `edge-trigger-distance`. The finger has to travel mostly inward, away from the edge; a drag along the edge doesn't trigger the bind. A tap in the edge zone still reaches the window under it.
 
 ##### Edge swipes with continuous actions (overview, workspace switch)
 
