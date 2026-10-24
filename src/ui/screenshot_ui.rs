@@ -775,6 +775,8 @@ impl ScreenshotUi {
                 allow_when_locked: true,
                 allow_inhibiting: false,
                 hotkey_overlay_title: None,
+                sensitivity: None,
+                natural_scroll: false,
             }
         }
 
