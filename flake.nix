@@ -2,7 +2,7 @@
 {
   description = "Niri: A scrollable-tiling Wayland compositor.";
 
-  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+  inputs.nixpkgs.url = "https://channels.nixos.org/nixpkgs-unstable/nixexprs.tar.zst";
 
   outputs =
     {
@@ -123,6 +123,8 @@
 
               install -Dm644 resources/niri.desktop -t $out/share/wayland-sessions
               install -Dm644 resources/niri-portals.conf -t $out/share/xdg-desktop-portal
+              install -Dm644 resources/niri.png -t $out/share/icons/hicolor/256x256/apps
+              install -Dm644 resources/niri.svg -t $out/share/icons/hicolor/scalable/apps
             ''
             + lib.optionalString withSystemd ''
               install -Dm755 resources/niri-session $out/bin/niri-session
