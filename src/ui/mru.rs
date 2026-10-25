@@ -77,7 +77,12 @@ const FONT: &str = "sans 14px";
 /// Scopes in the order they are cycled through.
 ///
 /// Count must match one defined in `generate_scope_panels()`.
-static SCOPE_CYCLE: [MruScope; 3] = [MruScope::All, MruScope::Workspace, MruScope::Output];
+static SCOPE_CYCLE: [MruScope; 4] = [
+    MruScope::All,
+    MruScope::Workspace,
+    MruScope::Output,
+    MruScope::Urgent,
+];
 
 /// Window MRU traversal context.
 #[derive(Debug)]
@@ -199,7 +204,7 @@ struct TitleTexture {
 #[derive(Debug, Default)]
 struct ScopePanel {
     scale: f64,
-    textures: Option<Option<[MruTexture; 3]>>,
+    textures: Option<Option<[MruTexture; 4]>>,
 }
 
 #[derive(Debug)]
@@ -212,6 +217,7 @@ struct Thumbnail {
     on_current_workspace: bool,
     /// Whether the window is on the current MRU output.
     on_current_output: bool,
+    is_urgent: bool,
 
     /// Cached app ID of the window.
     ///
@@ -231,6 +237,8 @@ struct Thumbnail {
 
 impl Thumbnail {
     fn from_mapped(mapped: &Mapped, clock: Clock, config: niri_config::MruPreviews) -> Self {
+        let is_focused = mapped.is_focused();
+        let is_urgent = mapped.is_urgent() || is_focused;
         let app_id = with_toplevel_role(mapped.toplevel(), |role| role.app_id.clone());
 
         let background = FocusRing::new(niri_config::FocusRing {
@@ -250,6 +258,7 @@ impl Thumbnail {
             timestamp: mapped.get_focus_timestamp(),
             on_current_output: false,
             on_current_workspace: false,
+            is_urgent,
             app_id,
             size: mapped.size(),
             clock,
@@ -828,6 +837,7 @@ fn matches(scope: MruScope, app_id_filter: Option<&str>, thumbnail: &Thumbnail) 
         MruScope::All => true,
         MruScope::Output => thumbnail.on_current_output,
         MruScope::Workspace => thumbnail.on_current_workspace,
+        MruScope::Urgent => thumbnail.is_urgent,
     };
     if !x {
         return false;
@@ -1231,6 +1241,7 @@ impl WindowMruUi {
             MruScope::All => "all",
             MruScope::Output => "output",
             MruScope::Workspace => "workspace",
+            MruScope::Urgent => "urgent",
         };
         format!("Scope {scope}")
     }
@@ -1723,7 +1734,7 @@ impl ScopePanel {
 fn generate_scope_panels(
     renderer: &mut GlesRenderer,
     scale: f64,
-) -> anyhow::Result<[MruTexture; 3]> {
+) -> anyhow::Result<[MruTexture; 4]> {
     fn make_panel_text(idx: usize) -> String {
         let span_unselected = "<span fgcolor='#999999'>";
         let span_end = "</span>";
@@ -1743,6 +1754,7 @@ fn generate_scope_panels(
                 MruScope::All => format!("{span_shortcut}A{span_shortcut_end}ll"),
                 MruScope::Output => format!("{span_shortcut}O{span_shortcut_end}utput"),
                 MruScope::Workspace => format!("{span_shortcut}W{span_shortcut_end}orkspace"),
+                MruScope::Urgent => format!("{span_shortcut}U{span_shortcut_end}rgent"),
             };
             buf.push_str(&text);
             if scope as usize != idx {
@@ -1758,6 +1770,7 @@ fn generate_scope_panels(
         render_panel(renderer, scale, &make_panel_text(0))?,
         render_panel(renderer, scale, &make_panel_text(1))?,
         render_panel(renderer, scale, &make_panel_text(2))?,
+        render_panel(renderer, scale, &make_panel_text(3))?,
     ])
 }
 
@@ -1849,6 +1862,7 @@ fn make_preset_opened_binds() -> Vec<Bind> {
     push(Keysym::a, Action::MruSetScope(MruScope::All));
     push(Keysym::o, Action::MruSetScope(MruScope::Output));
     push(Keysym::w, Action::MruSetScope(MruScope::Workspace));
+    push(Keysym::u, Action::MruSetScope(MruScope::Urgent));
     push(Keysym::s, Action::MruCycleScope);
 
     // Leave these in since they are the most expected and generally uncontroversial keys, so that
