@@ -26,6 +26,19 @@ Note that if you're using the provided `resources/niri-portals.conf`, you also n
 
 If you do not want to install `nautilus` (say you use `nemo` instead), you can set `org.freedesktop.impl.portal.FileChooser=gtk;` in `niri-portals.conf` to use the GTK portal for file chooser dialogues.
 
+If you also have KDE installed, you can route the file chooser to the native KDE dialogue instead. The KDE portal backend is restricted to KDE sessions via `UseIn=KDE` in its `.portal` file, so extend it in the user directory first:
+
+```sh
+mkdir -p ~/.local/share/xdg-desktop-portal/portals
+sed 's/UseIn=KDE/UseIn=KDE;niri/' \
+    /usr/share/xdg-desktop-portal/portals/kde.portal \
+    > ~/.local/share/xdg-desktop-portal/portals/kde.portal
+```
+
+Then set `org.freedesktop.impl.portal.FileChooser=kde;` in `niri-portals.conf`.
+
+Likewise, on systems running KDE's `ksecretd` (KWallet) without `gnome-keyring`, `org.freedesktop.impl.portal.Secret=kwallet;` is a valid Secret backend.
+
 > [!WARNING]
 > Do not set the `GDK_BACKEND` environment variable globally as this will break the screencast portal.
 
