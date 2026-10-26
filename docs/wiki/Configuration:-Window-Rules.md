@@ -668,6 +668,18 @@ window-rule {
 }
 ```
 
+<sup>Since: next release</sup> You can set `variable-refresh-rate` to `"fullscreen-only"` to activate on-demand VRR only when this window is fullscreen on this output.
+The window must cover the entire screen (when niri hides the top layer-shell layer).
+
+This mode will work even when there are overlays over the fullscreen window.
+
+```kdl
+// Enable on-demand VRR when any window is fullscreen.
+window-rule {
+    variable-refresh-rate "fullscreen-only"
+}
+```
+
 #### `default-column-display`
 
 <sup>Since: 25.02</sup>

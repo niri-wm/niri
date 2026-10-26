@@ -401,7 +401,21 @@ binds {
     // Open/close the Overview: a zoomed-out view of workspaces and windows.
     // You can also move the mouse into the top-left hot corner,
     // or do a four-finger swipe up on a touchpad.
-    Mod+O repeat=false { toggle-overview; }
+    //
+    // This is a release bind.
+    // Press and release Mod by itself to trigger it.
+    Mod {
+        release { toggle-overview; }
+    }
+
+    // You can also bind both press and release actions like so.
+    // If the press action fires, the release action
+    // is also guaranteed to fire.
+    // This is useful for binds like push-to-talk.
+    // Alt+Shift {
+    //     press   { spawn "notify-send" "Enable push-to-talk!"; }
+    //     release { spawn "notify-send" "Disable push-to-talk!"; }
+    // }
 
     Mod+Q repeat=false { close-window; }
     Alt+F4 repeat=false { close-window; }

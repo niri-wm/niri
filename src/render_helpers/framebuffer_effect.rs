@@ -1,11 +1,12 @@
 use std::cell::RefCell;
+use std::sync::Once;
 
 use glam::{Mat3, Vec2};
 use niri_config::CornerRadius;
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::element::{Element, Id, RenderElement};
 use smithay::backend::renderer::gles::{
-    ffi, GlesError, GlesFrame, GlesRenderer, GlesTexture, Uniform,
+    ffi, Capability, GlesError, GlesFrame, GlesRenderer, GlesTexture, Uniform,
 };
 use smithay::backend::renderer::utils::CommitCounter;
 use smithay::backend::renderer::{Frame as _, FrameContext, Offscreen, Texture as _};
@@ -166,6 +167,7 @@ impl RenderElement<GlesRenderer> for FramebufferEffectElement {
             let output_rect = Rectangle::from_size(frame.output_size());
             let transform = frame.transformation();
 
+            let supports_blit = frame.capabilities().contains(&Capability::Blit);
             let mut guard = frame.renderer();
 
             let inner = cache
@@ -174,6 +176,14 @@ impl RenderElement<GlesRenderer> for FramebufferEffectElement {
             let inner = &mut *inner;
 
             inner.intermediate = None;
+
+            if !supports_blit {
+                static WARN: Once = Once::new();
+                WARN.call_once(|| {
+                    warn!("non-xray background effects disabled: renderer does not support framebuffer blitting");
+                });
+                return Ok(());
+            }
 
             // We want clamp-to-edge behavior for out-of-bounds pixels. However, glBlitFramebuffer
             // seems to skip out-of-bounds pixels, even though my reading of the docs suggests

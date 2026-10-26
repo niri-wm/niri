@@ -113,16 +113,7 @@ impl SeatHandler for State {
     }
 
     fn led_state_changed(&mut self, _seat: &Seat<Self>, led_state: keyboard::LedState) {
-        let keyboards = self
-            .niri
-            .devices
-            .iter()
-            .filter(|device| device.has_capability(input::DeviceCapability::Keyboard))
-            .cloned();
-
-        for mut keyboard in keyboards {
-            keyboard.led_update(led_state.into());
-        }
+        self.update_keyboard_leds(led_state);
     }
 
     fn click_grab(
