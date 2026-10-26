@@ -366,7 +366,7 @@ pub struct Niri {
     /// Same as `pending_release_binds`, but for tablet tool buttons, keyed by the button code.
     pub pending_tablet_release_binds: HashMap<u32, Bind>,
     pub bind_cooldown_timers: HashMap<Key, RegistrationToken>,
-    pub bind_repeat_timer: Option<RegistrationToken>,
+    pub bind_repeat_timers: HashMap<Keycode, RegistrationToken>,
     pub keyboard_focus: KeyboardFocus,
     pub layer_shell_on_demand_focus: Option<LayerSurface>,
     pub idle_inhibiting_surfaces: HashSet<WlSurface>,
@@ -2847,7 +2847,7 @@ impl Niri {
             pending_mouse_release_binds: HashMap::new(),
             pending_tablet_release_binds: HashMap::new(),
             bind_cooldown_timers: HashMap::new(),
-            bind_repeat_timer: Option::default(),
+            bind_repeat_timers: HashMap::new(),
             presentation_state,
             security_context_state,
             gamma_control_manager_state,
@@ -6605,11 +6605,7 @@ impl Niri {
         self.pending_release_binds.clear();
         self.pending_mouse_release_binds.clear();
         self.pending_tablet_release_binds.clear();
-
-        // Stop ongoing key repeat if any.
-        if let Some(token) = self.bind_repeat_timer.take() {
-            self.event_loop.remove(token);
-        }
+        self.bind_repeat_timers.clear();
     }
 
     pub fn is_locked(&self) -> bool {

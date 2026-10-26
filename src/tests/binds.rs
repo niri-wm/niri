@@ -2127,3 +2127,112 @@ fn redundant_modifier_binds() {
         run("binds { Alt+Alt+Q { release { close-window; }; }; }", input)
     );
 }
+
+#[test]
+fn pressing_a_repeating_bind_cancels_an_earlier_release_only_bind() {
+    let c = "
+    binds {
+        Alt+Shift+R {
+            release { focus-column-left; }
+        }
+        Alt+Shift+H { focus-column-right; }
+    }
+    ";
+    let (mut f, id, surface) = set_up(c);
+
+    run_f(&mut f, id, &surface, "+LALT +LFSH +AD04");
+    assert_eq!(f.niri().test_action_count, 0);
+    run_f(&mut f, id, &surface, "+AC06");
+    assert_eq!(f.niri().test_action_count, 1);
+    assert_eq!(f.niri().bind_repeat_timers.len(), 1);
+
+    run_f(&mut f, id, &surface, "-AD04");
+    assert_eq!(f.niri().test_action_count, 1);
+    assert_eq!(f.niri().bind_repeat_timers.len(), 1);
+    run_f(&mut f, id, &surface, "-AC06 -LFSH -LALT");
+    assert!(f.niri().bind_repeat_timers.is_empty());
+}
+
+#[test]
+fn adding_a_modifier_does_not_switch_a_held_repeat_bind() {
+    let c = "
+    binds {
+        Alt+H { focus-column-left; }
+        Alt+Shift+H repeat=false { focus-column-right; }
+    }
+    ";
+    let (mut f, id, surface) = set_up(c);
+
+    run_f(&mut f, id, &surface, "+LALT +AC06");
+    assert_eq!(f.niri().test_action_count, 1);
+    assert_eq!(f.niri().bind_repeat_timers.len(), 1);
+
+    run_f(&mut f, id, &surface, "+LFSH");
+    assert_eq!(f.niri().test_action_count, 1);
+    assert!(f.niri().bind_repeat_timers.is_empty());
+
+    // The new shortcut only takes effect after H is pressed again.
+    run_f(&mut f, id, &surface, "-AC06 +AC06");
+    assert_eq!(f.niri().test_action_count, 2);
+    assert!(f.niri().bind_repeat_timers.is_empty());
+    run_f(&mut f, id, &surface, "-AC06 -LFSH -LALT");
+}
+
+#[test]
+fn removing_a_modifier_does_not_switch_a_held_repeat_bind() {
+    let c = "
+    binds {
+        Alt+H repeat=false { focus-column-left; }
+        Alt+Shift+H { focus-column-right; }
+    }
+    ";
+    let (mut f, id, surface) = set_up(c);
+
+    run_f(&mut f, id, &surface, "+LALT +LFSH +AC06");
+    assert_eq!(f.niri().test_action_count, 1);
+    assert_eq!(f.niri().bind_repeat_timers.len(), 1);
+
+    run_f(&mut f, id, &surface, "-LFSH");
+    assert_eq!(f.niri().test_action_count, 1);
+    assert!(f.niri().bind_repeat_timers.is_empty());
+
+    run_f(&mut f, id, &surface, "-AC06 +AC06");
+    assert_eq!(f.niri().test_action_count, 2);
+    assert!(f.niri().bind_repeat_timers.is_empty());
+    run_f(&mut f, id, &surface, "-AC06 -LALT");
+}
+
+#[test]
+fn lost_key_releases_stop_all_repeats_and_run_release_actions() {
+    let c = "
+    input {
+        keyboard {
+            repeat-delay 50
+            repeat-rate 1
+        }
+    }
+    binds {
+        Mod+Q repeat=true {
+            press { close-window; }
+            release { center-column; }
+        }
+        Mod+W repeat=true {
+            press { close-window; }
+            release { center-column; }
+        }
+    }
+    ";
+    let (mut f, id, surface) = set_up(c);
+
+    run_f(&mut f, id, &surface, "+LWIN +AD01 +AD02");
+    assert_eq!(f.niri().bind_repeat_timers.len(), 2);
+    let before = f.niri().test_action_count;
+
+    f.niri_state().release_held_inputs();
+    assert_eq!(f.niri().test_action_count, before + 2);
+    assert!(f.niri().bind_repeat_timers.is_empty());
+
+    std::thread::sleep(std::time::Duration::from_millis(70));
+    f.dispatch();
+    assert_eq!(f.niri().test_action_count, before + 2);
+}
