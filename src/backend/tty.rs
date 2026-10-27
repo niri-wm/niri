@@ -1810,6 +1810,11 @@ impl Tty {
         output_state.last_drm_sequence = Some(meta.sequence);
 
         output_state.frame_clock.presented(presentation_time);
+        if let Some(refresh) = refresh_interval {
+            output_state
+                .render_deadline
+                .presented(presentation_time, refresh);
+        }
 
         if redraw_needed || output_state.unfinished_animations_remain {
             let vblank_frame = tracy_client::Client::running()
@@ -2552,6 +2557,9 @@ impl Tty {
                         Some(refresh_interval(mode)),
                         surface.compositor.vrr_enabled(),
                     );
+                    if let Some(token) = mem::take(&mut output_state.render_deadline).take_timer() {
+                        niri.event_loop.remove(token);
+                    }
                     niri.output_resized(&output);
                 }
             }

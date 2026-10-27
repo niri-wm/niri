@@ -163,6 +163,7 @@ use crate::protocols::gamma_control::GammaControlManagerState;
 use crate::protocols::mutter_x11_interop::MutterX11InteropManagerState;
 use crate::protocols::output_management::OutputManagementManagerState;
 use crate::protocols::screencopy::{Screencopy, ScreencopyBuffer, ScreencopyManagerState};
+use crate::render_deadline::RenderDeadline;
 use crate::render_helpers::blur::BlurOptions;
 use crate::render_helpers::debug::push_opaque_regions;
 use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
@@ -510,6 +511,7 @@ pub struct OutputState {
     pub global: GlobalId,
     pub frame_clock: FrameClock,
     pub redraw_state: RedrawState,
+    pub render_deadline: RenderDeadline,
     pub on_demand_vrr_enabled: bool,
     // After the last redraw, some ongoing animations still remain.
     pub unfinished_animations_remain: bool,
@@ -3168,6 +3170,7 @@ impl Niri {
         let state = OutputState {
             global,
             redraw_state: RedrawState::Idle,
+            render_deadline: RenderDeadline::default(),
             on_demand_vrr_enabled: false,
             unfinished_animations_remain: false,
             frame_clock: FrameClock::new(refresh_interval, vrr),
@@ -3213,7 +3216,11 @@ impl Niri {
         self.reposition_outputs(None);
         self.gamma_control_manager_state.output_removed(output);
 
-        let state = self.output_state.remove(output).unwrap();
+        let mut state = self.output_state.remove(output).unwrap();
+
+        if let Some(token) = state.render_deadline.take_timer() {
+            self.event_loop.remove(token);
+        }
 
         match state.redraw_state {
             RedrawState::Idle => (),
@@ -3982,16 +3989,70 @@ impl Niri {
     pub fn redraw_queued_outputs(&mut self, backend: &mut Backend) {
         let _span = tracy_client::span!("Niri::redraw_queued_outputs");
 
-        while let Some((output, _)) = self.output_state.iter().find(|(_, state)| {
-            matches!(
-                state.redraw_state,
-                RedrawState::Queued | RedrawState::WaitingForEstimatedVBlankAndQueued(_)
-            )
-        }) {
-            trace!("redrawing output");
+        // Outputs are rendered sequentially, so render the one with the soonest vblank first.
+        while let Some((output, _)) = self
+            .output_state
+            .iter()
+            .filter(|(_, state)| {
+                !state.render_deadline.is_pending()
+                    && matches!(
+                        state.redraw_state,
+                        RedrawState::Queued | RedrawState::WaitingForEstimatedVBlankAndQueued(_)
+                    )
+            })
+            .min_by_key(|(_, state)| state.frame_clock.next_presentation_time())
+        {
             let output = output.clone();
+            if matches!(backend, Backend::Tty(_)) && self.defer_redraw_to_deadline(&output) {
+                continue;
+            }
+            trace!("redrawing output");
             self.redraw(backend, &output);
         }
+    }
+
+    /// Render as late as possible before the next vblank, so that every commit arriving
+    /// in the meantime makes it into the same frame, reducing input latency. Rendering immediately
+    /// only includes what has been committed so far. A client committing a moment later (e.g. a
+    /// terminal answering a keypress) then waits for the vblank, and the frame after it, i.e. up to
+    /// two refresh cycles.
+    fn defer_redraw_to_deadline(&mut self, output: &Output) -> bool {
+        let state = self.output_state.get_mut(output).unwrap();
+        // Expecting a vblank, render now
+        if !matches!(state.redraw_state, RedrawState::Queued) {
+            return false;
+        }
+        // VRR displays wait for the frame, there's no vblank to render ahead of
+        if state.frame_clock.vrr() || self.config.borrow().debug.disable_render_deadline {
+            return false;
+        }
+        let Some(refresh) = state.frame_clock.refresh_interval() else {
+            return false;
+        };
+        let now = get_monotonic_time();
+        let target = state.frame_clock.next_presentation_time();
+        let Some(deadline) = state.render_deadline.deadline(now, target, refresh) else {
+            return false;
+        };
+
+        let timer = Timer::from_duration(deadline - now);
+        let output = output.clone();
+        let token = self
+            .event_loop
+            .insert_source(timer, move |_, _, state| {
+                if let Some(output_state) = state.niri.output_state.get_mut(&output) {
+                    // Redrawn at the end of this loop iteration (unless something else changed
+                    // the redraw state in the meantime).
+                    let queued = matches!(output_state.redraw_state, RedrawState::Queued);
+                    output_state
+                        .render_deadline
+                        .timer_fired(queued.then_some(target));
+                }
+                TimeoutAction::Drop
+            })
+            .unwrap();
+        state.render_deadline.set_pending(token);
+        true
     }
 
     pub fn render_pointer<R: NiriRenderer>(
@@ -4891,6 +4952,7 @@ impl Niri {
 
         // Verify our invariant.
         let state = self.output_state.get_mut(output).unwrap();
+        state.render_deadline.redraw_started();
         assert!(matches!(
             state.redraw_state,
             RedrawState::Queued | RedrawState::WaitingForEstimatedVBlankAndQueued(_)
