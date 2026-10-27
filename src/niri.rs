@@ -3129,7 +3129,7 @@ impl Niri {
         false
     }
 
-    pub(crate) fn is_inside_hot_corner_at(&self, pos: Point<f64, Logical>) -> bool {
+    pub fn is_inside_hot_corner_at(&self, pos: Point<f64, Logical>) -> bool {
         self.output_under(pos)
             .is_some_and(|(output, pos)| self.is_inside_hot_corner(output, pos))
     }
