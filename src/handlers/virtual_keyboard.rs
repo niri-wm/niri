@@ -9,13 +9,15 @@
 //! - If the virtual keyboard uses `no_keymap` or the same one as the seat, it will use the seat's
 //!   xkb state directly.
 //! - If a client grabs the keyboard, then forwards events through a virtual keyboard (e.g., fcitx),
-//!   they are then forwarded bypassing the grab to avoid loops (sway special-cases this too).
+//!   they are then forwarded bypassing the grab to avoid loops (sway special-cases this too). The
+//!   same goes for its `modifiers` requests, which echo what the grab received.
 //! - Modifiers set through the `modifiers` request apply to the shared xkb state (see
 //!   `DeviceRemoved`).
 
 use std::sync::Arc;
 
 use smithay::backend::input::{Event, InputEvent, KeyboardKeyEvent};
+use smithay::input::keyboard::XkbContext;
 use smithay::utils::SERIAL_COUNTER;
 use smithay::wayland::input_method::InputMethodSeat;
 use smithay::wayland::virtual_keyboard::{
@@ -59,9 +61,15 @@ impl VirtualKeyboardHandler for State {
                 self.activate_virtual_keyboard_keymap(&device);
 
                 let keyboard = self.niri.seat.get_keyboard().unwrap();
-                keyboard.with_xkb_state(self, |mut context| {
+                let set_mask = |mut context: XkbContext| {
                     context.set_modifier_mask(mods_depressed, mods_latched, mods_locked, group);
-                });
+                };
+                if self.is_input_method_virtual_keyboard(&device) {
+                    // Do not forward echoed modifier events from a grab back to the grab.
+                    keyboard.with_xkb_state_bypassing_grab(self, set_mask);
+                } else {
+                    keyboard.with_xkb_state(self, set_mask);
+                }
             }
             InputEvent::Special(VirtualKeyboardSpecialEvent::KeymapChanged { .. }) => {
                 // The new keymap will be activated by the next key or modifiers event.
