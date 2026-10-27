@@ -281,7 +281,11 @@ impl MappedLayer {
                 // IME popups aren't affected by rules for regular popups.
                 PopupKind::InputMethod(_) => niri_config::ResolvedPopupsRules::default(),
             };
-            let alpha = alpha * popup_rules.opacity.unwrap_or(1.).clamp(0., 1.);
+            let alpha = match popup {
+                PopupKind::Xdg(_) => alpha * popup_rules.opacity.unwrap_or(1.).clamp(0., 1.),
+                // IME popups aren't affected by the layer opacity.
+                PopupKind::InputMethod(_) => 1.,
+            };
 
             let surface = popup.wl_surface();
             let popup_geo = popup.geometry();

@@ -167,7 +167,23 @@ recent-windows {
 The recent windows binds have lower precedence than the [normal binds](./Configuration:-Key-Bindings.md), meaning that if you have <kbd>Alt</kbd><kbd>Tab</kbd> bound to something else in the normal binds, the `recent-windows` bind won't work.
 In this case, you can remove the conflicting normal bind.
 
-All binds in this section must have a modifier key like <kbd>Alt</kbd> or <kbd>Mod</kbd> because the recent windows switcher remains open only while you hold any modifier key.
+All binds in this section must have a modifier key like <kbd>Alt</kbd> or <kbd>Mod</kbd> (that isn't the same as the trigger key) because the recent windows switcher remains open only while you hold any modifier key.
+
+```kdl
+recent-windows {
+    binds {
+        // Allowed: has a modifier, two keys.
+        Ctrl+Alt { next-window; }
+
+        // Not allowed: only a single key.
+        // Alt { next-window; }
+
+        // Not allowed: modifier matches the key
+        // (effectively only a single key).
+        // Alt+Alt_L { next-window; }
+    }
+}
+```
 
 #### Bindings inside the switcher
 

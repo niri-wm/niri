@@ -4,12 +4,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use serde::Deserialize;
-use zbus::fdo::RequestNameFlags;
 use zbus::object_server::{InterfaceRef, SignalEmitter};
 use zbus::zvariant::{DeserializeDict, OwnedObjectPath, SerializeDict, Type, Value};
 use zbus::{fdo, interface, ObjectServer};
 
-use super::Start;
+use super::{request_name, Start};
 use crate::backend::IpcOutputMap;
 use crate::utils::{CastSessionId, CastStreamId};
 
@@ -319,15 +318,11 @@ impl ScreenCast {
 }
 
 impl Start for ScreenCast {
-    fn start(self) -> anyhow::Result<zbus::blocking::Connection> {
+    fn start(self, monitor: bool) -> anyhow::Result<zbus::blocking::Connection> {
         let conn = zbus::blocking::Connection::session()?;
-        let flags = RequestNameFlags::AllowReplacement
-            | RequestNameFlags::ReplaceExisting
-            | RequestNameFlags::DoNotQueue;
-
         conn.object_server()
             .at("/org/gnome/Mutter/ScreenCast", self)?;
-        conn.request_name_with_flags("org.gnome.Mutter.ScreenCast", flags)?;
+        request_name(&conn, "org.gnome.Mutter.ScreenCast", monitor)?;
 
         Ok(conn)
     }

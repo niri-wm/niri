@@ -1,11 +1,10 @@
 use std::collections::HashMap;
 
-use zbus::fdo::{self, RequestNameFlags};
-use zbus::interface;
 use zbus::object_server::SignalEmitter;
 use zbus::zvariant::{SerializeDict, Type, Value};
+use zbus::{fdo, interface};
 
-use super::Start;
+use super::{request_name, Start};
 
 pub struct Introspect {
     to_niri: calloop::channel::Sender<IntrospectToNiri>,
@@ -67,15 +66,11 @@ impl Introspect {
 }
 
 impl Start for Introspect {
-    fn start(self) -> anyhow::Result<zbus::blocking::Connection> {
+    fn start(self, monitor: bool) -> anyhow::Result<zbus::blocking::Connection> {
         let conn = zbus::blocking::Connection::session()?;
-        let flags = RequestNameFlags::AllowReplacement
-            | RequestNameFlags::ReplaceExisting
-            | RequestNameFlags::DoNotQueue;
-
         conn.object_server()
             .at("/org/gnome/Shell/Introspect", self)?;
-        conn.request_name_with_flags("org.gnome.Shell.Introspect", flags)?;
+        request_name(&conn, "org.gnome.Shell.Introspect", monitor)?;
 
         Ok(conn)
     }
