@@ -215,13 +215,9 @@ fn resize_to_same_size() {
 
     // This needn't request anything because we're already that size; the size in the current
     // server state matches the requested size.
-    //
-    // FIXME: However, currently it will request the size anyway because the code checks the
-    // current server state, and the last size niri requested of the window was 100×100 (even if
-    // the window already acked and committed in response).
     assert_snapshot!(
         f.client(id).window(&surface).format_recent_configures(),
-        @"size: 200 × 200, bounds: 1920 × 1080, states: [Activated]"
+        @""
     );
 }
 
@@ -1357,10 +1353,8 @@ fn repeated_size_request() {
     f.double_roundtrip(id);
 
     // This should send a new configure since the window had committed.
-    //
-    // FIXME: doesn't request that currently.
     assert_snapshot!(
         f.client(id).window(&surface).format_recent_configures(),
-        @""
+        @"size: 200 × 100, bounds: 1920 × 1080, states: [Activated]"
     );
 }
