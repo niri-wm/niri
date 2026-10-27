@@ -132,7 +132,7 @@ use crate::dbus::freedesktop_locale1::Locale1ToNiri;
 #[cfg(feature = "dbus")]
 use crate::dbus::freedesktop_login1::Login1ToNiri;
 #[cfg(feature = "dbus")]
-use crate::dbus::gnome_shell::{AcceleratorGrab, ShellToNiri};
+use crate::dbus::gnome_shell::{GlobalShortcutsPortalBinds, ShellToNiri};
 #[cfg(feature = "dbus")]
 use crate::dbus::gnome_shell_introspect::{self, IntrospectToNiri, NiriToIntrospect};
 #[cfg(feature = "dbus")]
@@ -448,6 +448,8 @@ pub struct Niri {
     pub config_error_notification: ConfigErrorNotification,
     pub hotkey_overlay: HotkeyOverlay,
     pub exit_confirm_dialog: ExitConfirmDialog,
+    #[cfg(feature = "dbus")]
+    pub global_shortcuts_portal_binds: GlobalShortcutsPortalBinds,
 
     pub window_mru_ui: WindowMruUi,
     pub pending_mru_commit: Option<PendingMruCommit>,
@@ -2427,66 +2429,33 @@ impl State {
             ShellToNiri::GrabAccelerators {
                 accelerators,
                 results: tx,
-            } => self.handle_grab_accelerators(accelerators, tx),
+            } => {
+                debug!("requesting grab global shortcut accelerators: {accelerators:?}");
+                let results = self
+                    .niri
+                    .global_shortcuts_portal_binds
+                    .grab_accelerators(&accelerators);
+
+                debug!("returning actions: {results:?}");
+                if let Err(err) = tx.send_blocking(results) {
+                    warn!("error sending grab accelerators result to gnome shell: {err:?}");
+                }
+            }
             ShellToNiri::UngrabAccelerators {
                 actions,
                 result: tx,
-            } => self.handle_ungrab_accelerators(actions, tx),
-        }
-    }
+            } => {
+                debug!("requesting ungrab global shortcut accelerators: {actions:?}",);
+                let result = self
+                    .niri
+                    .global_shortcuts_portal_binds
+                    .ungrab_accelerators(&actions);
 
-    #[cfg(feature = "dbus")]
-    fn handle_grab_accelerators(
-        &mut self,
-        grabs: Vec<AcceleratorGrab>,
-        tx: async_channel::Sender<Vec<u32>>,
-    ) {
-        debug!("requesting grab global shortcut accelerators: {grabs:?}");
-        let Some(shell) = &mut self.niri.gnome_shell else {
-            warn!("gnome shell requested without being created");
-            let _ = tx.send_blocking(Vec::new());
-            return;
-        };
-
-        let results = grabs
-            .iter()
-            .map(|to_grab| {
-                use std::str::FromStr;
-
-                Key::from_str(&to_grab.accelerator)
-                    .ok()
-                    .and_then(|key| shell.grab_key(key))
-                    .unwrap_or(0)
-            })
-            .collect();
-
-        debug!("returning actions: {results:?}");
-        if let Err(err) = tx.send_blocking(results) {
-            warn!("error sending grab accelerators result to gnome shell: {err:?}");
-        }
-    }
-
-    #[cfg(feature = "dbus")]
-    fn handle_ungrab_accelerators(&mut self, actions: Vec<u32>, tx: async_channel::Sender<bool>) {
-        debug!("requesting ungrab global shortcut accelerators: {actions:?}",);
-        let Some(shell) = &mut self.niri.gnome_shell else {
-            warn!("gnome shell requested without being created");
-            let _ = tx.send_blocking(false);
-            return;
-        };
-
-        let result = !actions.is_empty()
-            && actions.iter().fold(true, |acc, action| {
-                if shell.ungrab_action(*action) {
-                    acc
-                } else {
-                    false
+                debug!("returning result: {result:?}");
+                if let Err(err) = tx.send_blocking(result) {
+                    warn!("error sending ungrab accelerators result to gnome shell: {err:?}");
                 }
-            });
-
-        debug!("returning result: {result:?}");
-        if let Err(err) = tx.send_blocking(result) {
-            warn!("error sending ungrab accelerators result to gnome shell: {err:?}");
+            }
         }
     }
 
@@ -2776,6 +2745,9 @@ impl Niri {
         let exit_confirm_dialog = ExitConfirmDialog::new(animation_clock.clone(), config.clone());
 
         #[cfg(feature = "dbus")]
+        let global_shortcuts = GlobalShortcutsPortalBinds::new();
+
+        #[cfg(feature = "dbus")]
         let a11y = A11y::new(event_loop.clone());
 
         event_loop
@@ -2970,6 +2942,8 @@ impl Niri {
             config_error_notification,
             hotkey_overlay,
             exit_confirm_dialog,
+            #[cfg(feature = "dbus")]
+            global_shortcuts_portal_binds: global_shortcuts,
 
             window_mru_ui,
             pending_mru_commit: None,

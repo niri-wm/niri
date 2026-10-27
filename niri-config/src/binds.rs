@@ -528,6 +528,10 @@ pub enum Action {
     MruSetScope(MruScope),
     #[knuffel(skip)]
     MruCycleScope,
+    #[knuffel(skip)]
+    GlobalShortcutActivateAction(u32),
+    #[knuffel(skip)]
+    GlobalShortcutDeactivateAction(u32),
 
     // Doesn't look like knuffel allows gating on #[cfg(test)]...
     #[knuffel(skip)]

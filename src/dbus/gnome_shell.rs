@@ -1,10 +1,9 @@
-use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, Mutex};
+use std::str::FromStr;
+use std::sync::{Arc, PoisonError, RwLock};
 
-use niri_config::{Key, ModKey, Modifiers};
+use niri_config::{Action, Bind, BoundAction, Key};
 use serde::Deserialize;
-use smithay::backend::input::InputTime;
-use smithay::input::keyboard::{Keysym, ModifiersState};
+use smithay::wayland::xdg_activation::XdgActivationState;
 use zbus::blocking::object_server::InterfaceRef;
 use zbus::fdo::{self};
 use zbus::interface;
@@ -14,27 +13,133 @@ use zbus::zvariant::{SerializeDict, Type, Value};
 use super::Start;
 use crate::dbus::request_name;
 
-type Action = u32;
+// It would be nice to make this a newtype to prevent accidental misuse, but we need to return a
+// Vec<u32> from org.gnome.Shell, so newtyping would require an extra allocation or a transmute.
+pub type ActionId = u32;
+
+const INVALID_ACTION: ActionId = u32::MAX;
+
+#[derive(Clone)]
+pub struct GlobalShortcutsPortalBinds {
+    next_action: ActionId,
+    binds: Vec<Bind>,
+}
+
+impl GlobalShortcutsPortalBinds {
+    /// Creates a new instance of these shortcuts.
+    pub fn new() -> Self {
+        Self {
+            next_action: 0,
+            binds: vec![],
+        }
+    }
+
+    /// Grabs the given accelerators, returning the [`Action`]s corresponding to each accelerator.
+    pub fn grab_accelerators(&mut self, accelerators: &[AcceleratorGrab]) -> Vec<ActionId> {
+        accelerators
+            .iter()
+            .map(|accelerator| self.bind_accelerator(accelerator))
+            .collect()
+    }
+
+    /// Removes all given `actions` from previously grabbed accelerators.
+    ///
+    /// Returns true if any action was unbound, false otherwise.
+    pub fn ungrab_accelerators(&mut self, actions: &[ActionId]) -> bool {
+        let mut unbound = false;
+        for action in actions {
+            unbound |= self.unbind_action(*action);
+        }
+        unbound
+    }
+
+    /// Returns all bound global shortcuts.
+    pub fn binds(&self) -> &[Bind] {
+        &self.binds
+    }
+
+    /// Binds the given accelerator.
+    ///
+    /// This function may return [`INVALID_ACTION`] and **not** actually bind the accelerator.
+    fn bind_accelerator(&mut self, accelerator: &AcceleratorGrab) -> ActionId {
+        let Ok(key) = Key::from_str(&accelerator.accelerator) else {
+            return INVALID_ACTION;
+        };
+        let action = self.get_next_action();
+        if action == INVALID_ACTION {
+            // There is no valid action here, so just don't bind the action at all and return the
+            // invalid value. Unbinding this later won't do anything, and we won't invoke this
+            // action.
+            return action;
+        }
+        self.binds.push(Bind {
+            key,
+            action: BoundAction::Both {
+                press: Action::GlobalShortcutActivateAction(action),
+                release: Action::GlobalShortcutDeactivateAction(action),
+            },
+            repeat: false,
+            pass_through: None,
+            cooldown: None,
+            allow_when_locked: false,
+            allow_inhibiting: false,
+            hotkey_overlay_title: None,
+        });
+        action
+    }
+
+    /// Removes all bindings associated with `action`.
+    ///
+    /// Returns `true` if any key was bound to `action`, false otherwise.
+    fn unbind_action(&mut self, action: ActionId) -> bool {
+        let mut unbound = false;
+        self.binds.retain(|bind| {
+            let BoundAction::Both {
+                press: Action::GlobalShortcutActivateAction(bound_action),
+                ..
+            } = bind.action
+            else {
+                // We only ever create this pattern of Bind in `binds`.
+                unreachable!()
+            };
+
+            if bound_action == action {
+                unbound = true;
+                false
+            } else {
+                true
+            }
+        });
+        unbound
+    }
+
+    /// Gets the next available ID to assign to a global shortcut.
+    ///
+    /// This returns [`None`] if we exhaust all action IDs.
+    fn get_next_action(&mut self) -> ActionId {
+        if self.next_action == INVALID_ACTION {
+            // In practice this will never happen, but it's better not to panic.
+            return INVALID_ACTION;
+        }
+        let next = self.next_action;
+        self.next_action += 1;
+        next
+    }
+}
 
 #[derive(Clone)]
 pub struct Shell {
     to_niri: calloop::channel::Sender<ShellToNiri>,
-    data: Arc<Mutex<Data>>,
-}
-
-#[derive(Debug, Clone)]
-struct Data {
-    action: std::ops::Range<Action>,
-    bound_keys: HashMap<niri_config::Key, HashSet<Action>>,
+    iface: Arc<RwLock<Option<InterfaceRef<Shell>>>>,
 }
 
 pub enum ShellToNiri {
     GrabAccelerators {
         accelerators: Vec<AcceleratorGrab>,
-        results: async_channel::Sender<Vec<Action>>,
+        results: async_channel::Sender<Vec<ActionId>>,
     },
     UngrabAccelerators {
-        actions: Vec<Action>,
+        actions: Vec<ActionId>,
         result: async_channel::Sender<bool>,
     },
 }
@@ -44,9 +149,17 @@ pub struct AcceleratorGrab {
     pub accelerator: String,
 
     // GNOME parameters, unused by us
-    // Shell.ActionMode
+    /// A bitflag of Gnome's
+    /// [ShellActionMode](https://gitlab.gnome.org/GNOME/gnome-shell/-/blob/9a753aa969709d351632dbefd23333681cc5b3c2/src/shell-action-modes.h#L22)
+    /// enum.
+    ///
+    /// This requests where a given bind wants to run (e.g., in the lock screen, in the overview
+    /// mode). These don't apply to niri.
     _mode_flags: u32,
-    // Meta.KeyBindingFlags
+    /// A bitflag of Gnome's
+    /// [MetaKeyBindingFlags](https://gitlab.gnome.org/GNOME/mutter/-/blob/79b73fa28eabb81d3d8c67340f9e96b4503ab693/src/meta/prefs.h#L442)
+    ///
+    /// xdg-desktop-portal-gnome only ever sends the TRIGGER_RELEASE value for GlobalShortcuts.
     _grab_flags: u32,
 }
 
@@ -55,9 +168,9 @@ pub struct AcceleratorGrab {
 pub struct ActivationParameters {
     // GNOME portal/shell use u32 -- despite GlobalShortcuts interface using `t` (u64)
     timestamp: u32,
-    // GNOME shell uses this to signal state and block shortcuts in some states
-    // GNOME portal seems to not care what this is set to
-    // see Shell.ActionMode for the relevant enum
+    /// Specifies which "mode" the action was triggered in.
+    ///
+    /// This is the same enum used by [`AcceleratorGrab::_mode_flags`].
     #[zvariant(rename = "action-mode")]
     action_mode: u32,
 
@@ -70,7 +183,7 @@ impl Shell {
     async fn grab_accelerators(
         &mut self,
         accelerators: Vec<AcceleratorGrab>,
-    ) -> fdo::Result<Vec<u32>> {
+    ) -> fdo::Result<Vec<ActionId>> {
         let (tx, rx) = async_channel::bounded(1);
 
         if let Err(err) = self.to_niri.send(ShellToNiri::GrabAccelerators {
@@ -86,7 +199,7 @@ impl Shell {
         })
     }
 
-    async fn ungrab_accelerators(&self, actions: Vec<u32>) -> fdo::Result<bool> {
+    async fn ungrab_accelerators(&self, actions: Vec<ActionId>) -> fdo::Result<bool> {
         let (tx, rx) = async_channel::bounded(1);
 
         if let Err(err) = self.to_niri.send(ShellToNiri::UngrabAccelerators {
@@ -103,14 +216,14 @@ impl Shell {
     }
 
     #[zbus(signal)]
-    pub async fn accelerator_activated(
+    async fn accelerator_activated(
         ctxt: &SignalEmitter<'_>,
         action: u32,
         parameters: ActivationParameters,
     ) -> zbus::Result<()>;
 
     #[zbus(signal)]
-    pub async fn accelerator_deactivated(
+    async fn accelerator_deactivated(
         ctxt: &SignalEmitter<'_>,
         action: u32,
         parameters: ActivationParameters,
@@ -121,146 +234,89 @@ impl Shell {
     pub fn new(to_niri: calloop::channel::Sender<ShellToNiri>) -> Self {
         Self {
             to_niri,
-            data: Arc::new(Mutex::new(Data::default())),
+            iface: Arc::new(RwLock::new(None)),
         }
     }
 
-    /// Handles global shortcut (de)activations
-    ///
-    /// returns true if any action was triggered
-    #[allow(clippy::too_many_arguments)]
-    pub fn process_key(
-        &self,
-        keysym: Keysym,
-        mods: ModifiersState,
-        mod_key: ModKey,
-        pressed: bool,
-        time: InputTime,
-        iface: InterfaceRef<Shell>,
-    ) -> bool {
-        let key = niri_config::Key {
-            trigger: niri_config::Trigger::Keysym(keysym),
-            modifiers: mod_state_to_modifier(&mods, mod_key),
-        };
+    /// Activates the given `action`, with the given `time` being the time the action was pressed.
+    pub fn activate_action(&self, action: ActionId, activation_state: &mut XdgActivationState) {
+        let iface = self.iface.read().unwrap();
+        // Unwrap is safe since we drop the shell before activating any actions if the iface fails
+        // to populate.
+        let iface = iface.as_ref().unwrap();
 
-        let data = self.data.lock().unwrap();
-        let Some(actions) = data.bound_keys.get(&key) else {
-            return false;
-        };
+        let (activation_token, _) = activation_state.create_external_token(None);
 
-        let ctxt = iface.signal_emitter().clone();
-        for action in actions {
-            let ctxt = &ctxt;
-            async_io::block_on(async move {
-                // FIXME: implementing activation_token would allow programs to notify on
-                // shortcut activations
-                let parameters = ActivationParameters {
-                    timestamp: time.millis(),
+        async_io::block_on(async {
+            if let Err(err) = Self::accelerator_activated(
+                iface.signal_emitter(),
+                action,
+                ActivationParameters {
+                    // FIXME: This timestamp doesn't **seem** to do anything, but it's probably not
+                    // great that we're giving it a dummy value. However, getting the input time
+                    // from anything that can trigger a bind is non-trivial (e.g., key-repeat
+                    // timers). Ideally we'd get the InputTime for whatever event caused us to
+                    // activate this action.
+                    timestamp: 0,
                     action_mode: 1,
-                    activation_token: String::default(),
-                };
-
-                let result = if pressed {
-                    Self::accelerator_activated(ctxt, *action, parameters.clone()).await
-                } else {
-                    Self::accelerator_deactivated(ctxt, *action, parameters.clone()).await
-                };
-
-                if let Err(err) = result {
-                    warn!("error emitting global shortcut: {err:?}");
-                }
-            })
-        }
-        false
-    }
-
-    /// Adds a key to global shortcut tracking
-    ///
-    /// Returns the `Action` id generated for the passed shortcut, returns `None` if grabbing
-    /// failed.
-    pub fn grab_key(&mut self, key: Key) -> Option<Action> {
-        let mut data = self.data.lock().unwrap();
-        data.action.next().inspect(|action| {
-            data.bound_keys.entry(key).or_default().insert(*action);
-        })
-    }
-
-    /// Removes an `Action` from global shortcut tracking.
-    ///
-    /// Returns `true` if `Action` had previously been grabbed for any keys.
-    pub fn ungrab_action(&mut self, action: Action) -> bool {
-        let mut data = self.data.lock().unwrap();
-
-        let mut found = false;
-        let mut drained = Vec::new();
-        data.bound_keys.iter_mut().for_each(|(k, v)| {
-            if v.contains(&action) {
-                v.remove(&action);
-                found = true;
-            }
-            if v.is_empty() {
-                drained.push(*k);
+                    activation_token: activation_token.to_string(),
+                },
+            )
+            .await
+            {
+                warn!("error emitting global shortcut: {err:?}");
             }
         });
+    }
 
-        for k in drained {
-            data.bound_keys.remove(&k);
-        }
+    /// Activates the given `action`, with the given `time` being the time the action was pressed.
+    pub fn deactivate_action(&self, action: ActionId, activation_state: &mut XdgActivationState) {
+        let iface = self.iface.read().unwrap();
+        // Unwrap is safe since we drop the shell before activating any actions if the iface fails
+        // to populate.
+        let iface = iface.as_ref().unwrap();
 
-        found
+        let (activation_token, _) = activation_state.create_external_token(None);
+
+        async_io::block_on(async {
+            if let Err(err) = Self::accelerator_deactivated(
+                iface.signal_emitter(),
+                action,
+                ActivationParameters {
+                    // FIXME: This timestamp doesn't **seem** to do anything, but it's probably not
+                    // great that we're giving it a dummy value. However, getting the input time
+                    // from anything that can trigger a bind is non-trivial (e.g., key-repeat
+                    // timers). Ideally we'd get the InputTime for whatever event caused us to
+                    // deactivate this action.
+                    timestamp: 0,
+                    action_mode: 1,
+                    activation_token: activation_token.to_string(),
+                },
+            )
+            .await
+            {
+                warn!("error emitting global shortcut: {err:?}");
+            }
+        });
     }
 }
 
 impl Start for Shell {
     fn start(self, monitor: bool) -> anyhow::Result<zbus::blocking::Connection> {
+        let iface_arc = self.iface.clone();
+
         let conn = zbus::blocking::Connection::session()?;
 
         conn.object_server().at("/org/gnome/Shell", self)?;
         request_name(&conn, "org.gnome.Shell", monitor)?;
 
+        // Cache the iface so we can use it later when emitting signals.
+        let iface = match conn.object_server().interface("/org/gnome/Shell") {
+            Ok(iface) => iface,
+            Err(err) => return Err(err.into()),
+        };
+        *iface_arc.write().unwrap_or_else(PoisonError::into_inner) = Some(iface);
+
         Ok(conn)
     }
-}
-
-impl Default for Data {
-    fn default() -> Self {
-        Self {
-            action: (0..Action::MAX),
-            bound_keys: Default::default(),
-        }
-    }
-}
-
-fn mod_state_to_modifier(mods: &ModifiersState, mod_key: ModKey) -> Modifiers {
-    let mut out = Modifiers::empty();
-
-    let mapping = [
-        (mods.ctrl, ModKey::Ctrl, Modifiers::CTRL),
-        (mods.shift, ModKey::Shift, Modifiers::SHIFT),
-        (mods.alt, ModKey::Alt, Modifiers::ALT),
-        (mods.logo, ModKey::Super, Modifiers::SUPER),
-        (
-            mods.iso_level3_shift,
-            ModKey::IsoLevel3Shift,
-            Modifiers::ISO_LEVEL3_SHIFT,
-        ),
-        (
-            mods.iso_level5_shift,
-            ModKey::IsoLevel5Shift,
-            Modifiers::ISO_LEVEL5_SHIFT,
-        ),
-    ];
-
-    for (is_pressed, mod_key_pred, modifier) in mapping {
-        if is_pressed {
-            // `mod_key` could shadow any one modifier
-            if mod_key == mod_key_pred {
-                out |= Modifiers::COMPOSITOR;
-            } else {
-                out |= modifier;
-            }
-        }
-    }
-
-    out
 }
