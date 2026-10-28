@@ -13,9 +13,7 @@ use smithay::reexports::wayland_server::protocol::wl_buffer::WlBuffer;
 use smithay::reexports::wayland_server::protocol::wl_pointer::WlPointer;
 use smithay::reexports::wayland_server::protocol::wl_shm;
 use smithay::reexports::wayland_server::{Client, DisplayHandle};
-use smithay::utils::{
-    Buffer as BufferCoords, Logical, Physical, Point, Rectangle, Scale, Size, Transform,
-};
+use smithay::utils::{Buffer as BufferCoords, Physical, Point, Rectangle, Scale, Size, Transform};
 use smithay::wayland::dmabuf::get_dmabuf;
 use smithay::wayland::image_capture_source::{
     ImageCaptureSource, ImageCaptureSourceHandler, OutputCaptureSourceHandler,
@@ -28,7 +26,7 @@ use smithay::wayland::image_copy_capture::{
 use smithay::wayland::shm;
 use wayland_backend::server::Credentials;
 
-use crate::cursor::{RenderCursor, XCursor};
+use crate::cursor::RenderCursor;
 use crate::niri::{Niri, State};
 use crate::utils::{get_credentials_for_client, CastSessionId, CastStreamId};
 
@@ -149,37 +147,23 @@ pub fn cursor_capture_constraints(niri: &Niri, output: &Output) -> BufferConstra
 
 /// Size the cursor renders at on this output.
 fn cursor_capture_size(niri: &Niri, output: &Output) -> Size<i32, BufferCoords> {
-    let int_scale = output.current_scale().integer_scale();
+    let fractional_scale = output.current_scale().fractional_scale();
     let scale = Scale::from(output.current_scale().fractional_scale());
 
-    let size: Size<i32, Physical> = match niri.cursor_manager.get_render_cursor(int_scale) {
+    let size: Size<i32, Physical> = match niri.cursor_manager.get_render_cursor(fractional_scale) {
         RenderCursor::Hidden => Size::from((0, 0)),
         RenderCursor::Surface { surface, .. } => {
             let bbox = smithay::desktop::utils::bbox_from_surface_tree(&surface, (0, 0));
             bbox.to_f64().to_physical_precise_up(scale).size
         }
-        RenderCursor::Named {
-            scale: buffer_scale,
-            cursor,
-            ..
-        } => {
-            // All frames are the same size since CursorManager::load_xcursor()
-            // picks one size and rejects frames which differ.
-            let (_idx, frame) = cursor.frame(niri.start_time.elapsed().as_millis() as u32);
-            // The image is loaded at the integer scale but drawn at the fractional one, so it
-            // ends up smaller than its own buffer whenever the two differ.
-            let logical = Size::<f64, Logical>::from((
-                f64::from(frame.width) / f64::from(buffer_scale),
-                f64::from(frame.height) / f64::from(buffer_scale),
-            ));
-            logical.to_physical_precise_ceil(scale)
-        }
+        RenderCursor::Named { cursor } => cursor.size(),
     };
 
     // Fall back to the nominal cursor size when the cursor is currently hidden or has no
     // buffer, so that the session always has valid constraints.
     if size.is_empty() {
-        let fallback = i32::from(niri.config.borrow().cursor.xcursor_size) * int_scale;
+        let fallback =
+            (f64::from(niri.config.borrow().cursor.xcursor_size) * fractional_scale).ceil() as i32;
         return Size::from((fallback, fallback));
     }
 
@@ -188,10 +172,12 @@ fn cursor_capture_size(niri: &Niri, output: &Output) -> Size<i32, BufferCoords> 
 
 /// Cursor hotspot in capture buffer coordinates.
 pub fn cursor_capture_hotspot(niri: &Niri, output: &Output) -> Point<i32, BufferCoords> {
-    let int_scale = output.current_scale().integer_scale();
     let scale = Scale::from(output.current_scale().fractional_scale());
 
-    let hotspot: Point<i32, Physical> = match niri.cursor_manager.get_render_cursor(int_scale) {
+    let hotspot: Point<i32, Physical> = match niri
+        .cursor_manager
+        .get_render_cursor(output.current_scale().fractional_scale())
+    {
         RenderCursor::Hidden => Point::from((0, 0)),
         RenderCursor::Surface { surface, hotspot } => {
             // The tree is shifted to put its bounding box at the origin in
@@ -201,17 +187,9 @@ pub fn cursor_capture_hotspot(niri: &Niri, output: &Output) -> Point<i32, Buffer
                 .to_f64()
                 .to_physical_precise_round(scale)
         }
-        RenderCursor::Named {
-            scale: buffer_scale,
-            cursor,
-            ..
-        } => {
-            let (_idx, frame) = cursor.frame(niri.start_time.elapsed().as_millis() as u32);
-            // Same rescaling as in cursor_capture_size().
-            XCursor::hotspot(frame)
-                .to_logical(buffer_scale)
-                .to_f64()
-                .to_physical_precise_round(scale)
+        RenderCursor::Named { cursor } => {
+            let (_, frame) = cursor.frame(niri.start_time.elapsed().as_millis() as u32);
+            frame.hotspot()
         }
     };
 
