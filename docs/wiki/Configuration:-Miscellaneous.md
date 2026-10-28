@@ -167,6 +167,21 @@ cursor {
 }
 ```
 
+Niri supports SVG cursor themes using KDE's `cursors_scalable` format.
+Select them with `xcursor-theme`, just like XCursor themes; no additional setting is needed.
+SVG cursors are rasterized at the output's actual scale, including fractional scales, and the results are cached.
+Theme loading and rasterization run in the background; decoded source images and SVG trees are released after preparation.
+SVG, XCursor, and built-in cursor pixels use the same premultiplied BGRA format, avoiding repeated format conversion when copied to compatible hardware cursor planes.
+The configured size is the theme's nominal size, which can differ from the image's canvas dimensions.
+SVG artwork must be self-contained: image loading and font-based text are not supported.
+
+Within the same theme inheritance level, SVG cursors take precedence over XCursor images.
+XCursor images remain available as a fallback for missing or invalid SVG cursors.
+SVG preparation checks intermediate rendering resources as well as the final canvas; artwork exceeding the safety limits also uses this fallback.
+
+These settings apply to cursors drawn by niri, including shapes requested through the cursor-shape protocol.
+Applications that supply their own cursor surfaces control their cursor images themselves.
+
 #### `hide-when-typing`
 
 <sup>Since: 0.1.10</sup>

@@ -2,13 +2,15 @@ use std::collections::{HashMap, HashSet};
 use std::env;
 use std::fs::File;
 use std::io::Read;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 
 use anyhow::{anyhow, ensure, Context};
+use resvg::usvg;
+use serde::Deserialize;
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::element::memory::{MemoryBuffer, MemoryRenderBuffer};
 use smithay::input::pointer::{CursorIcon, CursorImageStatus, CursorImageSurfaceData};
@@ -326,7 +328,8 @@ impl PreparedCursor {
         (index, &self.frames[index])
     }
 
-    pub fn frames(&self) -> &[CursorFrame] {
+    #[cfg(test)]
+    fn frames(&self) -> &[CursorFrame] {
         &self.frames
     }
 
@@ -555,12 +558,29 @@ fn worker_loop(shared: Arc<Shared>, tx: calloop::channel::Sender<()>) {
     }
 }
 
+#[derive(Deserialize)]
+struct Metadata {
+    filename: String,
+    nominal_size: f64,
+    hotspot_x: f64,
+    hotspot_y: f64,
+    #[serde(default)]
+    delay: u32,
+}
+
+struct SvgFrame {
+    tree: usvg::Tree,
+    metadata: Metadata,
+}
+
 enum CursorSource {
+    Svg(Vec<SvgFrame>),
     XCursor(Vec<Image>),
 }
 
 struct SourceCandidate {
     path: PathBuf,
+    scalable: bool,
     // None is untried; Some(None) is a permanently invalid source for this job.
     parsed: Option<Option<CursorSource>>,
 }
@@ -571,19 +591,26 @@ fn source_candidates(theme: &CursorTheme, icon: CursorIcon) -> Vec<SourceCandida
         .chain(icon.alt_names().iter().copied())
         .enumerate()
     {
+        if let Some((path, depth)) = theme.load_scalable_with_depth(name) {
+            candidates.push((depth, 0, alias, path));
+        }
         if let Some((path, depth)) = theme.load_icon_with_depth(name) {
-            candidates.push((depth, alias, path));
+            candidates.push((depth, 1, alias, path));
         }
     }
-    candidates.sort_by_key(|(depth, alias, _)| (*depth, *alias));
+    candidates.sort_by_key(|(depth, format, alias, _)| (*depth, *format, *alias));
     let mut seen = HashSet::new();
     candidates
         .into_iter()
-        .filter_map(|(_, _, path)| {
+        .filter_map(|(_, format, _, path)| {
             if !seen.insert(path.clone()) {
                 return None;
             }
-            Some(SourceCandidate { path, parsed: None })
+            Some(SourceCandidate {
+                path,
+                scalable: format == 0,
+                parsed: None,
+            })
         })
         .collect()
 }
@@ -598,7 +625,11 @@ fn prepare_candidates(
     for candidate in candidates {
         ensure!(!cancelled(), "cursor loading cancelled");
         if candidate.parsed.is_none() {
-            let parsed = load_xcursor(&candidate.path);
+            let parsed = if candidate.scalable {
+                load_svg(&candidate.path, cancelled)
+            } else {
+                load_xcursor(&candidate.path)
+            };
             ensure!(!cancelled(), "cursor loading cancelled");
             candidate.parsed = Some(match parsed {
                 Ok(source) => Some(source),
@@ -632,6 +663,325 @@ fn read_bounded(path: &Path, limit: usize) -> anyhow::Result<Vec<u8>> {
     file.take(limit as u64 + 1).read_to_end(&mut bytes)?;
     ensure!(bytes.len() <= limit, "cursor file too large");
     Ok(bytes)
+}
+
+fn load_svg(path: &Path, cancelled: &impl Fn() -> bool) -> anyhow::Result<CursorSource> {
+    let bytes = read_bounded(&path.join("metadata.json"), 1024 * 1024)?;
+    let metadata: Vec<Metadata> = serde_json::from_slice(&bytes)?;
+    ensure!(
+        !metadata.is_empty() && metadata.len() <= MAX_FRAMES,
+        "invalid frame count"
+    );
+    validate_svg_delays(metadata.iter().map(|frame| frame.delay), metadata.len())?;
+    let mut frames = Vec::with_capacity(metadata.len());
+    let mut total_bytes = 0;
+    for metadata in metadata {
+        ensure!(!cancelled(), "cursor loading cancelled");
+        ensure!(
+            metadata.nominal_size.is_finite() && metadata.nominal_size > 0.0,
+            "invalid nominal_size"
+        );
+        // Filenames are local to the cursor directory; symlinked cursor directories remain valid.
+        ensure!(
+            !metadata.filename.is_empty()
+                && Path::new(&metadata.filename)
+                    .components()
+                    .all(|part| matches!(part, Component::Normal(_))),
+            "invalid SVG filename"
+        );
+        let bytes = read_bounded(&path.join(&metadata.filename), MAX_FILE_BYTES)?;
+        total_bytes += bytes.len();
+        ensure!(total_bytes <= MAX_CURSOR_BYTES, "cursor source too large");
+        let options = usvg::Options {
+            // Cursor SVGs are self-contained vector artwork. Never read external images/fonts.
+            image_href_resolver: usvg::ImageHrefResolver {
+                resolve_data: Box::new(|_, _, _| None),
+                resolve_string: Box::new(|_, _| None),
+            },
+            ..Default::default()
+        };
+        // from_str deliberately excludes compressed SVG expansion beyond our input bound.
+        let tree = usvg::Tree::from_str(std::str::from_utf8(&bytes)?, &options)?;
+        ensure!(
+            metadata.hotspot_x.is_finite() && metadata.hotspot_y.is_finite(),
+            "invalid SVG hotspot"
+        );
+        frames.push(SvgFrame { tree, metadata });
+    }
+    Ok(CursorSource::Svg(frames))
+}
+
+fn validate_svg_delays(delays: impl IntoIterator<Item = u32>, count: usize) -> anyhow::Result<()> {
+    if count <= 1 {
+        return Ok(());
+    }
+    let mut duration = 0u32;
+    for delay in delays {
+        ensure!(delay > 0, "animated SVG delay must be positive");
+        duration = duration
+            .checked_add(delay)
+            .context("SVG animation duration overflow")?;
+    }
+    Ok(())
+}
+
+// Keep this preflight aligned with resvg 0.46's path/render/filter/clip/mask modules.
+// It budgets cumulative intermediate surface bytes, not source coordinates or process RSS.
+// The conservative filter allowance also covers retained results and pixel-sized scratch buffers.
+// Parsing/tree storage, path tessellation and filter-specific CPU complexity are not bounded here.
+fn validate_svg_resources(tree: &usvg::Tree, geometry: &FrameGeometry) -> anyhow::Result<()> {
+    let size = tiny_skia::IntSize::from_wh(geometry.size.w as u32, geometry.size.h as u32)
+        .context("invalid SVG output size")?;
+    let transform =
+        tiny_skia::Transform::from_scale(geometry.factor as f32, geometry.factor as f32);
+    SvgResources {
+        remaining: MAX_CURSOR_BYTES as u64,
+    }
+    .nodes(tree.root(), transform, size, svg_max_bbox(size))
+}
+
+fn svg_max_bbox(size: tiny_skia::IntSize) -> tiny_skia::IntRect {
+    // resvg::render uses a five-canvas-wide region, despite its internal "4x" comments.
+    tiny_skia::IntRect::from_xywh(
+        -(size.width() as i32) * 2,
+        -(size.height() as i32) * 2,
+        size.width() * 5,
+        size.height() * 5,
+    )
+    .unwrap()
+}
+
+fn svg_int_rect(rect: usvg::NonZeroRect) -> anyhow::Result<tiny_skia::IntRect> {
+    // Match NonZeroRect::to_int_rect without its unwrap on unrepresentable rectangles.
+    tiny_skia::IntRect::from_xywh(
+        rect.x().floor() as i32,
+        rect.y().floor() as i32,
+        (rect.width().ceil() as u32).max(1),
+        (rect.height().ceil() as u32).max(1),
+    )
+    .context("SVG intermediate rectangle out of bounds")
+}
+
+struct SvgResources {
+    remaining: u64,
+}
+
+impl SvgResources {
+    fn surface(&mut self, size: tiny_skia::IntSize, copies: u64) -> anyhow::Result<()> {
+        let bytes = u64::from(size.width())
+            .checked_mul(u64::from(size.height()))
+            .and_then(|pixels| pixels.checked_mul(4))
+            .and_then(|bytes| bytes.checked_mul(copies))
+            .context("SVG intermediate size overflow")?;
+        self.remaining = self
+            .remaining
+            .checked_sub(bytes)
+            .context("SVG intermediate resources exceed safety limit")?;
+        Ok(())
+    }
+
+    fn nodes(
+        &mut self,
+        root: &usvg::Group,
+        transform: tiny_skia::Transform,
+        size: tiny_skia::IntSize,
+        max_bbox: tiny_skia::IntRect,
+    ) -> anyhow::Result<()> {
+        // resvg::render_nodes ignores the subroot group's own transform/properties.
+        for node in root.children() {
+            match node {
+                usvg::Node::Group(group) => self.group(group, transform, size, max_bbox)?,
+                usvg::Node::Text(text) => {
+                    self.group(text.flattened(), transform, size, max_bbox)?
+                }
+                usvg::Node::Path(path) if path.is_visible() => {
+                    if path.data().bounds().width() != 0.0 && path.data().bounds().height() != 0.0 {
+                        if let Some(fill) = path.fill() {
+                            self.paint(fill.paint(), transform, max_bbox)?;
+                        }
+                    }
+                    if let Some(stroke) = path.stroke() {
+                        self.paint(stroke.paint(), transform, max_bbox)?;
+                    }
+                }
+                usvg::Node::Image(image) if image.is_visible() => {
+                    if let usvg::ImageKind::SVG(tree) = image.kind() {
+                        self.surface(size, 1)?;
+                        self.nodes(tree.root(), transform, size, svg_max_bbox(size))?;
+                    }
+                }
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+
+    fn paint(
+        &mut self,
+        paint: &usvg::Paint,
+        transform: tiny_skia::Transform,
+        max_bbox: tiny_skia::IntRect,
+    ) -> anyhow::Result<()> {
+        if let usvg::Paint::Pattern(pattern) = paint {
+            let (sx, sy) = transform.pre_concat(pattern.transform()).get_scale();
+            // Match resvg's f32 multiplication, rounding and saturating cast exactly.
+            let Some(size) = tiny_skia::IntSize::from_wh(
+                (pattern.rect().width() * sx).round() as u32,
+                (pattern.rect().height() * sy).round() as u32,
+            ) else {
+                return Ok(()); // resvg skips zero-sized tiles.
+            };
+            self.surface(size, 1)?;
+            // Nested patterns inherit this scale, not the original affine transform.
+            self.nodes(
+                pattern.root(),
+                tiny_skia::Transform::from_scale(sx, sy),
+                size,
+                max_bbox,
+            )?;
+        }
+        Ok(())
+    }
+
+    fn group(
+        &mut self,
+        group: &usvg::Group,
+        transform: tiny_skia::Transform,
+        size: tiny_skia::IntSize,
+        max_bbox: tiny_skia::IntRect,
+    ) -> anyhow::Result<()> {
+        let mut transform = transform.pre_concat(group.transform());
+        if !group.should_isolate() {
+            return self.nodes(group, transform, size, max_bbox);
+        }
+        let Some(bbox) = group.layer_bounding_box().transform(transform) else {
+            return Ok(());
+        };
+        let bounds = if group.filters().is_empty() {
+            // resvg expands non-filtered layers by two pixels on each side.
+            (|| {
+                tiny_skia::IntRect::from_xywh(
+                    (bbox.x().floor() as i32).checked_sub(2)?,
+                    (bbox.y().floor() as i32).checked_sub(2)?,
+                    (bbox.width().ceil() as u32).checked_add(4)?,
+                    (bbox.height().ceil() as u32).checked_add(4)?,
+                )
+            })()
+        } else {
+            Some(svg_int_rect(bbox)?)
+        };
+        let Some(bounds) = bounds.and_then(|bounds| bounds.intersect(&max_bbox)) else {
+            return Ok(()); // resvg skips layers outside its canvas bounds.
+        };
+        let size = bounds.size();
+        self.surface(size, 1)?;
+        let mut dx = bbox.x();
+        let mut dy = bbox.y();
+        dx -= bbox.x() - bounds.x() as f32;
+        dy -= bbox.y() - bounds.y() as f32;
+        transform = tiny_skia::Transform::from_translate(-dx, -dy).pre_concat(transform);
+        self.nodes(group, transform, size, max_bbox)?;
+        for filter in group.filters() {
+            // Unlike group layers, filter::apply_inner does NOT clip this region to max_bbox.
+            let Some(region) = filter.rect().transform(transform) else {
+                continue;
+            };
+            let region = svg_int_rect(region)?;
+            let source_pixels = u64::from(size.width()) * u64::from(size.height());
+            let filter_pixels = u64::from(region.width()) * u64::from(region.height());
+            let filter_size = if source_pixels >= filter_pixels {
+                size
+            } else {
+                region.size()
+            };
+            for primitive in filter.primitives() {
+                // Eight full surfaces cover inputs, color-space/copy-on-write copies, output,
+                // clipping, retained results, and the blur's two-surface f64 scratch buffer.
+                let Some(subregion) = primitive.rect().transform(transform) else {
+                    break; // resvg aborts this filter on an invalid primitive region.
+                };
+                let subregion = svg_int_rect(subregion)?;
+                self.surface(filter_size, 8)?;
+                if let usvg::filter::Kind::Merge(merge) = primitive.kind() {
+                    self.surface(filter_size, merge.inputs().len() as u64)?;
+                }
+                if let usvg::filter::Kind::Image(image) = primitive.kind() {
+                    // feImage starts a new render context bounded by its filter region.
+                    let (sx, sy) = transform.get_scale();
+                    let image_transform = tiny_skia::Transform::from_row(
+                        sx,
+                        0.0,
+                        0.0,
+                        sy,
+                        subregion.x() as f32,
+                        subregion.y() as f32,
+                    );
+                    let image_bounds =
+                        tiny_skia::IntRect::from_xywh(0, 0, region.width(), region.height())
+                            .unwrap();
+                    self.nodes(image.root(), image_transform, region.size(), image_bounds)?;
+                }
+            }
+        }
+        if let Some(clip) = group.clip_path() {
+            self.clip(clip, size)?;
+        }
+        if let Some(mask) = group.mask() {
+            self.mask(mask, transform, size, max_bbox)?;
+        }
+        Ok(())
+    }
+
+    fn clip(&mut self, clip: &usvg::ClipPath, size: tiny_skia::IntSize) -> anyhow::Result<()> {
+        // One RGBA clip canvas plus an alpha mask (charged as a full surface).
+        self.surface(size, 2)?;
+        self.clip_children(clip.root(), size)?;
+        if let Some(clip) = clip.clip_path() {
+            self.clip(clip, size)?;
+        }
+        Ok(())
+    }
+
+    fn clip_children(
+        &mut self,
+        root: &usvg::Group,
+        size: tiny_skia::IntSize,
+    ) -> anyhow::Result<()> {
+        // usvg normalizes clip-path paints to black with no strokes or filters.
+        for node in root.children() {
+            match node {
+                usvg::Node::Group(group) => {
+                    if let Some(clip) = group.clip_path() {
+                        self.surface(size, 1)?;
+                        self.clip(clip, size)?;
+                    }
+                    self.clip_children(group, size)?;
+                }
+                usvg::Node::Text(text) => self.clip_children(text.flattened(), size)?,
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+
+    fn mask(
+        &mut self,
+        mask: &usvg::Mask,
+        transform: tiny_skia::Transform,
+        size: tiny_skia::IntSize,
+        max_bbox: tiny_skia::IntRect,
+    ) -> anyhow::Result<()> {
+        if mask.root().children().is_empty() {
+            return Ok(());
+        }
+        // RGBA mask canvas and two sequential alpha masks.
+        self.surface(size, 2)?;
+        self.nodes(mask.root(), transform, size, max_bbox)?;
+        if let Some(mask) = mask.mask() {
+            self.mask(mask, transform, size, max_bbox)?;
+        }
+        Ok(())
+    }
 }
 
 fn load_xcursor(path: &Path) -> anyhow::Result<CursorSource> {
@@ -740,6 +1090,7 @@ fn frame_geometry(
 
 fn source_geometry(source: &CursorSource, target: f64) -> anyhow::Result<Vec<FrameGeometry>> {
     let count = match source {
+        CursorSource::Svg(frames) => frames.len(),
         CursorSource::XCursor(images) => images.len(),
     };
     ensure!(
@@ -748,6 +1099,30 @@ fn source_geometry(source: &CursorSource, target: f64) -> anyhow::Result<Vec<Fra
     );
     let mut frames = Vec::with_capacity(count);
     match source {
+        CursorSource::Svg(source_frames) => {
+            validate_svg_delays(
+                source_frames.iter().map(|frame| frame.metadata.delay),
+                source_frames.len(),
+            )?;
+            for (index, frame) in source_frames.iter().enumerate() {
+                ensure!(
+                    frame.metadata.nominal_size.is_finite() && frame.metadata.nominal_size > 0.0,
+                    "invalid nominal_size"
+                );
+                let geometry = frame_geometry(
+                    index,
+                    (
+                        f64::from(frame.tree.size().width()),
+                        f64::from(frame.tree.size().height()),
+                    ),
+                    (frame.metadata.hotspot_x, frame.metadata.hotspot_y),
+                    frame.metadata.delay,
+                    target / frame.metadata.nominal_size,
+                )?;
+                validate_svg_resources(&frame.tree, &geometry)?;
+                frames.push(geometry);
+            }
+        }
         CursorSource::XCursor(images) => {
             let nominal = images
                 .iter()
@@ -789,7 +1164,7 @@ fn source_geometry(source: &CursorSource, target: f64) -> anyhow::Result<Vec<Fra
     Ok(frames)
 }
 
-fn render_rgba(
+fn render_bgra(
     source: &CursorSource,
     geometry: &FrameGeometry,
     destination: &mut tiny_skia::PixmapMut<'_>,
@@ -797,6 +1172,13 @@ fn render_rgba(
     let transform =
         tiny_skia::Transform::from_scale(geometry.factor as f32, geometry.factor as f32);
     match source {
+        CursorSource::Svg(frames) => {
+            resvg::render(&frames[geometry.source_index].tree, transform, destination);
+            // Normalize the intrinsic raster before padding it into the animation canvas.
+            for pixel in destination.data_mut().chunks_exact_mut(4) {
+                pixel.swap(0, 2);
+            }
+        }
         CursorSource::XCursor(images) => {
             let image = &images[geometry.source_index];
             // Bilinear sampling treats RGB channels symmetrically. Keep file-order BGRA
@@ -856,10 +1238,12 @@ fn prepare_source(
     let mut frames = Vec::with_capacity(geometry.len());
     for geometry in geometry {
         ensure!(!cancelled(), "cursor preparation cancelled");
-        let native = geometry.factor == 1.0;
+        let native = matches!(source, CursorSource::XCursor(_)) && geometry.factor == 1.0;
         let format = Fourcc::Argb8888;
         let memory = if native {
-            let CursorSource::XCursor(images) = source;
+            let CursorSource::XCursor(images) = source else {
+                unreachable!()
+            };
             frame_buffer(
                 &images[geometry.source_index].pixels_rgba,
                 format,
@@ -872,14 +1256,15 @@ fn prepare_source(
             let mut destination =
                 tiny_skia::PixmapMut::from_bytes(&mut memory, size.w as u32, size.h as u32)
                     .context("invalid cursor canvas")?;
-            render_rgba(source, &geometry, &mut destination)?;
+            render_bgra(source, &geometry, &mut destination)?;
             memory
         } else {
-            // Keep the intrinsic bilinear sampling boundary when padding into the union canvas.
+            // Keep the intrinsic raster boundary: translating SVG/filter rendering or a
+            // bilinear image into the union canvas would expose pixels formerly clipped.
             let mut scratch =
                 tiny_skia::Pixmap::new(geometry.size.w as u32, geometry.size.h as u32)
                     .context("allocating cursor frame")?;
-            render_rgba(source, &geometry, &mut scratch.as_mut())?;
+            render_bgra(source, &geometry, &mut scratch.as_mut())?;
             frame_buffer(scratch.data(), format, &geometry, size, anchor)
         };
         frames.push(CursorFrame {
@@ -932,16 +1317,16 @@ fn builtin_cursor(factor: f64) -> PreparedCursor {
     // A temporary no-I/O fallback must stay cheap even for huge configured cursor sizes.
     let factor = factor.min(2.0);
     let side = (64.0 * factor).round().clamp(1.0, 128.0) as usize;
-    let mut memory = MemoryBuffer::new(Fourcc::Abgr8888, (side as i32, side as i32));
+    let mut memory = MemoryBuffer::new(Fourcc::Argb8888, (side as i32, side as i32));
     for y in 0..side {
         for x in 0..side {
             let source = ((y * 64 / side) * 64 + x * 64 / side) * 4;
             let target = (y * side + x) * 4;
             let pixel = &FALLBACK_CURSOR_DATA[source..source + 4];
-            // The builtin resource is straight RGBA, unlike SVG/XCursor raster output.
-            for channel in 0..3 {
+            // Premultiply the straight RGBA resource directly into the BGRA output.
+            for (channel, source_channel) in [2, 1, 0].into_iter().enumerate() {
                 memory[target + channel] =
-                    ((u16::from(pixel[channel]) * u16::from(pixel[3]) + 127) / 255) as u8;
+                    ((u16::from(pixel[source_channel]) * u16::from(pixel[3]) + 127) / 255) as u8;
             }
             memory[target + 3] = pixel[3];
         }
@@ -993,6 +1378,22 @@ mod tests {
             })
             .unwrap();
         pixels
+    }
+
+    fn svg_frame(width: u32, height: u32, xhot: f64, yhot: f64, delay: u32) -> SvgFrame {
+        SvgFrame {
+            tree: usvg::Tree::from_str(
+                &format!("<svg xmlns='http://www.w3.org/2000/svg' width='{width}' height='{height}'><path fill='red' d='M0 0H{width}V{height}H0Z'/></svg>"),
+                &usvg::Options::default(),
+            ).unwrap(),
+            metadata: Metadata {
+                filename: String::new(),
+                nominal_size: 24.0,
+                hotspot_x: xhot,
+                hotspot_y: yhot,
+                delay,
+            },
+        }
     }
 
     #[test]
@@ -1052,6 +1453,147 @@ mod tests {
     }
 
     #[test]
+    fn union_allocation_limits_are_checked_before_rendering() {
+        let source =
+            CursorSource::Svg((0..5).map(|_| svg_frame(2048, 2048, 0.0, 0.0, 1)).collect());
+        let cancellation_checks = std::cell::Cell::new(0);
+        assert!(prepare_source(&source, 24, 1.0, &|| {
+            cancellation_checks.set(cancellation_checks.get() + 1);
+            false
+        })
+        .is_err());
+        assert_eq!(cancellation_checks.get(), 1, "rendering must not start");
+    }
+
+    #[test]
+    fn padded_svg_keeps_intrinsic_clipping_and_filter_pixels() {
+        let filtered = || {
+            let mut frame = svg_frame(8, 8, 0.0, 0.0, 20);
+            frame.tree = usvg::Tree::from_str(
+                "<svg xmlns='http://www.w3.org/2000/svg' width='8' height='8'><defs><filter id='blur' x='-100%' y='-100%' width='300%' height='300%'><feGaussianBlur stdDeviation='1'/></filter></defs><path fill='red' filter='url(#blur)' d='M-3 -3H11V11H-3Z'/></svg>",
+                &usvg::Options::default(),
+            ).unwrap();
+            frame
+        };
+        for scale in [1.0, 1.25] {
+            let mut direct =
+                prepare_source(&CursorSource::Svg(vec![filtered()]), 24, scale, &|| false).unwrap();
+            let source = CursorSource::Svg(vec![filtered(), svg_frame(16, 16, 4.0, 4.0, 20)]);
+            let mut padded = prepare_source(&source, 24, scale, &|| false).unwrap();
+            let pixels = frame_pixels(&mut direct, 0);
+            assert!(pixels.iter().any(|channel| *channel != 0));
+            let offset = (4.0_f64 * scale).round() as usize;
+            let mut expected = vec![0; padded.size().w as usize * padded.size().h as usize * 4];
+            let row_bytes = direct.size().w as usize * 4;
+            for row in 0..direct.size().h as usize {
+                let start = ((row + offset) * padded.size().w as usize + offset) * 4;
+                expected[start..start + row_bytes]
+                    .copy_from_slice(&pixels[row * row_bytes..(row + 1) * row_bytes]);
+            }
+            assert_eq!(frame_pixels(&mut padded, 0), expected, "at scale {scale}");
+        }
+    }
+
+    fn svg_resource_source(contents: &str) -> CursorSource {
+        let mut frame = svg_frame(24, 24, 0.0, 0.0, 0);
+        frame.tree = usvg::Tree::from_str(contents, &usvg::Options::default()).unwrap();
+        CursorSource::Svg(vec![frame])
+    }
+
+    #[test]
+    fn svg_intermediate_pattern_is_rejected_before_rendering() {
+        let source = svg_resource_source(
+            "<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24'><defs><pattern id='p' patternUnits='userSpaceOnUse' width='10000' height='10000'><rect width='1' height='1'/></pattern></defs><rect width='24' height='24' fill='url(#p)'/></svg>",
+        );
+        let cancellation_checks = std::cell::Cell::new(0);
+        let error = prepare_source(&source, 24, 1.0, &|| {
+            cancellation_checks.set(cancellation_checks.get() + 1);
+            false
+        })
+        .err()
+        .unwrap();
+        assert!(error.to_string().contains("SVG intermediate"));
+        assert_eq!(cancellation_checks.get(), 1, "rendering must not start");
+    }
+
+    #[test]
+    fn svg_pattern_preflight_matches_transformed_tiles_and_rounding() {
+        let pattern = |width: &str, height: &str, transform: &str| {
+            svg_resource_source(&format!(
+            "<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24'><defs><pattern id='p' patternUnits='userSpaceOnUse' width='{width}' height='{height}' patternTransform='{transform}'><rect width='1' height='1'/></pattern></defs><rect width='24' height='24' fill='url(#p)'/></svg>",
+        ))
+        };
+        // A huge source-space tile can be cheap, and a small tile can be expensive.
+        assert!(source_geometry(&pattern("10000", "10000", "scale(.0001)"), 24.0).is_ok());
+        assert!(source_geometry(&pattern("100", "100", "scale(100)"), 24.0).is_err());
+        // 4096 squared RGBA pixels exactly fit 64 MiB. Do not actually render this tile.
+        assert!(source_geometry(&pattern("4096.49", "4096", "scale(1)"), 24.0).is_ok());
+        assert!(source_geometry(&pattern("4096.5", "4096", "scale(1)"), 24.0).is_err());
+        assert!(source_geometry(&pattern("3276.8", "3276.8", "scale(1)"), 30.0).is_ok());
+        assert!(source_geometry(&pattern("3277.6", "3277.6", "scale(1)"), 30.0).is_err());
+    }
+
+    #[test]
+    fn svg_nested_and_repeated_patterns_share_the_intermediate_budget() {
+        let nested = svg_resource_source(
+            "<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24'><defs><pattern id='inner' patternUnits='userSpaceOnUse' width='5000' height='5000' patternTransform='scale(2)'><rect width='1' height='1'/></pattern><pattern id='outer' patternUnits='userSpaceOnUse' width='2' height='2'><rect width='2' height='2' fill='url(#inner)'/></pattern></defs><rect width='24' height='24' fill='url(#outer)'/></svg>",
+        );
+        assert!(source_geometry(&nested, 24.0).is_err());
+        let repeated = svg_resource_source(&format!(
+            "<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24'><defs><pattern id='p' patternUnits='userSpaceOnUse' width='1024' height='1024'><rect width='1' height='1'/></pattern></defs>{}</svg>",
+            "<rect width='24' height='24' fill='url(#p)'/>".repeat(17),
+        ));
+        assert!(source_geometry(&repeated, 24.0).is_err());
+    }
+
+    #[test]
+    fn svg_layer_bounds_are_clipped_but_filter_regions_are_not() {
+        let source = svg_resource_source(
+            "<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24'><g opacity='.5'><rect x='-10000' y='-10000' width='20000' height='20000'/></g></svg>",
+        );
+        let CursorSource::Svg(frames) = &source else {
+            unreachable!()
+        };
+        let size = tiny_skia::IntSize::from_wh(24, 24).unwrap();
+        let mut resources = SvgResources {
+            remaining: MAX_CURSOR_BYTES as u64,
+        };
+        resources
+            .nodes(
+                frames[0].tree.root(),
+                tiny_skia::Transform::identity(),
+                size,
+                svg_max_bbox(size),
+            )
+            .unwrap();
+        assert_eq!(resources.remaining, MAX_CURSOR_BYTES as u64 - 120 * 120 * 4);
+        let filtered = svg_resource_source(
+            "<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24'><defs><filter id='f' filterUnits='userSpaceOnUse' x='0' y='0' width='10000' height='10000'><feFlood flood-color='red'/></filter></defs><rect width='24' height='24' filter='url(#f)'/></svg>",
+        );
+        assert!(source_geometry(&filtered, 24.0).is_err());
+    }
+
+    #[test]
+    fn svg_resource_validation_preserves_equivalent_pattern_filter_coordinates() {
+        for scale in [1.0, 1.25] {
+            let mut pixels = Vec::new();
+            for multiplier in [1, 1024] {
+                let source = svg_resource_source(&format!(
+                    "<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 {canvas} {canvas}'><defs><pattern id='inner' patternUnits='userSpaceOnUse' width='{tile}' height='{tile}'><rect width='{half}' height='{tile}' fill='red'/></pattern><pattern id='outer' patternUnits='userSpaceOnUse' width='{tile}' height='{tile}'><rect width='{tile}' height='{tile}' fill='url(#inner)'/></pattern><filter id='f' filterUnits='userSpaceOnUse' x='0' y='0' width='{canvas}' height='{canvas}'><feGaussianBlur stdDeviation='{blur}'/></filter><clipPath id='c'><rect width='{canvas}' height='{canvas}'/></clipPath><mask id='m' maskUnits='userSpaceOnUse' x='0' y='0' width='{canvas}' height='{canvas}'><rect width='{canvas}' height='{canvas}' fill='white'/></mask></defs><g opacity='.75' clip-path='url(#c)' mask='url(#m)'><g filter='url(#f)'><rect width='{canvas}' height='{canvas}' fill='url(#outer)'/></g></g></svg>",
+                    canvas = 24 * multiplier,
+                    tile = 4 * multiplier,
+                    half = 2 * multiplier,
+                    blur = f64::from(multiplier) / 2.0,
+                ));
+                let mut prepared = prepare_source(&source, 24, scale, &|| false).unwrap();
+                pixels.push(frame_pixels(&mut prepared, 0));
+            }
+            assert!(pixels[0].iter().any(|channel| *channel != 0));
+            assert_eq!(pixels[0], pixels[1], "at scale {scale}");
+        }
+    }
+
+    #[test]
     fn padded_xcursor_resampling_keeps_intrinsic_filter_boundary() {
         let first = || Image {
             pixels_rgba: [0, 0, 128, 128].repeat(8 * 8),
@@ -1077,6 +1619,76 @@ mod tests {
     }
 
     #[test]
+    fn canvas_preserves_negative_and_outside_svg_hotspots() {
+        let source = CursorSource::Svg(vec![
+            svg_frame(4, 3, -2.0, 5.0, 10),
+            svg_frame(4, 3, 6.0, -1.0, 10),
+        ]);
+        let mut prepared = prepare_source(&source, 24, 1.0, &|| false).unwrap();
+        assert_eq!(prepared.size(), Size::from((12, 9)));
+        assert_eq!(prepared.frames().len(), 2);
+        for frame in prepared.frames() {
+            assert_eq!(frame.hotspot(), Point::from((6, 5)));
+        }
+        let first = frame_pixels(&mut prepared, 0);
+        let offset = 8 * 4;
+        assert_eq!(&first[offset..offset + 4], &[0, 0, 255, 255]);
+        assert_eq!(&first[..offset], &[0; 32]);
+        let second = frame_pixels(&mut prepared, 1);
+        let offset = 6 * 12 * 4;
+        assert_eq!(&second[offset..offset + 4], &[0, 0, 255, 255]);
+        assert_eq!(scaled_hotspot(-4.0, 1.25).unwrap(), -5);
+        assert_eq!(scaled_hotspot(40.0, 1.25).unwrap(), 50);
+    }
+
+    #[test]
+    fn svg_rasterizes_fractional_scale_and_per_frame_nominal_size() {
+        let tree = || {
+            usvg::Tree::from_str(
+            "<svg xmlns='http://www.w3.org/2000/svg' width='32' height='24'><path fill='red' fill-opacity='.5' d='M0 0H32V24H0Z'/></svg>",
+            &usvg::Options::default(),
+        ).unwrap()
+        };
+        let source = CursorSource::Svg(vec![
+            SvgFrame {
+                tree: tree(),
+                metadata: Metadata {
+                    filename: String::new(),
+                    nominal_size: 24.0,
+                    hotspot_x: 4.0,
+                    hotspot_y: 6.0,
+                    delay: 20,
+                },
+            },
+            SvgFrame {
+                tree: tree(),
+                metadata: Metadata {
+                    filename: String::new(),
+                    nominal_size: 32.0,
+                    hotspot_x: 8.0,
+                    hotspot_y: 4.0,
+                    delay: 20,
+                },
+            },
+        ]);
+        let geometry = source_geometry(&source, 30.0).unwrap();
+        assert_eq!(geometry[0].size, Size::from((40, 30)));
+        assert_eq!(geometry[0].hotspot, Point::from((5, 8)));
+        assert_eq!(geometry[1].size, Size::from((30, 23)));
+        assert_eq!(geometry[1].hotspot, Point::from((8, 4)));
+        let mut prepared = prepare_source(&source, 24, 1.25, &|| false).unwrap();
+        assert_eq!(prepared.size(), Size::from((43, 30)));
+        assert_eq!(prepared.frame(0).1.hotspot(), Point::from((8, 8)));
+        let pixels = frame_pixels(&mut prepared, 0);
+        let pixel = &pixels[3 * 4..4 * 4];
+        // Prepared pixels are premultiplied BGRA, including padded SVG frames.
+        assert_eq!(pixel[2], pixel[3]);
+        assert_eq!(pixel[1], 0);
+        assert_eq!(pixel[0], 0);
+        assert!((127..=128).contains(&pixel[3]));
+    }
+
+    #[test]
     fn xcursor_animation_groups_by_nominal_size_not_dimensions() {
         let image = |size, width, delay| Image {
             size,
@@ -1095,6 +1707,56 @@ mod tests {
         assert_eq!(prepared.size().w, 4);
         assert_eq!(&frame_pixels(&mut prepared, 0)[..4], &[3, 2, 1, 255]);
         assert_eq!(&frame_pixels(&mut prepared, 0)[8..16], &[0; 8]);
+    }
+
+    #[test]
+    fn svg_animation_rejects_zero_or_overflowing_delays() {
+        assert!(validate_svg_delays([0], 1).is_ok());
+        assert!(validate_svg_delays([20, 30], 2).is_ok());
+        assert!(validate_svg_delays([20, 0], 2).is_err());
+        assert!(validate_svg_delays([u32::MAX, 1], 2).is_err());
+    }
+
+    #[test]
+    fn candidates_fall_back_after_raster_and_preparation_failures() {
+        let tree = usvg::Tree::from_str(
+            "<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32'/>",
+            &usvg::Options::default(),
+        )
+        .unwrap();
+        let oversized = CursorSource::Svg(vec![SvgFrame {
+            tree,
+            metadata: Metadata {
+                filename: String::new(),
+                nominal_size: 0.001,
+                hotspot_x: 1.0,
+                hotspot_y: 1.0,
+                delay: 0,
+            },
+        }]);
+        let image = |delay| Image {
+            size: 24,
+            width: 2,
+            height: 2,
+            xhot: 1,
+            yhot: 1,
+            delay,
+            pixels_rgba: [0, 0, 255, 255].repeat(4),
+            pixels_argb: vec![],
+        };
+        let overflowing = CursorSource::XCursor(vec![image(u32::MAX), image(1)]);
+        let fallback = CursorSource::XCursor(vec![image(0)]);
+        let mut candidates = [oversized, overflowing, fallback]
+            .into_iter()
+            .map(|source| SourceCandidate {
+                path: PathBuf::from("/nonexistent-cursor-regression"),
+                scalable: false,
+                parsed: Some(Some(source)),
+            })
+            .collect::<Vec<_>>();
+        let cursor = prepare_candidates(&mut candidates, 24, 1.25, &|| false).unwrap();
+        assert_eq!(cursor.size(), Size::from((3, 3)));
+        assert_eq!(cursor.frames().len(), 1);
     }
 
     #[test]
@@ -1152,6 +1814,43 @@ mod tests {
             let center = ((dimensions.1 / 2 * dimensions.0 + dimensions.0 / 2) * 4) as usize;
             assert_eq!(&pixels[center..center + 4], &[0, 0, 128, 128]);
         }
+    }
+
+    #[test]
+    fn equivalent_svg_coordinate_systems_produce_identical_pixels() {
+        let directory = env::temp_dir().join(format!(
+            "niri-cursor-svg-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos(),
+        ));
+        std::fs::create_dir(&directory).unwrap();
+        let mut rasters = Vec::new();
+        for multiplier in [1, 100] {
+            std::fs::write(directory.join("frame.svg"), format!(
+                "<svg xmlns='http://www.w3.org/2000/svg' width='{}' height='{}'><path fill='red' d='M0 0H{}V{}H0Z'/></svg>",
+                32 * multiplier, 24 * multiplier, 32 * multiplier, 24 * multiplier,
+            )).unwrap();
+            std::fs::write(directory.join("metadata.json"), format!(
+                r#"[{{"filename":"frame.svg","nominal_size":{},"hotspot_x":{},"hotspot_y":{}}}]"#,
+                24 * multiplier, 4 * multiplier, 6 * multiplier,
+            )).unwrap();
+            let source = load_svg(&directory, &|| false).unwrap();
+            rasters.push(prepare_source(&source, 24, 1.0, &|| false).unwrap());
+        }
+        std::fs::remove_dir_all(directory).unwrap();
+        assert_eq!(rasters[0].size(), Size::from((32, 24)));
+        assert_eq!(rasters[0].size(), rasters[1].size());
+        assert_eq!(
+            rasters[0].frame(0).1.hotspot(),
+            rasters[1].frame(0).1.hotspot()
+        );
+        assert_eq!(
+            frame_pixels(&mut rasters[0], 0),
+            frame_pixels(&mut rasters[1], 0)
+        );
     }
 
     fn manager_with_mailbox() -> (CursorManager, Arc<Shared>) {
@@ -1464,6 +2163,25 @@ mod tests {
         assert!(mailbox.publish(8, key, None));
         assert!(mailbox.in_flight.is_empty());
         assert_eq!(mailbox.completed.unwrap().generation, 8);
+    }
+
+    #[test]
+    fn scale_specific_prepare_failure_does_not_invalidate_preferred_source() {
+        let mut candidates = [
+            CursorSource::Svg(vec![svg_frame(1200, 4, 0.0, 0.0, 0)]),
+            CursorSource::XCursor(vec![image(2, 2, 0, 0, 0)]),
+        ]
+        .into_iter()
+        .map(|source| SourceCandidate {
+            path: PathBuf::from("/nonexistent-cursor-regression"),
+            scalable: false,
+            parsed: Some(Some(source)),
+        })
+        .collect::<Vec<_>>();
+        let fallback = prepare_candidates(&mut candidates, 24, 2.0, &|| false).unwrap();
+        assert_eq!(fallback.size(), Size::from((4, 4)));
+        let preferred = prepare_candidates(&mut candidates, 24, 1.0, &|| false).unwrap();
+        assert_eq!(preferred.size(), Size::from((1200, 4)));
     }
 
     #[test]
