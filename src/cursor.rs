@@ -1,7 +1,8 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::env;
-use std::fs::File;
+use std::fs::OpenOptions;
 use std::io::Read;
+use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Component, Path, PathBuf};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -18,7 +19,8 @@ use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{IsAlive, Logical, Physical, Point, Size, Transform};
 use smithay::wayland::compositor::with_states;
 use xcursor::parser::{parse_xcursor, Image};
-use xcursor::CursorTheme;
+mod resolver;
+use resolver::ThemeResolver;
 
 static FALLBACK_CURSOR_DATA: &[u8] = include_bytes!("../resources/cursor.rgba");
 
@@ -256,16 +258,6 @@ impl CursorManager {
                     .get_cursor_with_name(icon, scale)
                     .unwrap_or_else(|| self.get_default_cursor(scale)),
             },
-        }
-    }
-
-    pub fn is_current_cursor_animated(&self, scale: f64) -> bool {
-        match self.current_cursor {
-            CursorImageStatus::Named(icon) => self
-                .get_cursor_with_name(icon, scale)
-                .unwrap_or_else(|| self.get_default_cursor(scale))
-                .is_animated_cursor(),
-            _ => false,
         }
     }
 
@@ -536,13 +528,13 @@ fn worker_loop(shared: Arc<Shared>, tx: calloop::channel::Sender<()>) {
             drop(mailbox);
             if let Some(theme_name) = theme_name.take() {
                 generation = Some(request_generation);
-                theme = Some(CursorTheme::load(&theme_name));
+                theme = Some(ThemeResolver::load(&theme_name, &cancelled));
             }
             if cancelled() {
                 break;
             }
             let candidates = candidates.get_or_insert_with(|| {
-                source_candidates(theme.as_ref().unwrap(), icon, xcursor_fallback)
+                source_candidates(theme.as_ref().unwrap(), icon, xcursor_fallback, &cancelled)
             });
 
             let cursor =
@@ -598,39 +590,12 @@ struct SourceCandidate {
 }
 
 fn source_candidates(
-    theme: &CursorTheme,
+    theme: &ThemeResolver,
     icon: CursorIcon,
     xcursor_fallback: bool,
+    cancelled: &impl Fn() -> bool,
 ) -> Vec<SourceCandidate> {
-    let mut candidates = Vec::new();
-    for (alias, name) in std::iter::once(icon.name())
-        .chain(icon.alt_names().iter().copied())
-        .enumerate()
-    {
-        if let Some((path, depth)) = theme.load_scalable_with_depth(name) {
-            candidates.push((depth, 0, alias, path));
-        }
-        if xcursor_fallback {
-            if let Some((path, depth)) = theme.load_icon_with_depth(name) {
-                candidates.push((depth, 1, alias, path));
-            }
-        }
-    }
-    candidates.sort_by_key(|(depth, format, alias, _)| (*depth, *format, *alias));
-    let mut seen = HashSet::new();
-    candidates
-        .into_iter()
-        .filter_map(|(_, format, _, path)| {
-            if !seen.insert(path.clone()) {
-                return None;
-            }
-            Some(SourceCandidate {
-                path,
-                scalable: format == 0,
-                parsed: None,
-            })
-        })
-        .collect()
+    theme.candidates(icon, xcursor_fallback, cancelled)
 }
 
 fn prepare_candidates(
@@ -646,7 +611,7 @@ fn prepare_candidates(
             let parsed = if candidate.scalable {
                 load_svg(&candidate.path, cancelled)
             } else {
-                load_xcursor(&candidate.path)
+                load_xcursor(&candidate.path, cancelled)
             };
             ensure!(!cancelled(), "cursor loading cancelled");
             candidate.parsed = Some(match parsed {
@@ -672,11 +637,16 @@ fn prepare_candidates(
 }
 
 fn read_bounded(path: &Path, limit: usize) -> anyhow::Result<Vec<u8>> {
-    let file = File::open(path).with_context(|| format!("opening {}", path.display()))?;
-    ensure!(
-        file.metadata()?.len() <= limit as u64,
-        "cursor file too large"
-    );
+    // Follow theme/artwork symlinks, but never wait for a FIFO writer while opening.
+    // This bounds bytes, not filesystem latency or SVG parser execution time.
+    let file = OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NONBLOCK)
+        .open(path)
+        .with_context(|| format!("opening {}", path.display()))?;
+    let metadata = file.metadata()?;
+    ensure!(metadata.is_file(), "cursor source is not an ordinary file");
+    ensure!(metadata.len() <= limit as u64, "cursor file too large");
     let mut bytes = Vec::new();
     file.take(limit as u64 + 1).read_to_end(&mut bytes)?;
     ensure!(bytes.len() <= limit, "cursor file too large");
@@ -684,7 +654,9 @@ fn read_bounded(path: &Path, limit: usize) -> anyhow::Result<Vec<u8>> {
 }
 
 fn load_svg(path: &Path, cancelled: &impl Fn() -> bool) -> anyhow::Result<CursorSource> {
+    ensure!(!cancelled(), "cursor loading cancelled");
     let bytes = read_bounded(&path.join("metadata.json"), 1024 * 1024)?;
+    ensure!(!cancelled(), "cursor loading cancelled");
     let metadata: Vec<Metadata> = serde_json::from_slice(&bytes)?;
     ensure!(
         !metadata.is_empty() && metadata.len() <= MAX_FRAMES,
@@ -708,6 +680,7 @@ fn load_svg(path: &Path, cancelled: &impl Fn() -> bool) -> anyhow::Result<Cursor
             "invalid SVG filename"
         );
         let bytes = read_bounded(&path.join(&metadata.filename), MAX_FILE_BYTES)?;
+        ensure!(!cancelled(), "cursor loading cancelled");
         total_bytes += bytes.len();
         ensure!(total_bytes <= MAX_CURSOR_BYTES, "cursor source too large");
         let options = usvg::Options {
@@ -1002,8 +975,10 @@ impl SvgResources {
     }
 }
 
-fn load_xcursor(path: &Path) -> anyhow::Result<CursorSource> {
+fn load_xcursor(path: &Path, cancelled: &impl Fn() -> bool) -> anyhow::Result<CursorSource> {
+    ensure!(!cancelled(), "cursor loading cancelled");
     let bytes = read_bounded(path, MAX_FILE_BYTES)?;
+    ensure!(!cancelled(), "cursor loading cancelled");
     // xcursor allocates from untrusted header sizes, so preflight before invoking its parser.
     let word = |offset: usize| -> anyhow::Result<u32> {
         let bytes = bytes.get(offset..offset + 4).context("truncated XCursor")?;
@@ -1369,7 +1344,7 @@ mod tests {
     use super::*;
 
     // Absolute theme and inheritance paths avoid global environment changes and host themes.
-    fn policy_theme() -> PathBuf {
+    pub(super) fn policy_theme() -> PathBuf {
         static NEXT: AtomicU64 = AtomicU64::new(0);
         let path = env::temp_dir().join(format!(
             "niri-cursor-policy-{}-{}-{}",
@@ -1434,13 +1409,249 @@ mod tests {
         .unwrap();
     }
 
+    fn write_policy_inheritance(theme: &Path, parents: &[&str]) {
+        std::fs::create_dir_all(theme).unwrap();
+        std::fs::write(
+            theme.join("index.theme"),
+            format!("[Icon Theme]\nInherits={}\n", parents.join(",")),
+        )
+        .unwrap();
+    }
+
+    fn policy_fifo(path: &Path) {
+        use std::os::unix::ffi::OsStrExt;
+
+        let path = std::ffi::CString::new(path.as_os_str().as_bytes()).unwrap();
+        // SAFETY: the path is a valid NUL-terminated string and the mode is valid.
+        assert_eq!(unsafe { libc::mkfifo(path.as_ptr(), 0o600) }, 0);
+    }
+
+    #[test]
+    fn whitespace_separated_inherited_themes_supply_prepared_shapes() {
+        let fixture = policy_theme();
+        let roots = [fixture.clone()];
+        let child = fixture.join("child");
+        std::fs::create_dir_all(&child).unwrap();
+        write_policy_svg(&fixture.join("first"), CursorIcon::Default.name(), false);
+        write_policy_svg(&fixture.join("second"), CursorIcon::Text.name(), false);
+        for separator in [" ", "\t", ",", ";"] {
+            std::fs::write(
+                child.join("index.theme"),
+                format!("[Icon Theme]\nInherits=first{separator}second\n"),
+            )
+            .unwrap();
+            let theme = ThemeResolver::with_roots("child", &roots, &|| false);
+            for icon in [CursorIcon::Default, CursorIcon::Text] {
+                let mut candidates = source_candidates(&theme, icon, false, &|| false);
+                let mut cursor = prepare_candidates(&mut candidates, 24, 1.0, &|| false)
+                    .expect("each inherited theme must supply its shape");
+                assert_eq!(frame_pixels(&mut cursor, 0), [0, 0, 255, 255].repeat(4));
+            }
+        }
+        std::fs::remove_dir_all(fixture).unwrap();
+    }
+
+    #[test]
+    fn resolver_orders_depth_format_alias_roots_and_all_parents_with_cycles() {
+        let fixture = policy_theme();
+        let roots = [fixture.join("first/icons"), fixture.join("second/icons")];
+        let child = roots[0].join("child");
+        let other_child = roots[1].join("child");
+        let first_parent = roots[0].join("parent-one");
+        let other_parent = roots[1].join("parent-one");
+        let second_parent = roots[0].join("parent-two");
+        let grandparent = roots[0].join("grandparent");
+        write_policy_inheritance(&child, &["parent-one", "parent-two"]);
+        write_policy_inheritance(&other_child, &["parent-two"]);
+        write_policy_inheritance(&first_parent, &["child", "grandparent"]);
+        write_policy_inheritance(&other_parent, &["parent-two"]);
+        write_policy_inheritance(&second_parent, &["child"]);
+        write_policy_inheritance(&grandparent, &["parent-one"]);
+        let icon = CursorIcon::Text;
+        let name = icon.name();
+        let alias = icon.alt_names()[0];
+        write_policy_svg(&child, alias, false);
+        write_policy_svg(&other_child, name, false);
+        write_policy_bitmap(&child, name);
+        write_policy_bitmap(&other_child, name);
+        write_policy_svg(&first_parent, name, false);
+        write_policy_svg(&other_parent, name, false);
+        write_policy_svg(&second_parent, name, false);
+        write_policy_svg(&grandparent, name, false);
+        let theme = ThemeResolver::with_roots("child", &roots, &|| false);
+        let candidates = source_candidates(&theme, icon, true, &|| false);
+        assert_eq!(
+            candidates
+                .iter()
+                .map(|candidate| candidate.path.clone())
+                .collect::<Vec<_>>(),
+            [
+                other_child.join("cursors_scalable").join(name),
+                child.join("cursors_scalable").join(alias),
+                child.join("cursors").join(name),
+                other_child.join("cursors").join(name),
+                first_parent.join("cursors_scalable").join(name),
+                other_parent.join("cursors_scalable").join(name),
+                second_parent.join("cursors_scalable").join(name),
+                grandparent.join("cursors_scalable").join(name),
+            ],
+        );
+        let scalable = source_candidates(&theme, icon, false, &|| false);
+        assert_eq!(scalable.len(), 6);
+        assert!(scalable.iter().all(|candidate| candidate.scalable));
+        std::fs::remove_dir_all(fixture).unwrap();
+    }
+
+    #[test]
+    fn corrupt_or_incomplete_child_keeps_same_name_inherited_and_other_root_candidates() {
+        let fixture = policy_theme();
+        let roots = [fixture.join("first/icons"), fixture.join("second/icons")];
+        let child = roots[0].join("child");
+        let other_child = roots[1].join("child");
+        let parent = roots[0].join("parent");
+        write_policy_inheritance(&child, &["parent"]);
+        write_policy_inheritance(&other_child, &["parent"]);
+        write_policy_inheritance(&parent, &["child"]);
+        let name = CursorIcon::Default.name();
+        write_policy_svg(&child, name, true);
+        // An existing scalable directory with absent metadata must not mask inheritance.
+        std::fs::create_dir_all(other_child.join("cursors_scalable").join(name)).unwrap();
+        write_policy_svg(&parent, name, false);
+        let theme = ThemeResolver::with_roots("child", &roots, &|| false);
+        let mut candidates = source_candidates(&theme, CursorIcon::Default, false, &|| false);
+        assert_eq!(candidates.len(), 3);
+        assert!(prepare_candidates(&mut candidates, 24, 1.0, &|| false).is_ok());
+        assert!(matches!(candidates[0].parsed, Some(None)));
+        assert!(matches!(candidates[1].parsed, Some(None)));
+        assert!(matches!(candidates[2].parsed, Some(Some(_))));
+        write_policy_svg(&other_child, name, false);
+        let mut candidates = source_candidates(&theme, CursorIcon::Default, false, &|| false);
+        assert!(prepare_candidates(&mut candidates, 24, 1.0, &|| false).is_ok());
+        assert!(matches!(candidates[1].parsed, Some(Some(_))));
+        assert!(candidates[2].parsed.is_none());
+        std::fs::remove_dir_all(fixture).unwrap();
+    }
+
+    #[test]
+    fn ordinary_file_reader_rejects_fifo_symlinks_devices_and_byte_overflow() {
+        use std::os::unix::fs::symlink;
+
+        let fixture = policy_theme();
+        let fifo = fixture.join("fifo");
+        policy_fifo(&fifo);
+        let link = fixture.join("fifo-link");
+        symlink(&fifo, &link).unwrap();
+        assert!(read_bounded(&fifo, 100).is_err());
+        assert!(read_bounded(&link, 100).is_err());
+        assert!(read_bounded(Path::new("/dev/null"), 100).is_err());
+        assert!(read_bounded(&fixture, 100).is_err());
+        let regular = fixture.join("regular");
+        std::fs::write(&regular, b"1234").unwrap();
+        assert!(read_bounded(&regular, 3).is_err());
+        assert_eq!(read_bounded(&regular, 4).unwrap(), b"1234");
+        let regular_link = fixture.join("regular-link");
+        symlink(regular, &regular_link).unwrap();
+        assert_eq!(read_bounded(&regular_link, 4).unwrap(), b"1234");
+        std::fs::remove_dir_all(fixture).unwrap();
+    }
+
+    #[test]
+    fn fifo_metadata_artwork_and_index_allow_usable_inherited_svg() {
+        use std::os::unix::fs::symlink;
+
+        let fixture = policy_theme();
+        let roots = [fixture.clone()];
+        let name = CursorIcon::Default.name();
+        write_policy_svg(&fixture.join("default"), name, false);
+        for linked in [false, true] {
+            let fifo = fixture.join(format!("pipe-{linked}"));
+            policy_fifo(&fifo);
+            for part in ["metadata.json", "frame.svg", "index.theme"] {
+                let theme_name = format!("theme-{linked}-{part}");
+                let child = fixture.join(&theme_name);
+                write_policy_svg(&child, name, false);
+                let target = if part == "index.theme" {
+                    // A missing/invalid index uses the usual default-theme inheritance.
+                    child.join(part)
+                } else {
+                    write_policy_inheritance(&child, &["default"]);
+                    child.join("cursors_scalable").join(name).join(part)
+                };
+                if target.exists() {
+                    std::fs::remove_file(&target).unwrap();
+                }
+                if linked {
+                    symlink(&fifo, &target).unwrap();
+                } else {
+                    policy_fifo(&target);
+                }
+                let theme = ThemeResolver::with_roots(&theme_name, &roots, &|| false);
+                let mut candidates =
+                    source_candidates(&theme, CursorIcon::Default, false, &|| false);
+                assert_eq!(candidates.len(), 2);
+                assert!(prepare_candidates(&mut candidates, 24, 1.0, &|| false).is_ok());
+                if part != "index.theme" {
+                    assert!(matches!(candidates[0].parsed, Some(None)));
+                    assert!(matches!(candidates[1].parsed, Some(Some(_))));
+                }
+            }
+        }
+        let child = fixture.join("oversized-index");
+        write_policy_svg(&child, name, true);
+        std::fs::write(child.join("index.theme"), vec![b' '; 64 * 1024 + 1]).unwrap();
+        let theme = ThemeResolver::with_roots("oversized-index", &roots, &|| false);
+        let mut candidates = source_candidates(&theme, CursorIcon::Default, false, &|| false);
+        assert_eq!(candidates.len(), 2);
+        assert!(prepare_candidates(&mut candidates, 24, 1.0, &|| false).is_ok());
+        std::fs::remove_dir_all(fixture).unwrap();
+    }
+
+    #[test]
+    fn symlinked_themes_and_artwork_remain_valid_and_deduplicate_cycles() {
+        use std::os::unix::fs::symlink;
+
+        let fixture = policy_theme();
+        let child = fixture.join("theme");
+        let alias_theme = fixture.join("linked-theme");
+        let name = CursorIcon::Default.name();
+        write_policy_inheritance(&child, &["linked-theme"]);
+        write_policy_svg(&child, name, false);
+        symlink(&child, &alias_theme).unwrap();
+        let cursor = child.join("cursors_scalable").join(name);
+        std::fs::rename(cursor.join("frame.svg"), child.join("art.svg")).unwrap();
+        symlink(child.join("art.svg"), cursor.join("frame.svg")).unwrap();
+        std::fs::rename(cursor.join("metadata.json"), child.join("metadata.json")).unwrap();
+        symlink(child.join("metadata.json"), cursor.join("metadata.json")).unwrap();
+        symlink(
+            &cursor,
+            child
+                .join("cursors_scalable")
+                .join(CursorIcon::Default.alt_names()[0]),
+        )
+        .unwrap();
+        let theme = ThemeResolver::with_roots("linked-theme", &[fixture.clone()], &|| false);
+        let mut candidates = source_candidates(&theme, CursorIcon::Default, false, &|| false);
+        assert_eq!(candidates.len(), 1);
+        assert!(prepare_candidates(&mut candidates, 24, 1.0, &|| false).is_ok());
+        assert!(load_svg(&cursor, &|| true).is_err());
+        assert!(load_xcursor(&fixture.join("missing"), &|| true).is_err());
+        let checks = std::cell::Cell::new(0);
+        let cancelled = || {
+            checks.set(checks.get() + 1);
+            checks.get() >= 2
+        };
+        let error = load_svg(&cursor, &cancelled).err().unwrap();
+        assert!(error.to_string().contains("cancelled"));
+        std::fs::remove_dir_all(fixture).unwrap();
+    }
+
     #[test]
     fn bitmap_only_theme_requires_explicit_fallback() {
         let path = policy_theme();
         write_policy_bitmap(&path, CursorIcon::Default.name());
-        let theme = CursorTheme::load(path.to_str().unwrap());
-        assert!(source_candidates(&theme, CursorIcon::Default, false).is_empty());
-        let mut candidates = source_candidates(&theme, CursorIcon::Default, true);
+        let theme = ThemeResolver::with_roots(path.to_str().unwrap(), &[], &|| false);
+        assert!(source_candidates(&theme, CursorIcon::Default, false, &|| false).is_empty());
+        let mut candidates = source_candidates(&theme, CursorIcon::Default, true, &|| false);
         assert_eq!(candidates.len(), 1);
         let mut cursor = prepare_candidates(&mut candidates, 24, 1.0, &|| false).unwrap();
         assert_eq!(frame_pixels(&mut cursor, 0), [0x56, 0x34, 0x12, 0xff]);
@@ -1452,12 +1663,12 @@ mod tests {
         let path = policy_theme();
         write_policy_svg(&path, CursorIcon::Default.name(), true);
         write_policy_bitmap(&path, CursorIcon::Default.name());
-        let theme = CursorTheme::load(path.to_str().unwrap());
-        let mut candidates = source_candidates(&theme, CursorIcon::Default, false);
+        let theme = ThemeResolver::with_roots(path.to_str().unwrap(), &[], &|| false);
+        let mut candidates = source_candidates(&theme, CursorIcon::Default, false, &|| false);
         assert_eq!(candidates.len(), 1);
         assert!(candidates[0].scalable);
         assert!(prepare_candidates(&mut candidates, 24, 1.0, &|| false).is_err());
-        let mut candidates = source_candidates(&theme, CursorIcon::Default, true);
+        let mut candidates = source_candidates(&theme, CursorIcon::Default, true, &|| false);
         assert_eq!(candidates.len(), 2);
         assert!(candidates[0].scalable);
         assert!(!candidates[1].scalable);
@@ -1485,15 +1696,15 @@ mod tests {
         write_policy_bitmap(&inherited, CursorIcon::Default.name());
         write_policy_svg(&inherited, CursorIcon::Default.name(), false);
         write_policy_bitmap(&path, CursorIcon::Default.name());
-        let theme = CursorTheme::load(path.to_str().unwrap());
-        assert!(source_candidates(&theme, CursorIcon::Text, false).is_empty());
-        let aliases = source_candidates(&theme, CursorIcon::Text, true);
+        let theme = ThemeResolver::with_roots(path.to_str().unwrap(), &[], &|| false);
+        assert!(source_candidates(&theme, CursorIcon::Text, false, &|| false).is_empty());
+        let aliases = source_candidates(&theme, CursorIcon::Text, true, &|| false);
         assert_eq!(aliases.len(), 1);
         assert_eq!(aliases[0].path, inherited.join("cursors").join(alias));
-        let defaults = source_candidates(&theme, CursorIcon::Default, false);
+        let defaults = source_candidates(&theme, CursorIcon::Default, false, &|| false);
         assert_eq!(defaults.len(), 1);
         assert!(defaults[0].scalable);
-        let defaults = source_candidates(&theme, CursorIcon::Default, true);
+        let defaults = source_candidates(&theme, CursorIcon::Default, true, &|| false);
         // Local bitmap outranks inherited SVG: depth remains ahead of format.
         assert!(!defaults[0].scalable);
         assert!(defaults[1].scalable);
@@ -1504,14 +1715,14 @@ mod tests {
     fn policy_reload_clears_positive_and_negative_cache_and_isolates_generations() {
         let path = policy_theme();
         write_policy_bitmap(&path, CursorIcon::Default.name());
-        let theme = CursorTheme::load(path.to_str().unwrap());
+        let theme = ThemeResolver::with_roots(path.to_str().unwrap(), &[], &|| false);
         let (mut manager, shared) = manager_with_mailbox();
         let key = (CursorIcon::Default, 1.0f64.to_bits());
         manager.reload(path.to_str().unwrap(), 24, true);
         manager.prepare([1.0]);
         let old_generation = manager.generation;
         let old_policy = shared.mailbox.lock().unwrap().xcursor_fallback;
-        let mut candidates = source_candidates(&theme, key.0, old_policy);
+        let mut candidates = source_candidates(&theme, key.0, old_policy, &|| false);
         let cursor = prepare_candidates(&mut candidates, 24, 1.0, &|| false).unwrap();
         assert!(shared
             .mailbox
@@ -1532,8 +1743,8 @@ mod tests {
         drop(mailbox);
         manager.complete();
         assert!(manager.cache[&key].is_none());
-        assert!(source_candidates(&theme, key.0, false).is_empty());
-        assert!(!source_candidates(&theme, key.0, old_policy).is_empty());
+        assert!(source_candidates(&theme, key.0, false, &|| false).is_empty());
+        assert!(!source_candidates(&theme, key.0, old_policy, &|| false).is_empty());
         assert!(Rc::ptr_eq(
             &named_render(&manager, 1.0),
             &manager.scaled_fallbacks[&key.1]
@@ -1543,7 +1754,7 @@ mod tests {
         assert!(manager.cache.is_empty());
         manager.prepare([1.0]);
         assert!(shared.mailbox.lock().unwrap().xcursor_fallback);
-        let mut candidates = source_candidates(&theme, key.0, true);
+        let mut candidates = source_candidates(&theme, key.0, true, &|| false);
         let cursor = prepare_candidates(&mut candidates, 24, 1.0, &|| false).unwrap();
         let mut mailbox = shared.mailbox.lock().unwrap();
         assert!(!mailbox.publish(generation, key, None));

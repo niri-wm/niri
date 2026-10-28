@@ -180,7 +180,11 @@ SVG artwork must be self-contained: image loading and font-based text are not su
 If a shape is missing or invalid, niri uses the theme's SVG default cursor, then its built-in pointer.
 Set `xcursor-fallback true` to allow XCursor bitmap images as candidates, including for the default cursor.
 With this enabled, theme inheritance takes precedence; within the same inheritance level, SVG takes precedence over XCursor.
+Theme lookup follows `XCURSOR_PATH` when set, otherwise the user and system icon directories, including `$XDG_DATA_HOME/icons`.
+Multiple inherited themes are searched in order; an invalid shape does not hide a usable inherited candidate.
 SVG preparation checks intermediate rendering resources as well as the final canvas; artwork exceeding the safety limits is treated as invalid.
+Theme metadata and artwork must be ordinary files; symlinks to ordinary files are supported.
+Metadata and artwork byte counts and inheritance traversal are bounded; filesystem I/O, parsing, and rendering do not have a hard time limit.
 
 Changing `theme`, `size`, or `xcursor-fallback` reloads cursor resources.
 The fallback setting does not affect client-provided cursor surfaces or the `XCURSOR_*` environment variables.
