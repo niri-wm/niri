@@ -16,8 +16,9 @@ pub struct SpawnShAtStartup {
 
 #[derive(Debug, PartialEq)]
 pub struct Cursor {
-    pub xcursor_theme: String,
-    pub xcursor_size: u8,
+    pub theme: String,
+    pub size: u8,
+    pub xcursor_fallback: bool,
     pub hide_when_typing: bool,
     pub hide_after_inactive_ms: Option<u32>,
 }
@@ -25,8 +26,9 @@ pub struct Cursor {
 impl Default for Cursor {
     fn default() -> Self {
         Self {
-            xcursor_theme: String::from("default"),
-            xcursor_size: 24,
+            theme: String::from("default"),
+            size: 24,
+            xcursor_fallback: false,
             hide_when_typing: false,
             hide_after_inactive_ms: None,
         }
@@ -36,9 +38,11 @@ impl Default for Cursor {
 #[derive(knuffel::Decode, Debug, PartialEq)]
 pub struct CursorPart {
     #[knuffel(child, unwrap(argument))]
-    pub xcursor_theme: Option<String>,
+    pub theme: Option<String>,
     #[knuffel(child, unwrap(argument))]
-    pub xcursor_size: Option<u8>,
+    pub size: Option<u8>,
+    #[knuffel(child, unwrap(argument))]
+    pub xcursor_fallback: Option<bool>,
     #[knuffel(child)]
     pub hide_when_typing: Option<Flag>,
     #[knuffel(child, unwrap(argument))]
@@ -47,7 +51,7 @@ pub struct CursorPart {
 
 impl MergeWith<CursorPart> for Cursor {
     fn merge_with(&mut self, part: &CursorPart) {
-        merge_clone!((self, part), xcursor_theme, xcursor_size);
+        merge_clone!((self, part), theme, size, xcursor_fallback);
         merge!((self, part), hide_when_typing);
         merge_clone_opt!((self, part), hide_after_inactive_ms);
     }

@@ -642,6 +642,60 @@ mod tests {
         assert_eq!(config.input.keyboard.repeat_rate, 25);
     }
 
+    #[test]
+    fn cursor_defaults() {
+        for text in ["", "cursor {}"] {
+            let cursor = Config::parse_mem(text).unwrap().cursor;
+            assert!(!cursor.xcursor_fallback);
+        }
+    }
+
+    #[test]
+    fn cursor_fallback_merges_across_includes() {
+        struct Fixture(std::path::PathBuf);
+        impl Drop for Fixture {
+            fn drop(&mut self) {
+                let _ = fs::remove_dir_all(&self.0);
+            }
+        }
+        let directory = Fixture(std::env::temp_dir().join(format!(
+            "niri-cursor-config-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos(),
+        )));
+        fs::create_dir(&directory.0).unwrap();
+        fs::write(
+            directory.0.join("base.kdl"),
+            r#"
+            cursor {
+                theme "Breeze"
+                size 24
+                xcursor-fallback true
+            }
+        "#,
+        )
+        .unwrap();
+        for (override_body, expected_fallback) in [
+            ("size 32; xcursor-fallback false;", false),
+            ("size 32;", true),
+        ] {
+            let text = format!("include \"base.kdl\"\ncursor {{ {override_body} }}");
+            let config = Config::parse(&directory.0.join("config.kdl"), &text)
+                .config
+                .unwrap();
+            assert_eq!(config.cursor.theme, "Breeze");
+            assert_eq!(config.cursor.size, 32);
+            assert_eq!(config.cursor.xcursor_fallback, expected_fallback);
+        }
+    }
+
+    #[test]
+    fn cursor_rejects_legacy_theme_and_size_nodes() {
+        assert!(Config::parse_mem(r#"cursor { xcursor-theme "Breeze"; }"#).is_err());
+        assert!(Config::parse_mem("cursor { xcursor-size 24; }").is_err());
+    }
+
     #[track_caller]
     fn do_parse(text: &str) -> Config {
         Config::parse_mem(text)
@@ -1285,8 +1339,8 @@ mod tests {
             prefer-no-csd
 
             cursor {
-                xcursor-theme "breeze_cursors"
-                xcursor-size 16
+                theme "breeze_cursors"
+                size 16
                 hide-when-typing
                 hide-after-inactive-ms 3000
             }
@@ -1964,8 +2018,9 @@ mod tests {
             },
             prefer_no_csd: true,
             cursor: Cursor {
-                xcursor_theme: "breeze_cursors",
-                xcursor_size: 16,
+                theme: "breeze_cursors",
+                size: 16,
+                xcursor_fallback: false,
                 hide_when_typing: true,
                 hide_after_inactive_ms: Some(
                     3000,

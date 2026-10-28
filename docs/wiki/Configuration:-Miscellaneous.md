@@ -17,8 +17,8 @@ environment {
 }
 
 cursor {
-    xcursor-theme "breeze_cursors"
-    xcursor-size 48
+    theme "breeze_cursors"
+    size 48
 
     hide-when-typing
     hide-after-inactive-ms 1000
@@ -162,22 +162,31 @@ Change the theme and size of the cursor as well as set the `XCURSOR_THEME` and `
 
 ```kdl
 cursor {
-    xcursor-theme "breeze_cursors"
-    xcursor-size 48
+    theme "breeze_cursors"
+    size 48
+    xcursor-fallback false
 }
 ```
 
 Niri supports SVG cursor themes using KDE's `cursors_scalable` format.
-Select them with `xcursor-theme`, just like XCursor themes; no additional setting is needed.
+Select them with `theme`; SVG loading is automatic and needs no separate enable switch.
 SVG cursors are rasterized at the output's actual scale, including fractional scales, and the results are cached.
 Theme loading and rasterization run in the background; decoded source images and SVG trees are released after preparation.
 SVG, XCursor, and built-in cursor pixels use the same premultiplied BGRA format, avoiding repeated format conversion when copied to compatible hardware cursor planes.
 The configured size is the theme's nominal size, which can differ from the image's canvas dimensions.
 SVG artwork must be self-contained: image loading and font-based text are not supported.
 
-Within the same theme inheritance level, SVG cursors take precedence over XCursor images.
-XCursor images remain available as a fallback for missing or invalid SVG cursors.
-SVG preparation checks intermediate rendering resources as well as the final canvas; artwork exceeding the safety limits also uses this fallback.
+`xcursor-fallback` defaults to `false`: niri only looks for SVG artwork, including aliases and inherited themes.
+If a shape is missing or invalid, niri uses the theme's SVG default cursor, then its built-in pointer.
+Set `xcursor-fallback true` to allow XCursor bitmap images as candidates, including for the default cursor.
+With this enabled, theme inheritance takes precedence; within the same inheritance level, SVG takes precedence over XCursor.
+SVG preparation checks intermediate rendering resources as well as the final canvas; artwork exceeding the safety limits is treated as invalid.
+
+Changing `theme`, `size`, or `xcursor-fallback` reloads cursor resources.
+The fallback setting does not affect client-provided cursor surfaces or the `XCURSOR_*` environment variables.
+
+When migrating an existing configuration, rename `xcursor-theme` to `theme` and `xcursor-size` to `size`; the old names are not accepted.
+Bitmap-only themes require `xcursor-fallback true` to retain their artwork.
 
 These settings apply to cursors drawn by niri, including shapes requested through the cursor-shape protocol.
 Applications that supply their own cursor surfaces control their cursor images themselves.

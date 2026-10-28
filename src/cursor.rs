@@ -33,6 +33,7 @@ type Key = (CursorIcon, u64);
 pub struct CursorManager {
     theme: String,
     size: u8,
+    xcursor_fallback: bool,
     generation: u64,
     current_cursor: CursorImageStatus,
     cache: HashMap<Key, Option<Rc<PreparedCursor>>>,
@@ -45,11 +46,12 @@ pub struct CursorManager {
 }
 
 impl CursorManager {
-    pub fn new(theme: &str, size: u8) -> Self {
+    pub fn new(theme: &str, size: u8, xcursor_fallback: bool) -> Self {
         Self::ensure_env(theme, size);
         Self {
             theme: theme.to_owned(),
             size,
+            xcursor_fallback,
             generation: 0,
             current_cursor: CursorImageStatus::default_named(),
             cache: HashMap::new(),
@@ -93,10 +95,11 @@ impl CursorManager {
         self.requested_icon = None;
     }
 
-    pub fn reload(&mut self, theme: &str, size: u8) {
+    pub fn reload(&mut self, theme: &str, size: u8, xcursor_fallback: bool) {
         Self::ensure_env(theme, size);
         self.theme = theme.to_owned();
         self.size = size;
+        self.xcursor_fallback = xcursor_fallback;
         self.generation = self.generation.wrapping_add(1);
         self.cache.clear();
         self.scaled_fallbacks.clear();
@@ -162,6 +165,7 @@ impl CursorManager {
         mailbox.generation = self.generation;
         mailbox.theme.clone_from(&self.theme);
         mailbox.size = self.size;
+        mailbox.xcursor_fallback = self.xcursor_fallback;
         mailbox.desired.clear();
         let Some(icon) = self.named_icon() else {
             return;
@@ -384,6 +388,7 @@ struct Mailbox {
     generation: u64,
     theme: String,
     size: u8,
+    xcursor_fallback: bool,
     // Authoritative uncached demand: at most two icons per active scale, not a FIFO.
     desired: Vec<Key>,
     // Captured scales stay represented until checked against demand or published.
@@ -483,7 +488,7 @@ fn worker_loop(shared: Arc<Shared>, tx: calloop::channel::Sender<()>) {
     let mut theme = None;
     let mut scales = Vec::new();
     loop {
-        let (request_generation, mut theme_name, size, icon) = {
+        let (request_generation, mut theme_name, size, xcursor_fallback, icon) = {
             let mut mailbox = shared.mailbox.lock().unwrap();
             let icon = loop {
                 if shared.stopped.load(Ordering::Acquire) {
@@ -496,7 +501,13 @@ fn worker_loop(shared: Arc<Shared>, tx: calloop::channel::Sender<()>) {
             };
             let theme_name =
                 (generation != Some(mailbox.generation)).then(|| mailbox.theme.clone());
-            (mailbox.generation, theme_name, mailbox.size, icon)
+            (
+                mailbox.generation,
+                theme_name,
+                mailbox.size,
+                mailbox.xcursor_fallback,
+                icon,
+            )
         };
         let cancelled = || {
             shared.stopped.load(Ordering::Acquire)
@@ -530,8 +541,9 @@ fn worker_loop(shared: Arc<Shared>, tx: calloop::channel::Sender<()>) {
             if cancelled() {
                 break;
             }
-            let candidates =
-                candidates.get_or_insert_with(|| source_candidates(theme.as_ref().unwrap(), icon));
+            let candidates = candidates.get_or_insert_with(|| {
+                source_candidates(theme.as_ref().unwrap(), icon, xcursor_fallback)
+            });
 
             let cursor =
                 match prepare_candidates(candidates, size, f64::from_bits(scale), &cancelled) {
@@ -585,7 +597,11 @@ struct SourceCandidate {
     parsed: Option<Option<CursorSource>>,
 }
 
-fn source_candidates(theme: &CursorTheme, icon: CursorIcon) -> Vec<SourceCandidate> {
+fn source_candidates(
+    theme: &CursorTheme,
+    icon: CursorIcon,
+    xcursor_fallback: bool,
+) -> Vec<SourceCandidate> {
     let mut candidates = Vec::new();
     for (alias, name) in std::iter::once(icon.name())
         .chain(icon.alt_names().iter().copied())
@@ -594,8 +610,10 @@ fn source_candidates(theme: &CursorTheme, icon: CursorIcon) -> Vec<SourceCandida
         if let Some((path, depth)) = theme.load_scalable_with_depth(name) {
             candidates.push((depth, 0, alias, path));
         }
-        if let Some((path, depth)) = theme.load_icon_with_depth(name) {
-            candidates.push((depth, 1, alias, path));
+        if xcursor_fallback {
+            if let Some((path, depth)) = theme.load_icon_with_depth(name) {
+                candidates.push((depth, 1, alias, path));
+            }
         }
     }
     candidates.sort_by_key(|(depth, format, alias, _)| (*depth, *format, *alias));
@@ -1350,6 +1368,192 @@ fn builtin_cursor(factor: f64) -> PreparedCursor {
 mod tests {
     use super::*;
 
+    // Absolute theme and inheritance paths avoid global environment changes and host themes.
+    fn policy_theme() -> PathBuf {
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        let path = env::temp_dir().join(format!(
+            "niri-cursor-policy-{}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos(),
+            NEXT.fetch_add(1, Ordering::Relaxed),
+        ));
+        std::fs::create_dir_all(&path).unwrap();
+        std::fs::write(
+            path.join("index.theme"),
+            format!("[Icon Theme]\nInherits={}\n", path.display()),
+        )
+        .unwrap();
+        path
+    }
+
+    fn write_policy_bitmap(theme: &Path, name: &str) {
+        std::fs::create_dir_all(theme.join("cursors")).unwrap();
+        let mut bytes = b"Xcur".to_vec();
+        for word in [
+            16u32,
+            1,
+            1,
+            0xfffd_0002,
+            24,
+            28,
+            36,
+            0xfffd_0002,
+            24,
+            1,
+            1,
+            1,
+            0,
+            0,
+            0,
+            0xff12_3456,
+        ] {
+            bytes.extend_from_slice(&word.to_le_bytes());
+        }
+        std::fs::write(theme.join("cursors").join(name), bytes).unwrap();
+    }
+
+    fn write_policy_svg(theme: &Path, name: &str, broken: bool) {
+        let path = theme.join("cursors_scalable").join(name);
+        std::fs::create_dir_all(&path).unwrap();
+        std::fs::write(
+            path.join("metadata.json"),
+            r#"[{"filename":"frame.svg","nominal_size":24,"hotspot_x":0,"hotspot_y":0}]"#,
+        )
+        .unwrap();
+        std::fs::write(
+            path.join("frame.svg"),
+            if broken {
+                "not SVG"
+            } else {
+                "<svg xmlns='http://www.w3.org/2000/svg' width='2' height='2'><path fill='red' d='M0 0H2V2H0Z'/></svg>"
+            },
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn bitmap_only_theme_requires_explicit_fallback() {
+        let path = policy_theme();
+        write_policy_bitmap(&path, CursorIcon::Default.name());
+        let theme = CursorTheme::load(path.to_str().unwrap());
+        assert!(source_candidates(&theme, CursorIcon::Default, false).is_empty());
+        let mut candidates = source_candidates(&theme, CursorIcon::Default, true);
+        assert_eq!(candidates.len(), 1);
+        let mut cursor = prepare_candidates(&mut candidates, 24, 1.0, &|| false).unwrap();
+        assert_eq!(frame_pixels(&mut cursor, 0), [0x56, 0x34, 0x12, 0xff]);
+        std::fs::remove_dir_all(path).unwrap();
+    }
+
+    #[test]
+    fn broken_svg_uses_bitmap_only_when_opted_in() {
+        let path = policy_theme();
+        write_policy_svg(&path, CursorIcon::Default.name(), true);
+        write_policy_bitmap(&path, CursorIcon::Default.name());
+        let theme = CursorTheme::load(path.to_str().unwrap());
+        let mut candidates = source_candidates(&theme, CursorIcon::Default, false);
+        assert_eq!(candidates.len(), 1);
+        assert!(candidates[0].scalable);
+        assert!(prepare_candidates(&mut candidates, 24, 1.0, &|| false).is_err());
+        let mut candidates = source_candidates(&theme, CursorIcon::Default, true);
+        assert_eq!(candidates.len(), 2);
+        assert!(candidates[0].scalable);
+        assert!(!candidates[1].scalable);
+        assert!(prepare_candidates(&mut candidates, 24, 1.0, &|| false).is_ok());
+        std::fs::remove_dir_all(path).unwrap();
+    }
+
+    #[test]
+    fn inherited_alias_and_default_bitmap_sources_are_gated_before_lookup() {
+        let path = policy_theme();
+        let inherited = path.join("parent");
+        std::fs::create_dir(&inherited).unwrap();
+        std::fs::write(
+            inherited.join("index.theme"),
+            format!("[Icon Theme]\nInherits={}\n", inherited.display()),
+        )
+        .unwrap();
+        std::fs::write(
+            path.join("index.theme"),
+            format!("[Icon Theme]\nInherits={}\n", inherited.display()),
+        )
+        .unwrap();
+        let alias = CursorIcon::Text.alt_names()[0];
+        write_policy_bitmap(&inherited, alias);
+        write_policy_bitmap(&inherited, CursorIcon::Default.name());
+        write_policy_svg(&inherited, CursorIcon::Default.name(), false);
+        write_policy_bitmap(&path, CursorIcon::Default.name());
+        let theme = CursorTheme::load(path.to_str().unwrap());
+        assert!(source_candidates(&theme, CursorIcon::Text, false).is_empty());
+        let aliases = source_candidates(&theme, CursorIcon::Text, true);
+        assert_eq!(aliases.len(), 1);
+        assert_eq!(aliases[0].path, inherited.join("cursors").join(alias));
+        let defaults = source_candidates(&theme, CursorIcon::Default, false);
+        assert_eq!(defaults.len(), 1);
+        assert!(defaults[0].scalable);
+        let defaults = source_candidates(&theme, CursorIcon::Default, true);
+        // Local bitmap outranks inherited SVG: depth remains ahead of format.
+        assert!(!defaults[0].scalable);
+        assert!(defaults[1].scalable);
+        std::fs::remove_dir_all(path).unwrap();
+    }
+
+    #[test]
+    fn policy_reload_clears_positive_and_negative_cache_and_isolates_generations() {
+        let path = policy_theme();
+        write_policy_bitmap(&path, CursorIcon::Default.name());
+        let theme = CursorTheme::load(path.to_str().unwrap());
+        let (mut manager, shared) = manager_with_mailbox();
+        let key = (CursorIcon::Default, 1.0f64.to_bits());
+        manager.reload(path.to_str().unwrap(), 24, true);
+        manager.prepare([1.0]);
+        let old_generation = manager.generation;
+        let old_policy = shared.mailbox.lock().unwrap().xcursor_fallback;
+        let mut candidates = source_candidates(&theme, key.0, old_policy);
+        let cursor = prepare_candidates(&mut candidates, 24, 1.0, &|| false).unwrap();
+        assert!(shared
+            .mailbox
+            .lock()
+            .unwrap()
+            .publish(old_generation, key, Some(cursor)));
+        assert!(manager.complete());
+        assert!(manager.cache[&key].is_some());
+
+        manager.reload(path.to_str().unwrap(), 24, false);
+        assert!(manager.cache.is_empty());
+        manager.prepare([1.0]);
+        let generation = manager.generation;
+        let mut mailbox = shared.mailbox.lock().unwrap();
+        assert!(!mailbox.xcursor_fallback);
+        assert!(!mailbox.publish(old_generation, key, Some(builtin_cursor(1.0))));
+        assert!(mailbox.publish(generation, key, None));
+        drop(mailbox);
+        manager.complete();
+        assert!(manager.cache[&key].is_none());
+        assert!(source_candidates(&theme, key.0, false).is_empty());
+        assert!(!source_candidates(&theme, key.0, old_policy).is_empty());
+        assert!(Rc::ptr_eq(
+            &named_render(&manager, 1.0),
+            &manager.scaled_fallbacks[&key.1]
+        ));
+
+        manager.reload(path.to_str().unwrap(), 24, true);
+        assert!(manager.cache.is_empty());
+        manager.prepare([1.0]);
+        assert!(shared.mailbox.lock().unwrap().xcursor_fallback);
+        let mut candidates = source_candidates(&theme, key.0, true);
+        let cursor = prepare_candidates(&mut candidates, 24, 1.0, &|| false).unwrap();
+        let mut mailbox = shared.mailbox.lock().unwrap();
+        assert!(!mailbox.publish(generation, key, None));
+        assert!(mailbox.publish(manager.generation, key, Some(cursor)));
+        drop(mailbox);
+        assert!(manager.complete());
+        assert!(manager.cache[&key].is_some());
+        std::fs::remove_dir_all(path).unwrap();
+    }
+
     fn image(width: u32, height: u32, xhot: u32, yhot: u32, delay: u32) -> Image {
         Image {
             size: 24,
@@ -1855,7 +2059,7 @@ mod tests {
 
     fn manager_with_mailbox() -> (CursorManager, Arc<Shared>) {
         let shared = Arc::new(Shared::default());
-        let mut manager = CursorManager::new("", 24);
+        let mut manager = CursorManager::new("", 24, false);
         manager.worker = Some(Worker {
             shared: shared.clone(),
             _handle: thread::spawn(|| {}),
@@ -2207,7 +2411,7 @@ mod tests {
 
         for stop in [false, true] {
             let shared = Arc::new(Shared::default());
-            let mut manager = CursorManager::new("", 24);
+            let mut manager = CursorManager::new("", 24, false);
             manager.worker = Some(Worker {
                 shared: shared.clone(),
                 _handle: thread::spawn(|| {}),
@@ -2242,7 +2446,7 @@ mod tests {
             if stop {
                 drop(manager.worker.take());
             } else {
-                manager.reload("", 24);
+                manager.reload("", 24, false);
             }
             assert_eq!(
                 done_rx.recv_timeout(Duration::from_secs(5)).unwrap(),

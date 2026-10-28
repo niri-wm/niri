@@ -163,7 +163,7 @@ fn cursor_capture_size(niri: &Niri, output: &Output) -> Size<i32, BufferCoords> 
     // buffer, so that the session always has valid constraints.
     if size.is_empty() {
         let fallback =
-            (f64::from(niri.config.borrow().cursor.xcursor_size) * fractional_scale).ceil() as i32;
+            (f64::from(niri.config.borrow().cursor.size) * fractional_scale).ceil() as i32;
         return Size::from((fallback, fallback));
     }
 

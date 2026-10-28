@@ -1753,12 +1753,15 @@ impl State {
         let mut old_config = self.niri.config.borrow_mut();
 
         // Reload the cursor.
-        if config.cursor.xcursor_theme != old_config.cursor.xcursor_theme
-            || config.cursor.xcursor_size != old_config.cursor.xcursor_size
+        if config.cursor.theme != old_config.cursor.theme
+            || config.cursor.size != old_config.cursor.size
+            || config.cursor.xcursor_fallback != old_config.cursor.xcursor_fallback
         {
-            self.niri
-                .cursor_manager
-                .reload(&config.cursor.xcursor_theme, config.cursor.xcursor_size);
+            self.niri.cursor_manager.reload(
+                &config.cursor.theme,
+                config.cursor.size,
+                config.cursor.xcursor_fallback,
+            );
         }
 
         // We need &mut self to reload the xkb config, so just store it here.
@@ -2686,8 +2689,11 @@ impl Niri {
         seat.add_pointer();
 
         let cursor_shape_manager_state = CursorShapeManagerState::new::<State>(&display_handle);
-        let mut cursor_manager =
-            CursorManager::new(&config_.cursor.xcursor_theme, config_.cursor.xcursor_size);
+        let mut cursor_manager = CursorManager::new(
+            &config_.cursor.theme,
+            config_.cursor.size,
+            config_.cursor.xcursor_fallback,
+        );
         cursor_manager.start(event_loop.clone());
 
         let mod_key = backend.mod_key(&config.borrow());
