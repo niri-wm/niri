@@ -2677,8 +2677,7 @@ impl State {
         let mut new_pos = pos + event.delta();
 
         // We received an event for the regular pointer, so show it now.
-        self.niri.pointer_visibility = PointerVisibility::Visible;
-        self.niri.tablet_cursor_location = None;
+        self.show_regular_pointer();
 
         // Check if we have an active pointer constraint.
         //
@@ -2975,11 +2974,8 @@ impl State {
 
         self.niri.maybe_activate_pointer_constraint();
 
-        // We moved the pointer, show it.
-        self.niri.pointer_visibility = PointerVisibility::Visible;
-
         // We moved the regular pointer, so show it now.
-        self.niri.tablet_cursor_location = None;
+        self.show_regular_pointer();
 
         // Inform the layout of an ongoing DnD operation.
         let is_dnd_grab = pointer
@@ -3106,8 +3102,7 @@ impl State {
             }
 
             // We received an event for the regular pointer, so show it now.
-            self.niri.pointer_visibility = PointerVisibility::Visible;
-            self.niri.tablet_cursor_location = None;
+            self.show_regular_pointer();
 
             let is_overview_open = self.niri.layout.is_overview_open();
 
@@ -3366,6 +3361,17 @@ impl State {
         pointer.frame(self);
     }
 
+    fn show_regular_pointer(&mut self) {
+        let changed = !self.niri.pointer_visibility.is_visible()
+            || self.niri.tablet_cursor_location.is_some();
+        self.niri.pointer_visibility = PointerVisibility::Visible;
+        self.niri.tablet_cursor_location = None;
+        // The cursor may have stopped animating while hidden or on another output.
+        if changed {
+            self.niri.queue_redraw_all();
+        }
+    }
+
     fn on_pointer_axis<I: InputBackend>(&mut self, event: I::PointerAxisEvent) {
         self.niri.cancel_interrupted_release_binds();
 
@@ -3378,8 +3384,7 @@ impl State {
         // We received an event for the regular pointer, so show it now. This is also needed for
         // update_pointer_contents() below to return the real contents, necessary for the pointer
         // axis event to reach the window.
-        self.niri.pointer_visibility = PointerVisibility::Visible;
-        self.niri.tablet_cursor_location = None;
+        self.show_regular_pointer();
 
         let timestamp = Duration::from_micros(event.time().micros());
 

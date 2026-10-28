@@ -874,6 +874,9 @@ impl State {
         self.niri.refresh_layout();
 
         self.niri.cursor_manager.check_cursor_image_surface_alive();
+        // Keep named image preparation independent of display visibility: cursor-only capture
+        // and the screenshot UI may explicitly request the image while the pointer is hidden.
+        // Output redraw scheduling below accounts for which consumers actually need animation.
         self.niri.cursor_manager.prepare(
             self.niri
                 .global_space
@@ -4888,6 +4891,55 @@ impl Niri {
         }
     }
 
+    /// Whether this output has a consumer for successive frames of the named cursor image.
+    fn cursor_animation_needed(&self, output: &Output) -> bool {
+        let scale = Scale::from(output.current_scale().fractional_scale());
+        let RenderCursor::Named { cursor } = self
+            .cursor_manager
+            .get_render_cursor(output.current_scale().fractional_scale())
+        else {
+            // Client cursor surfaces drive their own frame callbacks and commits.
+            return false;
+        };
+        if !cursor.is_animated_cursor() {
+            return false;
+        }
+
+        // Cursor-only capture explicitly requests the image, independently of its displayed
+        // position or visibility. An idle session alone does not need successive frames.
+        if self.image_copy_cursor_sessions.iter().any(|session| {
+            session.pending_frame.is_some()
+                && image_copy_capture_impl::source_output(&session.session.source())
+                    .is_some_and(|source| source == *output)
+        }) {
+            return true;
+        }
+
+        // Display, embedded imagecopy, and PipeWire cursors all honor pointer visibility.
+        // Screenshots can explicitly include a hidden image, but take only a single frame.
+        if !self.pointer_visibility.is_visible() {
+            return false;
+        }
+
+        let Some(geometry) = self.global_space.output_geometry(output) else {
+            return false;
+        };
+        let Some(mode) = output.current_mode() else {
+            return false;
+        };
+        let pointer_pos = self
+            .tablet_cursor_location
+            .unwrap_or_else(|| self.seat.get_pointer().unwrap().current_location());
+        let (_, frame) = cursor.frame(self.start_time.elapsed().as_millis() as u32);
+        // Match render_pointer's physical rounding and hotspot, including tablet placement.
+        let pos = (pointer_pos - geometry.loc.to_f64()).to_physical_precise_round(scale)
+            - frame.hotspot();
+        let image = Rectangle::new(pos, cursor.size());
+        let output_rect =
+            Rectangle::from_size(output.current_transform().transform_size(mode.size));
+        image.overlaps(output_rect)
+    }
+
     fn redraw(&mut self, backend: &mut Backend, output: &Output) {
         let _span = tracy_client::span!("Niri::redraw");
 
@@ -4907,6 +4959,7 @@ impl Niri {
 
         let mut res = RenderResult::Skipped;
         if self.monitors_active {
+            let cursor_animation_needed = self.cursor_animation_needed(output);
             let state = self.output_state.get_mut(output).unwrap();
             state.unfinished_animations_remain = self.layout.are_animations_ongoing(Some(output));
             state.unfinished_animations_remain |=
@@ -4916,10 +4969,7 @@ impl Niri {
             state.unfinished_animations_remain |= self.window_mru_ui.are_animations_ongoing();
             state.unfinished_animations_remain |= state.screen_transition.is_some();
 
-            // Also keep redrawing if the current cursor is animated.
-            state.unfinished_animations_remain |= self
-                .cursor_manager
-                .is_current_cursor_animated(output.current_scale().fractional_scale());
+            state.unfinished_animations_remain |= cursor_animation_needed;
 
             // Also check layer surfaces.
             if !state.unfinished_animations_remain {

@@ -7,6 +7,7 @@ mod test_input_backend;
 
 mod animations;
 mod binds;
+mod cursor_animation;
 mod floating;
 mod fullscreen;
 mod layer_shell;
