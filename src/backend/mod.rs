@@ -6,6 +6,7 @@ use niri_config::{Config, ModKey};
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::drm::DrmNode;
 use smithay::backend::renderer::gles::GlesRenderer;
+use smithay::backend::renderer::Renderer;
 use smithay::output::Output;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 
@@ -81,6 +82,19 @@ impl Backend {
             Backend::Tty(tty) => tty.with_primary_renderer(f),
             Backend::Winit(winit) => winit.with_primary_renderer(f),
             Backend::Headless(headless) => headless.with_primary_renderer(f),
+        }
+    }
+
+    pub fn cleanup_texture_cache(&mut self) {
+        match self {
+            Self::Tty(tty) => tty.cleanup_texture_cache(),
+            _ => {
+                self.with_primary_renderer(|renderer| {
+                    if let Err(err) = renderer.cleanup_texture_cache() {
+                        warn!("error cleaning up texture cache: {err:?}");
+                    }
+                });
+            }
         }
     }
 
