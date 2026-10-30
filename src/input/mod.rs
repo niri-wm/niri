@@ -914,7 +914,7 @@ impl State {
                 // released while the session is still usable.
                 self.release_held_inputs();
 
-                self.backend.change_vt(vt);
+                self.backend.change_vt(vt as i32);
             }
             Action::Suspend => {
                 // Suspend may not deliver the key releases, so treat the held binds as
@@ -4896,7 +4896,7 @@ fn find_bind<'a, I: Iterator<Item = &'a Bind> + Clone>(
     #[allow(non_upper_case_globals)] // wat
     let hardcoded_action = match modified.map_or(KEY_NoSymbol, Keysym::raw) {
         modified @ KEY_XF86Switch_VT_1..=KEY_XF86Switch_VT_12 => {
-            let vt = (modified - KEY_XF86Switch_VT_1 + 1) as i32;
+            let vt = (modified - KEY_XF86Switch_VT_1 + 1) as u8;
             Some(Action::ChangeVt(vt))
         }
         KEY_XF86PowerOff if !disable_power_key_handling => Some(Action::Suspend),
