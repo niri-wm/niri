@@ -700,6 +700,7 @@ impl State {
         let layout = &self.niri.layout;
 
         let mut batch_change_layouts: Vec<(u64, WindowLayout)> = Vec::new();
+        let mut tile_pos_change_layouts: Vec<(u64, WindowLayout)> = Vec::new();
 
         // Check for window changes.
         let mut seen = HashSet::new();
@@ -733,7 +734,27 @@ impl State {
             }
 
             if ipc_win.layout != window_layout {
-                batch_change_layouts.push((id, window_layout));
+                let layouts_equal_except_tile_pos = ipc_win.layout.pos_in_scrolling_layout
+                    == window_layout.pos_in_scrolling_layout
+                    && ipc_win.layout.tile_size == window_layout.tile_size
+                    && ipc_win.layout.window_offset_in_tile == window_layout.window_offset_in_tile
+                    && ipc_win.layout.window_size == window_layout.window_size;
+
+                if layouts_equal_except_tile_pos && !mapped.is_floating() {
+                    tile_pos_change_layouts.push((id, window_layout));
+                } else {
+                    if mapped.is_floating() {
+                        batch_change_layouts.push((id, window_layout));
+                    } else {
+                        batch_change_layouts.push((
+                            id,
+                            WindowLayout {
+                                tile_pos_in_workspace_view: None,
+                                ..window_layout
+                            },
+                        ));
+                    }
+                }
             }
 
             if mapped.is_focused() && !ipc_win.is_focused {
@@ -787,6 +808,10 @@ impl State {
             state.apply(event.clone());
             server.send_event(event);
         }
+
+        state.apply(Event::WindowLayoutsChanged {
+            changes: tile_pos_change_layouts,
+        });
     }
 
     pub fn ipc_refresh_overview(&mut self) {
