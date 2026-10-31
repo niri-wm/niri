@@ -1,4 +1,4 @@
-use niri_config::CornerRadius;
+use niri_config::{CornerRadius, DEFAULT_CORNER_RADIUS_EXPONENT};
 use smithay::utils::{Logical, Point, Rectangle, Size};
 
 use super::focus_ring::{FocusRing, FocusRingRenderElement};
@@ -51,8 +51,17 @@ impl InsertHintElement {
         radius: CornerRadius,
         scale: f64,
     ) {
-        self.inner
-            .update_render_elements(size, true, false, false, view_rect, radius, scale, 1.);
+        self.inner.update_render_elements(
+            size,
+            true,
+            false,
+            false,
+            view_rect,
+            radius,
+            DEFAULT_CORNER_RADIUS_EXPONENT,
+            scale,
+            1.,
+        );
     }
 
     pub fn render(
