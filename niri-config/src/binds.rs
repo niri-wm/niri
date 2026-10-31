@@ -238,8 +238,7 @@ pub struct SwitchAction {
 #[derive(knuffel::Decode, Debug, Clone, PartialEq)]
 pub enum Action {
     Quit(#[knuffel(property(name = "skip-confirmation"), default)] bool),
-    #[knuffel(skip)]
-    ChangeVt(i32),
+    ChangeVt(#[knuffel(argument)] u8),
     Suspend,
     PowerOffMonitors,
     PowerOnMonitors,
@@ -538,6 +537,7 @@ impl From<niri_ipc::Action> for Action {
     fn from(value: niri_ipc::Action) -> Self {
         match value {
             niri_ipc::Action::Quit { skip_confirmation } => Self::Quit(skip_confirmation),
+            niri_ipc::Action::ChangeVt { vt } => Self::ChangeVt(vt),
             niri_ipc::Action::PowerOffMonitors {} => Self::PowerOffMonitors,
             niri_ipc::Action::PowerOnMonitors {} => Self::PowerOnMonitors,
             niri_ipc::Action::Spawn { command } => Self::Spawn(command),

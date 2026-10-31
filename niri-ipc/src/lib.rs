@@ -199,6 +199,12 @@ pub enum Action {
         #[cfg_attr(feature = "clap", arg(short, long))]
         skip_confirmation: bool,
     },
+    /// Change the virtual terminal.
+    ChangeVt {
+        /// Virtual terminal to change to.
+        #[cfg_attr(feature = "clap", arg(required = true))]
+        vt: u8,
+    },
     /// Power off all monitors via DPMS.
     PowerOffMonitors {},
     /// Power on all monitors via DPMS.
