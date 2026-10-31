@@ -18,8 +18,8 @@ use niri_config::input::XkbFile;
 use niri_config::output::MaxBpc;
 use niri_config::window_rule::VrrRule;
 use niri_config::{
-    Bind, Config, FloatOrInt, Key, Modifiers, OutputName, TrackLayout, WarpMouseToFocusMode,
-    WorkspaceReference, Xkb,
+    Bind, Config, FloatOrInt, Key, Modifiers, OutputName, OutputReference, TrackLayout,
+    WarpMouseToFocusMode, WorkspaceReference, Xkb,
 };
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::input::{InputTime, Keycode};
@@ -152,6 +152,7 @@ use crate::input::{
 use crate::ipc::server::IpcServer;
 use crate::layer::mapped::LayerSurfaceRenderElement;
 use crate::layer::MappedLayer;
+use crate::layout::monitor::Monitor;
 use crate::layout::tile::TileRenderElement;
 use crate::layout::workspace::{Workspace, WorkspaceId};
 use crate::layout::{
@@ -7254,6 +7255,43 @@ impl Niri {
     pub fn queue_redraw_mru_output(&mut self) {
         if let Some(output) = self.window_mru_ui.output().cloned() {
             self.queue_redraw(&output);
+        }
+    }
+
+    pub fn switch_workspace_down(&mut self, output_ref: OutputReference) {
+        if let Some(monitor) = self.monitor_mut(output_ref) {
+            monitor.switch_workspace_down()
+        }
+    }
+
+    pub fn switch_workspace_up(&mut self, output_ref: OutputReference) {
+        if let Some(monitor) = self.monitor_mut(output_ref) {
+            monitor.switch_workspace_up()
+        }
+    }
+
+    pub fn move_workspace_down(&mut self, output_ref: OutputReference) {
+        if let Some(monitor) = self.monitor_mut(output_ref) {
+            monitor.move_workspace_down()
+        }
+    }
+
+    pub fn move_workspace_up(&mut self, output_ref: OutputReference) {
+        if let Some(monitor) = self.monitor_mut(output_ref) {
+            monitor.move_workspace_up()
+        }
+    }
+
+    pub fn monitor_mut(&mut self, output_ref: OutputReference) -> Option<&mut Monitor<Mapped>> {
+        match output_ref {
+            OutputReference::Active => self.layout.active_monitor(),
+            OutputReference::UnderCursor => self
+                .output_under_cursor()
+                .and_then(|output| self.layout.monitor_for_output_mut(&output)),
+            OutputReference::OutputName(name) => self
+                .output_by_name_match(&name)
+                .cloned()
+                .and_then(|output| self.layout.monitor_for_output_mut(&output)),
         }
     }
 }
