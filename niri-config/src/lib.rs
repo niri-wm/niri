@@ -1655,6 +1655,7 @@ mod tests {
                 [
                     Output {
                         off: false,
+                        create_virtual: false,
                         name: "eDP-1",
                         scale: Some(
                             FloatOrInt(
@@ -1714,6 +1715,7 @@ mod tests {
                     },
                     Output {
                         off: false,
+                        create_virtual: false,
                         name: "eDP-2",
                         scale: None,
                         transform: Normal,
@@ -1741,6 +1743,7 @@ mod tests {
                     },
                     Output {
                         off: false,
+                        create_virtual: false,
                         name: "eDP-3",
                         scale: None,
                         transform: Normal,
