@@ -2716,6 +2716,7 @@ impl Niri {
                 Timer::from_duration(Duration::from_secs(1)),
                 |_, _, state| {
                     state.niri.send_frame_callbacks_on_fallback_timer();
+                    state.backend.cleanup_texture_cache();
                     TimeoutAction::ToDuration(Duration::from_secs(1))
                 },
             )
