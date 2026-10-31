@@ -2511,12 +2511,12 @@ impl State {
             Action::StopCast(session_id) => {
                 self.niri.stop_cast(CastSessionId::from(session_id));
             }
-            Action::ToggleOverview => {
-                self.niri.layout.toggle_overview();
+            Action::ToggleOverview(all_outputs) => {
+                self.niri.layout.toggle_overview(all_outputs);
                 self.niri.queue_redraw_all();
             }
-            Action::OpenOverview => {
-                if self.niri.layout.open_overview() {
+            Action::OpenOverview(all_outputs) => {
+                if self.niri.layout.open_overview(all_outputs) {
                     self.niri.queue_redraw_all();
                 }
             }
@@ -2877,7 +2877,7 @@ impl State {
                     .with_grab(|_, grab| grab_allows_hot_corner(grab))
                     .unwrap_or(true)
             {
-                self.niri.layout.toggle_overview();
+                self.niri.layout.toggle_overview(true);
             }
             self.niri.pointer_inside_hot_corner = true;
         }
@@ -2968,7 +2968,7 @@ impl State {
                     .with_grab(|_, grab| grab_allows_hot_corner(grab))
                     .unwrap_or(true)
             {
-                self.niri.layout.toggle_overview();
+                self.niri.layout.toggle_overview(true);
             }
             self.niri.pointer_inside_hot_corner = true;
         }
@@ -5277,7 +5277,7 @@ fn hardcoded_overview_bind(key: Keysym, mods: Modifiers) -> Option<Bind> {
     let action = match key {
         Keysym::Escape | Keysym::Return => {
             repeat = false;
-            Action::ToggleOverview
+            Action::ToggleOverview(true)
         }
         Keysym::Left => Action::FocusColumnLeft,
         Keysym::Right => Action::FocusColumnRight,
