@@ -1,11 +1,14 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::env;
-use std::fs::File;
+use std::fs::{self, File};
 use std::io::Read;
 use std::rc::Rc;
 
-use anyhow::{anyhow, Context};
+use anyhow::{anyhow, bail, Context};
+use librsvg_rebind::prelude::HandleExt;
+use pangocairo::cairo::{self, ImageSurface};
+use serde::Deserialize;
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::element::memory::MemoryRenderBuffer;
 use smithay::input::pointer::{CursorIcon, CursorImageStatus, CursorImageSurfaceData};
@@ -22,13 +25,13 @@ type XCursorCache = HashMap<(CursorIcon, i32), Option<Rc<XCursor>>>;
 
 pub struct CursorManager {
     theme: CursorTheme,
-    size: u8,
+    size: u16,
     current_cursor: CursorImageStatus,
     named_cursor_cache: RefCell<XCursorCache>,
 }
 
 impl CursorManager {
-    pub fn new(theme: &str, size: u8) -> Self {
+    pub fn new(theme: &str, size: u16) -> Self {
         Self::ensure_env(theme, size);
 
         let theme = CursorTheme::load(theme);
@@ -42,7 +45,7 @@ impl CursorManager {
     }
 
     /// Reload the cursor theme.
-    pub fn reload(&mut self, theme: &str, size: u8) {
+    pub fn reload(&mut self, theme: &str, size: u16) {
         Self::ensure_env(theme, size);
         self.theme = CursorTheme::load(theme);
         self.size = size;
@@ -111,12 +114,12 @@ impl CursorManager {
             .entry((icon, scale))
             .or_insert_with_key(|(icon, scale)| {
                 let size = self.size as i32 * scale;
-                let mut cursor = Self::load_xcursor(&self.theme, icon.name(), size);
+                let mut cursor = Self::load_cursor(&self.theme, icon.name(), size);
 
                 // Check alternative names to account for non-compliant themes.
                 if cursor.is_err() {
                     for name in icon.alt_names() {
-                        cursor = Self::load_xcursor(&self.theme, name, size);
+                        cursor = Self::load_cursor(&self.theme, name, size);
                         if cursor.is_ok() {
                             break;
                         }
@@ -135,6 +138,13 @@ impl CursorManager {
                 cursor.ok().map(Rc::new)
             })
             .clone()
+    }
+
+    fn load_cursor(theme: &CursorTheme, name: &str, size: i32) -> anyhow::Result<XCursor> {
+        Self::load_svg_cursor(theme, name, size).or_else(|e| {
+            debug!("failed to load svg cursor: {:?}", e);
+            Self::load_xcursor(theme, name, size)
+        })
     }
 
     /// Get default cursor.
@@ -186,8 +196,55 @@ impl CursorManager {
         })
     }
 
+    /// Load the scalable cursor with the given `name` from the file system, scaling to the given
+    /// `size`.
+    fn load_svg_cursor(theme: &CursorTheme, name: &str, size: i32) -> anyhow::Result<XCursor> {
+        let _span = tracy_client::span!("load_svg_cursor");
+
+        // See https://planet.kde.org/vlad-zahorodnii-2024-10-06-svg-cursors-everything-that-you-need-to-know-about-them
+        let Some(dir) = theme.load_scalable(name) else {
+            bail!("no cursor theme with name {} found", name);
+        };
+        let metadata = fs::read(dir.join("metadata.json"))?;
+        let metas: Vec<SvgCursorMeta> = match serde_json::from_slice(&metadata) {
+            Ok(metas) => metas,
+            Err(e) => {
+                warn!("error parsing SVG cursor metadata in {dir:?}: {e:?}");
+                return Err(e.into());
+            }
+        };
+
+        let mut images = Vec::with_capacity(metas.len());
+        for meta in &metas {
+            if meta.nominal_size <= 0. {
+                bail!(
+                    "invalid nominal_size {} for file {}",
+                    meta.nominal_size,
+                    meta.filename
+                );
+            }
+
+            let svg_path = dir.join(&meta.filename);
+            if let Some(p) = svg_path.to_str() {
+                images.push(rasterize_svg(p, meta, size)?);
+            } else {
+                bail!("failed to get svg path {:?}", svg_path);
+            }
+        }
+
+        if images.is_empty() {
+            bail!("no image found for cursor theme {}", name);
+        }
+
+        let animation_duration = images.iter().fold(0, |acc, image| acc + image.delay);
+        Ok(XCursor {
+            images,
+            animation_duration,
+        })
+    }
+
     /// Set the common XCURSOR env variables.
-    fn ensure_env(theme: &str, size: u8) {
+    fn ensure_env(theme: &str, size: u16) {
         env::set_var("XCURSOR_THEME", theme);
         env::set_var("XCURSOR_SIZE", size.to_string());
     }
@@ -209,6 +266,52 @@ impl CursorManager {
             animation_duration: 0,
         }
     }
+}
+
+// See https://invent.kde.org/plasma/breeze/-/blob/master/cursors/svg-cursor-format.schema.json
+#[derive(Debug, Clone, Deserialize)]
+struct SvgCursorMeta {
+    filename: String,
+    nominal_size: f64,
+    hotspot_x: f64,
+    hotspot_y: f64,
+    #[serde(default)]
+    delay: u32,
+}
+
+fn rasterize_svg(path: &str, meta: &SvgCursorMeta, size: i32) -> anyhow::Result<Image> {
+    let handle = librsvg_rebind::Handle::from_file(path)?
+        .ok_or_else(|| anyhow!("failed to get handle from file {}", path))?;
+    let Some((svg_width, svg_height)) = handle.intrinsic_size_in_pixels() else {
+        bail!("cursor has no intrinsic size");
+    };
+    let factor = size as f64 / meta.nominal_size;
+    let width = ((svg_width * factor).ceil() as u32).max(1);
+    let height = ((svg_height * factor).ceil() as u32).max(1);
+    let surface = ImageSurface::create(cairo::Format::ARgb32, width as i32, height as i32)?;
+    let cr = cairo::Context::new(&surface)?;
+    let viewport = librsvg_rebind::Rectangle::new(0., 0., width as f64, height as f64);
+    handle.render_document(&cr, &viewport)?;
+
+    let stride = surface.stride();
+    let row_len = width as usize * 4;
+    let mut pixels = Vec::with_capacity(row_len * height as usize);
+    surface.with_data(|data| {
+        for row in data.chunks_exact(stride as usize).take(height as usize) {
+            pixels.extend_from_slice(&row[..row_len]);
+        }
+    })?;
+
+    Ok(Image {
+        size: size as u32,
+        width,
+        height,
+        xhot: (meta.hotspot_x * factor).round().clamp(0., width as f64) as u32,
+        yhot: (meta.hotspot_y * factor).round().clamp(0., height as f64) as u32,
+        delay: meta.delay,
+        pixels_rgba: pixels,
+        pixels_argb: Vec::new(),
+    })
 }
 
 /// The cursor prepared for renderer.
