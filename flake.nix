@@ -2,7 +2,7 @@
 {
   description = "Niri: A scrollable-tiling Wayland compositor.";
 
-  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+  inputs.nixpkgs.url = "https://channels.nixos.org/nixpkgs-unstable/nixexprs.tar.zst";
 
   outputs =
     {
@@ -29,13 +29,14 @@
           systemd,
           wayland,
           installShellFiles,
+          copyDesktopItems,
           withDbus ? true,
           withSystemd ? true,
           withScreencastSupport ? true,
           withDinit ? false,
         }:
 
-        rustPlatform.buildRustPackage {
+        rustPlatform.buildRustPackage (finalAttrs: {
           pname = "niri";
           version = revision;
 
@@ -71,6 +72,7 @@
             rustPlatform.bindgenHook
             pkg-config
             installShellFiles
+            copyDesktopItems
           ];
 
           buildInputs =
@@ -123,11 +125,15 @@
 
               install -Dm644 resources/niri.desktop -t $out/share/wayland-sessions
               install -Dm644 resources/niri-portals.conf -t $out/share/xdg-desktop-portal
+              install -Dm644 resources/niri.png -t $out/share/icons/hicolor/256x256/apps
+              install -Dm644 resources/niri.svg -t $out/share/icons/hicolor/scalable/apps
             ''
             + lib.optionalString withSystemd ''
               install -Dm755 resources/niri-session $out/bin/niri-session
               install -Dm644 resources/niri{.service,-shutdown.target} -t $out/lib/systemd/user
             '';
+
+          desktopItems = [ "${finalAttrs.src}/resources/rs.bxt.niri.desktop" ];
 
           env = {
             # Force linking with libEGL and libwayland-client so they end up in RPATH and
@@ -154,7 +160,7 @@
             mainProgram = "niri";
             platforms = lib.platforms.linux;
           };
-        };
+        });
 
       inherit (nixpkgs) lib;
       # Support all Linux systems that the nixpkgs flake exposes
