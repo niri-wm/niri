@@ -1454,7 +1454,7 @@ pub enum OutputConfigChanged {
 }
 
 /// A workspace.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct Workspace {
     /// Unique id of this workspace.
@@ -1492,6 +1492,15 @@ pub struct Workspace {
     pub is_focused: bool,
     /// Id of the active window on this workspace, if any.
     pub active_window_id: Option<u64>,
+    /// Horizontal scroll position of the workspace's scrolling layout, in logical pixels.
+    ///
+    /// This is the x coordinate, within the scrolling layout's coordinate space, of the left edge
+    /// of the workspace view. The leftmost edge of column 1 is at x = 0; gaps between columns
+    /// count toward the offset. The value reflects the resting view position: it updates on
+    /// logical navigation steps (e.g. focus changes) rather than per animation frame, and it
+    /// stays unchanged while a touchpad view gesture is in progress, updating once the gesture
+    /// settles.
+    pub scrolling_view_pos: f64,
 }
 
 /// Configured keyboard layouts.
@@ -1661,6 +1670,17 @@ pub enum Event {
         workspace_id: u64,
         /// Id of the new active window, if any.
         active_window_id: Option<u64>,
+    },
+    /// The horizontal scroll position of a workspace's scrolling layout changed.
+    ///
+    /// This is emitted when the resting view position changes — e.g. on focus moves between
+    /// columns, or after a touchpad swipe settles. Per-animation-frame interpolation and
+    /// in-progress gesture motion are not reported, to avoid IPC spam.
+    WorkspaceViewPosChanged {
+        /// Id of the workspace whose view position changed.
+        workspace_id: u64,
+        /// The new horizontal scroll position; see [`Workspace::scrolling_view_pos`].
+        view_pos: f64,
     },
     /// The window configuration has changed.
     WindowsChanged {

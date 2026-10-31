@@ -2328,6 +2328,11 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         self.column_x(self.active_column_idx) + self.view_offset.target()
     }
 
+    /// Returns the view position unaffected by in-progress animations or gestures.
+    pub fn stationary_view_pos(&self) -> f64 {
+        self.column_x(self.active_column_idx) + self.view_offset.stationary()
+    }
+
     // HACK: pass a self.data iterator in manually as a workaround for the lack of method partial
     // borrowing. Note that this method's return value does not borrow the entire &Self!
     fn column_xs(&self, data: impl Iterator<Item = ColumnData>) -> impl Iterator<Item = f64> {

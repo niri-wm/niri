@@ -175,6 +175,14 @@ impl EventStreamStatePart for WorkspacesState {
                 let ws = ws.expect("changed workspace was missing from the map");
                 ws.active_window_id = active_window_id;
             }
+            Event::WorkspaceViewPosChanged {
+                workspace_id,
+                view_pos,
+            } => {
+                let ws = self.workspaces.get_mut(&workspace_id);
+                let ws = ws.expect("changed workspace was missing from the map");
+                ws.scrolling_view_pos = view_pos;
+            }
             event => return Some(event),
         }
         None
