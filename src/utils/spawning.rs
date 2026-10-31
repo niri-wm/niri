@@ -1,11 +1,14 @@
 use std::ffi::OsStr;
+use std::io::{self, Read};
+use std::os::fd::{AsFd, AsRawFd};
 use std::os::unix::process::CommandExt;
 use std::path::Path;
-use std::process::{Child, Command, Stdio};
+use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::RwLock;
-use std::{io, thread};
+use std::thread;
 
+use anyhow::Context;
 use atomic::Atomic;
 use libc::{getrlimit, rlim_t, rlimit, setrlimit, RLIMIT_NOFILE};
 use niri_config::Environment;
@@ -20,6 +23,64 @@ pub static CHILD_DISPLAY: RwLock<Option<String>> = RwLock::new(None);
 
 static ORIGINAL_NOFILE_RLIMIT_CUR: Atomic<rlim_t> = Atomic::new(0);
 static ORIGINAL_NOFILE_RLIMIT_MAX: Atomic<rlim_t> = Atomic::new(0);
+
+type Message = (Vec<String>, Option<XdgActivationToken>);
+pub struct Spawner(async_channel::Sender<Message>);
+
+impl Spawner {
+    pub fn new() -> Spawner {
+        let (sender, receiver) = async_channel::unbounded::<Message>();
+        thread::Builder::new()
+            .name("Command Spawner".to_owned())
+            .spawn(move || {
+                let ex = async_executor::LocalExecutor::new();
+                async_io::block_on(ex.run(async {
+                    #[cfg(feature = "systemd")]
+                    let mut spawnserver = systemd::prepare_spawnserver();
+                    while let Ok((command, token)) = receiver.recv().await {
+                        let Some((command, args)) = command.split_first() else {
+                            continue;
+                        };
+                        let spawnee = spawnee(command, args, token);
+                        #[cfg(feature = "systemd")]
+                        {
+                            let server = spawnserver.take().or_else(systemd::prepare_spawnserver);
+                            if let Some(server) = server {
+                                ex.spawn(systemd::spawn_in_spawnserver(server, spawnee))
+                                    .detach();
+                                spawnserver = systemd::prepare_spawnserver();
+                                continue;
+                            }
+                        }
+                        spawn_cmd(spawnee);
+                    }
+                }));
+            })
+            .unwrap();
+        Self(sender)
+    }
+
+    /// Spawns the command to run independently of the compositor.
+    pub fn spawn(&self, command: Vec<String>, token: Option<XdgActivationToken>) {
+        let _span = tracy_client::span!();
+        if command.is_empty() {
+            return;
+        }
+        if let Err(err) = self.0.send_blocking((command, token)) {
+            warn!("error sending command to the spawning thread: {err:?}");
+        };
+    }
+
+    /// Spawns the command through the shell.
+    ///
+    /// We hardcode `sh -c`, consistent with other compositors:
+    ///
+    /// - https://github.com/swaywm/sway/blob/b3dcde8d69c3f1304b076968a7a64f54d0c958be/sway/commands/exec_always.c#L64
+    /// - https://github.com/hyprwm/Hyprland/blob/1ac1ff457ab8ef1ae6a8f2ab17ee7965adfa729f/src/managers/KeybindManager.cpp#L987
+    pub fn spawn_sh(&self, command: String, token: Option<XdgActivationToken>) {
+        self.spawn(vec![String::from("sh"), String::from("-c"), command], token);
+    }
+}
 
 /// Increases the nofile rlimit to the maximum and stores the original value.
 pub fn store_and_increase_nofile_rlimit() {
@@ -62,42 +123,17 @@ pub fn restore_nofile_rlimit() {
     unsafe { setrlimit(RLIMIT_NOFILE, &rlim) };
 }
 
-/// Spawns the command to run independently of the compositor.
-pub fn spawn<T: AsRef<OsStr> + Send + 'static>(command: Vec<T>, token: Option<XdgActivationToken>) {
-    let _span = tracy_client::span!();
-
-    if command.is_empty() {
-        return;
-    }
-
-    // Spawning and waiting takes some milliseconds, so do it in a thread.
-    let res = thread::Builder::new()
-        .name("Command Spawner".to_owned())
-        .spawn(move || {
-            let (command, args) = command.split_first().unwrap();
-            spawn_sync(command, args, token);
-        });
-
-    if let Err(err) = res {
-        warn!("error spawning a thread to spawn the command: {err:?}");
+fn spawn_cmd(mut command: async_process::Command) {
+    if let Err(err) = command.spawn() {
+        warn!("error spawning {command:?}: {err:?}");
     }
 }
 
-/// Spawns the command through the shell.
-///
-/// We hardcode `sh -c`, consistent with other compositors:
-///
-/// - https://github.com/swaywm/sway/blob/b3dcde8d69c3f1304b076968a7a64f54d0c958be/sway/commands/exec_always.c#L64
-/// - https://github.com/hyprwm/Hyprland/blob/1ac1ff457ab8ef1ae6a8f2ab17ee7965adfa729f/src/managers/KeybindManager.cpp#L987
-pub fn spawn_sh(command: String, token: Option<XdgActivationToken>) {
-    spawn(vec![String::from("sh"), String::from("-c"), command], token);
-}
-
-fn spawn_sync(
+fn spawnee(
     command: impl AsRef<OsStr>,
     args: impl IntoIterator<Item = impl AsRef<OsStr>>,
     token: Option<XdgActivationToken>,
-) {
+) -> async_process::Command {
     let _span = tracy_client::span!();
 
     let mut command = command.as_ref();
@@ -113,11 +149,7 @@ fn spawn_sync(
     }
 
     let mut process = Command::new(command);
-    process
-        .args(args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
+    process.args(args);
 
     // Remove RUST_BACKTRACE and RUST_LIB_BACKTRACE from the environment if needed.
     if REMOVE_ENV_RUST_BACKTRACE.load(Ordering::Relaxed) {
@@ -154,284 +186,94 @@ fn spawn_sync(
         process.env("DESKTOP_STARTUP_ID", token.as_str());
     }
 
-    unsafe { process.pre_exec(crate::utils::signals::unblock_all) };
+    spawnee_restore_state(&mut process);
 
-    let Some(mut child) = do_spawn(command, process) else {
-        return;
-    };
+    let mut process = async_process::Command::from(process);
 
-    match child.wait() {
-        Ok(status) => {
-            if !status.success() {
-                warn!("child did not exit successfully: {status:?}");
-            }
-        }
-        Err(err) => {
-            warn!("error waiting for child: {err:?}");
-        }
-    }
+    process
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    process
 }
 
-#[cfg(not(feature = "systemd"))]
-fn do_spawn(command: &OsStr, mut process: Command) -> Option<Child> {
+fn spawnee_restore_state(cmd: &mut std::process::Command) {
     unsafe {
-        // Double-fork to avoid having to waitpid the child.
-        process.pre_exec(move || {
-            match libc::fork() {
-                -1 => return Err(io::Error::last_os_error()),
-                0 => (),
-                _ => libc::_exit(0),
-            }
-
+        cmd.pre_exec(|| {
             restore_nofile_rlimit();
-
-            Ok(())
+            crate::utils::signals::unblock_all()
         });
     }
+}
 
-    let child = match process.spawn() {
-        Ok(child) => child,
+pub fn spawnserver() -> Result<(), anyhow::Error> {
+    #[cfg(feature = "systemd")]
+    let could_prepare_scope = match systemd::scope_self(OsStr::new("spawnserver")) {
+        Ok(()) => true,
         Err(err) => {
-            warn!("error spawning {command:?}: {err:?}");
-            return None;
+            eprintln!("spawnserver could not put itself into scope: {err:?}");
+            false
         }
     };
 
-    Some(child)
-}
+    let mut buf = Vec::new();
+    io::stdin()
+        .lock()
+        .read_to_end(&mut buf)
+        .context("could not read the command to spawn")?;
+    let Some((args, buf)) = buf.split_first_chunk() else {
+        std::process::exit(0)
+    };
+    let argc = usize::from_ne_bytes(*args);
+    let mut bufi = buf
+        .split(|b| *b == 0)
+        .map(|b| unsafe { OsStr::from_encoded_bytes_unchecked(b) });
+    let Some(program) = bufi.next() else {
+        return Ok(());
+    };
+    let mut command = Command::new(program);
+    for _ in 0..argc {
+        let arg = bufi
+            .next()
+            .ok_or_else(|| anyhow::anyhow!("malformed command"))?;
+        command.arg(arg);
+    }
+    command.env_clear();
+    while let (Some(k), Some(v)) = (bufi.next(), bufi.next()) {
+        command.env(k, v);
+    }
 
-#[cfg(feature = "systemd")]
-use systemd::do_spawn;
+    #[cfg(feature = "systemd")]
+    if !could_prepare_scope {
+        if let Err(err) = systemd::scope_self(program) {
+            eprintln!("spawnserver could not put itself into scope on 2nd attempt either: {err:?}");
+        }
+    }
+
+    command.stdin(Stdio::null());
+    command.stdout(Stdio::null());
+    // SUBTLE: The following will close `stderr` descriptor before the exec, so we make a CLOEXEC
+    // copy of it and will restore stderr if exec fails so we can print out the error.
+    command.stderr(Stdio::null());
+    let stderr = io::stderr().as_fd().try_clone_to_owned()?;
+    let exec_err = Err(command.exec()).context(format!("could not spawn {program:?}"));
+    unsafe { libc::dup2(stderr.as_raw_fd(), io::stderr().as_raw_fd()) };
+    exec_err
+}
 
 #[cfg(feature = "systemd")]
 mod systemd {
-    use std::os::fd::{AsFd, AsRawFd, FromRawFd, OwnedFd};
+    use std::fmt::Write as _;
+    use std::os::unix::ffi::OsStrExt;
 
-    use smithay::reexports::rustix;
-    use smithay::reexports::rustix::io::{close, read, retry_on_intr, write};
-    use smithay::reexports::rustix::pipe::{pipe_with, PipeFlags};
+    use anyhow::Context;
+    use futures_util::{AsyncReadExt, AsyncWriteExt, StreamExt};
 
     use super::*;
 
-    pub fn do_spawn(command: &OsStr, mut process: Command) -> Option<Child> {
-        #[cfg(target_env = "gnu")]
-        use libc::close_range;
-        #[cfg(target_os = "openbsd")]
-        use libc::closefrom;
-
-        #[cfg(not(target_env = "gnu"))] // musl
-        pub fn close_range(
-            first: libc::c_uint,
-            last: libc::c_uint,
-            flags: libc::c_uint,
-        ) -> libc::c_long {
-            unsafe {
-                libc::syscall(
-                    libc::SYS_close_range,
-                    first as usize,
-                    last as usize,
-                    flags as usize,
-                )
-            }
-        }
-
-        // When running as a systemd session, we want to put children into their own transient
-        // scopes in order to separate them from the niri process. This is helpful for
-        // example to prevent the OOM killer from taking down niri together with a
-        // misbehaving client.
-        //
-        // Putting a child into a scope is done by calling systemd's StartTransientUnit D-Bus method
-        // with a PID. Unfortunately, there seems to be a race in systemd where if the child exits
-        // at just the right time, the transient unit will be created but empty, so it will
-        // linger around forever.
-        //
-        // To prevent this, we'll use our double-fork (done for a separate reason) to help. In our
-        // intermediate child we will send back the grandchild PID, and in niri we will create a
-        // transient scope with both our intermediate child and the grandchild PIDs set. Only then
-        // we will signal our intermediate child to exit. This way, even if the grandchild
-        // exits quickly, a non-empty scope will be created (with just our intermediate
-        // child), then cleaned up when our intermediate child exits.
-
-        // Make a pipe to receive the grandchild PID.
-
-        let (pipe_pid_read, pipe_pid_write) = pipe_with(PipeFlags::CLOEXEC)
-            .map_err(|err| {
-                warn!("error creating a pipe to transfer child PID: {err:?}");
-            })
-            .ok()
-            .unzip();
-        // Make a pipe to wait in the intermediate child.
-        let (pipe_wait_read, pipe_wait_write) = pipe_with(PipeFlags::CLOEXEC)
-            .map_err(|err| {
-                warn!("error creating a pipe for child to wait on: {err:?}");
-            })
-            .ok()
-            .unzip();
-
-        unsafe {
-            // The fds will be duplicated after a fork and closed on exec or exit automatically. Get
-            // the raw fd inside so that it's not closed any extra times.
-            let mut pipe_pid_read_fd = pipe_pid_read.as_ref().map(|fd| fd.as_raw_fd());
-            let mut pipe_pid_write_fd = pipe_pid_write.as_ref().map(|fd| fd.as_raw_fd());
-            let mut pipe_wait_read_fd = pipe_wait_read.as_ref().map(|fd| fd.as_raw_fd());
-            let mut pipe_wait_write_fd = pipe_wait_write.as_ref().map(|fd| fd.as_raw_fd());
-
-            // Double-fork to avoid having to waitpid the child.
-            process.pre_exec(move || {
-                // Close FDs that we don't need. Especially important for the write ones to unblock
-                // the readers.
-                if let Some(fd) = pipe_pid_read_fd.take() {
-                    close(fd);
-                }
-                if let Some(fd) = pipe_wait_write_fd.take() {
-                    close(fd);
-                }
-
-                // Convert the FDs to OwnedFd, which will close them in all of our fork paths.
-                let pipe_pid_write = pipe_pid_write_fd.take().map(|fd| OwnedFd::from_raw_fd(fd));
-                let pipe_wait_read = pipe_wait_read_fd.take().map(|fd| OwnedFd::from_raw_fd(fd));
-
-                match libc::fork() {
-                    -1 => return Err(io::Error::last_os_error()),
-                    0 => (),
-                    grandchild_pid => {
-                        // Send back the PID.
-                        if let Some(pipe) = pipe_pid_write {
-                            let _ = write_all(pipe, &grandchild_pid.to_ne_bytes());
-                        }
-
-                        // Wait until the parent signals us to exit.
-                        if let Some(pipe) = pipe_wait_read {
-                            // We're going to exit afterwards. Close all other FDs to allow
-                            // Command::spawn() to return in the parent process.
-                            #[cfg(not(target_os = "openbsd"))]
-                            {
-                                let raw = pipe.as_raw_fd() as u32;
-                                let _ = close_range(0, raw - 1, 0);
-                                let _ = close_range(raw + 1, !0, 0);
-                            }
-                            #[cfg(target_os = "openbsd")]
-                            {
-                                let raw = pipe.as_raw_fd();
-                                for fd in 0..raw {
-                                    close(fd);
-                                }
-                                closefrom(raw + 1);
-                            }
-
-                            let _ = read_all(pipe, &mut [0]);
-                        }
-
-                        libc::_exit(0)
-                    }
-                }
-
-                restore_nofile_rlimit();
-
-                Ok(())
-            });
-        }
-
-        let child = match process.spawn() {
-            Ok(child) => child,
-            Err(err) => {
-                warn!("error spawning {command:?}: {err:?}");
-                return None;
-            }
-        };
-
-        drop(pipe_pid_write);
-        drop(pipe_wait_read);
-
-        // Wait for the grandchild PID.
-        if let Some(pipe) = pipe_pid_read {
-            let mut buf = [0; 4];
-            match read_all(pipe, &mut buf) {
-                Ok(()) => {
-                    let pid = i32::from_ne_bytes(buf);
-                    trace!("spawned PID: {pid}");
-
-                    // Start a systemd scope for the grandchild.
-                    if let Err(err) = start_systemd_scope(command, child.id(), pid as u32) {
-                        trace!("error starting systemd scope for spawned command: {err:?}");
-                    }
-                }
-                Err(err) => {
-                    warn!("error reading child PID: {err:?}");
-                }
-            }
-        }
-
-        // Signal the intermediate child to exit now that we're done trying to creating a systemd
-        // scope.
-        trace!("signaling child to exit");
-        drop(pipe_wait_write);
-
-        Some(child)
-    }
-
-    fn write_all(fd: impl AsFd, buf: &[u8]) -> rustix::io::Result<()> {
-        let mut written = 0;
-        loop {
-            let n = retry_on_intr(|| write(&fd, &buf[written..]))?;
-            if n == 0 {
-                return Err(rustix::io::Errno::CANCELED);
-            }
-
-            written += n;
-            if written == buf.len() {
-                return Ok(());
-            }
-        }
-    }
-
-    fn read_all(fd: impl AsFd, buf: &mut [u8]) -> rustix::io::Result<()> {
-        let mut start = 0;
-        loop {
-            let n = retry_on_intr(|| read(&fd, &mut buf[start..]))?;
-            if n == 0 {
-                return Err(rustix::io::Errno::CANCELED);
-            }
-
-            start += n;
-            if start == buf.len() {
-                return Ok(());
-            }
-        }
-    }
-
-    /// Puts a (newly spawned) pid into a transient systemd scope.
-    ///
-    /// This separates the pid from the compositor scope, which for example prevents the OOM killer
-    /// from bringing down the compositor together with a misbehaving client.
-    fn start_systemd_scope(
-        name: &OsStr,
-        intermediate_pid: u32,
-        child_pid: u32,
-    ) -> anyhow::Result<()> {
-        use std::fmt::Write as _;
-        use std::os::unix::ffi::OsStrExt;
-        use std::sync::OnceLock;
-
-        use anyhow::Context;
-        use zbus::zvariant::{OwnedObjectPath, Value};
-
-        use crate::utils::IS_SYSTEMD_SERVICE;
-
-        // We only start transient scopes if we're a systemd service ourselves.
-        if !IS_SYSTEMD_SERVICE.load(Ordering::Relaxed) {
-            return Ok(());
-        }
-
-        let _span = tracy_client::span!();
-
-        // Extract the basename.
+    fn scope_name(name: &OsStr, pid: u32) -> String {
         let name = Path::new(name).file_name().unwrap_or(name);
-
         let mut scope_name = String::from("app-niri-");
-
-        // Escape for systemd similarly to libgnome-desktop, which says it had adapted this from
-        // systemd source.
         for &c in name.as_bytes() {
             if c.is_ascii_alphanumeric() || matches!(c, b':' | b'_' | b'.') {
                 scope_name.push(char::from(c));
@@ -439,29 +281,188 @@ mod systemd {
                 let _ = write!(scope_name, "\\x{c:02x}");
             }
         }
+        let _ = write!(scope_name, "-{pid}.scope");
+        scope_name
+    }
 
-        let _ = write!(scope_name, "-{child_pid}.scope");
+    pub(super) fn prepare_spawnserver() -> Option<async_process::Child> {
+        if !crate::utils::IS_SYSTEMD_SERVICE.load(Ordering::Relaxed) {
+            return None;
+        }
+        let mut spawnserver = if std::fs::exists("/proc/self/exe").map_err(|_| ()) == Ok(true) {
+            std::process::Command::new("/proc/self/exe")
+        } else {
+            std::process::Command::new(std::env::current_exe().ok()?)
+        };
+        spawnee_restore_state(&mut spawnserver);
+        spawnserver.arg("spawnserver");
+        let mut spawnserver = async_process::Command::from(spawnserver);
+        spawnserver.stdin(Stdio::piped());
+        spawnserver.stdout(Stdio::piped());
+        // exec errors output by spawnserver.
+        spawnserver.stderr(Stdio::inherit());
+        match spawnserver.spawn() {
+            Ok(server) => Some(server),
+            Err(e) => {
+                info!("cannot spawn a spawnserver, will fall back to direct spawning: {e:?}");
+                None
+            }
+        }
+    }
 
-        // Ask systemd to start a transient scope.
-        static CONNECTION: OnceLock<zbus::Result<zbus::blocking::Connection>> = OnceLock::new();
-        let conn = CONNECTION
-            .get_or_init(zbus::blocking::Connection::session)
-            .clone()
-            .context("error connecting to session bus")?;
+    /// Send a command to the spawnserver to spawn.
+    pub(super) async fn spawn_in_spawnserver(
+        mut spawnserver: async_process::Child,
+        command: async_process::Command,
+    ) {
+        let mut buf = Vec::new();
+        let args = command.get_args();
+        buf.extend_from_slice(&args.len().to_ne_bytes());
+        buf.extend_from_slice(command.get_program().as_encoded_bytes());
+        buf.push(0);
+        for arg in args {
+            buf.extend_from_slice(arg.as_encoded_bytes());
+            buf.push(0);
+        }
+        let mut environ = std::env::vars_os().collect::<std::collections::HashMap<_, _>>();
+        for (k, v) in command.get_envs() {
+            if let Some(v) = v {
+                environ.insert(k.into(), v.into());
+            } else {
+                environ.remove(k);
+            }
+        }
+        for (k, v) in environ {
+            buf.extend_from_slice(k.as_encoded_bytes());
+            buf.push(0);
+            buf.extend_from_slice(v.as_encoded_bytes());
+            buf.push(0);
+        }
 
-        let proxy = zbus::blocking::Proxy::new(
+        {
+            let Some(mut stdin) = spawnserver.stdin.take() else {
+                // This should be unreachable, but we have a reasonable fallback to try.
+                let _ = spawnserver.kill();
+                return super::spawn_cmd(command);
+            };
+            let Ok(_) = stdin.write_all(&buf).await else {
+                // Likely reason for a failure here is that spawnserver crashed or got killed.
+                let _ = spawnserver.kill();
+                return super::spawn_cmd(command);
+            };
+            drop(stdin); // spawnserver may proceed to exec
+        }
+
+        if let Some(mut stdout) = spawnserver.stdout.take() {
+            // Wait for exec to happen, spawnserver indicates this by closing its stdout.
+            let mut buf = [0];
+            let result = stdout.read(&mut buf).await;
+            debug_assert_eq!(result.map_err(|_| ()), Ok(0));
+        }
+
+        if let Ok(None) = spawnserver.try_status() {
+            if let Err(e) = rescope_spawned(command.get_program(), spawnserver.id()).await {
+                warn!("could not migrate spawned program to its named scope: {e:?}");
+            };
+        }
+    }
+
+    pub(super) fn scope_self(name: &OsStr) -> anyhow::Result<()> {
+        if !crate::utils::IS_SYSTEMD_SERVICE.load(Ordering::Relaxed) {
+            return Ok(());
+        }
+        async_io::block_on(async {
+            let conn = zbus::Connection::session()
+                .await
+                .context("error connecting to session bus")?;
+            let proxy = zbus::Proxy::new(
+                &conn,
+                "org.freedesktop.systemd1",
+                "/org/freedesktop/systemd1",
+                "org.freedesktop.systemd1.Manager",
+            )
+            .await
+            .context("error creating a Proxy")?;
+            start_systemd_scope(&proxy, name, std::process::id())
+                .await
+                .context("could not put spawnserver into an intermediate scope")?;
+            Ok(())
+        })
+    }
+
+    async fn rescope_spawned(command: &OsStr, pid: u32) -> anyhow::Result<()> {
+        let conn = zbus::Connection::session()
+            .await
+            .context("could not connect to session bus")?;
+        rescope(conn, command, pid)
+            .await
+            .context("error moving spawned process into its scope")?;
+        Ok(())
+    }
+
+    async fn rescope(conn: zbus::Connection, command: &OsStr, pid: u32) -> anyhow::Result<()> {
+        let from = scope_name(OsStr::new("spawnserver"), pid);
+        let to = scope_name(command, pid);
+        let proxy = zbus::Proxy::new(
             &conn,
             "org.freedesktop.systemd1",
             "/org/freedesktop/systemd1",
             "org.freedesktop.systemd1.Manager",
         )
+        .await
         .context("error creating a Proxy")?;
+        start_systemd_scope(&proxy, command, pid).await?;
 
-        let signals = proxy
+        for _ in 0..64 {
+            let procs: Vec<(String, u32, String)> =
+                match proxy.call("GetUnitProcesses", &from).await {
+                    Ok(procs) => procs,
+                    // spawnserver scope emptied and got garbage collected (program has exited).
+                    Err(zbus::Error::MethodError(name, _, _))
+                        if name.as_str() == "org.freedesktop.systemd1.NoSuchUnit" =>
+                    {
+                        return Ok(())
+                    }
+                    Err(err) => return Err(err).context("error calling GetUnitProcesses"),
+                };
+            if procs.is_empty() {
+                return Ok(());
+            }
+            let pids: Vec<u32> = procs.into_iter().map(|(_, pid, _)| pid).collect();
+            trace!("moving {pids:?} from {from} to {to}");
+            // Processes may spawn or exit in between iterations.
+            if let Err(err) = proxy
+                .call::<_, _, ()>("AttachProcessesToUnit", &(&to, "", &pids))
+                .await
+            {
+                trace!("error attaching {pids:?} to {to}: {err:?}");
+            }
+        }
+        anyhow::bail!("{from} still not empty after 64 attempts to rescope, giving up")
+    }
+
+    /// Puts a (newly spawned) pid into a transient systemd scope.
+    ///
+    /// This separates the pid from the compositor scope, which for example prevents the OOM killer
+    /// from bringing down the compositor together with a misbehaving client.
+    async fn start_systemd_scope(
+        proxy: &zbus::Proxy<'_>,
+        name: &OsStr,
+        child_pid: u32,
+    ) -> anyhow::Result<()> {
+        use zbus::zvariant::{OwnedObjectPath, Value};
+
+        let _span = tracy_client::span!();
+
+        // Extract the basename.
+        let name = Path::new(name).file_name().unwrap_or(name);
+        let scope_name = scope_name(name, child_pid);
+        let mut signals = proxy
             .receive_signal("JobRemoved")
+            .await
             .context("error creating a signal iterator")?;
 
-        let pids: &[_] = &[intermediate_pid, child_pid];
+        let pids: &[_] = &[child_pid];
         let properties: &[_] = &[
             ("PIDs", Value::new(pids)),
             ("CollectMode", Value::new("inactive-or-failed")),
@@ -470,16 +471,17 @@ mod systemd {
 
         let job: OwnedObjectPath = proxy
             .call("StartTransientUnit", &(scope_name, "fail", properties, aux))
+            .await
             .context("error calling StartTransientUnit")?;
 
         trace!("waiting for JobRemoved");
-        for message in signals {
+        while let Some(message) = signals.next().await {
             let body = message.body();
             let body: (u32, OwnedObjectPath, &str, &str) =
                 body.deserialize().context("error parsing signal")?;
 
             if body.1 == job {
-                // Our transient unit had started, we're good to exit the intermediate child.
+                // Our transient unit had started, we're good to proceed to exec.
                 break;
             }
         }
