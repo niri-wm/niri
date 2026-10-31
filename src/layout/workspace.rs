@@ -2017,6 +2017,12 @@ impl<W: LayoutElement> Workspace<W> {
         self.layout_config.as_ref()
     }
 
+    pub fn scrolling_view_pos(&self) -> f64 {
+        // Stationary, not target: during an ongoing touchpad gesture the target tracks the finger
+        // on every input event, which would make the IPC event fire at input rate.
+        self.scrolling.stationary_view_pos()
+    }
+
     pub fn scrolling(&self) -> &ScrollingSpace<W> {
         &self.scrolling
     }
