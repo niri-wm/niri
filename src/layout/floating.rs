@@ -557,18 +557,36 @@ impl<W: LayoutElement> FloatingSpace<W> {
         id: &W::Id,
         blocker: TransactionBlocker,
     ) {
-        let (tile, tile_pos) = self
-            .tiles_with_render_positions_mut(false)
-            .find(|(tile, _)| tile.window().id() == id)
-            .unwrap();
+        // Extract everything from the tile in a block to end the mutable borrow before the
+        // animation call below takes `&mut self`.
+        let (snapshot_opt, tile_size, tile_pos, anim_override) = {
+            let (tile, tile_pos) = self
+                .tiles_with_render_positions_mut(false)
+                .find(|(tile, _)| tile.window().id() == id)
+                .unwrap();
 
-        let Some(snapshot) = tile.take_unmap_snapshot() else {
+            let snapshot = tile.take_unmap_snapshot();
+            let tile_size = tile.tile_size();
+            let anim_override = tile.window().rules().window_close.clone();
+
+            (snapshot, tile_size, tile_pos, anim_override)
+        };
+
+        let Some(snapshot) = snapshot_opt else {
             return;
         };
 
-        let tile_size = tile.tile_size();
+        let anim_config =
+            anim_override.unwrap_or_else(|| self.options.animations.window_close.clone());
 
-        self.start_close_animation_for_tile(renderer, snapshot, tile_size, tile_pos, blocker);
+        self.start_close_animation_for_tile(
+            renderer,
+            snapshot,
+            tile_size,
+            tile_pos,
+            blocker,
+            &anim_config,
+        );
     }
 
     pub fn activate_window_without_raising(&mut self, id: &W::Id) -> bool {
@@ -608,14 +626,9 @@ impl<W: LayoutElement> FloatingSpace<W> {
         tile_size: Size<f64, Logical>,
         tile_pos: Point<f64, Logical>,
         blocker: TransactionBlocker,
+        anim_config: &niri_config::animations::WindowCloseAnim,
     ) {
-        let anim = Animation::new(
-            self.clock.clone(),
-            0.,
-            1.,
-            0.,
-            self.options.animations.window_close.anim,
-        );
+        let anim = Animation::new(self.clock.clone(), 0., 1., 0., anim_config.anim);
 
         let blocker = if self.options.disable_transactions {
             TransactionBlocker::completed()
@@ -625,7 +638,14 @@ impl<W: LayoutElement> FloatingSpace<W> {
 
         let scale = Scale::from(self.scale);
         let res = ClosingWindow::new(
-            renderer, snapshot, scale, tile_size, tile_pos, blocker, anim,
+            renderer,
+            snapshot,
+            scale,
+            tile_size,
+            tile_pos,
+            blocker,
+            anim,
+            anim_config.custom_shader.clone(),
         );
         match res {
             Ok(closing) => {
