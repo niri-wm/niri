@@ -2463,18 +2463,26 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     }
 
     pub fn tiles_with_ipc_layouts(&self) -> impl Iterator<Item = (&Tile<W>, WindowLayout)> {
+        let view_pos = self.view_pos();
+
         self.columns
             .iter()
+            .zip(self.column_xs(self.data.iter().copied()))
             .enumerate()
-            .flat_map(move |(col_idx, col)| {
-                col.tiles().enumerate().map(move |(tile_idx, (tile, _))| {
-                    let layout = WindowLayout {
-                        // Our indices are 1-based, consistent with the actions.
-                        pos_in_scrolling_layout: Some((col_idx + 1, tile_idx + 1)),
-                        ..tile.ipc_layout_template()
-                    };
-                    (tile, layout)
-                })
+            .flat_map(move |(col_idx, (col, col_x))| {
+                let col_off = Point::from((col_x - view_pos, 0.));
+
+                col.tiles()
+                    .enumerate()
+                    .map(move |(tile_idx, (tile, tile_off))| {
+                        let layout = WindowLayout {
+                            // Our indices are 1-based, consistent with the actions.
+                            pos_in_scrolling_layout: Some((col_idx + 1, tile_idx + 1)),
+                            tile_pos_in_workspace_view: Some((col_off + tile_off).into()),
+                            ..tile.ipc_layout_template()
+                        };
+                        (tile, layout)
+                    })
             })
     }
 
