@@ -76,7 +76,7 @@ libc = "0.2.189"
 libdisplay-info = "0.3.0"
 log = { version = "0.4", features = ["max_level_trace", "release_max_level_debug"] }
 niri-config = { version = "26.4.0", path = "niri-config" }
-niri-ipc = { version = "26.4.0", path = "niri-ipc", features = ["clap"] }
+niri-ipc = { version = "26.4.0", path = "niri-ipc", features = ["clap"], default-features = false }
 ordered-float = "5"
 pango = { version = "0.21.5", features = ["v1_44"] }
 pangocairo = "0.21.5"
