@@ -15,7 +15,7 @@
 
 use std::sync::Arc;
 
-use smithay::backend::input::{Event, InputEvent, KeyboardKeyEvent};
+use smithay::backend::input::{Event, InputEvent, KeyState, KeyboardKeyEvent};
 use smithay::utils::SERIAL_COUNTER;
 use smithay::wayland::input_method::InputMethodSeat;
 use smithay::wayland::virtual_keyboard::{
@@ -43,6 +43,8 @@ impl VirtualKeyboardHandler for State {
                     // Do not forward passed-through events from a grab back to
                     // the grab.
                     self.forward_input_method_key(&event);
+                } else if self.release_input_method_forwarded_key(&event) {
+                    // The grab ended between the press and the release.
                 } else {
                     self.process_input_event(InputEvent::<VirtualKeyboardBackend>::Keyboard {
                         event,
@@ -134,6 +136,12 @@ impl State {
     ///
     /// Note that sway also special-cases this in the same way.
     pub fn forward_input_method_key(&mut self, event: &VirtualKeyboardKeyEvent) {
+        let key = (event.device().source(), event.key_code());
+        match event.state() {
+            KeyState::Pressed => self.niri.input_method_forwarded_keys.insert(key),
+            KeyState::Released => self.niri.input_method_forwarded_keys.remove(&key),
+        };
+
         let serial = SERIAL_COUNTER.next_serial();
 
         // The modifiers associated with the physical key went to the input method
@@ -147,6 +155,43 @@ impl State {
             event.time(),
             true,
         );
+    }
+
+    /// Releases a key whose press was forwarded by [`Self::forward_input_method_key`], if any.
+    ///
+    /// This is necessary because an input method may release the grab before releasing the keys it
+    /// passed through (fcitx does this when deactivating). Without special-casing this, these
+    /// releases would be dropped since they aren't associated with presses from the same virtual
+    /// keyboard source (rather, the presses are associated with the original keyboard, even though
+    /// they were captured by the IME grab).
+    ///
+    /// TODO: This doesn't work if fcitx has PersistentVirtualKeyboard enabled, since it makes fcitx
+    /// keep the virtual keyboard after deactivation, resulting in non-repeating keys (e.g., Shift)
+    /// staying pressed in the client if they're released while the grab is ending (fcitx only
+    /// releases repeating keys itself, and the rest are only released when the virtual keyboard is
+    /// destroyed). Fixing this needs a smithay callback for when the IME keyboard grab ends, so we
+    /// can send the client a release for each key in `input_method_forwarded_keys` that is no
+    /// longer held by any keyboard.
+    ///
+    /// Returns whether the event was handled.
+    pub fn release_input_method_forwarded_key(&mut self, event: &VirtualKeyboardKeyEvent) -> bool {
+        if event.state() != KeyState::Released {
+            return false;
+        }
+
+        let key = (event.device().source(), event.key_code());
+        if !self.niri.input_method_forwarded_keys.remove(&key) {
+            return false;
+        }
+
+        // If another keyboard still holds the key, its own release will reach the client when the
+        // key is released on that keyboard.
+        let keyboard = self.niri.seat.get_keyboard().unwrap();
+        if !keyboard.pressed_keys().contains(&event.key_code()) {
+            self.forward_input_method_key(event);
+        }
+
+        true
     }
 
     /// Activates the virtual keyboard's keymap on the current seat, unless it already is.

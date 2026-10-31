@@ -47,7 +47,7 @@ use smithay::desktop::{
     find_popup_root_surface, layer_map_for_output, LayerMap, LayerSurface, PopupGrab, PopupManager,
     PopupUngrabStrategy, Space, Window, WindowSurfaceType,
 };
-use smithay::input::keyboard::{Layout as KeyboardLayout, LedState, XkbConfig};
+use smithay::input::keyboard::{KeyboardSource, Layout as KeyboardLayout, LedState, XkbConfig};
 use smithay::input::pointer::{
     CursorIcon, CursorImageStatus, CursorImageSurfaceData, Focus,
     GrabStartData as PointerGrabStartData, MotionEvent,
@@ -383,6 +383,12 @@ pub struct Niri {
     /// only gets activated on the next key/modifier event from the virtual
     /// keyboard.
     pub virtual_keyboard_keymap: Option<VirtualKeyboardKeymap>,
+    /// Keys pressed through an input method's virtual keyboard which were forwarded bypassing the
+    /// grab. If the input method releases the grab before sending the release, the release would
+    /// skip the special-cased path and take the normal one (where smithay would drop it since that
+    /// virtual keyboard wasn't the one which pressed the key), so it needs to be forwarded to the
+    /// client directly instead.
+    pub input_method_forwarded_keys: HashSet<(KeyboardSource, Keycode)>,
     /// Configured (non-virtual-keyboard) keymap as XKB_KEYMAP_FORMAT_TEXT_V1.
     ///
     /// Computed lazily from the seat while no virtual keyboard keymap is
@@ -2869,6 +2875,7 @@ impl Niri {
             keyboard_shortcuts_inhibiting_surfaces: HashMap::new(),
             xkb_from_locale1: None,
             virtual_keyboard_keymap: None,
+            input_method_forwarded_keys: HashSet::new(),
             configured_keymap: None,
             cursor_manager,
             cursor_texture_cache: Default::default(),

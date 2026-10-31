@@ -38,6 +38,7 @@ use smithay::output::Output;
 use smithay::reexports::wayland_server::protocol::wl_data_source::WlDataSource;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Rectangle, Transform, SERIAL_COUNTER};
+use smithay::wayland::input_method::InputMethodSeat;
 use smithay::wayland::keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitor;
 use smithay::wayland::pointer_constraints::{with_pointer_constraint, PointerConstraint};
 use smithay::wayland::virtual_keyboard::VirtualKeyboardDevice;
@@ -725,6 +726,17 @@ impl State {
                     // Interaction with the active window, immediately update the active window's
                     // focus timestamp without waiting for a possible pending MRU lock-in delay.
                     this.niri.mru_apply_keyboard_commit();
+
+                    // Without an input method grab, this release (the last one for the keycode,
+                    // typically from the keyboard whose press was captured and passed through by
+                    // the IME) goes to the client directly, so the input method's own release of
+                    // the key mustn't be forwarded again.
+                    let input_method_grab = this.niri.seat.input_method().keyboard_grab_client();
+                    if !pressed && input_method_grab.is_none() {
+                        this.niri
+                            .input_method_forwarded_keys
+                            .retain(|(_, code)| *code != key_code);
+                    }
                 }
 
                 res
