@@ -3780,6 +3780,7 @@ fn tabs_with_different_border() {
                 right: FloatOrInt(0.),
                 top: FloatOrInt(20000.),
                 bottom: FloatOrInt(0.),
+                overflow: true,
             },
             ..Default::default()
         },
@@ -3909,6 +3910,7 @@ fn arbitrary_struts() -> impl Strategy<Value = Struts> {
             right: FloatOrInt(right),
             top: FloatOrInt(top),
             bottom: FloatOrInt(bottom),
+            overflow: true,
         })
 }
 
