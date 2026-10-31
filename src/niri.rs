@@ -812,6 +812,8 @@ impl State {
         state.ipc_keyboard_layouts_changed();
         // Focus the default monitor if set by the user.
         state.focus_default_monitor();
+        // Activate any configured workspaces on each monitor
+        state.activate_default_workspaces();
 
         Ok(state)
     }
@@ -1123,6 +1125,28 @@ impl State {
 
         self.niri.layout.focus_output(&target);
         self.move_cursor_to_output(&target);
+    }
+
+    pub fn activate_default_workspaces(&mut self) {
+        let workspaces = {
+            let config = self.niri.config.borrow();
+            config.workspaces.clone()
+        };
+
+        let niri = &mut self.niri;
+        'monitors: for monitor in niri.layout.monitors_mut() {
+            for ws in &workspaces {
+                if !ws.active_at_startup {
+                    continue;
+                }
+
+                if let Some(idx) = monitor.find_named_workspace_index(&ws.name.0) {
+                    monitor.activate_workspace(idx);
+
+                    continue 'monitors;
+                }
+            }
+        }
     }
 
     /// Focus a specific window, taking care of a potential active output change and cursor
