@@ -13,6 +13,7 @@ layout {
     default-column-display "tabbed"
     background-color "#003300"
     fullscreen-backdrop-color "#000000ff"
+    maximized-window-placement "expel-from-column"
 
     preset-column-widths {
         proportion 0.33333
@@ -576,5 +577,18 @@ You can set this to `"transparent"`, or just a transparent color, to enable tran
 // Let fullscreen windows be semitransparent.
 layout {
     fullscreen-backdrop-color "transparent"
+}
+```
+
+### `maximized-window-placement`
+
+<sup>Since: next release</sup>
+
+Determines whether windows are expelled from their column on maximize/fullscreen.
+Can be `expel-from-column` or `keep-in-column`.
+
+```kdl
+layout {
+    maximized-window-placement "expel-from-column"
 }
 ```
