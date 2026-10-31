@@ -1983,6 +1983,35 @@ dependencies = [
 ]
 
 [[package]]
+name = "librsvg-rebind"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "163f9e31a1a0475beb7ab182a520564cfa9f8ee014f40b73c6d14297f47629e2"
+dependencies = [
+ "bitflags",
+ "cairo-rs",
+ "gio",
+ "glib",
+ "libc",
+ "librsvg-rebind-sys",
+]
+
+[[package]]
+name = "librsvg-rebind-sys"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "de0830536aea2f46438cd2490501e5a5b513de010275336909240659c25d0fe9"
+dependencies = [
+ "cairo-sys-rs",
+ "gdk-pixbuf-sys",
+ "gio-sys",
+ "glib-sys",
+ "gobject-sys",
+ "libc",
+ "system-deps",
+]
+
+[[package]]
 name = "libseat"
 version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2231,6 +2260,7 @@ dependencies = [
  "keyframe",
  "libc",
  "libdisplay-info",
+ "librsvg-rebind",
  "log",
  "niri-config",
  "niri-ipc",
