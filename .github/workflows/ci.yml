@@ -8,10 +8,10 @@ on:
     - cron: '0 0 1 * *' # Monthly
 
 env:
-  DEPS_APT: curl gcc clang libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev libpipewire-0.3-dev libpango1.0-dev libdisplay-info-dev
-  DEPS_DNF: cargo gcc clang libudev-devel libgbm-devel libxkbcommon-devel wayland-devel libinput-devel dbus-devel systemd-devel libseat-devel pipewire-devel pango-devel cairo-gobject-devel libdisplay-info-devel
-  DEPS_APK: cargo clang-libclang eudev-dev glib-dev libdisplay-info-dev libinput-dev libseat-dev libxkbcommon-dev mesa-dev pango-dev pipewire-dev tar
-  DEPS_PKG: git curl rust llvm pkgconf pixman libudev-devd libdisplay-info seatd libinput libxkbcommon pipewire mesa-libs cairo devel/glib20 gettext-runtime harfbuzz pango
+  DEPS_APT: curl gcc clang libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev libpipewire-0.3-dev libpango1.0-dev libdisplay-info-dev librsvg2-dev
+  DEPS_DNF: cargo gcc clang libudev-devel libgbm-devel libxkbcommon-devel wayland-devel libinput-devel dbus-devel systemd-devel libseat-devel pipewire-devel pango-devel cairo-gobject-devel libdisplay-info-devel librsvg2-devel
+  DEPS_APK: cargo clang-libclang eudev-dev glib-dev libdisplay-info-dev libinput-dev libseat-dev libxkbcommon-dev mesa-dev pango-dev pipewire-dev librsvg-dev tar
+  DEPS_PKG: git curl rust llvm pkgconf pixman libudev-devd libdisplay-info seatd libinput libxkbcommon pipewire mesa-libs cairo devel/glib20 gettext-runtime harfbuzz pango librsvg2-rust
 
 jobs:
   test:
