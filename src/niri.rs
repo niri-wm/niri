@@ -132,6 +132,8 @@ use crate::dbus::freedesktop_locale1::Locale1ToNiri;
 #[cfg(feature = "dbus")]
 use crate::dbus::freedesktop_login1::Login1ToNiri;
 #[cfg(feature = "dbus")]
+use crate::dbus::gnome_shell::{GlobalShortcutsPortalBinds, ShellToNiri};
+#[cfg(feature = "dbus")]
 use crate::dbus::gnome_shell_introspect::{self, IntrospectToNiri, NiriToIntrospect};
 #[cfg(feature = "dbus")]
 use crate::dbus::gnome_shell_screenshot::{NiriToScreenshot, ScreenshotToNiri};
@@ -446,6 +448,8 @@ pub struct Niri {
     pub config_error_notification: ConfigErrorNotification,
     pub hotkey_overlay: HotkeyOverlay,
     pub exit_confirm_dialog: ExitConfirmDialog,
+    #[cfg(feature = "dbus")]
+    pub global_shortcuts_portal_binds: GlobalShortcutsPortalBinds,
 
     pub window_mru_ui: WindowMruUi,
     pub pending_mru_commit: Option<PendingMruCommit>,
@@ -464,6 +468,8 @@ pub struct Niri {
     pub a11y: A11y,
     #[cfg(feature = "dbus")]
     pub inhibit_power_key_fd: Option<zbus::zvariant::OwnedFd>,
+    #[cfg(feature = "dbus")]
+    pub gnome_shell: Option<crate::dbus::gnome_shell::Shell>,
 
     pub ipc_server: Option<IpcServer>,
     pub ipc_outputs_changed: bool,
@@ -2418,6 +2424,42 @@ impl State {
     }
 
     #[cfg(feature = "dbus")]
+    pub fn on_gnome_shell_msg(&mut self, msg: ShellToNiri) {
+        match msg {
+            ShellToNiri::GrabAccelerators {
+                accelerators,
+                results: tx,
+            } => {
+                debug!("requesting grab global shortcut accelerators: {accelerators:?}");
+                let results = self
+                    .niri
+                    .global_shortcuts_portal_binds
+                    .grab_accelerators(&accelerators);
+
+                debug!("returning actions: {results:?}");
+                if let Err(err) = tx.send_blocking(results) {
+                    warn!("error sending grab accelerators result to gnome shell: {err:?}");
+                }
+            }
+            ShellToNiri::UngrabAccelerators {
+                actions,
+                result: tx,
+            } => {
+                debug!("requesting ungrab global shortcut accelerators: {actions:?}",);
+                let result = self
+                    .niri
+                    .global_shortcuts_portal_binds
+                    .ungrab_accelerators(&actions);
+
+                debug!("returning result: {result:?}");
+                if let Err(err) = tx.send_blocking(result) {
+                    warn!("error sending ungrab accelerators result to gnome shell: {err:?}");
+                }
+            }
+        }
+    }
+
+    #[cfg(feature = "dbus")]
     pub fn on_introspect_msg(
         &mut self,
         to_introspect: &async_channel::Sender<NiriToIntrospect>,
@@ -2703,6 +2745,9 @@ impl Niri {
         let exit_confirm_dialog = ExitConfirmDialog::new(animation_clock.clone(), config.clone());
 
         #[cfg(feature = "dbus")]
+        let global_shortcuts = GlobalShortcutsPortalBinds::new();
+
+        #[cfg(feature = "dbus")]
         let a11y = A11y::new(event_loop.clone());
 
         event_loop
@@ -2897,6 +2942,8 @@ impl Niri {
             config_error_notification,
             hotkey_overlay,
             exit_confirm_dialog,
+            #[cfg(feature = "dbus")]
+            global_shortcuts_portal_binds: global_shortcuts,
 
             window_mru_ui,
             pending_mru_commit: None,
@@ -2915,6 +2962,8 @@ impl Niri {
             a11y,
             #[cfg(feature = "dbus")]
             inhibit_power_key_fd: None,
+            #[cfg(feature = "dbus")]
+            gnome_shell: None,
 
             ipc_server,
             ipc_outputs_changed: false,

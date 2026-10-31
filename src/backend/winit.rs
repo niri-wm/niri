@@ -9,6 +9,7 @@ use niri_config::{Config, OutputName};
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::drm::DrmNode;
 use smithay::backend::egl::EGLDevice;
+use smithay::backend::input::InputTime;
 use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::renderer::{DebugFlags, ImportDma, ImportEgl, Renderer};
@@ -155,7 +156,7 @@ impl Winit {
                 WinitEvent::Input(event) => state.process_input_event(event),
                 WinitEvent::Focus(false) => {
                     // Lost focus. Reset key pressed (like alt or windows key)
-                    state.release_held_inputs();
+                    state.release_held_inputs(InputTime::now());
 
                     if let Some(keyboard) = state.niri.seat.get_keyboard() {
                         keyboard.release_source(state, KeyboardSource::MAIN);

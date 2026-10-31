@@ -6,12 +6,14 @@ use zbus::names::{UniqueName, WellKnownName};
 use zbus::object_server::Interface;
 use zbus::zvariant::NoneValue as _;
 
+use crate::dbus::gnome_shell::Shell;
 use crate::niri::State;
 
 pub mod freedesktop_a11y;
 pub mod freedesktop_locale1;
 pub mod freedesktop_login1;
 pub mod freedesktop_screensaver;
+pub mod gnome_shell;
 pub mod gnome_shell_introspect;
 pub mod gnome_shell_screenshot;
 pub mod mutter_display_config;
@@ -37,6 +39,7 @@ pub struct DBusServers {
     pub conn_display_config: Option<Connection>,
     pub conn_screen_saver: Option<Connection>,
     pub conn_screen_shot: Option<Connection>,
+    pub conn_gnome_shell: Option<Connection>,
     pub conn_introspect: Option<Connection>,
     #[cfg(feature = "xdp-gnome-screencast")]
     pub conn_screen_cast: Option<Connection>,
@@ -106,6 +109,19 @@ impl DBusServers {
                 .unwrap();
             let screenshot = gnome_shell_screenshot::Screenshot::new(to_niri, from_niri);
             dbus.conn_screen_shot = try_start(screenshot, is_session_instance);
+
+            let (to_niri, from_gnome_shell) = calloop::channel::channel();
+            niri.event_loop
+                .insert_source(from_gnome_shell, move |event, _, state| match event {
+                    calloop::channel::Event::Msg(msg) => state.on_gnome_shell_msg(msg),
+                    calloop::channel::Event::Closed => (),
+                })
+                .unwrap();
+            let shell = Shell::new(to_niri);
+            if let Some(x) = try_start(shell.clone(), is_session_instance) {
+                dbus.conn_gnome_shell = Some(x);
+                niri.gnome_shell = Some(shell);
+            }
 
             let (to_niri, from_introspect) = calloop::channel::channel();
             let (to_introspect, from_niri) = async_channel::unbounded();
