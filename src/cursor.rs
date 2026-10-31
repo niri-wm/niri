@@ -25,13 +25,13 @@ type XCursorCache = HashMap<(CursorIcon, i32), Option<Rc<XCursor>>>;
 
 pub struct CursorManager {
     theme: CursorTheme,
-    size: u8,
+    size: u16,
     current_cursor: CursorImageStatus,
     named_cursor_cache: RefCell<XCursorCache>,
 }
 
 impl CursorManager {
-    pub fn new(theme: &str, size: u8) -> Self {
+    pub fn new(theme: &str, size: u16) -> Self {
         Self::ensure_env(theme, size);
 
         let theme = CursorTheme::load(theme);
@@ -45,7 +45,7 @@ impl CursorManager {
     }
 
     /// Reload the cursor theme.
-    pub fn reload(&mut self, theme: &str, size: u8) {
+    pub fn reload(&mut self, theme: &str, size: u16) {
         Self::ensure_env(theme, size);
         self.theme = CursorTheme::load(theme);
         self.size = size;
@@ -244,7 +244,7 @@ impl CursorManager {
     }
 
     /// Set the common XCURSOR env variables.
-    fn ensure_env(theme: &str, size: u8) {
+    fn ensure_env(theme: &str, size: u16) {
         env::set_var("XCURSOR_THEME", theme);
         env::set_var("XCURSOR_SIZE", size.to_string());
     }
