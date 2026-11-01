@@ -6994,6 +6994,11 @@ impl Niri {
             }
         }
 
+        // Skip focusing the window/layer when outputs-only=true
+        if let Some(true) = ffm.outputs_only {
+            return;
+        }
+
         if let Some(window) = &new_focus.window {
             if !self.layout.is_overview_open() && current_focus.window.as_ref() != Some(window) {
                 let (window, hit) = window;
