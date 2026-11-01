@@ -168,6 +168,7 @@ impl WatcherInner {
                 CheckResult::Unchanged
             }
         } else {
+            self.last_props = None;
             CheckResult::Missing
         }
     }
