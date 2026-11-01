@@ -130,7 +130,7 @@ impl Element for SolidColorRenderElement {
     }
 
     fn geometry(&self, scale: Scale<f64>) -> Rectangle<i32, Physical> {
-        self.geometry.to_physical_precise_round(scale)
+        self.geometry.to_physical_precise_up(scale)
     }
 
     fn opaque_regions(&self, scale: Scale<f64>) -> OpaqueRegions<i32, Physical> {
