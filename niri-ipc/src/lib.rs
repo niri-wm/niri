@@ -82,7 +82,10 @@ pub enum Request {
     /// Request information about the focused window.
     FocusedWindow,
     /// Request picking a window and get its information.
-    PickWindow,
+    PickWindow {
+        /// Immediately picking the window under the cursor.
+        now: bool,
+    },
     /// Request picking a color from the screen.
     PickColor,
     /// Perform an action.
