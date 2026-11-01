@@ -152,7 +152,8 @@ fn cursor_capture_size(niri: &Niri, output: &Output) -> Size<i32, BufferCoords> 
     let int_scale = output.current_scale().integer_scale();
     let scale = Scale::from(output.current_scale().fractional_scale());
 
-    let size: Size<i32, Physical> = match niri.cursor_manager.get_render_cursor(int_scale) {
+    let size: Size<i32, Physical> = match niri.cursor_manager.get_render_cursor(int_scale, scale.x)
+    {
         RenderCursor::Hidden => Size::from((0, 0)),
         RenderCursor::Surface { surface, .. } => {
             let bbox = smithay::desktop::utils::bbox_from_surface_tree(&surface, (0, 0));
@@ -191,29 +192,30 @@ pub fn cursor_capture_hotspot(niri: &Niri, output: &Output) -> Point<i32, Buffer
     let int_scale = output.current_scale().integer_scale();
     let scale = Scale::from(output.current_scale().fractional_scale());
 
-    let hotspot: Point<i32, Physical> = match niri.cursor_manager.get_render_cursor(int_scale) {
-        RenderCursor::Hidden => Point::from((0, 0)),
-        RenderCursor::Surface { surface, hotspot } => {
-            // The tree is shifted to put its bounding box at the origin in
-            // render_cursor_for_capture(), so shift the hotspot too.
-            let bbox = smithay::desktop::utils::bbox_from_surface_tree(&surface, (0, 0));
-            (hotspot - bbox.loc)
-                .to_f64()
-                .to_physical_precise_round(scale)
-        }
-        RenderCursor::Named {
-            scale: buffer_scale,
-            cursor,
-            ..
-        } => {
-            let (_idx, frame) = cursor.frame(niri.start_time.elapsed().as_millis() as u32);
-            // Same rescaling as in cursor_capture_size().
-            XCursor::hotspot(frame)
-                .to_logical(buffer_scale)
-                .to_f64()
-                .to_physical_precise_round(scale)
-        }
-    };
+    let hotspot: Point<i32, Physical> =
+        match niri.cursor_manager.get_render_cursor(int_scale, scale.x) {
+            RenderCursor::Hidden => Point::from((0, 0)),
+            RenderCursor::Surface { surface, hotspot } => {
+                // The tree is shifted to put its bounding box at the origin in
+                // render_cursor_for_capture(), so shift the hotspot too.
+                let bbox = smithay::desktop::utils::bbox_from_surface_tree(&surface, (0, 0));
+                (hotspot - bbox.loc)
+                    .to_f64()
+                    .to_physical_precise_round(scale)
+            }
+            RenderCursor::Named {
+                scale: buffer_scale,
+                cursor,
+                ..
+            } => {
+                let (_idx, frame) = cursor.frame(niri.start_time.elapsed().as_millis() as u32);
+                // Same rescaling as in cursor_capture_size().
+                XCursor::hotspot(frame)
+                    .to_logical(buffer_scale)
+                    .to_f64()
+                    .to_physical_precise_round(scale)
+            }
+        };
 
     Point::from((hotspot.x, hotspot.y))
 }

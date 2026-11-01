@@ -127,6 +127,7 @@ use crate::animation::Clock;
 use crate::backend::tty::SurfaceDmabufFeedback;
 use crate::backend::{Backend, Headless, RenderResult, Tty, Winit};
 use crate::cursor::{CursorManager, CursorTextureCache, RenderCursor, XCursor};
+use crate::cursor_scale::{CursorScaleParams, CursorScaleTracker};
 #[cfg(feature = "dbus")]
 use crate::dbus::freedesktop_locale1::Locale1ToNiri;
 #[cfg(feature = "dbus")]
@@ -392,6 +393,10 @@ pub struct Niri {
     /// afterwards without going through the config again.
     pub configured_keymap: Option<Arc<str>>,
 
+    pub cursor_scale_tracker: CursorScaleTracker,
+    /// Timer waking the event loop at the cursor shake decay deadline, along with that deadline
+    /// in animation clock time.
+    pub cursor_scale_timer: Option<(RegistrationToken, Duration)>,
     pub cursor_manager: CursorManager,
     pub cursor_texture_cache: CursorTextureCache,
     pub cursor_shape_manager_state: CursorShapeManagerState,
@@ -1745,6 +1750,12 @@ impl State {
             self.niri
                 .cursor_manager
                 .reload(&config.cursor.xcursor_theme, config.cursor.xcursor_size);
+            self.niri
+                .cursor_scale_tracker
+                .reload(CursorScaleParams::from_config(
+                    config.cursor.shake.clone(),
+                    &config.animations,
+                ));
             self.niri.cursor_texture_cache.clear();
         }
 
@@ -2678,6 +2689,10 @@ impl Niri {
         seat.add_pointer();
 
         let cursor_shape_manager_state = CursorShapeManagerState::new::<State>(&display_handle);
+        let cursor_scale_tracker = CursorScaleTracker::new(
+            animation_clock.clone(),
+            CursorScaleParams::from_config(config_.cursor.shake.clone(), &config_.animations),
+        );
         let cursor_manager =
             CursorManager::new(&config_.cursor.xcursor_theme, config_.cursor.xcursor_size);
 
@@ -2867,6 +2882,8 @@ impl Niri {
             cursor_manager,
             cursor_texture_cache: Default::default(),
             cursor_shape_manager_state,
+            cursor_scale_tracker,
+            cursor_scale_timer: None,
             dnd_icon: None,
             pointer_contents: PointContents::default(),
             pointer_visibility: PointerVisibility::Visible,
@@ -3993,6 +4010,44 @@ impl Niri {
         }
     }
 
+    /// Uploads the textures of every size a cursor expansion goes through.
+    ///
+    /// Without this, each size gets imported on the frame that first needs it, stuttering the
+    /// animation. Already imported textures are only looked up, so calling this on every frame of
+    /// the expansion is cheap; the actual uploads happen on its first frame, still near 1x size.
+    fn preload_magnified_cursor_textures<R: NiriRenderer>(
+        &self,
+        renderer: &mut R,
+        icon: CursorIcon,
+        scale: i32,
+        fractional_scale: f64,
+        max_mult: f64,
+    ) {
+        let _span = tracy_client::span!("Niri::preload_magnified_cursor_textures");
+
+        let cursors =
+            self.cursor_manager
+                .magnified_cursors(icon, scale, fractional_scale, max_mult);
+        for (pixel_size, cursor) in cursors {
+            for idx in 0..cursor.frames().len() {
+                let texture = self
+                    .cursor_texture_cache
+                    .get(icon, pixel_size, scale, &cursor, idx);
+                if let Err(err) = MemoryRenderBufferRenderElement::from_buffer(
+                    renderer,
+                    Point::<f64, Physical>::from((0., 0.)),
+                    &texture,
+                    None,
+                    None,
+                    None,
+                    Kind::Cursor,
+                ) {
+                    warn!("error preloading a cursor texture: {err:?}");
+                }
+            }
+        }
+    }
+
     pub fn render_pointer<R: NiriRenderer>(
         &self,
         renderer: &mut R,
@@ -4011,47 +4066,92 @@ impl Niri {
 
         // Get the render cursor to draw.
         let cursor_scale = output_scale.integer_scale();
-        let render_cursor = self.cursor_manager.get_render_cursor(cursor_scale);
+        let fractional_scale = output_scale.fractional_scale();
+        let render_cursor = self
+            .cursor_manager
+            .get_render_cursor(cursor_scale, fractional_scale);
 
-        let output_scale = Scale::from(output.current_scale().fractional_scale());
+        let output_scale = Scale::from(fractional_scale);
 
         match render_cursor {
             RenderCursor::Hidden => (),
             RenderCursor::Surface { surface, hotspot } => {
-                let pointer_pos =
+                let mult = self.cursor_manager.size_multiplier() as f64;
+                let surface_top_left =
                     (pointer_pos - hotspot.to_f64()).to_physical_precise_round(output_scale);
 
-                push_elements_from_surface_tree(
-                    renderer,
-                    &surface,
-                    pointer_pos,
-                    output_scale,
-                    1.,
-                    Kind::Cursor,
-                    &mut |elem| push(elem.into()),
-                );
+                if (mult - 1.0).abs() < 0.001 {
+                    push_elements_from_surface_tree(
+                        renderer,
+                        &surface,
+                        surface_top_left,
+                        output_scale,
+                        1.,
+                        Kind::Cursor,
+                        &mut |elem| push(elem.into()),
+                    );
+                } else {
+                    let anchor: Point<i32, Physical> =
+                        pointer_pos.to_physical_precise_round(output_scale);
+                    push_elements_from_surface_tree(
+                        renderer,
+                        &surface,
+                        surface_top_left,
+                        output_scale,
+                        1.,
+                        Kind::Cursor,
+                        &mut |elem| {
+                            let scaled = RescaleRenderElement::from_element(elem, anchor, mult);
+                            push(scaled.into());
+                        },
+                    );
+                }
             }
             RenderCursor::Named {
                 icon,
                 scale,
                 cursor,
+                pixel_size,
+                rescale,
             } => {
+                if let Some(max_mult) = self.cursor_scale_tracker.expansion_target() {
+                    self.preload_magnified_cursor_textures(
+                        renderer,
+                        icon,
+                        scale,
+                        fractional_scale,
+                        max_mult,
+                    );
+                }
+
                 let (idx, frame) = cursor.frame(self.start_time.elapsed().as_millis() as u32);
                 let hotspot = XCursor::hotspot(frame).to_logical(scale);
-                let pointer_pos =
+                let element_pos =
                     (pointer_pos - hotspot.to_f64()).to_physical_precise_round(output_scale);
 
-                let texture = self.cursor_texture_cache.get(icon, scale, &cursor, idx);
+                let texture = self
+                    .cursor_texture_cache
+                    .get(icon, pixel_size, scale, &cursor, idx);
                 match MemoryRenderBufferRenderElement::from_buffer(
                     renderer,
-                    pointer_pos,
+                    element_pos,
                     &texture,
                     None,
                     None,
                     None,
                     Kind::Cursor,
                 ) {
-                    Ok(element) => push(element.into()),
+                    Ok(element) => {
+                        if (rescale - 1.0).abs() < 0.001 {
+                            push(element.into());
+                        } else {
+                            let anchor: Point<i32, Physical> =
+                                pointer_pos.to_physical_precise_round(output_scale);
+                            let scaled =
+                                RescaleRenderElement::from_element(element, anchor, rescale);
+                            push(scaled.into());
+                        }
+                    }
                     Err(err) => {
                         warn!("error importing a cursor texture: {err:?}");
                     }
@@ -4159,7 +4259,21 @@ impl Niri {
                 });
 
                 let surface_pos = pointer_pos.to_i32_round() - hotspot;
-                let bbox = bbox_from_surface_tree(surface, surface_pos);
+                let raw_bbox = bbox_from_surface_tree(surface, surface_pos);
+
+                // Expand bbox by the magnify multiplier around the hotspot so that overlap
+                // detection covers the scaled surface cursor.
+                let mult = self.cursor_manager.size_multiplier() as f64;
+                let bbox = if mult > 1.01 {
+                    let anchor: Point<i32, Logical> = pointer_pos.to_i32_round();
+                    let dx = ((raw_bbox.loc.x - anchor.x) as f64 * mult).round() as i32;
+                    let dy = ((raw_bbox.loc.y - anchor.y) as f64 * mult).round() as i32;
+                    let w = (raw_bbox.size.w as f64 * mult).round() as i32;
+                    let h = (raw_bbox.size.h as f64 * mult).round() as i32;
+                    Rectangle::new((anchor.x + dx, anchor.y + dy).into(), (w, h).into())
+                } else {
+                    raw_bbox
+                };
 
                 let dnd = self
                     .dnd_icon
@@ -4243,15 +4357,25 @@ impl Niri {
 
                     // The default cursor is rendered at the right scale for each output, which
                     // means that it may have a different hotspot for each output.
-                    let output_scale = output.current_scale().integer_scale();
+                    let output_scale = output.current_scale();
                     let cursor = self
                         .cursor_manager
-                        .get_cursor_with_name(icon, output_scale)
-                        .unwrap_or_else(|| self.cursor_manager.get_default_cursor(output_scale));
+                        .get_cursor_with_name(
+                            icon,
+                            output_scale.integer_scale(),
+                            output_scale.fractional_scale(),
+                        )
+                        .unwrap_or_else(|| {
+                            self.cursor_manager.get_default_cursor(
+                                output_scale.integer_scale(),
+                                output_scale.fractional_scale(),
+                            )
+                        });
 
                     // For simplicity, we always use frame 0 for this computation. Let's hope the
                     // hotspot doesn't change between frames.
-                    let hotspot = XCursor::hotspot(&cursor.frames()[0]).to_logical(output_scale);
+                    let hotspot = XCursor::hotspot(&cursor.frames()[0])
+                        .to_logical(output_scale.integer_scale());
 
                     let surface_pos = pointer_pos.to_i32_round() - hotspot;
                     let bbox = bbox_from_surface_tree(surface, surface_pos);
@@ -4367,6 +4491,20 @@ impl Niri {
         self.exit_confirm_dialog.advance_animations();
         self.screenshot_ui.advance_animations();
         self.window_mru_ui.advance_animations();
+
+        let cursor_changed = self
+            .cursor_scale_tracker
+            .advance_animations(&mut self.cursor_manager);
+
+        if cursor_changed {
+            // FIXME: can be more granular.
+            self.queue_redraw_all();
+        }
+
+        if self.cursor_scale_tracker.has_animations() {
+            self.queue_redraw_all();
+        }
+        self.arm_cursor_scale_timer();
 
         for state in self.output_state.values_mut() {
             if let Some(transition) = &mut state.screen_transition {
@@ -4900,6 +5038,11 @@ impl Niri {
         // Freeze the clock at the target time.
         self.clock.set_unadjusted(target_presentation_time);
 
+        // Sample the cursor magnification at the target time too, like the layout animations,
+        // so that its steps follow the frame timing rather than whenever the event loop woke up.
+        self.cursor_scale_tracker
+            .advance_animations(&mut self.cursor_manager);
+
         self.update_render_elements(Some(output));
 
         let mut res = RenderResult::Skipped;
@@ -4917,6 +5060,7 @@ impl Niri {
             state.unfinished_animations_remain |= self
                 .cursor_manager
                 .is_current_cursor_animated(output.current_scale().integer_scale());
+            state.unfinished_animations_remain |= self.cursor_scale_tracker.has_animations();
 
             // Also check layer surfaces.
             if !state.unfinished_animations_remain {
@@ -5963,7 +6107,10 @@ impl Niri {
         let output_scale = Scale::from(output.current_scale().fractional_scale());
 
         let mut elements = Vec::new();
-        match self.cursor_manager.get_render_cursor(int_scale) {
+        match self
+            .cursor_manager
+            .get_render_cursor(int_scale, output_scale.x)
+        {
             RenderCursor::Hidden => (),
             RenderCursor::Surface { surface, .. } => {
                 // Subsurfaces can extend above or to the left of the root surface, so shift the
@@ -5987,9 +6134,13 @@ impl Niri {
                 icon,
                 scale,
                 cursor,
+                pixel_size,
+                ..
             } => {
                 let (idx, _frame) = cursor.frame(self.start_time.elapsed().as_millis() as u32);
-                let texture = self.cursor_texture_cache.get(icon, scale, &cursor, idx);
+                let texture = self
+                    .cursor_texture_cache
+                    .get(icon, pixel_size, scale, &cursor, idx);
                 match MemoryRenderBufferRenderElement::from_buffer(
                     renderer,
                     Point::<f64, _>::from((0., 0.)),
@@ -7168,6 +7319,42 @@ impl Niri {
         }
     }
 
+    /// Makes sure the event loop wakes up at the cursor shake decay deadline.
+    ///
+    /// While the cursor sits expanded there is nothing to redraw, so with an idle pointer nothing
+    /// else would call `advance_animations()` to start the shrink.
+    fn arm_cursor_scale_timer(&mut self) {
+        let Some(deadline) = self.cursor_scale_tracker.next_wakeup() else {
+            return;
+        };
+
+        // Pointer motion only pushes the deadline later, so an already armed earlier timer is
+        // fine: when it fires early, advance_animations() re-arms for the new deadline.
+        if let Some((token, armed)) = self.cursor_scale_timer {
+            if armed <= deadline {
+                return;
+            }
+            self.event_loop.remove(token);
+            self.cursor_scale_timer = None;
+        }
+
+        let rate = self.clock.rate();
+        if rate <= 0. {
+            return;
+        }
+        let remaining = deadline.saturating_sub(self.clock.now());
+        let timer = Timer::from_duration(remaining.div_f64(rate));
+        let token = self
+            .event_loop
+            .insert_source(timer, |_, _, state| {
+                // Waking up is enough: the loop then runs advance_animations().
+                state.niri.cursor_scale_timer = None;
+                TimeoutAction::Drop
+            })
+            .unwrap();
+        self.cursor_scale_timer = Some((token, deadline));
+    }
+
     pub fn reset_pointer_inactivity_timer(&mut self) {
         if self.pointer_inactivity_timer_got_reset {
             return;
@@ -7294,7 +7481,9 @@ fn scale_relocate_crop<E: Element>(
 niri_render_elements! {
     PointerRenderElements<R> => {
         Wayland = WaylandSurfaceRenderElement<R>,
+        WaylandRescaled = RescaleRenderElement<WaylandSurfaceRenderElement<R>>,
         NamedPointer = MemoryRenderBufferRenderElement<R>,
+        NamedPointerRescaled = RescaleRenderElement<MemoryRenderBufferRenderElement<R>>,
     }
 }
 
