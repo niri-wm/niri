@@ -452,6 +452,12 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         self.columns.iter_mut().flat_map(|col| col.tiles.iter_mut())
     }
 
+    /// Tile offsets of a column, for tests.
+    #[cfg(test)]
+    pub fn column_tile_offsets(&self, col_idx: usize) -> Vec<Point<f64, Logical>> {
+        self.columns[col_idx].tile_offsets().collect()
+    }
+
     pub fn is_empty(&self) -> bool {
         self.columns.is_empty()
     }
@@ -5328,6 +5334,19 @@ impl<W: LayoutElement> Column<W> {
         }
 
         origin.y += self.working_area.loc.y + self.options.layout.gaps;
+
+        // Vertically center a lone window in its column, so that the empty
+        // space above and below it is equal, instead of top-aligning it.
+        if self.options.layout.center_single_window_vertically && self.tiles.len() == 1 {
+            let gaps = self.options.layout.gaps;
+            let available = self.working_area.size.h - gaps * 2.;
+            if let Some(data) = self.data.first() {
+                let height = data.size.h;
+                if height < available {
+                    origin.y += (available - height) / 2.;
+                }
+            }
+        }
 
         if self.display_mode == ColumnDisplay::Tabbed {
             origin += self
