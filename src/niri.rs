@@ -6415,6 +6415,9 @@ impl Niri {
             })
             .unwrap();
 
+        // Borrow notification flag here so that thread can move it
+        let show_notification = !self.config.borrow().screenshot_notification.disable;
+
         // Encode and save the image in a thread as it's slow.
         thread::spawn(move || {
             let mut buf = vec![];
@@ -6455,10 +6458,12 @@ impl Niri {
             } else {
                 debug!("not saving screenshot to disk");
             }
-
-            #[cfg(feature = "dbus")]
-            if let Err(err) = crate::utils::show_screenshot_notification(image_path.as_deref()) {
-                warn!("error showing screenshot notification: {err:?}");
+            if show_notification {
+                #[cfg(feature = "dbus")]
+                if let Err(err) = crate::utils::show_screenshot_notification(image_path.as_deref())
+                {
+                    warn!("error showing screenshot notification: {err:?}");
+                }
             }
 
             // Send screenshot completion event.
