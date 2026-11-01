@@ -1,6 +1,7 @@
 use knuffel::errors::DecodeError;
 use niri_ipc::ColumnDisplay;
 
+use crate::animations::{WindowCloseAnim, WindowOpenAnim};
 use crate::appearance::{
     BackgroundEffect, BackgroundEffectRule, BlockOutFrom, BorderRule, CornerRadius, ShadowRule,
     TabIndicatorRule,
@@ -84,6 +85,16 @@ pub struct WindowRule {
     pub background_effect: BackgroundEffectRule,
     #[knuffel(child, default)]
     pub popups: PopupsRule,
+    #[knuffel(child)]
+    pub animations: Option<WindowAnimationsRule>,
+}
+
+#[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]
+pub struct WindowAnimationsRule {
+    #[knuffel(child)]
+    pub window_open: Option<WindowOpenAnim>,
+    #[knuffel(child)]
+    pub window_close: Option<WindowCloseAnim>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
