@@ -1160,7 +1160,8 @@ impl State {
         let mut floating_width = None;
         let mut height = None;
         let mut floating_height = None;
-        let is_full_width = rules.open_maximized.unwrap_or(false);
+        let is_full_width_maybe = rules.open_maximized;
+        let mut is_full_width = is_full_width_maybe.unwrap_or(false);
         let is_floating = rules.compute_open_floating(toplevel);
 
         // Tell the surface the preferred size and bounds for its likely output.
@@ -1191,6 +1192,7 @@ impl State {
                 });
             }
 
+            is_full_width = ws.resolve_default_full_width(is_full_width_maybe);
             width = ws.resolve_default_width(rules.default_width, false);
             floating_width = ws.resolve_default_width(rules.default_width, true);
             height = ws.resolve_default_height(rules.default_height, false);
