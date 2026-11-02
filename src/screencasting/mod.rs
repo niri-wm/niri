@@ -187,10 +187,7 @@ impl State {
             };
 
             let scale = Scale::from(output.current_scale().fractional_scale());
-            let bbox = mapped
-                .window
-                .bbox_with_popups()
-                .to_physical_precise_up(scale);
+            let bbox = mapped.capture_bbox(scale);
 
             match cast.ensure_size(bbox.size) {
                 Ok(CastSizeChange::Ready) => (),
@@ -648,10 +645,7 @@ impl Niri {
                 continue;
             };
 
-            let bbox = mapped
-                .window
-                .bbox_with_popups()
-                .to_physical_precise_up(scale);
+            let bbox = mapped.capture_bbox(scale);
 
             match cast.ensure_size(bbox.size) {
                 Ok(CastSizeChange::Ready) => (),
@@ -778,10 +772,7 @@ impl Niri {
             .find(|(_, m)| m.id().get() == window_id)?;
         let output = self.casting.mapped_cast_output.get(&mapped.window)?;
         let scale = Scale::from(output.current_scale().fractional_scale());
-        let bbox = mapped
-            .window
-            .bbox_with_popups()
-            .to_physical_precise_up(scale);
+        let bbox = mapped.capture_bbox(scale);
         let refresh = output.current_mode().unwrap().refresh as u32;
         Some((bbox.size, refresh))
     }

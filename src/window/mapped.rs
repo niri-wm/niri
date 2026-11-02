@@ -12,7 +12,7 @@ use smithay::reexports::wayland_protocols::xdg::decoration::zv1::server::zxdg_to
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::Resource as _;
-use smithay::utils::{Logical, Point, Rectangle, Scale, Serial, Size, Transform};
+use smithay::utils::{Logical, Physical, Point, Rectangle, Scale, Serial, Size, Transform};
 use smithay::wayland::compositor::{remove_pre_commit_hook, with_states, HookId, SurfaceData};
 use smithay::wayland::seat::WaylandFocus;
 use smithay::wayland::shell::xdg::{
@@ -610,6 +610,11 @@ impl Mapped {
 
     pub fn is_urgent(&self) -> bool {
         self.is_urgent
+    }
+
+    /// Returns the physical bbox needed to fit a screenshot of this window.
+    pub fn capture_bbox(&self, scale: Scale<f64>) -> Rectangle<i32, Physical> {
+        self.window.bbox_with_popups().to_physical_precise_up(scale)
     }
 }
 
