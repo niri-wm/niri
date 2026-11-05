@@ -1,6 +1,5 @@
 use std::time::Duration;
 
-use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::allocator::{Buffer as _, Fourcc, Modifier};
 use smithay::backend::drm::DrmNode;
 use smithay::backend::renderer::damage::OutputDamageTracker;
@@ -30,6 +29,7 @@ use wayland_backend::server::Credentials;
 
 use crate::cursor::{RenderCursor, XCursor};
 use crate::niri::{Niri, State};
+use crate::render_helpers::CaptureBuffer;
 use crate::utils::{get_credentials_for_client, CastSessionId, CastStreamId};
 
 /// Output capture session.
@@ -218,11 +218,6 @@ pub fn cursor_capture_hotspot(niri: &Niri, output: &Output) -> Point<i32, Buffer
     Point::from((hotspot.x, hotspot.y))
 }
 
-pub enum CaptureBuffer {
-    Dma(Dmabuf),
-    Shm,
-}
-
 /// Checks a frame's buffer for compatibility with the render helpers.
 ///
 /// Smithay only validates buffers against the protocol constraints, which allow
@@ -245,7 +240,7 @@ pub fn capture_buffer(
         data.format == format && data.width == size.w && data.height == size.h
     })
     .unwrap_or(false);
-    matches.then_some(CaptureBuffer::Shm)
+    matches.then_some(CaptureBuffer::Shm(buffer.clone()))
 }
 
 /// Finishes a frame, waiting for `sync_point` first if the render is still in flight.
@@ -256,10 +251,10 @@ pub fn frame_success_after_sync<T>(
     transform: Transform,
     damage: Vec<Rectangle<i32, BufferCoords>>,
     presented: Duration,
-    sync_point: Option<SyncPoint>,
+    sync_point: SyncPoint,
     event_loop: &LoopHandle<'static, T>,
 ) {
-    let Some(sync_fd) = sync_point.and_then(|sync| sync.export()) else {
+    let Some(sync_fd) = sync_point.export() else {
         frame.success(transform, damage, presented);
         return;
     };

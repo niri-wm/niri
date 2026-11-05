@@ -31,11 +31,10 @@ use smithay::backend::renderer::element::utils::{
     RescaleRenderElement,
 };
 use smithay::backend::renderer::element::{
-    default_primary_scanout_output_compare, Element, Id, Kind, PrimaryScanoutOutput, RenderElement,
+    default_primary_scanout_output_compare, Element, Id, Kind, PrimaryScanoutOutput,
     RenderElementStates,
 };
 use smithay::backend::renderer::gles::GlesRenderer;
-use smithay::backend::renderer::sync::SyncPoint;
 use smithay::backend::renderer::Color32F;
 use smithay::desktop::utils::{
     bbox_from_surface_tree, output_update, send_dmabuf_feedback_surface_tree,
@@ -137,7 +136,7 @@ use crate::dbus::gnome_shell_introspect::{self, IntrospectToNiri, NiriToIntrospe
 use crate::dbus::gnome_shell_screenshot::{NiriToScreenshot, ScreenshotToNiri};
 use crate::frame_clock::FrameClock;
 use crate::handlers::image_copy_capture::{
-    self as image_copy_capture_impl, CaptureBuffer, ImageCopyCursorSession, ImageCopySession,
+    self as image_copy_capture_impl, ImageCopyCursorSession, ImageCopySession,
 };
 use crate::handlers::virtual_keyboard::VirtualKeyboardKeymap;
 use crate::handlers::{configure_lock_surface, XDG_ACTIVATION_TOKEN_TIMEOUT};
@@ -163,7 +162,7 @@ use crate::protocols::foreign_toplevel::{self, ForeignToplevelManagerState};
 use crate::protocols::gamma_control::GammaControlManagerState;
 use crate::protocols::mutter_x11_interop::MutterX11InteropManagerState;
 use crate::protocols::output_management::OutputManagementManagerState;
-use crate::protocols::screencopy::{Screencopy, ScreencopyBuffer, ScreencopyManagerState};
+use crate::protocols::screencopy::{Screencopy, ScreencopyManagerState};
 use crate::render_helpers::blur::BlurOptions;
 use crate::render_helpers::debug::push_opaque_regions;
 use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
@@ -173,8 +172,8 @@ use crate::render_helpers::surface::push_elements_from_surface_tree;
 use crate::render_helpers::texture::TextureBuffer;
 use crate::render_helpers::xray::{Xray, XrayPos};
 use crate::render_helpers::{
-    encompassing_geo, render_to_dmabuf, render_to_encompassing_texture, render_to_shm,
-    render_to_texture, render_to_vec, shaders, RenderCtx, RenderTarget,
+    encompassing_geo, render_to_encompassing_texture, render_to_shm, render_to_texture,
+    render_to_vec, shaders, CaptureBuffer, RenderCtx, RenderTarget,
 };
 #[cfg(feature = "xdp-gnome-screencast")]
 use crate::screencasting::Screencasting;
@@ -5651,13 +5650,10 @@ impl Niri {
 
                         screencopy.damage(damages);
 
-                        let render_result = Self::render_for_screencopy_internal(
-                            renderer,
-                            damage_tracker,
-                            &elements,
-                            states,
-                            screencopy,
-                        );
+                        let render_result =
+                            screencopy
+                                .buffer()
+                                .render(renderer, damage_tracker, &elements, states);
                         match render_result {
                             Ok(sync) => {
                                 queue.pop().submit_after_sync(false, sync, &self.event_loop);
@@ -5715,13 +5711,9 @@ impl Niri {
 
         let (_damages, states) =
             Self::damage_screencopy_internal(output, &elements, damage_tracker, &screencopy);
-        let res = Self::render_for_screencopy_internal(
-            renderer,
-            damage_tracker,
-            &elements,
-            states,
-            &screencopy,
-        );
+        let res = screencopy
+            .buffer()
+            .render(renderer, damage_tracker, &elements, states);
         let res = res.map(|sync| screencopy.submit_after_sync(false, sync, &self.event_loop));
 
         if res.is_err() {
@@ -5816,17 +5808,7 @@ impl Niri {
                 continue;
             };
 
-            let res = match capture_buffer {
-                CaptureBuffer::Dma(dmabuf) => {
-                    render_to_dmabuf(renderer, &mut s.damage_tracker, dmabuf, elements, states)
-                        .map(Some)
-                }
-                CaptureBuffer::Shm => {
-                    render_to_shm(renderer, &mut s.damage_tracker, &buffer, elements, states)
-                        .map(|()| None)
-                }
-            };
-
+            let res = capture_buffer.render(renderer, &mut s.damage_tracker, elements, states);
             match res {
                 Ok(sync) => {
                     image_copy_capture_impl::frame_success_after_sync(
@@ -5910,7 +5892,7 @@ impl Niri {
                 constraints.size,
                 wl_shm::Format::Argb8888,
             );
-            if !matches!(capture_buffer, Some(CaptureBuffer::Shm)) {
+            if !matches!(capture_buffer, Some(CaptureBuffer::Shm(_))) {
                 frame.fail(CaptureFailureReason::BufferConstraints);
                 // Report full damage next time.
                 s.damage_tracker = OutputDamageTracker::new(size, scale, Transform::Normal);
@@ -6104,31 +6086,6 @@ impl Niri {
 
         // Just checked damage tracker has static mode
         damage_tracker.damage_output(1, elements).unwrap()
-    }
-
-    #[allow(clippy::type_complexity)]
-    fn render_for_screencopy_internal(
-        renderer: &mut GlesRenderer,
-        damage_tracker: &mut OutputDamageTracker,
-        elements: &[impl RenderElement<GlesRenderer>],
-        states: RenderElementStates,
-        screencopy: &Screencopy,
-    ) -> anyhow::Result<Option<SyncPoint>> {
-        let sync = match screencopy.buffer() {
-            ScreencopyBuffer::Dmabuf(dmabuf) => {
-                let sync =
-                    render_to_dmabuf(renderer, damage_tracker, dmabuf.clone(), elements, states)
-                        .context("error rendering to screencopy dmabuf")?;
-                Some(sync)
-            }
-            ScreencopyBuffer::Shm(wl_buffer) => {
-                render_to_shm(renderer, damage_tracker, wl_buffer, elements, states)
-                    .context("error rendering to screencopy shm buffer")?;
-                None
-            }
-        };
-
-        Ok(sync)
     }
 
     #[cfg(not(feature = "xdp-gnome-screencast"))]

@@ -102,6 +102,14 @@ pub struct BakedBuffer<B> {
     pub dst: Option<Size<i32, Logical>>,
 }
 
+/// Buffer backed by a wl_buffer.
+#[derive(Clone)]
+pub enum CaptureBuffer {
+    // The Dmabuf that is contained inside the WlBuffer.
+    Dma(Dmabuf),
+    Shm(WlBuffer),
+}
+
 pub trait ToRenderElement {
     type RenderElement;
 
@@ -466,4 +474,28 @@ fn render_elements(
     }
 
     frame.finish().context("error finishing frame")
+}
+
+impl CaptureBuffer {
+    pub fn render(
+        &self,
+        renderer: &mut GlesRenderer,
+        damage_tracker: &mut OutputDamageTracker,
+        elements: &[impl RenderElement<GlesRenderer>],
+        states: RenderElementStates,
+    ) -> anyhow::Result<SyncPoint> {
+        match self {
+            CaptureBuffer::Dma(dmabuf) => {
+                let sync =
+                    render_to_dmabuf(renderer, damage_tracker, dmabuf.clone(), elements, states)
+                        .context("error rendering to screencopy dmabuf")?;
+                Ok(sync)
+            }
+            CaptureBuffer::Shm(wl_buffer) => {
+                render_to_shm(renderer, damage_tracker, wl_buffer, elements, states)
+                    .context("error rendering to screencopy shm buffer")?;
+                Ok(SyncPoint::signaled())
+            }
+        }
+    }
 }
