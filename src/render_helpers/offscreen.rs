@@ -103,9 +103,11 @@ impl OffscreenBuffer {
         }) = inner.as_mut()
         {
             let old_size = texture.size();
-            if old_size.w < src_size.w || old_size.h < src_size.h {
+            // Recreate on any size change. Reusing a larger texture after shrink can preserve
+            // stale pixels and damage history, which is incorrect for subsequent renders.
+            if old_size != src_size {
                 size_string = format!(
-                    "size increased from {} × {} to {} × {}",
+                    "size changed from {} × {} to {} × {}",
                     old_size.w, old_size.h, src_size.w, src_size.h
                 );
                 reason = &size_string;
