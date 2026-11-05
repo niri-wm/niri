@@ -224,20 +224,15 @@ pub fn cursor_capture_hotspot(niri: &Niri, output: &Output) -> Point<i32, Buffer
 /// a client to attach a larger buffer than asked for, but the render helpers
 /// need an exact match, and checking them here allows mismatches to be reported
 /// to the client.
-pub fn capture_buffer(
-    buffer: &WlBuffer,
-    size: Size<i32, BufferCoords>,
-    format: wl_shm::Format,
-) -> Option<CaptureBuffer> {
+pub fn capture_buffer(buffer: &WlBuffer, size: Size<i32, BufferCoords>) -> Option<CaptureBuffer> {
     if let Ok(dmabuf) = get_dmabuf(buffer) {
         let size_matches = dmabuf.width() == size.w as u32 && dmabuf.height() == size.h as u32;
         return size_matches.then(|| CaptureBuffer::Dma(dmabuf.clone()));
     }
 
-    // Stride and pool placement are defined by the client, but the format and
-    // dimensions need to match.
+    // Stride and pool placement are defined by the client, but the dimensions need to match.
     let matches = shm::with_buffer_contents(buffer, |_ptr, _len, data| {
-        data.format == format && data.width == size.w && data.height == size.h
+        data.width == size.w && data.height == size.h
     })
     .unwrap_or(false);
     matches.then_some(CaptureBuffer::Shm(buffer.clone()))
