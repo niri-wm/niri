@@ -48,7 +48,7 @@ use smithay::desktop::{
     find_popup_root_surface, layer_map_for_output, LayerMap, LayerSurface, PopupGrab, PopupManager,
     PopupUngrabStrategy, Space, Window, WindowSurfaceType,
 };
-use smithay::input::keyboard::{Layout as KeyboardLayout, LedState, XkbConfig};
+use smithay::input::keyboard::{KeymapFile, Layout as KeyboardLayout, LedState, XkbConfig};
 use smithay::input::pointer::{
     CursorIcon, CursorImageStatus, CursorImageSurfaceData, Focus,
     GrabStartData as PointerGrabStartData, MotionEvent,
@@ -390,7 +390,7 @@ pub struct Niri {
     /// active, and cleared whenever the configured keymap changes. Used to
     /// compare against virtual keyboard keymaps, and to switch back to it
     /// afterwards without going through the config again.
-    pub configured_keymap: Option<Arc<str>>,
+    pub configured_keymap: Option<KeymapFile>,
 
     pub cursor_manager: CursorManager,
     pub cursor_texture_cache: CursorTextureCache,
