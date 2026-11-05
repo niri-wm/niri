@@ -5821,15 +5821,10 @@ impl Niri {
                     render_to_dmabuf(renderer, &mut s.damage_tracker, dmabuf, elements, states)
                         .map(Some)
                 }
-                CaptureBuffer::Shm => render_to_shm(
-                    renderer,
-                    &mut s.damage_tracker,
-                    &buffer,
-                    wl_shm::Format::Xrgb8888,
-                    elements,
-                    states,
-                )
-                .map(|()| None),
+                CaptureBuffer::Shm => {
+                    render_to_shm(renderer, &mut s.damage_tracker, &buffer, elements, states)
+                        .map(|()| None)
+                }
             };
 
             match res {
@@ -5922,14 +5917,7 @@ impl Niri {
                 continue;
             }
 
-            let res = render_to_shm(
-                renderer,
-                &mut s.damage_tracker,
-                &buffer,
-                wl_shm::Format::Argb8888,
-                elements,
-                states,
-            );
+            let res = render_to_shm(renderer, &mut s.damage_tracker, &buffer, elements, states);
             match res {
                 Ok(()) => {
                     let full_damage = vec![Rectangle::from_size(constraints.size)];
@@ -6134,15 +6122,8 @@ impl Niri {
                 Some(sync)
             }
             ScreencopyBuffer::Shm(wl_buffer) => {
-                render_to_shm(
-                    renderer,
-                    damage_tracker,
-                    wl_buffer,
-                    wl_shm::Format::Xrgb8888,
-                    elements,
-                    states,
-                )
-                .context("error rendering to screencopy shm buffer")?;
+                render_to_shm(renderer, damage_tracker, wl_buffer, elements, states)
+                    .context("error rendering to screencopy shm buffer")?;
                 None
             }
         };
