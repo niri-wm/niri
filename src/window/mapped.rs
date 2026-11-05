@@ -38,7 +38,7 @@ use crate::render_helpers::surface::{
     push_elements_from_surface_tree, render_snapshot_from_surface_tree,
 };
 use crate::render_helpers::xray::XrayPos;
-use crate::render_helpers::{background_effect, BakedBuffer, RenderCtx, RenderTarget};
+use crate::render_helpers::{background_effect, BakedBuffer, RenderCtx};
 use crate::utils::id::IdCounter;
 use crate::utils::transaction::Transaction;
 use crate::utils::{
@@ -501,13 +501,13 @@ impl Mapped {
 
     pub fn render_for_screen_cast<R: NiriRenderer>(
         &self,
-        renderer: &mut R,
+        ctx: RenderCtx<R>,
         scale: Scale<f64>,
         push: &mut dyn FnMut(WindowCastRenderElements<R>),
     ) {
         let bbox = self.window.bbox_with_popups().to_physical_precise_up(scale);
 
-        let has_border_shader = BorderRenderElement::has_shader(renderer);
+        let has_border_shader = BorderRenderElement::has_shader(ctx.renderer);
         let radius = self.geometry_corner_radius();
         let window_size = self
             .size()
@@ -547,18 +547,9 @@ impl Mapped {
             WindowCastRenderElements::from(elem)
         };
 
-        self.render(
-            RenderCtx {
-                renderer,
-                target: RenderTarget::Screencast,
-                xray: None,
-            },
-            location,
-            scale,
-            1.,
-            XrayPos::default(),
-            &mut |elem| push(use_border(elem)),
-        );
+        self.render(ctx, location, scale, 1., XrayPos::default(), &mut |elem| {
+            push(use_border(elem))
+        });
     }
 
     pub fn get_focus_timestamp(&self) -> Option<Duration> {

@@ -225,8 +225,13 @@ impl State {
                     }
                 }
 
+                let ctx = RenderCtx {
+                    renderer,
+                    target: RenderTarget::Screencast,
+                    xray: None,
+                };
                 let main_start = elements.len();
-                mapped.render_for_screen_cast(renderer, scale, &mut |elem| {
+                mapped.render_for_screen_cast(ctx, scale, &mut |elem| {
                     elements.push(CastRenderElement::from(elem))
                 });
 
@@ -682,8 +687,13 @@ impl Niri {
                 }
             }
 
+            let ctx = RenderCtx {
+                renderer,
+                target: RenderTarget::Screencast,
+                xray: None,
+            };
             let main_start = elements.len();
-            mapped.render_for_screen_cast(renderer, scale, &mut |elem| {
+            mapped.render_for_screen_cast(ctx, scale, &mut |elem| {
                 elements.push(CastRenderElement::from(elem))
             });
 
