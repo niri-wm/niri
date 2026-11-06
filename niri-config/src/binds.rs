@@ -291,6 +291,24 @@ pub enum Action {
     ToggleWindowedFullscreen,
     #[knuffel(skip)]
     ToggleWindowedFullscreenById(u64),
+    SetWindowFullscreen,
+    #[knuffel(skip)]
+    SetWindowFullscreenById(u64),
+    UnsetWindowFullscreen,
+    #[knuffel(skip)]
+    UnsetWindowFullscreenById(u64),
+    SetWindowMaximizedToEdges,
+    #[knuffel(skip)]
+    SetWindowMaximizedToEdgesById(u64),
+    UnsetWindowMaximizedToEdges,
+    #[knuffel(skip)]
+    UnsetWindowMaximizedToEdgesById(u64),
+    SetWindowedFullscreen,
+    #[knuffel(skip)]
+    SetWindowedFullscreenById(u64),
+    UnsetWindowedFullscreen,
+    #[knuffel(skip)]
+    UnsetWindowedFullscreenById(u64),
     #[knuffel(skip)]
     FocusWindow(u64),
     FocusWindowInColumn(#[knuffel(argument)] u8),
@@ -580,6 +598,34 @@ impl From<niri_ipc::Action> for Action {
             }
             niri_ipc::Action::ToggleWindowedFullscreen { id: Some(id) } => {
                 Self::ToggleWindowedFullscreenById(id)
+            }
+            niri_ipc::Action::SetWindowFullscreen { id: None } => Self::SetWindowFullscreen,
+            niri_ipc::Action::SetWindowFullscreen { id: Some(id) } => {
+                Self::SetWindowFullscreenById(id)
+            }
+            niri_ipc::Action::UnsetWindowFullscreen { id: None } => Self::UnsetWindowFullscreen,
+            niri_ipc::Action::UnsetWindowFullscreen { id: Some(id) } => {
+                Self::UnsetWindowFullscreenById(id)
+            }
+            niri_ipc::Action::SetWindowMaximizedToEdges { id: None } => {
+                Self::SetWindowMaximizedToEdges
+            }
+            niri_ipc::Action::SetWindowMaximizedToEdges { id: Some(id) } => {
+                Self::SetWindowMaximizedToEdgesById(id)
+            }
+            niri_ipc::Action::UnsetWindowMaximizedToEdges { id: None } => {
+                Self::UnsetWindowMaximizedToEdges
+            }
+            niri_ipc::Action::UnsetWindowMaximizedToEdges { id: Some(id) } => {
+                Self::UnsetWindowMaximizedToEdgesById(id)
+            }
+            niri_ipc::Action::SetWindowedFullscreen { id: None } => Self::SetWindowedFullscreen,
+            niri_ipc::Action::SetWindowedFullscreen { id: Some(id) } => {
+                Self::SetWindowedFullscreenById(id)
+            }
+            niri_ipc::Action::UnsetWindowedFullscreen { id: None } => Self::UnsetWindowedFullscreen,
+            niri_ipc::Action::UnsetWindowedFullscreen { id: Some(id) } => {
+                Self::UnsetWindowedFullscreenById(id)
             }
             niri_ipc::Action::FocusWindow { id } => Self::FocusWindow(id),
             niri_ipc::Action::FocusWindowInColumn { index } => Self::FocusWindowInColumn(index),
