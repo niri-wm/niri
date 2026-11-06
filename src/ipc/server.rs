@@ -912,17 +912,27 @@ impl State {
         // Unlike wlr-screencopy, a session is an explicit protocol object, so
         // the cast lifetime is tied to it. Dead sessions are already dropped by
         // refresh_image_copy_capture(), which runs before this.
-        let output_sessions = self
-            .niri
-            .image_copy_sessions
-            .iter()
-            .map(|s| (s.session_id, s.stream_id, s.session.source(), s.credentials));
-        let cursor_sessions = self
-            .niri
-            .image_copy_cursor_sessions
-            .iter()
-            .map(|s| (s.session_id, s.stream_id, s.session.source(), s.credentials));
-        for (session_id, stream_id, source, credentials) in output_sessions.chain(cursor_sessions) {
+        let output_sessions = self.niri.image_copy_sessions.iter().map(|s| {
+            (
+                niri_ipc::CastKind::ExtImageCopyCapture,
+                s.session_id,
+                s.stream_id,
+                s.session.source(),
+                s.credentials,
+            )
+        });
+        let cursor_sessions = self.niri.image_copy_cursor_sessions.iter().map(|s| {
+            (
+                niri_ipc::CastKind::ExtImageCopyCaptureCursor,
+                s.session_id,
+                s.stream_id,
+                s.session.source(),
+                s.credentials,
+            )
+        });
+        for (kind, session_id, stream_id, source, credentials) in
+            output_sessions.chain(cursor_sessions)
+        {
             let target = if let Some(output) = source_output(&source) {
                 niri_ipc::CastTarget::Output {
                     name: output.name(),
@@ -940,7 +950,7 @@ impl State {
                 let cast = niri_ipc::Cast {
                     session_id: session_id.get(),
                     stream_id,
-                    kind: niri_ipc::CastKind::ExtImageCopyCapture,
+                    kind,
                     target,
                     is_dynamic_target: false,
                     is_active: true,

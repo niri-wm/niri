@@ -1609,6 +1609,11 @@ pub enum CastKind {
     /// A client capturing both an output and the cursor creates two sessions, which are reported
     /// as two `Cast`s sharing one [`session_id`](Cast::session_id).
     ExtImageCopyCapture,
+    /// ext-image-copy-capture protocol cursor screencast.
+    ///
+    /// `Cast`s of this kind show the image of the cursor and cursor position. Their
+    /// [`target`](Cast::target) indicates the output or window that the cursor is captured over.
+    ExtImageCopyCaptureCursor,
 }
 
 /// Target of a screencast.
