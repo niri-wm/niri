@@ -5401,6 +5401,10 @@ impl Niri {
     }
 
     pub fn send_frame_callbacks(&mut self, output: &Output) {
+        if !self.monitors_active {
+            return;
+        }
+
         let _span = tracy_client::span!("Niri::send_frame_callbacks");
 
         let state = self.output_state.get(output).unwrap();
