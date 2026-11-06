@@ -887,7 +887,6 @@ impl State {
         self.niri.refresh_mapped_cast_outputs();
         // Should happen before refresh_window_rules(), but after anything that can start or stop
         // screencasts.
-        #[cfg(feature = "xdp-gnome-screencast")]
         self.niri.refresh_mapped_cast_window_rules();
         self.ipc_refresh_casts();
 
@@ -6289,6 +6288,31 @@ impl Niri {
 
         // Just checked damage tracker has static mode
         damage_tracker.damage_output(1, elements).unwrap()
+    }
+
+    pub fn refresh_mapped_cast_window_rules(&mut self) {
+        // O(N^2) but should be fine since there aren't many casts usually.
+        self.layout.with_windows_mut(|mapped, _| {
+            let id = mapped.id();
+
+            let mut value = false;
+            for session in &self.image_copy_sessions {
+                let source = session.session.source();
+                if image_copy_capture_impl::source_mapped_id(&source) == Some(id) {
+                    value = true;
+                    break;
+                }
+            }
+
+            #[cfg(feature = "xdp-gnome-screencast")]
+            if !value {
+                let id = CastTarget::Window { id: id.get() };
+                // Find regardless of cast.is_active.
+                value = self.casting.casts.iter().any(|cast| cast.target == id);
+            }
+
+            mapped.set_is_window_cast_target(value);
+        });
     }
 
     #[cfg(not(feature = "xdp-gnome-screencast"))]

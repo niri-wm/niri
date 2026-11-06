@@ -471,20 +471,6 @@ impl State {
 }
 
 impl Niri {
-    pub fn refresh_mapped_cast_window_rules(&mut self) {
-        // O(N^2) but should be fine since there aren't many casts usually.
-        self.layout.with_windows_mut(|mapped, _| {
-            let id = mapped.id().get();
-            // Find regardless of cast.is_active.
-            let value = self
-                .casting
-                .casts
-                .iter()
-                .any(|cast| cast.target == (CastTarget::Window { id }));
-            mapped.set_is_window_cast_target(value);
-        });
-    }
-
     pub fn refresh_mapped_cast_outputs(&mut self) {
         let mut seen = HashSet::new();
         let mut output_changed = vec![];
