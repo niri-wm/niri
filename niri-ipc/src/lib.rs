@@ -330,6 +330,75 @@ pub enum Action {
         #[cfg_attr(feature = "clap", arg(long))]
         id: Option<u64>,
     },
+    /// Make a window fullscreen.
+    #[cfg_attr(feature = "clap", clap(about = "Make the focused window fullscreen"))]
+    SetWindowFullscreen {
+        /// Id of the window to make fullscreen.
+        ///
+        /// If `None`, uses the focused window.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: Option<u64>,
+    },
+    /// Take a window out of fullscreen.
+    #[cfg_attr(
+        feature = "clap",
+        clap(about = "Take the focused window out of fullscreen")
+    )]
+    UnsetWindowFullscreen {
+        /// Id of the window to take out of fullscreen.
+        ///
+        /// If `None`, uses the focused window.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: Option<u64>,
+    },
+    /// Maximize a window to the screen edges.
+    #[cfg_attr(
+        feature = "clap",
+        clap(about = "Maximize the focused window to the screen edges")
+    )]
+    SetWindowMaximizedToEdges {
+        /// Id of the window to maximize to edges.
+        ///
+        /// If `None`, uses the focused window.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: Option<u64>,
+    },
+    /// Unmaximize a window from the screen edges.
+    #[cfg_attr(
+        feature = "clap",
+        clap(about = "Unmaximize the focused window from the screen edges")
+    )]
+    UnsetWindowMaximizedToEdges {
+        /// Id of the window to unmaximize from edges.
+        ///
+        /// If `None`, uses the focused window.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: Option<u64>,
+    },
+    /// Enable windowed (fake) fullscreen on a window.
+    #[cfg_attr(
+        feature = "clap",
+        clap(about = "Enable windowed (fake) fullscreen on the focused window")
+    )]
+    SetWindowedFullscreen {
+        /// Id of the window to enable windowed fullscreen on.
+        ///
+        /// If `None`, uses the focused window.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: Option<u64>,
+    },
+    /// Disable windowed (fake) fullscreen on a window.
+    #[cfg_attr(
+        feature = "clap",
+        clap(about = "Disable windowed (fake) fullscreen on the focused window")
+    )]
+    UnsetWindowedFullscreen {
+        /// Id of the window to disable windowed fullscreen on.
+        ///
+        /// If `None`, uses the focused window.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: Option<u64>,
+    },
     /// Focus a window by id.
     FocusWindow {
         /// Id of the window to focus.

@@ -1100,6 +1100,102 @@ impl State {
                     self.niri.queue_redraw_all();
                 }
             }
+            Action::SetWindowFullscreen => {
+                let focus = self.niri.layout.focus().map(|m| m.window.clone());
+                if let Some(window) = focus {
+                    self.niri.layout.set_fullscreen(&window, true);
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
+                }
+            }
+            Action::SetWindowFullscreenById(id) => {
+                let id = MappedId::specific(id);
+                if let Some(window) = self.niri.find_window_by_id(id) {
+                    self.niri.layout.set_fullscreen(&window, true);
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
+                }
+            }
+            Action::UnsetWindowFullscreen => {
+                let focus = self.niri.layout.focus().map(|m| m.window.clone());
+                if let Some(window) = focus {
+                    self.niri.layout.set_fullscreen(&window, false);
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
+                }
+            }
+            Action::UnsetWindowFullscreenById(id) => {
+                let id = MappedId::specific(id);
+                if let Some(window) = self.niri.find_window_by_id(id) {
+                    self.niri.layout.set_fullscreen(&window, false);
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
+                }
+            }
+            Action::SetWindowedFullscreen => {
+                let focus = self.niri.layout.focus().map(|m| m.window.clone());
+                if let Some(window) = focus {
+                    self.niri.layout.set_windowed_fullscreen(&window, true);
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
+                }
+            }
+            Action::SetWindowedFullscreenById(id) => {
+                let id = MappedId::specific(id);
+                if let Some(window) = self.niri.find_window_by_id(id) {
+                    self.niri.layout.set_windowed_fullscreen(&window, true);
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
+                }
+            }
+            Action::UnsetWindowedFullscreen => {
+                let focus = self.niri.layout.focus().map(|m| m.window.clone());
+                if let Some(window) = focus {
+                    self.niri.layout.set_windowed_fullscreen(&window, false);
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
+                }
+            }
+            Action::UnsetWindowedFullscreenById(id) => {
+                let id = MappedId::specific(id);
+                if let Some(window) = self.niri.find_window_by_id(id) {
+                    self.niri.layout.set_windowed_fullscreen(&window, false);
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
+                }
+            }
+            Action::SetWindowMaximizedToEdges => {
+                let focus = self.niri.layout.focus().map(|m| m.window.clone());
+                if let Some(window) = focus {
+                    self.niri.layout.set_maximized(&window, true);
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
+                }
+            }
+            Action::SetWindowMaximizedToEdgesById(id) => {
+                let id = MappedId::specific(id);
+                if let Some(window) = self.niri.find_window_by_id(id) {
+                    self.niri.layout.set_maximized(&window, true);
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
+                }
+            }
+            Action::UnsetWindowMaximizedToEdges => {
+                let focus = self.niri.layout.focus().map(|m| m.window.clone());
+                if let Some(window) = focus {
+                    self.niri.layout.set_maximized(&window, false);
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
+                }
+            }
+            Action::UnsetWindowMaximizedToEdgesById(id) => {
+                let id = MappedId::specific(id);
+                if let Some(window) = self.niri.find_window_by_id(id) {
+                    self.niri.layout.set_maximized(&window, false);
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
+                }
+            }
             Action::FocusWindow(id) => {
                 let id = MappedId::specific(id);
                 if let Some(window) = self.niri.find_window_by_id(id) {
