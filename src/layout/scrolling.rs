@@ -2465,7 +2465,9 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     pub fn tiles_with_ipc_layouts(&self) -> impl Iterator<Item = (&Tile<W>, WindowLayout)> {
         let scale = self.scale;
         let view = Rectangle::from_size(self.view_size);
-        let view_pos = self.target_view_pos();
+        // Use the stationary view offset, consistent with how moving floating windows doesn't spam
+        // the IPC in progress.
+        let view_pos = self.column_x(self.active_column_idx) + self.view_offset.stationary();
 
         self.columns
             .iter()
