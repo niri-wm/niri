@@ -44,7 +44,6 @@ Set them as automatically-installed optional dependencies, if possible.
 (This is in general the standard fallback portal that you want installed.)
 - `oo7-portal` or `gnome-keyring`: configured as the Secret portal provider in `niri-portals.conf`.
 - Your distro's GPU driver package, such as `mesa-dri-drivers` and `mesa-libEGL`.
-Working hardware acceleration is required for running niri.
 - Some notification daemon like `mako`, generally required for apps to work correctly.
 
 Finally, you may want to auto-install some of the applications bound in niri's [default configuration file](https://github.com/niri-wm/niri/blob/main/resources/default-config.kdl) (search for `spawn`), such as `alacritty` and `fuzzel`.

@@ -124,10 +124,6 @@ When this happens, you usually see a black screen when trying to start niri from
 
 Also, on Intel graphics, you may need a workaround described [here](https://wiki.nixos.org/wiki/Intel_Graphics).
 
-### Virtual Machines
-
-To run niri in a VM, make sure to enable 3D acceleration.
-
 ## Main Default Hotkeys
 
 When running on a TTY, the Mod key is <kbd>Super</kbd>.
