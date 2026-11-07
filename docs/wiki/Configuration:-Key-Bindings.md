@@ -580,3 +580,15 @@ binds {
 
 The toggle state is combined with the [`off` setting](./Configuration:-Input.md#pointing-devices) in the config: both the config and the toggle must allow the touchpad for it to be enabled.
 The toggle state resets when niri restarts, and applies to newly hot-plugged touchpads.
+
+### `toggle-floating-layout`
+
+<sup>Since: next release</sup>
+
+Quickly toggle the floating layout on or off. Useful for quickly "peeking" at a tiling window behind a floating window without having to close or move the floating window.
+
+```kdl
+binds {
+    Mod+X { toggle-floating-layout; }
+}
+```
