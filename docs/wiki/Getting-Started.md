@@ -1,24 +1,25 @@
 ## Quick start
 
-Use these commands to install niri with [DankMaterialShell](https://github.com/AvengeMedia/DankMaterialShell) for a fairly out-of-the-box experience.
+Use these commands to install niri with [Dux Modular Shell](https://github.com/duxlabs-dev/dux-shell) for a fairly out-of-the-box experience.
 
 Fedora:
 ```
-sudo dnf copr enable avengemedia/dms
+sudo dnf copr enable duxlabs/dms
 sudo dnf install niri dms
 systemctl --user add-wants niri.service dms
 ```
 
 Arch Linux:
 ```
-sudo pacman -Syu niri xwayland-satellite xdg-desktop-portal-gnome xdg-desktop-portal-gtk alacritty dms-shell-niri matugen cava qt6-multimedia-ffmpeg
+sudo pacman -Syu niri xwayland-satellite xdg-desktop-portal-gnome xdg-desktop-portal-gtk alacritty dux-shell matugen cava qt6-multimedia-ffmpeg
 systemctl --user add-wants niri.service dms
 ```
 
 Ubuntu 25.10 and above:
 ```
-sudo add-apt-repository ppa:avengemedia/danklinux
-sudo add-apt-repository ppa:avengemedia/dms
+sudo add-apt-repository ppa:duxlabs/dux-repo
+sudo add-apt-repository ppa:duxlabs/dms
+sudo apt update
 sudo apt install niri dms
 ```
 
@@ -28,7 +29,7 @@ Or, if not using a display manager, run `niri-session` on a TTY.
 The default niri config will run Waybar, so you might get two bars on screen.
 To fix this, stop Waybar with `pkill waybar` command, then open `~/.config/niri/config.kdl` and delete the `spawn-at-startup "waybar"` line.
 
-Check the DankMaterialShell's [compositor setup page](https://danklinux.com/docs/dankmaterialshell/compositors#niri-configuration) to learn how to configure DMS-specific binds and other niri integrations.
+Check the Dux Modular Shell's [compositor setup page](https://duxlabs.dev/docs/dms/compositors#niri-configuration) to learn how to configure DMS-specific binds and other niri integrations.
 
 ## Slower and more considered start
 
@@ -65,7 +66,7 @@ Some desktop environments and shells work with niri and can give a more out-of-t
 
 - [LXQt](https://lxqt-project.org/) officially supports niri, see [their wiki](https://github.com/lxqt/lxqt/wiki/ConfigWaylandSettings#general) for details on setting it up.
 - Many [XFCE](https://www.xfce.org/) components work on Wayland, including niri. See [their wiki](https://wiki.xfce.org/releng/wayland_roadmap#component_specific_status) for details.
-- There are complete desktop shells that support niri, for example [DankMaterialShell](https://github.com/AvengeMedia/DankMaterialShell) and [Noctalia](https://github.com/noctalia-dev/noctalia-shell).
+- There are complete desktop shells that support niri, for example [Dux Modular Shell](https://github.com/duxlabs-dev/dux-shell) and [Noctalia](https://github.com/noctalia-dev/noctalia-shell).
 - You can run a [COSMIC](https://system76.com/cosmic/) session with niri using [cosmic-ext-extra-sessions](https://github.com/Drakulix/cosmic-ext-extra-sessions).
 
 ### Default applications
