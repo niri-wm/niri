@@ -1871,6 +1871,12 @@ impl Tty {
         Some(f(renderer.as_gles_renderer()))
     }
 
+    pub fn cleanup_texture_cache(&mut self) {
+        if let Err(err) = self.gpu_manager.cleanup_texture_cache() {
+            warn!("error cleaning up texture cache: {err:?}");
+        }
+    }
+
     pub fn primary_render_node(&mut self) -> Option<DrmNode> {
         // Only meaningful while the primary renderer exists.
         self.gpu_manager
