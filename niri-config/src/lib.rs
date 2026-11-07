@@ -646,6 +646,23 @@ mod tests {
         assert_eq!(config.input.keyboard.repeat_rate, 25);
     }
 
+    #[test]
+    fn overview_action_scope() {
+        let config = Config::parse_mem(
+            "binds { Mod+O { toggle-overview all-outputs=false; }; Mod+Shift+O { toggle-overview; }; }",
+        )
+        .unwrap();
+
+        assert_eq!(
+            config.binds.0[0].action,
+            binds::BoundAction::Press(binds::Action::ToggleOverview(false))
+        );
+        assert_eq!(
+            config.binds.0[1].action,
+            binds::BoundAction::Press(binds::Action::ToggleOverview(true))
+        );
+    }
+
     #[track_caller]
     fn do_parse(text: &str) -> Config {
         Config::parse_mem(text)
@@ -885,7 +902,7 @@ mod tests {
         // A release section binds only the release phase.
         assert!(matches!(
             action(2),
-            BoundAction::Release(Action::ToggleOverview)
+            BoundAction::Release(Action::ToggleOverview(true))
         ));
 
         // Both sections bind both phases.
@@ -893,7 +910,7 @@ mod tests {
             action(3),
             BoundAction::Both {
                 press: Action::CloseWindow,
-                release: Action::ToggleOverview,
+                release: Action::ToggleOverview(true),
             }
         ));
     }
@@ -2797,7 +2814,9 @@ mod tests {
                             ),
                         },
                         action: Release(
-                            ToggleOverview,
+                            ToggleOverview(
+                                true,
+                            ),
                         ),
                         repeat: false,
                         pass_through: None,
