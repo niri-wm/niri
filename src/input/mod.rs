@@ -14,7 +14,7 @@ use niri_ipc::LayoutSwitchTarget;
 use smithay::backend::input::{
     AbsolutePositionEvent, Axis, AxisSource, ButtonState, Device, DeviceCapability, Event,
     GestureBeginEvent, GestureEndEvent, GesturePinchUpdateEvent as _, GestureSwipeUpdateEvent as _,
-    InputEvent, KeyState, KeyboardKeyEvent, Keycode, MouseButton, PointerAxisEvent,
+    InputEvent, InputTime, KeyState, KeyboardKeyEvent, Keycode, MouseButton, PointerAxisEvent,
     PointerButtonEvent, PointerMotionEvent, ProximityState, Switch, SwitchState, SwitchToggleEvent,
     TabletToolButtonEvent, TabletToolEvent, TabletToolProximityEvent, TabletToolTipEvent,
     TabletToolTipState, TouchEvent,
@@ -50,6 +50,8 @@ use self::resize_grab::ResizeGrab;
 use self::spatial_movement_grab::SpatialMovementGrab;
 #[cfg(feature = "dbus")]
 use crate::dbus::freedesktop_a11y::KbMonBlock;
+#[cfg(feature = "dbus")]
+use crate::dbus::gnome_shell::GlobalShortcutsPortalBinds;
 use crate::layout::scrolling::ScrollDirection;
 use crate::layout::{ActivateWindow, LayoutElement as _};
 use crate::niri::{CastTarget, Niri, PointerVisibility, State};
@@ -501,7 +503,7 @@ impl State {
                 if !pressed {
                     if let Some(bind) = self.niri.pending_release_binds.remove(&event.key_code()) {
                         self.niri.suppressed_keys.remove(&event.key_code());
-                        self.handle_bind(bind, false);
+                        self.handle_bind(bind, false, time);
                     }
                 }
                 return;
@@ -651,7 +653,7 @@ impl State {
                 // Check if all modifiers were released while the MRU UI was open. If so, close the
                 // UI (which will also transfer the focus to the current MRU UI selection).
                 if this.niri.window_mru_ui.is_open() && !pressed && modifiers.is_empty() {
-                    this.do_action(Action::MruConfirm, false);
+                    this.do_action(Action::MruConfirm, false, time);
 
                     // A pending release action recorded for the key must still run if it
                     // closed the MRU instead of going through the regular bind lookup.
@@ -691,6 +693,8 @@ impl State {
                         &config,
                         &this.niri.screenshot_ui,
                         &mut this.niri.window_mru_ui,
+                        #[cfg(feature = "dbus")]
+                        &this.niri.global_shortcuts_portal_binds,
                         this.niri.keyboard_focus.is_overview(),
                         modifiers,
                     );
@@ -754,7 +758,7 @@ impl State {
                 if pressed && bind.repeat {
                     self.start_key_repeat(bind.clone());
                 }
-                self.handle_bind(bind, pressed);
+                self.handle_bind(bind, pressed, time);
             }
             ShouldInterceptResult::Forward | ShouldInterceptResult::InterceptOnly => {}
         }
@@ -786,7 +790,10 @@ impl State {
             .niri
             .event_loop
             .insert_source(repeat_timer, move |_, _, state| {
-                state.handle_bind(bind.clone(), true);
+                // We don't get an InputTime from the timer (only an instant). Just use now instead.
+                // It should be close enough.
+                let time = InputTime::now();
+                state.handle_bind(bind.clone(), true, time);
                 TimeoutAction::ToDuration(repeat_duration)
             })
             .unwrap();
@@ -816,7 +823,7 @@ impl State {
         self.niri.queue_redraw_all();
     }
 
-    pub fn handle_bind(&mut self, bind: Bind, pressed: bool) {
+    pub fn handle_bind(&mut self, bind: Bind, pressed: bool, time: InputTime) {
         let allowed_when_locked = bind_allowed_when_locked(&bind, pressed);
         let allowed_during_screenshot = bind_allowed_during_screenshot(&bind, pressed);
 
@@ -858,11 +865,11 @@ impl State {
             return;
         };
 
-        self.do_action(action, allowed_when_locked);
+        self.do_action(action, allowed_when_locked, time);
     }
 
     /// Forgets all held inputs, running the release actions of anything that was still held.
-    pub fn release_held_inputs(&mut self) {
+    pub fn release_held_inputs(&mut self, time: InputTime) {
         let mut binds = Vec::new();
         binds.extend(
             self.niri
@@ -887,11 +894,11 @@ impl State {
         self.niri.clear_input_state();
 
         for bind in binds {
-            self.handle_bind(bind, false);
+            self.handle_bind(bind, false, time);
         }
     }
 
-    pub fn do_action(&mut self, action: Action, allow_when_locked: bool) {
+    pub fn do_action(&mut self, action: Action, allow_when_locked: bool, time: InputTime) {
         if self.niri.is_locked() && !(allow_when_locked || allowed_when_locked(&action)) {
             return;
         }
@@ -913,14 +920,14 @@ impl State {
             Action::ChangeVt(vt) => {
                 // Changing VT may not deliver the key releases, so treat the held binds as
                 // released while the session is still usable.
-                self.release_held_inputs();
+                self.release_held_inputs(time);
 
                 self.backend.change_vt(vt as i32);
             }
             Action::Suspend => {
                 // Suspend may not deliver the key releases, so treat the held binds as
                 // released before suspending.
-                self.release_held_inputs();
+                self.release_held_inputs(time);
 
                 self.backend.suspend();
             }
@@ -2717,6 +2724,28 @@ impl State {
                     self.niri.queue_redraw_mru_output();
                 }
             }
+            Action::GlobalShortcutActivateAction(action) => {
+                #[cfg(feature = "dbus")]
+                {
+                    let Some(shell) = self.niri.gnome_shell.as_ref() else {
+                        error!("attempted to activate action {action} but gnome_shell is missing");
+                        return;
+                    };
+                    shell.activate_action(action, time, &mut self.niri.activation_state);
+                }
+            }
+            Action::GlobalShortcutDeactivateAction(action) => {
+                #[cfg(feature = "dbus")]
+                {
+                    let Some(shell) = self.niri.gnome_shell.as_ref() else {
+                        error!(
+                            "attempted to deactivate action {action} but gnome_shell is missing"
+                        );
+                        return;
+                    };
+                    shell.deactivate_action(action, time, &mut self.niri.activation_state);
+                }
+            }
             Action::TestAction => {
                 #[cfg(test)]
                 {
@@ -3083,6 +3112,8 @@ impl State {
             &config,
             &self.niri.screenshot_ui,
             &mut self.niri.window_mru_ui,
+            #[cfg(feature = "dbus")]
+            &self.niri.global_shortcuts_portal_binds,
             self.niri.keyboard_focus.is_overview(),
             modifiers,
         );
@@ -3110,7 +3141,7 @@ impl State {
         if ButtonState::Released == button_state {
             if let Some(bind) = self.niri.pending_mouse_release_binds.remove(&button_code) {
                 self.niri.suppressed_buttons.remove(&button_code);
-                self.handle_bind(bind, false);
+                self.handle_bind(bind, false, event.time());
                 return;
             }
         }
@@ -3169,7 +3200,7 @@ impl State {
                             .insert(button_code, bind.clone());
                     }
                     if bind.has_press() {
-                        self.handle_bind(bind.clone(), true);
+                        self.handle_bind(bind.clone(), true, event.time());
                     }
                     return;
                 }
@@ -3532,12 +3563,12 @@ impl State {
 
                     if let Some(right) = bind_right {
                         for _ in 0..ticks {
-                            self.handle_bind(right.clone(), true);
+                            self.handle_bind(right.clone(), true, event.time());
                         }
                     }
                     if let Some(left) = bind_left {
                         for _ in ticks..0 {
-                            self.handle_bind(left.clone(), true);
+                            self.handle_bind(left.clone(), true, event.time());
                         }
                     }
                 }
@@ -3622,12 +3653,12 @@ impl State {
 
                     if let Some(down) = bind_down {
                         for _ in 0..ticks {
-                            self.handle_bind(down.clone(), true);
+                            self.handle_bind(down.clone(), true, event.time());
                         }
                     }
                     if let Some(up) = bind_up {
                         for _ in ticks..0 {
-                            self.handle_bind(up.clone(), true);
+                            self.handle_bind(up.clone(), true, event.time());
                         }
                     }
                 }
@@ -3757,12 +3788,12 @@ impl State {
 
                     if let Some(right) = bind_right {
                         for _ in 0..ticks {
-                            self.handle_bind(right.clone(), true);
+                            self.handle_bind(right.clone(), true, event.time());
                         }
                     }
                     if let Some(left) = bind_left {
                         for _ in ticks..0 {
-                            self.handle_bind(left.clone(), true);
+                            self.handle_bind(left.clone(), true, event.time());
                         }
                     }
                 }
@@ -3779,12 +3810,12 @@ impl State {
 
                     if let Some(down) = bind_down {
                         for _ in 0..ticks {
-                            self.handle_bind(down.clone(), true);
+                            self.handle_bind(down.clone(), true, event.time());
                         }
                     }
                     if let Some(up) = bind_up {
                         for _ in ticks..0 {
-                            self.handle_bind(up.clone(), true);
+                            self.handle_bind(up.clone(), true, event.time());
                         }
                     }
                 }
@@ -4193,7 +4224,7 @@ impl State {
             if button_state == ButtonState::Released {
                 if let Some(bind) = self.niri.pending_tablet_release_binds.remove(&button) {
                     self.niri.suppressed_buttons.remove(&button);
-                    self.handle_bind(bind, false);
+                    self.handle_bind(bind, false, event.time());
                     return;
                 }
             }
@@ -4226,7 +4257,7 @@ impl State {
                                     .insert(button, bind.clone());
                             }
                             if bind.has_press() {
-                                self.handle_bind(bind.clone(), true);
+                                self.handle_bind(bind.clone(), true, event.time());
                             }
                             return;
                         }
@@ -4818,7 +4849,7 @@ impl State {
         };
 
         if let Some(action) = action {
-            self.do_action(action, true);
+            self.do_action(action, true, evt.time());
         }
     }
 
@@ -5769,6 +5800,7 @@ fn make_binds_iter<'a>(
     config: &'a Config,
     screenshot_ui: &'a ScreenshotUi,
     mru: &'a mut WindowMruUi,
+    #[cfg(feature = "dbus")] global_shortcuts: &'a GlobalShortcutsPortalBinds,
     overview_focused: bool,
     mods: Modifiers,
 ) -> impl Iterator<Item = &'a Bind> + Clone {
@@ -5794,11 +5826,17 @@ fn make_binds_iter<'a>(
         .flatten();
 
     // The precedence is screenshot UI, then general, then MRU binds.
-    screenshot_binds
+    let all_binds = screenshot_binds
         .chain(general_binds)
         .chain(mru_binds)
         .chain(mru_open_binds)
-        .chain(overview_binds)
+        .chain(overview_binds);
+
+    // The GlobalShortcuts portal binds go last.
+    #[cfg(feature = "dbus")]
+    let all_binds = all_binds.chain(global_shortcuts.binds());
+
+    all_binds
 }
 
 #[cfg(test)]
