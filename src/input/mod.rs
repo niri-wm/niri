@@ -5339,6 +5339,33 @@ fn bind_allowed_during_screenshot(bind: &Bind, pressed: bool) -> bool {
     }
 }
 
+/// Helper function to apply custom acceleration curve if configured.
+/// Requires libinput 1.23+ (enabled via the `libinput_1_23` feature on the `input` crate).
+fn apply_custom_accel_curve(device: &mut input::Device, curve: &niri_config::AccelProfileCurve) {
+    let Some(accel_config) = input::AccelConfig::new(input::AccelProfile::Custom) else {
+        warn!(
+            "Failed to create custom acceleration config. Curve step={}, points={:?}. Using default acceleration instead.",
+            curve.step, curve.points
+        );
+        return;
+    };
+
+    if let Err(err) = accel_config.set_points(input::AccelType::Motion, curve.step, &curve.points) {
+        warn!(
+            "Failed to set custom acceleration curve points. Curve step={}, points={:?}. Error: {:?}. Using default acceleration instead.",
+            curve.step, curve.points, err
+        );
+        return;
+    }
+
+    if let Err(err) = device.config_accel_apply(accel_config) {
+        warn!(
+            "Failed to apply custom acceleration curve. Curve step={}, points={:?}. Error: {:?}. Using default acceleration instead.",
+            curve.step, curve.points, err
+        );
+    }
+}
+
 pub fn apply_libinput_settings(
     config: &niri_config::Input,
     device: &mut input::Device,
@@ -5378,6 +5405,13 @@ pub fn apply_libinput_settings(
 
         if let Some(accel_profile) = c.accel_profile {
             let _ = device.config_accel_set_profile(accel_profile.into());
+
+            // Apply custom curve if configured
+            if accel_profile == niri_config::AccelProfile::Custom {
+                if let Some(curve) = &c.accel_custom_curve {
+                    apply_custom_accel_curve(device, curve);
+                }
+            }
         } else if let Some(default) = device.config_accel_default_profile() {
             let _ = device.config_accel_set_profile(default);
         }
@@ -5456,6 +5490,13 @@ pub fn apply_libinput_settings(
 
         if let Some(accel_profile) = c.accel_profile {
             let _ = device.config_accel_set_profile(accel_profile.into());
+
+            // Apply custom curve if configured
+            if accel_profile == niri_config::AccelProfile::Custom {
+                if let Some(curve) = &c.accel_custom_curve {
+                    apply_custom_accel_curve(device, curve);
+                }
+            }
         } else if let Some(default) = device.config_accel_default_profile() {
             let _ = device.config_accel_set_profile(default);
         }
@@ -5503,6 +5544,13 @@ pub fn apply_libinput_settings(
 
         if let Some(accel_profile) = c.accel_profile {
             let _ = device.config_accel_set_profile(accel_profile.into());
+
+            // Apply custom curve if configured
+            if accel_profile == niri_config::AccelProfile::Custom {
+                if let Some(curve) = &c.accel_custom_curve {
+                    apply_custom_accel_curve(device, curve);
+                }
+            }
         } else if let Some(default) = device.config_accel_default_profile() {
             let _ = device.config_accel_set_profile(default);
         }
@@ -5550,6 +5598,13 @@ pub fn apply_libinput_settings(
 
         if let Some(accel_profile) = c.accel_profile {
             let _ = device.config_accel_set_profile(accel_profile.into());
+
+            // Apply custom curve if configured
+            if accel_profile == niri_config::AccelProfile::Custom {
+                if let Some(curve) = &c.accel_custom_curve {
+                    apply_custom_accel_curve(device, curve);
+                }
+            }
         } else if let Some(default) = device.config_accel_default_profile() {
             let _ = device.config_accel_set_profile(default);
         }

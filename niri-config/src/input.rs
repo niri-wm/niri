@@ -173,6 +173,14 @@ pub enum TrackLayout {
     Window,
 }
 
+#[derive(knuffel::Decode, Debug, Clone, PartialEq)]
+pub struct AccelProfileCurve {
+    #[knuffel(child, unwrap(argument))]
+    pub step: f64,
+    #[knuffel(child, unwrap(arguments))]
+    pub points: Vec<f64>,
+}
+
 #[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq)]
 pub struct ScrollFactor {
     #[knuffel(argument)]
@@ -214,6 +222,8 @@ pub struct Touchpad {
     pub accel_speed: FloatOrInt<-1, 1>,
     #[knuffel(child, unwrap(argument, str))]
     pub accel_profile: Option<AccelProfile>,
+    #[knuffel(child)]
+    pub accel_custom_curve: Option<AccelProfileCurve>,
     #[knuffel(child, unwrap(argument, str))]
     pub scroll_method: Option<ScrollMethod>,
     #[knuffel(child, unwrap(argument))]
@@ -244,6 +254,8 @@ pub struct Mouse {
     pub accel_speed: FloatOrInt<-1, 1>,
     #[knuffel(child, unwrap(argument, str))]
     pub accel_profile: Option<AccelProfile>,
+    #[knuffel(child)]
+    pub accel_custom_curve: Option<AccelProfileCurve>,
     #[knuffel(child, unwrap(argument, str))]
     pub scroll_method: Option<ScrollMethod>,
     #[knuffel(child, unwrap(argument))]
@@ -268,6 +280,8 @@ pub struct Trackpoint {
     pub accel_speed: FloatOrInt<-1, 1>,
     #[knuffel(child, unwrap(argument, str))]
     pub accel_profile: Option<AccelProfile>,
+    #[knuffel(child)]
+    pub accel_custom_curve: Option<AccelProfileCurve>,
     #[knuffel(child, unwrap(argument, str))]
     pub scroll_method: Option<ScrollMethod>,
     #[knuffel(child, unwrap(argument))]
@@ -290,6 +304,8 @@ pub struct Trackball {
     pub accel_speed: FloatOrInt<-1, 1>,
     #[knuffel(child, unwrap(argument, str))]
     pub accel_profile: Option<AccelProfile>,
+    #[knuffel(child)]
+    pub accel_custom_curve: Option<AccelProfileCurve>,
     #[knuffel(child, unwrap(argument, str))]
     pub scroll_method: Option<ScrollMethod>,
     #[knuffel(child, unwrap(argument))]
@@ -321,6 +337,7 @@ impl From<ClickMethod> for input::ClickMethod {
 pub enum AccelProfile {
     Adaptive,
     Flat,
+    Custom,
 }
 
 impl From<AccelProfile> for input::AccelProfile {
@@ -328,6 +345,8 @@ impl From<AccelProfile> for input::AccelProfile {
         match value {
             AccelProfile::Adaptive => Self::Adaptive,
             AccelProfile::Flat => Self::Flat,
+            // Custom profile requires libinput 1.23+ which is now available in input crate 0.10.0
+            AccelProfile::Custom => Self::Custom,
         }
     }
 }
@@ -501,8 +520,9 @@ impl FromStr for AccelProfile {
         match s {
             "adaptive" => Ok(Self::Adaptive),
             "flat" => Ok(Self::Flat),
+            "custom" => Ok(Self::Custom),
             _ => Err(miette!(
-                r#"invalid accel profile, can be "adaptive" or "flat""#
+                r#"invalid accel profile, can be "adaptive", "flat", or "custom""#
             )),
         }
     }
@@ -865,5 +885,97 @@ mod tests {
             2.0,
         )
         ");
+    }
+
+    #[test]
+    fn parse_custom_accel_profile() {
+        // Test custom profile with curve
+        let parsed = do_parse(
+            r#"
+            trackpoint {
+                accel-profile "custom"
+                accel-custom-curve {
+                    step 0.5
+                    points 0.0 0.0 0.1 0.2 0.5 0.8 1.0 1.0
+                }
+            }
+            "#,
+        );
+
+        assert_debug_snapshot!(parsed.trackpoint.accel_profile, @r#"
+        Some(
+            Custom,
+        )
+        "#);
+        assert_debug_snapshot!(parsed.trackpoint.accel_custom_curve, @r#"
+        Some(
+            AccelProfileCurve {
+                step: 0.5,
+                points: [
+                    0.0,
+                    0.0,
+                    0.1,
+                    0.2,
+                    0.5,
+                    0.8,
+                    1.0,
+                    1.0,
+                ],
+            },
+        )
+        "#);
+    }
+
+    #[test]
+    fn parse_custom_accel_profile_mouse() {
+        // Test custom profile on mouse
+        let parsed = do_parse(
+            r#"
+            mouse {
+                accel-profile "custom"
+                accel-custom-curve {
+                    step 1.0
+                    points 0.0 0.0 1.0 1.0
+                }
+            }
+            "#,
+        );
+
+        assert!(parsed.mouse.accel_profile == Some(AccelProfile::Custom));
+        assert!(parsed.mouse.accel_custom_curve.is_some());
+    }
+
+    #[test]
+    fn parse_accel_profile_variants() {
+        // Test all profile types
+        let parsed = do_parse(
+            r#"
+            mouse {
+                accel-profile "adaptive"
+            }
+            trackpoint {
+                accel-profile "flat"
+            }
+            touchpad {
+                accel-profile "custom"
+            }
+            "#,
+        );
+
+        assert_debug_snapshot!(parsed.mouse.accel_profile, @r#"
+        Some(
+            Adaptive,
+        )
+        "#);
+        assert_debug_snapshot!(parsed.trackpoint.accel_profile, @r#"
+        Some(
+            Flat,
+        )
+        "#);
+        assert_debug_snapshot!(parsed.touchpad.accel_profile, @r#"
+        Some(
+            Custom,
+        )
+        "#);
     }
 }
