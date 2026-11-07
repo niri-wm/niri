@@ -1,4 +1,4 @@
-use std::io::{BufRead as _, ErrorKind};
+use std::io::{self, BufRead as _, ErrorKind};
 use std::iter::Peekable;
 use std::path::Path;
 use std::{env, slice};
@@ -8,11 +8,12 @@ use niri_config::OutputName;
 use niri_ipc::socket::Socket;
 use niri_ipc::{
     Action, Cast, CastKind, CastTarget, Event, KeyboardLayouts, LogicalOutput, Mode, Output,
-    OutputConfigChanged, Overview, Request, Response, Transform, Window, WindowLayout,
+    OutputConfigChanged, Overview, Request, Response, ScreenshotRequest, Transform, Window,
+    WindowLayout,
 };
 use serde_json::json;
 
-use crate::cli::Msg;
+use crate::cli::{Msg, ScreenshotTarget};
 use crate::utils::version;
 
 pub fn handle_msg(mut msg: Msg, json: bool, print_request: bool) -> anyhow::Result<()> {
@@ -29,6 +30,15 @@ pub fn handle_msg(mut msg: Msg, json: bool, print_request: bool) -> anyhow::Resu
         }
     }
 
+    if let Msg::Screenshot { target, id, .. } = &msg {
+        if *target != ScreenshotTarget::Window && id.is_some() {
+            bail!("--id is only valid with --target window");
+        }
+        if json {
+            bail!("--json cannot be used with --stdout");
+        }
+    }
+
     let request = match &msg {
         Msg::Version => Request::Version,
         Msg::Outputs => Request::Outputs,
@@ -36,6 +46,23 @@ pub fn handle_msg(mut msg: Msg, json: bool, print_request: bool) -> anyhow::Resu
         Msg::FocusedOutput => Request::FocusedOutput,
         Msg::PickWindow => Request::PickWindow,
         Msg::PickColor => Request::PickColor,
+        Msg::Screenshot {
+            target,
+            id,
+            show_pointer,
+            ..
+        } => {
+            let show_pointer = show_pointer.unwrap_or(*target != ScreenshotTarget::Window);
+            let target = match target {
+                ScreenshotTarget::Selection => niri_ipc::ScreenshotTarget::Selection,
+                ScreenshotTarget::Screen => niri_ipc::ScreenshotTarget::Screen,
+                ScreenshotTarget::Window => niri_ipc::ScreenshotTarget::Window { id: *id },
+            };
+            Request::Screenshot(ScreenshotRequest {
+                target,
+                show_pointer,
+            })
+        }
         Msg::Action { action } => Request::Action(action.clone()),
         Msg::Output { output, action } => Request::Output {
             output: output.clone(),
@@ -69,7 +96,17 @@ pub fn handle_msg(mut msg: Msg, json: bool, print_request: bool) -> anyhow::Resu
     let is_event_stream = matches!(request, Request::EventStream);
     let mut socket = Socket::connect().context("error connecting to the niri socket")?;
 
-    let result = socket.send(request);
+    let result = match request {
+        Request::Screenshot(request) => {
+            unsafe {
+                libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+            }
+
+            let stdout = io::stdout();
+            socket.send_screenshot(request, stdout.lock())
+        }
+        request => socket.send(request),
+    };
 
     // For errors that can be caused by a version mismatch between the running niri instance and
     // the niri msg CLI, we will try to fetch and compare the versions.
@@ -331,6 +368,14 @@ pub fn handle_msg(mut msg: Msg, json: bool, print_request: bool) -> anyhow::Resu
                 println!("Hex: #{r:02x}{g:02x}{b:02x}");
             } else {
                 println!("No color was picked.");
+            }
+        }
+        Msg::Screenshot { .. } => {
+            let Response::Screenshot(screenshot) = response else {
+                bail!("unexpected response: expected Screenshot, got {response:?}");
+            };
+            if screenshot.is_none() {
+                bail!("screenshot was cancelled");
             }
         }
         Msg::Action { .. } => {
