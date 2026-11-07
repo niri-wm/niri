@@ -22,9 +22,10 @@ uniform float niri_progress;
 uniform float niri_clamped_progress;
 
 uniform vec4 niri_corner_radius;
+uniform float niri_corner_exponent;
 uniform float niri_clip_to_geometry;
 
 uniform float niri_alpha;
 uniform float niri_scale;
 
-float niri_rounding_alpha(vec2 coords, vec2 size, vec4 corner_radius);
+float niri_rounding_alpha(vec2 coords, vec2 size, vec4 corner_radius, float corner_exponent);
