@@ -20,6 +20,7 @@ use niri_ipc::{
     Action, Event, KeyboardLayouts, OutputConfigChanged, Overview, Reply, Request, Response,
     Timestamp, WindowLayout, Workspace,
 };
+use smithay::backend::input::InputTime;
 use smithay::desktop::layer_map_for_output;
 use smithay::input::pointer::{
     CursorIcon, CursorImageStatus, Focus, GrabStartData as PointerGrabStartData,
@@ -389,7 +390,9 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
                 // Make sure some logic like workspace clean-up has a chance to run before doing
                 // actions.
                 state.niri.advance_animations();
-                state.do_action(action, false);
+                // This action didn't come from an input, so just use the current time.
+                let time = InputTime::now();
+                state.do_action(action, false, time);
                 let _ = tx.send_blocking(());
             });
 

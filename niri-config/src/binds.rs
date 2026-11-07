@@ -545,6 +545,10 @@ pub enum Action {
     MruSetScope(MruScope),
     #[knuffel(skip)]
     MruCycleScope,
+    #[knuffel(skip)]
+    GlobalShortcutActivateAction(u32),
+    #[knuffel(skip)]
+    GlobalShortcutDeactivateAction(u32),
 
     // Doesn't look like knuffel allows gating on #[cfg(test)]...
     #[knuffel(skip)]
@@ -1358,6 +1362,24 @@ impl FromStr for Key {
             Trigger::Modifier(ModKey::IsoLevel5Shift)
         } else {
             let mut keysym = keysym_from_name(key, KEYSYM_CASE_INSENSITIVE);
+
+            let with_xf86;
+            let mut final_key = key;
+            if keysym.raw() == KEY_NoSymbol {
+                // If the key didn't match, try it with an XF86 prefix.
+                // This way, you can write e.g. AudioMute instead of XF86AudioMute.
+                //
+                // This is actually needed for the xdg-desktop-portal-gnome implementation of the
+                // GlobalShortcuts portal, as it will request non-XF86-prefixed names. Mutter then
+                // does this same exact prefixing:
+                // https://gitlab.gnome.org/GNOME/mutter/-/blob/b48811767189fb5446bd1b831e98271a21866e09/src/core/meta-accel-parse.c#L302-311
+                with_xf86 = format!("XF86{key}");
+                keysym = keysym_from_name(&with_xf86, KEYSYM_CASE_INSENSITIVE);
+                if keysym.raw() != KEY_NoSymbol {
+                    final_key = &with_xf86;
+                }
+            }
+
             // The keyboard event handling code can receive either
             // XF86ScreenSaver or XF86Screensaver, because there is no
             // case mapping defined between these keysyms. If we just
@@ -1380,7 +1402,7 @@ impl FromStr for Key {
             //
             // See https://github.com/niri-wm/niri/issues/1969
             if keysym == Keysym::XF86_Screensaver {
-                keysym = keysym_from_name(key, KEYSYM_NO_FLAGS);
+                keysym = keysym_from_name(final_key, KEYSYM_NO_FLAGS);
                 if keysym.raw() == KEY_NoSymbol {
                     keysym = Keysym::XF86_ScreenSaver;
                 }
@@ -1426,6 +1448,29 @@ mod tests {
         );
         assert_eq!(
             "xf86screensaver".parse::<Key>().unwrap(),
+            Key {
+                trigger: Trigger::Keysym(Keysym::XF86_ScreenSaver),
+                modifiers: Modifiers::empty(),
+            }
+        );
+
+        // And now with the auto-prepended XF86 prefix.
+        assert_eq!(
+            "ScreenSaver".parse::<Key>().unwrap(),
+            Key {
+                trigger: Trigger::Keysym(Keysym::XF86_ScreenSaver),
+                modifiers: Modifiers::empty(),
+            },
+        );
+        assert_eq!(
+            "Screensaver".parse::<Key>().unwrap(),
+            Key {
+                trigger: Trigger::Keysym(Keysym::XF86_Screensaver),
+                modifiers: Modifiers::empty(),
+            }
+        );
+        assert_eq!(
+            "screensaver".parse::<Key>().unwrap(),
             Key {
                 trigger: Trigger::Keysym(Keysym::XF86_ScreenSaver),
                 modifiers: Modifiers::empty(),
