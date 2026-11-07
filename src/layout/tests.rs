@@ -864,6 +864,7 @@ impl Op {
                         .map(|name| format!("output{name}"))
                         .collect(),
                     layout: layout_config.map(|x| niri_config::WorkspaceLayoutPart(*x)),
+                    active_at_startup: false,
                 });
             }
             Op::UnnameWorkspace { ws_name } => {
