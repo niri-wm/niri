@@ -4969,6 +4969,16 @@ fn should_intercept_key<'a>(
         return ShouldInterceptResult::Forward;
     }
 
+    // If the bind is not allowed when locked, forward the key.
+    //
+    // This early return is not necessary to prevent the action from running because
+    // allow_when_locked is also checked in handle_bind() (this is required for key repeat).
+    // However, especially with the GlobalShortcuts portal, it's quite easy to bind single letter
+    // keys. This forward lets them work to type on the lock screen so the user isn't locked out.
+    if is_locked && !bind_allowed_when_locked(&bind, true) {
+        return ShouldInterceptResult::Forward;
+    }
+
     // By default we intercept the key which hides both the press and release from clients.
     // Clients still learn about the modifier state via `advertise_modifier_state()`.
     //
@@ -6211,11 +6221,11 @@ mod tests {
         let result = press_close_key(&mut state, &bindings, Modifiers::SUPER);
 
         // `handle_bind()` drops the press while locked, and nothing is recorded to undo.
-        assert_matches!(result, ShouldInterceptResult::InterceptAndHandle(_));
+        assert_matches!(result, ShouldInterceptResult::Forward);
         assert!(state.pending_release_binds.is_empty());
 
         let result = release_close_key(&mut state, &bindings, Modifiers::SUPER);
-        assert_matches!(result, ShouldInterceptResult::InterceptOnly);
+        assert_matches!(result, ShouldInterceptResult::Forward);
     }
 
     #[test]
