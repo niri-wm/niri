@@ -2003,6 +2003,28 @@ mod tests {
                 hide_after_inactive_ms: Some(
                     3000,
                 ),
+                shake: ShakeConfig {
+                    off: true,
+                    max_multiplier: 4.5,
+                    post_expand_delay_ms: 250,
+                    expand_duration_ms: 200,
+                    decay_duration_ms: 300,
+                    shake_interval_ms: 400,
+                    min_diagonal: 100.0,
+                    sensitivity: 2.0,
+                    cooldown_ms: Some(
+                        400,
+                    ),
+                    behavior: Some(
+                        "hold",
+                    ),
+                    stopped_threshold_ms: Some(
+                        50,
+                    ),
+                    shake_relax_ms: Some(
+                        150,
+                    ),
+                },
             },
             screenshot_path: ScreenshotPath(
                 Some(
@@ -2154,6 +2176,28 @@ mod tests {
                                 damping_ratio: 1.0,
                                 stiffness: 800,
                                 epsilon: 0.001,
+                            },
+                        ),
+                    },
+                ),
+                cursor_expand: CursorExpandAnim(
+                    Animation {
+                        off: false,
+                        kind: Easing(
+                            EasingParams {
+                                duration_ms: 200,
+                                curve: EaseOutCubic,
+                            },
+                        ),
+                    },
+                ),
+                cursor_shrink: CursorShrinkAnim(
+                    Animation {
+                        off: false,
+                        kind: Easing(
+                            EasingParams {
+                                duration_ms: 300,
+                                curve: EaseOutCubic,
                             },
                         ),
                     },
