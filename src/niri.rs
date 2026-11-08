@@ -138,7 +138,8 @@ use crate::dbus::gnome_shell_introspect::{self, IntrospectToNiri, NiriToIntrospe
 use crate::dbus::gnome_shell_screenshot::{NiriToScreenshot, ScreenshotToNiri};
 use crate::frame_clock::FrameClock;
 use crate::handlers::image_copy_capture::{
-    self as image_copy_capture_impl, ImageCopyCursorSession, ImageCopySession,
+    self as image_copy_capture_impl, CursorCaptureGeometry, ImageCopyCursorSession,
+    ImageCopySession,
 };
 use crate::handlers::virtual_keyboard::VirtualKeyboardKeymap;
 use crate::handlers::{configure_lock_surface, XDG_ACTIVATION_TOKEN_TIMEOUT};
@@ -1008,7 +1009,7 @@ impl State {
         }
         self.niri.image_copy_sessions = sessions;
 
-        // Cursor session constraints are refreshed in refresh_image_copy_cursor_sessions().
+        // Cursor session constraints are refreshed in render_cursor_for_capture().
         let mut cursor_sessions = mem::take(&mut self.niri.image_copy_cursor_sessions);
         cursor_sessions.retain(|s| {
             let source = s.session.source();
@@ -6118,7 +6119,7 @@ impl Niri {
         let scale: Scale<f64> = output.current_scale().fractional_scale().into();
 
         // The cursor render is the same for all sessions on the output.
-        let mut cached_elements = None;
+        let mut cached_cursor = None;
 
         let mut sessions = mem::take(&mut self.image_copy_cursor_sessions);
         for s in &mut sessions {
@@ -6135,30 +6136,44 @@ impl Niri {
                 continue;
             }
 
-            // The constraints are kept up to date with the cursor image size in
-            // refresh_image_copy_cursor_sessions, which also fails pending frames on change.
-            let Some(constraints) = s.session.current_constraints() else {
-                let frame = s.pending_frame.take().unwrap();
-                frame.fail(CaptureFailureReason::BufferConstraints);
+            let (elements, geometry) = cached_cursor
+                .get_or_insert_with(|| self.render_cursor_for_capture(renderer, output));
+
+            let size_changed = s
+                .session
+                .current_constraints()
+                .is_none_or(|c| (c.size.w, c.size.h) != (geometry.size.w, geometry.size.h));
+            if size_changed {
+                // Cannot capture a frame for outdated constraints, so fail it
+                // before sending the new constraints (otherwise clients which
+                // re-negotiate on failure may miss the new `done`).
+                if let Some(frame) = s.pending_frame.take() {
+                    frame.fail(CaptureFailureReason::BufferConstraints);
+                }
+                let constraints =
+                    image_copy_capture_impl::cursor_capture_constraints(geometry.size);
+                s.session.update_constraints(constraints);
                 continue;
-            };
-            let size = Size::<i32, Physical>::from((constraints.size.w, constraints.size.h));
+            }
+            // Buffer -> Physical
+            let size = Size::<i32, Physical>::new(geometry.size.w, geometry.size.h);
 
             // Recreate the damage tracker if the cursor buffer size or output scale changed.
             reset_damage_tracker_if_changed(&mut s.damage_tracker, size, scale, Transform::Normal);
 
-            let elements = cached_elements
-                .get_or_insert_with(|| self.render_cursor_for_capture(renderer, output));
-
             let (damage, states) = s.damage_tracker.damage_output(1, elements).unwrap();
             if damage.is_none() {
                 // No change, capture the frame later.
+                //
+                // FIXME: also check if the cursor hotspot changed (which could happen without
+                // damage) and redraw the cursor in this case too. This needs exposing
+                // CursorSessionRef::hotspot() from Smithay.
                 continue;
             }
 
             let frame = s.pending_frame.take().unwrap();
             let buffer = frame.buffer();
-            let capture_buffer = image_copy_capture_impl::capture_buffer(&buffer, constraints.size);
+            let capture_buffer = image_copy_capture_impl::capture_buffer(&buffer, geometry.size);
             if !matches!(capture_buffer, Some(CaptureBuffer::Shm(_))) {
                 frame.fail(CaptureFailureReason::BufferConstraints);
                 // Report full damage next time.
@@ -6169,7 +6184,10 @@ impl Niri {
             let res = render_to_shm(renderer, &mut s.damage_tracker, &buffer, elements, states);
             match res {
                 Ok(()) => {
-                    let full_damage = vec![Rectangle::from_size(constraints.size)];
+                    s.session
+                        .set_cursor_hotspot((geometry.hotspot.x, geometry.hotspot.y));
+
+                    let full_damage = vec![Rectangle::from_size(geometry.size)];
                     frame.success(Transform::Normal, full_damage, target_presentation_time);
                 }
                 Err(err) => {
@@ -6195,56 +6213,46 @@ impl Niri {
         &self,
         renderer: &mut GlesRenderer,
         output: &Output,
-    ) -> Vec<PointerRenderElements<GlesRenderer>> {
-        let int_scale = output.current_scale().integer_scale();
-        let output_scale = Scale::from(output.current_scale().fractional_scale());
+    ) -> (
+        Vec<RelocateRenderElement<PointerRenderElements<GlesRenderer>>>,
+        CursorCaptureGeometry,
+    ) {
+        let output_scale = output.current_scale();
+        let scale = Scale::from(output_scale.fractional_scale());
 
         let mut elements = Vec::new();
-        match self.cursor_manager.get_render_cursor(int_scale) {
-            RenderCursor::Hidden => (),
-            RenderCursor::Surface { surface, .. } => {
-                // Subsurfaces can extend above or to the left of the root surface, so shift the
-                // tree to put its bounding box at the origin. The hotspot is shifted to match in
-                // cursor_capture_hotspot().
-                let bbox = smithay::desktop::utils::bbox_from_surface_tree(&surface, (0, 0));
-                let loc = Point::<i32, Logical>::from((-bbox.loc.x, -bbox.loc.y))
-                    .to_f64()
-                    .to_physical_precise_round(output_scale);
-                push_elements_from_surface_tree(
-                    renderer,
-                    &surface,
-                    loc,
-                    output_scale,
-                    1.,
-                    Kind::Cursor,
-                    &mut |elem| elements.push(elem.into()),
-                );
-            }
-            RenderCursor::Named {
-                icon,
-                scale,
-                cursor,
-            } => {
-                let (idx, _frame) = cursor.frame(self.start_time.elapsed().as_millis() as u32);
-                let texture = self.cursor_texture_cache.get(icon, scale, &cursor, idx);
-                match MemoryRenderBufferRenderElement::from_buffer(
-                    renderer,
-                    Point::<f64, _>::from((0., 0.)),
-                    &texture,
-                    None,
-                    None,
-                    None,
-                    Kind::Cursor,
-                ) {
-                    Ok(element) => elements.push(element.into()),
-                    Err(err) => {
-                        warn!("error importing a cursor texture: {err:?}");
-                    }
-                }
-            }
+        self.render_pointer(renderer, output, &mut |elem| elements.push(elem));
+
+        // We need the elements at (0, 0) for damage tracking.
+        let geo = encompassing_geo(scale, elements.iter());
+        let off = geo.loc.upscale(-1);
+
+        let elements = elements
+            .into_iter()
+            .map(|elem| RelocateRenderElement::from_element(elem, off, Relocate::Relative))
+            .collect();
+
+        let output_loc = self.global_space.output_geometry(output).unwrap().loc;
+        let pointer_loc = self
+            .tablet_cursor_location
+            .unwrap_or_else(|| self.seat.get_pointer().unwrap().current_location());
+        let hotspot =
+            (pointer_loc - output_loc.to_f64()).to_physical_precise_round(scale) - geo.loc;
+
+        // Physical -> Buffer
+        let mut size = Size::new(geo.size.w, geo.size.h);
+        let hotspot = Point::new(hotspot.x, hotspot.y);
+
+        // Fall back to the nominal cursor size when the cursor is currently hidden or has no
+        // buffer, so that the session always has valid constraints.
+        if size.is_empty() {
+            let int_scale = output_scale.integer_scale();
+            let fallback = i32::from(self.config.borrow().cursor.xcursor_size) * int_scale;
+            size = Size::from((fallback, fallback));
         }
 
-        elements
+        let geometry = CursorCaptureGeometry { size, hotspot };
+        (elements, geometry)
     }
 
     /// Sends cursor position, hotspot and size to cursor sessions independently
@@ -6286,26 +6294,6 @@ impl Niri {
 
             let scale = Scale::from(output.current_scale().fractional_scale());
 
-            // Update the constraints if the cursor image size changed.
-            let constraints = image_copy_capture_impl::cursor_capture_constraints(self, &output);
-            let cursor_size = constraints.size;
-            let size_changed = s
-                .session
-                .current_constraints()
-                .is_none_or(|c| (c.size.w, c.size.h) != (constraints.size.w, constraints.size.h));
-            if size_changed {
-                // Cannot capture a frame for outdated constraints, so fail it
-                // before sending the new constraints (otherwise clients which
-                // re-negotiate on failure may miss the new `done`).
-                if let Some(frame) = s.pending_frame.take() {
-                    frame.fail(CaptureFailureReason::BufferConstraints);
-                }
-                s.session.update_constraints(constraints);
-            }
-
-            let hotspot = image_copy_capture_impl::cursor_capture_hotspot(self, &output);
-            s.session.set_cursor_hotspot((hotspot.x, hotspot.y));
-
             let pos = if !self.pointer_visibility.is_visible() {
                 None
             } else if let Some(mapped) = mapped {
@@ -6332,13 +6320,7 @@ impl Niri {
                             .to_physical_precise_round(scale);
                         Point::from((ipos.x, ipos.y))
                     })
-            } else if let Some(mode) = output.current_mode() {
-                // Unlike frame damage, the position is in transformed buffer coordinates, i.e. the
-                // displayed orientation, so the output transform is not undone here. This matches
-                // wlroots.
-                let pos: Point<i32, Physical> =
-                    (pointer_pos - output_geo.loc.to_f64()).to_physical_precise_round(scale);
-
+            } else {
                 // Cursors are considered to have entered if any part of the image
                 // intersects the output, not just the hotspot, so the position may
                 // be negative or past the edge.
@@ -6351,16 +6333,15 @@ impl Niri {
                 // This intentionally differs from how PipeWire casts work since PW
                 // requires the pointer to be within the output bounds, but this
                 // isn't relevant (or wanted) for the imagecopy protocol.
-                let hotspot = Point::<i32, Physical>::from((hotspot.x, hotspot.y));
-                let image =
-                    Rectangle::new(pos - hotspot, Size::from((cursor_size.w, cursor_size.h)));
-                let output_rect =
-                    Rectangle::from_size(output.current_transform().transform_size(mode.size));
-                image
-                    .overlaps(output_rect)
-                    .then_some(Point::from((pos.x, pos.y)))
-            } else {
-                None
+                self.outputs_overlapping_pointer.contains(&output).then(|| {
+                    // Unlike frame damage, the position is in transformed buffer coordinates,
+                    // i.e. the displayed orientation, so the output transform is not undone here.
+                    // This matches wlroots.
+                    let pos: Point<i32, Physical> =
+                        (pointer_pos - output_geo.loc.to_f64()).to_physical_precise_round(scale);
+
+                    Point::from((pos.x, pos.y))
+                })
             };
             s.session.set_cursor_pos(pos);
         }
