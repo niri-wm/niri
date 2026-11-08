@@ -4269,16 +4269,8 @@ impl Niri {
                         .lock()
                         .unwrap()
                         .hotspot
-                });
-
-                let surface_pos = pointer_pos.to_i32_round() - hotspot;
-                let bbox = bbox_from_surface_tree(surface, surface_pos);
-
-                let dnd = self
-                    .dnd_icon
-                    .as_ref()
-                    .map(|icon| &icon.surface)
-                    .map(|surface| (surface, bbox_from_surface_tree(surface, surface_pos)));
+                })
+                .to_f64();
 
                 // FIXME we basically need to pick the largest scale factor across the overlapping
                 // outputs, this is how it's usually done in clients as well.
@@ -4287,25 +4279,44 @@ impl Niri {
                 let mut dnd_scale = 1.;
                 let mut dnd_transform = Transform::Normal;
                 for output in self.global_space.outputs() {
-                    let geo = self.global_space.output_geometry(output).unwrap();
+                    let output_scale = output.current_scale().fractional_scale();
+                    let geo = self.global_space.output_geometry(output).unwrap().to_f64();
                     let mut overlaps = false;
 
                     // Compute pointer surface overlap.
+
+                    // Rounding matching render_pointer().
+                    let surface_pos = (pointer_pos - geo.loc - hotspot)
+                        .to_physical_precise_round(output_scale)
+                        .to_logical(output_scale)
+                        + geo.loc;
+                    let mut bbox = bbox_from_surface_tree(surface, (0, 0)).to_f64();
+                    bbox.loc += surface_pos;
+
                     if let Some(mut overlap) = geo.intersection(bbox) {
                         overlaps = true;
                         overlap.loc -= surface_pos;
-                        cursor_scale =
-                            f64::max(cursor_scale, output.current_scale().fractional_scale());
+                        cursor_scale = f64::max(cursor_scale, output_scale);
                         // FIXME: using the largest overlapping or "primary" output transform would
                         // make more sense here.
                         cursor_transform = output.current_transform();
-                        output_update(output, Some(overlap), surface);
+                        output_update(output, Some(overlap.to_i32_up()), surface);
                     } else {
                         output_update(output, None, surface);
                     }
 
                     // Compute DnD icon surface overlap.
-                    if let Some((surface, bbox)) = dnd {
+                    if let Some(dnd_icon) = &self.dnd_icon {
+                        let surface = &dnd_icon.surface;
+
+                        // Rounding matching render_pointer().
+                        let surface_pos = (pointer_pos - geo.loc + dnd_icon.offset.to_f64())
+                            .to_physical_precise_round(output_scale)
+                            .to_logical(output_scale)
+                            + geo.loc;
+                        let mut bbox = bbox_from_surface_tree(surface, (0, 0)).to_f64();
+                        bbox.loc += surface_pos;
+
                         if let Some(mut overlap) = geo.intersection(bbox) {
                             overlaps = true;
                             overlap.loc -= surface_pos;
@@ -4314,7 +4325,7 @@ impl Niri {
                             // FIXME: using the largest overlapping or "primary" output transform
                             // would make more sense here.
                             dnd_transform = output.current_transform();
-                            output_update(output, Some(overlap), surface);
+                            output_update(output, Some(overlap.to_i32_up()), surface);
                         } else {
                             output_update(output, None, surface);
                         }
@@ -4333,7 +4344,8 @@ impl Niri {
                         cursor_transform,
                     )
                 });
-                if let Some((surface, _)) = dnd {
+                if let Some(dnd_icon) = &self.dnd_icon {
+                    let surface = &dnd_icon.surface;
                     with_states(surface, |data| {
                         send_scale_transform(
                             surface,
@@ -4345,8 +4357,6 @@ impl Niri {
                 }
             }
             cursor_image => {
-                let dnd_surface = self.dnd_icon.as_ref().map(|icon| &icon.surface);
-
                 let icon = if let CursorImageStatus::Named(icon) = cursor_image {
                     *icon
                 } else {
@@ -4357,36 +4367,37 @@ impl Niri {
                 let mut dnd_transform = Transform::Normal;
                 for output in self.global_space.outputs() {
                     let mut overlaps = false;
-                    let geo = self.global_space.output_geometry(output).unwrap();
+                    let output_scale = output.current_scale().fractional_scale();
+                    let geo = self.global_space.output_geometry(output).unwrap().to_f64();
 
                     // The default cursor is rendered at the right scale for each output, which
                     // means that it may have a different hotspot for each output.
-                    let output_scale = output.current_scale().integer_scale();
+                    let cursor_scale = output.current_scale().integer_scale();
                     let cursor = self
                         .cursor_manager
-                        .get_cursor_with_name(icon, output_scale)
-                        .unwrap_or_else(|| self.cursor_manager.get_default_cursor(output_scale));
-
-                    // For simplicity, we always use frame 0 for this computation. Let's hope the
-                    // hotspot doesn't change between frames.
-                    let frame = &cursor.frames()[0];
-                    let hotspot = XCursor::hotspot(frame).to_logical(output_scale);
-
-                    let surface_pos = pointer_pos.to_i32_round() - hotspot;
+                        .get_cursor_with_name(icon, cursor_scale)
+                        .unwrap_or_else(|| self.cursor_manager.get_default_cursor(cursor_scale));
 
                     // There's no cursor surface, but there might be a DnD icon.
-                    if let Some(surface) = dnd_surface {
-                        let bbox = bbox_from_surface_tree(surface, surface_pos);
+                    if let Some(dnd_icon) = &self.dnd_icon {
+                        let surface = &dnd_icon.surface;
+
+                        // Rounding matching render_pointer().
+                        let surface_pos = (pointer_pos - geo.loc + dnd_icon.offset.to_f64())
+                            .to_physical_precise_round(output_scale)
+                            .to_logical(output_scale)
+                            + geo.loc;
+                        let mut bbox = bbox_from_surface_tree(surface, (0, 0)).to_f64();
+                        bbox.loc += surface_pos;
 
                         if let Some(mut overlap) = geo.intersection(bbox) {
                             overlaps = true;
                             overlap.loc -= surface_pos;
-                            dnd_scale =
-                                f64::max(dnd_scale, output.current_scale().fractional_scale());
+                            dnd_scale = f64::max(dnd_scale, output_scale);
                             // FIXME: using the largest overlapping or "primary" output transform
                             // would make more sense here.
                             dnd_transform = output.current_transform();
-                            output_update(output, Some(overlap), surface);
+                            output_update(output, Some(overlap.to_i32_up()), surface);
                         } else {
                             output_update(output, None, surface);
                         }
@@ -4394,9 +4405,19 @@ impl Niri {
 
                     // Check the cursor image itself.
                     if !overlaps {
+                        // For simplicity, we always use frame 0 for this computation. Let's hope
+                        // the hotspot doesn't change between frames.
+                        let frame = &cursor.frames()[0];
+                        let hotspot = XCursor::hotspot(frame).to_logical(cursor_scale);
+
+                        // Rounding matching render_pointer().
+                        let pos = (pointer_pos - geo.loc - hotspot.to_f64())
+                            .to_physical_precise_round(output_scale)
+                            .to_logical(output_scale)
+                            + geo.loc;
                         let size = Size::new(f64::from(frame.width), f64::from(frame.height))
-                            / f64::from(output_scale);
-                        let bbox = Rectangle::new(surface_pos, size.to_i32_ceil());
+                            / f64::from(cursor_scale);
+                        let bbox = Rectangle::new(pos, size);
                         overlaps = geo.intersection(bbox).is_some();
                     }
 
@@ -4405,7 +4426,9 @@ impl Niri {
                     }
                 }
 
-                if let Some(surface) = dnd_surface {
+                if let Some(dnd_icon) = &self.dnd_icon {
+                    let surface = &dnd_icon.surface;
+
                     with_states(surface, |data| {
                         send_scale_transform(
                             surface,
