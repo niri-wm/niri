@@ -45,6 +45,11 @@ pub struct ImageCopySession {
     pub stream_id: CastStreamId,
     /// Credentials of the capturing client, if known.
     pub credentials: Option<Credentials>,
+    /// Number of frames requested so far (saturating).
+    ///
+    /// The session is reported as a cast only from the second frame, so that
+    /// one-shot screenshot tools like grim don't show up.
+    pub frames_requested: u8,
 }
 
 /// Cursor capture session of an output.
@@ -60,6 +65,22 @@ pub struct ImageCopyCursorSession {
     pub stream_id: CastStreamId,
     /// Credentials of the capturing client, if known.
     pub credentials: Option<Credentials>,
+    /// Number of frames requested so far (saturating), see `ImageCopySession`.
+    pub frames_requested: u8,
+}
+
+impl ImageCopySession {
+    /// Whether this session is reported as a cast.
+    pub fn is_cast(&self) -> bool {
+        self.frames_requested >= 2
+    }
+}
+
+impl ImageCopyCursorSession {
+    /// Whether this session is reported as a cast.
+    pub fn is_cast(&self) -> bool {
+        self.frames_requested >= 2
+    }
 }
 
 #[derive(Copy, Clone)]
@@ -379,6 +400,7 @@ impl ImageCopyCaptureHandler for State {
             session_id,
             stream_id: CastStreamId::next(),
             credentials,
+            frames_requested: 0,
         });
     }
 
@@ -396,6 +418,7 @@ impl ImageCopyCaptureHandler for State {
                 session_id,
                 stream_id: CastStreamId::next(),
                 credentials,
+                frames_requested: 0,
             });
         // Send the initial cursor position and hotspot.
         self.niri.refresh_image_copy_cursor_sessions();
@@ -423,6 +446,7 @@ impl ImageCopyCaptureHandler for State {
             return;
         }
         s.pending_frame = Some(frame);
+        s.frames_requested = s.frames_requested.saturating_add(1);
 
         // The frame is captured on the next redraw with damage.
         if let Some(output) = source_session_output(&self.niri, &session.source()) {
@@ -451,6 +475,7 @@ impl ImageCopyCaptureHandler for State {
             return;
         }
         s.pending_frame = Some(frame);
+        s.frames_requested = s.frames_requested.saturating_add(1);
 
         // The frame is captured on the next redraw when the cursor image changes.
         if let Some(output) = source_session_output(&self.niri, &session.source()) {
