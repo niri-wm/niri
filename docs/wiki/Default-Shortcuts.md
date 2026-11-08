@@ -23,19 +23,18 @@ If you forget some important shortcuts, niri might display these.
 | `Ctrl` + `Alt` + `Delete` | Quit niri |
 
 
-## Running application & commands
+## Running and closing applications
 
 | Shortcut | Action |
 | :--- | :--- |
 | `Mod` + `T` | Open a Terminal: alacritty |
 | `Mod` + `D` | Run an Application: fuzzel|
-| `Mod` + `Alt` + `S` |  Use spawn-sh to run a shell command|
-| `Alt` + `F4` |  Use spawn-sh to run a shell command|
 
 
 | Shortcut | Action |
 | :--- | :--- |
 | `Mod` + `Q` |  Close window |
+| `Alt` + `F4` |  Close window |
 
 # Basic Navigation & Window management
 
