@@ -1,5 +1,3 @@
-use std::collections::hash_map::Entry;
-use std::collections::HashMap;
 use std::str::FromStr;
 use std::time::Duration;
 
@@ -12,7 +10,9 @@ use niri_ipc::{
 use smithay::input::keyboard::keysyms::KEY_NoSymbol;
 use smithay::input::keyboard::xkb::{keysym_from_name, KEYSYM_CASE_INSENSITIVE, KEYSYM_NO_FLAGS};
 use smithay::input::keyboard::Keysym;
+use tracing::warn;
 
+use crate::input::ModKey;
 use crate::recent_windows::{MruDirection, MruFilter, MruScope};
 use crate::utils::{expect_only_children, MergeWith};
 
@@ -22,12 +22,63 @@ pub struct Binds(pub Vec<Bind>);
 #[derive(Debug, Clone, PartialEq)]
 pub struct Bind {
     pub key: Key,
-    pub action: Action,
+    pub action: BoundAction,
     pub repeat: bool,
+    pub pass_through: Option<bool>,
     pub cooldown: Option<Duration>,
     pub allow_when_locked: bool,
     pub allow_inhibiting: bool,
     pub hotkey_overlay_title: Option<Option<String>>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum BoundAction {
+    Press(Action),
+    Release(Action),
+    Both { press: Action, release: Action },
+}
+
+impl Bind {
+    pub fn has_press(&self) -> bool {
+        matches!(
+            self.action,
+            BoundAction::Press(_) | BoundAction::Both { .. }
+        )
+    }
+
+    pub fn has_release(&self) -> bool {
+        matches!(
+            self.action,
+            BoundAction::Release(_) | BoundAction::Both { .. }
+        )
+    }
+
+    pub fn press_action(&self) -> Option<&Action> {
+        match &self.action {
+            BoundAction::Press(action) => Some(action),
+            BoundAction::Both { press, .. } => Some(press),
+            BoundAction::Release(_) => None,
+        }
+    }
+
+    pub fn release_action(&self) -> Option<&Action> {
+        match &self.action {
+            BoundAction::Release(action) => Some(action),
+            BoundAction::Both { release, .. } => Some(release),
+            BoundAction::Press(_) => None,
+        }
+    }
+
+    pub fn into_action(self, pressed: bool) -> Option<Action> {
+        match (self.action, pressed) {
+            (BoundAction::Press(action), true) | (BoundAction::Release(action), false) => {
+                Some(action)
+            }
+            (BoundAction::Both { press, .. }, true) => Some(press),
+            (BoundAction::Both { release, .. }, false) => Some(release),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
@@ -39,6 +90,8 @@ pub struct Key {
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub enum Trigger {
     Keysym(Keysym),
+    CompositorMod,
+    Modifier(ModKey),
     MouseLeft,
     MouseRight,
     MouseMiddle,
@@ -55,6 +108,87 @@ pub enum Trigger {
     TabletStylusButton1,
     TabletStylusButton2,
     TabletStylusButton3,
+}
+
+/// Returns whether `keysym` is a modifier key like `Shift_L`.
+///
+/// This function matches what the niri config considers modifiers.
+/// So, it does not correspond exactly to `keysym.is_modifier_key()`.
+/// For example, unlike XKB, `Caps_Lock` and `ISO_Next_Group` aren't considered modifiers.
+pub fn is_keysym_modifier(keysym: Keysym) -> bool {
+    ModKey::from_keysym(keysym).is_some()
+}
+
+impl Trigger {
+    pub fn is_modifier(self) -> bool {
+        match self {
+            Self::CompositorMod | Self::Modifier(_) => true,
+            Self::Keysym(keysym) => is_keysym_modifier(keysym),
+            _ => false,
+        }
+    }
+
+    pub fn is_generic_modifier(self) -> bool {
+        matches!(self, Self::CompositorMod | Self::Modifier(_))
+    }
+
+    /// The modifier flags that this trigger sets, if it is a modifier key.
+    pub fn implied_modifier(self) -> Modifiers {
+        match self {
+            Self::CompositorMod => Modifiers::COMPOSITOR,
+            Self::Modifier(modifier) => modifier.to_modifiers(),
+            Self::Keysym(keysym) => ModKey::from_keysym(keysym)
+                .map_or(Modifiers::empty(), |modifier| modifier.to_modifiers()),
+            _ => Modifiers::empty(),
+        }
+    }
+
+    pub fn is_keyboard(self) -> bool {
+        matches!(
+            self,
+            Trigger::Keysym(_) | Trigger::CompositorMod | Trigger::Modifier(_)
+        )
+    }
+
+    pub fn is_scroll(self) -> bool {
+        matches!(
+            self,
+            Trigger::WheelScrollDown
+                | Trigger::WheelScrollUp
+                | Trigger::WheelScrollLeft
+                | Trigger::WheelScrollRight
+                | Trigger::TouchpadScrollDown
+                | Trigger::TouchpadScrollUp
+                | Trigger::TouchpadScrollLeft
+                | Trigger::TouchpadScrollRight
+        )
+    }
+}
+
+impl Key {
+    /// Whether the two keys are triggered by the same key press.
+    ///
+    /// Two different keybinds can be triggered by the same key press. For example, a modifier key
+    /// can be spelled as the modifier itself (`Alt`) or as its keysym (`Alt_L`).
+    pub fn conflicts_with(&self, other: &Self) -> bool {
+        // The trigger and the modifiers match exactly.
+        //
+        // All non-modifier triggers fall into this category.
+        if *self == *other {
+            return true;
+        }
+
+        // Modifiers include the trigger's implied modifier, so differing modifiers can never be
+        // triggered by the same key press.
+        if self.modifiers != other.modifiers {
+            return false;
+        }
+
+        // Generic-modifier-only binds are press-order-independent, so only their modifier set
+        // (which already includes the trigger implied modifier) has to match.
+        (self.trigger.is_generic_modifier() && other.trigger.is_modifier())
+            || (self.trigger.is_modifier() && other.trigger.is_generic_modifier())
+    }
 }
 
 bitflags! {
@@ -104,14 +238,14 @@ pub struct SwitchAction {
 #[derive(knuffel::Decode, Debug, Clone, PartialEq)]
 pub enum Action {
     Quit(#[knuffel(property(name = "skip-confirmation"), default)] bool),
-    #[knuffel(skip)]
-    ChangeVt(i32),
+    ChangeVt(#[knuffel(argument)] u8),
     Suspend,
     PowerOffMonitors,
     PowerOnMonitors,
     ToggleDebugTint,
     DebugToggleOpaqueRegions,
     DebugToggleDamage,
+    ToggleTouchpad,
     Spawn(#[knuffel(arguments)] Vec<String>),
     SpawnSh(#[knuffel(argument)] String),
     DoScreenTransition(#[knuffel(property(name = "delay-ms"))] Option<u16>),
@@ -157,6 +291,24 @@ pub enum Action {
     ToggleWindowedFullscreen,
     #[knuffel(skip)]
     ToggleWindowedFullscreenById(u64),
+    SetWindowFullscreen,
+    #[knuffel(skip)]
+    SetWindowFullscreenById(u64),
+    UnsetWindowFullscreen,
+    #[knuffel(skip)]
+    UnsetWindowFullscreenById(u64),
+    SetWindowMaximizedToEdges,
+    #[knuffel(skip)]
+    SetWindowMaximizedToEdgesById(u64),
+    UnsetWindowMaximizedToEdges,
+    #[knuffel(skip)]
+    UnsetWindowMaximizedToEdgesById(u64),
+    SetWindowedFullscreen,
+    #[knuffel(skip)]
+    SetWindowedFullscreenById(u64),
+    UnsetWindowedFullscreen,
+    #[knuffel(skip)]
+    UnsetWindowedFullscreenById(u64),
     #[knuffel(skip)]
     FocusWindow(u64),
     FocusWindowInColumn(#[knuffel(argument)] u8),
@@ -393,12 +545,21 @@ pub enum Action {
     MruSetScope(MruScope),
     #[knuffel(skip)]
     MruCycleScope,
+    #[knuffel(skip)]
+    GlobalShortcutActivateAction(u32),
+    #[knuffel(skip)]
+    GlobalShortcutDeactivateAction(u32),
+
+    // Doesn't look like knuffel allows gating on #[cfg(test)]...
+    #[knuffel(skip)]
+    TestAction,
 }
 
 impl From<niri_ipc::Action> for Action {
     fn from(value: niri_ipc::Action) -> Self {
         match value {
             niri_ipc::Action::Quit { skip_confirmation } => Self::Quit(skip_confirmation),
+            niri_ipc::Action::ChangeVt { vt } => Self::ChangeVt(vt),
             niri_ipc::Action::PowerOffMonitors {} => Self::PowerOffMonitors,
             niri_ipc::Action::PowerOnMonitors {} => Self::PowerOnMonitors,
             niri_ipc::Action::Spawn { command } => Self::Spawn(command),
@@ -441,6 +602,34 @@ impl From<niri_ipc::Action> for Action {
             }
             niri_ipc::Action::ToggleWindowedFullscreen { id: Some(id) } => {
                 Self::ToggleWindowedFullscreenById(id)
+            }
+            niri_ipc::Action::SetWindowFullscreen { id: None } => Self::SetWindowFullscreen,
+            niri_ipc::Action::SetWindowFullscreen { id: Some(id) } => {
+                Self::SetWindowFullscreenById(id)
+            }
+            niri_ipc::Action::UnsetWindowFullscreen { id: None } => Self::UnsetWindowFullscreen,
+            niri_ipc::Action::UnsetWindowFullscreen { id: Some(id) } => {
+                Self::UnsetWindowFullscreenById(id)
+            }
+            niri_ipc::Action::SetWindowMaximizedToEdges { id: None } => {
+                Self::SetWindowMaximizedToEdges
+            }
+            niri_ipc::Action::SetWindowMaximizedToEdges { id: Some(id) } => {
+                Self::SetWindowMaximizedToEdgesById(id)
+            }
+            niri_ipc::Action::UnsetWindowMaximizedToEdges { id: None } => {
+                Self::UnsetWindowMaximizedToEdges
+            }
+            niri_ipc::Action::UnsetWindowMaximizedToEdges { id: Some(id) } => {
+                Self::UnsetWindowMaximizedToEdgesById(id)
+            }
+            niri_ipc::Action::SetWindowedFullscreen { id: None } => Self::SetWindowedFullscreen,
+            niri_ipc::Action::SetWindowedFullscreen { id: Some(id) } => {
+                Self::SetWindowedFullscreenById(id)
+            }
+            niri_ipc::Action::UnsetWindowedFullscreen { id: None } => Self::UnsetWindowedFullscreen,
+            niri_ipc::Action::UnsetWindowedFullscreen { id: Some(id) } => {
+                Self::UnsetWindowedFullscreenById(id)
             }
             niri_ipc::Action::FocusWindow { id } => Self::FocusWindow(id),
             niri_ipc::Action::FocusWindowInColumn { index } => Self::FocusWindowInColumn(index),
@@ -664,6 +853,7 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::ToggleDebugTint {} => Self::ToggleDebugTint,
             niri_ipc::Action::DebugToggleOpaqueRegions {} => Self::DebugToggleOpaqueRegions,
             niri_ipc::Action::DebugToggleDamage {} => Self::DebugToggleDamage,
+            niri_ipc::Action::ToggleTouchpad {} => Self::ToggleTouchpad,
             niri_ipc::Action::ToggleWindowFloating { id: None } => Self::ToggleWindowFloating,
             niri_ipc::Action::ToggleWindowFloating { id: Some(id) } => {
                 Self::ToggleWindowFloatingById(id)
@@ -773,9 +963,8 @@ where
     ) -> Result<Self, DecodeError<S>> {
         expect_only_children(node, ctx);
 
-        let mut seen_keys: HashMap<Key, &knuffel::ast::SpannedNode<S>> = HashMap::new();
-
-        let mut binds = Vec::new();
+        let mut nodes: Vec<&knuffel::ast::SpannedNode<S>> = Vec::new();
+        let mut binds: Vec<Bind> = Vec::new();
 
         for child in node.children() {
             match Bind::decode_node(child, ctx) {
@@ -783,26 +972,30 @@ where
                     ctx.emit_error(e);
                 }
                 Ok(bind) => {
-                    match seen_keys.entry(bind.key) {
-                        Entry::Occupied(entry) => {
-                            // Even though it's technically incorrect, we use
-                            // `DecodeError::Missing` here because it labels the bind with
-                            // "node starts here", which is the least bad option
-                            ctx.emit_error(DecodeError::missing(
-                                entry.get(),
-                                "keybind first defined here",
-                            ));
+                    let conflict = binds
+                        .iter()
+                        .position(|prev| prev.key.conflicts_with(&bind.key));
+                    if let Some(idx) = conflict {
+                        // Even though it's technically incorrect, we use
+                        // `DecodeError::Missing` here because it labels the bind with
+                        // "node starts here", which is the least bad option
+                        ctx.emit_error(DecodeError::missing(
+                            nodes[idx],
+                            "keybind first defined here",
+                        ));
 
-                            ctx.emit_error(DecodeError::unexpected(
-                                &child.node_name,
-                                "keybind",
-                                "duplicate keybind later defined here",
-                            ));
-                        }
-                        Entry::Vacant(entry) => {
-                            entry.insert(child);
-                            binds.push(bind);
-                        }
+                        ctx.emit_error(DecodeError::unexpected(
+                            &child.node_name,
+                            "keybind",
+                            if binds[idx].key == bind.key {
+                                "duplicate keybind later defined here"
+                            } else {
+                                "conflicting keybind later defined here"
+                            },
+                        ));
+                    } else {
+                        nodes.push(child);
+                        binds.push(bind);
                     }
                 }
             }
@@ -841,16 +1034,38 @@ where
             .parse::<Key>()
             .map_err(|e| DecodeError::conversion(&node.node_name, e.wrap_err("invalid keybind")))?;
 
-        let mut repeat = true;
+        let mut repeat = None;
+        let mut repeat_node = None;
+        let mut pass_through = None;
         let mut cooldown = None;
         let mut allow_when_locked = false;
         let mut allow_when_locked_node = None;
         let mut allow_inhibiting = true;
         let mut hotkey_overlay_title = None;
+
         for (name, val) in &node.properties {
             match &***name {
                 "repeat" => {
-                    repeat = knuffel::traits::DecodeScalar::decode(val, ctx)?;
+                    repeat = Some(knuffel::traits::DecodeScalar::decode(val, ctx)?);
+                    repeat_node = Some(name);
+                }
+                "pass-through" => {
+                    pass_through = Some(knuffel::traits::DecodeScalar::decode(val, ctx)?);
+
+                    // Supporting this for mouse binds would be a bit weird. Mouse binds trigger
+                    // compositor gestures, so should pass-through also trigger the corresponding
+                    // gesture, on top of the bind? If yes, then there are some conflicts, e.g. with
+                    // toggle-overview and the Mod+LMB move grab or LMB press-to-close-overview.
+                    //
+                    // All in all, this needs design, and I'm not sure why you'd want pass-through
+                    // mouse binds anyway, so, let's do keyboard only for now.
+                    if !key.trigger.is_keyboard() {
+                        ctx.emit_error(DecodeError::unexpected(
+                            name,
+                            "property",
+                            "pass-through is only supported for keyboard binds",
+                        ));
+                    }
                 }
                 "cooldown-ms" => {
                     cooldown = Some(Duration::from_millis(
@@ -877,69 +1092,185 @@ where
             }
         }
 
-        let mut children = node.children();
-
         // If the action is invalid but the key is fine, we still want to return something.
         // That way, the parent can handle the existence of duplicate keybinds,
         // even if their contents are not valid.
         let dummy = Self {
             key,
-            action: Action::Spawn(vec![]),
+            action: BoundAction::Press(Action::Spawn(vec![])),
             repeat: true,
+            pass_through: None,
             cooldown: None,
             allow_when_locked: false,
             allow_inhibiting: true,
             hotkey_overlay_title: None,
         };
 
-        if let Some(child) = children.next() {
-            for unwanted_child in children {
-                ctx.emit_error(DecodeError::unexpected(
-                    unwanted_child,
-                    "node",
-                    "only one action is allowed per keybind",
-                ));
-            }
+        // direct_action is an action node that is not wrapped in a press or release section
+        let mut direct_action: Option<Action> = None;
+        let mut press_action: Option<Action> = None;
+        let mut release_action: Option<Action> = None;
+
+        let decode_action = |ctx: &mut knuffel::decode::Context<S>,
+                             child: &knuffel::ast::SpannedNode<S>| {
             match Action::decode_node(child, ctx) {
-                Ok(action) => {
-                    if !matches!(action, Action::Spawn(_) | Action::SpawnSh(_)) {
-                        if let Some(node) = allow_when_locked_node {
-                            ctx.emit_error(DecodeError::unexpected(
-                                node,
-                                "property",
-                                "allow-when-locked can only be set on spawn binds",
-                            ));
-                        }
-                    }
-
-                    // The toggle-inhibit action must always be uninhibitable.
-                    // Otherwise, it would be impossible to trigger it.
-                    if matches!(action, Action::ToggleKeyboardShortcutsInhibit) {
-                        allow_inhibiting = false;
-                    }
-
-                    Ok(Self {
-                        key,
-                        action,
-                        repeat,
-                        cooldown,
-                        allow_when_locked,
-                        allow_inhibiting,
-                        hotkey_overlay_title,
-                    })
-                }
+                Ok(action) => Some(action),
                 Err(e) => {
                     ctx.emit_error(e);
-                    Ok(dummy)
+                    None
                 }
             }
-        } else {
-            ctx.emit_error(DecodeError::missing(
-                node,
-                "expected an action for this keybind",
-            ));
-            Ok(dummy)
+        };
+
+        for child in node.children() {
+            let child_name = &*child.node_name;
+            let child_name: &str = child_name.as_ref();
+
+            if child_name == "press" || child_name == "release" {
+                let is_press = child_name == "press";
+                let slot = if is_press {
+                    &mut press_action
+                } else {
+                    &mut release_action
+                };
+
+                if slot.is_some() {
+                    ctx.emit_error(DecodeError::unexpected(
+                        &child.node_name,
+                        "section",
+                        format!("duplicate `{child_name}` section"),
+                    ));
+                    continue;
+                }
+
+                if direct_action.is_some() {
+                    ctx.emit_error(DecodeError::unexpected(
+                        &child.node_name,
+                        "section",
+                        "cannot mix direct actions with press/release sections",
+                    ));
+                    continue;
+                }
+
+                // The action is the section's single child node.
+                let mut children = child.children();
+                let Some(action_child) = children.next() else {
+                    ctx.emit_error(DecodeError::missing(
+                        child,
+                        format!("expected an action for this {child_name} section"),
+                    ));
+                    continue;
+                };
+
+                for unwanted_child in children {
+                    ctx.emit_error(DecodeError::unexpected(
+                        unwanted_child,
+                        "node",
+                        "only one action is allowed per keybind",
+                    ));
+                }
+
+                *slot = decode_action(ctx, action_child);
+            } else {
+                if direct_action.is_some() {
+                    ctx.emit_error(DecodeError::unexpected(
+                        &child.node_name,
+                        "node",
+                        "only one action is allowed per keybind",
+                    ));
+                    continue;
+                }
+
+                if press_action.is_some() || release_action.is_some() {
+                    ctx.emit_error(DecodeError::unexpected(
+                        &child.node_name,
+                        "node",
+                        "cannot mix direct actions with press/release sections",
+                    ));
+                    continue;
+                }
+
+                direct_action = decode_action(ctx, child);
+            }
         }
+
+        let press_action = press_action.or(direct_action);
+
+        if release_action.is_some() && key.trigger.is_scroll() {
+            ctx.emit_error(DecodeError::unexpected(
+                node,
+                "bind",
+                "release sections are not supported for scroll binds",
+            ));
+            release_action = None;
+        }
+
+        if let Some(node) = repeat_node {
+            if repeat == Some(true) && press_action.is_none() && release_action.is_some() {
+                ctx.emit_error(DecodeError::unexpected(
+                    node,
+                    "property",
+                    "release-only binds cannot repeat",
+                ));
+            }
+        }
+
+        if let Some(node) = allow_when_locked_node {
+            for action in press_action.iter().chain(release_action.iter()) {
+                if !matches!(action, Action::Spawn(_) | Action::SpawnSh(_)) {
+                    ctx.emit_error(DecodeError::unexpected(
+                        node,
+                        "property",
+                        "allow-when-locked can only be set on spawn binds",
+                    ));
+                }
+            }
+        }
+
+        // The toggle-inhibit action must always be uninhibitable.
+        // Otherwise, it would be impossible to trigger it.
+        if matches!(press_action, Some(Action::ToggleKeyboardShortcutsInhibit))
+            || matches!(release_action, Some(Action::ToggleKeyboardShortcutsInhibit))
+        {
+            allow_inhibiting = false;
+        }
+
+        let repeat = match repeat {
+            Some(value) => value,
+            None => release_action.is_none(),
+        };
+
+        let action = match (press_action, release_action) {
+            (Some(press), Some(release)) => BoundAction::Both { press, release },
+            (Some(press), None) => BoundAction::Press(press),
+            (None, Some(release)) => BoundAction::Release(release),
+            (None, None) => {
+                // If a press or release section was present, an error about its missing or
+                // invalid action was already emitted above.
+                let has_section = node.children().any(|child| {
+                    let name = child.node_name.as_ref();
+                    name == "press" || name == "release"
+                });
+                if !has_section {
+                    ctx.emit_error(DecodeError::missing(
+                        node,
+                        "expected an action for this keybind",
+                    ));
+                }
+                return Ok(dummy);
+            }
+        };
+
+        Ok(Self {
+            key,
+            action,
+            repeat,
+            pass_through,
+            cooldown,
+            allow_when_locked,
+            allow_inhibiting,
+            hotkey_overlay_title,
+        })
     }
 }
 
@@ -947,34 +1278,40 @@ impl FromStr for Key {
     type Err = miette::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let mut modifiers = Modifiers::empty();
+        if s.contains('\0') {
+            return Err(miette!("invalid key with a null byte: {s:?}"));
+        }
+
+        let mut written_modifiers: Vec<(Modifiers, &str)> = Vec::new();
 
         let mut split = s.split('+');
         let key = split.next_back().unwrap();
 
         for part in split {
             let part = part.trim();
-            if part.eq_ignore_ascii_case("mod") {
-                modifiers |= Modifiers::COMPOSITOR
+            let modifier = if part.eq_ignore_ascii_case("mod") {
+                Modifiers::COMPOSITOR
             } else if part.eq_ignore_ascii_case("ctrl") || part.eq_ignore_ascii_case("control") {
-                modifiers |= Modifiers::CTRL;
+                Modifiers::CTRL
             } else if part.eq_ignore_ascii_case("shift") {
-                modifiers |= Modifiers::SHIFT;
+                Modifiers::SHIFT
             } else if part.eq_ignore_ascii_case("alt") {
-                modifiers |= Modifiers::ALT;
+                Modifiers::ALT
             } else if part.eq_ignore_ascii_case("super") || part.eq_ignore_ascii_case("win") {
-                modifiers |= Modifiers::SUPER;
+                Modifiers::SUPER
             } else if part.eq_ignore_ascii_case("iso_level3_shift")
                 || part.eq_ignore_ascii_case("mod5")
             {
-                modifiers |= Modifiers::ISO_LEVEL3_SHIFT;
+                Modifiers::ISO_LEVEL3_SHIFT
             } else if part.eq_ignore_ascii_case("iso_level5_shift")
                 || part.eq_ignore_ascii_case("mod3")
             {
-                modifiers |= Modifiers::ISO_LEVEL5_SHIFT;
+                Modifiers::ISO_LEVEL5_SHIFT
             } else {
                 return Err(miette!("invalid modifier: {part}"));
-            }
+            };
+
+            written_modifiers.push((modifier, part));
         }
 
         let trigger = if key.eq_ignore_ascii_case("MouseLeft") {
@@ -1009,8 +1346,40 @@ impl FromStr for Key {
             Trigger::TabletStylusButton2
         } else if key.eq_ignore_ascii_case("TabletStylusButton3") {
             Trigger::TabletStylusButton3
+        } else if key.eq_ignore_ascii_case("Mod") {
+            Trigger::CompositorMod
+        } else if key.eq_ignore_ascii_case("Ctrl") || key.eq_ignore_ascii_case("Control") {
+            Trigger::Modifier(ModKey::Ctrl)
+        } else if key.eq_ignore_ascii_case("Shift") {
+            Trigger::Modifier(ModKey::Shift)
+        } else if key.eq_ignore_ascii_case("Alt") {
+            Trigger::Modifier(ModKey::Alt)
+        } else if key.eq_ignore_ascii_case("Super") || key.eq_ignore_ascii_case("Win") {
+            Trigger::Modifier(ModKey::Super)
+        } else if key.eq_ignore_ascii_case("ISO_Level3_Shift") || key.eq_ignore_ascii_case("Mod5") {
+            Trigger::Modifier(ModKey::IsoLevel3Shift)
+        } else if key.eq_ignore_ascii_case("ISO_Level5_Shift") || key.eq_ignore_ascii_case("Mod3") {
+            Trigger::Modifier(ModKey::IsoLevel5Shift)
         } else {
             let mut keysym = keysym_from_name(key, KEYSYM_CASE_INSENSITIVE);
+
+            let with_xf86;
+            let mut final_key = key;
+            if keysym.raw() == KEY_NoSymbol {
+                // If the key didn't match, try it with an XF86 prefix.
+                // This way, you can write e.g. AudioMute instead of XF86AudioMute.
+                //
+                // This is actually needed for the xdg-desktop-portal-gnome implementation of the
+                // GlobalShortcuts portal, as it will request non-XF86-prefixed names. Mutter then
+                // does this same exact prefixing:
+                // https://gitlab.gnome.org/GNOME/mutter/-/blob/b48811767189fb5446bd1b831e98271a21866e09/src/core/meta-accel-parse.c#L302-311
+                with_xf86 = format!("XF86{key}");
+                keysym = keysym_from_name(&with_xf86, KEYSYM_CASE_INSENSITIVE);
+                if keysym.raw() != KEY_NoSymbol {
+                    final_key = &with_xf86;
+                }
+            }
+
             // The keyboard event handling code can receive either
             // XF86ScreenSaver or XF86Screensaver, because there is no
             // case mapping defined between these keysyms. If we just
@@ -1033,7 +1402,7 @@ impl FromStr for Key {
             //
             // See https://github.com/niri-wm/niri/issues/1969
             if keysym == Keysym::XF86_Screensaver {
-                keysym = keysym_from_name(key, KEYSYM_NO_FLAGS);
+                keysym = keysym_from_name(final_key, KEYSYM_NO_FLAGS);
                 if keysym.raw() == KEY_NoSymbol {
                     keysym = Keysym::XF86_ScreenSaver;
                 }
@@ -1043,6 +1412,15 @@ impl FromStr for Key {
             }
             Trigger::Keysym(keysym)
         };
+
+        let mut modifiers = trigger.implied_modifier();
+        for (modifier, spelling) in written_modifiers {
+            if modifiers.contains(modifier) {
+                warn!("redundant modifier `{spelling}` in keybind `{s}`");
+            }
+
+            modifiers |= modifier;
+        }
 
         Ok(Key { trigger, modifiers })
     }
@@ -1070,6 +1448,29 @@ mod tests {
         );
         assert_eq!(
             "xf86screensaver".parse::<Key>().unwrap(),
+            Key {
+                trigger: Trigger::Keysym(Keysym::XF86_ScreenSaver),
+                modifiers: Modifiers::empty(),
+            }
+        );
+
+        // And now with the auto-prepended XF86 prefix.
+        assert_eq!(
+            "ScreenSaver".parse::<Key>().unwrap(),
+            Key {
+                trigger: Trigger::Keysym(Keysym::XF86_ScreenSaver),
+                modifiers: Modifiers::empty(),
+            },
+        );
+        assert_eq!(
+            "Screensaver".parse::<Key>().unwrap(),
+            Key {
+                trigger: Trigger::Keysym(Keysym::XF86_Screensaver),
+                modifiers: Modifiers::empty(),
+            }
+        );
+        assert_eq!(
+            "screensaver".parse::<Key>().unwrap(),
             Key {
                 trigger: Trigger::Keysym(Keysym::XF86_ScreenSaver),
                 modifiers: Modifiers::empty(),
@@ -1108,5 +1509,178 @@ mod tests {
                 modifiers: Modifiers::ISO_LEVEL5_SHIFT
             },
         );
+    }
+
+    #[test]
+    fn parse_bare_modifier_spellings() {
+        // Each modifier can be spelled with its canonical name or an alias. A bare modifier key
+        // parses to `Trigger::Modifier`.
+        for (text, modifier) in [
+            ("Ctrl", ModKey::Ctrl),
+            ("Control", ModKey::Ctrl),
+            ("Shift", ModKey::Shift),
+            ("Alt", ModKey::Alt),
+            ("Super", ModKey::Super),
+            ("Win", ModKey::Super),
+            ("Mod5", ModKey::IsoLevel3Shift),
+            ("ISO_Level3_Shift", ModKey::IsoLevel3Shift),
+            ("Mod3", ModKey::IsoLevel5Shift),
+            ("ISO_Level5_Shift", ModKey::IsoLevel5Shift),
+        ] {
+            assert_eq!(
+                text.parse::<Key>().unwrap(),
+                Key {
+                    trigger: Trigger::Modifier(modifier),
+                    modifiers: modifier.to_modifiers(),
+                },
+                "parsing `{text}`",
+            );
+        }
+    }
+
+    #[test]
+    fn parse_mod_as_trigger() {
+        // The mod key keeps its own trigger, which is resolved to a real modifier at runtime.
+        assert_eq!(
+            "Mod".parse::<Key>().unwrap(),
+            Key {
+                trigger: Trigger::CompositorMod,
+                modifiers: Modifiers::COMPOSITOR,
+            },
+        );
+
+        // It can also be used together with other held modifiers.
+        assert_eq!(
+            "Ctrl+Mod".parse::<Key>().unwrap(),
+            Key {
+                trigger: Trigger::CompositorMod,
+                modifiers: Modifiers::CTRL | Modifiers::COMPOSITOR,
+            },
+        );
+
+        // `Mod` also works as a held modifier of another trigger.
+        assert_eq!(
+            "Mod+Control_L".parse::<Key>().unwrap(),
+            Key {
+                trigger: Trigger::Keysym(Keysym::Control_L),
+                modifiers: Modifiers::COMPOSITOR | Modifiers::CTRL,
+            },
+        );
+    }
+
+    #[test]
+    fn parse_multi_modifier_triggers() {
+        // A modifier key as the trigger with another held modifier, either spelled as the modifier
+        // itself or as its keysym.
+        assert_eq!(
+            "Ctrl+Alt".parse::<Key>().unwrap(),
+            Key {
+                trigger: Trigger::Modifier(ModKey::Alt),
+                modifiers: Modifiers::CTRL | Modifiers::ALT,
+            },
+        );
+        assert_eq!(
+            "Ctrl+Alt_L".parse::<Key>().unwrap(),
+            Key {
+                trigger: Trigger::Keysym(Keysym::Alt_L),
+                modifiers: Modifiers::CTRL | Modifiers::ALT,
+            },
+        );
+    }
+
+    #[test]
+    fn parse_normalizes_redundant_modifiers() {
+        let key = |text: &str| text.parse::<Key>().unwrap();
+
+        // Modifier triggers can be written with or without the redundant modifier.
+        assert_eq!(key("Alt+Alt_L"), key("Alt_L"));
+        assert_eq!(key("Alt+Alt_R"), key("Alt_R"));
+        assert_eq!(key("Alt+Alt"), key("Alt"));
+        assert_eq!(key("Alt+Alt+Alt_L"), key("Alt_L"));
+        assert_eq!(key("Ctrl+Shift+Control_L"), key("Shift+Control_L"));
+        assert_eq!(key("Mod+Mod"), key("Mod"));
+
+        // Duplicate modifiers are fine with non-modifier triggers.
+        assert_eq!(key("Alt+Alt+Q"), key("Alt+Q"));
+        assert_eq!(key("Mod+Mod+Q"), key("Mod+Q"));
+
+        // Still works if spelled differently.
+        assert_eq!(key("Ctrl+Control+Q"), key("Ctrl+Q"));
+        assert_eq!(key("Super+Win+Q"), key("Super+Q"));
+    }
+
+    #[test]
+    fn parse_modifier_trigger_includes_implied_modifier() {
+        // The modifier that the trigger implies is part of the key.
+        assert_eq!(
+            "Alt_L".parse::<Key>().unwrap(),
+            Key {
+                trigger: Trigger::Keysym(Keysym::Alt_L),
+                modifiers: Modifiers::ALT,
+            },
+        );
+        assert_eq!(
+            "Alt+Alt".parse::<Key>().unwrap(),
+            Key {
+                trigger: Trigger::Modifier(ModKey::Alt),
+                modifiers: Modifiers::ALT,
+            },
+        );
+        // `Mod` is only resolved at runtime, so no trigger implies it.
+        assert_eq!(
+            "Alt+Mod".parse::<Key>().unwrap(),
+            Key {
+                trigger: Trigger::CompositorMod,
+                modifiers: Modifiers::ALT | Modifiers::COMPOSITOR,
+            },
+        );
+    }
+
+    #[test]
+    fn key_conflicts() {
+        let key = |text: &str| text.parse::<Key>().unwrap();
+
+        // Alt_L and Alt_R conflict with Alt, and vice versa.
+        let alt = key("Alt");
+        let alt_l = key("Alt_L");
+        let alt_r = key("Alt_R");
+        assert!(alt.conflicts_with(&alt_l));
+        assert!(alt.conflicts_with(&alt_r));
+        assert!(alt_l.conflicts_with(&alt));
+        assert!(alt_r.conflicts_with(&alt));
+
+        // The left and right keysyms are different keys.
+        assert!(!alt_l.conflicts_with(&alt_r));
+
+        // Different modifiers mean different binds, even for the same trigger.
+        assert!(!alt.conflicts_with(&key("Ctrl+Alt_L")));
+
+        // Non-overlapping triggers don't conflict, even with the same modifiers.
+        assert!(!key("Mod+Q").conflicts_with(&key("Mod+L")));
+        assert!(!key("Q").conflicts_with(&key("Ctrl")));
+
+        // Identical keys are duplicates.
+        assert!(key("Q").conflicts_with(&key("Q")));
+        assert!(alt.conflicts_with(&alt));
+
+        // The compositor mod key is only resolved at runtime, so `Mod` isn't compared against the
+        // mod key's own spellings.
+        let compositor_mod = key("Mod");
+        assert!(!compositor_mod.conflicts_with(&key("Super_L")));
+        assert!(!compositor_mod.conflicts_with(&key("Super")));
+
+        // Generic-modifier-only keys are order-independent.
+        assert!(key("Ctrl+Alt").conflicts_with(&key("Alt+Ctrl")));
+        assert!(key("Mod+Shift+Alt").conflicts_with(&key("Shift+Alt+Mod")));
+        assert!(key("Ctrl+Alt").conflicts_with(&key("Alt+Control_L")));
+        assert!(key("Ctrl+Alt_L").conflicts_with(&key("Alt+Ctrl")));
+
+        assert!(!key("Ctrl+Alt").conflicts_with(&key("Ctrl+Alt+A")));
+    }
+
+    #[test]
+    fn null_byte() {
+        // Shouldn't panic.
+        let _ = "W\0".parse::<Key>();
     }
 }

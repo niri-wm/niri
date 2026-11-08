@@ -12,7 +12,7 @@ use smithay::reexports::wayland_protocols::xdg::decoration::zv1::server::zxdg_to
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::Resource as _;
-use smithay::utils::{Logical, Point, Rectangle, Scale, Serial, Size, Transform};
+use smithay::utils::{Logical, Physical, Point, Rectangle, Scale, Serial, Size, Transform};
 use smithay::wayland::compositor::{remove_pre_commit_hook, with_states, HookId, SurfaceData};
 use smithay::wayland::seat::WaylandFocus;
 use smithay::wayland::shell::xdg::{
@@ -38,7 +38,7 @@ use crate::render_helpers::surface::{
     push_elements_from_surface_tree, render_snapshot_from_surface_tree,
 };
 use crate::render_helpers::xray::XrayPos;
-use crate::render_helpers::{background_effect, BakedBuffer, RenderCtx, RenderTarget};
+use crate::render_helpers::{background_effect, BakedBuffer, RenderCtx};
 use crate::utils::id::IdCounter;
 use crate::utils::transaction::Transaction;
 use crate::utils::{
@@ -215,6 +215,10 @@ impl MappedId {
 
     pub fn get(self) -> u64 {
         self.0
+    }
+
+    pub fn specific(id: u64) -> Self {
+        Self(id)
     }
 
     /// Converts the ID to a string that can be used as an identifier in
@@ -497,13 +501,13 @@ impl Mapped {
 
     pub fn render_for_screen_cast<R: NiriRenderer>(
         &self,
-        renderer: &mut R,
+        ctx: RenderCtx<R>,
         scale: Scale<f64>,
         push: &mut dyn FnMut(WindowCastRenderElements<R>),
     ) {
         let bbox = self.window.bbox_with_popups().to_physical_precise_up(scale);
 
-        let has_border_shader = BorderRenderElement::has_shader(renderer);
+        let has_border_shader = BorderRenderElement::has_shader(ctx.renderer);
         let radius = self.geometry_corner_radius();
         let window_size = self
             .size()
@@ -543,18 +547,9 @@ impl Mapped {
             WindowCastRenderElements::from(elem)
         };
 
-        self.render(
-            RenderCtx {
-                renderer,
-                target: RenderTarget::Screencast,
-                xray: None,
-            },
-            location,
-            scale,
-            1.,
-            XrayPos::default(),
-            &mut |elem| push(use_border(elem)),
-        );
+        self.render(ctx, location, scale, 1., XrayPos::default(), &mut |elem| {
+            push(use_border(elem))
+        });
     }
 
     pub fn get_focus_timestamp(&self) -> Option<Duration> {
@@ -610,6 +605,11 @@ impl Mapped {
 
     pub fn is_urgent(&self) -> bool {
         self.is_urgent
+    }
+
+    /// Returns the physical bbox needed to fit a screenshot of this window.
+    pub fn capture_bbox(&self, scale: Scale<f64>) -> Rectangle<i32, Physical> {
+        self.window.bbox_with_popups().to_physical_precise_up(scale)
     }
 }
 
@@ -693,7 +693,11 @@ impl LayoutElement for Mapped {
                 // IME popups aren't affected by rules for regular popups.
                 PopupKind::InputMethod(_) => niri_config::ResolvedPopupsRules::default(),
             };
-            let alpha = alpha * popup_rules.opacity.unwrap_or(1.).clamp(0., 1.);
+            let alpha = match popup {
+                PopupKind::Xdg(_) => alpha * popup_rules.opacity.unwrap_or(1.).clamp(0., 1.),
+                // IME popups aren't affected by the window opacity.
+                PopupKind::InputMethod(_) => 1.,
+            };
 
             let surface = popup.wl_surface();
             let popup_geo = popup.geometry();

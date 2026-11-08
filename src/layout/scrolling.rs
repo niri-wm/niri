@@ -2463,18 +2463,45 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     }
 
     pub fn tiles_with_ipc_layouts(&self) -> impl Iterator<Item = (&Tile<W>, WindowLayout)> {
+        let scale = self.scale;
+        let view = Rectangle::from_size(self.view_size);
+        // Use the stationary view offset, consistent with how moving floating windows doesn't spam
+        // the IPC in progress.
+        let view_pos = self.column_x(self.active_column_idx) + self.view_offset.stationary();
+
         self.columns
             .iter()
+            .zip(self.column_xs(self.data.iter().copied()))
             .enumerate()
-            .flat_map(move |(col_idx, col)| {
-                col.tiles().enumerate().map(move |(tile_idx, (tile, _))| {
-                    let layout = WindowLayout {
-                        // Our indices are 1-based, consistent with the actions.
-                        pos_in_scrolling_layout: Some((col_idx + 1, tile_idx + 1)),
-                        ..tile.ipc_layout_template()
-                    };
-                    (tile, layout)
-                })
+            .flat_map(move |(col_idx, (col, col_x))| {
+                // Do not include animated render offset here consistently with floating.
+                let col_off = Point::from((col_x - view_pos, 0.));
+
+                col.tiles()
+                    .enumerate()
+                    .map(move |(tile_idx, (tile, tile_off))| {
+                        // Do not include animated render offset here consistently with floating.
+                        let pos = col_off + tile_off;
+                        // Round to physical pixels.
+                        let pos = pos.to_physical_precise_round(scale).to_logical(scale);
+
+                        let mut layout = WindowLayout {
+                            // Our indices are 1-based, consistent with the actions.
+                            pos_in_scrolling_layout: Some((col_idx + 1, tile_idx + 1)),
+                            tile_pos_in_workspace_view: Some(pos.into()),
+                            ..tile.ipc_layout_template()
+                        };
+
+                        // Clear out tile_pos_in_workspace_view for tiles outside of the workspace
+                        // view to avoid IPC spam. E.g. so that any scrolling on a workspace with
+                        // 100 columns didn't have to send 100 window layout changes.
+                        let bbox = Rectangle::new(pos, Size::from(layout.tile_size));
+                        if bbox.intersection(view).is_none() {
+                            layout.tile_pos_in_workspace_view = None;
+                        }
+
+                        (tile, layout)
+                    })
             })
     }
 
@@ -2604,21 +2631,36 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         view.intersection(window_rect)
     }
 
-    pub fn popup_target_rect(&self, id: &W::Id) -> Option<Rectangle<f64, Logical>> {
-        for col in &self.columns {
+    pub fn popup_target_rect(&self, id: &W::Id, overflow: bool) -> Option<Rectangle<f64, Logical>> {
+        let view_pos = self.target_view_pos();
+        let col_xs = self.column_xs(self.data.iter().copied());
+        for (col, col_x) in zip(&self.columns, col_xs) {
             for (tile, pos) in col.tiles() {
                 if tile.window().id() == id {
                     // In the scrolling layout, we try to position popups horizontally within the
                     // window geometry (so they remain visible even if the window scrolls flush with
                     // the left/right edge of the screen), and vertically within the whole parent
                     // working area.
-                    let width = tile.window_size().w;
-                    let height = self.parent_area.size.h;
+                    let target = if overflow {
+                        // For IME popups, this is a bit of an unexpected behavior though; people
+                        // are used to them extending to the right. Also, IME popups disappear when
+                        // keyboard focus changes, so changing scroll position is not a problem. So,
+                        // constrain them to the parent area instead.
+                        let mut target = self.parent_area;
+                        target.loc.x -= col_x - view_pos;
+                        target.loc -= pos;
+                        target.loc -= tile.window_loc();
+                        target
+                    } else {
+                        let width = tile.window_size().w;
+                        let height = self.parent_area.size.h;
 
-                    let mut target = Rectangle::from_size(Size::from((width, height)));
-                    target.loc.y += self.parent_area.loc.y;
-                    target.loc.y -= pos.y;
-                    target.loc.y -= tile.window_loc().y;
+                        let mut target = Rectangle::from_size(Size::from((width, height)));
+                        target.loc.y += self.parent_area.loc.y;
+                        target.loc.y -= pos.y;
+                        target.loc.y -= tile.window_loc().y;
+                        target
+                    };
 
                     return Some(target);
                 }
@@ -2928,19 +2970,22 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         true
     }
 
-    pub fn render_above_top_layer(&self) -> bool {
+    pub fn fullscreen_window_above_top_layer(&self) -> Option<&W> {
         // Render above the top layer if we're on a fullscreen window and the view is stationary.
         if self.columns.is_empty() {
-            return false;
+            return None;
         }
 
         if !self.view_offset.is_static() {
-            return false;
+            return None;
         }
 
-        self.columns[self.active_column_idx]
-            .sizing_mode()
-            .is_fullscreen()
+        let col = &self.columns[self.active_column_idx];
+        if !col.sizing_mode().is_fullscreen() {
+            return None;
+        }
+
+        Some(col.tiles[col.active_tile_idx].window())
     }
 
     pub fn render<R: NiriRenderer>(

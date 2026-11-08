@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::mem;
 use std::rc::Rc;
@@ -9,10 +9,12 @@ use niri_config::{Config, OutputName};
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::drm::DrmNode;
 use smithay::backend::egl::EGLDevice;
+use smithay::backend::input::InputTime;
 use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::renderer::{DebugFlags, ImportDma, ImportEgl, Renderer};
 use smithay::backend::winit::{self, WinitEvent, WinitGraphicsBackend};
+use smithay::input::keyboard::KeyboardSource;
 use smithay::output::{Mode, Output, PhysicalProperties, Subpixel};
 use smithay::reexports::calloop::LoopHandle;
 use smithay::reexports::wayland_protocols::wp::presentation_time::server::wp_presentation_feedback;
@@ -26,7 +28,7 @@ use super::{IpcOutputMap, OutputId, RenderResult};
 use crate::niri::{Niri, RedrawState, State};
 use crate::render_helpers::debug::draw_damage;
 use crate::render_helpers::{resources, shaders, RenderCtx, RenderTarget};
-use crate::utils::{get_monotonic_time, logical_output};
+use crate::utils::{get_monotonic_time, logical_output, WinitScale};
 
 pub struct Winit {
     config: Rc<RefCell<Config>>,
@@ -56,6 +58,11 @@ impl Winit {
             ));
         let (backend, winit) = winit::init_from_attributes(builder)?;
 
+        // unless debug option is set, we dont show cursor in nested mode
+        if !config.borrow().debug.nested_show_host_cursor {
+            backend.window().set_cursor_visible(false);
+        }
+
         let output = Output::new(
             "winit".to_string(),
             PhysicalProperties {
@@ -80,6 +87,10 @@ impl Winit {
             model: Some("Winit".to_string()),
             serial: None,
         });
+
+        output
+            .user_data()
+            .insert_if_missing(|| WinitScale(Cell::new(backend.scale_factor())));
 
         let physical_properties = output.physical_properties();
         let ipc_outputs = Arc::new(Mutex::new(HashMap::from([(
@@ -109,9 +120,10 @@ impl Winit {
 
         event_loop
             .insert_source(winit, move |event, _, state| match event {
-                WinitEvent::Resized { size, .. } => {
+                WinitEvent::Resized { size, scale_factor } => {
                     let winit = state.backend.winit();
-                    winit.output.change_current_state(
+                    let output = winit.output.clone();
+                    output.change_current_state(
                         Some(Mode {
                             size,
                             refresh: 60_000,
@@ -122,22 +134,35 @@ impl Winit {
                     );
 
                     {
+                        let scale = output.user_data().get_or_insert(WinitScale::default);
+                        scale.0.set(scale_factor);
+                    }
+
+                    {
                         let mut ipc_outputs = winit.ipc_outputs.lock().unwrap();
                         let output = ipc_outputs.values_mut().next().unwrap();
                         let mode = &mut output.modes[0];
                         mode.width = size.w.clamp(0, u16::MAX as i32) as u16;
                         mode.height = size.h.clamp(0, u16::MAX as i32) as u16;
-                        if let Some(logical) = output.logical.as_mut() {
-                            logical.width = size.w as u32;
-                            logical.height = size.h as u32;
-                        }
                         state.niri.ipc_outputs_changed = true;
                     }
 
-                    state.niri.output_resized(&winit.output);
+                    state.reload_output_config();
+
+                    // reload_output_config() will call output_resized() for scale changes,
+                    // but not for size-only changes. Even if this is the second call, it's fine.
+                    state.niri.output_resized(&output);
                 }
                 WinitEvent::Input(event) => state.process_input_event(event),
-                WinitEvent::Focus(_) => (),
+                WinitEvent::Focus(false) => {
+                    // Lost focus. Reset key pressed (like alt or windows key)
+                    state.release_held_inputs(InputTime::now());
+
+                    if let Some(keyboard) = state.niri.seat.get_keyboard() {
+                        keyboard.release_source(state, KeyboardSource::MAIN);
+                    }
+                }
+                WinitEvent::Focus(true) => (),
                 WinitEvent::Redraw => state.niri.queue_redraw(&state.backend.winit().output),
                 WinitEvent::CloseRequested => state.niri.stop_signal.stop(),
             })
@@ -391,5 +416,9 @@ impl Winit {
 
     pub fn ipc_outputs(&self) -> Arc<Mutex<IpcOutputMap>> {
         self.ipc_outputs.clone()
+    }
+
+    pub fn set_cursor_visible(&self, visible: bool) {
+        self.backend.window().set_cursor_visible(visible);
     }
 }

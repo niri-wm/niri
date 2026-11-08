@@ -6,8 +6,8 @@ use crate::LayoutPart;
 pub struct Workspace {
     #[knuffel(argument)]
     pub name: WorkspaceName,
-    #[knuffel(child, unwrap(argument))]
-    pub open_on_output: Option<String>,
+    #[knuffel(children(name = "open-on-output"), unwrap(argument))]
+    pub open_on_output: Vec<String>,
     #[knuffel(child)]
     pub layout: Option<WorkspaceLayoutPart>,
 }

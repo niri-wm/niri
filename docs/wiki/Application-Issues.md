@@ -76,7 +76,7 @@ environment {
 }
 ```
 
-Note that the niri environment config does not propagate to apps and shells started by systemd, for example to DankMaterialShell and its application launcher.
+Note that the niri environment config does not propagate to apps and shells started by systemd, for example to Dux Modular Shell and its application launcher.
 You can set the variable in your login shell config (i.e. `~/.bash_profile`) instead, though keep in mind that then it will be set for all compositors, not just niri.
 
 ### Fullscreen games
