@@ -12,9 +12,7 @@ use smithay::reexports::wayland_server::protocol::wl_buffer::WlBuffer;
 use smithay::reexports::wayland_server::protocol::wl_pointer::WlPointer;
 use smithay::reexports::wayland_server::protocol::wl_shm;
 use smithay::reexports::wayland_server::{Client, DisplayHandle};
-use smithay::utils::{
-    Buffer as BufferCoords, Logical, Physical, Point, Rectangle, Scale, Size, Transform,
-};
+use smithay::utils::{Buffer as BufferCoords, Point, Rectangle, Scale, Size, Transform};
 use smithay::wayland::dmabuf::get_dmabuf;
 use smithay::wayland::image_capture_source::{
     ImageCaptureSource, ImageCaptureSourceHandler, OutputCaptureSourceHandler,
@@ -27,7 +25,6 @@ use smithay::wayland::image_copy_capture::{
 use smithay::wayland::shm;
 use wayland_backend::server::Credentials;
 
-use crate::cursor::{RenderCursor, XCursor};
 use crate::niri::{Niri, State};
 use crate::render_helpers::CaptureBuffer;
 use crate::utils::{get_credentials_for_client, CastSessionId, CastStreamId};
@@ -199,84 +196,20 @@ fn capture_dmabuf_constraints(
     Some(DmabufConstraints { node, formats })
 }
 
-/// Buffer constraints for capturing the cursor of an output. Argb8888 since it has alpha.
-pub fn cursor_capture_constraints(niri: &Niri, output: &Output) -> BufferConstraints {
+#[derive(Clone, Copy)]
+pub struct CursorCaptureGeometry {
+    /// Size of the elements' encompassing geo.
+    pub size: Size<i32, BufferCoords>,
+    /// Location of the cursor's hotspot on the cursor bitmap.
+    pub hotspot: Point<i32, BufferCoords>,
+}
+
+pub fn cursor_capture_constraints(size: Size<i32, BufferCoords>) -> BufferConstraints {
     BufferConstraints {
-        size: cursor_capture_size(niri, output),
+        size,
         shm: vec![wl_shm::Format::Argb8888],
         dma: None,
     }
-}
-
-/// Size the cursor renders at on this output.
-fn cursor_capture_size(niri: &Niri, output: &Output) -> Size<i32, BufferCoords> {
-    let int_scale = output.current_scale().integer_scale();
-    let scale = Scale::from(output.current_scale().fractional_scale());
-
-    let size: Size<i32, Physical> = match niri.cursor_manager.get_render_cursor(int_scale) {
-        RenderCursor::Hidden => Size::from((0, 0)),
-        RenderCursor::Surface { surface, .. } => {
-            let bbox = smithay::desktop::utils::bbox_from_surface_tree(&surface, (0, 0));
-            bbox.to_f64().to_physical_precise_up(scale).size
-        }
-        RenderCursor::Named {
-            scale: buffer_scale,
-            cursor,
-            ..
-        } => {
-            // All frames are the same size since CursorManager::load_xcursor()
-            // picks one size and rejects frames which differ.
-            let (_idx, frame) = cursor.frame(niri.start_time.elapsed().as_millis() as u32);
-            // The image is loaded at the integer scale but drawn at the fractional one, so it
-            // ends up smaller than its own buffer whenever the two differ.
-            let logical = Size::<f64, Logical>::from((
-                f64::from(frame.width) / f64::from(buffer_scale),
-                f64::from(frame.height) / f64::from(buffer_scale),
-            ));
-            logical.to_physical_precise_ceil(scale)
-        }
-    };
-
-    // Fall back to the nominal cursor size when the cursor is currently hidden or has no
-    // buffer, so that the session always has valid constraints.
-    if size.is_empty() {
-        let fallback = i32::from(niri.config.borrow().cursor.xcursor_size) * int_scale;
-        return Size::from((fallback, fallback));
-    }
-
-    Size::from((size.w, size.h))
-}
-
-/// Cursor hotspot in capture buffer coordinates.
-pub fn cursor_capture_hotspot(niri: &Niri, output: &Output) -> Point<i32, BufferCoords> {
-    let int_scale = output.current_scale().integer_scale();
-    let scale = Scale::from(output.current_scale().fractional_scale());
-
-    let hotspot: Point<i32, Physical> = match niri.cursor_manager.get_render_cursor(int_scale) {
-        RenderCursor::Hidden => Point::from((0, 0)),
-        RenderCursor::Surface { surface, hotspot } => {
-            // The tree is shifted to put its bounding box at the origin in
-            // render_cursor_for_capture(), so shift the hotspot too.
-            let bbox = smithay::desktop::utils::bbox_from_surface_tree(&surface, (0, 0));
-            (hotspot - bbox.loc)
-                .to_f64()
-                .to_physical_precise_round(scale)
-        }
-        RenderCursor::Named {
-            scale: buffer_scale,
-            cursor,
-            ..
-        } => {
-            let (_idx, frame) = cursor.frame(niri.start_time.elapsed().as_millis() as u32);
-            // Same rescaling as in cursor_capture_size().
-            XCursor::hotspot(frame)
-                .to_logical(buffer_scale)
-                .to_f64()
-                .to_physical_precise_round(scale)
-        }
-    };
-
-    Point::from((hotspot.x, hotspot.y))
 }
 
 /// Checks a frame's buffer for compatibility with the render helpers.
@@ -385,7 +318,11 @@ impl ImageCopyCaptureHandler for State {
             return None;
         }
 
-        Some(cursor_capture_constraints(&self.niri, &output))
+        let (_, geometry) = self.backend.with_primary_renderer(|renderer| {
+            self.niri.render_cursor_for_capture(renderer, &output)
+        })?;
+
+        Some(cursor_capture_constraints(geometry.size))
     }
 
     fn new_session(&mut self, session: Session) {
@@ -420,7 +357,7 @@ impl ImageCopyCaptureHandler for State {
                 credentials,
                 frames_requested: 0,
             });
-        // Send the initial cursor position and hotspot.
+        // Send the initial cursor position.
         self.niri.refresh_image_copy_cursor_sessions();
     }
 
