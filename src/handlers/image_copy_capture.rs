@@ -178,10 +178,17 @@ fn capture_dmabuf_constraints(
     Some(DmabufConstraints { node, formats })
 }
 
+pub struct CursorCaptureGeometry {
+    pub size: Size<i32, BufferCoords>,
+    pub hotspot: Point<i32, BufferCoords>,
+    pub cursor_loc: Point<i32, Physical>,
+    pub dnd_loc: Option<Point<i32, Physical>>,
+}
+
 /// Buffer constraints for capturing the cursor of an output. Argb8888 since it has alpha.
 pub fn cursor_capture_constraints(niri: &Niri, output: &Output) -> BufferConstraints {
     BufferConstraints {
-        size: cursor_capture_size(niri, output),
+        size: cursor_capture_geometry(niri, output).size,
         shm: vec![wl_shm::Format::Argb8888],
         dma: None,
     }
@@ -256,6 +263,39 @@ pub fn cursor_capture_hotspot(niri: &Niri, output: &Output) -> Point<i32, Buffer
     };
 
     Point::from((hotspot.x, hotspot.y))
+}
+
+/// Geometry information about the captured cursor.
+pub fn cursor_capture_geometry(niri: &Niri, output: &Output) -> CursorCaptureGeometry {
+    let scale = Scale::from(output.current_scale().fractional_scale());
+    let size = cursor_capture_size(niri, output);
+    let hotspot_ = cursor_capture_hotspot(niri, output);
+    let hotspot = Point::<_, Physical>::from((hotspot_.x, hotspot_.y));
+    let dnd = niri.dnd_icon.as_ref().map(|i| {
+        let bbox = smithay::desktop::utils::bbox_from_surface_tree(&i.surface, (0, 0));
+        let offset = i.offset.to_f64().to_physical_precise_round(scale);
+        let bbox_size: Size<i32, _> = bbox.to_f64().to_physical_precise_up(scale).size;
+        (
+            hotspot + (i.offset.to_f64() + bbox.loc.to_f64()).to_physical_precise_round(scale),
+            bbox_size,
+            hotspot + offset,
+        )
+    });
+
+    let mut min = Point::<_, Physical>::from((0, 0));
+    let mut max = Point::<_, Physical>::from((size.w, size.h));
+    if let Some((loc, dnd_size, _)) = dnd {
+        min = (min.x.min(loc.x), min.y.min(loc.y)).into();
+        max = (max.x.max(loc.x + dnd_size.w), max.y.max(loc.y + dnd_size.h)).into();
+    }
+
+    let offset = Point::from((-min.x, -min.y));
+    CursorCaptureGeometry {
+        size: (max.x - min.x, max.y - min.y).into(),
+        hotspot: (hotspot.x + offset.x, hotspot.y + offset.y).into(),
+        cursor_loc: offset,
+        dnd_loc: dnd.map(|(_, _, loc)| loc + offset),
+    }
 }
 
 /// Checks a frame's buffer for compatibility with the render helpers.

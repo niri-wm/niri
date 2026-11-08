@@ -6095,6 +6095,7 @@ impl Niri {
     ) -> Vec<PointerRenderElements<GlesRenderer>> {
         let int_scale = output.current_scale().integer_scale();
         let output_scale = Scale::from(output.current_scale().fractional_scale());
+        let geometry = image_copy_capture_impl::cursor_capture_geometry(self, output);
 
         let mut elements = Vec::new();
         match self.cursor_manager.get_render_cursor(int_scale) {
@@ -6102,11 +6103,12 @@ impl Niri {
             RenderCursor::Surface { surface, .. } => {
                 // Subsurfaces can extend above or to the left of the root surface, so shift the
                 // tree to put its bounding box at the origin. The hotspot is shifted to match in
-                // cursor_capture_hotspot().
+                // cursor_capture_geometry().
                 let bbox = smithay::desktop::utils::bbox_from_surface_tree(&surface, (0, 0));
                 let loc = Point::<i32, Logical>::from((-bbox.loc.x, -bbox.loc.y))
                     .to_f64()
-                    .to_physical_precise_round(output_scale);
+                    .to_physical_precise_round(output_scale)
+                    + geometry.cursor_loc;
                 push_elements_from_surface_tree(
                     renderer,
                     &surface,
@@ -6126,7 +6128,7 @@ impl Niri {
                 let texture = self.cursor_texture_cache.get(icon, scale, &cursor, idx);
                 match MemoryRenderBufferRenderElement::from_buffer(
                     renderer,
-                    Point::<f64, _>::from((0., 0.)),
+                    geometry.cursor_loc.to_f64(),
                     &texture,
                     None,
                     None,
@@ -6139,6 +6141,18 @@ impl Niri {
                     }
                 }
             }
+        }
+
+        if let (Some(dnd_icon), Some(loc)) = (self.dnd_icon.as_ref(), geometry.dnd_loc) {
+            push_elements_from_surface_tree(
+                renderer,
+                &dnd_icon.surface,
+                loc,
+                output_scale,
+                1.,
+                Kind::ScanoutCandidate,
+                &mut |elem| elements.push(elem.into()),
+            );
         }
 
         elements
@@ -6200,7 +6214,7 @@ impl Niri {
                 s.session.update_constraints(constraints);
             }
 
-            let hotspot = image_copy_capture_impl::cursor_capture_hotspot(self, &output);
+            let hotspot = image_copy_capture_impl::cursor_capture_geometry(self, &output).hotspot;
             s.session.set_cursor_hotspot((hotspot.x, hotspot.y));
 
             let pos = if !self.pointer_visibility.is_visible() {
