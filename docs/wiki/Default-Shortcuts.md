@@ -89,6 +89,20 @@ Adding `Ctrl` to navigation shortcuts will instead move the window. It also work
 | `Mod` + `Ctrl` + `Wheel Scroll Right` | Move column right |
 
 
+The window switcher allows to quickly reach a window. Once it is opened, some keys allow to filter windows.
+
+| Shortcut | Action |
+| :--- | :--- |
+| `Alt` + `Tab` | Window Switcher |
+| `S` | Window switcher scope: Cycle |
+| `A` | Window switcher scope: All|
+| `W` | Window switcher scope : Workspace |
+| `O` | Window switcher scope : Output|
+| Left | Window switcher : move left|
+| Right | Window switcher : move right|
+| Home | Window switcher : move to first|
+| End | Window switcher : move to end|
+
 # Screens
 
 ## Monitors
