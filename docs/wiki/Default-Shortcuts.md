@@ -38,6 +38,7 @@ If you forget some important shortcuts, niri might display these.
 
 # Basic Navigation & Window management
 
+One of the methods to trigger the [overview](./Overview.md) is a default shortcut. It is a release mod. See the dedicated page for more details.
 
 | Shortcut | Action |
 | :--- | :--- |
