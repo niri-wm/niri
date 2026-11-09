@@ -65,6 +65,23 @@ impl Default for ScreenshotPath {
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct SpawnOverlay {
+    pub enable: bool,
+}
+
+#[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct SpawnOverlayPart {
+    #[knuffel(child)]
+    pub enable: Option<Flag>,
+}
+
+impl MergeWith<SpawnOverlayPart> for SpawnOverlay {
+    fn merge_with(&mut self, part: &SpawnOverlayPart) {
+        merge!((self, part), enable);
+    }
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct HotkeyOverlay {
     pub skip_at_startup: bool,
     pub hide_not_bound: bool,
