@@ -143,7 +143,7 @@ pub fn output_capture_constraints(
     Some(BufferConstraints {
         size,
         shm: vec![wl_shm::Format::Xrgb8888],
-        dma: capture_dmabuf_constraints(renderer, render_node),
+        dma: capture_dmabuf_constraints(renderer, render_node, false),
     })
 }
 
@@ -159,14 +159,15 @@ pub fn window_capture_constraints(
 
     BufferConstraints {
         size: Size::from((size.w, size.h)),
-        shm: vec![wl_shm::Format::Xrgb8888, wl_shm::Format::Argb8888],
-        dma: capture_dmabuf_constraints(renderer, render_node),
+        shm: vec![wl_shm::Format::Argb8888, wl_shm::Format::Xrgb8888],
+        dma: capture_dmabuf_constraints(renderer, render_node, true),
     }
 }
 
 fn capture_dmabuf_constraints(
     renderer: &GlesRenderer,
     render_node: Option<DrmNode>,
+    needs_alpha: bool,
 ) -> Option<DmabufConstraints> {
     let node = render_node?;
     let egl = renderer.egl_context();
@@ -187,9 +188,10 @@ fn capture_dmabuf_constraints(
 
     // Put Xrgb8888 and Argb8888 first since some clients always take the
     // first advertised format (e.g. wl-mirror, grim).
+    let one = if needs_alpha { 1 } else { 0 };
     formats.sort_by_key(|(code, _)| match code {
-        Fourcc::Xrgb8888 => 0,
-        Fourcc::Argb8888 => 1,
+        Fourcc::Xrgb8888 => one,
+        Fourcc::Argb8888 => 1 - one,
         _ => 2,
     });
 
