@@ -20,6 +20,7 @@ use smithay::backend::input::{
     TabletToolTipState, TouchEvent,
 };
 use smithay::backend::libinput::LibinputInputBackend;
+use smithay::desktop::layer_map_for_output;
 use smithay::input::dnd::DnDGrab;
 use smithay::input::keyboard::{keysyms, KeyboardSource, Keysym, Layout, ModifiersState};
 use smithay::input::pointer::{
@@ -40,6 +41,7 @@ use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Rectangle, Transform, SERIAL_COUNTER};
 use smithay::wayland::keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitor;
 use smithay::wayland::pointer_constraints::{with_pointer_constraint, PointerConstraint};
+use smithay::wayland::shell::wlr_layer::{self, Layer};
 use smithay::wayland::virtual_keyboard::VirtualKeyboardDevice;
 use touch_overview_grab::TouchOverviewGrab;
 
@@ -737,6 +739,15 @@ impl State {
                 };
 
                 if res.should_forward() {
+                    if pressed && this.handle_focus_on_type_in_overview(modified) {
+                        // Update keyboard focus right away so that input_forward() below
+                        // sends the key to this newly focused surface.
+                        //
+                        // In case of track-layout "window", this will also switch to the target
+                        // layout before forwarding the key.
+                        this.update_keyboard_focus();
+                    }
+
                     // Interaction with the active window, immediately update the active window's
                     // focus timestamp without waiting for a possible pending MRU lock-in delay.
                     this.niri.mru_apply_keyboard_commit();
@@ -4879,6 +4890,68 @@ impl State {
         let grab = grab.as_any();
 
         grab.is::<PickWindowGrab>() || grab.is::<PickColorGrab>() || Self::is_dnd_grab(grab)
+    }
+
+    /// Updates focus according to the focus-on-type-in-overview layer rule.
+    ///
+    /// `keysym` is the modified keysym that just got pressed.
+    ///
+    /// Returns `true` if some surface got focused.
+    fn handle_focus_on_type_in_overview(&mut self, keysym: Option<Keysym>) -> bool {
+        /// Checks whether the key should trigger focus-on-type.
+        ///
+        /// This check notably excludes Compose and dead keys:
+        ///
+        /// - They are normally handled by the IME, and an IME cannot work with this focus-on-type
+        ///   implementation since it requires the surface to be focused.
+        /// - Among toolkits that can handle them without an IME, GTK has that disabled by default,
+        ///   and Qt has a bug where it drops the first Compose or dead key (the one that arrives
+        ///   right after wl_keyboard.enter).
+        /// - Dead keys are a bit annoying to check for as there's not a ready-made function for
+        ///   that in xkb.
+        /// - This only concerns the very first typed key, and it is very unlikely that the user
+        ///   wants to start their type to search with a dead key.
+        fn is_typed_keysym(keysym: Keysym) -> bool {
+            keysym.key_char().is_some_and(|c| !c.is_ascii_control())
+        }
+
+        if !self.niri.keyboard_focus.is_overview() {
+            return false;
+        }
+
+        if !keysym.is_some_and(is_typed_keysym) {
+            return false;
+        }
+
+        // Find the surface to focus.
+        //
+        // The focus is on the overview, so we know there are no exclusive or grabbing
+        // layer surfaces.
+        let Some(surface) = self.niri.layout.active_output().and_then(|output| {
+            let layers = layer_map_for_output(output);
+
+            // The order matches how update_keyboard_focus() generally works.
+            let overlay = layers.layers_on(Layer::Overlay).rev();
+            let top = layers.layers_on(Layer::Top).rev();
+            let surface = overlay.chain(top).find(|surface| {
+                if surface.cached_state().keyboard_interactivity
+                    != wlr_layer::KeyboardInteractivity::OnDemand
+                {
+                    return false;
+                }
+
+                self.niri
+                    .mapped_layer_surfaces
+                    .get(surface)
+                    .is_some_and(|mapped| mapped.rules().focus_on_type_in_overview)
+            });
+            surface.cloned()
+        }) else {
+            return false;
+        };
+
+        self.niri.layer_shell_on_demand_focus = Some(surface);
+        true
     }
 }
 
