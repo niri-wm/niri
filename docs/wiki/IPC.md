@@ -28,6 +28,14 @@ You can get raw events from `niri msg --json event-stream`, or by connecting to 
 
 You can find the full list of events along with documentation [here](https://niri-wm.github.io/niri/niri_ipc/enum.Event.html).
 
+<sup>Since: next release</sup>
+
+You can now optionally filter event stream with event names.
+
+```sh
+$ niri msg --json event-stream OverviewOpenedOrClosed WindowFocusChanged
+```
+
 ### Programmatic Access
 
 `niri msg --json` is a thin wrapper over writing and reading to a socket.
