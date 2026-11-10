@@ -196,6 +196,19 @@ Example screenshot key mappings.
 | `Ctrl` + `Print`  | Screenshot : screen            |
 | `Alt` + `Print`  | Screenshot : active window          |
 
+While you perform a zone screenshot, note certain shortcuts allow to move & resize region. If you amend these shortcuts then new shortcuts will apply.
+
+| Shortcut | Action
+|:-----|:-----|
+| `Mod` + `Ctrl` + h   | Move screenshot region left |
+| `Mod` + `Ctrl` + j   | Move screenshot region down |
+| `Mod` + `Ctrl` + k   | Move screenshot region up  |
+| `Mod` + `Ctrl` + l   | Move screenshot region right  |
+| `Mod` +  `-`  | Shrink region horizontally  |
+| `Mod` +  `+`  | Enlarge region horizontally |
+| `Mod` +  `Shit` + `-`  | Shrink region vertically |
+| `Mod` +  `Shit` + `+`  | Enlarge region vertically  | 
+
 
 Example brightness key mappings for brightnessctl.
 
