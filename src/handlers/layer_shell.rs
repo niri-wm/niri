@@ -178,6 +178,15 @@ impl State {
                 // little annoying.
                 self.niri.layer_shell_on_demand_focus = Some(layer.clone());
             }
+
+            // If a mapped surface switches from on-demand to none, drop its focus immediately,
+            // because otherwise when a surface switches back and forth in a single event loop
+            // cycle, the focus will never get dropped.
+            let none = layer.cached_state().keyboard_interactivity
+                == wlr_layer::KeyboardInteractivity::None;
+            if none && self.niri.layer_shell_on_demand_focus.as_ref() == Some(layer) {
+                self.niri.layer_shell_on_demand_focus = None;
+            }
         } else {
             // The surface is unmapped.
             if self.niri.mapped_layer_surfaces.remove(layer).is_some() {

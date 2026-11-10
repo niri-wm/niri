@@ -331,7 +331,7 @@ fn keyboard_interactivity_on_demand_to_none_then_on_demand() {
     layer.commit();
     f.double_roundtrip(id);
 
-    assert_snapshot!(f.client(id).state.format_recent_keyboard_events(&surface), @"");
+    assert_snapshot!(f.client(id).state.format_recent_keyboard_events(&surface), @"leave");
 }
 
 #[test]
