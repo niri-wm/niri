@@ -427,6 +427,11 @@ impl State {
         surface.recent_keyboard_events()
     }
 
+    pub fn format_recent_keyboard_events(&mut self, surface: &WlSurface) -> String {
+        let surface = self.surfaces.get_mut(surface).unwrap();
+        surface.format_recent_keyboard_events()
+    }
+
     pub fn inhibit_shortcuts(&self, surface: &WlSurface) -> ZwpKeyboardShortcutsInhibitorV1 {
         let ksim = self.ksim.as_ref().unwrap();
         let seat = self.seats.keys().next().unwrap();
@@ -601,6 +606,17 @@ impl Surface {
         let start = self.keyboard_events_looked_at;
         self.keyboard_events_looked_at = self.keyboard_events_received.len();
         self.keyboard_events_received[start..].iter()
+    }
+
+    pub fn format_recent_keyboard_events(&mut self) -> String {
+        let mut buf = String::new();
+        for event in self.recent_keyboard_events() {
+            if !buf.is_empty() {
+                buf.push('\n');
+            }
+            write!(buf, "{event}").unwrap();
+        }
+        buf
     }
 }
 

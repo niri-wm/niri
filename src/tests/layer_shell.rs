@@ -256,3 +256,118 @@ fn multiple_commits_before_mapping() {
     // Configure with new size.
     assert_snapshot!(layer.format_recent_configures(), @"size: 1920 × 50");
 }
+
+#[test]
+fn keyboard_interactivity_none_then_on_demand() {
+    let mut f = Fixture::new();
+    f.add_output(1, (1920, 1080));
+    let id = f.add_client();
+
+    let layer = f.client(id).create_layer(None, Layer::Overlay, "");
+    let surface = layer.surface.clone();
+    layer.set_configure_props(LayerConfigureProps {
+        size: Some((100, 100)),
+        kb_interactivity: Some(KeyboardInteractivity::None),
+        ..Default::default()
+    });
+    layer.commit();
+    f.roundtrip(id);
+
+    // Start with None; switch to OnDemand immediately after mapping.
+    let layer = f.client(id).layer(&surface);
+    layer.attach_new_buffer();
+    layer.set_size(100, 100);
+    layer.ack_last_and_commit();
+
+    layer.set_configure_props(LayerConfigureProps {
+        kb_interactivity: Some(KeyboardInteractivity::OnDemand),
+        ..Default::default()
+    });
+    layer.commit();
+
+    f.double_roundtrip(id);
+
+    assert_snapshot!(f.client(id).state.format_recent_keyboard_events(&surface), @"");
+}
+
+#[test]
+fn keyboard_interactivity_on_demand_to_none_then_on_demand() {
+    let mut f = Fixture::new();
+    f.add_output(1, (1920, 1080));
+    let id = f.add_client();
+
+    let layer = f.client(id).create_layer(None, Layer::Overlay, "");
+    let surface = layer.surface.clone();
+    layer.set_configure_props(LayerConfigureProps {
+        size: Some((100, 100)),
+        kb_interactivity: Some(KeyboardInteractivity::OnDemand),
+        ..Default::default()
+    });
+    layer.commit();
+    f.roundtrip(id);
+
+    let layer = f.client(id).layer(&surface);
+    layer.attach_new_buffer();
+    layer.set_size(100, 100);
+    layer.ack_last_and_commit();
+    f.double_roundtrip(id);
+
+    assert_snapshot!(f.client(id).state.format_recent_keyboard_events(&surface), @"
+    enter: []
+    modifiers: depressed=0, latched=0, locked=0, group=0
+    ");
+
+    // Set to None and back to OnDemand within one compositor event loop iteration.
+    let layer = f.client(id).layer(&surface);
+    layer.set_configure_props(LayerConfigureProps {
+        kb_interactivity: Some(KeyboardInteractivity::None),
+        ..Default::default()
+    });
+    layer.commit();
+    layer.set_configure_props(LayerConfigureProps {
+        kb_interactivity: Some(KeyboardInteractivity::OnDemand),
+        ..Default::default()
+    });
+    layer.commit();
+    f.double_roundtrip(id);
+
+    assert_snapshot!(f.client(id).state.format_recent_keyboard_events(&surface), @"");
+}
+
+#[test]
+fn keyboard_interactivity_exclusive_to_on_demand() {
+    let mut f = Fixture::new();
+    f.add_output(1, (1920, 1080));
+    let id = f.add_client();
+
+    let layer = f.client(id).create_layer(None, Layer::Overlay, "");
+    let surface = layer.surface.clone();
+    layer.set_configure_props(LayerConfigureProps {
+        size: Some((100, 100)),
+        kb_interactivity: Some(KeyboardInteractivity::Exclusive),
+        ..Default::default()
+    });
+    layer.commit();
+    f.roundtrip(id);
+
+    let layer = f.client(id).layer(&surface);
+    layer.attach_new_buffer();
+    layer.set_size(100, 100);
+    layer.ack_last_and_commit();
+    f.double_roundtrip(id);
+
+    assert_snapshot!(f.client(id).state.format_recent_keyboard_events(&surface), @"
+    enter: []
+    modifiers: depressed=0, latched=0, locked=0, group=0
+    ");
+
+    let layer = f.client(id).layer(&surface);
+    layer.set_configure_props(LayerConfigureProps {
+        kb_interactivity: Some(KeyboardInteractivity::OnDemand),
+        ..Default::default()
+    });
+    layer.commit();
+    f.double_roundtrip(id);
+
+    assert_snapshot!(f.client(id).state.format_recent_keyboard_events(&surface), @"leave");
+}
