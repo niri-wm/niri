@@ -169,6 +169,7 @@ use crate::protocols::screencopy::{Screencopy, ScreencopyManagerState};
 use crate::render_helpers::blur::BlurOptions;
 use crate::render_helpers::debug::push_opaque_regions;
 use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
+use crate::render_helpers::render_elements::RescaledElement;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
 use crate::render_helpers::surface::push_elements_from_surface_tree;
@@ -4122,16 +4123,33 @@ impl Niri {
         let pointer_pos = pointer_pos - output_pos.to_f64();
 
         // Get the render cursor to draw.
-        let cursor_scale = output_scale.integer_scale();
+        let scale_with_output = self.config.borrow().cursor.scale_with_output;
+        let cursor_scale = if scale_with_output {
+            output_scale.integer_scale()
+        } else {
+            // Load themed cursors at their nominal pixel size instead of
+            // multiplying by the output scale.
+            1
+        };
         let render_cursor = self.cursor_manager.get_render_cursor(cursor_scale);
 
         let output_scale = Scale::from(output.current_scale().fractional_scale());
 
         match render_cursor {
             RenderCursor::Hidden => (),
-            RenderCursor::Surface { surface, hotspot } => {
-                let pointer_pos =
-                    (pointer_pos - hotspot.to_f64()).to_physical_precise_round(output_scale);
+            RenderCursor::Surface {
+                surface,
+                hotspot,
+                buffer_scale,
+            } => {
+                let pointer_pos = if scale_with_output {
+                    (pointer_pos - hotspot.to_f64()).to_physical_precise_round(output_scale)
+                } else {
+                    // The cursor buffer is drawn 1:1 in physical pixels, so its
+                    // hotspot is already in physical pixels too.
+                    pointer_pos.to_physical_precise_round(output_scale)
+                        - hotspot.to_physical(Scale::from(buffer_scale))
+                };
 
                 push_elements_from_surface_tree(
                     renderer,
@@ -4140,7 +4158,22 @@ impl Niri {
                     output_scale,
                     1.,
                     Kind::Cursor,
-                    &mut |elem| push(elem.into()),
+                    &mut |elem| {
+                        if scale_with_output {
+                            push(elem.into());
+                        } else {
+                            // Undo the output scale applied by the renderer, so that the
+                            // cursor buffer is drawn at its native pixel size.
+                            let origin = elem.location(output_scale);
+                            let rescale = f64::from(buffer_scale) / output_scale.x;
+                            push(
+                                RescaledElement::new(RescaleRenderElement::from_element(
+                                    elem, origin, rescale,
+                                ))
+                                .into(),
+                            );
+                        }
+                    },
                 );
             }
             RenderCursor::Named {
@@ -4150,8 +4183,13 @@ impl Niri {
             } => {
                 let (idx, frame) = cursor.frame(self.start_time.elapsed().as_millis() as u32);
                 let hotspot = XCursor::hotspot(frame).to_logical(scale);
-                let pointer_pos =
-                    (pointer_pos - hotspot.to_f64()).to_physical_precise_round(output_scale);
+                let pointer_pos = if scale_with_output {
+                    (pointer_pos - hotspot.to_f64()).to_physical_precise_round(output_scale)
+                } else {
+                    // Cursor loaded at its nominal pixel size and drawn 1:1 in
+                    // physical pixels, so the hotspot is in physical pixels too.
+                    pointer_pos.to_physical(output_scale) - XCursor::hotspot(frame).to_f64()
+                };
 
                 let texture = self.cursor_texture_cache.get(icon, scale, &cursor, idx);
                 match MemoryRenderBufferRenderElement::from_buffer(
@@ -4163,7 +4201,22 @@ impl Niri {
                     None,
                     Kind::Cursor,
                 ) {
-                    Ok(element) => push(element.into()),
+                    Ok(element) => {
+                        if scale_with_output {
+                            push(element.into());
+                        } else {
+                            // Undo the output scale applied by the renderer, so that the
+                            // cursor is drawn at its native pixel size.
+                            let origin = element.location(output_scale);
+                            let rescale = 1.0 / output_scale.x;
+                            push(
+                                RescaledElement::new(RescaleRenderElement::from_element(
+                                    element, origin, rescale,
+                                ))
+                                .into(),
+                            );
+                        }
+                    }
                     Err(err) => {
                         warn!("error importing a cursor texture: {err:?}");
                     }
@@ -7534,6 +7587,12 @@ niri_render_elements! {
     PointerRenderElements<R> => {
         Wayland = WaylandSurfaceRenderElement<R>,
         NamedPointer = MemoryRenderBufferRenderElement<R>,
+        RescaledWayland = crate::render_helpers::render_elements::RescaledElement<
+            WaylandSurfaceRenderElement<R>,
+        >,
+        RescaledNamedPointer = crate::render_helpers::render_elements::RescaledElement<
+            MemoryRenderBufferRenderElement<R>,
+        >,
     }
 }
 

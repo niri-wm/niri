@@ -1322,6 +1322,7 @@ mod tests {
                 xcursor-size 16
                 hide-when-typing
                 hide-after-inactive-ms 3000
+                scale-with-output false
             }
 
             screenshot-path "~/Screenshots/screenshot.png"
@@ -2003,6 +2004,7 @@ mod tests {
                 hide_after_inactive_ms: Some(
                     3000,
                 ),
+                scale_with_output: false,
             },
             screenshot_path: ScreenshotPath(
                 Some(

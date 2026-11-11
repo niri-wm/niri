@@ -20,6 +20,11 @@ pub struct Cursor {
     pub xcursor_size: u8,
     pub hide_when_typing: bool,
     pub hide_after_inactive_ms: Option<u32>,
+    /// Whether client-provided cursor images are scaled by the output scale.
+    ///
+    /// When `false`, a cursor buffer is drawn 1:1 in physical pixels: a 24px
+    /// image occupies 24 physical pixels regardless of the output scale.
+    pub scale_with_output: bool,
 }
 
 impl Default for Cursor {
@@ -29,6 +34,7 @@ impl Default for Cursor {
             xcursor_size: 24,
             hide_when_typing: false,
             hide_after_inactive_ms: None,
+            scale_with_output: true,
         }
     }
 }
@@ -43,12 +49,14 @@ pub struct CursorPart {
     pub hide_when_typing: Option<Flag>,
     #[knuffel(child, unwrap(argument))]
     pub hide_after_inactive_ms: Option<u32>,
+    #[knuffel(child)]
+    pub scale_with_output: Option<Flag>,
 }
 
 impl MergeWith<CursorPart> for Cursor {
     fn merge_with(&mut self, part: &CursorPart) {
         merge_clone!((self, part), xcursor_theme, xcursor_size);
-        merge!((self, part), hide_when_typing);
+        merge!((self, part), hide_when_typing, scale_with_output);
         merge_clone_opt!((self, part), hide_after_inactive_ms);
     }
 }

@@ -185,3 +185,95 @@ macro_rules! niri_render_elements {
         }
     };
 }
+
+use smithay::backend::renderer::element::utils::RescaleRenderElement;
+use smithay::backend::renderer::element::{Element, Id, Kind, RenderElement};
+use smithay::backend::renderer::utils::{CommitCounter, DamageSet, OpaqueRegions};
+use smithay::backend::renderer::Renderer;
+use smithay::utils::user_data::UserDataMap;
+use smithay::utils::{Buffer, Physical, Rectangle, Scale, Transform};
+
+/// A [`RescaleRenderElement`] with a manual [`Debug`] impl.
+///
+/// Some elements (like [`WaylandSurfaceRenderElement`]) don't implement `Debug`, which
+/// prevents them from being used directly in the generated render element enums.
+pub struct RescaledElement<E> {
+    inner: RescaleRenderElement<E>,
+}
+
+impl<E> RescaledElement<E> {
+    pub fn new(inner: RescaleRenderElement<E>) -> Self {
+        Self { inner }
+    }
+}
+
+impl<E> std::fmt::Debug for RescaledElement<E> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RescaledElement").finish_non_exhaustive()
+    }
+}
+
+impl<E: Element> Element for RescaledElement<E> {
+    fn id(&self) -> &Id {
+        self.inner.id()
+    }
+
+    fn current_commit(&self) -> CommitCounter {
+        self.inner.current_commit()
+    }
+
+    fn location(&self, scale: Scale<f64>) -> smithay::utils::Point<i32, Physical> {
+        self.inner.location(scale)
+    }
+
+    fn src(&self) -> Rectangle<f64, Buffer> {
+        self.inner.src()
+    }
+
+    fn transform(&self) -> Transform {
+        self.inner.transform()
+    }
+
+    fn geometry(&self, scale: Scale<f64>) -> Rectangle<i32, Physical> {
+        self.inner.geometry(scale)
+    }
+
+    fn damage_since(
+        &self,
+        scale: Scale<f64>,
+        commit: Option<CommitCounter>,
+    ) -> DamageSet<i32, Physical> {
+        self.inner.damage_since(scale, commit)
+    }
+
+    fn opaque_regions(&self, scale: Scale<f64>) -> OpaqueRegions<i32, Physical> {
+        self.inner.opaque_regions(scale)
+    }
+
+    fn alpha(&self) -> f32 {
+        self.inner.alpha()
+    }
+
+    fn kind(&self) -> Kind {
+        self.inner.kind()
+    }
+
+    fn is_framebuffer_effect(&self) -> bool {
+        self.inner.is_framebuffer_effect()
+    }
+}
+
+impl<R: Renderer, E: RenderElement<R>> RenderElement<R> for RescaledElement<E> {
+    fn draw(
+        &self,
+        frame: &mut R::Frame<'_, '_>,
+        src: Rectangle<f64, Buffer>,
+        dst: Rectangle<i32, Physical>,
+        damage: &[Rectangle<i32, Physical>],
+        opaque_regions: &[Rectangle<i32, Physical>],
+        cache: Option<&UserDataMap>,
+    ) -> Result<(), R::Error> {
+        self.inner
+            .draw(frame, src, dst, damage, opaque_regions, cache)
+    }
+}

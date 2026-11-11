@@ -11,7 +11,7 @@ use smithay::backend::renderer::element::memory::MemoryRenderBuffer;
 use smithay::input::pointer::{CursorIcon, CursorImageStatus, CursorImageSurfaceData};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{IsAlive, Logical, Physical, Point, Transform};
-use smithay::wayland::compositor::with_states;
+use smithay::wayland::compositor::{with_states, SurfaceAttributes};
 use xcursor::parser::{parse_xcursor, Image};
 use xcursor::CursorTheme;
 
@@ -63,17 +63,27 @@ impl CursorManager {
         match self.current_cursor.clone() {
             CursorImageStatus::Hidden => RenderCursor::Hidden,
             CursorImageStatus::Surface(surface) => {
-                let hotspot = with_states(&surface, |states| {
-                    states
+                let (hotspot, buffer_scale) = with_states(&surface, |states| {
+                    let hotspot = states
                         .data_map
                         .get::<CursorImageSurfaceData>()
                         .unwrap()
                         .lock()
                         .unwrap()
-                        .hotspot
+                        .hotspot;
+                    let buffer_scale = states
+                        .cached_state
+                        .get::<SurfaceAttributes>()
+                        .current()
+                        .buffer_scale;
+                    (hotspot, buffer_scale)
                 });
 
-                RenderCursor::Surface { hotspot, surface }
+                RenderCursor::Surface {
+                    hotspot,
+                    surface,
+                    buffer_scale,
+                }
             }
             CursorImageStatus::Named(icon) => self.get_render_cursor_named(icon, scale),
         }
@@ -217,6 +227,7 @@ pub enum RenderCursor {
     Surface {
         hotspot: Point<i32, Logical>,
         surface: WlSurface,
+        buffer_scale: i32,
     },
     Named {
         icon: CursorIcon,

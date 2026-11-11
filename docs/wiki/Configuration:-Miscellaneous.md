@@ -196,6 +196,20 @@ cursor {
 }
 ```
 
+#### `scale-with-output`
+
+<sup>Since: 26.05</sup>
+
+Whether cursors are scaled by the output scale.
+
+Defaults to `true`. When set to `false`, cursors are drawn 1:1 in physical pixels, without scale by output option.
+
+```kdl
+cursor {
+    scale-with-output false
+}
+```
+
 ### `overview`
 
 <sup>Since: 25.05</sup>
