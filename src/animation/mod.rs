@@ -24,6 +24,7 @@ pub struct Animation {
     /// Best effort; not always exactly precise.
     clamped_duration: Duration,
     start_time: Duration,
+    has_delay: bool,
     clock: Clock,
     kind: Kind,
 }
@@ -79,6 +80,7 @@ impl Animation {
         }
 
         let start_time = self.start_time;
+        let has_delay = self.has_delay;
 
         match config.kind {
             niri_config::animations::Kind::Spring(p) => {
@@ -105,6 +107,7 @@ impl Animation {
         }
 
         self.start_time = start_time;
+        self.has_delay = has_delay;
     }
 
     /// Restarts the animation using the previous config.
@@ -170,6 +173,7 @@ impl Animation {
             // Our current curves never overshoot.
             clamped_duration: duration,
             start_time: clock.now(),
+            has_delay: false,
             clock,
             kind,
         }
@@ -190,6 +194,7 @@ impl Animation {
             duration,
             clamped_duration,
             start_time: clock.now(),
+            has_delay: false,
             clock,
             kind,
         }
@@ -225,25 +230,38 @@ impl Animation {
             duration,
             clamped_duration: duration,
             start_time: clock.now(),
+            has_delay: false,
             clock,
             kind,
         }
     }
 
     pub fn is_done(&self) -> bool {
-        if self.clock.should_complete_instantly() {
+        let now = self.clock.now();
+        if self.clock.should_complete_instantly() && (!self.has_delay || now >= self.start_time) {
             return true;
         }
 
-        self.clock.now() >= self.start_time + self.duration
+        now >= self.start_time + self.duration
+    }
+
+    /// Delays the animation start by shifting it forward in time.
+    pub fn delay(&mut self, delay: Duration) {
+        self.start_time += delay;
+        self.has_delay = true;
+    }
+
+    pub fn has_started(&self) -> bool {
+        self.clock.now() >= self.start_time
     }
 
     pub fn is_clamped_done(&self) -> bool {
-        if self.clock.should_complete_instantly() {
+        let now = self.clock.now();
+        if self.clock.should_complete_instantly() && (!self.has_delay || now >= self.start_time) {
             return true;
         }
 
-        self.clock.now() >= self.start_time + self.clamped_duration
+        now >= self.start_time + self.clamped_duration
     }
 
     pub fn value_at(&self, at: Duration) -> f64 {
@@ -362,5 +380,62 @@ impl From<niri_config::animations::Curve> for Curve {
                 Curve::CubicBezier(CubicBezier::new(x1, y1, x2, y2))
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn linear_300ms() -> niri_config::Animation {
+        niri_config::Animation {
+            off: false,
+            kind: niri_config::animations::Kind::Easing(niri_config::animations::EasingParams {
+                duration_ms: 300,
+                curve: niri_config::animations::Curve::Linear,
+            }),
+        }
+    }
+
+    #[test]
+    fn delay_freezes_then_runs_to_target() {
+        let start = Duration::from_secs(10);
+        let mut clock = Clock::with_time(start);
+        let mut anim = Animation::new(clock.clone(), 1., 0., 0., linear_300ms());
+        anim.delay(Duration::from_millis(250));
+
+        // During the delay: frozen at `from`, not done.
+        assert_eq!(anim.value(), 1.);
+        assert_eq!(anim.clamped_value(), 1.);
+        assert!(!anim.is_done());
+
+        // Mid-flight, after the delay: matches linear 1 → 0.
+        clock.set_unadjusted(start + Duration::from_millis(250 + 150));
+        assert!((anim.value() - 0.5).abs() < 1e-9);
+        assert!(!anim.is_done());
+
+        // After delay + duration: done, stuck at `to`.
+        clock.set_unadjusted(start + Duration::from_secs(10));
+        assert!(anim.is_done());
+        assert_eq!(anim.value(), 0.);
+        assert_eq!(anim.clamped_value(), 0.);
+    }
+
+    #[test]
+    fn delay_is_preserved_when_completing_instantly() {
+        let start = Duration::from_secs(10);
+        let mut clock = Clock::with_time(start);
+        let mut anim = Animation::new(clock.clone(), 1., 0., 0., linear_300ms());
+        anim.delay(Duration::from_millis(250));
+        clock.set_complete_instantly(true);
+
+        assert_eq!(anim.value(), 1.);
+        assert_eq!(anim.clamped_value(), 1.);
+        assert!(!anim.is_done());
+
+        clock.set_unadjusted(start + Duration::from_millis(251));
+        assert!(anim.is_done());
+        assert_eq!(anim.value(), 0.);
+        assert_eq!(anim.clamped_value(), 0.);
     }
 }
