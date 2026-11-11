@@ -1370,7 +1370,7 @@ mod tests {
             }
 
             window-rule {
-                match app-id=".*alacritty"
+                match app-id=".*alacritty" is-maximized-to-edges=true
                 exclude title="~"
                 exclude is-active=true is-focused=false
 
@@ -2250,6 +2250,9 @@ mod tests {
                             is_window_cast_target: None,
                             is_urgent: None,
                             at_startup: None,
+                            is_maximized_to_edges: Some(
+                                true,
+                            ),
                         },
                     ],
                     excludes: [
@@ -2269,6 +2272,7 @@ mod tests {
                             is_window_cast_target: None,
                             is_urgent: None,
                             at_startup: None,
+                            is_maximized_to_edges: None,
                         },
                         Match {
                             app_id: None,
@@ -2284,6 +2288,7 @@ mod tests {
                             is_window_cast_target: None,
                             is_urgent: None,
                             at_startup: None,
+                            is_maximized_to_edges: None,
                         },
                     ],
                     default_column_width: None,

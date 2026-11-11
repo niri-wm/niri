@@ -317,6 +317,10 @@ impl Mapped {
         rv.is_maximized = rv.sizing_mode().is_maximized();
         rv.is_pending_maximized = rv.pending_sizing_mode().is_maximized();
 
+        // The inherited rules were computed while unmapped, when is-maximized-to-edges was false.
+        // Recompute even if an initially maximized window opens without gaining focus.
+        rv.need_to_recompute_rules |= rv.is_maximized;
+
         rv
     }
 
@@ -385,6 +389,10 @@ impl Mapped {
 
     pub fn is_window_cast_target(&self) -> bool {
         self.is_window_cast_target
+    }
+
+    pub fn is_maximized_to_edges(&self) -> bool {
+        self.is_maximized
     }
 
     pub fn toggle_ignore_opacity_window_rule(&mut self) {
@@ -1425,7 +1433,9 @@ impl LayoutElement for Mapped {
         // "Commit" our "acked" pending maximized state.
         self.uncommitted_maximized.retain_mut(|(serial, value)| {
             if commit_serial.is_no_older_than(serial) {
+                let changed = self.is_maximized != *value;
                 self.is_maximized = *value;
+                self.need_to_recompute_rules |= changed;
                 false
             } else {
                 true
