@@ -638,6 +638,18 @@ pub enum LockRenderState {
 struct SurfaceFrameThrottlingState {
     /// Output and sequence that the frame callback was last sent at.
     last_sent_at: RefCell<Option<(Output, u32)>>,
+    no_throttle: RefCell<bool>,
+}
+
+pub fn setup_throttling_state_for_mapped(mapped: &Mapped) {
+    let no_throttle = mapped.is_window_cast_target();
+
+    with_states(mapped.toplevel().wl_surface(), move |states| {
+        let frame_throttling_state = states
+            .data_map
+            .get_or_insert(SurfaceFrameThrottlingState::default);
+        *frame_throttling_state.no_throttle.borrow_mut() = no_throttle;
+    });
 }
 
 pub enum CenterCoords {
@@ -728,6 +740,7 @@ impl Default for SurfaceFrameThrottlingState {
     fn default() -> Self {
         Self {
             last_sent_at: RefCell::new(None),
+            no_throttle: RefCell::new(false),
         }
     }
 }
@@ -5511,18 +5524,25 @@ impl Niri {
         let sequence = state.frame_callback_sequence;
 
         let should_send = |surface: &WlSurface, states: &SurfaceData| {
+            let frame_throttling_state = states
+                .data_map
+                .get_or_insert(SurfaceFrameThrottlingState::default);
+
             // Do the standard primary scanout output check. For pointer surfaces it deduplicates
             // the frame callbacks across potentially multiple outputs, and for regular windows and
             // layer-shell surfaces it avoids sending frame callbacks to invisible surfaces.
             let current_primary_output = surface_primary_scanout_output(surface, states);
-            if current_primary_output.as_ref() != Some(output) {
+            if current_primary_output.is_some() && current_primary_output.as_ref() != Some(output) {
+                // Deduplicate frame callback.
+                return None;
+            }
+            let no_throttle = frame_throttling_state.no_throttle.borrow_mut();
+            if current_primary_output.is_none() && !*no_throttle {
+                // Skip invisible surface.
                 return None;
             }
 
             // Next, check the throttling status.
-            let frame_throttling_state = states
-                .data_map
-                .get_or_insert(SurfaceFrameThrottlingState::default);
             let mut last_sent_at = frame_throttling_state.last_sent_at.borrow_mut();
 
             let mut send = true;
@@ -5546,6 +5566,7 @@ impl Niri {
         let frame_callback_time = get_monotonic_time();
 
         for mapped in self.layout.windows_for_output_mut(output) {
+            setup_throttling_state_for_mapped(mapped);
             mapped.send_frame(
                 output,
                 frame_callback_time,
