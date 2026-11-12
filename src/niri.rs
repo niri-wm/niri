@@ -1417,24 +1417,22 @@ impl State {
             let is_overview_open = self.niri.layout.is_overview_open();
 
             let mut surface = grab_on_layer(Layer::Overlay);
-            // FIXME: we shouldn't prioritize the top layer grabs over regular overlay input or a
-            // fullscreen layout window. This will need tracking in grab() to avoid handing it out
-            // in the first place. Or a better way to structure this code.
-            surface = surface.or_else(|| grab_on_layer(Layer::Top));
-
-            if !is_overview_open {
-                surface = surface.or_else(|| grab_on_layer(Layer::Bottom));
-                surface = surface.or_else(|| grab_on_layer(Layer::Background));
-            }
-
-            surface = surface.or_else(|| focus_on_layer(Layer::Overlay));
 
             if mon.render_above_top_layer() {
+                surface = surface.or_else(|| focus_on_layer(Layer::Overlay));
                 surface = surface.or_else(layout_focus);
                 surface = surface.or_else(|| focus_on_layer(Layer::Top));
                 surface = surface.or_else(|| focus_on_layer(Layer::Bottom));
                 surface = surface.or_else(|| focus_on_layer(Layer::Background));
             } else {
+                surface = surface.or_else(|| grab_on_layer(Layer::Top));
+
+                if !is_overview_open {
+                    surface = surface.or_else(|| grab_on_layer(Layer::Bottom));
+                    surface = surface.or_else(|| grab_on_layer(Layer::Background));
+                }
+
+                surface = surface.or_else(|| focus_on_layer(Layer::Overlay));
                 surface = surface.or_else(|| focus_on_layer(Layer::Top));
 
                 if is_overview_open {
