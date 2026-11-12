@@ -43,6 +43,7 @@ Set them as automatically-installed optional dependencies, if possible.
 - `xdg-desktop-portal-gtk`: configured as the fallback portal in `niri-portals.conf`.
 (This is in general the standard fallback portal that you want installed.)
 - `oo7-portal` or `gnome-keyring`: configured as the Secret portal provider in `niri-portals.conf`.
+- `gnome-control-center`: required for the global shortcuts portal to work.
 - Your distro's GPU driver package, such as `mesa-dri-drivers` and `mesa-libEGL`.
 Working hardware acceleration is required for running niri.
 - Some notification daemon like `mako`, generally required for apps to work correctly.

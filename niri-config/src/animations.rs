@@ -165,8 +165,12 @@ fn parse_custom_shader_path<S: knuffel::traits::ErrorSpan>(
     for (name, val) in &spanned.properties {
         if &***name == "path" {
             let path_val = knuffel::traits::DecodeScalar::decode(val, ctx)?;
-            let Some(path) = expand_home_path(path_val, spanned, ctx) else {
-                continue;
+            let path = match expand_home_path(path_val, spanned, ctx) {
+                Ok(p) => p,
+                Err(e) => {
+                    ctx.emit_error(e);
+                    continue;
+                }
             };
 
             let includes = ctx.get::<Rc<RefCell<Includes>>>().unwrap();

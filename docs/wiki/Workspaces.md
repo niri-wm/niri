@@ -24,6 +24,8 @@ You can move a workspace to a different monitor using binds like `move-workspace
 
 When you disconnect a monitor, its workspaces will automatically move to a different monitor.
 But, they will also "remember" their original monitor, so when you reconnect it, the workspaces will automatically move back to it.
+To reduce surprising workspace movement, regular workspaces will "forget" their monitor when you open a new window there.
+[Named workspaces](./Configuration:-Named-Workspaces.md), on the other hand, will remember their original monitor until you explicitly move them to a different one.
 
 > [!TIP]
 > From other tiling WMs, you may be used to thinking about workspaces like this: "These are all of my workspaces. I can show workspace X on my first monitor, and workspace Y on my second monitor."

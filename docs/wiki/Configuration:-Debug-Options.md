@@ -35,6 +35,7 @@ debug {
     skip-cursor-only-updates-during-vrr
     deactivate-unfocused-windows
     disable-10bit-output
+    nested-show-host-cursor
 }
 
 binds {
@@ -397,5 +398,17 @@ Tints damaged regions with red.
 ```kdl
 binds {
     Mod+Shift+Ctrl+D { debug-toggle-damage; }
+}
+```
+
+### `nested-show-host-cursor`
+
+<sup>Since: next release</sup>
+
+Shows the host cursor when running niri as a nested window, on top of the nested niri cursor.
+
+```kdl
+debug {
+    nested-show-host-cursor
 }
 ```

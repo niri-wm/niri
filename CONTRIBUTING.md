@@ -8,7 +8,7 @@ Make sure to join our Matrix chat if you have any questions or want to discuss a
 ## LLM policy
 
 You're not allowed to use LLMs to *create*.
-All pull request code, issue descriptions, comments, public reviews, etc. must be human-written.
+All pull request code (including tests), issue descriptions, comments, public reviews, etc. must be human-written.
 You can use LLMs privately (not like I can check or control that), but not to write from scratch.
 You may use LLMs for *translating* your human-written text; in this case you must also provide the original text to reduce the chance of miscommunication.
 
@@ -23,6 +23,11 @@ This policy is motivated by several observations:
     The code ends up overly complex to solve non-existing or impractical problems.
     Such code would not get written in the first place since the effort-benefit ratio is too high.
     It increases maintenance burden and takes time away from more important PRs.
+
+    This reasoning applies to test code too.
+    LLM-written tests tend to be overly verbose and hard to understand.
+    Since it's *effortless* to generate test code with LLMs, the tests frequently end up repeating themselves, testing things that are trivially true, or testing internal states of the system rather than the outcomes.
+    Such tests may be helpful for initial verification of a new feature, but they are a chore to review and disproportionately increase maintenance burden.
 - Nobody wants to read AI slop.
 
 ## Issues and discussions

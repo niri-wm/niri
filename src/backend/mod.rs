@@ -213,6 +213,13 @@ impl Backend {
         }
     }
 
+    pub fn set_host_cursor_visible(&mut self, visible: bool) {
+        match self {
+            Backend::Winit(winit) => winit.set_cursor_visible(visible),
+            Backend::Tty(_) | Backend::Headless(_) => (),
+        }
+    }
+
     pub fn tty_checked(&mut self) -> Option<&mut Tty> {
         if let Self::Tty(v) = self {
             Some(v)

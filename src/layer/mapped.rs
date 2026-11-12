@@ -179,7 +179,7 @@ impl MappedLayer {
             return Point::from((0., 0.));
         }
 
-        let y = baba_is_float_offset(self.clock.now(), self.view_size.h);
+        let y = baba_is_float_offset(self.clock.now_unadjusted(), self.view_size.h);
         let y = round_logical_in_physical(self.scale, y);
         Point::from((0., y))
     }
@@ -281,7 +281,11 @@ impl MappedLayer {
                 // IME popups aren't affected by rules for regular popups.
                 PopupKind::InputMethod(_) => niri_config::ResolvedPopupsRules::default(),
             };
-            let alpha = alpha * popup_rules.opacity.unwrap_or(1.).clamp(0., 1.);
+            let alpha = match popup {
+                PopupKind::Xdg(_) => alpha * popup_rules.opacity.unwrap_or(1.).clamp(0., 1.),
+                // IME popups aren't affected by the layer opacity.
+                PopupKind::InputMethod(_) => 1.,
+            };
 
             let surface = popup.wl_surface();
             let popup_geo = popup.geometry();

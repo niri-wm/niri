@@ -152,13 +152,23 @@ impl HotkeyOverlay {
     }
 }
 
+/// Returns the actions that a bind triggers.
+fn bind_actions(bind: &Bind) -> impl Iterator<Item = &Action> {
+    bind.press_action().into_iter().chain(bind.release_action())
+}
+
+/// Whether the bind triggers the action, on press or on release.
+fn bind_triggers(bind: &Bind, action: &Action) -> bool {
+    bind.press_action() == Some(action) || bind.release_action() == Some(action)
+}
+
 fn format_bind(binds: &[Bind], action: &Action) -> Option<(Option<Key>, String)> {
     let mut bind_with_non_null = None;
     let mut bind_with_custom_title = None;
     let mut found_null_title = false;
 
     for bind in binds {
-        if bind.action != *action {
+        if !bind_triggers(bind, action) {
             continue;
         }
 
@@ -202,9 +212,15 @@ fn collect_actions(config: &Config) -> Vec<&Action> {
 
     // Prefer Quit(false) if found, otherwise try Quit(true), and if there's neither, fall back to
     // Quit(false).
-    if binds.iter().any(|bind| bind.action == Action::Quit(false)) {
+    if binds
+        .iter()
+        .any(|bind| bind_triggers(bind, &Action::Quit(false)))
+    {
         actions.push(&Action::Quit(false));
-    } else if binds.iter().any(|bind| bind.action == Action::Quit(true)) {
+    } else if binds
+        .iter()
+        .any(|bind| bind_triggers(bind, &Action::Quit(true)))
+    {
         actions.push(&Action::Quit(true));
     } else {
         actions.push(&Action::Quit(false));
@@ -221,14 +237,16 @@ fn collect_actions(config: &Config) -> Vec<&Action> {
     ]);
 
     // Prefer move-column-to-workspace-down, but fall back to move-window-to-workspace-down.
-    if let Some(bind) = binds
+    if let Some(action) = binds
         .iter()
-        .find(|bind| matches!(bind.action, Action::MoveColumnToWorkspaceDown(_)))
+        .flat_map(bind_actions)
+        .find(|action| matches!(action, Action::MoveColumnToWorkspaceDown(_)))
     {
-        actions.push(&bind.action);
+        actions.push(action);
     } else if binds
         .iter()
-        .any(|bind| matches!(bind.action, Action::MoveWindowToWorkspaceDown(_)))
+        .flat_map(bind_actions)
+        .any(|action| matches!(action, Action::MoveWindowToWorkspaceDown(_)))
     {
         actions.push(&Action::MoveWindowToWorkspaceDown(true));
     } else {
@@ -236,14 +254,16 @@ fn collect_actions(config: &Config) -> Vec<&Action> {
     }
 
     // Same for -up.
-    if let Some(bind) = binds
+    if let Some(action) = binds
         .iter()
-        .find(|bind| matches!(bind.action, Action::MoveColumnToWorkspaceUp(_)))
+        .flat_map(bind_actions)
+        .find(|action| matches!(action, Action::MoveColumnToWorkspaceUp(_)))
     {
-        actions.push(&bind.action);
+        actions.push(action);
     } else if binds
         .iter()
-        .any(|bind| matches!(bind.action, Action::MoveWindowToWorkspaceUp(_)))
+        .flat_map(bind_actions)
+        .any(|action| matches!(action, Action::MoveWindowToWorkspaceUp(_)))
     {
         actions.push(&Action::MoveWindowToWorkspaceUp(true));
     } else {
@@ -261,34 +281,42 @@ fn collect_actions(config: &Config) -> Vec<&Action> {
     ]);
 
     // Screenshot is not as important, can omit if not bound.
-    if let Some(bind) = binds
+    if let Some(action) = binds
         .iter()
-        .find(|bind| matches!(bind.action, Action::Screenshot(_, _)))
+        .flat_map(bind_actions)
+        .find(|action| matches!(action, Action::Screenshot(_, _)))
     {
-        actions.push(&bind.action);
+        actions.push(action);
     }
 
     // Add actions with a custom hotkey-overlay-title.
     for bind in binds {
         if matches!(bind.hotkey_overlay_title, Some(Some(_))) {
             // Avoid duplicate actions.
-            if !actions.contains(&&bind.action) {
-                actions.push(&bind.action);
+            if let Some(action) = bind_actions(bind).next() {
+                if !actions.contains(&action) {
+                    actions.push(action);
+                }
             }
         }
     }
 
     // Add the spawn actions.
-    for bind in binds.iter().filter(|bind| {
-        matches!(bind.action, Action::Spawn(_) | Action::SpawnSh(_))
-            // Only show binds with Mod or Super to filter out stuff like volume up/down.
-            && (bind.key.modifiers.contains(Modifiers::COMPOSITOR)
-                || bind.key.modifiers.contains(Modifiers::SUPER))
-            // Also filter out wheel and touchpad scroll binds.
-            && matches!(bind.key.trigger, Trigger::Keysym(_))
-    }) {
-        let action = &bind.action;
+    for action in binds.iter().filter_map(|bind| {
+        // Includes the trigger's implied modifier.
+        let modifiers = bind.key.modifiers;
 
+        // Only show binds with Mod or Super to filter out stuff like volume up/down.
+        // Also filter out wheel and touchpad scroll binds.
+        if bind.key.trigger.is_keyboard()
+            && modifiers.intersects(Modifiers::COMPOSITOR | Modifiers::SUPER)
+        {
+            bind_actions(bind)
+                .find(|action| matches!(action, Action::Spawn(_) | Action::SpawnSh(_)))
+        } else {
+            None
+        }
+    }) {
         // We only show one bind for each action, so we need to deduplicate the Spawn actions.
         if !actions.contains(&action) {
             actions.push(action);
@@ -297,7 +325,7 @@ fn collect_actions(config: &Config) -> Vec<&Action> {
 
     if config.hotkey_overlay.hide_not_bound {
         // Only keep actions that have been bound
-        actions.retain(|&action| binds.iter().any(|bind| bind.action == *action))
+        actions.retain(|&action| binds.iter().any(|bind| bind_triggers(bind, action)))
     }
 
     actions
@@ -496,50 +524,43 @@ fn action_name(action: &Action) -> String {
 fn key_name(screen_reader: bool, mod_key: ModKey, key: &Key) -> String {
     let mut name = String::new();
 
-    let has_comp_mod = key.modifiers.contains(Modifiers::COMPOSITOR);
+    // Do not show modifiers implied by the trigger.
+    let mut implied = key.trigger.implied_modifier();
+    // Spellings of the mod key also imply the compositor modifier (e.g. Mod+Super_L).
+    let mod_modifiers = Modifiers::COMPOSITOR | mod_key.to_modifiers();
+    if implied.intersects(mod_modifiers) {
+        implied |= mod_modifiers;
+    }
+    let modifiers = key.modifiers & !implied;
+
+    let has_comp_mod = modifiers.contains(Modifiers::COMPOSITOR);
+
+    let mod_key_pretty = modifier_name(mod_key);
 
     // Compositor mod goes first.
     if has_comp_mod {
-        match mod_key {
-            ModKey::Super => {
-                name.push_str("Super + ");
-            }
-            ModKey::Alt => {
-                name.push_str("Alt + ");
-            }
-            ModKey::Shift => {
-                name.push_str("Shift + ");
-            }
-            ModKey::Ctrl => {
-                name.push_str("Ctrl + ");
-            }
-            ModKey::IsoLevel3Shift => {
-                name.push_str("Mod5 + ");
-            }
-            ModKey::IsoLevel5Shift => {
-                name.push_str("Mod3 + ");
-            }
-        }
+        name.push_str(mod_key_pretty);
+        name.push_str(" + ");
     }
 
-    if key.modifiers.contains(Modifiers::SUPER) && !(has_comp_mod && mod_key == ModKey::Super) {
+    if modifiers.contains(Modifiers::SUPER) && !(has_comp_mod && mod_key == ModKey::Super) {
         name.push_str("Super + ");
     }
-    if key.modifiers.contains(Modifiers::CTRL) && !(has_comp_mod && mod_key == ModKey::Ctrl) {
+    if modifiers.contains(Modifiers::CTRL) && !(has_comp_mod && mod_key == ModKey::Ctrl) {
         name.push_str("Ctrl + ");
     }
-    if key.modifiers.contains(Modifiers::SHIFT) && !(has_comp_mod && mod_key == ModKey::Shift) {
+    if modifiers.contains(Modifiers::SHIFT) && !(has_comp_mod && mod_key == ModKey::Shift) {
         name.push_str("Shift + ");
     }
-    if key.modifiers.contains(Modifiers::ALT) && !(has_comp_mod && mod_key == ModKey::Alt) {
+    if modifiers.contains(Modifiers::ALT) && !(has_comp_mod && mod_key == ModKey::Alt) {
         name.push_str("Alt + ");
     }
-    if key.modifiers.contains(Modifiers::ISO_LEVEL3_SHIFT)
+    if modifiers.contains(Modifiers::ISO_LEVEL3_SHIFT)
         && !(has_comp_mod && mod_key == ModKey::IsoLevel3Shift)
     {
         name.push_str("Mod5 + ");
     }
-    if key.modifiers.contains(Modifiers::ISO_LEVEL5_SHIFT)
+    if modifiers.contains(Modifiers::ISO_LEVEL5_SHIFT)
         && !(has_comp_mod && mod_key == ModKey::IsoLevel5Shift)
     {
         name.push_str("Mod3 + ");
@@ -547,6 +568,8 @@ fn key_name(screen_reader: bool, mod_key: ModKey, key: &Key) -> String {
 
     let pretty = match key.trigger {
         Trigger::Keysym(keysym) => prettify_keysym_name(screen_reader, &keysym_get_name(keysym)),
+        Trigger::CompositorMod => mod_key_pretty.into(),
+        Trigger::Modifier(modifier) => modifier_name(modifier).into(),
         Trigger::MouseLeft => String::from("Mouse Left"),
         Trigger::MouseRight => String::from("Mouse Right"),
         Trigger::MouseMiddle => String::from("Mouse Middle"),
@@ -567,6 +590,17 @@ fn key_name(screen_reader: bool, mod_key: ModKey, key: &Key) -> String {
     name.push_str(&pretty);
 
     name
+}
+
+fn modifier_name(modifier: ModKey) -> &'static str {
+    match modifier {
+        ModKey::Super => "Super",
+        ModKey::Alt => "Alt",
+        ModKey::Shift => "Shift",
+        ModKey::Ctrl => "Ctrl",
+        ModKey::IsoLevel3Shift => "Mod5",
+        ModKey::IsoLevel5Shift => "Mod3",
+    }
 }
 
 fn prettify_keysym_name(screen_reader: bool, name: &str) -> String {
@@ -631,6 +665,114 @@ mod tests {
     fn test_format_bind() {
         // Not bound.
         assert_snapshot!(check("", Action::Screenshot(true, None)), @" (not bound) : Take a Screenshot");
+
+        // Bare modifier binds.
+        assert_snapshot!(
+            check(
+                r#"binds {
+                    Alt { close-window; }
+                }"#,
+                Action::CloseWindow,
+            ),
+            @" Alt : Close Focused Window"
+        );
+        assert_snapshot!(
+            check(
+                r#"binds {
+                    Ctrl { close-window; }
+                    Shift { close-window; }
+                }"#,
+                Action::CloseWindow,
+            ),
+            @" Ctrl : Close Focused Window"
+        );
+        assert_snapshot!(
+            check(
+                r#"binds {
+                    Mod5 { close-window; }
+                    Mod3 { close-window; }
+                }"#,
+                Action::CloseWindow,
+            ),
+            @" Mod5 : Close Focused Window"
+        );
+        assert_snapshot!(
+            check(
+                r#"binds {
+                    Super { close-window; }
+                }"#,
+                Action::CloseWindow,
+            ),
+            @" Super : Close Focused Window"
+        );
+
+        // Modifier + modifier binds: a held modifier key with another modifier key as the trigger.
+        assert_snapshot!(
+            check(
+                r#"binds {
+                    Ctrl+Alt_L { close-window; }
+                }"#,
+                Action::CloseWindow,
+            ),
+            @" Ctrl + Alt_L : Close Focused Window"
+        );
+        assert_snapshot!(
+            check(
+                r#"binds {
+                    Alt+Ctrl { close-window; }
+                }"#,
+                Action::CloseWindow,
+            ),
+            @" Alt + Ctrl : Close Focused Window"
+        );
+
+        // A Ctrl keysym names only one side of the keyboard, so it keeps its exact name instead of
+        // being shortened to `Ctrl`.
+        assert_snapshot!(
+            check(
+                r#"binds {
+                    Control_L { close-window; }
+                }"#,
+                Action::CloseWindow,
+            ),
+            @" Control_L : Close Focused Window"
+        );
+        assert_snapshot!(
+            check(
+                r#"binds {
+                    Mod+Control_R { close-window; }
+                }"#,
+                Action::CloseWindow,
+            ),
+            @" Super + Control_R : Close Focused Window"
+        );
+
+        // A release bind is shown too.
+        assert_snapshot!(
+            check(
+                r#"binds {
+                    Mod {
+                        release { toggle-overview; }
+                    }
+                }"#,
+                Action::ToggleOverview,
+            ),
+            @" Super : Open the Overview"
+        );
+
+        // Same for the release action of a bind with both actions.
+        assert_snapshot!(
+            check(
+                r#"binds {
+                    Mod+Shift+Q {
+                        press { close-window; }
+                        release { toggle-overview; }
+                    }
+                }"#,
+                Action::ToggleOverview,
+            ),
+            @" Super + Shift + Q : Open the Overview"
+        );
 
         // Bound with a default title.
         assert_snapshot!(
@@ -713,5 +855,110 @@ mod tests {
             ),
             @" Super + P : Hello"
         );
+
+        // Mod overlapping with trigger.
+        assert_snapshot!(
+            check(
+                r#"binds {
+                    Mod+Super_L { screenshot; }
+                }"#,
+                Action::Screenshot(true, None),
+            ),
+            @" Super_L : Take a Screenshot"
+        );
+        assert_snapshot!(
+            check(
+                r#"binds {
+                    Mod+Super { screenshot; }
+                }"#,
+                Action::Screenshot(true, None),
+            ),
+            @" Super : Take a Screenshot"
+        );
+        assert_snapshot!(
+            check(
+                r#"binds {
+                    Super+Mod { screenshot; }
+                }"#,
+                Action::Screenshot(true, None),
+            ),
+            @" Super : Take a Screenshot"
+        );
+    }
+
+    #[test]
+    fn test_collect_actions() {
+        // Release binds count as bound, both for the actions that are always listed and for the
+        // ones that are only listed when bound.
+        let config = Config::parse_mem(
+            r#"binds {
+                Alt {
+                    release { screenshot; }
+                }
+                Mod {
+                    release { spawn "foot"; }
+                }
+            }"#,
+        )
+        .unwrap();
+
+        let actions = collect_actions(&config);
+        assert!(actions.contains(&&Action::Screenshot(true, None)));
+        assert!(actions.contains(&&Action::Spawn(vec![String::from("foot")])));
+
+        // Release binds keep actions in the list with hide-not-bound.
+        let config = Config::parse_mem(
+            r#"binds {
+                Mod {
+                    release { toggle-overview; }
+                }
+            }
+            hotkey-overlay { hide-not-bound; }"#,
+        )
+        .unwrap();
+
+        assert!(collect_actions(&config).contains(&&Action::ToggleOverview));
+
+        // A release bind with a custom title adds its action to the list.
+        let config = Config::parse_mem(
+            r#"binds {
+                Mod+Q hotkey-overlay-title="Custom" {
+                    release { center-column; }
+                }
+            }"#,
+        )
+        .unwrap();
+
+        assert!(collect_actions(&config).contains(&&Action::CenterColumn));
+
+        // Various filtering behavior.
+        let config = Config::parse_mem(
+            r#"binds {
+                XF86AudioMute { spawn "Mute"; }
+                Super_L { spawn "Super_L"; }
+                Mod { spawn "Mod"; }
+                Shift_L { spawn "Shift_L"; }
+                Alt { spawn "Alt"; }
+                Mod+Shift_L { spawn "Mod+Shift_L"; }
+                Super+Ctrl { spawn "Super+Ctrl"; }
+                Mod+Alt { spawn "Mod+Alt"; }
+            }"#,
+        )
+        .unwrap();
+
+        let mut snapshot = String::new();
+        for action in collect_actions(&config) {
+            if let Action::Spawn(args) = action {
+                snapshot.push_str(&args[0]);
+                snapshot.push('\n');
+            }
+        }
+        assert_snapshot!(snapshot, @"
+        Super_L
+        Mod
+        Mod+Shift_L
+        Super+Ctrl
+        Mod+Alt
+        ");
     }
 }
