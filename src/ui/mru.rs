@@ -1581,7 +1581,7 @@ impl Inner {
 
         let current_id = self.wmru.current_id;
 
-        let bob_y = baba_is_float_offset(self.clock.now(), output_size.h);
+        let bob_y = baba_is_float_offset(self.clock.now_unadjusted(), output_size.h);
         let bob_y = round_logical_in_physical(scale, bob_y);
 
         let config = self.config.borrow();
