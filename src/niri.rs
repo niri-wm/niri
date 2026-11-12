@@ -3572,6 +3572,15 @@ impl Niri {
             return false;
         }
 
+        let Some(mon) = self.layout.monitor_for_output(output) else {
+            return false;
+        };
+
+        // A fullscreen window above top layer covers bottom and background popups.
+        if mon.render_above_top_layer() {
+            return false;
+        }
+
         // Check if some layer-shell surface is on top.
         let layers = layer_map_for_output(output);
         let layer_popup_under = |layer| {
@@ -3589,7 +3598,6 @@ impl Niri {
                     layer_pos_within_output += mapped.bob_offset();
 
                     // Background and bottom layers move together with the workspaces.
-                    let mon = self.layout.monitor_for_output(output)?;
                     let (_, geo) = mon.workspace_under(pos_within_output)?;
                     layer_pos_within_output += geo.loc;
 
