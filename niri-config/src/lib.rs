@@ -1304,6 +1304,8 @@ mod tests {
 
                 center-focused-column "on-overflow"
 
+                center-single-window-vertically
+
                 default-column-display "tabbed"
 
                 insert-hint {
@@ -1965,6 +1967,7 @@ mod tests {
                 ],
                 center_focused_column: OnOverflow,
                 always_center_single_column: false,
+                center_single_window_vertically: true,
                 empty_workspace_above_first: false,
                 default_column_display: Tabbed,
                 gaps: 8.0,

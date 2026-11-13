@@ -2619,6 +2619,67 @@ fn one_window_in_column_becomes_weight_1() {
 }
 
 #[test]
+fn single_short_window_is_vertically_centered() {
+    fn make_layout(center: bool) -> Layout<TestWindow> {
+        let options = Options {
+            layout: niri_config::Layout {
+                center_single_window_vertically: center,
+                gaps: 16.,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let mut layout = Layout::with_options(Clock::with_time(Duration::ZERO), options);
+        let ops = [
+            Op::AddOutput(1),
+            Op::AddWindow {
+                params: TestWindowParams::new(0),
+            },
+            Op::SetWindowHeight {
+                id: None,
+                change: SizeChange::SetFixed(100),
+            },
+            Op::Communicate(0),
+        ];
+        check_ops_on_layout(&mut layout, ops);
+        layout
+    }
+
+    // Test outputs are 1280x720 at scale 1 with no struts,
+    // so the working area is 1280x720 at (0, 0).
+    let working_h = 720.;
+    let gaps = 16.;
+
+    let layout = make_layout(true);
+    let scrolling = layout.active_workspace().unwrap().scrolling();
+    let tile_h = scrolling.tiles().next().unwrap().tile_size().h;
+    assert!(
+        tile_h < working_h - gaps * 2. - 1.,
+        "test requires a short window, got height {tile_h}"
+    );
+    let offsets = scrolling.column_tile_offsets(0);
+    // tile_offsets() chains a dummy one-past-the-end offset.
+    assert_eq!(offsets.len(), 2);
+    let expected = gaps + (working_h - gaps * 2. - tile_h) / 2.;
+    assert!(
+        (offsets[0].y - expected).abs() < 1e-6,
+        "centered y = {}, expected {expected}",
+        offsets[0].y
+    );
+
+    // Without the option, the lone window stays top-aligned.
+    let layout = make_layout(false);
+    let scrolling = layout.active_workspace().unwrap().scrolling();
+    let offsets = scrolling.column_tile_offsets(0);
+    assert_eq!(offsets.len(), 2);
+    assert!(
+        (offsets[0].y - gaps).abs() < 1e-6,
+        "top-aligned y = {}, expected {gaps}",
+        offsets[0].y
+    );
+}
+
+#[test]
 fn fixed_height_takes_max_non_auto_into_account() {
     let ops = [
         Op::AddOutput(1),
@@ -4006,6 +4067,7 @@ prop_compose! {
         tab_indicator in prop::option::of(arbitrary_tab_indicator()),
         center_focused_column in prop::option::of(arbitrary_center_focused_column()),
         always_center_single_column in prop::option::of(any::<bool>().prop_map(Flag)),
+        center_single_window_vertically in prop::option::of(any::<bool>().prop_map(Flag)),
         empty_workspace_above_first in prop::option::of(any::<bool>().prop_map(Flag)),
     ) -> niri_config::LayoutPart {
         niri_config::LayoutPart {
@@ -4013,6 +4075,7 @@ prop_compose! {
             struts,
             center_focused_column,
             always_center_single_column,
+            center_single_window_vertically,
             empty_workspace_above_first,
             focus_ring,
             border,
