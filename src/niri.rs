@@ -459,6 +459,13 @@ pub struct Niri {
     pub pick_window: Option<async_channel::Sender<Option<MappedId>>>,
     pub pick_color: Option<async_channel::Sender<Option<niri_ipc::PickedColor>>>,
 
+    /// Sender to complete a pending `screenshot` action requested over IPC.
+    ///
+    /// When the screenshot UI is opened through `niri msg action screenshot`, the reply is
+    /// deferred until the screenshot is taken or the UI is cancelled. The sender is completed
+    /// when the screenshot finishes, or when the UI is closed without taking a screenshot.
+    pub screenshot_reply: Option<async_channel::Sender<()>>,
+
     pub debug_draw_opaque_regions: bool,
     pub debug_draw_damage: bool,
 
@@ -2589,6 +2596,16 @@ fn reset_damage_tracker_if_changed(
 }
 
 impl Niri {
+    /// Complete the reply for a pending IPC `screenshot` action, if any.
+    ///
+    /// The reply is deferred while the screenshot UI is open. Call this when the UI is closed
+    /// without taking a screenshot, so the waiting `niri msg` can exit instead of hanging.
+    pub fn complete_screenshot_reply(&mut self) {
+        if let Some(tx) = self.screenshot_reply.take() {
+            let _ = tx.send_blocking(());
+        }
+    }
+
     pub fn new(
         config: Rc<RefCell<Config>>,
         event_loop: LoopHandle<'static, State>,
@@ -3004,6 +3021,7 @@ impl Niri {
 
             pick_window: None,
             pick_color: None,
+            screenshot_reply: None,
 
             debug_draw_opaque_regions: false,
             debug_draw_damage: false,
@@ -3369,6 +3387,7 @@ impl Niri {
         }
 
         if self.screenshot_ui.close() {
+            self.complete_screenshot_reply();
             self.cursor_manager
                 .set_cursor_image(CursorImageStatus::default_named());
             self.queue_redraw_all();
@@ -3419,6 +3438,7 @@ impl Niri {
             // physical coordinates.
             if old_size != size || old_scale != scale || old_transform != transform {
                 self.screenshot_ui.close();
+                self.complete_screenshot_reply();
                 self.cursor_manager
                     .set_cursor_image(CursorImageStatus::default_named());
                 self.queue_redraw_all();
@@ -6658,6 +6678,9 @@ impl Niri {
             let w = std::io::Cursor::new(&mut buf);
             if let Err(err) = write_png_rgba8(w, size.w as u32, size.h as u32, &pixels) {
                 warn!("error encoding screenshot image: {err:?}");
+                // Still send the completion event, so a waiting
+                // `niri msg action screenshot` doesn't hang.
+                let _ = event_tx.send(None);
                 return;
             }
 
@@ -6944,7 +6967,9 @@ impl Niri {
             } => {
                 self.event_loop.remove(deadline_token);
 
-                self.screenshot_ui.close();
+                if self.screenshot_ui.close() {
+                    self.complete_screenshot_reply();
+                }
                 self.cursor_manager
                     .set_cursor_image(CursorImageStatus::default_named());
                 self.cancel_mru();

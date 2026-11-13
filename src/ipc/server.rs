@@ -385,6 +385,12 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
 
             let (tx, rx) = async_channel::bounded(1);
 
+            // The screenshot action opens an interactive region-selection UI and only finishes
+            // when the user confirms or cancels it. Wait for the screenshot to actually be
+            // taken (or the UI cancelled) before replying, so `niri msg action screenshot`
+            // doesn't exit before the screenshot file exists.
+            let wait_for_screenshot = matches!(action, Action::Screenshot { .. });
+
             let action = niri_config::Action::from(action);
             ctx.event_loop.insert_idle(move |state| {
                 // Make sure some logic like workspace clean-up has a chance to run before doing
@@ -392,13 +398,21 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
                 state.niri.advance_animations();
                 // This action didn't come from an input, so just use the current time.
                 let time = InputTime::now();
+                let was_open = wait_for_screenshot && state.niri.screenshot_ui.is_open();
                 state.do_action(action, false, time);
+                if wait_for_screenshot && !was_open && state.niri.screenshot_ui.is_open() {
+                    // This action opened the screenshot UI. Defer the reply until the
+                    // screenshot is taken or the UI is cancelled.
+                    state.niri.screenshot_reply = Some(tx);
+                    return;
+                }
                 let _ = tx.send_blocking(());
             });
 
             // Wait until the action has been processed before returning. This is important for a
             // few actions, for instance for DoScreenTransition this wait ensures that the screen
-            // contents were sampled into the texture.
+            // contents were sampled into the texture. For the screenshot action, this also waits
+            // until the screenshot is taken or cancelled (see above).
             let _ = rx.recv().await;
             Response::Handled
         }
@@ -1020,13 +1034,18 @@ impl State {
     }
 
     pub fn ipc_screenshot_taken(&mut self, path: Option<String>) {
-        let Some(server) = &self.niri.ipc_server else {
-            return;
-        };
-        let mut state = server.event_stream_state.borrow_mut();
-
         let event = Event::ScreenshotCaptured { path };
-        state.apply(event.clone());
-        server.send_event(event);
+
+        if let Some(server) = &self.niri.ipc_server {
+            {
+                let mut state = server.event_stream_state.borrow_mut();
+                state.apply(event.clone());
+            }
+            server.send_event(event);
+        }
+
+        // Complete a pending IPC `screenshot` action, if any. Its reply was deferred until the
+        // screenshot was actually taken.
+        self.niri.complete_screenshot_reply();
     }
 }

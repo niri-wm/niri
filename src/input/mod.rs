@@ -1017,6 +1017,7 @@ impl State {
                 }
 
                 self.niri.screenshot_ui.close();
+                self.niri.complete_screenshot_reply();
                 self.niri
                     .cursor_manager
                     .set_cursor_image(CursorImageStatus::default_named());
