@@ -25,6 +25,7 @@ pub struct Layout {
     pub struts: Struts,
     pub background_color: Color,
     pub fullscreen_backdrop_color: Color,
+    pub maximized_window_placement: MaximizedWindowPlacement,
 }
 
 impl Default for Layout {
@@ -54,6 +55,7 @@ impl Default for Layout {
             ],
             background_color: DEFAULT_BACKGROUND_COLOR,
             fullscreen_backdrop_color: Color::from_array_unpremul([0., 0., 0., 1.]),
+            maximized_window_placement: MaximizedWindowPlacement::ExpelFromColumn,
         }
     }
 }
@@ -81,6 +83,7 @@ impl MergeWith<LayoutPart> for Layout {
             struts,
             background_color,
             fullscreen_backdrop_color,
+            maximized_window_placement,
         );
 
         if let Some(x) = part.default_column_width {
@@ -131,6 +134,8 @@ pub struct LayoutPart {
     pub background_color: Option<Color>,
     #[knuffel(child)]
     pub fullscreen_backdrop_color: Option<Color>,
+    #[knuffel(child, unwrap(argument))]
+    pub maximized_window_placement: Option<MaximizedWindowPlacement>,
 }
 
 #[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
@@ -173,6 +178,16 @@ pub enum CenterFocusedColumn {
     /// Focusing a column will center it if it doesn't fit on the screen together with the
     /// previously focused column.
     OnOverflow,
+}
+
+/// How to handle maximizing or fullscreening a window contained in a column with other windows.
+#[derive(knuffel::DecodeScalar, Debug, Default, PartialEq, Eq, Clone, Copy)]
+pub enum MaximizedWindowPlacement {
+    /// When maximizing or fullscreening a window, expel it to the right of its containing column
+    #[default]
+    ExpelFromColumn,
+    /// When maximizing or fullscreening a window, keep it in its containing column
+    KeepInColumn,
 }
 
 impl<S> knuffel::Decode<S> for DefaultPresetSize

@@ -657,3 +657,151 @@ fn removing_only_fullscreen_tile_updates_view_offset() {
     // FIXME: currently, removing a tile doesn't cause the view offset to update.
     assert_snapshot!(layout.active_workspace().unwrap().scrolling().view_pos(), @"0");
 }
+
+#[test]
+fn expected_number_of_columns_after_toggling_fullscreen() {
+    use niri_config::MaximizedWindowPlacement;
+
+    enum ToggleType {
+        Fullscreen,
+        MaximizeToEdges,
+    }
+
+    #[track_caller]
+    fn test_with_params(
+        toggle_type: ToggleType,
+        maximized_column_placement: MaximizedWindowPlacement,
+        expected_number_of_columns: usize,
+    ) {
+        let mut options = Options::default();
+        options.layout.maximized_window_placement = maximized_column_placement;
+        let mut layout =
+            Layout::<TestWindow>::with_options(Clock::with_time(Duration::ZERO), options);
+
+        let every_op = [
+            Op::AddOutput(0),
+            Op::AddWindow {
+                params: TestWindowParams::new(0),
+            },
+            Op::AddWindow {
+                params: TestWindowParams::new(1),
+            },
+            Op::FocusColumnLeft,
+            Op::ConsumeWindowIntoColumn,
+            match toggle_type {
+                ToggleType::Fullscreen => Op::FullscreenWindow(0),
+                ToggleType::MaximizeToEdges => Op::MaximizeWindowToEdges { id: Some(0) },
+            },
+        ];
+
+        for op in every_op {
+            op.apply(&mut layout);
+        }
+
+        let columns = layout
+            .active_workspace()
+            .into_iter()
+            .flat_map(|ws| ws.scrolling().columns());
+        assert_eq!(columns.count(), expected_number_of_columns);
+    }
+
+    test_with_params(
+        ToggleType::Fullscreen,
+        MaximizedWindowPlacement::KeepInColumn,
+        1,
+    );
+    test_with_params(
+        ToggleType::Fullscreen,
+        MaximizedWindowPlacement::ExpelFromColumn,
+        2,
+    );
+    test_with_params(
+        ToggleType::MaximizeToEdges,
+        MaximizedWindowPlacement::KeepInColumn,
+        1,
+    );
+    test_with_params(
+        ToggleType::MaximizeToEdges,
+        MaximizedWindowPlacement::ExpelFromColumn,
+        2,
+    );
+}
+
+#[test]
+fn expected_number_of_columns_and_sizing_mode_after_toggling_tabbed_mode_during_fullscreen() {
+    use niri_config::MaximizedWindowPlacement;
+
+    enum ToggleType {
+        Fullscreen,
+        MaximizeToEdges,
+    }
+
+    const EXPECTED_NUMBER_OF_COLUMNS: usize = 1;
+
+    #[track_caller]
+    fn test_with_params(
+        toggle_type: ToggleType,
+        maximized_column_placement: MaximizedWindowPlacement,
+        expected_sizing_mode: SizingMode,
+    ) {
+        let mut options = Options::default();
+        options.layout.maximized_window_placement = maximized_column_placement;
+        let mut layout =
+            Layout::<TestWindow>::with_options(Clock::with_time(Duration::ZERO), options);
+
+        let every_op = [
+            Op::AddOutput(0),
+            Op::AddWindow {
+                params: TestWindowParams::new(0),
+            },
+            Op::AddWindow {
+                params: TestWindowParams::new(1),
+            },
+            Op::FocusColumnLeft,
+            Op::ToggleColumnTabbedDisplay,
+            Op::ConsumeWindowIntoColumn,
+            match toggle_type {
+                ToggleType::Fullscreen => Op::FullscreenWindow(0),
+                ToggleType::MaximizeToEdges => Op::MaximizeWindowToEdges { id: Some(0) },
+            },
+            Op::ToggleColumnTabbedDisplay,
+        ];
+
+        for op in every_op {
+            op.apply(&mut layout);
+        }
+
+        let columns = layout
+            .active_workspace()
+            .into_iter()
+            .flat_map(|ws| ws.scrolling().columns());
+        assert_eq!(columns.count(), EXPECTED_NUMBER_OF_COLUMNS);
+        let active_window = layout.active_workspace().and_then(|ws| ws.active_window());
+        assert!(active_window.is_some());
+        assert_eq!(
+            active_window.unwrap().pending_sizing_mode(),
+            expected_sizing_mode
+        );
+    }
+
+    test_with_params(
+        ToggleType::Fullscreen,
+        MaximizedWindowPlacement::KeepInColumn,
+        SizingMode::Fullscreen,
+    );
+    test_with_params(
+        ToggleType::Fullscreen,
+        MaximizedWindowPlacement::ExpelFromColumn,
+        SizingMode::Normal,
+    );
+    test_with_params(
+        ToggleType::MaximizeToEdges,
+        MaximizedWindowPlacement::KeepInColumn,
+        SizingMode::Maximized,
+    );
+    test_with_params(
+        ToggleType::MaximizeToEdges,
+        MaximizedWindowPlacement::ExpelFromColumn,
+        SizingMode::Normal,
+    );
+}
