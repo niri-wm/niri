@@ -54,6 +54,7 @@ window-rule {
     opacity 0.5
     block-out-from "screencast"
     // block-out-from "screen-capture"
+    // block-out-from "screen-capture" kind="hide"
     variable-refresh-rate true
     default-column-display "tabbed"
     default-floating-position x=100 y=200 relative-to="bottom-left"
@@ -595,6 +596,27 @@ window-rule {
 >
 > This is because window title (and app ID) are not double-buffered in the Wayland protocol, so they are not tied to specific window contents.
 > There's no robust way for Firefox to synchronize visibly showing a different tab and changing the window title.
+
+<sup>Since: next release</sup>
+You can set `kind="hide"` to hide the window completely instead of drawing a black rectangle.
+
+> [!WARNING]
+>
+> With `kind="hide"`, it's easy to unintentionally show something on the screencast.
+> You could be looking at a blocked-out window that covers some sensitive data, but the screencast will be showing the sensitive data underneath, since the covering window is hidden from the screencast.
+>
+> ![Blocked-out password manager covering a terminal where unbeknownst to the user, some sensitive information got shown.](./img/block-out-from-hide.jpg)
+>
+> The default block-out kind doesn't have this problem because the screencast would show a black rectangle.
+
+```kdl
+// Hide a password manager entirely instead of showing a black rectangle.
+window-rule {
+    match app-id=r#"^org\.keepassxc\.KeePassXC$"#
+
+    block-out-from "screen-capture" kind="hide"
+}
+```
 
 #### `on-xdg-activate`
 

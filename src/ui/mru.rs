@@ -466,6 +466,9 @@ impl Thumbnail {
         // Hide title for blocked-out windows, but only after computing the title size. This way,
         // the background and the border won't have to oscillate in size between normal and
         // screencast renders, causing excessive damage.
+        //
+        // If the window is hidden (kind="hide"), it still makes sense to show its slot in the MRU,
+        // otherwise there would be a weird gap.
         let should_block_out = ctx.target.should_block_out(mapped.rules().block_out_from);
         let title_texture = title_texture.filter(|_| !should_block_out);
 

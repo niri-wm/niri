@@ -56,6 +56,10 @@ where
         ctx: RenderCtx<GlesRenderer>,
         scale: Scale<f64>,
     ) -> Option<&(GlesTexture, Rectangle<i32, Physical>)> {
+        // We don't check for should_hide() here. The only way for that to be true here is when
+        // rendering a resizing window that went from blocked-out-hidden to currently visible.
+        // It's ok to render the black rectangle in this case, and avoids having to deal with edge
+        // cases like animated border size not matching window size.
         if ctx.target.should_block_out(self.block_out_from) {
             self.blocked_out_texture.get_or_init(|| {
                 let _span = tracy_client::span!("RenderSnapshot::texture");

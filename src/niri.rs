@@ -6542,6 +6542,12 @@ impl Niri {
         show_pointer: bool,
         path: Option<String>,
     ) -> anyhow::Result<()> {
+        let target = RenderTarget::ScreenCapture;
+        if target.should_hide(mapped.rules().block_out_from) {
+            // We won't have any elements to render. Saving a fully transparent picture is odd.
+            bail!("window is hidden from screen capture");
+        }
+
         let _span = tracy_client::span!("Niri::screenshot_window");
 
         let scale = Scale::from(output.current_scale().fractional_scale());
@@ -6570,7 +6576,7 @@ impl Niri {
 
         let ctx = RenderCtx {
             renderer,
-            target: RenderTarget::ScreenCapture,
+            target,
             xray: None,
         };
         mapped.render(

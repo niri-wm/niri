@@ -1364,6 +1364,10 @@ impl<W: LayoutElement> Tile<W> {
         focus_ring: bool,
         push: &mut dyn FnMut(TileRenderElement<R>),
     ) {
+        if ctx.target.should_hide(self.window.rules().block_out_from) {
+            return;
+        }
+
         let _span = tracy_client::span!("Tile::render");
 
         let scale = Scale::from(self.scale);
