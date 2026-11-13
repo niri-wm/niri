@@ -3002,8 +3002,9 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         if layer.is_normal() {
             let view_rect = Rectangle::new(Point::from((self.view_pos(), 0.)), self.view_size);
             for closing in self.closing_windows.iter().rev() {
-                let elem = closing.render(ctx.as_gles(), view_rect, scale);
-                push(elem.into());
+                if let Some(elem) = closing.render(ctx.as_gles(), view_rect, scale) {
+                    push(elem.into());
+                }
             }
         }
 
@@ -3025,7 +3026,14 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             {
                 let pos = col_pos.to_physical_precise_round(scale).to_logical(scale);
                 col.tab_indicator
-                    .render(ctx.renderer, pos, &mut |elem| push(elem.into()));
+                    .render(ctx.renderer, pos, &mut |idx, elem| {
+                        if !ctx
+                            .target
+                            .should_hide(col.tiles[idx].window().rules().block_out_from)
+                        {
+                            push(elem.into());
+                        }
+                    });
             }
 
             for (tile, tile_off, visible) in col.tiles_in_render_order() {
