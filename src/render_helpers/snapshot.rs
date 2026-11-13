@@ -56,6 +56,10 @@ where
         ctx: RenderCtx<GlesRenderer>,
         scale: Scale<f64>,
     ) -> Option<&(GlesTexture, Rectangle<i32, Physical>)> {
+        if ctx.target.should_hide(self.block_out_from) {
+            return None;
+        }
+
         if ctx.target.should_block_out(self.block_out_from) {
             self.blocked_out_texture.get_or_init(|| {
                 let _span = tracy_client::span!("RenderSnapshot::texture");

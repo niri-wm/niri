@@ -35,8 +35,8 @@ pub struct ClosingWindow {
     /// can be used instead.
     buffer_with_blocked_out_bg: Option<TextureBuffer<GlesTexture>>,
 
-    /// Blocked-out contents of the window.
-    blocked_out_buffer: TextureBuffer<GlesTexture>,
+    /// Blocked-out contents and their offset, or `None` when hidden.
+    blocked_out_buffer: Option<(TextureBuffer<GlesTexture>, Point<f64, Logical>)>,
 
     /// Where the window should be blocked out from.
     block_out_from: Option<BlockOutFrom>,
@@ -52,9 +52,6 @@ pub struct ClosingWindow {
 
     /// How much the texture with blocked-out bg should be offset.
     buffer_with_blocked_out_bg_offset: Point<f64, Logical>,
-
-    /// How much the blocked-out texture should be offset.
-    blocked_out_buffer_offset: Point<f64, Logical>,
 
     /// The closing animation.
     anim_state: AnimationState,
@@ -138,9 +135,11 @@ impl ClosingWindow {
             } else {
                 (None, Point::default())
             };
-        let (blocked_out_buffer, blocked_out_buffer_offset) =
-            render_to_texture(snapshot.blocked_out_contents)
-                .context("error rendering blocked-out contents")?;
+        // Both block-out targets include screencasts.
+        let blocked_out_buffer = (!RenderTarget::Screencast.should_hide(snapshot.block_out_from))
+            .then(|| render_to_texture(snapshot.blocked_out_contents))
+            .transpose()
+            .context("error rendering blocked-out contents")?;
 
         Ok(Self {
             buffer,
@@ -151,7 +150,6 @@ impl ClosingWindow {
             pos,
             buffer_offset,
             buffer_with_blocked_out_bg_offset,
-            blocked_out_buffer_offset,
             anim_state: AnimationState::new(blocker, anim),
             random_seed: fastrand::f32(),
         })
@@ -181,9 +179,10 @@ impl ClosingWindow {
         ctx: RenderCtx<GlesRenderer>,
         view_rect: Rectangle<f64, Logical>,
         scale: Scale<f64>,
-    ) -> ClosingWindowRenderElement {
+    ) -> Option<ClosingWindowRenderElement> {
         let (buffer, offset) = if ctx.target.should_block_out(self.block_out_from) {
-            (&self.blocked_out_buffer, self.blocked_out_buffer_offset)
+            let (buffer, offset) = self.blocked_out_buffer.as_ref()?;
+            (buffer, *offset)
         } else if ctx.target != RenderTarget::Output && self.buffer_with_blocked_out_bg.is_some() {
             (
                 self.buffer_with_blocked_out_bg.as_ref().unwrap(),
@@ -215,7 +214,7 @@ impl ClosingWindow {
                     Relocate::Relative,
                 );
 
-                return elem.into();
+                return Some(elem.into());
             }
             AnimationState::Animating(anim) => anim,
         };
@@ -250,7 +249,7 @@ impl ClosingWindow {
             let geo_to_tex =
                 Mat3::from_translation(-tex_loc / tex_size) * Mat3::from_scale(geo_size / tex_size);
 
-            return ShaderRenderElement::new(
+            let elem = ShaderRenderElement::new(
                 ProgramType::Close,
                 view_rect.size,
                 None,
@@ -267,8 +266,8 @@ impl ClosingWindow {
                 HashMap::from([(String::from("niri_tex"), buffer.texture().clone())]),
                 Kind::Unspecified,
             )
-            .with_location(Point::from((0., 0.)))
-            .into();
+            .with_location(Point::from((0., 0.)));
+            return Some(elem.into());
         }
 
         let elem = TextureRenderElement::from_texture_buffer(
@@ -297,6 +296,6 @@ impl ClosingWindow {
             Relocate::Relative,
         );
 
-        elem.into()
+        Some(elem.into())
     }
 }

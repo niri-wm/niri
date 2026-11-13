@@ -1128,7 +1128,12 @@ impl<W: LayoutElement> Tile<W> {
 
         // If we're resizing, try to render a shader, or a fallback.
         let mut pushed_resize = false;
-        if let Some(resize) = &self.resize_animation {
+        // Skip hidden snapshots without triggering the resize error fallback.
+        if let Some(resize) = self
+            .resize_animation
+            .as_ref()
+            .filter(|resize| !ctx.target.should_hide(resize.snapshot.block_out_from))
+        {
             if ResizeRenderElement::has_shader(ctx.renderer) {
                 let mut ctx = ctx.as_gles();
 
@@ -1375,6 +1380,10 @@ impl<W: LayoutElement> Tile<W> {
 
         let mut pushed = false;
         self.window().set_offscreen_data(None);
+
+        if ctx.target.should_hide(self.window.rules().block_out_from) {
+            return;
+        }
 
         if let Some(open) = &self.open_animation {
             let mut ctx = ctx.as_gles();

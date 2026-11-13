@@ -294,16 +294,16 @@ impl TabIndicator {
         &self,
         renderer: &mut impl NiriRenderer,
         pos: Point<f64, Logical>,
-        push: &mut dyn FnMut(TabIndicatorRenderElement),
+        push: &mut dyn FnMut(usize, TabIndicatorRenderElement),
     ) {
         let has_border_shader = BorderRenderElement::has_shader(renderer);
         if !has_border_shader {
             return;
         }
 
-        for (shader, loc) in zip(&self.shaders, &self.shader_locs) {
+        for (idx, (shader, loc)) in zip(&self.shaders, &self.shader_locs).enumerate() {
             let elem = shader.clone().with_location(pos + *loc);
-            push(TabIndicatorRenderElement::from(elem));
+            push(idx, TabIndicatorRenderElement::from(elem));
         }
     }
 

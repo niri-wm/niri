@@ -6544,6 +6544,11 @@ impl Niri {
     ) -> anyhow::Result<()> {
         let _span = tracy_client::span!("Niri::screenshot_window");
 
+        ensure!(
+            !RenderTarget::ScreenCapture.should_hide(mapped.rules().block_out_from),
+            "window is hidden from screen capture"
+        );
+
         let scale = Scale::from(output.current_scale().fractional_scale());
         let alpha =
             if mapped.sizing_mode().is_fullscreen() || mapped.is_ignoring_opacity_window_rule() {
