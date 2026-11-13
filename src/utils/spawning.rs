@@ -30,6 +30,7 @@ pub struct Spawner(async_channel::Sender<Message>);
 impl Spawner {
     pub fn new() -> Spawner {
         let (sender, receiver) = async_channel::unbounded::<Message>();
+
         thread::Builder::new()
             .name("Command Spawner".to_owned())
             .spawn(move || {
@@ -37,11 +38,13 @@ impl Spawner {
                 async_io::block_on(ex.run(async {
                     #[cfg(feature = "systemd")]
                     let mut spawnserver = systemd::prepare_spawnserver();
+
                     while let Ok((command, token)) = receiver.recv().await {
                         let Some((command, args)) = command.split_first() else {
                             continue;
                         };
-                        let spawnee = spawnee(command, args, token);
+                        let spawnee = prepare_command(command, args, token);
+
                         #[cfg(feature = "systemd")]
                         {
                             let server = spawnserver.take().or_else(systemd::prepare_spawnserver);
@@ -52,23 +55,27 @@ impl Spawner {
                                 continue;
                             }
                         }
-                        spawn_cmd(spawnee);
+
+                        just_spawn(spawnee);
                     }
                 }));
             })
             .unwrap();
+
         Self(sender)
     }
 
     /// Spawns the command to run independently of the compositor.
     pub fn spawn(&self, command: Vec<String>, token: Option<XdgActivationToken>) {
         let _span = tracy_client::span!();
+
         if command.is_empty() {
             return;
         }
+
         if let Err(err) = self.0.send_blocking((command, token)) {
             warn!("error sending command to the spawning thread: {err:?}");
-        };
+        }
     }
 
     /// Spawns the command through the shell.
@@ -123,13 +130,13 @@ pub fn restore_nofile_rlimit() {
     unsafe { setrlimit(RLIMIT_NOFILE, &rlim) };
 }
 
-fn spawn_cmd(mut command: async_process::Command) {
+fn just_spawn(mut command: async_process::Command) {
     if let Err(err) = command.spawn() {
         warn!("error spawning {command:?}: {err:?}");
     }
 }
 
-fn spawnee(
+fn prepare_command(
     command: impl AsRef<OsStr>,
     args: impl IntoIterator<Item = impl AsRef<OsStr>>,
     token: Option<XdgActivationToken>,
@@ -186,18 +193,18 @@ fn spawnee(
         process.env("DESKTOP_STARTUP_ID", token.as_str());
     }
 
-    spawnee_restore_state(&mut process);
+    restore_state_in_pre_exec(&mut process);
 
     let mut process = async_process::Command::from(process);
-
     process
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
+
     process
 }
 
-fn spawnee_restore_state(cmd: &mut std::process::Command) {
+fn restore_state_in_pre_exec(cmd: &mut std::process::Command) {
     unsafe {
         cmd.pre_exec(|| {
             restore_nofile_rlimit();
@@ -221,23 +228,28 @@ pub fn spawnserver() -> Result<(), anyhow::Error> {
         .lock()
         .read_to_end(&mut buf)
         .context("could not read the command to spawn")?;
-    let Some((args, buf)) = buf.split_first_chunk() else {
+
+    let Some((argc, buf)) = buf.split_first_chunk() else {
         std::process::exit(0)
     };
-    let argc = usize::from_ne_bytes(*args);
+    let argc = usize::from_ne_bytes(*argc);
+
     let mut bufi = buf
         .split(|b| *b == 0)
         .map(|b| unsafe { OsStr::from_encoded_bytes_unchecked(b) });
+
     let Some(program) = bufi.next() else {
         return Ok(());
     };
     let mut command = Command::new(program);
+
     for _ in 0..argc {
         let arg = bufi
             .next()
             .ok_or_else(|| anyhow::anyhow!("malformed command"))?;
         command.arg(arg);
     }
+
     command.env_clear();
     while let (Some(k), Some(v)) = (bufi.next(), bufi.next()) {
         command.env(k, v);
@@ -256,9 +268,9 @@ pub fn spawnserver() -> Result<(), anyhow::Error> {
     // copy of it and will restore stderr if exec fails so we can print out the error.
     command.stderr(Stdio::null());
     let stderr = io::stderr().as_fd().try_clone_to_owned()?;
-    let exec_err = Err(command.exec()).context(format!("could not spawn {program:?}"));
+    let exec_err = Err(command.exec());
     unsafe { libc::dup2(stderr.as_raw_fd(), io::stderr().as_raw_fd()) };
-    exec_err
+    exec_err.context(format!("could not spawn {program:?}"))
 }
 
 #[cfg(feature = "systemd")]
@@ -289,22 +301,26 @@ mod systemd {
         if !crate::utils::IS_SYSTEMD_SERVICE.load(Ordering::Relaxed) {
             return None;
         }
+
         let mut spawnserver = if std::fs::exists("/proc/self/exe").map_err(|_| ()) == Ok(true) {
             std::process::Command::new("/proc/self/exe")
         } else {
             std::process::Command::new(std::env::current_exe().ok()?)
         };
-        spawnee_restore_state(&mut spawnserver);
+
+        restore_state_in_pre_exec(&mut spawnserver);
         spawnserver.arg("spawnserver");
+
         let mut spawnserver = async_process::Command::from(spawnserver);
         spawnserver.stdin(Stdio::piped());
         spawnserver.stdout(Stdio::piped());
         // exec errors output by spawnserver.
         spawnserver.stderr(Stdio::inherit());
+
         match spawnserver.spawn() {
             Ok(server) => Some(server),
             Err(e) => {
-                info!("cannot spawn a spawnserver, will fall back to direct spawning: {e:?}");
+                debug!("could not spawn a spawnserver, will fall back to direct spawning: {e:?}");
                 None
             }
         }
@@ -324,6 +340,7 @@ mod systemd {
             buf.extend_from_slice(arg.as_encoded_bytes());
             buf.push(0);
         }
+
         let mut environ = std::env::vars_os().collect::<std::collections::HashMap<_, _>>();
         for (k, v) in command.get_envs() {
             if let Some(v) = v {
@@ -343,12 +360,12 @@ mod systemd {
             let Some(mut stdin) = spawnserver.stdin.take() else {
                 // This should be unreachable, but we have a reasonable fallback to try.
                 let _ = spawnserver.kill();
-                return super::spawn_cmd(command);
+                return super::just_spawn(command);
             };
             let Ok(_) = stdin.write_all(&buf).await else {
                 // Likely reason for a failure here is that spawnserver crashed or got killed.
                 let _ = spawnserver.kill();
-                return super::spawn_cmd(command);
+                return super::just_spawn(command);
             };
             drop(stdin); // spawnserver may proceed to exec
         }
@@ -363,7 +380,7 @@ mod systemd {
         if let Ok(None) = spawnserver.try_status() {
             if let Err(e) = rescope_spawned(command.get_program(), spawnserver.id()).await {
                 warn!("could not migrate spawned program to its named scope: {e:?}");
-            };
+            }
         }
     }
 
@@ -371,6 +388,7 @@ mod systemd {
         if !crate::utils::IS_SYSTEMD_SERVICE.load(Ordering::Relaxed) {
             return Ok(());
         }
+
         async_io::block_on(async {
             let conn = zbus::Connection::session()
                 .await
@@ -383,9 +401,11 @@ mod systemd {
             )
             .await
             .context("error creating a Proxy")?;
+
             start_systemd_scope(&proxy, name, std::process::id())
                 .await
                 .context("could not put spawnserver into an intermediate scope")?;
+
             Ok(())
         })
     }
@@ -452,10 +472,7 @@ mod systemd {
     ) -> anyhow::Result<()> {
         use zbus::zvariant::{OwnedObjectPath, Value};
 
-        let _span = tracy_client::span!();
-
         // Extract the basename.
-        let name = Path::new(name).file_name().unwrap_or(name);
         let scope_name = scope_name(name, child_pid);
         let mut signals = proxy
             .receive_signal("JobRemoved")

@@ -42,6 +42,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if env::var_os("NOTIFY_SOCKET").is_some() {
         IS_SYSTEMD_SERVICE.store(true, Ordering::Relaxed);
     }
+
     // Want minimal overhead for spawnserver, so handle this early on before any other work setting
     // up the process is done.
     if std::env::args_os()
