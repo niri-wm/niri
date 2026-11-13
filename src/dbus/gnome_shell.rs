@@ -102,7 +102,7 @@ impl GlobalShortcutsPortalBinds {
         };
         let Ok(key) = Key::from_str(converted_accelerator.as_ref()) else {
             warn!(
-                "failed to parse key from acclerator \"{}\" (converted to canonical form \
+                "failed to parse key from accelerator \"{}\" (converted to canonical form \
                 \"{converted_accelerator}\")",
                 accelerator.accelerator
             );
