@@ -2527,6 +2527,12 @@ impl State {
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
+            Action::ToggleFloatingLayout => {
+                self.niri.layout.toggle_floating_layout();
+                self.maybe_warp_cursor_to_focus();
+                // FIXME: granular
+                self.niri.queue_redraw_all();
+            }
             Action::MoveFloatingWindowById { id, x, y } => {
                 let window = if let Some(id) = id {
                     let id = MappedId::specific(id);

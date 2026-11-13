@@ -753,6 +753,7 @@ enum Op {
         #[proptest(strategy = "arbitrary_layout_part().prop_map(Box::new)")]
         layout_config: Box<niri_config::LayoutPart>,
     },
+    ToggleFloatingLayout,
 }
 
 impl Op {
@@ -1627,6 +1628,9 @@ impl Op {
                 };
 
                 layout.update_options(options);
+            }
+            Op::ToggleFloatingLayout => {
+                layout.toggle_floating_layout();
             }
         }
     }
