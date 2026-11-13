@@ -2773,8 +2773,23 @@ impl Niri {
         seat.add_pointer();
 
         let cursor_shape_manager_state = CursorShapeManagerState::new::<State>(&display_handle);
-        let cursor_manager =
-            CursorManager::new(&config_.cursor.xcursor_theme, config_.cursor.xcursor_size);
+        let (cursor_tx, cursor_rx) = calloop::channel::channel();
+        let cursor_manager = CursorManager::new(
+            &config_.cursor.xcursor_theme,
+            config_.cursor.xcursor_size,
+            cursor_tx,
+        );
+        event_loop
+            .insert_source(cursor_rx, |event, _, state: &mut State| {
+                if let calloop::channel::Event::Msg(response) = event {
+                    if state.niri.cursor_manager.apply_rasterized(response) {
+                        state.niri.cursor_texture_cache.clear();
+                        state.niri.queue_redraw_all();
+                    }
+                }
+            })
+            .unwrap();
+        cursor_manager.get_default_cursor(1);
 
         let mod_key = backend.mod_key(&config.borrow());
         let mods_with_mouse_binds = mods_with_mouse_binds(mod_key, &config_.binds);
