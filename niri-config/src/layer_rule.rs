@@ -1,6 +1,7 @@
 use crate::appearance::{BackgroundEffectRule, BlockOutFrom, CornerRadius, ShadowRule};
 use crate::utils::RegexEq;
 use crate::window_rule::PopupsRule;
+use crate::FloatOrInt;
 
 #[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]
 pub struct LayerRule {
@@ -17,6 +18,8 @@ pub struct LayerRule {
     pub shadow: ShadowRule,
     #[knuffel(child)]
     pub geometry_corner_radius: Option<CornerRadius>,
+    #[knuffel(child, unwrap(argument))]
+    pub geometry_corner_radius_exponent: Option<FloatOrInt<1, { i32::MAX }>>,
     #[knuffel(child, unwrap(argument))]
     pub place_within_backdrop: Option<bool>,
     #[knuffel(child, unwrap(argument))]
