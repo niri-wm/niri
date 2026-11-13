@@ -30,7 +30,6 @@ Note that there are some limitations:
 
 - We don't have a bind to move focus to layer-shell panels. This is not hard to add, but it would be good to have some consensus or prior art with LXQt/Xfce on how exactly this should work.
 - You need to have a screen connected and enabled. Without a screen, niri won't give focus any window. This makes sense for sighted users, and I'm not entirely sure what makes the most sense for accessibility purposes (maybe, it'd be better solved with virtual monitors).
-- You need working EGL (hardware acceleration).
 - We don't have screen curtain functionality yet.
 
 If you're shipping niri and would like to make it work better for screen readers out of the box, consider the following changes to the default niri config:

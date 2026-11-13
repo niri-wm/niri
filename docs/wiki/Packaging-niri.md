@@ -45,7 +45,6 @@ Set them as automatically-installed optional dependencies, if possible.
 - `oo7-portal` or `gnome-keyring`: configured as the Secret portal provider in `niri-portals.conf`.
 - `gnome-control-center`: required for the global shortcuts portal to work.
 - Your distro's GPU driver package, such as `mesa-dri-drivers` and `mesa-libEGL`.
-Working hardware acceleration is required for running niri.
 - Some notification daemon like `mako`, generally required for apps to work correctly.
 
 Finally, you may want to auto-install some of the applications bound in niri's [default configuration file](https://github.com/niri-wm/niri/blob/main/resources/default-config.kdl) (search for `spawn`), such as `alacritty` and `fuzzel`.
