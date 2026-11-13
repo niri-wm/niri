@@ -40,6 +40,7 @@ struct TestWindowInner {
     is_pending_windowed_fullscreen: Cell<bool>,
     animate_next_configure: Cell<bool>,
     animation_snapshot: RefCell<Option<LayoutElementRenderSnapshot>>,
+    input_regions: RefCell<Vec<Rectangle<i32, Logical>>>,
     rules: ResolvedWindowRules,
 }
 
@@ -92,8 +93,13 @@ impl TestWindow {
             is_pending_windowed_fullscreen: Cell::new(false),
             animate_next_configure: Cell::new(false),
             animation_snapshot: RefCell::new(None),
+            input_regions: RefCell::new(Vec::new()),
             rules: params.rules.unwrap_or_default(),
         }))
+    }
+
+    fn set_input_regions(&self, regions: impl IntoIterator<Item = Rectangle<i32, Logical>>) {
+        self.0.input_regions.replace(regions.into_iter().collect());
     }
 
     fn communicate(&self) -> bool {
@@ -164,8 +170,12 @@ impl LayoutElement for TestWindow {
         (0, 0).into()
     }
 
-    fn is_in_input_region(&self, _point: Point<f64, Logical>) -> bool {
-        false
+    fn is_in_input_region(&self, point: Point<f64, Logical>) -> bool {
+        self.0
+            .input_regions
+            .borrow()
+            .iter()
+            .any(|region| region.to_f64().contains(point))
     }
 
     fn request_size(
@@ -2297,6 +2307,272 @@ fn large_max_size() {
     options.layout.border.width = 1.;
 
     check_ops_with_options(options, ops);
+}
+
+#[test]
+fn input_region_holes() {
+    for bottom_is_floating in [false, true] {
+        for scale in [1., 1.25] {
+            let ops = [
+                Op::AddScaledOutput {
+                    id: 1,
+                    scale,
+                    layout_config: None,
+                },
+                Op::AddWindow {
+                    params: TestWindowParams {
+                        is_floating: bottom_is_floating,
+                        ..TestWindowParams::new(1)
+                    },
+                },
+                Op::AddWindow {
+                    params: TestWindowParams {
+                        is_floating: true,
+                        rules: Some(ResolvedWindowRules {
+                            draw_border_with_background: Some(false),
+                            ..Default::default()
+                        }),
+                        ..TestWindowParams::new(2)
+                    },
+                },
+            ];
+            let mut options = Options::default();
+            options.layout.border.off = false;
+            options.layout.border.width = 4.;
+            let mut layout = check_ops_with_options(options, ops);
+
+            // Overlap the floating window with either a tiled or another floating window.
+            let (_, bottom_pos, _) = layout
+                .active_workspace()
+                .unwrap()
+                .tiles_with_render_positions()
+                .find(|(tile, _, _)| tile.window().id() == &1)
+                .unwrap();
+            layout.move_floating_window(
+                Some(&2),
+                PositionChange::SetFixed(bottom_pos.x),
+                PositionChange::SetFixed(bottom_pos.y),
+                false,
+            );
+            for (_, window) in layout.windows() {
+                let size = if window.id() == &1 {
+                    window.size()
+                } else {
+                    Size::from((20, 20))
+                };
+                window.set_input_regions([Rectangle::from_size(size)]);
+            }
+
+            let (top_tile, top_pos, _) = layout
+                .active_workspace()
+                .unwrap()
+                .tiles_with_render_positions()
+                .find(|(tile, _, _)| tile.window().id() == &2)
+                .unwrap();
+            let input_pos = top_pos + top_tile.window_loc() + Point::from((10., 10.));
+            let hole_pos = top_pos + top_tile.window_loc() + Point::from((50., 50.));
+            let border_pos = top_pos + Point::from((2., 50.));
+            let output = layout.outputs().next().unwrap().clone();
+
+            let size = top_tile.tile_size();
+            for (pos, edges) in [
+                (Point::from((2., 50.)), ResizeEdge::LEFT),
+                (Point::from((size.w - 2., 50.)), ResizeEdge::RIGHT),
+                (Point::from((50., 2.)), ResizeEdge::TOP),
+                (Point::from((50., size.h - 2.)), ResizeEdge::BOTTOM),
+                (Point::from((2., 2.)), ResizeEdge::TOP_LEFT),
+                (
+                    Point::from((size.w - 2., size.h - 2.)),
+                    ResizeEdge::BOTTOM_RIGHT,
+                ),
+            ] {
+                let hit = layout.window_under(&output, top_pos + pos);
+                assert_eq!(
+                    hit.map(|(window, hit)| (*window.id(), hit)),
+                    Some((2, HitType::ResizeBorder { edges })),
+                    "floating={bottom_is_floating}, scale={scale}, pos={pos:?}"
+                );
+            }
+
+            assert!(top_tile
+                .hit((-1., -1.).into(), InputRegion::Ignore, true)
+                .is_none());
+            for pos in [input_pos, hole_pos, border_pos] {
+                let hit = layout
+                    .active_workspace()
+                    .unwrap()
+                    .window_under(pos, InputRegion::Ignore, true)
+                    .map(|(window, hit)| (*window.id(), hit));
+                assert_eq!(
+                    hit,
+                    Some((
+                        2,
+                        HitType::Activate {
+                            is_tab_indicator: false
+                        }
+                    ))
+                );
+            }
+
+            for overview in [false, true] {
+                if overview {
+                    layout.toggle_overview();
+                }
+                for (pos, id, activates) in [
+                    (input_pos, 2, overview),
+                    (hole_pos, 1, overview),
+                    (border_pos, 2, true),
+                ] {
+                    let hit = layout.window_under(&output, pos).map(|(window, hit)| {
+                        (
+                            *window.id(),
+                            matches!(hit, HitType::Activate { .. } | HitType::ResizeBorder { .. }),
+                        )
+                    });
+                    assert_eq!(
+                        hit,
+                        Some((id, activates)),
+                        "floating={bottom_is_floating}, scale={scale}, overview={overview}, pos={pos:?}"
+                    );
+                }
+            }
+
+            check_ops_on_layout(&mut layout, [Op::CloseWindow(1)]);
+            assert!(layout.window_under(&output, hole_pos).is_none());
+            assert!(layout
+                .active_workspace()
+                .unwrap()
+                .window_under(hole_pos, InputRegion::Honor, true)
+                .is_none());
+        }
+    }
+}
+
+#[test]
+fn tiled_focus_ring_background_hit_testing() {
+    let mut layout = check_ops([
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+    ]);
+    let output = layout.outputs().next().unwrap().clone();
+    for (_, window) in layout.windows() {
+        window.set_input_regions([Rectangle::from_size((20, 20).into())]);
+    }
+    let hole_pos = |layout: &Layout<TestWindow>| {
+        let (tile, pos, _) = layout
+            .active_workspace()
+            .unwrap()
+            .tiles_with_render_positions()
+            .find(|(tile, _, _)| tile.window().id() == &1)
+            .unwrap();
+        pos + tile.window_loc() + Point::from((50., 50.))
+    };
+
+    // Without a border, only the active tile has a decoration background.
+    for active in [1, 2] {
+        layout.activate_window(&active);
+        let pos = hole_pos(&layout);
+        let hit = layout
+            .window_under(&output, pos)
+            .map(|(window, hit)| (*window.id(), hit));
+        assert_eq!(
+            hit,
+            (active == 1).then_some((
+                1,
+                HitType::Activate {
+                    is_tab_indicator: false
+                }
+            ))
+        );
+        assert_eq!(
+            layout.resize_edges_under(&output, pos).is_some(),
+            active == 1
+        );
+    }
+
+    // Moving the other tile suppresses the remaining workspace's focus ring.
+    let start = Point::from((50., 50.));
+    let delta = Point::from((INTERACTIVE_MOVE_START_THRESHOLD.sqrt(), 0.));
+    assert!(layout.interactive_move_begin(2, &output, start));
+    assert!(layout.interactive_move_update(&2, delta, output.clone(), start + delta,));
+    assert!(layout.interactive_move_is_moving_above_output(&output));
+    assert_eq!(
+        layout
+            .active_workspace()
+            .unwrap()
+            .active_window()
+            .unwrap()
+            .id(),
+        &1
+    );
+    let pos = hole_pos(&layout);
+    assert!(layout.window_under(&output, pos).is_none());
+    assert!(layout.resize_edges_under(&output, pos).is_none());
+
+    // The moving tile still has its own focus ring background.
+    let InteractiveMoveState::Moving(move_) = layout.interactive_move.as_ref().unwrap() else {
+        unreachable!();
+    };
+    let pos = move_.tile_render_location(1.) + move_.tile.window_loc() + Point::from((50., 50.));
+    let (window, hit) = layout.interactive_moved_window_under(&output, pos).unwrap();
+    assert_eq!(window.id(), &2);
+    assert!(matches!(hit, HitType::Activate { .. }));
+}
+
+#[test]
+fn moved_window_input_region_holes_pass_through_in_overview() {
+    let ops = [
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams {
+                is_floating: true,
+                rules: Some(ResolvedWindowRules {
+                    draw_border_with_background: Some(false),
+                    ..Default::default()
+                }),
+                ..TestWindowParams::new(1)
+            },
+        },
+    ];
+    let mut layout = check_ops(ops);
+    let output = layout.outputs().next().unwrap().clone();
+    layout
+        .windows()
+        .find(|(_, window)| window.id() == &1)
+        .unwrap()
+        .1
+        .set_input_regions([Rectangle::new((0, 0).into(), (20, 20).into())]);
+
+    assert!(layout.interactive_move_begin(1, &output, Point::from((50., 50.))));
+    assert!(layout.interactive_move_update(
+        &1,
+        Point::from((1., 1.)),
+        output.clone(),
+        Point::from((51., 51.)),
+    ));
+    layout.toggle_overview();
+    let zoom = layout.overview_zoom();
+    let InteractiveMoveState::Moving(move_) = layout.interactive_move.as_ref().unwrap() else {
+        panic!("window must be interactively moving");
+    };
+    let tile_pos = move_.tile_render_location(zoom);
+    let window_pos = move_.tile.window_loc().to_f64();
+    let input_pos = tile_pos + (window_pos + Point::from((10., 10.))).upscale(zoom);
+    let hole_pos = tile_pos + (window_pos + Point::from((50., 50.))).upscale(zoom);
+
+    let (window, hit) = layout
+        .interactive_moved_window_under(&output, input_pos)
+        .unwrap();
+    assert_eq!(window.id(), &1);
+    assert!(matches!(hit, HitType::Activate { .. }));
+    assert!(layout
+        .interactive_moved_window_under(&output, hole_pos)
+        .is_none());
 }
 
 #[test]
