@@ -558,12 +558,15 @@ pub fn show_screenshot_notification(image_path: Option<&Path>) -> anyhow::Result
     let conn = zbus::blocking::Connection::session()?;
 
     // Try to add the screenshot as an image if possible.
-    let mut image_url = None;
+    let mut hints = HashMap::from([
+        ("transient", zvariant::Value::Bool(true)),
+        ("urgency", zvariant::Value::U8(1)),
+    ]);
     if let Some(path) = image_path {
         match path.canonicalize() {
             Ok(path) => match glib::filename_to_uri(path, None) {
                 Ok(url) => {
-                    image_url = Some(url);
+                    hints.insert("image-path", zvariant::Value::Str(url.to_string().into()));
                 }
                 Err(err) => {
                     warn!("error converting screenshot path to file url: {err:?}");
@@ -585,14 +588,11 @@ pub fn show_screenshot_notification(image_path: Option<&Path>) -> anyhow::Result
         &(
             "niri",
             0u32,
-            image_url.as_ref().map(|url| url.as_str()).unwrap_or(""),
+            "niri",
             "Screenshot captured",
             "You can paste the image from the clipboard.",
             actions,
-            HashMap::from([
-                ("transient", zvariant::Value::Bool(true)),
-                ("urgency", zvariant::Value::U8(1)),
-            ]),
+            hints,
             -1,
         ),
     )?;
