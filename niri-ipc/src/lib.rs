@@ -205,6 +205,8 @@ pub enum Action {
         #[cfg_attr(feature = "clap", arg(required = true))]
         vt: u8,
     },
+    /// Suspend the system.
+    Suspend {},
     /// Power off all monitors via DPMS.
     PowerOffMonitors {},
     /// Power on all monitors via DPMS.
