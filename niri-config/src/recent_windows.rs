@@ -11,6 +11,7 @@ pub struct RecentWindows {
     pub open_delay_ms: u16,
     pub highlight: MruHighlight,
     pub previews: MruPreviews,
+    pub all_outputs: bool,
     pub binds: Vec<Bind>,
 }
 
@@ -22,6 +23,7 @@ impl Default for RecentWindows {
             open_delay_ms: 150,
             highlight: MruHighlight::default(),
             previews: MruPreviews::default(),
+            all_outputs: false,
             binds: default_binds(),
         }
     }
@@ -41,6 +43,8 @@ pub struct RecentWindowsPart {
     pub highlight: Option<MruHighlightPart>,
     #[knuffel(child)]
     pub previews: Option<MruPreviewsPart>,
+    #[knuffel(child, unwrap(argument))]
+    pub all_outputs: Option<bool>,
     #[knuffel(child)]
     pub binds: Option<MruBinds>,
 }
@@ -52,7 +56,7 @@ impl MergeWith<RecentWindowsPart> for RecentWindows {
             self.on = false;
         }
 
-        merge_clone!((self, part), debounce_ms, open_delay_ms);
+        merge_clone!((self, part), debounce_ms, open_delay_ms, all_outputs);
         merge!((self, part), highlight, previews);
 
         if let Some(part) = &part.binds {
