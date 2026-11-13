@@ -1601,8 +1601,17 @@ impl State {
     pub fn set_xkb_config(&mut self, xkb: XkbConfig) {
         let keyboard = self.niri.seat.get_keyboard().unwrap();
         let restore = self.keyboard_state_to_restore();
+        let layout = xkb.layout.to_owned();
         if let Err(err) = keyboard.set_xkb_config(self, xkb) {
             warn!("error updating xkb config: {err:?}");
+            self.niri.config_error_notification.show_error(
+                crate::ui::config_error_notification::xkb_error_text(&layout, true),
+            );
+            self.niri.queue_redraw_all();
+
+            #[cfg(feature = "dbus")]
+            self.niri.a11y_announce_xkb_error(&layout);
+
             return;
         }
         self.niri.virtual_keyboard_keymap = None;
@@ -2745,6 +2754,7 @@ impl Niri {
         let single_pixel_buffer_state = SinglePixelBufferState::new::<State>(&display_handle);
 
         let mut seat: Seat<State> = seat_state.new_wl_seat(&display_handle, backend.seat_name());
+        let mut initial_xkb_failed = false;
         let keyboard = match seat.add_keyboard(
             config_.input.keyboard.xkb.to_xkb_config(),
             config_.input.keyboard.repeat_delay.into(),
@@ -2753,6 +2763,7 @@ impl Niri {
             Err(err) => {
                 if let smithay::input::keyboard::Error::BadKeymap = err {
                     warn!("error loading the configured xkb keymap, trying default");
+                    initial_xkb_failed = true;
                 } else {
                     warn!("error adding keyboard: {err:?}");
                 }
@@ -2787,8 +2798,14 @@ impl Niri {
 
         let screenshot_ui = ScreenshotUi::new(animation_clock.clone(), config.clone());
         let window_mru_ui = WindowMruUi::new(config.clone());
-        let config_error_notification =
+        let mut config_error_notification =
             ConfigErrorNotification::new(animation_clock.clone(), config.clone());
+        if initial_xkb_failed {
+            let layout = config_.input.keyboard.xkb.layout.clone();
+            config_error_notification.show_error(
+                crate::ui::config_error_notification::xkb_error_text(&layout, true),
+            );
+        }
 
         let mut hotkey_overlay = HotkeyOverlay::new(config.clone(), mod_key);
         if !config_.hotkey_overlay.skip_at_startup {

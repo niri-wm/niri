@@ -262,6 +262,16 @@ impl Niri {
         self.a11y_announce(crate::ui::config_error_notification::error_text(false));
     }
 
+    pub fn a11y_announce_xkb_error(&mut self, layout: &str) {
+        if self.a11y.to_accesskit.is_none() {
+            return;
+        }
+
+        self.a11y_announce(crate::ui::config_error_notification::xkb_error_text(
+            layout, false,
+        ));
+    }
+
     pub fn a11y_announce_hotkey_overlay(&mut self) {
         if self.a11y.to_accesskit.is_none() {
             return;

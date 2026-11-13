@@ -25,6 +25,7 @@ use niri::utils::spawning::{
     REMOVE_ENV_RUST_BACKTRACE, REMOVE_ENV_RUST_LIB_BACKTRACE,
 };
 use niri::utils::{cause_panic, version, watcher, xwayland, IS_SYSTEMD_SERVICE};
+use niri_config::input::XkbFile;
 use niri_config::{Config, ConfigPath};
 use niri_ipc::socket::SOCKET_PATH_ENV;
 use sd_notify::NotifyState;
@@ -37,6 +38,56 @@ const DEFAULT_LOG_FILTER: &str = "niri=debug,smithay::backend::renderer::gles=er
 #[global_allocator]
 static GLOBAL: tracy_client::ProfiledAllocator<std::alloc::System> =
     tracy_client::ProfiledAllocator::new(std::alloc::System, 100);
+
+/// Checks that the configured keyboard layout actually compiles to a keymap.
+///
+/// A layout name that does not exist (e.g. `layout "en"`) parses fine but fails to compile in
+/// xkbcommon, so without this check `niri validate` would call such a config valid while the
+/// compositor silently falls back to the default keymap. Mirrors what the compositor does when
+/// applying the config: a custom keymap file takes precedence over the RMLVO settings when it
+/// loads, otherwise the RMLVO settings are used.
+fn validate_xkb(config: &Config) -> anyhow::Result<()> {
+    use smithay::input::keyboard::xkb;
+
+    let xkb = &config.input.keyboard.xkb;
+
+    // A custom keymap file takes precedence over the RMLVO settings when it loads.
+    if let Some(XkbFile(Some(keymap))) = &xkb.file {
+        let context = xkb::Context::new(xkb::CONTEXT_NO_FLAGS);
+        if xkb::Keymap::new_from_string(
+            &context,
+            keymap.clone(),
+            xkb::KEYMAP_FORMAT_TEXT_V1,
+            xkb::KEYMAP_COMPILE_NO_FLAGS,
+        )
+        .is_some()
+        {
+            return Ok(());
+        }
+        // The file failed to load, so the compositor falls back to the RMLVO settings below.
+    }
+
+    let context = xkb::Context::new(xkb::CONTEXT_NO_FLAGS);
+    let xkb_config = xkb.to_xkb_config();
+    if xkb::Keymap::new_from_names(
+        &context,
+        xkb_config.rules,
+        xkb_config.model,
+        xkb_config.layout,
+        xkb_config.variant,
+        xkb_config.options,
+        xkb::KEYMAP_COMPILE_NO_FLAGS,
+    )
+    .is_none()
+    {
+        anyhow::bail!(
+            "invalid keyboard layout: failed to compile the xkb keymap for layout {:?}",
+            xkb.layout
+        );
+    }
+
+    Ok(())
+}
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Set backtrace defaults if not set.
@@ -102,7 +153,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Sub::Validate { config } => {
                 tracy_client::Client::start();
 
-                config_path(config).load().config?;
+                let config = config_path(config).load().config?;
+                validate_xkb(&config)?;
                 info!("config is valid");
                 return Ok(());
             }

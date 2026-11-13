@@ -32,6 +32,11 @@ pub struct ConfigErrorNotification {
     // notification.
     created_path: Option<PathBuf>,
 
+    // If set, the config error notification shows this text instead of the default
+    // "Failed to parse the config file" message. Used for errors that surface after parsing,
+    // like a keyboard layout that fails to load.
+    custom_error: Option<String>,
+
     clock: Clock,
     config: Rc<RefCell<Config>>,
 }
@@ -49,6 +54,7 @@ impl ConfigErrorNotification {
             state: State::Hidden,
             buffers: RefCell::new(HashMap::new()),
             created_path: None,
+            custom_error: None,
             clock,
             config,
         }
@@ -70,6 +76,10 @@ impl ConfigErrorNotification {
             self.created_path = Some(created_path.to_owned());
             self.buffers.borrow_mut().clear();
         }
+        if self.custom_error.is_some() {
+            self.custom_error = None;
+            self.buffers.borrow_mut().clear();
+        }
 
         self.state = State::Showing(self.animation(0., 1.));
     }
@@ -82,6 +92,31 @@ impl ConfigErrorNotification {
 
         if self.created_path.is_some() {
             self.created_path = None;
+            self.buffers.borrow_mut().clear();
+        }
+        if self.custom_error.is_some() {
+            self.custom_error = None;
+            self.buffers.borrow_mut().clear();
+        }
+
+        // Show from scratch even if already showing to bring attention.
+        self.state = State::Showing(self.animation(0., 1.));
+    }
+
+    /// Shows the config error notification with a custom message instead of the default
+    /// "Failed to parse the config file" text. Used for errors that surface after parsing,
+    /// like a keyboard layout that fails to load.
+    pub fn show_error(&mut self, message: String) {
+        let c = self.config.borrow();
+        if c.config_notification.disable_failed {
+            return;
+        }
+
+        if self.created_path.is_some() {
+            self.created_path = None;
+        }
+        if self.custom_error.as_deref() != Some(message.as_str()) {
+            self.custom_error = Some(message);
             self.buffers.borrow_mut().clear();
         }
 
@@ -142,11 +177,14 @@ impl ConfigErrorNotification {
         let scale = output.current_scale().fractional_scale();
         let output_size = output_size(output);
         let path = self.created_path.as_deref();
+        let custom_error = self.custom_error.as_deref();
 
         let mut buffers = self.buffers.borrow_mut();
         let buffer = buffers
             .entry(NotNan::new(scale).unwrap())
-            .or_insert_with(move || render(renderer.as_gles_renderer(), scale, path).ok());
+            .or_insert_with(move || {
+                render(renderer.as_gles_renderer(), scale, path, custom_error).ok()
+            });
         let buffer = buffer.clone()?;
 
         let size = buffer.logical_size();
@@ -178,12 +216,16 @@ fn render(
     renderer: &mut GlesRenderer,
     scale: f64,
     created_path: Option<&Path>,
+    custom_error: Option<&str>,
 ) -> anyhow::Result<TextureBuffer<GlesTexture>> {
     let _span = tracy_client::span!("config_error_notification::render");
 
     let padding: i32 = to_physical_precise_round(scale, PADDING);
 
-    let mut text = error_text(true);
+    let mut text = match custom_error {
+        Some(message) => message.to_owned(),
+        None => error_text(true),
+    };
     let mut border_color = (1., 0.3, 0.3);
     if let Some(path) = created_path {
         text = format!(
@@ -255,4 +297,23 @@ pub fn error_text(markup: bool) -> String {
     };
 
     format!("Failed to parse the config file. Please run {command} to see the errors.")
+}
+
+/// Error text for a keyboard layout that failed to load, pointing at `niri validate` for the
+/// details. `layout` is the configured layout name, empty when the keymap failed for another
+/// reason (or the layout came from the system locale).
+pub fn xkb_error_text(layout: &str, markup: bool) -> String {
+    let command = if markup {
+        "<span face='monospace' bgcolor='#000000'>niri validate</span>"
+    } else {
+        "niri validate"
+    };
+
+    if layout.is_empty() {
+        format!("Failed to load the keyboard layout. Please run {command} to see the errors.")
+    } else {
+        format!(
+            "Failed to load the keyboard layout \"{layout}\". Please run {command} to see the errors."
+        )
+    }
 }
