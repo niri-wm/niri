@@ -20,6 +20,7 @@ layer-rule {
     opacity 0.5
     block-out-from "screencast"
     // block-out-from "screen-capture"
+    // block-out-from "screen-capture" kind="hide"
 
     shadow {
         on
@@ -127,6 +128,9 @@ layer-rule {
     match namespace="^notifications$"
 
     block-out-from "screencast"
+
+    // Or, hide entirely:
+    // block-out-from "screencast" kind="hide"
 }
 ```
 

@@ -338,6 +338,10 @@ window-rule {
 
     // Use this instead if you want them visible on third-party screenshot tools.
     // block-out-from "screencast"
+
+    // You can also hide the window entirely instead of drawing a black rectangle.
+    // Careful: this way you could unintentionally expose sensitive data.
+    // block-out-from "screencast" kind="hide"
 }
 
 // Example: enable rounded corners for all windows.

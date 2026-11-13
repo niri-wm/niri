@@ -66,7 +66,7 @@ pub struct WindowRule {
     pub clip_to_geometry: Option<bool>,
     #[knuffel(child, unwrap(argument))]
     pub baba_is_float: Option<bool>,
-    #[knuffel(child, unwrap(argument))]
+    #[knuffel(child)]
     pub block_out_from: Option<BlockOutFrom>,
     #[knuffel(child, unwrap(argument))]
     pub variable_refresh_rate: Option<VrrRule>,
