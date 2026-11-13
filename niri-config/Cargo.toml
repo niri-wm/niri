@@ -12,7 +12,7 @@ bitflags.workspace = true
 csscolorparser = "0.8"
 knuffel = "3.2.0"
 miette = { version = "5.10.0", features = ["fancy-no-backtrace"] }
-niri-ipc = { version = "26.4.0", path = "../niri-ipc" }
+niri-ipc = { version = "26.4.0", path = "../niri-ipc", default-features = false }
 regex = "1.13.1"
 smithay = { workspace = true, features = ["backend_libinput"] }
 tracing.workspace = true
