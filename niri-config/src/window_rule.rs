@@ -152,6 +152,8 @@ pub struct Match {
     pub is_urgent: Option<bool>,
     #[knuffel(property)]
     pub at_startup: Option<bool>,
+    #[knuffel(property)]
+    pub is_maximized_to_edges: Option<bool>,
 }
 
 #[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]

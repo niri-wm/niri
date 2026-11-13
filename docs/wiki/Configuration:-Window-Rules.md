@@ -37,6 +37,7 @@ window-rule {
     match is-window-cast-target=true
     match is-urgent=true
     match at-startup=true
+    match is-maximized-to-edges=true
 
     // Properties that apply once upon window opening.
     default-column-width { proportion 0.75; }
@@ -336,6 +337,19 @@ This is useful for properties like `open-on-output` which you may want to apply 
 window-rule {
     match at-startup=true
     open-on-output "HDMI-A-1"
+}
+```
+
+#### `is-maximized-to-edges`
+
+<sup>Since: next release</sup>
+
+Can be `true` or `false`.
+Matches windows [maximized to edges](./Fullscreen-and-Maximize.md#windows-maximized-to-edges).
+
+```kdl
+window-rule {
+    match is-maximized-to-edges=true
 }
 ```
 
