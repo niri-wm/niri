@@ -849,9 +849,8 @@ fn layouts() {
     -AC10  47 XK_dead_acute
     ");
 
-    // We require the modifiers to match the bind for it to trigger.
-    // So Ctrl-? cannot be triggered on us-qwerty since entering ? necessarily requires a Shift.
-    // If you spell out Shift like Super-Shift-?, it should be triggerable.
+    // Consumed modifiers are stripped, so Ctrl-? triggers on us-qwerty even though ? requires Shift
+    // Spelling out Shift like Super-Shift-? still works
     let c = r#"
     input {
         keyboard {
@@ -879,9 +878,8 @@ fn layouts() {
         surface key pressed: 42
         surface modifiers: depressed=5, latched=0, locked=0, group=0
     +AB10  61 XK_question
-        surface key pressed: 53
+        niri test-action
     -AB10  61 XK_question
-        surface key released: 53
     ");
     assert_snapshot!(run(c, "+LWIN +LFSH +AB10 -AB10"),
     @"
@@ -2472,4 +2470,58 @@ fn redundant_modifier_binds() {
         run("binds { Alt+Q { release { close-window; }; }; }", input),
         run("binds { Alt+Alt+Q { release { close-window; }; }; }", input)
     );
+}
+
+#[test]
+fn consumed_modifiers() {
+    let c = r#"
+    binds {
+        Mod+equal { focus-column-right; }
+        Mod+plus { close-window; }
+        Ctrl+Alt+BackSpace { quit; }
+    }
+    "#;
+
+    // Shift is consumed to produce '+', so Mod+Shift+= triggers Mod+plus
+    assert_snapshot!(run(c, "+LWIN +LFSH +AE12 -AE12"), @"
+    +LWIN 133 XK_Super_L
+        surface key pressed: 125
+        surface modifiers: depressed=64, latched=0, locked=0, group=0
+    +LFSH  50 XK_Shift_L
+        surface key pressed: 42
+        surface modifiers: depressed=65, latched=0, locked=0, group=0
+    +AE12  21 XK_plus
+        niri test-action
+    -AE12  21 XK_plus
+    ");
+
+    // Mod+= triggers Mod+equal
+    assert_snapshot!(run(c, "+LWIN +AE12 -AE12"), @"
+    +LWIN 133 XK_Super_L
+        surface key pressed: 125
+        surface modifiers: depressed=64, latched=0, locked=0, group=0
+    +AE12  21 XK_equal
+        niri test-action
+    -AE12  21 XK_equal
+    ");
+
+    // Backspace alone doesn't trigger Ctrl+Alt+BackSpace
+    assert_snapshot!(run(c, "+BKSP -BKSP"), @"
+    +BKSP  22 XK_BackSpace
+        surface key pressed: 14
+    -BKSP  22 XK_BackSpace
+        surface key released: 14
+    ");
+
+    assert_snapshot!(run(c, "+LCTL +LALT +BKSP -BKSP"), @"
+    +LCTL  37 XK_Control_L
+        surface key pressed: 29
+        surface modifiers: depressed=4, latched=0, locked=0, group=0
+    +LALT  64 XK_Alt_L
+        surface key pressed: 56
+        surface modifiers: depressed=12, latched=0, locked=0, group=0
+    +BKSP  22 XK_BackSpace
+        niri test-action
+    -BKSP  22 XK_BackSpace
+    ");
 }
