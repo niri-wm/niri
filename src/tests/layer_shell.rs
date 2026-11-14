@@ -1,6 +1,10 @@
+use std::net::Shutdown;
+use std::os::unix::net::UnixStream;
+
 use insta::assert_snapshot;
 use niri_config::Config;
 use smithay::backend::input::{InputEvent, InputTime, KeyState};
+use smithay::desktop::layer_map_for_output;
 use smithay::reexports::wayland_protocols_wlr::layer_shell::v1::client::zwlr_layer_shell_v1::Layer;
 use smithay::reexports::wayland_protocols_wlr::layer_shell::v1::client::zwlr_layer_surface_v1::{
     Anchor, KeyboardInteractivity,
@@ -9,6 +13,132 @@ use smithay::reexports::wayland_protocols_wlr::layer_shell::v1::client::zwlr_lay
 use super::*;
 use crate::tests::client::{LayerConfigureProps, LayerMargin};
 use crate::tests::test_input_backend::{TestInputBackend, TestKeyboardKeyEvent};
+
+#[test]
+fn remove_output_cleans_up_layers_before_client_response() {
+    // Exercise both explicit destruction orders, and disconnect without destroying the layers.
+    for cleanup in 0..3 {
+        let mut f = Fixture::new();
+        f.add_output(1, (1920, 1080));
+        f.add_output(2, (1280, 720));
+        let removed_output = f.niri_output(1);
+        let remaining_output = f.niri_output(2);
+        let id = f.add_client();
+        f.double_roundtrip(id);
+        let mut surfaces = Vec::new();
+
+        for output_name in ["headless-1", "headless-2"] {
+            let output = f.client(id).output(output_name);
+            for mapped in [true, false] {
+                let layer = f.client(id).create_layer(Some(&output), Layer::Top, "");
+                let surface = layer.surface.clone();
+                layer.set_configure_props(LayerConfigureProps {
+                    size: Some((100, 50)),
+                    kb_interactivity: Some(if output_name == "headless-1" {
+                        KeyboardInteractivity::OnDemand
+                    } else {
+                        KeyboardInteractivity::None
+                    }),
+                    ..Default::default()
+                });
+                layer.commit();
+                f.double_roundtrip(id);
+
+                if mapped {
+                    let layer = f.client(id).layer(&surface);
+                    layer.attach_new_buffer();
+                    layer.set_size(100, 50);
+                    layer.ack_last_and_commit();
+                    f.double_roundtrip(id);
+                }
+                surfaces.push(surface);
+            }
+        }
+
+        assert_eq!(f.niri().mapped_layer_surfaces.len(), 2);
+        assert_eq!(f.niri().unmapped_layer_surfaces.len(), 2);
+        assert!(f.niri().layer_shell_on_demand_focus.is_some());
+
+        f.niri().remove_output(&removed_output);
+
+        // No client dispatch has happened: cleanup must not depend on handling closed.
+        assert!(!f.client(id).layer(&surfaces[0]).close_requested);
+        assert_eq!(layer_map_for_output(&removed_output).layers().count(), 0);
+        assert_eq!(layer_map_for_output(&remaining_output).layers().count(), 2);
+        assert_eq!(f.niri().mapped_layer_surfaces.len(), 1);
+        assert_eq!(f.niri().unmapped_layer_surfaces.len(), 1);
+        assert!(f.niri().layer_shell_on_demand_focus.is_none());
+        assert!(f
+            .niri()
+            .mapped_layer_surfaces
+            .keys()
+            .all(|layer| layer_map_for_output(&remaining_output)
+                .layers()
+                .any(|l| l == layer)));
+        let remaining_unmapped = layer_map_for_output(&remaining_output)
+            .layers()
+            .find(|layer| !f.niri().mapped_layer_surfaces.contains_key(*layer))
+            .unwrap()
+            .wl_surface()
+            .clone();
+        assert!(f
+            .niri()
+            .unmapped_layer_surfaces
+            .contains(&remaining_unmapped));
+
+        f.double_roundtrip(id);
+        for surface in &surfaces[..2] {
+            assert!(f.client(id).layer(surface).close_requested);
+        }
+        for surface in &surfaces[2..] {
+            assert!(!f.client(id).layer(surface).close_requested);
+        }
+
+        // Late commits must not reinsert a closed layer into either tracking collection.
+        f.client(id).layer(&surfaces[0]).commit();
+        f.double_roundtrip(id);
+        f.client(id).layer(&surfaces[0]).attach_null();
+        f.client(id).layer(&surfaces[0]).commit();
+        f.double_roundtrip(id);
+        assert_eq!(f.niri().mapped_layer_surfaces.len(), 1);
+        assert_eq!(f.niri().unmapped_layer_surfaces.len(), 1);
+
+        if cleanup == 2 {
+            // Only dispatch the server after disconnecting: the fixture's client source is
+            // deliberately still registered, but must not try to read the closed connection.
+            let fd = f
+                .client(id)
+                .connection
+                .backend()
+                .poll_fd()
+                .try_clone_to_owned()
+                .unwrap();
+            UnixStream::from(fd).shutdown(Shutdown::Both).unwrap();
+            f.state.server.dispatch();
+            assert!(f.niri().mapped_layer_surfaces.is_empty());
+            assert!(f.niri().unmapped_layer_surfaces.is_empty());
+            assert_eq!(layer_map_for_output(&remaining_output).layers().count(), 0);
+        } else {
+            for surface in &surfaces[..2] {
+                let role = f.client(id).layer(surface).layer_surface.clone();
+                if cleanup == 0 {
+                    role.destroy();
+                    f.double_roundtrip(id);
+                    surface.destroy();
+                } else {
+                    surface.destroy();
+                    f.double_roundtrip(id);
+                    role.destroy();
+                }
+                f.double_roundtrip(id);
+            }
+            assert_eq!(f.niri().mapped_layer_surfaces.len(), 1);
+            assert_eq!(f.niri().unmapped_layer_surfaces.len(), 1);
+            assert_eq!(layer_map_for_output(&remaining_output).layers().count(), 2);
+        }
+        assert_eq!(layer_map_for_output(&removed_output).layers().count(), 0);
+    }
+}
 
 #[test]
 fn simple_top_anchor() {
