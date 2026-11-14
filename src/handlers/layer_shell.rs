@@ -47,6 +47,17 @@ impl WlrLayerShellHandler for State {
     fn layer_destroyed(&mut self, surface: WlrLayerSurface) {
         let wl_surface = surface.wl_surface();
         self.niri.unmapped_layer_surfaces.remove(wl_surface);
+        self.niri
+            .mapped_layer_surfaces
+            .retain(|layer, _| layer.layer_surface() != &surface);
+        if self
+            .niri
+            .layer_shell_on_demand_focus
+            .as_ref()
+            .is_some_and(|layer| layer.layer_surface() == &surface)
+        {
+            self.niri.layer_shell_on_demand_focus = None;
+        }
 
         let output = if let Some((output, mut map, layer)) =
             self.niri.layout.outputs().find_map(|o| {
@@ -58,7 +69,6 @@ impl WlrLayerShellHandler for State {
                 layer.map(|layer| (o.clone(), map, layer))
             }) {
             map.unmap_layer(&layer);
-            self.niri.mapped_layer_surfaces.remove(&layer);
             Some(output)
         } else {
             None
