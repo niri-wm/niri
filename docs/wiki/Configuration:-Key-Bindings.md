@@ -86,12 +86,13 @@ binds {
 > Here, look at `sym: Left` and `sym: Right`: these are the key names.
 > I was pressing the left and the right arrow in this example.
 >
-> Keep in mind that binding a key requires spelling out the modifiers that you hold when typing it.
-> So, symbols that you type while holding Shift need the Shift modifier in the corresponding binding.
-> For example, on the US QWERTY layout, <kbd>&lt;</kbd> is on <kbd>Shift</kbd> + <kbd>,</kbd>, so to bind it, you spell out something like `Mod+Shift+Less` or `Mod+Shift+Comma` (just `Mod+Less` will not work).
+> <sup>Since: next release</sup> If no bind matches all held modifiers, niri retries the typed keysym without the modifiers used to produce it.
+> On US QWERTY, <kbd>&lt;</kbd> is on <kbd>Shift</kbd> + <kbd>,</kbd>, so `Mod+Less` works.
+> `Mod+Shift+Less` and `Mod+Shift+Comma` take priority if configured.
 >
 > As another example, if you've configured the French [BÉPO](https://en.wikipedia.org/wiki/B%C3%89PO) XKB layout, your <kbd>&lt;</kbd> is on <kbd>AltGr</kbd> + <kbd>«</kbd>.
-> <kbd>AltGr</kbd> is `ISO_Level3_Shift`, or equivalently `Mod5`, so to bind it, you spell out something like `Mod+Mod5+Less` or `Mod+Mod5+guillemotleft`.
+> <kbd>AltGr</kbd> is `ISO_Level3_Shift`, or equivalently `Mod5`, so `Mod+Less` works.
+> `Mod+Mod5+Less` and `Mod+Mod5+guillemotleft` take priority if configured.
 >
 > When resolving ASCII (latin) keys, niri will search for the *first* configured XKB layout that has the ASCII key.
 > So for example with US Colemak and RU layouts configured, US Colemak will be used for ASCII binds.
