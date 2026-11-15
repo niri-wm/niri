@@ -186,7 +186,7 @@ use crate::ui::hotkey_overlay::HotkeyOverlay;
 use crate::ui::mru::{MruCloseRequest, WindowMruUi, WindowMruUiRenderElement};
 use crate::ui::screen_transition::{self, ScreenTransition};
 use crate::ui::selection_ui::{
-    OutputScreenshot, SelectionMode, SelectionUi, SelectionUiRenderElement,
+    rect_from_corner_points, OutputScreenshot, SelectionMode, SelectionUi, SelectionUiRenderElement,
 };
 use crate::utils::scale::{closest_representable_scale, guess_monitor_scale};
 use crate::utils::spawning::{CHILD_DISPLAY, CHILD_ENV};
@@ -2270,16 +2270,27 @@ impl State {
             return;
         };
 
-        self.niri.update_render_elements(None);
+        let screenshots = if mode.is_frozen() {
+            self.niri.update_render_elements(None);
 
-        let Some(screenshots) = self
-            .backend
-            .with_primary_renderer(|renderer| self.niri.capture_screenshots(renderer).collect())
-        else {
-            return;
+            let Some(screenshots) = self.backend.with_primary_renderer(|renderer| {
+                self.niri
+                    .capture_screenshots(renderer)
+                    .map(|(output, s)| (output, Some(s)))
+                    .collect()
+            }) else {
+                return;
+            };
+            screenshots
+        } else {
+            self.niri
+                .global_space
+                .outputs()
+                .map(|output| (output.clone(), None))
+                .collect()
         };
 
-        // Now that we captured the screenshots, clear grabs.
+        // Now that we captured the screenshots (if needed), clear grabs.
         self.cancel_pointing_grabs();
 
         self.backend.with_primary_renderer(|renderer| {
@@ -2327,25 +2338,51 @@ impl State {
         self.niri.queue_redraw_all();
     }
 
+    pub fn handle_pick_region(&mut self, tx: async_channel::Sender<niri_ipc::PickedRegion>) {
+        self.open_selection_ui(false, SelectionMode::PickRegion(tx));
+    }
+
     pub fn confirm_selection(&mut self, write_to_disk: bool) {
-        let SelectionUi::Open { mode, .. } = &mut self.niri.selection_ui else {
+        let SelectionUi::Open {
+            selection, mode, ..
+        } = &mut self.niri.selection_ui
+        else {
             return;
         };
-        let SelectionMode::Screenshot { path } = mode;
-        let path = path.take();
-
-        self.backend.with_primary_renderer(|renderer| {
-            match self.niri.selection_ui.capture(renderer) {
-                Ok((size, pixels)) => {
-                    if let Err(err) = self.niri.save_screenshot(size, pixels, write_to_disk, path) {
-                        warn!("error saving screenshot: {err:?}");
+        match mode {
+            SelectionMode::Screenshot { path } => {
+                let path = path.take();
+                self.backend.with_primary_renderer(|renderer| {
+                    match self.niri.selection_ui.capture(renderer) {
+                        Ok((size, pixels)) => {
+                            if let Err(err) =
+                                self.niri.save_screenshot(size, pixels, write_to_disk, path)
+                            {
+                                warn!("error saving screenshot: {err:?}");
+                            }
+                        }
+                        Err(err) => {
+                            warn!("error capturing screenshot: {err:?}");
+                        }
                     }
-                }
-                Err(err) => {
-                    warn!("error capturing screenshot: {err:?}");
-                }
+                });
             }
-        });
+            SelectionMode::PickRegion(tx) => {
+                let output = &selection.0;
+                let scale = output.current_scale().fractional_scale();
+                let rect = rect_from_corner_points(selection.1, selection.2).to_f64();
+                let mut rect = rect.to_logical(scale);
+                let loc = self.niri.global_space.output_geometry(output).unwrap().loc;
+                rect.loc += loc.to_f64();
+                let _ = tx.try_send(niri_ipc::PickedRegion {
+                    output: output.name(),
+                    x: rect.loc.x,
+                    y: rect.loc.y,
+                    width: rect.size.w,
+                    height: rect.size.h,
+                });
+            }
+        }
 
         self.niri.selection_ui.close();
         self.niri
@@ -4741,15 +4778,17 @@ impl Niri {
         )
         .into();
 
-        // If the screenshot UI is open, draw it.
+        // If the selection UI is open, draw it.
         if self.selection_ui.is_open() {
             self.selection_ui
                 .render_output(output, ctx.target, &mut |elem| push(elem.into()));
 
-            // Add the backdrop for outputs that were connected while the screenshot UI was open.
-            push(backdrop);
+            if self.selection_ui.is_frozen() {
+                // Add the backdrop for outputs that were connected while the UI was open.
+                push(backdrop);
 
-            return;
+                return;
+            }
         }
 
         // Draw the hotkey overlay on top.

@@ -42,6 +42,8 @@ const TEXT_HIDE_P: &str =
 const TEXT_SHOW_P: &str =
     "Press <span face='mono' bgcolor='#2C2C2C'> Space </span> to save the screenshot.\n\
      Press <span face='mono' bgcolor='#2C2C2C'> P </span> to show the pointer.";
+const TEXT_PICK: &str =
+    "Press <span face='mono' bgcolor='#2C2C2C'> Space </span> to pick the selected region.";
 
 // Ideally the selection UI should support cross-output selections. However, that poses some
 // technical challenges when the outputs have different scales and such. So, this implementation
@@ -71,6 +73,18 @@ pub enum SelectionUi {
 pub enum SelectionMode {
     /// Capture and save a screenshot.
     Screenshot { path: Option<String> },
+    /// Send the selection back.
+    PickRegion(async_channel::Sender<niri_ipc::PickedRegion>),
+}
+
+impl SelectionMode {
+    /// Whether the UI shows a frozen screen.
+    pub fn is_frozen(&self) -> bool {
+        match self {
+            SelectionMode::Screenshot { .. } => true,
+            SelectionMode::PickRegion(_) => false,
+        }
+    }
 }
 
 /// State for moving the selection (as opposed to just drawing).
@@ -96,11 +110,29 @@ pub struct OutputData {
     size: Size<i32, Physical>,
     scale: f64,
     transform: Transform,
-    // Output, screencast, screen capture.
-    screenshot: [OutputScreenshot; 3],
+    // Output, screencast, screen capture. `None` when the mode is not frozen.
+    screenshot: Option<[OutputScreenshot; 3]>,
     buffers: [SolidColorBuffer; 8],
     locations: [Point<i32, Physical>; 8],
-    panel: Option<(TextureBuffer<GlesTexture>, TextureBuffer<GlesTexture>)>,
+    panel: Option<Panel>,
+}
+
+/// Help panel shown at the bottom of the selection UI.
+enum Panel {
+    Single(TextureBuffer<GlesTexture>),
+    PointerToggle {
+        show: TextureBuffer<GlesTexture>,
+        hide: TextureBuffer<GlesTexture>,
+    },
+}
+
+impl OutputData {
+    fn panel(&self, show_pointer: bool) -> Option<&TextureBuffer<GlesTexture>> {
+        match self.panel.as_ref()? {
+            Panel::Single(texture) => Some(texture),
+            Panel::PointerToggle { show, hide } => Some(if show_pointer { hide } else { show }),
+        }
+    }
 }
 
 pub struct OutputScreenshot {
@@ -145,7 +177,7 @@ impl SelectionUi {
         &mut self,
         renderer: &mut GlesRenderer,
         // Output, screencast, screen capture.
-        screenshots: HashMap<Output, [OutputScreenshot; 3]>,
+        screenshots: HashMap<Output, Option<[OutputScreenshot; 3]>>,
         default_output: Output,
         show_pointer: bool,
         mode: SelectionMode,
@@ -213,9 +245,13 @@ impl SelectionUi {
                         .map_err(|err| warn!("error rendering help panel: {err:?}"))
                         .ok()
                 };
-                let panel_show = render_panel_(TEXT_SHOW_P);
-                let panel_hide = render_panel_(TEXT_HIDE_P);
-                let panel = Option::zip(panel_show, panel_hide);
+                let panel = match mode {
+                    SelectionMode::Screenshot { .. } => {
+                        Option::zip(render_panel_(TEXT_SHOW_P), render_panel_(TEXT_HIDE_P))
+                            .map(|(show, hide)| Panel::PointerToggle { show, hide })
+                    }
+                    SelectionMode::PickRegion(_) => render_panel_(TEXT_PICK).map(Panel::Single),
+                };
 
                 let data = OutputData {
                     size,
@@ -277,13 +313,22 @@ impl SelectionUi {
     }
 
     pub fn toggle_pointer(&mut self) {
-        if let Self::Open { show_pointer, .. } = self {
-            *show_pointer = !*show_pointer;
+        if let Self::Open {
+            show_pointer, mode, ..
+        } = self
+        {
+            if mode.is_frozen() {
+                *show_pointer = !*show_pointer;
+            }
         }
     }
 
     pub fn is_open(&self) -> bool {
         matches!(self, SelectionUi::Open { .. })
+    }
+
+    pub fn is_frozen(&self) -> bool {
+        matches!(self, SelectionUi::Open { mode, .. } if mode.is_frozen())
     }
 
     pub fn set_space_down(&mut self, down: bool) {
@@ -652,8 +697,7 @@ impl SelectionUi {
         let progress = open_anim.clamped_value().clamp(0., 1.) as f32;
 
         // The help panel goes on top.
-        if let Some((show, hide)) = &output_data.panel {
-            let buffer = if *show_pointer { hide } else { show };
+        if let Some(buffer) = output_data.panel(*show_pointer) {
             let alpha = if button.is_dragging_selection() {
                 0.3
             } else {
@@ -685,12 +729,15 @@ impl SelectionUi {
         }
 
         // The screenshot itself goes last.
+        let Some(screenshot) = &output_data.screenshot else {
+            return;
+        };
         let index = match target {
             RenderTarget::Output => 0,
             RenderTarget::Screencast => 1,
             RenderTarget::ScreenCapture => 2,
         };
-        let screenshot = &output_data.screenshot[index];
+        let screenshot = &screenshot[index];
 
         if *show_pointer {
             if let Some(pointer) = screenshot.pointer.clone() {
@@ -719,7 +766,10 @@ impl SelectionUi {
         let data = &output_data[&selection.0];
         let rect = rect_from_corner_points(selection.1, selection.2);
 
-        let screenshot = &data.screenshot[0];
+        let screenshot = &data
+            .screenshot
+            .as_ref()
+            .context("no screenshot was captured")?[0];
 
         // Composite the pointer on top if needed.
         let mut tex_rect = None;
@@ -975,8 +1025,7 @@ impl SelectionUi {
             return false;
         };
 
-        if let Some((show, hide)) = &output_data.panel {
-            let buffer = if *show_pointer { hide } else { show };
+        if let Some(buffer) = output_data.panel(*show_pointer) {
             let panel_size = buffer.texture().size();
             let location = panel_location(output_data, panel_size);
 
@@ -1055,8 +1104,7 @@ impl SelectionUi {
                 return None;
             };
 
-            if let Some((show, hide)) = &output_data.panel {
-                let buffer = if *show_pointer { hide } else { show };
+            if let Some(buffer) = output_data.panel(*show_pointer) {
                 let panel_size = buffer.texture().size();
                 let location = panel_location(output_data, panel_size);
 

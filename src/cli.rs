@@ -82,6 +82,8 @@ pub enum Msg {
     PickWindow,
     /// Pick a color from the screen with the mouse.
     PickColor,
+    /// Pick a screen region with the screenshot UI and print its geometry.
+    PickRegion,
     /// Perform an action.
     Action {
         #[command(subcommand)]
