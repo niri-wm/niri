@@ -1069,60 +1069,60 @@ impl<W: LayoutElement> Workspace<W> {
         }
     }
 
-    pub fn move_left(&mut self) -> bool {
+    pub fn move_left(&mut self, focus: bool) -> bool {
         if self.floating_is_active.get() {
             self.floating.move_left();
             true
         } else {
-            self.scrolling.move_left()
+            self.scrolling.move_left(focus)
         }
     }
 
-    pub fn move_right(&mut self) -> bool {
+    pub fn move_right(&mut self, focus: bool) -> bool {
         if self.floating_is_active.get() {
             self.floating.move_right();
             true
         } else {
-            self.scrolling.move_right()
+            self.scrolling.move_right(focus)
         }
     }
 
-    pub fn move_column_to_first(&mut self) {
+    pub fn move_column_to_first(&mut self, focus: bool) {
         if self.floating_is_active.get() {
             return;
         }
-        self.scrolling.move_column_to_first();
+        self.scrolling.move_column_to_first(focus);
     }
 
-    pub fn move_column_to_last(&mut self) {
+    pub fn move_column_to_last(&mut self, focus: bool) {
         if self.floating_is_active.get() {
             return;
         }
-        self.scrolling.move_column_to_last();
+        self.scrolling.move_column_to_last(focus);
     }
 
-    pub fn move_column_to_index(&mut self, index: usize) {
+    pub fn move_column_to_index(&mut self, index: usize, focus: bool) {
         if self.floating_is_active.get() {
             return;
         }
-        self.scrolling.move_column_to_index(index);
+        self.scrolling.move_column_to_index(index, focus);
     }
 
-    pub fn move_down(&mut self) -> bool {
+    pub fn move_down(&mut self, focus: bool) -> bool {
         if self.floating_is_active.get() {
             self.floating.move_down();
             true
         } else {
-            self.scrolling.move_down()
+            self.scrolling.move_down(focus)
         }
     }
 
-    pub fn move_up(&mut self) -> bool {
+    pub fn move_up(&mut self, focus: bool) -> bool {
         if self.floating_is_active.get() {
             self.floating.move_up();
             true
         } else {
-            self.scrolling.move_up()
+            self.scrolling.move_up(focus)
         }
     }
 
@@ -1158,11 +1158,11 @@ impl<W: LayoutElement> Workspace<W> {
         self.scrolling.expel_from_column();
     }
 
-    pub fn swap_window_in_direction(&mut self, direction: ScrollDirection) {
+    pub fn swap_window_in_direction(&mut self, direction: ScrollDirection, focus: bool) {
         if self.floating_is_active.get() {
             return;
         }
-        self.scrolling.swap_window_in_direction(direction);
+        self.scrolling.swap_window_in_direction(direction, focus);
     }
 
     pub fn toggle_column_tabbed_display(&mut self) {
