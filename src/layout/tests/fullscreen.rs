@@ -657,3 +657,49 @@ fn removing_only_fullscreen_tile_updates_view_offset() {
     // FIXME: currently, removing a tile doesn't cause the view offset to update.
     assert_snapshot!(layout.active_workspace().unwrap().scrolling().view_pos(), @"0");
 }
+
+#[test]
+fn move_without_focus_of_fullscreen_window() {
+    let ops = [
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+        Op::FullscreenWindow(2),
+        Op::Communicate(2),
+        Op::CompleteAnimations,
+        Op::MoveColumnLeft { focus: false },
+    ];
+
+    check_ops(ops);
+}
+
+#[test]
+fn swap_without_focus_of_fullscreen_window() {
+    let ops = [
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::AddWindow {
+            params: TestWindowParams::new(3),
+        },
+        Op::ConsumeOrExpelWindowLeft { id: None },
+        Op::ToggleColumnTabbedDisplay,
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+        Op::FullscreenWindow(2),
+        Op::Communicate(2),
+        Op::CompleteAnimations,
+        Op::SwapWindowInDirection {
+            direction: ScrollDirection::Left,
+            focus: false,
+        },
+    ];
+
+    check_ops(ops);
+}
