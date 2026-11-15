@@ -1248,11 +1248,10 @@ fn render_panel(
     layout.set_markup(text);
     layout.set_spacing(spacing);
 
-    let (mut width, mut height) = layout.pixel_size();
+    let (mut width, text_height) = layout.pixel_size();
 
     width += padding + radius * 2 + padding - half_border_width + padding;
-    height = max(height, radius * 2);
-    height += padding * 2;
+    let height = max(text_height, radius * 2) + padding * 2;
 
     let surface = ImageSurface::create(cairo::Format::ARgb32, width, height)?;
     let cr = cairo::Context::new(&surface)?;
@@ -1280,7 +1279,8 @@ fn render_panel(
     cr.set_source_rgb(1., 1., 1.);
     cr.fill()?;
 
-    cr.move_to(padding + r * 2. + padding - half_border_width, padding);
+    let text_y = f64::from((height - text_height) / 2);
+    cr.move_to(padding + r * 2. + padding - half_border_width, text_y);
 
     let layout = pangocairo::functions::create_layout(&cr);
     layout.context().set_round_glyph_positions(false);
