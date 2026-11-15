@@ -2620,7 +2620,9 @@ mod tests {
                             ),
                         },
                         action: Press(
-                            MoveWindowToMonitorRight,
+                            MoveWindowToMonitorRight(
+                                true,
+                            ),
                         ),
                         repeat: true,
                         pass_through: None,
@@ -2641,6 +2643,7 @@ mod tests {
                         action: Press(
                             MoveWindowToMonitor(
                                 "eDP-1",
+                                true,
                             ),
                         ),
                         repeat: true,
@@ -2662,6 +2665,7 @@ mod tests {
                         action: Press(
                             MoveColumnToMonitor(
                                 "DP-1",
+                                true,
                             ),
                         ),
                         repeat: true,
