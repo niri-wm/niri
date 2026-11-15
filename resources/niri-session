@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/usr/bin/env sh
 
 # Detect if being run as a user service, which implies external session management,
 # exec compositor directly
@@ -8,17 +8,6 @@ if [ -n "${MANAGERPID:-}" ] && [ "${SYSTEMD_EXEC_PID:-}" = "$$" ]; then
         exec niri --session
         ;;
     esac
-fi
-
-if [ -n "$SHELL" ] &&
-   grep -q "$SHELL" /etc/shells &&
-   ! (echo "$SHELL" | grep -q "false") &&
-   ! (echo "$SHELL" | grep -q "nologin"); then
-  if [ "$1" != '-l' ]; then
-    exec "$SHELL" -l -c "exec $0 -l $*"
-  else
-    shift
-  fi
 fi
 
 # Try to detect the service manager that is being used
