@@ -344,16 +344,16 @@ pub enum Action {
     MoveColumnRight(#[knuffel(property(name = "focus"), default = true)] bool),
     MoveColumnToFirst(#[knuffel(property(name = "focus"), default = true)] bool),
     MoveColumnToLast(#[knuffel(property(name = "focus"), default = true)] bool),
-    MoveColumnLeftOrToMonitorLeft,
-    MoveColumnRightOrToMonitorRight,
+    MoveColumnLeftOrToMonitorLeft(#[knuffel(property(name = "focus"), default = true)] bool),
+    MoveColumnRightOrToMonitorRight(#[knuffel(property(name = "focus"), default = true)] bool),
     MoveColumnToIndex(
         #[knuffel(argument)] usize,
         #[knuffel(property(name = "focus"), default = true)] bool,
     ),
     MoveWindowDown(#[knuffel(property(name = "focus"), default = true)] bool),
     MoveWindowUp(#[knuffel(property(name = "focus"), default = true)] bool),
-    MoveWindowDownOrToWorkspaceDown,
-    MoveWindowUpOrToWorkspaceUp,
+    MoveWindowDownOrToWorkspaceDown(#[knuffel(property(name = "focus"), default = true)] bool),
+    MoveWindowUpOrToWorkspaceUp(#[knuffel(property(name = "focus"), default = true)] bool),
     ConsumeOrExpelWindowLeft,
     #[knuffel(skip)]
     ConsumeOrExpelWindowLeftById(u64),
@@ -427,25 +427,32 @@ pub enum Action {
     FocusMonitorPrevious,
     FocusMonitorNext,
     FocusMonitor(#[knuffel(argument)] String),
-    MoveWindowToMonitorLeft,
-    MoveWindowToMonitorRight,
-    MoveWindowToMonitorDown,
-    MoveWindowToMonitorUp,
-    MoveWindowToMonitorPrevious,
-    MoveWindowToMonitorNext,
-    MoveWindowToMonitor(#[knuffel(argument)] String),
+    MoveWindowToMonitorLeft(#[knuffel(property(name = "focus"), default = true)] bool),
+    MoveWindowToMonitorRight(#[knuffel(property(name = "focus"), default = true)] bool),
+    MoveWindowToMonitorDown(#[knuffel(property(name = "focus"), default = true)] bool),
+    MoveWindowToMonitorUp(#[knuffel(property(name = "focus"), default = true)] bool),
+    MoveWindowToMonitorPrevious(#[knuffel(property(name = "focus"), default = true)] bool),
+    MoveWindowToMonitorNext(#[knuffel(property(name = "focus"), default = true)] bool),
+    MoveWindowToMonitor(
+        #[knuffel(argument)] String,
+        #[knuffel(property(name = "focus"), default = true)] bool,
+    ),
     #[knuffel(skip)]
     MoveWindowToMonitorById {
         id: u64,
         output: String,
+        focus: bool,
     },
-    MoveColumnToMonitorLeft,
-    MoveColumnToMonitorRight,
-    MoveColumnToMonitorDown,
-    MoveColumnToMonitorUp,
-    MoveColumnToMonitorPrevious,
-    MoveColumnToMonitorNext,
-    MoveColumnToMonitor(#[knuffel(argument)] String),
+    MoveColumnToMonitorLeft(#[knuffel(property(name = "focus"), default = true)] bool),
+    MoveColumnToMonitorRight(#[knuffel(property(name = "focus"), default = true)] bool),
+    MoveColumnToMonitorDown(#[knuffel(property(name = "focus"), default = true)] bool),
+    MoveColumnToMonitorUp(#[knuffel(property(name = "focus"), default = true)] bool),
+    MoveColumnToMonitorPrevious(#[knuffel(property(name = "focus"), default = true)] bool),
+    MoveColumnToMonitorNext(#[knuffel(property(name = "focus"), default = true)] bool),
+    MoveColumnToMonitor(
+        #[knuffel(argument)] String,
+        #[knuffel(property(name = "focus"), default = true)] bool,
+    ),
     SetWindowWidth(#[knuffel(argument, str)] SizeChange),
     #[knuffel(skip)]
     SetWindowWidthById {
@@ -660,16 +667,6 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::FocusWindowBottom {} => Self::FocusWindowBottom,
             niri_ipc::Action::FocusWindowDownOrTop {} => Self::FocusWindowDownOrTop,
             niri_ipc::Action::FocusWindowUpOrBottom {} => Self::FocusWindowUpOrBottom,
-            niri_ipc::Action::MoveColumnLeftOrToMonitorLeft {} => {
-                Self::MoveColumnLeftOrToMonitorLeft
-            }
-            niri_ipc::Action::MoveColumnRightOrToMonitorRight {} => {
-                Self::MoveColumnRightOrToMonitorRight
-            }
-            niri_ipc::Action::MoveWindowDownOrToWorkspaceDown {} => {
-                Self::MoveWindowDownOrToWorkspaceDown
-            }
-            niri_ipc::Action::MoveWindowUpOrToWorkspaceUp {} => Self::MoveWindowUpOrToWorkspaceUp,
             niri_ipc::Action::MoveColumnLeft { focus } => Self::MoveColumnLeft(focus),
             niri_ipc::Action::MoveColumnRight { focus } => Self::MoveColumnRight(focus),
             niri_ipc::Action::MoveColumnToFirst { focus } => Self::MoveColumnToFirst(focus),
@@ -677,8 +674,20 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::MoveColumnToIndex { index, focus } => {
                 Self::MoveColumnToIndex(index, focus)
             }
+            niri_ipc::Action::MoveColumnLeftOrToMonitorLeft { focus } => {
+                Self::MoveColumnLeftOrToMonitorLeft(focus)
+            }
+            niri_ipc::Action::MoveColumnRightOrToMonitorRight { focus } => {
+                Self::MoveColumnRightOrToMonitorRight(focus)
+            }
             niri_ipc::Action::MoveWindowDown { focus } => Self::MoveWindowDown(focus),
             niri_ipc::Action::MoveWindowUp { focus } => Self::MoveWindowUp(focus),
+            niri_ipc::Action::MoveWindowDownOrToWorkspaceDown { focus } => {
+                Self::MoveWindowDownOrToWorkspaceDown(focus)
+            }
+            niri_ipc::Action::MoveWindowUpOrToWorkspaceUp { focus } => {
+                Self::MoveWindowUpOrToWorkspaceUp(focus)
+            }
             niri_ipc::Action::ConsumeOrExpelWindowLeft { id: None } => {
                 Self::ConsumeOrExpelWindowLeft
             }
@@ -760,26 +769,51 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::FocusMonitorPrevious {} => Self::FocusMonitorPrevious,
             niri_ipc::Action::FocusMonitorNext {} => Self::FocusMonitorNext,
             niri_ipc::Action::FocusMonitor { output } => Self::FocusMonitor(output),
-            niri_ipc::Action::MoveWindowToMonitorLeft {} => Self::MoveWindowToMonitorLeft,
-            niri_ipc::Action::MoveWindowToMonitorRight {} => Self::MoveWindowToMonitorRight,
-            niri_ipc::Action::MoveWindowToMonitorDown {} => Self::MoveWindowToMonitorDown,
-            niri_ipc::Action::MoveWindowToMonitorUp {} => Self::MoveWindowToMonitorUp,
-            niri_ipc::Action::MoveWindowToMonitorPrevious {} => Self::MoveWindowToMonitorPrevious,
-            niri_ipc::Action::MoveWindowToMonitorNext {} => Self::MoveWindowToMonitorNext,
-            niri_ipc::Action::MoveWindowToMonitor { id: None, output } => {
-                Self::MoveWindowToMonitor(output)
+            niri_ipc::Action::MoveWindowToMonitorLeft { focus } => {
+                Self::MoveWindowToMonitorLeft(focus)
             }
+            niri_ipc::Action::MoveWindowToMonitorRight { focus } => {
+                Self::MoveWindowToMonitorRight(focus)
+            }
+            niri_ipc::Action::MoveWindowToMonitorDown { focus } => {
+                Self::MoveWindowToMonitorDown(focus)
+            }
+            niri_ipc::Action::MoveWindowToMonitorUp { focus } => Self::MoveWindowToMonitorUp(focus),
+            niri_ipc::Action::MoveWindowToMonitorPrevious { focus } => {
+                Self::MoveWindowToMonitorPrevious(focus)
+            }
+            niri_ipc::Action::MoveWindowToMonitorNext { focus } => {
+                Self::MoveWindowToMonitorNext(focus)
+            }
+            niri_ipc::Action::MoveWindowToMonitor {
+                id: None,
+                output,
+                focus,
+            } => Self::MoveWindowToMonitor(output, focus),
             niri_ipc::Action::MoveWindowToMonitor {
                 id: Some(id),
                 output,
-            } => Self::MoveWindowToMonitorById { id, output },
-            niri_ipc::Action::MoveColumnToMonitorLeft {} => Self::MoveColumnToMonitorLeft,
-            niri_ipc::Action::MoveColumnToMonitorRight {} => Self::MoveColumnToMonitorRight,
-            niri_ipc::Action::MoveColumnToMonitorDown {} => Self::MoveColumnToMonitorDown,
-            niri_ipc::Action::MoveColumnToMonitorUp {} => Self::MoveColumnToMonitorUp,
-            niri_ipc::Action::MoveColumnToMonitorPrevious {} => Self::MoveColumnToMonitorPrevious,
-            niri_ipc::Action::MoveColumnToMonitorNext {} => Self::MoveColumnToMonitorNext,
-            niri_ipc::Action::MoveColumnToMonitor { output } => Self::MoveColumnToMonitor(output),
+                focus,
+            } => Self::MoveWindowToMonitorById { id, output, focus },
+            niri_ipc::Action::MoveColumnToMonitorLeft { focus } => {
+                Self::MoveColumnToMonitorLeft(focus)
+            }
+            niri_ipc::Action::MoveColumnToMonitorRight { focus } => {
+                Self::MoveColumnToMonitorRight(focus)
+            }
+            niri_ipc::Action::MoveColumnToMonitorDown { focus } => {
+                Self::MoveColumnToMonitorDown(focus)
+            }
+            niri_ipc::Action::MoveColumnToMonitorUp { focus } => Self::MoveColumnToMonitorUp(focus),
+            niri_ipc::Action::MoveColumnToMonitorPrevious { focus } => {
+                Self::MoveColumnToMonitorPrevious(focus)
+            }
+            niri_ipc::Action::MoveColumnToMonitorNext { focus } => {
+                Self::MoveColumnToMonitorNext(focus)
+            }
+            niri_ipc::Action::MoveColumnToMonitor { output, focus } => {
+                Self::MoveColumnToMonitor(output, focus)
+            }
             niri_ipc::Action::SetWindowWidth { id: None, change } => Self::SetWindowWidth(change),
             niri_ipc::Action::SetWindowWidth {
                 id: Some(id),
