@@ -157,7 +157,8 @@ use crate::layer::MappedLayer;
 use crate::layout::tile::TileRenderElement;
 use crate::layout::workspace::{Workspace, WorkspaceId};
 use crate::layout::{
-    HitType, Layout, LayoutElement as _, LayoutElementRenderElement, MonitorRenderElement,
+    ActivateWindow, HitType, Layout, LayoutElement as _, LayoutElementRenderElement,
+    MonitorRenderElement,
 };
 use crate::niri_render_elements;
 use crate::protocols::ext_workspace::{self, ExtWorkspaceManagerState};
@@ -1321,6 +1322,28 @@ impl State {
     pub fn move_cursor_to_output(&mut self, output: &Output) {
         let geo = self.niri.global_space.output_geometry(output).unwrap();
         self.move_cursor(center(geo).to_f64());
+    }
+
+    pub fn move_to_output(&mut self, output: &Output, focus: bool) {
+        self.niri
+            .layout
+            .move_to_output(None, &output, None, ActivateWindow::from_focus(focus));
+        if focus {
+            self.niri.layout.focus_output(&output);
+            if !self.maybe_warp_cursor_to_focus_centered() {
+                self.move_cursor_to_output(&output);
+            }
+        }
+    }
+
+    pub fn move_column_to_output(&mut self, output: &Output, focus: bool) {
+        self.niri.layout.move_column_to_output(&output, None, focus);
+        if focus {
+            self.niri.layout.focus_output(&output);
+            if !self.maybe_warp_cursor_to_focus_centered() {
+                self.move_cursor_to_output(&output);
+            }
+        }
     }
 
     pub fn refresh_popup_grab(&mut self) {
