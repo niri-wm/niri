@@ -16,7 +16,7 @@ use crate::window::mapped::MappedId;
 
 const ID_ROOT: NodeId = NodeId(0);
 const ID_ANNOUNCEMENT: NodeId = NodeId(1);
-const ID_SCREENSHOT_UI: NodeId = NodeId(2);
+const ID_SELECTION_UI: NodeId = NodeId(2);
 const ID_EXIT_CONFIRM_DIALOG: NodeId = NodeId(3);
 const ID_OVERVIEW: NodeId = NodeId(4);
 const ID_MRU: NodeId = NodeId(5);
@@ -272,7 +272,7 @@ impl Niri {
 
     fn a11y_focus(&self) -> NodeId {
         match self.keyboard_focus {
-            KeyboardFocus::ScreenshotUi => ID_SCREENSHOT_UI,
+            KeyboardFocus::SelectionUi => ID_SELECTION_UI,
             KeyboardFocus::ExitConfirmDialog => ID_EXIT_CONFIRM_DIALOG,
             KeyboardFocus::Overview => ID_OVERVIEW,
             KeyboardFocus::Mru => ID_MRU,
@@ -300,8 +300,8 @@ impl Niri {
         let mut node = Node::new(Role::Label);
         node.set_live(Live::Polite);
 
-        let mut screenshot_ui = Node::new(Role::Group);
-        screenshot_ui.set_label("Screenshot UI");
+        let mut selection_ui = Node::new(Role::Group);
+        selection_ui.set_label("Screenshot UI");
 
         let exit_confirm_dialog = crate::ui::exit_confirm_dialog::a11y_node();
 
@@ -314,7 +314,7 @@ impl Niri {
         let mut root = Node::new(Role::Window);
         root.set_children(vec![
             ID_ANNOUNCEMENT,
-            ID_SCREENSHOT_UI,
+            ID_SELECTION_UI,
             ID_EXIT_CONFIRM_DIALOG,
             ID_OVERVIEW,
             ID_MRU,
@@ -335,7 +335,7 @@ impl Niri {
             nodes: vec![
                 (ID_ROOT, root),
                 (ID_ANNOUNCEMENT, node),
-                (ID_SCREENSHOT_UI, screenshot_ui),
+                (ID_SELECTION_UI, selection_ui),
                 (ID_EXIT_CONFIRM_DIALOG, exit_confirm_dialog),
                 (ID_OVERVIEW, overview),
                 (ID_MRU, mru),

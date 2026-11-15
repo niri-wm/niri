@@ -43,13 +43,13 @@ const TEXT_SHOW_P: &str =
     "Press <span face='mono' bgcolor='#2C2C2C'> Space </span> to save the screenshot.\n\
      Press <span face='mono' bgcolor='#2C2C2C'> P </span> to show the pointer.";
 
-// Ideally the screenshot UI should support cross-output selections. However, that poses some
+// Ideally the selection UI should support cross-output selections. However, that poses some
 // technical challenges when the outputs have different scales and such. So, this implementation
 // allows only single-output selections for now.
 //
 // As a consequence of this, selection coordinates are in output-local coordinate space.
 #[allow(clippy::large_enum_variant)]
-pub enum ScreenshotUi {
+pub enum SelectionUi {
     Closed {
         last_selection: Option<(WeakOutput, Rectangle<i32, Physical>)>,
         clock: Clock,
@@ -104,7 +104,7 @@ pub struct OutputScreenshot {
 }
 
 niri_render_elements! {
-    ScreenshotUiRenderElement => {
+    SelectionUiRenderElement => {
         Screenshot = PrimaryGpuTextureRenderElement,
         SolidColor = SolidColorRenderElement,
     }
@@ -126,7 +126,7 @@ impl Button {
     }
 }
 
-impl ScreenshotUi {
+impl SelectionUi {
     pub fn new(clock: Clock, config: Rc<RefCell<Config>>) -> Self {
         Self::Closed {
             last_selection: None,
@@ -277,7 +277,7 @@ impl ScreenshotUi {
     }
 
     pub fn is_open(&self) -> bool {
-        matches!(self, ScreenshotUi::Open { .. })
+        matches!(self, SelectionUi::Open { .. })
     }
 
     pub fn set_space_down(&mut self, down: bool) {
@@ -553,7 +553,7 @@ impl ScreenshotUi {
             ..
         } = self
         else {
-            panic!("screenshot UI must be open to update buffers");
+            panic!("selection UI must be open to update buffers");
         };
 
         let (selection_output, a, b) = selection;
@@ -623,9 +623,9 @@ impl ScreenshotUi {
         &self,
         output: &Output,
         target: RenderTarget,
-        push: &mut dyn FnMut(ScreenshotUiRenderElement),
+        push: &mut dyn FnMut(SelectionUiRenderElement),
     ) {
-        let _span = tracy_client::span!("ScreenshotUi::render_output");
+        let _span = tracy_client::span!("SelectionUi::render_output");
 
         let Self::Open {
             output_data,
@@ -635,7 +635,7 @@ impl ScreenshotUi {
             ..
         } = self
         else {
-            panic!("screenshot UI must be open to render it");
+            panic!("selection UI must be open to render it");
         };
 
         let Some(output_data) = output_data.get(output) else {
@@ -698,7 +698,7 @@ impl ScreenshotUi {
         &self,
         renderer: &mut GlesRenderer,
     ) -> anyhow::Result<(Size<i32, Physical>, Vec<u8>)> {
-        let _span = tracy_client::span!("ScreenshotUi::capture");
+        let _span = tracy_client::span!("SelectionUi::capture");
 
         let Self::Open {
             selection,
@@ -707,7 +707,7 @@ impl ScreenshotUi {
             ..
         } = self
         else {
-            panic!("screenshot UI must be open to capture");
+            panic!("selection UI must be open to capture");
         };
 
         let data = &output_data[&selection.0];
@@ -1170,7 +1170,7 @@ fn render_panel(
     scale: f64,
     text: &str,
 ) -> anyhow::Result<TextureBuffer<GlesTexture>> {
-    let _span = tracy_client::span!("screenshot_ui::render_panel");
+    let _span = tracy_client::span!("selection_ui::render_panel");
 
     let padding: i32 = to_physical_precise_round(scale, PADDING);
     // Keep the border width even to avoid blurry edges.
