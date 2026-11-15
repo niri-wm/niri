@@ -58,7 +58,7 @@ use crate::layout::scrolling::ScrollDirection;
 use crate::layout::{ActivateWindow, LayoutElement as _};
 use crate::niri::{CastTarget, Niri, PointerVisibility, State};
 use crate::ui::mru::{WindowMru, WindowMruUi};
-use crate::ui::selection_ui::SelectionUi;
+use crate::ui::selection_ui::{SelectionMode, SelectionUi};
 use crate::utils::spawning::{spawn, spawn_sh};
 use crate::utils::{center, get_monotonic_time, CastSessionId, ResizeEdge};
 use crate::window::mapped::MappedId;
@@ -1027,7 +1027,7 @@ impl State {
                 self.niri.queue_redraw_all();
             }
             Action::Screenshot(show_cursor, path) => {
-                self.open_selection_ui(show_cursor, path);
+                self.open_selection_ui(show_cursor, SelectionMode::Screenshot { path });
                 self.niri.cancel_mru();
             }
             Action::ScreenshotWindow(write_to_disk, show_pointer, path) => {

@@ -185,7 +185,9 @@ use crate::ui::exit_confirm_dialog::{ExitConfirmDialog, ExitConfirmDialogRenderE
 use crate::ui::hotkey_overlay::HotkeyOverlay;
 use crate::ui::mru::{MruCloseRequest, WindowMruUi, WindowMruUiRenderElement};
 use crate::ui::screen_transition::{self, ScreenTransition};
-use crate::ui::selection_ui::{OutputScreenshot, SelectionUi, SelectionUiRenderElement};
+use crate::ui::selection_ui::{
+    OutputScreenshot, SelectionMode, SelectionUi, SelectionUiRenderElement,
+};
 use crate::utils::scale::{closest_representable_scale, guess_monitor_scale};
 use crate::utils::spawning::{CHILD_DISPLAY, CHILD_ENV};
 use crate::utils::vblank_throttle::VBlankThrottle;
@@ -2255,7 +2257,7 @@ impl State {
         self.niri.output_management_state.notify_changes(new_config);
     }
 
-    pub fn open_selection_ui(&mut self, show_pointer: bool, path: Option<String>) {
+    pub fn open_selection_ui(&mut self, show_pointer: bool, mode: SelectionMode) {
         if self.niri.is_locked() || self.niri.selection_ui.is_open() {
             return;
         }
@@ -2283,7 +2285,7 @@ impl State {
         self.backend.with_primary_renderer(|renderer| {
             self.niri
                 .selection_ui
-                .open(renderer, screenshots, default_output, show_pointer, path)
+                .open(renderer, screenshots, default_output, show_pointer, mode)
         });
 
         self.niri
@@ -2326,9 +2328,10 @@ impl State {
     }
 
     pub fn confirm_selection(&mut self, write_to_disk: bool) {
-        let SelectionUi::Open { path, .. } = &mut self.niri.selection_ui else {
+        let SelectionUi::Open { mode, .. } = &mut self.niri.selection_ui else {
             return;
         };
+        let SelectionMode::Screenshot { path } = mode;
         let path = path.take();
 
         self.backend.with_primary_renderer(|renderer| {

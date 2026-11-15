@@ -63,8 +63,14 @@ pub enum SelectionUi {
         open_anim: Animation,
         clock: Clock,
         config: Rc<RefCell<Config>>,
-        path: Option<String>,
+        mode: SelectionMode,
     },
+}
+
+/// What is the selection used for.
+pub enum SelectionMode {
+    /// Capture and save a screenshot.
+    Screenshot { path: Option<String> },
 }
 
 /// State for moving the selection (as opposed to just drawing).
@@ -142,7 +148,7 @@ impl SelectionUi {
         screenshots: HashMap<Output, [OutputScreenshot; 3]>,
         default_output: Output,
         show_pointer: bool,
-        path: Option<String>,
+        mode: SelectionMode,
     ) -> bool {
         if screenshots.is_empty() {
             return false;
@@ -237,7 +243,7 @@ impl SelectionUi {
             open_anim,
             clock: clock.clone(),
             config: config.clone(),
-            path,
+            mode,
         };
 
         self.update_buffers();
