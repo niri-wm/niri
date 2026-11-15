@@ -1266,36 +1266,36 @@ impl State {
                     }
                 });
             }
-            Action::MoveColumnLeft => {
+            Action::MoveColumnLeft(focus) => {
                 if self.niri.screenshot_ui.is_open() {
                     self.niri.screenshot_ui.move_left();
                 } else {
-                    self.niri.layout.move_left();
+                    self.niri.layout.move_left(focus);
                     self.maybe_warp_cursor_to_focus();
                 }
 
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
-            Action::MoveColumnRight => {
+            Action::MoveColumnRight(focus) => {
                 if self.niri.screenshot_ui.is_open() {
                     self.niri.screenshot_ui.move_right();
                 } else {
-                    self.niri.layout.move_right();
+                    self.niri.layout.move_right(focus);
                     self.maybe_warp_cursor_to_focus();
                 }
 
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
-            Action::MoveColumnToFirst => {
-                self.niri.layout.move_column_to_first();
+            Action::MoveColumnToFirst(focus) => {
+                self.niri.layout.move_column_to_first(focus);
                 self.maybe_warp_cursor_to_focus();
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
-            Action::MoveColumnToLast => {
-                self.niri.layout.move_column_to_last();
+            Action::MoveColumnToLast(focus) => {
+                self.niri.layout.move_column_to_last(focus);
                 self.maybe_warp_cursor_to_focus();
                 // FIXME: granular
                 self.niri.queue_redraw_all();
@@ -1312,7 +1312,7 @@ impl State {
                         self.maybe_warp_cursor_to_focus();
                     }
                 } else {
-                    self.niri.layout.move_left();
+                    self.niri.layout.move_left(true);
                     self.maybe_warp_cursor_to_focus();
                 }
 
@@ -1331,29 +1331,29 @@ impl State {
                         self.maybe_warp_cursor_to_focus();
                     }
                 } else {
-                    self.niri.layout.move_right();
+                    self.niri.layout.move_right(true);
                     self.maybe_warp_cursor_to_focus();
                 }
 
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
-            Action::MoveWindowDown => {
+            Action::MoveWindowDown(focus) => {
                 if self.niri.screenshot_ui.is_open() {
                     self.niri.screenshot_ui.move_down();
                 } else {
-                    self.niri.layout.move_down();
+                    self.niri.layout.move_down(focus);
                     self.maybe_warp_cursor_to_focus();
                 }
 
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
-            Action::MoveWindowUp => {
+            Action::MoveWindowUp(focus) => {
                 if self.niri.screenshot_ui.is_open() {
                     self.niri.screenshot_ui.move_up();
                 } else {
-                    self.niri.layout.move_up();
+                    self.niri.layout.move_up(focus);
                     self.maybe_warp_cursor_to_focus();
                 }
 
@@ -1790,8 +1790,8 @@ impl State {
                     self.niri.queue_redraw_all();
                 }
             }
-            Action::MoveColumnToIndex(idx) => {
-                self.niri.layout.move_column_to_index(idx);
+            Action::MoveColumnToIndex(idx, focus) => {
+                self.niri.layout.move_column_to_index(idx, focus);
                 self.maybe_warp_cursor_to_focus();
                 // FIXME: granular
                 self.niri.queue_redraw_all();
@@ -1917,18 +1917,18 @@ impl State {
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
-            Action::SwapWindowRight => {
+            Action::SwapWindowRight(focus) => {
                 self.niri
                     .layout
-                    .swap_window_in_direction(ScrollDirection::Right);
+                    .swap_window_in_direction(ScrollDirection::Right, focus);
                 self.maybe_warp_cursor_to_focus();
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
-            Action::SwapWindowLeft => {
+            Action::SwapWindowLeft(focus) => {
                 self.niri
                     .layout
-                    .swap_window_in_direction(ScrollDirection::Left);
+                    .swap_window_in_direction(ScrollDirection::Left, focus);
                 self.maybe_warp_cursor_to_focus();
                 // FIXME: granular
                 self.niri.queue_redraw_all();
@@ -5420,13 +5420,9 @@ fn allowed_during_screenshot(action: &Action) -> bool {
             | Action::Spawn(_)
             | Action::SpawnSh(_)
             // The screenshot UI can handle these.
-            | Action::MoveColumnLeft
             | Action::MoveColumnLeftOrToMonitorLeft
-            | Action::MoveColumnRight
             | Action::MoveColumnRightOrToMonitorRight
-            | Action::MoveWindowUp
             | Action::MoveWindowUpOrToWorkspaceUp
-            | Action::MoveWindowDown
             | Action::MoveWindowDownOrToWorkspaceDown
             | Action::MoveColumnToMonitorLeft
             | Action::MoveColumnToMonitorRight
@@ -5442,6 +5438,10 @@ fn allowed_during_screenshot(action: &Action) -> bool {
             | Action::MoveWindowToMonitorPrevious
             | Action::MoveWindowToMonitorNext
             | Action::MoveWindowToMonitor(_)
+            | Action::MoveColumnLeft(_)
+            | Action::MoveColumnRight(_)
+            | Action::MoveWindowUp(_)
+            | Action::MoveWindowDown(_)
             | Action::SetWindowWidth(_)
             | Action::SetWindowHeight(_)
             | Action::SetColumnWidth(_)
@@ -6406,15 +6406,15 @@ mod tests {
         // allowed while the screenshot UI is open.
         let both = |press, release| close_bind(BoundAction::Both { press, release });
         assert!(!bind_allowed_during_screenshot(
-            &both(Action::MoveColumnLeft, Action::CloseWindow),
+            &both(Action::MoveColumnLeft(true), Action::CloseWindow),
             true
         ));
         assert!(!bind_allowed_during_screenshot(
-            &both(Action::CloseWindow, Action::MoveColumnLeft),
+            &both(Action::CloseWindow, Action::MoveColumnLeft(true)),
             true
         ));
         assert!(bind_allowed_during_screenshot(
-            &both(Action::MoveColumnLeft, Action::MoveWindowUp),
+            &both(Action::MoveColumnLeft(true), Action::MoveWindowUp(true)),
             true
         ));
     }
@@ -6422,7 +6422,7 @@ mod tests {
     #[test]
     fn bind_allowed_during_screenshot_requires_only_the_single_action() {
         assert!(bind_allowed_during_screenshot(
-            &close_bind(BoundAction::Press(Action::MoveColumnLeft)),
+            &close_bind(BoundAction::Press(Action::MoveColumnLeft(true))),
             true
         ));
         assert!(!bind_allowed_during_screenshot(
@@ -6437,17 +6437,17 @@ mod tests {
         // not block it.
         let both = |press, release| close_bind(BoundAction::Both { press, release });
         assert!(bind_allowed_during_screenshot(
-            &both(Action::MoveColumnLeft, Action::CloseWindow),
+            &both(Action::MoveColumnLeft(true), Action::CloseWindow),
             false
         ));
         assert!(bind_allowed_during_screenshot(
-            &both(Action::CloseWindow, Action::MoveColumnLeft),
+            &both(Action::CloseWindow, Action::MoveColumnLeft(true)),
             false
         ));
 
         // A release-only bind has no press to undo, so its own action must be allowed.
         assert!(bind_allowed_during_screenshot(
-            &close_bind(BoundAction::Release(Action::MoveColumnLeft)),
+            &close_bind(BoundAction::Release(Action::MoveColumnLeft(true))),
             false
         ));
         assert!(!bind_allowed_during_screenshot(

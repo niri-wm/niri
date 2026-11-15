@@ -1699,15 +1699,15 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         self.columns[self.active_column_idx].focus_bottom()
     }
 
-    pub fn move_column_to_index(&mut self, index: usize) {
+    pub fn move_column_to_index(&mut self, index: usize, focus: bool) {
         if self.columns.is_empty() {
             return;
         }
 
-        self.move_column_to(index.saturating_sub(1).min(self.columns.len() - 1));
+        self.move_column_to(index.saturating_sub(1).min(self.columns.len() - 1), focus);
     }
 
-    fn move_column_to(&mut self, new_idx: usize) {
+    fn move_column_to(&mut self, new_idx: usize, focus: bool) {
         if self.active_column_idx == new_idx {
             return;
         }
@@ -1741,55 +1741,60 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             }
         }
 
-        self.activate_column_with_anim_config(new_idx, self.options.animations.window_movement.0);
+        if focus {
+            self.activate_column_with_anim_config(
+                new_idx,
+                self.options.animations.window_movement.0,
+            );
+        }
     }
 
-    pub fn move_left(&mut self) -> bool {
+    pub fn move_left(&mut self, focus: bool) -> bool {
         if self.active_column_idx == 0 {
             return false;
         }
 
-        self.move_column_to(self.active_column_idx - 1);
+        self.move_column_to(self.active_column_idx - 1, focus);
         true
     }
 
-    pub fn move_right(&mut self) -> bool {
+    pub fn move_right(&mut self, focus: bool) -> bool {
         let new_idx = self.active_column_idx + 1;
         if new_idx >= self.columns.len() {
             return false;
         }
 
-        self.move_column_to(new_idx);
+        self.move_column_to(new_idx, focus);
         true
     }
 
-    pub fn move_column_to_first(&mut self) {
-        self.move_column_to(0);
+    pub fn move_column_to_first(&mut self, focus: bool) {
+        self.move_column_to(0, focus);
     }
 
-    pub fn move_column_to_last(&mut self) {
+    pub fn move_column_to_last(&mut self, focus: bool) {
         if self.columns.is_empty() {
             return;
         }
 
         let new_idx = self.columns.len() - 1;
-        self.move_column_to(new_idx);
+        self.move_column_to(new_idx, focus);
     }
 
-    pub fn move_down(&mut self) -> bool {
+    pub fn move_down(&mut self, focus: bool) -> bool {
         if self.columns.is_empty() {
             return false;
         }
 
-        self.columns[self.active_column_idx].move_down()
+        self.columns[self.active_column_idx].move_down(focus)
     }
 
-    pub fn move_up(&mut self) -> bool {
+    pub fn move_up(&mut self, focus: bool) -> bool {
         if self.columns.is_empty() {
             return false;
         }
 
-        self.columns[self.active_column_idx].move_up()
+        self.columns[self.active_column_idx].move_up(focus)
     }
 
     pub fn consume_or_expel_window_left(&mut self, window: Option<&W::Id>) {
@@ -2058,7 +2063,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         new_col.tiles[0].animate_move_from(offset);
     }
 
-    pub fn swap_window_in_direction(&mut self, direction: ScrollDirection) {
+    pub fn swap_window_in_direction(&mut self, direction: ScrollDirection, focus: bool) {
         if self.columns.is_empty() {
             return;
         }
@@ -2089,7 +2094,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         if self.columns[source_column_idx].tiles.len() == 1
             && self.columns[target_column_idx].tiles.len() == 1
         {
-            return self.move_column_to(target_column_idx);
+            return self.move_column_to(target_column_idx, focus);
         }
 
         let source_tile_idx = self.columns[source_column_idx].active_tile_idx;
@@ -2183,7 +2188,9 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             .animate_move_from(target_pt - source_pt);
         self.columns[source_column_idx].tiles[source_tile_idx].ensure_alpha_animates_to_1();
 
-        self.activate_column(target_column_idx);
+        if focus {
+            self.activate_column(target_column_idx);
+        }
     }
 
     pub fn toggle_column_tabbed_display(&mut self) {
@@ -4865,7 +4872,7 @@ impl<W: LayoutElement> Column<W> {
         self.activate_idx(self.tiles.len() - 1);
     }
 
-    fn move_up(&mut self) -> bool {
+    fn move_up(&mut self, focus: bool) -> bool {
         let new_idx = self.active_tile_idx.saturating_sub(1);
         if self.active_tile_idx == new_idx {
             return false;
@@ -4878,7 +4885,9 @@ impl<W: LayoutElement> Column<W> {
 
         self.tiles.swap(self.active_tile_idx, new_idx);
         self.data.swap(self.active_tile_idx, new_idx);
-        self.active_tile_idx = new_idx;
+        if focus {
+            self.active_tile_idx = new_idx;
+        }
 
         // Animate the movement.
         let new_active_y = self.tile_offset(new_idx).y;
@@ -4888,7 +4897,7 @@ impl<W: LayoutElement> Column<W> {
         true
     }
 
-    fn move_down(&mut self) -> bool {
+    fn move_down(&mut self, focus: bool) -> bool {
         let new_idx = min(self.active_tile_idx + 1, self.tiles.len() - 1);
         if self.active_tile_idx == new_idx {
             return false;
@@ -4901,7 +4910,9 @@ impl<W: LayoutElement> Column<W> {
 
         self.tiles.swap(self.active_tile_idx, new_idx);
         self.data.swap(self.active_tile_idx, new_idx);
-        self.active_tile_idx = new_idx;
+        if focus {
+            self.active_tile_idx = new_idx;
+        }
 
         // Animate the movement.
         let new_active_y = self.tile_offset(new_idx).y;

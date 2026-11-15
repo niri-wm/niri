@@ -340,15 +340,18 @@ pub enum Action {
     FocusWindowBottom,
     FocusWindowDownOrTop,
     FocusWindowUpOrBottom,
-    MoveColumnLeft,
-    MoveColumnRight,
-    MoveColumnToFirst,
-    MoveColumnToLast,
+    MoveColumnLeft(#[knuffel(property(name = "focus"), default = true)] bool),
+    MoveColumnRight(#[knuffel(property(name = "focus"), default = true)] bool),
+    MoveColumnToFirst(#[knuffel(property(name = "focus"), default = true)] bool),
+    MoveColumnToLast(#[knuffel(property(name = "focus"), default = true)] bool),
     MoveColumnLeftOrToMonitorLeft,
     MoveColumnRightOrToMonitorRight,
-    MoveColumnToIndex(#[knuffel(argument)] usize),
-    MoveWindowDown,
-    MoveWindowUp,
+    MoveColumnToIndex(
+        #[knuffel(argument)] usize,
+        #[knuffel(property(name = "focus"), default = true)] bool,
+    ),
+    MoveWindowDown(#[knuffel(property(name = "focus"), default = true)] bool),
+    MoveWindowUp(#[knuffel(property(name = "focus"), default = true)] bool),
     MoveWindowDownOrToWorkspaceDown,
     MoveWindowUpOrToWorkspaceUp,
     ConsumeOrExpelWindowLeft,
@@ -359,8 +362,8 @@ pub enum Action {
     ConsumeOrExpelWindowRightById(u64),
     ConsumeWindowIntoColumn,
     ExpelWindowFromColumn,
-    SwapWindowLeft,
-    SwapWindowRight,
+    SwapWindowLeft(#[knuffel(property(name = "focus"), default = true)] bool),
+    SwapWindowRight(#[knuffel(property(name = "focus"), default = true)] bool),
     ToggleColumnTabbedDisplay,
     SetColumnDisplay(#[knuffel(argument, str)] ColumnDisplay),
     CenterColumn,
@@ -657,23 +660,25 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::FocusWindowBottom {} => Self::FocusWindowBottom,
             niri_ipc::Action::FocusWindowDownOrTop {} => Self::FocusWindowDownOrTop,
             niri_ipc::Action::FocusWindowUpOrBottom {} => Self::FocusWindowUpOrBottom,
-            niri_ipc::Action::MoveColumnLeft {} => Self::MoveColumnLeft,
-            niri_ipc::Action::MoveColumnRight {} => Self::MoveColumnRight,
-            niri_ipc::Action::MoveColumnToFirst {} => Self::MoveColumnToFirst,
-            niri_ipc::Action::MoveColumnToLast {} => Self::MoveColumnToLast,
-            niri_ipc::Action::MoveColumnToIndex { index } => Self::MoveColumnToIndex(index),
             niri_ipc::Action::MoveColumnLeftOrToMonitorLeft {} => {
                 Self::MoveColumnLeftOrToMonitorLeft
             }
             niri_ipc::Action::MoveColumnRightOrToMonitorRight {} => {
                 Self::MoveColumnRightOrToMonitorRight
             }
-            niri_ipc::Action::MoveWindowDown {} => Self::MoveWindowDown,
-            niri_ipc::Action::MoveWindowUp {} => Self::MoveWindowUp,
             niri_ipc::Action::MoveWindowDownOrToWorkspaceDown {} => {
                 Self::MoveWindowDownOrToWorkspaceDown
             }
             niri_ipc::Action::MoveWindowUpOrToWorkspaceUp {} => Self::MoveWindowUpOrToWorkspaceUp,
+            niri_ipc::Action::MoveColumnLeft { focus } => Self::MoveColumnLeft(focus),
+            niri_ipc::Action::MoveColumnRight { focus } => Self::MoveColumnRight(focus),
+            niri_ipc::Action::MoveColumnToFirst { focus } => Self::MoveColumnToFirst(focus),
+            niri_ipc::Action::MoveColumnToLast { focus } => Self::MoveColumnToLast(focus),
+            niri_ipc::Action::MoveColumnToIndex { index, focus } => {
+                Self::MoveColumnToIndex(index, focus)
+            }
+            niri_ipc::Action::MoveWindowDown { focus } => Self::MoveWindowDown(focus),
+            niri_ipc::Action::MoveWindowUp { focus } => Self::MoveWindowUp(focus),
             niri_ipc::Action::ConsumeOrExpelWindowLeft { id: None } => {
                 Self::ConsumeOrExpelWindowLeft
             }
@@ -688,8 +693,8 @@ impl From<niri_ipc::Action> for Action {
             }
             niri_ipc::Action::ConsumeWindowIntoColumn {} => Self::ConsumeWindowIntoColumn,
             niri_ipc::Action::ExpelWindowFromColumn {} => Self::ExpelWindowFromColumn,
-            niri_ipc::Action::SwapWindowRight {} => Self::SwapWindowRight,
-            niri_ipc::Action::SwapWindowLeft {} => Self::SwapWindowLeft,
+            niri_ipc::Action::SwapWindowRight { focus } => Self::SwapWindowRight(focus),
+            niri_ipc::Action::SwapWindowLeft { focus } => Self::SwapWindowLeft(focus),
             niri_ipc::Action::ToggleColumnTabbedDisplay {} => Self::ToggleColumnTabbedDisplay,
             niri_ipc::Action::SetColumnDisplay { display } => Self::SetColumnDisplay(display),
             niri_ipc::Action::CenterColumn {} => Self::CenterColumn,
