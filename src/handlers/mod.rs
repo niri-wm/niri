@@ -773,6 +773,12 @@ impl XdgActivationHandler for State {
             return true;
         }
 
+        // Touch has no enter event, so check against the last touch down instead.
+        let touch_last_down = seat.get_touch().and_then(|touch| touch.last_down());
+        if touch_last_down.is_some_and(|last_down| serial.is_no_older_than(&last_down)) {
+            return true;
+        }
+
         false
     }
 
