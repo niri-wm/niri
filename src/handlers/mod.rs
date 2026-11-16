@@ -773,6 +773,12 @@ impl XdgActivationHandler for State {
             return true;
         }
 
+        // Touch has no enter event, so check against the last touch down instead.
+        let touch_last_down = self.niri.last_touch_down_serial;
+        if touch_last_down.is_some_and(|last_down| serial.is_no_older_than(&last_down)) {
+            return true;
+        }
+
         false
     }
 

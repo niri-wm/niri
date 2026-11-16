@@ -4662,6 +4662,7 @@ impl State {
         self.niri.cancel_interrupted_release_binds();
 
         let serial = SERIAL_COUNTER.next_serial();
+        self.niri.last_touch_down_serial = Some(serial);
 
         let under = self.niri.contents_under(pos);
 
