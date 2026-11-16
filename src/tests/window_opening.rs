@@ -943,3 +943,82 @@ post-map configures:
     let _guard = settings.bind_to_scope();
     assert_snapshot!(snapshot);
 }
+
+#[test]
+fn foreign_toplevel_activate_syncs_keyboard_focus() {
+    use crate::protocols::foreign_toplevel::ForeignToplevelHandler;
+
+    let mut f = Fixture::new();
+    f.add_output(1, (1920, 1080));
+
+    let id = f.add_client();
+
+    let w1 = f.client(id).create_window();
+    let s1 = w1.surface.clone();
+    w1.commit();
+    f.roundtrip(id);
+
+    let w1 = f.client(id).window(&s1);
+    w1.attach_new_buffer();
+    w1.set_size(200, 200);
+    w1.ack_last_and_commit();
+    f.double_roundtrip(id);
+
+    let server_s1 = f
+        .niri()
+        .layout
+        .windows()
+        .next()
+        .unwrap()
+        .1
+        .toplevel()
+        .wl_surface()
+        .clone();
+
+    let w2 = f.client(id).create_window();
+    let s2 = w2.surface.clone();
+    w2.commit();
+    f.roundtrip(id);
+
+    let w2 = f.client(id).window(&s2);
+    w2.attach_new_buffer();
+    w2.set_size(200, 200);
+    w2.ack_last_and_commit();
+    f.double_roundtrip(id);
+
+    let server_s2 = f
+        .niri()
+        .layout
+        .windows()
+        .find(|(_, m)| m.toplevel().wl_surface() != &server_s1)
+        .unwrap()
+        .1
+        .toplevel()
+        .wl_surface()
+        .clone();
+
+    assert_eq!(
+        f.niri_state()
+            .niri
+            .seat
+            .get_keyboard()
+            .unwrap()
+            .current_focus()
+            .as_ref(),
+        Some(&server_s2)
+    );
+
+    ForeignToplevelHandler::activate(f.niri_state(), server_s1.clone());
+
+    // A refresh would hide a delayed focus update.
+    assert_eq!(
+        f.niri_state()
+            .niri
+            .seat
+            .get_keyboard()
+            .unwrap()
+            .current_focus()
+            .as_ref(),
+        Some(&server_s1)
+    );
+}
