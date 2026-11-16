@@ -66,6 +66,35 @@ fn simple() {
 }
 
 #[test]
+fn minimize_request_sends_configure() {
+    let mut f = Fixture::new();
+    f.add_output(1, (1920, 1080));
+
+    let id = f.add_client();
+    let window = f.client(id).create_window();
+    let surface = window.surface.clone();
+    window.commit();
+    f.roundtrip(id);
+
+    let window = f.client(id).window(&surface);
+    window.attach_new_buffer();
+    window.ack_last_and_commit();
+    f.double_roundtrip(id);
+
+    let window = f.client(id).window(&surface);
+    let _ = window.recent_configures();
+
+    window.set_minimized();
+    f.roundtrip(id);
+
+    let window = f.client(id).window(&surface);
+    assert_snapshot!(
+        window.format_recent_configures(),
+        @"size: 936 × 1048, bounds: 1888 × 1048, states: [Activated]"
+    );
+}
+
+#[test]
 #[should_panic(expected = "Protocol error 3 on object xdg_surface")]
 fn dont_ack_initial_configure() {
     let mut f = Fixture::new();
