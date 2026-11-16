@@ -2188,6 +2188,9 @@ mod tests {
                     bottom_left: false,
                     bottom_right: false,
                 },
+                workspace_switch: WorkspaceSwitch {
+                    off: false,
+                },
             },
             overview: Overview {
                 zoom: 0.5,
