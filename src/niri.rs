@@ -88,7 +88,7 @@ use smithay::wayland::image_capture_source::{
     ImageCaptureSource, ImageCaptureSourceState, OutputCaptureSourceState,
 };
 use smithay::wayland::image_copy_capture::{CaptureFailureReason, ImageCopyCaptureState};
-use smithay::wayland::input_method::InputMethodManagerState;
+use smithay::wayland::input_method::{InputMethodManagerState, InputMethodSeat};
 use smithay::wayland::keyboard_shortcuts_inhibit::{
     KeyboardShortcutsInhibitState, KeyboardShortcutsInhibitor,
 };
@@ -3736,6 +3736,43 @@ impl Niri {
         if self.exit_confirm_dialog.is_open() {
             return rv;
         } else if self.is_locked() {
+            // Include some layer surfaces on the lock screen, e.g. an on-screen keyboard.
+            let layer_map = layer_map_for_output(output);
+            let layer_under = |layer, surface_type| {
+                self.lock_screen_layers(&layer_map, layer)
+                    .find_map(|(mapped, geo)| {
+                        let mut layer_pos_within_output = geo.loc.to_f64();
+                        layer_pos_within_output += mapped.bob_offset();
+
+                        mapped
+                            .surface()
+                            .surface_under(
+                                pos_within_output - layer_pos_within_output,
+                                surface_type,
+                            )
+                            .map(|(surface, pos_within_layer)| {
+                                let pos = pos_within_layer.to_f64() + layer_pos_within_output;
+                                (
+                                    (surface, pos + output_pos_in_global_space.to_f64()),
+                                    mapped.surface().clone(),
+                                )
+                            })
+                    })
+            };
+            let popup = WindowSurfaceType::POPUP | WindowSurfaceType::SUBSURFACE;
+            let toplevel = WindowSurfaceType::TOPLEVEL | WindowSurfaceType::SUBSURFACE;
+            let layer_under = layer_under(Layer::Overlay, popup)
+                .or_else(|| layer_under(Layer::Overlay, toplevel))
+                .or_else(|| layer_under(Layer::Top, popup))
+                .or_else(|| layer_under(Layer::Top, toplevel));
+            drop(layer_map);
+
+            if let Some((surface, layer)) = layer_under {
+                rv.surface = Some(surface);
+                rv.layer = Some(layer);
+                return rv;
+            }
+
             let Some(state) = self.output_state.get(output) else {
                 return rv;
             };
@@ -4728,6 +4765,40 @@ impl Niri {
 
         // If the session is locked, draw the lock surface.
         if self.is_locked() {
+            // Render without xray, which would show the unlocked contents.
+            let mut ctx = RenderCtx {
+                xray: None,
+                ..ctx.r()
+            };
+
+            // Include some layer surfaces on the lock screen, e.g. an on-screen keyboard.
+            let layer_map = layer_map_for_output(output);
+            macro_rules! push_popups_from_layer {
+                ($layer:expr) => {{
+                    for (mapped, geo) in self.lock_screen_layers(&layer_map, $layer) {
+                        let loc = geo.loc.to_f64();
+                        mapped.render_popups(ctx.r(), None, loc, XrayPos::default(), &mut |elem| {
+                            push(elem.into())
+                        });
+                    }
+                }};
+            }
+            macro_rules! push_normal_from_layer {
+                ($layer:expr) => {{
+                    for (mapped, geo) in self.lock_screen_layers(&layer_map, $layer) {
+                        let loc = geo.loc.to_f64();
+                        mapped.render_normal(ctx.r(), None, loc, XrayPos::default(), &mut |elem| {
+                            push(elem.into())
+                        });
+                    }
+                }};
+            }
+            push_popups_from_layer!(Layer::Overlay);
+            push_normal_from_layer!(Layer::Overlay);
+            push_popups_from_layer!(Layer::Top);
+            push_normal_from_layer!(Layer::Top);
+            drop(layer_map);
+
             if let Some(surface) = state.lock_surface.as_ref() {
                 push_elements_from_surface_tree(
                     ctx.renderer,
@@ -5032,6 +5103,24 @@ impl Niri {
             let geo = layer_map.layer_geometry(surface)?;
             Some((mapped, geo))
         })
+    }
+
+    /// Layer surfaces to show when the session is locked.
+    ///
+    /// Includes layer surfaces of the active input method, so that an on-screen keyboard
+    /// can be used on the lock screen.
+    fn lock_screen_layers<'a>(
+        &'a self,
+        layer_map: &'a LayerMap,
+        layer: Layer,
+    ) -> impl Iterator<Item = (&'a MappedLayer, Rectangle<i32, Logical>)> {
+        // FIXME: changes to input_method().client() currently don't queue a redraw because there's
+        // no convenient place to do it.
+        let client = self.seat.input_method().client();
+        self.layers_in_render_order(layer_map, layer, false)
+            .filter(move |(mapped, _)| {
+                client.is_some() && mapped.surface().wl_surface().client() == client
+            })
     }
 
     fn render_layer_normal<R: NiriRenderer>(
