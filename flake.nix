@@ -26,6 +26,7 @@
           pipewire,
           pkg-config,
           rustPlatform,
+          stdenv,
           systemd,
           wayland,
           installShellFiles,
@@ -115,14 +116,16 @@
 
           postInstall =
             ''
+              install -Dm644 resources/niri.desktop -t $out/share/wayland-sessions
+              install -Dm644 resources/niri-portals.conf -t $out/share/xdg-desktop-portal
+            ''
+            # Generating completions runs niri, which doesn't work when cross-compiling.
+            + lib.optionalString (stdenv.buildPlatform.canExecute stdenv.hostPlatform) ''
               installShellCompletion --cmd niri \
                 --bash <($out/bin/niri completions bash) \
                 --fish <($out/bin/niri completions fish) \
                 --nushell <($out/bin/niri completions nushell) \
                 --zsh <($out/bin/niri completions zsh)
-
-              install -Dm644 resources/niri.desktop -t $out/share/wayland-sessions
-              install -Dm644 resources/niri-portals.conf -t $out/share/xdg-desktop-portal
             ''
             + lib.optionalString withSystemd ''
               install -Dm755 resources/niri-session $out/bin/niri-session
