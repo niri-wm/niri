@@ -907,11 +907,15 @@ impl Op {
                 }
 
                 let is_floating = params.is_floating;
+                let width = layout
+                    .active_workspace()
+                    .and_then(|ws| ws.resolve_default_width(None, false));
+
                 let win = TestWindow::new(params);
                 layout.add_window(
                     win,
                     AddWindowTarget::Auto,
-                    None,
+                    width,
                     None,
                     false,
                     is_floating,
@@ -934,6 +938,8 @@ impl Op {
                     }
                 }
 
+                let mut workspace: Option<&Workspace<_>> = None;
+
                 match &mut layout.monitor_set {
                     MonitorSet::Normal { monitors, .. } => {
                         for mon in monitors {
@@ -945,6 +951,7 @@ impl Op {
 
                                     if win.0.id == next_to_id {
                                         found_next_to = true;
+                                        workspace = Some(ws);
                                     }
                                 }
                             }
@@ -959,6 +966,7 @@ impl Op {
 
                                 if win.0.id == next_to_id {
                                     found_next_to = true;
+                                    workspace = Some(ws);
                                 }
                             }
                         }
@@ -968,6 +976,8 @@ impl Op {
                 if !found_next_to {
                     return;
                 }
+
+                let width = workspace.and_then(|ws| ws.resolve_default_width(None, false));
 
                 if let Some(parent_id) = params.parent_id {
                     if parent_id_causes_loop(layout, params.id, parent_id) {
@@ -980,7 +990,7 @@ impl Op {
                 layout.add_window(
                     win,
                     AddWindowTarget::NextTo(&next_to_id),
-                    None,
+                    width,
                     None,
                     false,
                     is_floating,
@@ -1050,11 +1060,16 @@ impl Op {
                 }
 
                 let is_floating = params.is_floating;
+                let width = layout
+                    .workspaces()
+                    .find_map(|(_, _, ws)| (ws.id() == ws_id).then_some(ws))
+                    .and_then(|ws| ws.resolve_default_width(None, false));
+
                 let win = TestWindow::new(params);
                 layout.add_window(
                     win,
                     AddWindowTarget::Workspace(ws_id),
-                    None,
+                    width,
                     None,
                     false,
                     is_floating,
@@ -3521,6 +3536,7 @@ fn preset_column_width_reset_after_set_width() {
 
     let options = Options {
         layout: niri_config::Layout {
+            default_column_width: None,
             preset_column_widths: vec![PresetSize::Fixed(500), PresetSize::Fixed(1000)],
             ..Default::default()
         },
