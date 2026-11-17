@@ -4588,6 +4588,15 @@ impl<W: LayoutElement> Column<W> {
         }
     }
 
+    fn width_px_to_proportion(&self, width_px: f64) -> f64 {
+        let full = self.working_area.size.w - self.options.layout.gaps;
+        if full == 0. {
+            1.
+        } else {
+            (width_px + self.options.layout.gaps + self.extra_size().w) / full
+        }
+    }
+
     fn update_tile_sizes(&mut self, animate: bool) {
         self.update_tile_sizes_with_transaction(animate, Transaction::new());
     }
@@ -5070,12 +5079,7 @@ impl<W: LayoutElement> Column<W> {
                 ColumnWidth::Proportion(proportion)
             }
             (ColumnWidth::Fixed(_), SizeChange::AdjustProportion(delta)) => {
-                let full = self.working_area.size.w - self.options.layout.gaps;
-                let current = if full == 0. {
-                    1.
-                } else {
-                    (current_px + self.options.layout.gaps + self.extra_size().w) / full
-                };
+                let current = self.width_px_to_proportion(current_px);
                 let proportion = (current + delta / 100.).clamp(0., MAX_F);
                 ColumnWidth::Proportion(proportion)
             }
