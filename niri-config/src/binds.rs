@@ -240,6 +240,8 @@ pub enum Action {
     Quit(#[knuffel(property(name = "skip-confirmation"), default)] bool),
     ChangeVt(#[knuffel(argument)] u8),
     Suspend,
+    #[knuffel(skip)]
+    PowerKeySuspend,
     PowerOffMonitors,
     PowerOnMonitors,
     ToggleDebugTint,
