@@ -949,6 +949,14 @@ impl State {
 
                 self.backend.suspend();
             }
+            Action::PowerKeySuspend => {
+                // Don't let the key press that woke the system up put it right back to sleep.
+                if self.niri.should_ignore_power_key() {
+                    return;
+                }
+
+                self.do_action(Action::Suspend, allow_when_locked, time);
+            }
             Action::PowerOffMonitors => {
                 self.niri.deactivate_monitors(&mut self.backend);
             }
@@ -5103,7 +5111,7 @@ fn find_bind<'a, I: Iterator<Item = &'a Bind> + Clone>(
             let vt = (modified - KEY_XF86Switch_VT_1 + 1) as u8;
             Some(Action::ChangeVt(vt))
         }
-        KEY_XF86PowerOff if !disable_power_key_handling => Some(Action::Suspend),
+        KEY_XF86PowerOff if !disable_power_key_handling => Some(Action::PowerKeySuspend),
         _ => None,
     };
 
@@ -5366,6 +5374,7 @@ fn allowed_when_locked(action: &Action) -> bool {
         action,
         Action::ChangeVt(_)
             | Action::Suspend
+            | Action::PowerKeySuspend
             | Action::PowerOffMonitors
             | Action::PowerOnMonitors
             | Action::SwitchLayout(_)
@@ -5413,6 +5422,7 @@ fn allowed_during_screenshot(action: &Action) -> bool {
         Action::Quit(_)
             | Action::ChangeVt(_)
             | Action::Suspend
+            | Action::PowerKeySuspend
             | Action::PowerOffMonitors
             | Action::PowerOnMonitors
             | Action::ToggleTouchpad

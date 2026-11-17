@@ -4,12 +4,15 @@ use zbus::names::InterfaceName;
 
 pub enum Login1ToNiri {
     LidClosedChanged(bool),
+    PrepareForSleep(bool),
 }
 
 pub fn start(
     to_niri: calloop::channel::Sender<Login1ToNiri>,
 ) -> anyhow::Result<zbus::blocking::Connection> {
     let conn = zbus::blocking::Connection::system()?;
+
+    let to_niri_sleep = to_niri.clone();
 
     let async_conn = conn.inner().clone();
     let future = async move {
@@ -100,6 +103,52 @@ pub fn start(
         .executor()
         .spawn(future, "monitor login1 property changes");
     task.detach();
+
+    let async_conn = conn.inner().clone();
+    let sleep_future = async move {
+        let proxy = zbus::Proxy::new(
+            &async_conn,
+            "org.freedesktop.login1",
+            "/org/freedesktop/login1",
+            "org.freedesktop.login1.Manager",
+        )
+        .await;
+        let proxy = match proxy {
+            Ok(x) => x,
+            Err(err) => {
+                warn!("error creating login1 Manager proxy: {err:?}");
+                return;
+            }
+        };
+
+        let mut signals = match proxy.receive_signal("PrepareForSleep").await {
+            Ok(x) => x,
+            Err(err) => {
+                warn!("error subscribing to PrepareForSleep: {err:?}");
+                return;
+            }
+        };
+
+        while let Some(message) = signals.next().await {
+            let start: bool = match message.body().deserialize() {
+                Ok(x) => x,
+                Err(err) => {
+                    warn!("error parsing PrepareForSleep: {err:?}");
+                    continue;
+                }
+            };
+
+            if let Err(err) = to_niri_sleep.send(Login1ToNiri::PrepareForSleep(start)) {
+                warn!("error sending message to niri: {err:?}");
+                return;
+            }
+        }
+    };
+
+    conn.inner()
+        .executor()
+        .spawn(sleep_future, "monitor login1 sleep")
+        .detach();
 
     Ok(conn)
 }

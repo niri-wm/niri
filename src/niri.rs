@@ -206,6 +206,13 @@ const CLEAR_COLOR_LOCKED: [f32; 4] = [0.3, 0.1, 0.1, 1.];
 // should be ~1.995 seconds.
 const FRAME_CALLBACK_THROTTLE: Option<Duration> = Some(Duration::from_millis(995));
 
+/// How long to keep ignoring the power key after waking up.
+///
+/// Same as GNOME, which found 1 second to be too short on some devices:
+/// https://mail.gnome.org/archives/commits-list/2018-October/msg05157.html
+#[cfg(feature = "dbus")]
+const POWER_KEY_IGNORE_AFTER_WAKE: Duration = Duration::from_secs(3);
+
 /// Parts of the seat keyboard state that get reset when its keymap is replaced.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct SavedKeyboardState {
@@ -288,6 +295,9 @@ pub struct Niri {
     /// Libinput guarantees that the lid switch starts in open state, and if it was closed during
     /// startup, libinput will immediately send a closed event.
     pub is_lid_closed: bool,
+    /// Power key presses before this time get ignored. Set while asleep, and for a bit after
+    /// waking up since the press that woke the system up may arrive after logind says it's awake.
+    pub ignore_power_key_until: Option<Duration>,
 
     /// Runtime toggle for touchpad disabled state (combined with config.touchpad.off).
     pub touchpad_disabled_by_toggle: bool,
@@ -2541,10 +2551,24 @@ impl State {
 
     #[cfg(feature = "dbus")]
     pub fn on_login1_msg(&mut self, msg: Login1ToNiri) {
-        let Login1ToNiri::LidClosedChanged(is_closed) = msg;
-
-        trace!("login1 lid {}", if is_closed { "closed" } else { "opened" });
-        self.set_lid_closed(is_closed);
+        match msg {
+            Login1ToNiri::LidClosedChanged(is_closed) => {
+                trace!("login1 lid {}", if is_closed { "closed" } else { "opened" });
+                self.set_lid_closed(is_closed);
+            }
+            Login1ToNiri::PrepareForSleep(start) => {
+                trace!(
+                    "login1 {}",
+                    if start { "going to sleep" } else { "woke up" }
+                );
+                let until = if start {
+                    Duration::MAX
+                } else {
+                    get_monotonic_time() + POWER_KEY_IGNORE_AFTER_WAKE
+                };
+                self.niri.ignore_power_key_until = Some(until);
+            }
+        }
     }
 
     #[cfg(feature = "dbus")]
@@ -2892,6 +2916,7 @@ impl Niri {
             blocker_cleared_rx,
             monitors_active: true,
             is_lid_closed: false,
+            ignore_power_key_until: None,
             touchpad_disabled_by_toggle: false,
 
             devices: HashSet::new(),
@@ -6851,6 +6876,11 @@ impl Niri {
         if let Some(token) = self.bind_repeat_timer.take() {
             self.event_loop.remove(token);
         }
+    }
+
+    pub fn should_ignore_power_key(&self) -> bool {
+        self.ignore_power_key_until
+            .is_some_and(|until| get_monotonic_time() < until)
     }
 
     pub fn is_locked(&self) -> bool {
