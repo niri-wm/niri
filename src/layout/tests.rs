@@ -3548,6 +3548,33 @@ fn preset_column_width_reset_after_set_width() {
 }
 
 #[test]
+fn preset_column_width_matches_for_new_window() {
+    let ops = [
+        Op::AddOutput(0),
+        Op::AddWindow {
+            params: TestWindowParams {
+                // The max size is smaller than our 0.5 default proportion.
+                min_max_size: (Size::default(), Size::new(100, 100)),
+                ..TestWindowParams::new(0)
+            },
+        },
+        Op::SwitchPresetColumnWidth,
+    ];
+
+    let options = Options {
+        layout: niri_config::Layout {
+            default_column_width: Some(PresetSize::Proportion(0.5)),
+            preset_column_widths: vec![PresetSize::Proportion(0.5), PresetSize::Proportion(0.75)],
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let mut layout = check_ops_with_options(options, ops);
+    let removed = layout.remove_window(&0, Transaction::new()).unwrap();
+    assert_eq!(removed.width, ColumnWidth::Proportion(0.75));
+}
+
+#[test]
 fn move_column_to_workspace_unfocused_with_multiple_monitors() {
     let ops = [
         Op::AddOutput(1),
