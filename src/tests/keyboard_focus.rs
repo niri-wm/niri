@@ -31,5 +31,5 @@ fn leave_on_focused_window_destroy() {
     window.surface.destroy();
     f.double_roundtrip(id);
 
-    assert_snapshot!(f.client(id).state.format_recent_keyboard_events(&surface), @"");
+    assert_snapshot!(f.client(id).state.format_recent_keyboard_events(&surface), @"leave");
 }

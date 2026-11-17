@@ -926,6 +926,11 @@ impl XdgShellHandler for State {
         self.niri.window_mru_ui.remove_window(id);
         self.niri.layout.remove_window(&window, transaction.clone());
 
+        // Clients usually destroy the wl_surface in the same request batch, and once it's dead,
+        // wl_keyboard.leave can no longer be sent for it. So update the focus right away. Clients
+        // with client-side key repeat would otherwise keep repeating a key held during the close.
+        self.update_keyboard_focus();
+
         let surface = surface.wl_surface();
         // This check is necessary because implicit resource destruction is done with
         // undefined order, so the surface might get destroyed before toplevel_destroyed() is
