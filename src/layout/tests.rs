@@ -1,5 +1,6 @@
 use std::cell::{Cell, OnceCell, RefCell};
 
+use insta::{assert_compact_debug_snapshot, assert_snapshot};
 use niri_config::utils::Flag;
 use niri_config::workspace::WorkspaceName;
 use niri_config::{
@@ -8,6 +9,7 @@ use niri_config::{
 };
 use proptest::prelude::*;
 use proptest_derive::Arbitrary;
+use smithay::desktop::layer_map_for_output;
 use smithay::output::{Mode, PhysicalProperties, Subpixel};
 use smithay::utils::Rectangle;
 
@@ -414,6 +416,12 @@ enum Op {
         scale: f64,
         #[proptest(strategy = "prop::option::of(arbitrary_layout_part().prop_map(Box::new))")]
         layout_config: Option<Box<niri_config::LayoutPart>>,
+    },
+    SetOutputScale {
+        #[proptest(strategy = "1..=5usize")]
+        id: usize,
+        #[proptest(strategy = "arbitrary_scale()")]
+        scale: f64,
     },
     RemoveOutput(#[proptest(strategy = "1..=5usize")] usize),
     FocusOutput(#[proptest(strategy = "1..=5usize")] usize),
@@ -827,6 +835,24 @@ impl Op {
                     serial: None,
                 });
                 layout.add_output(output.clone(), layout_config.map(|x| *x));
+            }
+            Op::SetOutputScale { id, scale } => {
+                let name = format!("output{id}");
+                let Some(output) = layout.outputs().find(|o| o.name() == name).cloned() else {
+                    return;
+                };
+
+                output.change_current_state(
+                    None,
+                    None,
+                    Some(smithay::output::Scale::Fractional(scale)),
+                    None,
+                );
+
+                // A bit cursed but layout uses the layer map non exclusive area.
+                layer_map_for_output(&output).arrange();
+
+                layout.update_output_size(&output);
             }
             Op::RemoveOutput(id) => {
                 let name = format!("output{id}");
@@ -3572,6 +3598,441 @@ fn preset_column_width_matches_for_new_window() {
     let mut layout = check_ops_with_options(options, ops);
     let removed = layout.remove_window(&0, Transaction::new()).unwrap();
     assert_eq!(removed.width, ColumnWidth::Proportion(0.75));
+}
+
+#[test]
+fn updating_config_doesnt_change_proportional_width() {
+    let ops = [
+        Op::AddOutput(0),
+        Op::AddWindow {
+            params: TestWindowParams::new(0),
+        },
+        Op::SetColumnWidth(SizeChange::SetProportion(50.)),
+        Op::UpdateConfig {
+            layout_config: Box::new(niri_config::LayoutPart {
+                // Bigger gaps and border make effective width smaller.
+                gaps: Some(FloatOrInt(100.)),
+                border: Some(niri_config::BorderRule {
+                    on: true,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+        },
+    ];
+
+    let mut layout = check_ops(ops);
+    let removed = layout.remove_window(&0, Transaction::new()).unwrap();
+    assert_eq!(removed.width, ColumnWidth::Proportion(0.5));
+
+    let win = removed.tile.window();
+    assert_eq!(win.requested_size().unwrap().w, 482);
+}
+
+#[test]
+fn change_output_scale_with_proportional_width() {
+    let ops = [
+        Op::AddOutput(0),
+        Op::AddWindow {
+            params: TestWindowParams::new(0),
+        },
+        Op::SetColumnWidth(SizeChange::SetProportion(50.)),
+    ];
+
+    let mut layout = check_ops(ops);
+    let win = layout.windows().next().unwrap().1;
+    assert_snapshot!(win.requested_size().unwrap().w, @"616");
+
+    check_ops_on_layout(&mut layout, [Op::SetOutputScale { id: 0, scale: 2. }]);
+
+    let removed = layout.remove_window(&0, Transaction::new()).unwrap();
+    assert_compact_debug_snapshot!(removed.width, @"Proportion(0.5)");
+
+    let win = removed.tile.window();
+    assert_snapshot!(win.requested_size().unwrap().w, @"296");
+}
+
+#[test]
+fn move_column_proportional_to_workspace_with_different_area() {
+    let ops = [
+        Op::AddOutput(0),
+        Op::AddWindow {
+            params: TestWindowParams::new(0),
+        },
+        Op::SetColumnWidth(SizeChange::SetProportion(50.)),
+        Op::AddNamedWorkspace {
+            ws_name: 1,
+            output_names: Vec::new(),
+            layout_config: Some(Box::new(niri_config::LayoutPart {
+                // Bigger gaps and border make effective width smaller.
+                gaps: Some(FloatOrInt(100.)),
+                border: Some(niri_config::BorderRule {
+                    on: true,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            })),
+        },
+    ];
+
+    let mut layout = check_ops(ops);
+    let win = layout.windows().next().unwrap().1;
+    assert_snapshot!(win.requested_size().unwrap().w, @"616");
+
+    // The named workspace is above.
+    check_ops_on_layout(&mut layout, [Op::MoveColumnToWorkspaceUp(true)]);
+
+    let removed = layout.remove_window(&0, Transaction::new()).unwrap();
+    assert_compact_debug_snapshot!(removed.width, @"Proportion(0.5)");
+
+    let win = removed.tile.window();
+    assert_snapshot!(win.requested_size().unwrap().w, @"482");
+}
+
+#[test]
+fn move_window_proportional_to_workspace_with_different_area() {
+    let ops = [
+        Op::AddOutput(0),
+        Op::AddWindow {
+            params: TestWindowParams::new(0),
+        },
+        Op::SetColumnWidth(SizeChange::SetProportion(50.)),
+        Op::AddNamedWorkspace {
+            ws_name: 1,
+            output_names: Vec::new(),
+            layout_config: Some(Box::new(niri_config::LayoutPart {
+                // Bigger gaps and border make effective width smaller.
+                gaps: Some(FloatOrInt(100.)),
+                border: Some(niri_config::BorderRule {
+                    on: true,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            })),
+        },
+    ];
+
+    let mut layout = check_ops(ops);
+    let win = layout.windows().next().unwrap().1;
+    assert_snapshot!(win.requested_size().unwrap().w, @"616");
+
+    // The named workspace is above.
+    check_ops_on_layout(&mut layout, [Op::MoveWindowToWorkspaceUp(true)]);
+
+    let removed = layout.remove_window(&0, Transaction::new()).unwrap();
+    assert_compact_debug_snapshot!(removed.width, @"Proportion(0.5)");
+
+    let win = removed.tile.window();
+    assert_snapshot!(win.requested_size().unwrap().w, @"482");
+}
+
+#[test]
+fn move_column_fixed_to_workspace_with_different_area() {
+    let ops = [
+        Op::AddOutput(0),
+        Op::AddWindow {
+            params: TestWindowParams::new(0),
+        },
+        Op::SetColumnWidth(SizeChange::SetFixed(200)),
+        Op::AddNamedWorkspace {
+            ws_name: 1,
+            output_names: Vec::new(),
+            layout_config: Some(Box::new(niri_config::LayoutPart {
+                // Bigger gaps and border make effective width smaller.
+                gaps: Some(FloatOrInt(100.)),
+                border: Some(niri_config::BorderRule {
+                    on: true,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            })),
+        },
+    ];
+
+    let mut layout = check_ops(ops);
+    let win = layout.windows().next().unwrap().1;
+    assert_snapshot!(win.requested_size().unwrap().w, @"200");
+
+    // The named workspace is above.
+    check_ops_on_layout(&mut layout, [Op::MoveColumnToWorkspaceUp(true)]);
+
+    let removed = layout.remove_window(&0, Transaction::new()).unwrap();
+    assert_compact_debug_snapshot!(removed.width, @"Fixed(200.0)");
+
+    let win = removed.tile.window();
+    assert_snapshot!(win.requested_size().unwrap().w, @"192");
+}
+
+#[test]
+fn move_window_fixed_to_workspace_with_different_area() {
+    let ops = [
+        Op::AddOutput(0),
+        Op::AddWindow {
+            params: TestWindowParams::new(0),
+        },
+        Op::SetColumnWidth(SizeChange::SetFixed(200)),
+        Op::AddNamedWorkspace {
+            ws_name: 1,
+            output_names: Vec::new(),
+            layout_config: Some(Box::new(niri_config::LayoutPart {
+                // Bigger gaps and border make effective width smaller.
+                gaps: Some(FloatOrInt(100.)),
+                border: Some(niri_config::BorderRule {
+                    on: true,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            })),
+        },
+    ];
+
+    let mut layout = check_ops(ops);
+    let win = layout.windows().next().unwrap().1;
+    assert_snapshot!(win.requested_size().unwrap().w, @"200");
+
+    // The named workspace is above.
+    check_ops_on_layout(&mut layout, [Op::MoveWindowToWorkspaceUp(true)]);
+
+    let removed = layout.remove_window(&0, Transaction::new()).unwrap();
+    assert_compact_debug_snapshot!(removed.width, @"Fixed(200.0)");
+
+    let win = removed.tile.window();
+    assert_snapshot!(win.requested_size().unwrap().w, @"192");
+}
+
+#[test]
+fn move_column_proportional_to_output_with_different_size() {
+    let ops = [
+        Op::AddOutput(0),
+        Op::AddWindow {
+            params: TestWindowParams::new(0),
+        },
+        Op::SetColumnWidth(SizeChange::SetProportion(50.)),
+        Op::AddScaledOutput {
+            id: 1,
+            scale: 2.,
+            layout_config: None,
+        },
+    ];
+
+    let mut layout = check_ops(ops);
+    let win = layout.windows().next().unwrap().1;
+    assert_snapshot!(win.requested_size().unwrap().w, @"616");
+
+    check_ops_on_layout(
+        &mut layout,
+        [Op::MoveColumnToOutput {
+            output_id: 1,
+            target_ws_idx: None,
+            activate: true,
+        }],
+    );
+
+    let removed = layout.remove_window(&0, Transaction::new()).unwrap();
+    assert_compact_debug_snapshot!(removed.width, @"Proportion(0.5)");
+
+    let win = removed.tile.window();
+    assert_snapshot!(win.requested_size().unwrap().w, @"296");
+}
+
+#[test]
+fn move_window_proportional_to_output_with_different_size() {
+    let ops = [
+        Op::AddOutput(0),
+        Op::AddWindow {
+            params: TestWindowParams::new(0),
+        },
+        Op::SetColumnWidth(SizeChange::SetProportion(50.)),
+        Op::AddScaledOutput {
+            id: 1,
+            scale: 2.,
+            layout_config: None,
+        },
+    ];
+
+    let mut layout = check_ops(ops);
+    let win = layout.windows().next().unwrap().1;
+    assert_snapshot!(win.requested_size().unwrap().w, @"616");
+
+    check_ops_on_layout(
+        &mut layout,
+        [Op::MoveWindowToOutput {
+            window_id: None,
+            output_id: 1,
+            target_ws_idx: None,
+        }],
+    );
+
+    let removed = layout.remove_window(&0, Transaction::new()).unwrap();
+    assert_compact_debug_snapshot!(removed.width, @"Proportion(0.5)");
+
+    let win = removed.tile.window();
+    assert_snapshot!(win.requested_size().unwrap().w, @"296");
+}
+
+#[test]
+fn interactive_move_window_proportional_to_output_with_different_size() {
+    let ops = [
+        Op::AddOutput(0),
+        Op::AddWindow {
+            params: TestWindowParams::new(0),
+        },
+        Op::SetColumnWidth(SizeChange::SetProportion(50.)),
+        Op::AddScaledOutput {
+            id: 1,
+            scale: 2.,
+            layout_config: None,
+        },
+    ];
+
+    let mut layout = check_ops(ops);
+    let win = layout.windows().next().unwrap().1;
+    assert_snapshot!(win.requested_size().unwrap().w, @"616");
+
+    check_ops_on_layout(
+        &mut layout,
+        [
+            Op::InteractiveMoveBegin {
+                window: 0,
+                output_idx: 0,
+                px: 0.,
+                py: 0.,
+            },
+            Op::InteractiveMoveUpdate {
+                window: 0,
+                dx: 2000.,
+                dy: 0.,
+                output_idx: 1,
+                px: 0.,
+                py: 0.,
+            },
+            Op::InteractiveMoveEnd { window: 0 },
+        ],
+    );
+
+    let removed = layout.remove_window(&0, Transaction::new()).unwrap();
+    assert_compact_debug_snapshot!(removed.width, @"Proportion(0.5)");
+
+    let win = removed.tile.window();
+    assert_snapshot!(win.requested_size().unwrap().w, @"296");
+}
+
+#[test]
+fn move_column_fixed_to_output_with_different_size() {
+    let ops = [
+        Op::AddOutput(0),
+        Op::AddWindow {
+            params: TestWindowParams::new(0),
+        },
+        Op::SetColumnWidth(SizeChange::SetFixed(200)),
+        Op::AddScaledOutput {
+            id: 1,
+            scale: 2.,
+            layout_config: None,
+        },
+    ];
+
+    let mut layout = check_ops(ops);
+    let win = layout.windows().next().unwrap().1;
+    assert_snapshot!(win.requested_size().unwrap().w, @"200");
+
+    check_ops_on_layout(
+        &mut layout,
+        [Op::MoveColumnToOutput {
+            output_id: 1,
+            target_ws_idx: None,
+            activate: true,
+        }],
+    );
+
+    let removed = layout.remove_window(&0, Transaction::new()).unwrap();
+    assert_compact_debug_snapshot!(removed.width, @"Fixed(200.0)");
+
+    let win = removed.tile.window();
+    assert_snapshot!(win.requested_size().unwrap().w, @"200");
+}
+
+#[test]
+fn move_window_fixed_to_output_with_different_size() {
+    let ops = [
+        Op::AddOutput(0),
+        Op::AddWindow {
+            params: TestWindowParams::new(0),
+        },
+        Op::SetColumnWidth(SizeChange::SetFixed(200)),
+        Op::AddScaledOutput {
+            id: 1,
+            scale: 2.,
+            layout_config: None,
+        },
+    ];
+
+    let mut layout = check_ops(ops);
+    let win = layout.windows().next().unwrap().1;
+    assert_snapshot!(win.requested_size().unwrap().w, @"200");
+
+    check_ops_on_layout(
+        &mut layout,
+        [Op::MoveWindowToOutput {
+            window_id: None,
+            output_id: 1,
+            target_ws_idx: None,
+        }],
+    );
+
+    let removed = layout.remove_window(&0, Transaction::new()).unwrap();
+    assert_compact_debug_snapshot!(removed.width, @"Fixed(200.0)");
+
+    let win = removed.tile.window();
+    assert_snapshot!(win.requested_size().unwrap().w, @"200");
+}
+
+#[test]
+fn move_workspace_to_output_with_different_size() {
+    let ops = [
+        Op::AddOutput(0),
+        Op::AddWindow {
+            params: TestWindowParams::new(0),
+        },
+        Op::SetColumnWidth(SizeChange::SetProportion(50.)),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::SetColumnWidth(SizeChange::SetFixed(200)),
+    ];
+
+    let mut layout = check_ops(ops);
+    {
+        let mut windows = layout.windows();
+        let win = windows.next().unwrap().1;
+        assert_snapshot!(win.requested_size().unwrap().w, @"616");
+        let win = windows.next().unwrap().1;
+        assert_snapshot!(win.requested_size().unwrap().w, @"200");
+    }
+
+    check_ops_on_layout(
+        &mut layout,
+        [
+            Op::AddScaledOutput {
+                id: 1,
+                scale: 2.,
+                layout_config: None,
+            },
+            Op::MoveWorkspaceToOutput(1),
+        ],
+    );
+
+    let removed = layout.remove_window(&0, Transaction::new()).unwrap();
+    assert_compact_debug_snapshot!(removed.width, @"Proportion(0.5)");
+
+    let win = removed.tile.window();
+    assert_snapshot!(win.requested_size().unwrap().w, @"296");
+
+    let removed = layout.remove_window(&1, Transaction::new()).unwrap();
+    assert_compact_debug_snapshot!(removed.width, @"Fixed(200.0)");
+
+    let win = removed.tile.window();
+    assert_snapshot!(win.requested_size().unwrap().w, @"200");
 }
 
 #[test]
