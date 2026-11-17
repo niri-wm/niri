@@ -3829,10 +3829,10 @@ fn move_column_proportional_to_output_with_different_size() {
     );
 
     let removed = layout.remove_window(&0, Transaction::new()).unwrap();
-    assert_compact_debug_snapshot!(removed.width, @"Proportion(0.5)");
+    assert_compact_debug_snapshot!(removed.width, @"Proportion(1.0128205128205128)");
 
     let win = removed.tile.window();
-    assert_snapshot!(win.requested_size().unwrap().w, @"296");
+    assert_snapshot!(win.requested_size().unwrap().w, @"616");
 }
 
 #[test]
@@ -3864,10 +3864,10 @@ fn move_window_proportional_to_output_with_different_size() {
     );
 
     let removed = layout.remove_window(&0, Transaction::new()).unwrap();
-    assert_compact_debug_snapshot!(removed.width, @"Proportion(0.5)");
+    assert_compact_debug_snapshot!(removed.width, @"Proportion(1.0128205128205128)");
 
     let win = removed.tile.window();
-    assert_snapshot!(win.requested_size().unwrap().w, @"296");
+    assert_snapshot!(win.requested_size().unwrap().w, @"616");
 }
 
 #[test]

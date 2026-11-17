@@ -909,6 +909,18 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         is_full_width: bool,
         anim: Option<niri_config::Animation>,
     ) {
+        // Rough proxy for "tile moved to a different enough monitor".
+        //
+        // TODO: this doesn't work for interactive move at the moment
+        // because it proactively updates the tile view size...
+        let view_width_changed = tile.view_size().w != self.view_size.w;
+        // FIXME: we aren't able to adjust the width of currently-maximized/fullscreen windows.
+        // We don't have the normal size here for that unfortunately at the moment.
+        let old_size = (!is_full_width)
+            .then(|| tile.window().expected_size())
+            .flatten();
+        let old_px = old_size.map(|size| tile.tile_width_for_window_width(f64::from(size.w)));
+
         let column = Column::new_with_tile(
             tile,
             self.view_size,
@@ -919,7 +931,14 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             is_full_width,
         );
 
-        self.add_column(col_idx, column, activate, anim);
+        let column = self.add_column(col_idx, column, activate, anim);
+
+        // Keep pixel width when moving across differently-sized outputs.
+        if let Some(old_px) = old_px {
+            if view_width_changed && old_px != column.resolve_column_width(column.width) {
+                column.update_proportion_width_to_match_px(old_px);
+            }
+        }
     }
 
     pub fn add_tile_to_column(
@@ -1002,7 +1021,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         mut column: Column<W>,
         activate: bool,
         anim_config: Option<niri_config::Animation>,
-    ) {
+    ) -> &mut Column<W> {
         let was_empty = self.columns.is_empty();
 
         let idx = idx.unwrap_or_else(|| {
@@ -1013,6 +1032,10 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             }
         });
 
+        // Rough proxy for "column moved to a different enough monitor".
+        let view_width_changed = column.view_size.w != self.view_size.w;
+        let old_px = column.resolve_column_width(column.width);
+
         column.update_config(
             self.view_size,
             self.working_area,
@@ -1020,6 +1043,12 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             self.scale,
             self.options.clone(),
         );
+
+        // Keep pixel width when moving across differently-sized outputs.
+        if view_width_changed && old_px != column.resolve_column_width(column.width) {
+            column.update_proportion_width_to_match_px(old_px);
+        }
+
         self.data.insert(idx, ColumnData::new(&column));
         self.columns.insert(idx, column);
 
@@ -1057,6 +1086,8 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             self.activate_column_with_anim_config(idx, anim_config);
             self.activate_prev_column_on_removal = prev_offset;
         }
+
+        &mut self.columns[idx]
     }
 
     pub fn remove_tile(&mut self, window: &W::Id, transaction: Transaction) -> RemovedTile<W> {
@@ -5193,6 +5224,17 @@ impl<W: LayoutElement> Column<W> {
             let weight = height / median;
             data.height = WindowHeight::Auto { weight };
         }
+    }
+
+    fn update_proportion_width_to_match_px(&mut self, old_px: f64) {
+        if !matches!(self.width, ColumnWidth::Proportion(_)) {
+            return;
+        }
+
+        let new_prop = self.width_px_to_proportion(old_px);
+        self.width = ColumnWidth::Proportion(new_prop.clamp(0., 10000.));
+        self.preset_width_idx = None;
+        self.update_tile_sizes(false);
     }
 
     fn set_fullscreen(&mut self, is_fullscreen: bool) {
