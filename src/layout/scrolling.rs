@@ -3327,141 +3327,77 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             let view_width = self.view_size.w;
             let gaps = self.options.layout.gaps;
 
-            let snap_points =
-                |col_x, col: &Column<W>, prev_col_w: Option<f64>, next_col_w: Option<f64>| {
-                    let col_w = col.width();
-                    let mode = col.sizing_mode();
-
-                    let area = if mode.is_maximized() {
-                        self.parent_area
-                    } else {
-                        self.working_area
-                    };
-
-                    let left_strut = area.loc.x;
-                    let right_strut = self.view_size.w - area.size.w - area.loc.x;
-
-                    // Normal columns align with the working area, but fullscreen columns align with
-                    // the view size.
-                    if mode.is_fullscreen() {
-                        let left = col_x;
-                        let right = left + col_w;
-                        (left, right)
-                    } else {
-                        // Logic from compute_new_view_offset.
-                        let padding = if mode.is_maximized() {
-                            0.
-                        } else {
-                            ((area.size.w - col_w) / 2.).clamp(0., gaps)
-                        };
-
-                        let center = if area.size.w <= col_w {
-                            col_x - left_strut
-                        } else {
-                            col_x - (area.size.w - col_w) / 2. - left_strut
-                        };
-                        let is_overflowing = |adj_col_w: Option<f64>| {
-                            center_on_overflow
-                                && adj_col_w
-                                    .filter(|adj_col_w| {
-                                        // NOTE: This logic won't work entirely correctly with small
-                                        // fixed-size maximized windows (they have a different area
-                                        // and padding).
-                                        center_on_overflow
-                                            && adj_col_w + 3.0 * gaps + col_w > area.size.w
-                                    })
-                                    .is_some()
-                        };
-
-                        let left = if is_overflowing(next_col_w) {
-                            center
-                        } else {
-                            col_x - padding - left_strut
-                        };
-                        let right = if is_overflowing(prev_col_w) {
-                            center + view_width
-                        } else {
-                            col_x + col_w + padding + right_strut
-                        };
-                        (left, right)
-                    }
-                };
-
-            // Prevent the gesture from snapping further than the first/last column, as this is
-            // generally undesired.
-            //
-            // It's ok if leftmost_snap is > rightmost_snap (this happens if the columns on a
-            // workspace total up to less than the workspace width).
-
-            // The first column's left snap isn't actually guaranteed to be the *leftmost* snap.
-            // With weird enough left strut and perhaps a maximized small fixed-size window, you
-            // can make the second window's left snap be further to the left than the first
-            // window's. The same goes for the rightmost snap.
-            //
-            // This isn't actually a big problem because it's very much an obscure edge case. Just
-            // need to make sure the code doesn't panic when that happens.
-            let leftmost_snap = snap_points(
-                0.,
-                &self.columns[0],
-                None,
-                self.columns.get(1).map(|c| c.width()),
-            )
-            .0;
-            let last_col_idx = self.columns.len() - 1;
-            let last_col_x = self
-                .columns
-                .iter()
-                .take(last_col_idx)
-                .fold(0., |col_x, col| col_x + col.width() + gaps);
-            let rightmost_snap = snap_points(
-                last_col_x,
-                &self.columns[last_col_idx],
-                last_col_idx
-                    .checked_sub(1)
-                    .and_then(|idx| self.columns.get(idx).map(|c| c.width())),
-                None,
-            )
-            .1 - view_width;
-
-            snapping_points.push(Snap {
-                view_pos: leftmost_snap,
-                col_idx: 0,
-            });
-            snapping_points.push(Snap {
-                view_pos: rightmost_snap,
-                col_idx: last_col_idx,
-            });
-
-            let mut push = |col_idx, left, right| {
-                if leftmost_snap < left && left < rightmost_snap {
-                    snapping_points.push(Snap {
-                        view_pos: left,
-                        col_idx,
-                    });
-                }
-
-                let right = right - view_width;
-                if leftmost_snap < right && right < rightmost_snap {
-                    snapping_points.push(Snap {
-                        view_pos: right,
-                        col_idx,
-                    });
-                }
-            };
-
             let mut col_x = 0.;
             for (col_idx, col) in self.columns.iter().enumerate() {
-                let (left, right) = snap_points(
-                    col_x,
-                    col,
-                    col_idx
-                        .checked_sub(1)
-                        .and_then(|idx| self.columns.get(idx).map(|c| c.width())),
-                    self.columns.get(col_idx + 1).map(|c| c.width()),
-                );
-                push(col_idx, left, right);
+                let col_w = col.width();
+                let mode = col.sizing_mode();
 
-                col_x += col.width() + gaps;
+                let area = if mode.is_maximized() {
+                    self.parent_area
+                } else {
+                    self.working_area
+                };
+
+                let left_strut = area.loc.x;
+                let right_strut = self.view_size.w - area.size.w - area.loc.x;
+
+                // Normal columns align with the working area, but fullscreen columns align with
+                // the view size.
+                if mode.is_fullscreen() {
+                    let view_pos = col_x;
+                    snapping_points.push(Snap { view_pos, col_idx });
+                } else {
+                    // Logic from compute_new_view_offset.
+                    let padding = if mode.is_maximized() {
+                        0.
+                    } else {
+                        ((area.size.w - col_w) / 2.).clamp(0., gaps)
+                    };
+
+                    let center = if area.size.w <= col_w {
+                        col_x - left_strut
+                    } else {
+                        col_x - (area.size.w - col_w) / 2. - left_strut
+                    };
+                    let is_overflowing = |adj_col_w: Option<f64>| {
+                        center_on_overflow
+                            && adj_col_w
+                                .filter(|adj_col_w| {
+                                    // NOTE: This logic won't work entirely correctly with small
+                                    // fixed-size maximized windows (they have a different area
+                                    // and padding).
+                                    center_on_overflow
+                                        && adj_col_w + 3.0 * gaps + col_w > area.size.w
+                                })
+                                .is_some()
+                    };
+
+                    let mut overflowed = false;
+                    let next_col_w = self.columns.get(col_idx + 1).map(|c| c.width());
+                    if !is_overflowing(next_col_w) {
+                        let view_pos = col_x - padding - left_strut;
+                        snapping_points.push(Snap { view_pos, col_idx });
+                    } else {
+                        overflowed = true;
+                    };
+
+                    let prev_col_w = col_idx
+                        .checked_sub(1)
+                        .and_then(|idx| self.columns.get(idx).map(|c| c.width()));
+                    if !is_overflowing(prev_col_w) {
+                        let view_pos = col_x + col_w + padding + right_strut - view_width;
+                        snapping_points.push(Snap { view_pos, col_idx });
+                    } else {
+                        overflowed = true;
+                    };
+
+                    if overflowed {
+                        let view_pos = center;
+                        snapping_points.push(Snap { view_pos, col_idx });
+                    }
+                }
+
+                col_x += col_w + gaps;
             }
         }
 
