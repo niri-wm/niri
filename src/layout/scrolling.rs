@@ -3354,11 +3354,17 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                         ((area.size.w - col_w) / 2.).clamp(0., gaps)
                     };
 
+                    // Always add the center snap for convenience, especially on ultrawides.
                     let center = if area.size.w <= col_w {
                         col_x - left_strut
                     } else {
                         col_x - (area.size.w - col_w) / 2. - left_strut
                     };
+                    snapping_points.push(Snap {
+                        view_pos: center,
+                        col_idx,
+                    });
+
                     let is_overflowing = |adj_col_w: Option<f64>| {
                         center_on_overflow
                             && adj_col_w
@@ -3372,27 +3378,17 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                                 .is_some()
                     };
 
-                    let mut overflowed = false;
                     let next_col_w = self.columns.get(col_idx + 1).map(|c| c.width());
                     if !is_overflowing(next_col_w) {
                         let view_pos = col_x - padding - left_strut;
                         snapping_points.push(Snap { view_pos, col_idx });
-                    } else {
-                        overflowed = true;
-                    };
+                    }
 
                     let prev_col_w = col_idx
                         .checked_sub(1)
                         .and_then(|idx| self.columns.get(idx).map(|c| c.width()));
                     if !is_overflowing(prev_col_w) {
                         let view_pos = col_x + col_w + padding + right_strut - view_width;
-                        snapping_points.push(Snap { view_pos, col_idx });
-                    } else {
-                        overflowed = true;
-                    };
-
-                    if overflowed {
-                        let view_pos = center;
                         snapping_points.push(Snap { view_pos, col_idx });
                     }
                 }
