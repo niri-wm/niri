@@ -2300,9 +2300,9 @@ mod tests {
                             ),
                         ),
                     ),
-                    open_on_output: Some(
+                    open_on_output: [
                         "eDP-1",
-                    ),
+                    ],
                     open_on_workspace: None,
                     open_maximized: Some(
                         true,
