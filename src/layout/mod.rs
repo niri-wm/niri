@@ -4282,18 +4282,7 @@ impl<W: LayoutElement> Layout<W> {
 
                 let ws_idx = match insert_ws {
                     InsertWorkspace::Existing(ws_id) => mon.idx_of_ws(ws_id).unwrap(),
-                    InsertWorkspace::NewAt(ws_idx) => {
-                        if mon.options.layout.empty_workspace_above_first && ws_idx == 0 {
-                            // Reuse the top empty workspace.
-                            0
-                        } else if mon.workspaces.len() - 1 <= ws_idx {
-                            // Reuse the bottom empty workspace.
-                            mon.workspaces.len() - 1
-                        } else {
-                            mon.add_workspace_at(ws_idx);
-                            ws_idx
-                        }
-                    }
+                    InsertWorkspace::NewAt(ws_idx) => mon.add_or_reuse_empty_workspace_at(ws_idx),
                 };
 
                 match position {
