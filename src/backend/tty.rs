@@ -1614,6 +1614,11 @@ impl Tty {
             {
                 debug!("withdrawing non-desktop connector from DRM leasing");
 
+                // Revoke any ongoing lease.
+                device
+                    .active_leases
+                    .retain(|l| !l.connectors().any(|connector| connector == conn));
+
                 let conn = *conn;
                 device.non_desktop_connectors.remove(&(conn, crtc));
 
