@@ -608,6 +608,46 @@ pub enum Action {
         #[cfg_attr(feature = "clap", arg(long, action = clap::ArgAction::Set, default_value_t = true))]
         focus: bool,
     },
+    /// Move the focused window to a new workspace below a workspace.
+    #[cfg_attr(
+        feature = "clap",
+        clap(about = "Move the focused window to a new workspace below the focused workspace")
+    )]
+    MoveWindowToNewWorkspaceBelow {
+        /// Reference (index or name) of the workspace below which to put the new workspace.
+        ///
+        /// If `None`, uses the focused workspace.
+        #[cfg_attr(feature = "clap", arg())]
+        reference: Option<WorkspaceReferenceArg>,
+
+        /// Whether the focus should follow the moved window.
+        ///
+        /// If `true` (the default), the focus will follow the window to the new workspace. If
+        /// `false`, the focus will remain on the original workspace.
+        #[serde(default = "default_true")]
+        #[cfg_attr(feature = "clap", arg(long, action = clap::ArgAction::Set, default_value_t = true))]
+        focus: bool,
+    },
+    /// Move the focused window to a new workspace above a workspace.
+    #[cfg_attr(
+        feature = "clap",
+        clap(about = "Move the focused window to a new workspace above the focused workspace")
+    )]
+    MoveWindowToNewWorkspaceAbove {
+        /// Reference (index or name) of the workspace above which to put the new workspace.
+        ///
+        /// If `None`, uses the focused workspace.
+        #[cfg_attr(feature = "clap", arg())]
+        reference: Option<WorkspaceReferenceArg>,
+
+        /// Whether the focus should follow the moved window.
+        ///
+        /// If `true` (the default), the focus will follow the window to the new workspace. If
+        /// `false`, the focus will remain on the original workspace.
+        #[serde(default = "default_true")]
+        #[cfg_attr(feature = "clap", arg(long, action = clap::ArgAction::Set, default_value_t = true))]
+        focus: bool,
+    },
     /// Move the focused column to the workspace below.
     MoveColumnToWorkspaceDown {
         /// Whether the focus should follow the target workspace.
