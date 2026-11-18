@@ -14,6 +14,7 @@
       niri-package =
         {
           lib,
+          bashNonInteractive,
           cairo,
           dbus,
           libGL,
@@ -55,7 +56,8 @@
           };
 
           postPatch = ''
-            patchShebangs resources/niri-session
+            # --host so cross builds get a shell for the target, not the build machine
+            patchShebangs --host resources/niri-session
             substituteInPlace resources/niri.service \
               --replace-fail 'ExecStart=niri' "ExecStart=$out/bin/niri"
           '';
@@ -76,6 +78,7 @@
 
           buildInputs =
             [
+              bashNonInteractive # For niri-session
               cairo
               dbus
               libGL
