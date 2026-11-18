@@ -1097,3 +1097,159 @@ fn width_resize_and_cancel_of_column_to_the_left() {
     200 × 200 at x:100 y:  0
     ");
 }
+
+fn format_monitor_tiles(layout: &Layout<TestWindow>) -> String {
+    let mut buf = String::new();
+    let mon = layout.active_monitor_ref().unwrap();
+    let mut tiles = Vec::new();
+    // Don't cull, like the rendering of windows moving between workspaces.
+    for (idx, (ws, geo)) in mon.workspaces_with_render_geo_cull(false).enumerate() {
+        for (tile, pos, _visible) in ws.tiles_with_render_positions() {
+            tiles.push((*tile.window().id(), idx, geo.loc + pos));
+        }
+    }
+
+    tiles.sort_by_key(|(id, _, _)| *id);
+    for (id, ws_idx, pos) in tiles {
+        let Point { x, y, .. } = pos;
+        writeln!(&mut buf, "{id} on ws{ws_idx} at x:{x:>4.0} y:{y:>4.0}").unwrap();
+    }
+    buf
+}
+
+// Leaves workspaces [[1, 2], [3], []] with window 2 focused.
+fn set_up_for_new_workspace() -> Layout<TestWindow> {
+    const LINEAR: Kind = Kind::Easing(EasingParams {
+        duration_ms: 1000,
+        curve: Curve::Linear,
+    });
+
+    let mut options = make_options();
+    options.animations.workspace_switch.0.kind = LINEAR;
+
+    let ops = [
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::AddWindow {
+            params: TestWindowParams::new(3),
+        },
+        Op::MoveWindowToWorkspaceDown(false),
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+        Op::Communicate(1),
+        Op::Communicate(2),
+        Op::Communicate(3),
+        Op::CompleteAnimations,
+    ];
+
+    check_ops_with_options(options, ops)
+}
+
+#[test]
+fn move_window_to_new_workspace_below_follows_view() {
+    // The view slides down to the new workspace together with the window, so the window stays at
+    // the same y on screen.
+    let mut layout = set_up_for_new_workspace();
+    assert_snapshot!(format_monitor_tiles(&layout), @r"
+    1 on ws0 at x:-540 y:   0
+    2 on ws0 at x: 100 y:   0
+    3 on ws1 at x:   0 y: 792
+    ");
+
+    Op::MoveWindowToNewWorkspace {
+        ws_name: None,
+        ws_idx: None,
+        below: true,
+        focus: true,
+    }
+    .apply(&mut layout);
+    assert_snapshot!(format_monitor_tiles(&layout), @r"
+    1 on ws0 at x:-540 y:   0
+    2 on ws1 at x: 100 y:   0
+    3 on ws2 at x:   0 y:1584
+    ");
+
+    Op::AdvanceAnimations { msec_delta: 500 }.apply(&mut layout);
+    assert_snapshot!(format_monitor_tiles(&layout), @r"
+    1 on ws0 at x:   0 y:-396
+    2 on ws1 at x:  50 y:   0
+    3 on ws2 at x:   0 y:1188
+    ");
+
+    Op::AdvanceAnimations { msec_delta: 500 }.apply(&mut layout);
+    assert_snapshot!(format_monitor_tiles(&layout), @r"
+    1 on ws0 at x:   0 y:-792
+    2 on ws1 at x:   0 y:   0
+    3 on ws2 at x:   0 y: 792
+    ");
+}
+
+#[test]
+fn move_window_to_new_workspace_above_follows_view() {
+    // The view slides up to the new workspace together with the window, so the window stays at
+    // the same y on screen.
+    let mut layout = set_up_for_new_workspace();
+
+    Op::MoveWindowToNewWorkspace {
+        ws_name: None,
+        ws_idx: None,
+        below: false,
+        focus: true,
+    }
+    .apply(&mut layout);
+    assert_snapshot!(format_monitor_tiles(&layout), @r"
+    1 on ws1 at x:-540 y:   0
+    2 on ws0 at x: 100 y:   0
+    3 on ws2 at x:   0 y: 792
+    ");
+
+    Op::AdvanceAnimations { msec_delta: 500 }.apply(&mut layout);
+    assert_snapshot!(format_monitor_tiles(&layout), @r"
+    1 on ws1 at x:   0 y: 396
+    2 on ws0 at x:  50 y:   0
+    3 on ws2 at x:   0 y:1188
+    ");
+
+    Op::AdvanceAnimations { msec_delta: 500 }.apply(&mut layout);
+    assert_snapshot!(format_monitor_tiles(&layout), @r"
+    1 on ws1 at x:   0 y: 792
+    2 on ws0 at x:   0 y:   0
+    3 on ws2 at x:   0 y:1584
+    ");
+}
+
+#[test]
+fn move_window_to_new_workspace_below_without_focus() {
+    // The view stays, and the window slides down into the new workspace.
+    let mut layout = set_up_for_new_workspace();
+
+    Op::MoveWindowToNewWorkspace {
+        ws_name: None,
+        ws_idx: None,
+        below: true,
+        focus: false,
+    }
+    .apply(&mut layout);
+    assert_snapshot!(format_monitor_tiles(&layout), @r"
+    1 on ws0 at x:-540 y:   0
+    2 on ws1 at x: 100 y:   0
+    3 on ws2 at x:   0 y:1584
+    ");
+
+    Op::AdvanceAnimations { msec_delta: 500 }.apply(&mut layout);
+    assert_snapshot!(format_monitor_tiles(&layout), @r"
+    1 on ws0 at x:   0 y:   0
+    2 on ws1 at x:  50 y: 396
+    3 on ws2 at x:   0 y:1584
+    ");
+
+    Op::AdvanceAnimations { msec_delta: 500 }.apply(&mut layout);
+    assert_snapshot!(format_monitor_tiles(&layout), @r"
+    1 on ws0 at x:   0 y:   0
+    2 on ws1 at x:   0 y: 792
+    3 on ws2 at x:   0 y:1584
+    ");
+}

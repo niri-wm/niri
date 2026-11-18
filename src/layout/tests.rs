@@ -554,6 +554,14 @@ enum Op {
         #[proptest(strategy = "0..=4usize")]
         workspace_idx: usize,
     },
+    MoveWindowToNewWorkspace {
+        #[proptest(strategy = "proptest::option::of(1..=5usize)")]
+        ws_name: Option<usize>,
+        #[proptest(strategy = "proptest::option::of(0..=4usize)")]
+        ws_idx: Option<usize>,
+        below: bool,
+        focus: bool,
+    },
     MoveColumnToWorkspaceDown(bool),
     MoveColumnToWorkspaceUp(bool),
     MoveColumnToWorkspace(#[proptest(strategy = "0..=4usize")] usize, bool),
@@ -1257,6 +1265,26 @@ impl Op {
                 let window_id = window_id.filter(|id| layout.has_window(id));
                 layout.move_to_workspace(window_id.as_ref(), workspace_idx, ActivateWindow::Smart);
             }
+            Op::MoveWindowToNewWorkspace {
+                ws_name,
+                ws_idx,
+                below,
+                focus,
+            } => {
+                let reference = if let Some(ws_name) = ws_name {
+                    let name = format!("ws{ws_name}");
+                    let Some(reference) = layout.monitors().find_map(|mon| {
+                        let idx = mon.find_named_workspace_index(&name)?;
+                        Some((Some(mon.output().clone()), idx))
+                    }) else {
+                        return;
+                    };
+                    Some(reference)
+                } else {
+                    ws_idx.map(|idx| (None, idx))
+                };
+                layout.move_to_new_workspace(reference, below, focus);
+            }
             Op::MoveColumnToWorkspaceDown(focus) => layout.move_column_to_workspace_down(focus),
             Op::MoveColumnToWorkspaceUp(focus) => layout.move_column_to_workspace_up(focus),
             Op::MoveColumnToWorkspace(idx, focus) => layout.move_column_to_workspace(idx, focus),
@@ -1915,6 +1943,24 @@ fn operations_dont_panic() {
             window_id: None,
             workspace_idx: 2,
         },
+        Op::MoveWindowToNewWorkspace {
+            ws_name: None,
+            ws_idx: None,
+            below: true,
+            focus: true,
+        },
+        Op::MoveWindowToNewWorkspace {
+            ws_name: None,
+            ws_idx: None,
+            below: false,
+            focus: true,
+        },
+        Op::MoveWindowToNewWorkspace {
+            ws_name: None,
+            ws_idx: Some(0),
+            below: false,
+            focus: false,
+        },
         Op::MoveColumnToWorkspaceDown(true),
         Op::MoveColumnToWorkspaceUp(true),
         Op::MoveColumnToWorkspace(1, true),
@@ -2093,6 +2139,24 @@ fn operations_from_starting_state_dont_panic() {
         Op::MoveWindowToWorkspace {
             window_id: None,
             workspace_idx: 3,
+        },
+        Op::MoveWindowToNewWorkspace {
+            ws_name: None,
+            ws_idx: None,
+            below: true,
+            focus: true,
+        },
+        Op::MoveWindowToNewWorkspace {
+            ws_name: None,
+            ws_idx: None,
+            below: false,
+            focus: true,
+        },
+        Op::MoveWindowToNewWorkspace {
+            ws_name: None,
+            ws_idx: Some(0),
+            below: false,
+            focus: false,
         },
         Op::MoveColumnToWorkspaceDown(true),
         Op::MoveColumnToWorkspaceUp(true),
@@ -2455,6 +2519,144 @@ fn move_workspace_to_output() {
     assert_eq!(monitors[1].active_workspace_idx, 0);
     assert_eq!(monitors[1].workspaces.len(), 2);
     assert!(monitors[1].workspaces[0].has_windows());
+}
+
+fn ws_window_ids(mon: &Monitor<TestWindow>) -> Vec<Vec<usize>> {
+    mon.workspaces
+        .iter()
+        .map(|ws| ws.windows().map(|win| *win.id()).collect())
+        .collect()
+}
+
+// Leaves workspaces [[1, 2], [3], []] with window 2 focused.
+fn set_up_for_new_workspace() -> Vec<Op> {
+    vec![
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::AddWindow {
+            params: TestWindowParams::new(3),
+        },
+        Op::MoveWindowToWorkspaceDown(false),
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+    ]
+}
+
+#[test]
+fn move_window_to_new_workspace_below_and_above() {
+    for (below, focus, expected, active) in [
+        (true, true, [[1], [2], [3]], 1),
+        (true, false, [[1], [2], [3]], 0),
+        (false, true, [[2], [1], [3]], 0),
+        (false, false, [[2], [1], [3]], 1),
+    ] {
+        let mut ops = set_up_for_new_workspace();
+        ops.push(Op::MoveWindowToNewWorkspace {
+            ws_name: None,
+            ws_idx: None,
+            below,
+            focus,
+        });
+        ops.push(Op::CompleteAnimations);
+        let layout = check_ops(ops);
+
+        let mon = layout.active_monitor_ref().unwrap();
+        let expected = expected.map(Vec::from).into_iter().chain([vec![]]);
+        assert_eq!(ws_window_ids(mon), Vec::from_iter(expected));
+        assert_eq!(mon.active_workspace_idx, active);
+        if focus {
+            assert_eq!(layout.focus().unwrap().id(), &2);
+        }
+    }
+}
+
+#[test]
+fn move_window_to_new_workspace_below_reference() {
+    let mut ops = set_up_for_new_workspace();
+    ops.push(Op::MoveWindowToNewWorkspace {
+        ws_name: None,
+        ws_idx: Some(1),
+        below: true,
+        focus: true,
+    });
+    let layout = check_ops(ops);
+
+    let mon = layout.active_monitor_ref().unwrap();
+    assert_eq!(ws_window_ids(mon), [vec![1], vec![3], vec![2], vec![]]);
+    assert_eq!(mon.active_workspace_idx, 2);
+}
+
+#[test]
+fn move_window_to_new_workspace_on_other_output() {
+    let ops = [
+        Op::AddOutput(1),
+        Op::AddOutput(2),
+        Op::FocusOutput(2),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::SetWorkspaceName {
+            new_ws_name: 1,
+            ws_name: None,
+        },
+        Op::FocusOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+        Op::MoveWindowToNewWorkspace {
+            ws_name: Some(1),
+            ws_idx: None,
+            below: false,
+            focus: true,
+        },
+        Op::CompleteAnimations,
+    ];
+    let layout = check_ops(ops);
+
+    let mon = layout.active_monitor_ref().unwrap();
+    assert_eq!(mon.output_name(), "output2");
+    assert_eq!(ws_window_ids(mon), [vec![2], vec![1], vec![]]);
+    assert_eq!(mon.active_workspace_idx, 0);
+    assert_eq!(mon.workspaces[1].name(), Some(&String::from("ws1")));
+}
+
+#[test]
+fn move_window_to_new_workspace_with_empty_workspace_above_first() {
+    let options = Options {
+        layout: niri_config::Layout {
+            empty_workspace_above_first: true,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+
+    // Above the first workspace, and above the top empty workspace which gets reused.
+    for ws_idx in [None, Some(0)] {
+        let ops = [
+            Op::AddOutput(1),
+            Op::AddWindow {
+                params: TestWindowParams::new(1),
+            },
+            Op::AddWindow {
+                params: TestWindowParams::new(2),
+            },
+            Op::MoveWindowToNewWorkspace {
+                ws_name: None,
+                ws_idx,
+                below: false,
+                focus: true,
+            },
+            Op::CompleteAnimations,
+        ];
+        let layout = check_ops_with_options(options.clone(), ops);
+
+        let mon = layout.active_monitor_ref().unwrap();
+        assert_eq!(ws_window_ids(mon), [vec![], vec![2], vec![1], vec![]]);
+        assert_eq!(mon.active_workspace_idx, 1);
+    }
 }
 
 #[test]

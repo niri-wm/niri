@@ -2210,6 +2210,69 @@ impl<W: LayoutElement> Layout<W> {
         monitor.move_to_workspace(window, idx, activate);
     }
 
+    /// Moves the focused window to a new workspace right below or above the reference workspace.
+    ///
+    /// Without a reference, uses the active workspace. A reference without an output means the
+    /// active output.
+    pub fn move_to_new_workspace(
+        &mut self,
+        reference: Option<(Option<Output>, usize)>,
+        below: bool,
+        focus: bool,
+    ) {
+        if let Some(InteractiveMoveState::Moving(_)) = &self.interactive_move {
+            return;
+        }
+
+        let MonitorSet::Normal {
+            monitors,
+            active_monitor_idx,
+            ..
+        } = &mut self.monitor_set
+        else {
+            return;
+        };
+
+        // Check this before adding a workspace so that we don't leave a stray empty one.
+        if monitors[*active_monitor_idx].active_window().is_none() {
+            return;
+        }
+
+        let (mon_idx, ref_idx) = match reference {
+            Some((Some(output), ref_idx)) => {
+                let Some(mon_idx) = monitors.iter().position(|mon| mon.output == output) else {
+                    return;
+                };
+                (mon_idx, ref_idx)
+            }
+            Some((None, ref_idx)) => (*active_monitor_idx, ref_idx),
+            None => {
+                let mon_idx = *active_monitor_idx;
+                (mon_idx, monitors[mon_idx].active_workspace_idx)
+            }
+        };
+
+        let mon = &mut monitors[mon_idx];
+        let ref_idx = ref_idx.min(mon.workspaces.len() - 1);
+        let idx = if below { ref_idx + 1 } else { ref_idx };
+        let new_idx = mon.add_or_reuse_empty_workspace_at(idx);
+
+        let activate = if focus {
+            ActivateWindow::Smart
+        } else {
+            ActivateWindow::No
+        };
+
+        if mon_idx == *active_monitor_idx {
+            // This animates the window and the view the same way as move-window-to-workspace,
+            // since the new workspace is a regular workspace by now.
+            mon.move_to_workspace(None, new_idx, activate);
+        } else {
+            let output = mon.output.clone();
+            self.move_to_output(None, &output, Some(new_idx), activate);
+        }
+    }
+
     pub fn move_column_to_workspace_up(&mut self, activate: bool) {
         let Some(monitor) = self.active_monitor() else {
             return;
