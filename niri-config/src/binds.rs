@@ -396,6 +396,14 @@ pub enum Action {
         reference: WorkspaceReference,
         focus: bool,
     },
+    MoveWindowToNewWorkspaceBelow(
+        #[knuffel(argument)] Option<WorkspaceReference>,
+        #[knuffel(property(name = "focus"), default = true)] bool,
+    ),
+    MoveWindowToNewWorkspaceAbove(
+        #[knuffel(argument)] Option<WorkspaceReference>,
+        #[knuffel(property(name = "focus"), default = true)] bool,
+    ),
     MoveColumnToWorkspaceDown(#[knuffel(property(name = "focus"), default = true)] bool),
     MoveColumnToWorkspaceUp(#[knuffel(property(name = "focus"), default = true)] bool),
     MoveColumnToWorkspace(
@@ -742,6 +750,12 @@ impl From<niri_ipc::Action> for Action {
                 reference: WorkspaceReference::from(reference),
                 focus,
             },
+            niri_ipc::Action::MoveWindowToNewWorkspaceBelow { reference, focus } => {
+                Self::MoveWindowToNewWorkspaceBelow(reference.map(WorkspaceReference::from), focus)
+            }
+            niri_ipc::Action::MoveWindowToNewWorkspaceAbove { reference, focus } => {
+                Self::MoveWindowToNewWorkspaceAbove(reference.map(WorkspaceReference::from), focus)
+            }
             niri_ipc::Action::MoveColumnToWorkspaceDown { focus } => {
                 Self::MoveColumnToWorkspaceDown(focus)
             }

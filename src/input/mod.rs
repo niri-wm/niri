@@ -1768,6 +1768,12 @@ impl State {
                     }
                 }
             }
+            Action::MoveWindowToNewWorkspaceBelow(reference, focus) => {
+                self.move_window_to_new_workspace(reference, true, focus);
+            }
+            Action::MoveWindowToNewWorkspaceAbove(reference, focus) => {
+                self.move_window_to_new_workspace(reference, false, focus);
+            }
             Action::MoveColumnToWorkspaceDown(focus) => {
                 self.niri.layout.move_column_to_workspace_down(focus);
                 self.maybe_warp_cursor_to_focus();
@@ -2785,6 +2791,38 @@ impl State {
                 }
             }
         }
+    }
+
+    fn move_window_to_new_workspace(
+        &mut self,
+        reference: Option<WorkspaceReference>,
+        below: bool,
+        focus: bool,
+    ) {
+        let reference = match reference.map(|r| self.niri.resolve_workspace_reference(r)) {
+            None => None,         // Use focused workspace.
+            Some(None) => return, // Workspace wasn't found.
+            Some(Some(r)) => Some(r),
+        };
+        let target_output = reference.as_ref().and_then(|(output, _)| output.clone());
+
+        self.niri
+            .layout
+            .move_to_new_workspace(reference, below, focus);
+
+        match target_output {
+            Some(output) if focus => {
+                if !self.maybe_warp_cursor_to_focus_centered() {
+                    self.move_cursor_to_output(&output);
+                }
+            }
+            _ => {
+                self.maybe_warp_cursor_to_focus();
+            }
+        }
+
+        // FIXME: granular
+        self.niri.queue_redraw_all();
     }
 
     fn on_pointer_motion<I: InputBackend>(&mut self, event: I::PointerMotionEvent) {
