@@ -390,6 +390,8 @@ If such an output does not exist, the window will open on the currently focused 
 
 If the window opens on an output that is not currently focused, the window will not be automatically focused.
 
+Note that `open-on-workspace` takes precedence over `open-on-output`.
+
 ```kdl
 // Open Firefox and Telegram (but not its Media Viewer)
 // on a specific monitor.
@@ -406,6 +408,16 @@ window-rule {
 
 <sup>Since: 0.1.9</sup> `open-on-output` can now use monitor manufacturer, model, and serial.
 Before, it could only use the connector name.
+
+<sup>Since: next release</sup> You can now write multiple `open-on-output` lines.
+If the first output is not connected, the window will open on the second output, and so on.
+
+```kdl
+window-rule {
+    open-on-output "DP-1"
+    open-on-output "DP-2" // fallback
+}
+```
 
 #### `open-on-workspace`
 
