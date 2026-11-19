@@ -495,17 +495,37 @@ enum Op {
     FocusWindowBottom,
     FocusWindowDownOrTop,
     FocusWindowUpOrBottom,
-    MoveColumnLeft,
-    MoveColumnRight,
-    MoveColumnToFirst,
-    MoveColumnToLast,
-    MoveColumnLeftOrToMonitorLeft(#[proptest(strategy = "1..=2u8")] u8),
-    MoveColumnRightOrToMonitorRight(#[proptest(strategy = "1..=2u8")] u8),
-    MoveColumnToIndex(#[proptest(strategy = "1..=5usize")] usize),
-    MoveWindowDown,
-    MoveWindowUp,
-    MoveWindowDownOrToWorkspaceDown,
-    MoveWindowUpOrToWorkspaceUp,
+    MoveColumnLeft {
+        focus: bool,
+    },
+    MoveColumnRight {
+        focus: bool,
+    },
+    MoveColumnToFirst {
+        focus: bool,
+    },
+    MoveColumnToLast {
+        focus: bool,
+    },
+    MoveColumnLeftOrToMonitorLeft {
+        #[proptest(strategy = "1..=2u8")]
+        id: u8,
+        focus: bool,
+    },
+    MoveColumnRightOrToMonitorRight {
+        #[proptest(strategy = "1..=2u8")]
+        id: u8,
+        focus: bool,
+    },
+    MoveColumnToIndex {
+        #[proptest(strategy = "1..=5usize")]
+        index: usize,
+        focus: bool,
+    },
+    MoveWindowDown(bool),
+    MoveWindowUp(bool),
+    MoveWindowDownOrToWorkspaceDown(bool),
+    MoveWindowUpOrToWorkspaceUp(bool),
     ConsumeOrExpelWindowLeft {
         #[proptest(strategy = "proptest::option::of(1..=5usize)")]
         id: Option<usize>,
@@ -516,7 +536,11 @@ enum Op {
     },
     ConsumeWindowIntoColumn,
     ExpelWindowFromColumn,
-    SwapWindowInDirection(#[proptest(strategy = "arbitrary_scroll_direction()")] ScrollDirection),
+    SwapWindowInDirection {
+        #[proptest(strategy = "arbitrary_scroll_direction()")]
+        direction: ScrollDirection,
+        focus: bool,
+    },
     ToggleColumnTabbedDisplay,
     SetColumnDisplay(#[proptest(strategy = "arbitrary_column_display()")] ColumnDisplay),
     CenterColumn,
@@ -1179,31 +1203,33 @@ impl Op {
             Op::FocusWindowBottom => layout.focus_window_bottom(),
             Op::FocusWindowDownOrTop => layout.focus_window_down_or_top(),
             Op::FocusWindowUpOrBottom => layout.focus_window_up_or_bottom(),
-            Op::MoveColumnLeft => layout.move_left(),
-            Op::MoveColumnRight => layout.move_right(),
-            Op::MoveColumnToFirst => layout.move_column_to_first(),
-            Op::MoveColumnToLast => layout.move_column_to_last(),
-            Op::MoveColumnLeftOrToMonitorLeft(id) => {
+            Op::MoveColumnLeft { focus } => layout.move_left(focus),
+            Op::MoveColumnRight { focus } => layout.move_right(focus),
+            Op::MoveColumnToFirst { focus } => layout.move_column_to_first(focus),
+            Op::MoveColumnToLast { focus } => layout.move_column_to_last(focus),
+            Op::MoveColumnLeftOrToMonitorLeft { id, focus } => {
                 let name = format!("output{id}");
                 let Some(output) = layout.outputs().find(|o| o.name() == name).cloned() else {
                     return;
                 };
 
-                layout.move_column_left_or_to_output(&output);
+                layout.move_column_left_or_to_output(&output, focus);
             }
-            Op::MoveColumnRightOrToMonitorRight(id) => {
+            Op::MoveColumnRightOrToMonitorRight { id, focus } => {
                 let name = format!("output{id}");
                 let Some(output) = layout.outputs().find(|o| o.name() == name).cloned() else {
                     return;
                 };
 
-                layout.move_column_right_or_to_output(&output);
+                layout.move_column_right_or_to_output(&output, focus);
             }
-            Op::MoveColumnToIndex(index) => layout.move_column_to_index(index),
-            Op::MoveWindowDown => layout.move_down(),
-            Op::MoveWindowUp => layout.move_up(),
-            Op::MoveWindowDownOrToWorkspaceDown => layout.move_down_or_to_workspace_down(),
-            Op::MoveWindowUpOrToWorkspaceUp => layout.move_up_or_to_workspace_up(),
+            Op::MoveColumnToIndex { index, focus } => layout.move_column_to_index(index, focus),
+            Op::MoveWindowDown(focus) => layout.move_down(focus),
+            Op::MoveWindowUp(focus) => layout.move_up(focus),
+            Op::MoveWindowDownOrToWorkspaceDown(focus) => {
+                layout.move_down_or_to_workspace_down(focus)
+            }
+            Op::MoveWindowUpOrToWorkspaceUp(focus) => layout.move_up_or_to_workspace_up(focus),
             Op::ConsumeOrExpelWindowLeft { id } => {
                 let id = id.filter(|id| layout.has_window(id));
                 layout.consume_or_expel_window_left(id.as_ref());
@@ -1214,7 +1240,9 @@ impl Op {
             }
             Op::ConsumeWindowIntoColumn => layout.consume_into_column(),
             Op::ExpelWindowFromColumn => layout.expel_from_column(),
-            Op::SwapWindowInDirection(direction) => layout.swap_window_in_direction(direction),
+            Op::SwapWindowInDirection { direction, focus } => {
+                layout.swap_window_in_direction(direction, focus)
+            }
             Op::ToggleColumnTabbedDisplay => layout.toggle_column_tabbed_display(),
             Op::SetColumnDisplay(display) => layout.set_column_display(display),
             Op::CenterColumn => layout.center_column(),
@@ -1876,10 +1904,10 @@ fn operations_dont_panic() {
         Op::FocusWindowDownOrColumnLeft,
         Op::FocusWindowDownOrColumnRight,
         Op::FocusWindowOrWorkspaceDown,
-        Op::MoveColumnLeft,
-        Op::MoveColumnRight,
-        Op::MoveColumnLeftOrToMonitorLeft(0),
-        Op::MoveColumnRightOrToMonitorRight(1),
+        Op::MoveColumnLeft { focus: true },
+        Op::MoveColumnRight { focus: true },
+        Op::MoveColumnLeftOrToMonitorLeft { id: 0, focus: true },
+        Op::MoveColumnRightOrToMonitorRight { id: 1, focus: true },
         Op::ConsumeWindowIntoColumn,
         Op::ExpelWindowFromColumn,
         Op::CenterColumn,
@@ -1901,10 +1929,10 @@ fn operations_dont_panic() {
         Op::MoveColumnToWorkspaceUp(true),
         Op::MoveColumnToWorkspace(1, true),
         Op::MoveColumnToWorkspace(2, true),
-        Op::MoveWindowDown,
-        Op::MoveWindowDownOrToWorkspaceDown,
-        Op::MoveWindowUp,
-        Op::MoveWindowUpOrToWorkspaceUp,
+        Op::MoveWindowDown(true),
+        Op::MoveWindowDownOrToWorkspaceDown(true),
+        Op::MoveWindowUp(true),
+        Op::MoveWindowUpOrToWorkspaceUp(true),
         Op::ConsumeOrExpelWindowLeft { id: None },
         Op::ConsumeOrExpelWindowRight { id: None },
         Op::MoveWorkspaceToOutput(1),
@@ -2050,10 +2078,10 @@ fn operations_from_starting_state_dont_panic() {
         Op::FocusWindowDownOrColumnLeft,
         Op::FocusWindowDownOrColumnRight,
         Op::FocusWindowOrWorkspaceDown,
-        Op::MoveColumnLeft,
-        Op::MoveColumnRight,
-        Op::MoveColumnLeftOrToMonitorLeft(0),
-        Op::MoveColumnRightOrToMonitorRight(1),
+        Op::MoveColumnLeft { focus: true },
+        Op::MoveColumnRight { focus: true },
+        Op::MoveColumnLeftOrToMonitorLeft { id: 0, focus: true },
+        Op::MoveColumnRightOrToMonitorRight { id: 1, focus: true },
         Op::ConsumeWindowIntoColumn,
         Op::ExpelWindowFromColumn,
         Op::CenterColumn,
@@ -2081,10 +2109,10 @@ fn operations_from_starting_state_dont_panic() {
         Op::MoveColumnToWorkspace(1, true),
         Op::MoveColumnToWorkspace(2, true),
         Op::MoveColumnToWorkspace(3, true),
-        Op::MoveWindowDown,
-        Op::MoveWindowDownOrToWorkspaceDown,
-        Op::MoveWindowUp,
-        Op::MoveWindowUpOrToWorkspaceUp,
+        Op::MoveWindowDown(true),
+        Op::MoveWindowDownOrToWorkspaceDown(true),
+        Op::MoveWindowUp(true),
+        Op::MoveWindowUpOrToWorkspaceUp(true),
         Op::ConsumeOrExpelWindowLeft { id: None },
         Op::ConsumeOrExpelWindowRight { id: None },
         Op::ToggleColumnTabbedDisplay,

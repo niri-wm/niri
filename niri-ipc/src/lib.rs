@@ -468,17 +468,68 @@ pub enum Action {
     /// Focus the window above or the bottommost window.
     FocusWindowUpOrBottom {},
     /// Move the focused column to the left.
-    MoveColumnLeft {},
+    MoveColumnLeft {
+        /// Whether the focus should follow the moved column.
+        ///
+        /// If `true` (the default), the focus will follow the column to the left.
+        /// If `false`, the focus will remain on the original column index.
+        #[serde(default = "default_true")]
+        #[cfg_attr(feature = "clap", arg(long, action = clap::ArgAction::Set, default_value_t = true))]
+        focus: bool,
+    },
     /// Move the focused column to the right.
-    MoveColumnRight {},
+    MoveColumnRight {
+        /// Whether the focus should follow the moved column.
+        ///
+        /// If `true` (the default), the focus will follow the column to the right.
+        /// If `false`, the focus will remain on the original column index.
+        #[serde(default = "default_true")]
+        #[cfg_attr(feature = "clap", arg(long, action = clap::ArgAction::Set, default_value_t = true))]
+        focus: bool,
+    },
     /// Move the focused column to the start of the workspace.
-    MoveColumnToFirst {},
+    MoveColumnToFirst {
+        /// Whether the focus should follow the moved column.
+        ///
+        /// If `true` (the default), the focus will follow the column to the beginning of the
+        /// workspace.
+        /// If `false`, the focus will remain on the original column index.
+        #[serde(default = "default_true")]
+        #[cfg_attr(feature = "clap", arg(long, action = clap::ArgAction::Set, default_value_t = true))]
+        focus: bool,
+    },
     /// Move the focused column to the end of the workspace.
-    MoveColumnToLast {},
+    MoveColumnToLast {
+        /// Whether the focus should follow the moved column.
+        ///
+        /// If `true` (the default), the focus will follow the column to the end of the workspace.
+        /// If `false`, the focus will remain on the original column index.
+        #[serde(default = "default_true")]
+        #[cfg_attr(feature = "clap", arg(long, action = clap::ArgAction::Set, default_value_t = true))]
+        focus: bool,
+    },
     /// Move the focused column to the left or to the monitor to the left.
-    MoveColumnLeftOrToMonitorLeft {},
+    MoveColumnLeftOrToMonitorLeft {
+        /// Whether the focus should follow the moved column.
+        ///
+        /// If `true` (the default), the focus will follow the column to the left or to the monitor
+        /// on the left.
+        /// If `false`, the focus will remain on the original column index and workspace.
+        #[serde(default = "default_true")]
+        #[cfg_attr(feature = "clap", arg(long, action = clap::ArgAction::Set, default_value_t = true))]
+        focus: bool,
+    },
     /// Move the focused column to the right or to the monitor to the right.
-    MoveColumnRightOrToMonitorRight {},
+    MoveColumnRightOrToMonitorRight {
+        /// Whether the focus should follow the moved column.
+        ///
+        /// If `true` (the default), the focus will follow the column to the right or to the
+        /// monitor on the right.
+        /// If `false`, the focus will remain on the original column index and workspace.
+        #[serde(default = "default_true")]
+        #[cfg_attr(feature = "clap", arg(long, action = clap::ArgAction::Set, default_value_t = true))]
+        focus: bool,
+    },
     /// Move the focused column to a specific index on its workspace.
     MoveColumnToIndex {
         /// New index for the column.
@@ -486,15 +537,55 @@ pub enum Action {
         /// The index starts from 1 for the first column.
         #[cfg_attr(feature = "clap", arg())]
         index: usize,
+        /// Whether the focus should follow the moved column.
+        ///
+        /// If `true` (the default), the focus will follow the column to its new index.
+        /// If `false`, the focus will remain on the original column index.
+        #[serde(default = "default_true")]
+        #[cfg_attr(feature = "clap", arg(long, action = clap::ArgAction::Set, default_value_t = true))]
+        focus: bool,
     },
     /// Move the focused window down in a column.
-    MoveWindowDown {},
+    MoveWindowDown {
+        /// Whether the focus should follow the moved window.
+        ///
+        /// If `true` (the default), the focus will follow the window down.
+        /// If `false`, the focus will remain on the original tile index.
+        #[serde(default = "default_true")]
+        #[cfg_attr(feature = "clap", arg(long, action = clap::ArgAction::Set, default_value_t = true))]
+        focus: bool,
+    },
     /// Move the focused window up in a column.
-    MoveWindowUp {},
+    MoveWindowUp {
+        /// Whether the focus should follow the moved window.
+        ///
+        /// If `true` (the default), the focus will follow the window up.
+        /// If `false`, the focus will remain on the original tile index.
+        #[serde(default = "default_true")]
+        #[cfg_attr(feature = "clap", arg(long, action = clap::ArgAction::Set, default_value_t = true))]
+        focus: bool,
+    },
     /// Move the focused window down in a column or to the workspace below.
-    MoveWindowDownOrToWorkspaceDown {},
+    MoveWindowDownOrToWorkspaceDown {
+        /// Whether the focus should follow the moved window.
+        ///
+        /// If `true` (the default), the focus will follow the window down or to a new workspace
+        /// down.
+        /// If `false`, the focus will remain on the original tile index and workspace.
+        #[serde(default = "default_true")]
+        #[cfg_attr(feature = "clap", arg(long, action = clap::ArgAction::Set, default_value_t = true))]
+        focus: bool,
+    },
     /// Move the focused window up in a column or to the workspace above.
-    MoveWindowUpOrToWorkspaceUp {},
+    MoveWindowUpOrToWorkspaceUp {
+        /// Whether the focus should follow the moved column.
+        ///
+        /// If `true` (the default), the focus will follow the window up or to a new workspace up.
+        /// If `false`, the focus will remain on the original tile index and workspace.
+        #[serde(default = "default_true")]
+        #[cfg_attr(feature = "clap", arg(long, action = clap::ArgAction::Set, default_value_t = true))]
+        focus: bool,
+    },
     /// Consume or expel a window left.
     #[cfg_attr(
         feature = "clap",
@@ -524,9 +615,25 @@ pub enum Action {
     /// Expel the bottom window from the focused column.
     ExpelWindowFromColumn {},
     /// Swap focused window with one to the right.
-    SwapWindowRight {},
+    SwapWindowRight {
+        /// Whether the focus should follow the currently focused window.
+        ///
+        /// If `true` (the default), the focus will follow the window to the right.
+        /// If `false`, the focus will switch to the window coming from the right.
+        #[serde(default = "default_true")]
+        #[cfg_attr(feature = "clap", arg(long, action = clap::ArgAction::Set, default_value_t = true))]
+        focus: bool,
+    },
     /// Swap focused window with one to the left.
-    SwapWindowLeft {},
+    SwapWindowLeft {
+        /// Whether the focus should follow the currently focused window.
+        ///
+        /// If `true` (the default), the focus will follow the window to the left.
+        /// If `false`, the focus will switch to the window coming from the left.
+        #[serde(default = "default_true")]
+        #[cfg_attr(feature = "clap", arg(long, action = clap::ArgAction::Set, default_value_t = true))]
+        focus: bool,
+    },
     /// Toggle the focused column between normal and tabbed display.
     ToggleColumnTabbedDisplay {},
     /// Set the display mode of the focused column.
@@ -709,17 +816,71 @@ pub enum Action {
         output: String,
     },
     /// Move the focused window to the monitor to the left.
-    MoveWindowToMonitorLeft {},
+    MoveWindowToMonitorLeft {
+        /// Whether the focus should follow the moved window.
+        ///
+        /// If `true` (the default) and the window to move is focused, the focus will follow the
+        /// window to the new monitor. If `false`, the focus will remain on the original
+        /// monitor.
+        #[serde(default = "default_true")]
+        #[cfg_attr(feature = "clap", arg(long, action = clap::ArgAction::Set, default_value_t = true))]
+        focus: bool,
+    },
     /// Move the focused window to the monitor to the right.
-    MoveWindowToMonitorRight {},
+    MoveWindowToMonitorRight {
+        /// Whether the focus should follow the moved window.
+        ///
+        /// If `true` (the default) and the window to move is focused, the focus will follow the
+        /// window to the new monitor. If `false`, the focus will remain on the original
+        /// monitor.
+        #[serde(default = "default_true")]
+        #[cfg_attr(feature = "clap", arg(long, action = clap::ArgAction::Set, default_value_t = true))]
+        focus: bool,
+    },
     /// Move the focused window to the monitor below.
-    MoveWindowToMonitorDown {},
+    MoveWindowToMonitorDown {
+        /// Whether the focus should follow the moved window.
+        ///
+        /// If `true` (the default) and the window to move is focused, the focus will follow the
+        /// window to the new monitor. If `false`, the focus will remain on the original
+        /// monitor.
+        #[serde(default = "default_true")]
+        #[cfg_attr(feature = "clap", arg(long, action = clap::ArgAction::Set, default_value_t = true))]
+        focus: bool,
+    },
     /// Move the focused window to the monitor above.
-    MoveWindowToMonitorUp {},
+    MoveWindowToMonitorUp {
+        /// Whether the focus should follow the moved window.
+        ///
+        /// If `true` (the default) and the window to move is focused, the focus will follow the
+        /// window to the new monitor. If `false`, the focus will remain on the original
+        /// monitor.
+        #[serde(default = "default_true")]
+        #[cfg_attr(feature = "clap", arg(long, action = clap::ArgAction::Set, default_value_t = true))]
+        focus: bool,
+    },
     /// Move the focused window to the previous monitor.
-    MoveWindowToMonitorPrevious {},
+    MoveWindowToMonitorPrevious {
+        /// Whether the focus should follow the moved window.
+        ///
+        /// If `true` (the default) and the window to move is focused, the focus will follow the
+        /// window to the new monitor. If `false`, the focus will remain on the original
+        /// monitor.
+        #[serde(default = "default_true")]
+        #[cfg_attr(feature = "clap", arg(long, action = clap::ArgAction::Set, default_value_t = true))]
+        focus: bool,
+    },
     /// Move the focused window to the next monitor.
-    MoveWindowToMonitorNext {},
+    MoveWindowToMonitorNext {
+        /// Whether the focus should follow the moved window.
+        ///
+        /// If `true` (the default) and the window to move is focused, the focus will follow the
+        /// window to the new monitor. If `false`, the focus will remain on the original
+        /// monitor.
+        #[serde(default = "default_true")]
+        #[cfg_attr(feature = "clap", arg(long, action = clap::ArgAction::Set, default_value_t = true))]
+        focus: bool,
+    },
     /// Move a window to a specific monitor.
     #[cfg_attr(
         feature = "clap",
@@ -735,24 +896,95 @@ pub enum Action {
         /// The target output name.
         #[cfg_attr(feature = "clap", arg())]
         output: String,
+
+        /// Whether the focus should follow the moved window.
+        ///
+        /// If `true` (the default) and the window to move is focused, the focus will follow the
+        /// window to the new monitor. If `false`, the focus will remain on the original
+        /// monitor.
+        #[serde(default = "default_true")]
+        #[cfg_attr(feature = "clap", arg(long, action = clap::ArgAction::Set, default_value_t = true))]
+        focus: bool,
     },
     /// Move the focused column to the monitor to the left.
-    MoveColumnToMonitorLeft {},
+    MoveColumnToMonitorLeft {
+        /// Whether the focus should follow the moved column.
+        ///
+        /// If `true` (the default) and the column to move is focused, the focus will follow the
+        /// column to the new monitor. If `false`, the focus will remain on the original
+        /// monitor.
+        #[serde(default = "default_true")]
+        #[cfg_attr(feature = "clap", arg(long, action = clap::ArgAction::Set, default_value_t = true))]
+        focus: bool,
+    },
     /// Move the focused column to the monitor to the right.
-    MoveColumnToMonitorRight {},
+    MoveColumnToMonitorRight {
+        /// Whether the focus should follow the moved column.
+        ///
+        /// If `true` (the default) and the column to move is focused, the focus will follow the
+        /// column to the new monitor. If `false`, the focus will remain on the original
+        /// monitor.
+        #[serde(default = "default_true")]
+        #[cfg_attr(feature = "clap", arg(long, action = clap::ArgAction::Set, default_value_t = true))]
+        focus: bool,
+    },
     /// Move the focused column to the monitor below.
-    MoveColumnToMonitorDown {},
+    MoveColumnToMonitorDown {
+        /// Whether the focus should follow the moved column.
+        ///
+        /// If `true` (the default) and the column to move is focused, the focus will follow the
+        /// column to the new monitor. If `false`, the focus will remain on the original
+        /// monitor.
+        #[serde(default = "default_true")]
+        #[cfg_attr(feature = "clap", arg(long, action = clap::ArgAction::Set, default_value_t = true))]
+        focus: bool,
+    },
     /// Move the focused column to the monitor above.
-    MoveColumnToMonitorUp {},
+    MoveColumnToMonitorUp {
+        /// Whether the focus should follow the moved column.
+        ///
+        /// If `true` (the default) and the column to move is focused, the focus will follow the
+        /// column to the new monitor. If `false`, the focus will remain on the original
+        /// monitor.
+        #[serde(default = "default_true")]
+        #[cfg_attr(feature = "clap", arg(long, action = clap::ArgAction::Set, default_value_t = true))]
+        focus: bool,
+    },
     /// Move the focused column to the previous monitor.
-    MoveColumnToMonitorPrevious {},
+    MoveColumnToMonitorPrevious {
+        /// Whether the focus should follow the moved column.
+        ///
+        /// If `true` (the default) and the column to move is focused, the focus will follow the
+        /// column to the new monitor. If `false`, the focus will remain on the original
+        /// monitor.
+        #[serde(default = "default_true")]
+        #[cfg_attr(feature = "clap", arg(long, action = clap::ArgAction::Set, default_value_t = true))]
+        focus: bool,
+    },
     /// Move the focused column to the next monitor.
-    MoveColumnToMonitorNext {},
+    MoveColumnToMonitorNext {
+        /// Whether the focus should follow the moved column.
+        ///
+        /// If `true` (the default) and the column to move is focused, the focus will follow the
+        /// column to the new monitor. If `false`, the focus will remain on the original
+        /// monitor.
+        #[serde(default = "default_true")]
+        #[cfg_attr(feature = "clap", arg(long, action = clap::ArgAction::Set, default_value_t = true))]
+        focus: bool,
+    },
     /// Move the focused column to a specific monitor.
     MoveColumnToMonitor {
         /// The target output name.
         #[cfg_attr(feature = "clap", arg())]
         output: String,
+        /// Whether the focus should follow the moved column.
+        ///
+        /// If `true` (the default) and the column to move is focused, the focus will follow the
+        /// column to the new monitor. If `false`, the focus will remain on the original
+        /// monitor.
+        #[serde(default = "default_true")]
+        #[cfg_attr(feature = "clap", arg(long, action = clap::ArgAction::Set, default_value_t = true))]
+        focus: bool,
     },
     /// Change the width of a window.
     #[cfg_attr(
