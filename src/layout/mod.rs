@@ -54,7 +54,7 @@ use workspace::{WorkspaceAddWindowTarget, WorkspaceId};
 
 pub use self::monitor::MonitorRenderElement;
 use self::monitor::{Monitor, WorkspaceSwitch};
-use self::workspace::{OutputId, Workspace};
+use self::workspace::{FloatingHidden, OutputId, Workspace};
 use crate::animation::{Animation, Clock};
 use crate::input::swipe_tracker::SwipeTracker;
 use crate::layout::scrolling::ScrollDirection;
@@ -371,6 +371,11 @@ pub struct Layout<W: LayoutElement> {
     overview_open: bool,
     /// The overview zoom progress.
     overview_progress: Option<OverviewProgress>,
+    /// Whether floating windows are hidden on all workspaces.
+    ///
+    /// Shared with every monitor and workspace. A workspace clears it when it focuses one of its
+    /// floating windows.
+    floating_hidden: FloatingHidden,
     /// Configurable properties of the layout.
     options: Rc<Options>,
 }
@@ -728,18 +733,25 @@ impl<W: LayoutElement> Layout<W> {
             update_render_elements_time: Duration::ZERO,
             overview_open: false,
             overview_progress: None,
+            floating_hidden: FloatingHidden::default(),
             options: Rc::new(options),
         }
     }
 
     fn with_options_and_workspaces(clock: Clock, config: &Config, options: Options) -> Self {
         let opts = Rc::new(options);
+        let floating_hidden = FloatingHidden::default();
 
         let workspaces = config
             .workspaces
             .iter()
             .map(|ws| {
-                Workspace::new_with_config_no_outputs(Some(ws.clone()), clock.clone(), opts.clone())
+                Workspace::new_with_config_no_outputs(
+                    Some(ws.clone()),
+                    clock.clone(),
+                    floating_hidden.clone(),
+                    opts.clone(),
+                )
             })
             .collect();
 
@@ -753,6 +765,7 @@ impl<W: LayoutElement> Layout<W> {
             update_render_elements_time: Duration::ZERO,
             overview_open: false,
             overview_progress: None,
+            floating_hidden,
             options: opts,
         }
     }
@@ -839,6 +852,7 @@ impl<W: LayoutElement> Layout<W> {
                     workspaces,
                     ws_id_to_activate,
                     self.clock.clone(),
+                    self.floating_hidden.clone(),
                     self.options.clone(),
                     layout_config,
                 );
@@ -860,6 +874,7 @@ impl<W: LayoutElement> Layout<W> {
                     workspaces,
                     ws_id_to_activate,
                     self.clock.clone(),
+                    self.floating_hidden.clone(),
                     self.options.clone(),
                     layout_config,
                 );
@@ -1081,6 +1096,7 @@ impl<W: LayoutElement> Layout<W> {
                         if workspaces.is_empty() {
                             workspaces.push(Workspace::new_no_outputs(
                                 self.clock.clone(),
+                                self.floating_hidden.clone(),
                                 self.options.clone(),
                             ));
                         }
@@ -1111,6 +1127,7 @@ impl<W: LayoutElement> Layout<W> {
                             if workspaces.is_empty() {
                                 workspaces.push(Workspace::new_no_outputs(
                                     self.clock.clone(),
+                                    self.floating_hidden.clone(),
                                     self.options.clone(),
                                 ));
                             }
@@ -2546,6 +2563,10 @@ impl<W: LayoutElement> Layout<W> {
                         seen_workspace_name.push(name.clone());
                     }
 
+                    assert!(
+                        workspace.floating_hidden.ptr_eq(&self.floating_hidden),
+                        "workspace must share the layout floating hidden flag"
+                    );
                     workspace.verify_invariants(move_win_id.as_ref());
                 }
 
@@ -2560,6 +2581,10 @@ impl<W: LayoutElement> Layout<W> {
 
         for (idx, monitor) in monitors.iter().enumerate() {
             assert_eq!(self.clock, monitor.clock);
+            assert!(
+                monitor.floating_hidden.ptr_eq(&self.floating_hidden),
+                "monitor must share the layout floating hidden flag"
+            );
             assert_eq!(
                 monitor.base_options, self.options,
                 "monitor base options must be synchronized with layout"
@@ -2605,6 +2630,10 @@ impl<W: LayoutElement> Layout<W> {
                     seen_workspace_name.push(name.clone());
                 }
 
+                assert!(
+                    workspace.floating_hidden.ptr_eq(&self.floating_hidden),
+                    "workspace must share the layout floating hidden flag"
+                );
                 workspace.verify_invariants(move_win_id.as_ref());
 
                 let has_view_offset_gesture = workspace.scrolling().view_offset().is_gesture();
@@ -2952,6 +2981,7 @@ impl<W: LayoutElement> Layout<W> {
         }
 
         let clock = self.clock.clone();
+        let floating_hidden = self.floating_hidden.clone();
         let options = self.options.clone();
 
         match &mut self.monitor_set {
@@ -2979,13 +3009,18 @@ impl<W: LayoutElement> Layout<W> {
                     mon.output.clone(),
                     Some(ws_config.clone()),
                     clock,
+                    floating_hidden,
                     options,
                 );
                 mon.insert_workspace(ws, 0, false);
             }
             MonitorSet::NoOutputs { workspaces } => {
-                let ws =
-                    Workspace::new_with_config_no_outputs(Some(ws_config.clone()), clock, options);
+                let ws = Workspace::new_with_config_no_outputs(
+                    Some(ws_config.clone()),
+                    clock,
+                    floating_hidden,
+                    options,
+                );
                 workspaces.insert(0, ws);
             }
         }
@@ -3265,6 +3300,12 @@ impl<W: LayoutElement> Layout<W> {
     }
 
     pub fn focus_floating(&mut self) {
+        if self.floating_hidden.get() {
+            // Unhides on every workspace and focuses floating on the active one, if it has any.
+            self.unhide_floating_layout();
+            return;
+        }
+
         let Some(workspace) = self.active_workspace_mut() else {
             return;
         };
@@ -3286,24 +3327,37 @@ impl<W: LayoutElement> Layout<W> {
     }
 
     pub fn hide_floating_layout(&mut self) {
-        let Some(workspace) = self.active_workspace_mut() else {
+        if self.floating_hidden.get() {
             return;
-        };
-        workspace.hide_floating_layout();
+        }
+
+        self.floating_hidden.set(true);
+        for ws in self.workspaces_mut() {
+            ws.sync_floating_hidden(false);
+        }
     }
 
     pub fn unhide_floating_layout(&mut self) {
-        let Some(workspace) = self.active_workspace_mut() else {
+        if !self.floating_hidden.get() {
             return;
-        };
-        workspace.unhide_floating_layout();
+        }
+
+        self.floating_hidden.set(false);
+
+        // Unhiding focuses the floating windows on the active workspace.
+        let active_ws_id = self.active_workspace().map(|ws| ws.id());
+        for ws in self.workspaces_mut() {
+            let focus_floating = Some(ws.id()) == active_ws_id;
+            ws.sync_floating_hidden(focus_floating);
+        }
     }
 
     pub fn toggle_floating_layout(&mut self) {
-        let Some(workspace) = self.active_workspace_mut() else {
-            return;
-        };
-        workspace.toggle_floating_layout();
+        if self.floating_hidden.get() {
+            self.unhide_floating_layout();
+        } else {
+            self.hide_floating_layout();
+        }
     }
 
     pub fn move_floating_window(
@@ -4417,6 +4471,7 @@ impl<W: LayoutElement> Layout<W> {
                 if workspaces.is_empty() {
                     workspaces.push(Workspace::new_no_outputs(
                         self.clock.clone(),
+                        self.floating_hidden.clone(),
                         self.options.clone(),
                     ));
                 }

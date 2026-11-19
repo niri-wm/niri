@@ -3291,6 +3291,164 @@ fn windows_on_other_workspaces_remain_activated() {
     assert!(win.0.pending_activated.get());
 }
 
+/// Two workspaces, each with one tiled and one floating window.
+fn hidden_floating_setup_ops() -> [Op; 7] {
+    [
+        Op::AddOutput(0),
+        Op::AddWindow {
+            params: TestWindowParams::new(0),
+        },
+        Op::AddWindow {
+            params: TestWindowParams {
+                is_floating: true,
+                ..TestWindowParams::new(1)
+            },
+        },
+        Op::FocusWorkspace(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+        Op::AddWindow {
+            params: TestWindowParams {
+                is_floating: true,
+                ..TestWindowParams::new(3)
+            },
+        },
+        Op::HideFloatingLayout,
+    ]
+}
+
+fn floating_visible_per_workspace(layout: &Layout<TestWindow>) -> Vec<bool> {
+    layout
+        .workspaces()
+        .filter(|(_, _, ws)| ws.has_windows())
+        .map(|(_, _, ws)| ws.is_floating_visible())
+        .collect()
+}
+
+fn focused_id(layout: &Layout<TestWindow>) -> Option<usize> {
+    layout.focus().map(|win| *win.id())
+}
+
+#[test]
+fn hide_floating_windows_applies_to_all_workspaces() {
+    let mut layout = check_ops(hidden_floating_setup_ops());
+    assert_eq!(floating_visible_per_workspace(&layout), [false, false]);
+    assert_eq!(focused_id(&layout), Some(2));
+
+    check_ops_on_layout(&mut layout, [Op::FocusWorkspace(0)]);
+    assert_eq!(floating_visible_per_workspace(&layout), [false, false]);
+    assert_eq!(focused_id(&layout), Some(0));
+}
+
+#[test]
+fn unhide_floating_windows_focuses_floating_on_active_workspace() {
+    let mut layout = check_ops(hidden_floating_setup_ops());
+    check_ops_on_layout(&mut layout, [Op::UnhideFloatingLayout]);
+    assert_eq!(floating_visible_per_workspace(&layout), [true, true]);
+    assert_eq!(focused_id(&layout), Some(3));
+
+    check_ops_on_layout(&mut layout, [Op::FocusWorkspace(0)]);
+    assert_eq!(focused_id(&layout), Some(0));
+}
+
+#[test]
+fn toggle_floating_windows_round_trips() {
+    let mut layout = check_ops(hidden_floating_setup_ops());
+    check_ops_on_layout(&mut layout, [Op::ToggleFloatingLayout]);
+    assert_eq!(floating_visible_per_workspace(&layout), [true, true]);
+    check_ops_on_layout(&mut layout, [Op::ToggleFloatingLayout]);
+    assert_eq!(floating_visible_per_workspace(&layout), [false, false]);
+}
+
+#[test]
+fn focusing_hidden_floating_window_unhides_on_all_workspaces() {
+    let mut layout = check_ops(hidden_floating_setup_ops());
+    check_ops_on_layout(&mut layout, [Op::FocusWindow(1)]);
+    assert_eq!(floating_visible_per_workspace(&layout), [true, true]);
+    assert_eq!(focused_id(&layout), Some(1));
+}
+
+#[test]
+fn switch_focus_to_hidden_floating_unhides() {
+    let mut layout = check_ops(hidden_floating_setup_ops());
+    check_ops_on_layout(&mut layout, [Op::SwitchFocusFloatingTiling]);
+    assert_eq!(floating_visible_per_workspace(&layout), [true, true]);
+    assert_eq!(focused_id(&layout), Some(3));
+}
+
+#[test]
+fn focus_floating_unhides_hidden_floating_windows() {
+    let mut layout = check_ops(hidden_floating_setup_ops());
+    check_ops_on_layout(&mut layout, [Op::FocusFloating]);
+    assert_eq!(floating_visible_per_workspace(&layout), [true, true]);
+    assert_eq!(focused_id(&layout), Some(3));
+}
+
+#[test]
+fn focus_floating_unhides_from_workspace_without_floating_windows() {
+    let mut layout = check_ops(hidden_floating_setup_ops());
+    check_ops_on_layout(
+        &mut layout,
+        [
+            Op::FocusWorkspace(2),
+            Op::AddWindow {
+                params: TestWindowParams::new(4),
+            },
+            Op::FocusFloating,
+        ],
+    );
+    assert_eq!(floating_visible_per_workspace(&layout), [true, true, true]);
+    assert_eq!(focused_id(&layout), Some(4));
+}
+
+#[test]
+fn adding_focused_floating_window_unhides() {
+    let mut layout = check_ops(hidden_floating_setup_ops());
+    check_ops_on_layout(
+        &mut layout,
+        [Op::AddWindow {
+            params: TestWindowParams {
+                is_floating: true,
+                ..TestWindowParams::new(4)
+            },
+        }],
+    );
+    assert_eq!(floating_visible_per_workspace(&layout), [true, true]);
+    assert_eq!(focused_id(&layout), Some(4));
+}
+
+#[test]
+fn closing_last_tiled_window_keeps_floating_hidden() {
+    let mut layout = check_ops(hidden_floating_setup_ops());
+    check_ops_on_layout(&mut layout, [Op::CloseWindow(2)]);
+    assert_eq!(floating_visible_per_workspace(&layout), [false, false]);
+    assert_eq!(focused_id(&layout), None);
+
+    // With nothing tiled, unhiding focuses the floating window
+    check_ops_on_layout(&mut layout, [Op::UnhideFloatingLayout]);
+    assert_eq!(focused_id(&layout), Some(3));
+}
+
+#[test]
+fn new_workspaces_start_with_floating_hidden() {
+    let mut layout = check_ops(hidden_floating_setup_ops());
+    check_ops_on_layout(
+        &mut layout,
+        [
+            Op::AddOutput(1),
+            Op::FocusOutput(1),
+            Op::AddWindow {
+                params: TestWindowParams::new(4),
+            },
+            Op::FocusOutput(0),
+        ],
+    );
+    assert!(floating_visible_per_workspace(&layout)
+        .iter()
+        .all(|visible| !visible));
+}
+
 #[test]
 fn stacking_add_parent_brings_up_child() {
     let ops = [
