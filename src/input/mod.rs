@@ -2527,19 +2527,19 @@ impl State {
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
-            Action::ToggleFloatingLayout => {
+            Action::ToggleFloatingWindows => {
                 self.niri.layout.toggle_floating_layout();
                 self.maybe_warp_cursor_to_focus();
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
-            Action::HideFloatingLayout => {
+            Action::HideFloatingWindows => {
                 self.niri.layout.hide_floating_layout();
                 self.maybe_warp_cursor_to_focus();
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
-            Action::UnhideFloatingLayout => {
+            Action::UnhideFloatingWindows => {
                 self.niri.layout.unhide_floating_layout();
                 self.maybe_warp_cursor_to_focus();
                 // FIXME: granular

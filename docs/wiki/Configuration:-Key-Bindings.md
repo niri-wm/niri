@@ -581,11 +581,11 @@ binds {
 The toggle state is combined with the [`off` setting](./Configuration:-Input.md#pointing-devices) in the config: both the config and the toggle must allow the touchpad for it to be enabled.
 The toggle state resets when niri restarts, and applies to newly hot-plugged touchpads.
 
-### `toggle-floating-layout`, `hide-floating-layout`, `unhide-floating-layout`
+### `toggle-floating-windows`, `hide-floating-windows`, `unhide-floating-windows`
 
 <sup>Since: next release</sup>
 
-Quickly toggle the floating layout visibility on or off.
+Quickly toggle the visibility of floating windows on or off.
 
 Useful for quickly "peeking" at a tiling window behind a floating window without having to close or move the floating window.
 If the floating layout is hidden and a new floating window appears, or if you switch focus to the floating layout, it will automatically unhide itself.
@@ -593,12 +593,12 @@ If the floating layout is hidden and a new floating window appears, or if you sw
 ```kdl
 binds {
     // Press to hide or unhide.
-    Mod+X { toggle-floating-layout; }
+    Mod+X { toggle-floating-windows; }
 
     // Or, hide while the key is pressed.
     Mod+Z {
-        press { hide-floating-layout; }
-        release { unhide-floating-layout; }
+        press { hide-floating-windows; }
+        release { unhide-floating-windows; }
     }
 }
 ```
