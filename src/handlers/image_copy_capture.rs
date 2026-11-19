@@ -1,6 +1,5 @@
 use std::time::Duration;
 
-use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::allocator::{Buffer as _, Fourcc, Modifier};
 use smithay::backend::drm::DrmNode;
 use smithay::backend::renderer::damage::OutputDamageTracker;
@@ -13,9 +12,7 @@ use smithay::reexports::wayland_server::protocol::wl_buffer::WlBuffer;
 use smithay::reexports::wayland_server::protocol::wl_pointer::WlPointer;
 use smithay::reexports::wayland_server::protocol::wl_shm;
 use smithay::reexports::wayland_server::{Client, DisplayHandle};
-use smithay::utils::{
-    Buffer as BufferCoords, Logical, Physical, Point, Rectangle, Scale, Size, Transform,
-};
+use smithay::utils::{Buffer as BufferCoords, Point, Rectangle, Scale, Size, Transform};
 use smithay::wayland::dmabuf::get_dmabuf;
 use smithay::wayland::image_capture_source::{
     ImageCaptureSource, ImageCaptureSourceHandler, OutputCaptureSourceHandler,
@@ -28,9 +25,10 @@ use smithay::wayland::image_copy_capture::{
 use smithay::wayland::shm;
 use wayland_backend::server::Credentials;
 
-use crate::cursor::{RenderCursor, XCursor};
 use crate::niri::{Niri, State};
+use crate::render_helpers::CaptureBuffer;
 use crate::utils::{get_credentials_for_client, CastSessionId, CastStreamId};
+use crate::window::mapped::{Mapped, MappedId};
 
 /// Output capture session.
 pub struct ImageCopySession {
@@ -44,6 +42,11 @@ pub struct ImageCopySession {
     pub stream_id: CastStreamId,
     /// Credentials of the capturing client, if known.
     pub credentials: Option<Credentials>,
+    /// Number of frames requested so far (saturating).
+    ///
+    /// The session is reported as a cast only from the second frame, so that
+    /// one-shot screenshot tools like grim don't show up.
+    pub frames_requested: u8,
 }
 
 /// Cursor capture session of an output.
@@ -59,7 +62,26 @@ pub struct ImageCopyCursorSession {
     pub stream_id: CastStreamId,
     /// Credentials of the capturing client, if known.
     pub credentials: Option<Credentials>,
+    /// Number of frames requested so far (saturating), see `ImageCopySession`.
+    pub frames_requested: u8,
 }
+
+impl ImageCopySession {
+    /// Whether this session is reported as a cast.
+    pub fn is_cast(&self) -> bool {
+        self.frames_requested >= 2
+    }
+}
+
+impl ImageCopyCursorSession {
+    /// Whether this session is reported as a cast.
+    pub fn is_cast(&self) -> bool {
+        self.frames_requested >= 2
+    }
+}
+
+#[derive(Copy, Clone)]
+pub struct WindowSourceMappedId(pub MappedId);
 
 /// Credentials for the client which created a capture session.
 ///
@@ -80,9 +102,25 @@ fn source_session_id(source: &ImageCaptureSource) -> CastSessionId {
 }
 
 /// Output captured by a session, or `None` if it's gone (sessions can outlive
-/// their output).
+/// their output) or this is not an output source.
 pub fn source_output(source: &ImageCaptureSource) -> Option<Output> {
     source.user_data().get::<WeakOutput>()?.upgrade()
+}
+
+/// Id of the window captured by a session, or `None` if it doesn't correspond to one.
+pub fn source_mapped_id(source: &ImageCaptureSource) -> Option<MappedId> {
+    Some(source.user_data().get::<WindowSourceMappedId>()?.0)
+}
+
+/// Output of a session's source.
+pub fn source_session_output(niri: &Niri, source: &ImageCaptureSource) -> Option<Output> {
+    if let Some(output) = source_output(source) {
+        return Some(output);
+    }
+
+    let id = source_mapped_id(source)?;
+    let (_, out) = niri.find_mapped_output_by_id(id)?;
+    Some(out?.clone())
 }
 
 /// Buffer constraints for capturing an output.
@@ -102,125 +140,78 @@ pub fn output_capture_constraints(
     let mode = output.current_mode()?;
     let size = Size::<i32, BufferCoords>::from((mode.size.w, mode.size.h));
 
-    let dma = (|| {
-        let node = render_node?;
-        let egl = renderer.egl_context();
-
-        // Offer all formats the renderer can draw into to avoid unnecessary
-        // conversions, preserving the original order (many clients depend on
-        // the order being stable to select the same format when renegotiating).
-        let mut formats: Vec<(Fourcc, Vec<Modifier>)> = Vec::new();
-        for format in egl.dmabuf_render_formats().iter() {
-            match formats.iter_mut().find(|(code, _)| *code == format.code) {
-                Some((_, modifiers)) => modifiers.push(format.modifier),
-                None => formats.push((format.code, vec![format.modifier])),
-            }
-        }
-        if formats.is_empty() {
-            return None;
-        }
-
-        // Put Xrgb8888 and Argb8888 first since some clients always take the
-        // first advertised format (e.g. wl-mirror, grim).
-        formats.sort_by_key(|(code, _)| match code {
-            Fourcc::Xrgb8888 => 0,
-            Fourcc::Argb8888 => 1,
-            _ => 2,
-        });
-
-        Some(DmabufConstraints { node, formats })
-    })();
-
     Some(BufferConstraints {
         size,
         shm: vec![wl_shm::Format::Xrgb8888],
-        dma,
+        dma: capture_dmabuf_constraints(renderer, render_node, false),
     })
 }
 
-/// Buffer constraints for capturing the cursor of an output. Argb8888 since it has alpha.
-pub fn cursor_capture_constraints(niri: &Niri, output: &Output) -> BufferConstraints {
+/// Buffer constraints for capturing a window.
+pub fn window_capture_constraints(
+    renderer: &GlesRenderer,
+    render_node: Option<DrmNode>,
+    mapped: &Mapped,
+    output: &Output,
+) -> BufferConstraints {
+    let scale = Scale::from(output.current_scale().fractional_scale());
+    let size = mapped.capture_bbox(scale).size;
+
     BufferConstraints {
-        size: cursor_capture_size(niri, output),
+        size: Size::from((size.w, size.h)),
+        shm: vec![wl_shm::Format::Argb8888, wl_shm::Format::Xrgb8888],
+        dma: capture_dmabuf_constraints(renderer, render_node, true),
+    }
+}
+
+fn capture_dmabuf_constraints(
+    renderer: &GlesRenderer,
+    render_node: Option<DrmNode>,
+    needs_alpha: bool,
+) -> Option<DmabufConstraints> {
+    let node = render_node?;
+    let egl = renderer.egl_context();
+
+    // Offer all formats the renderer can draw into to avoid unnecessary
+    // conversions, preserving the original order (many clients depend on
+    // the order being stable to select the same format when renegotiating).
+    let mut formats: Vec<(Fourcc, Vec<Modifier>)> = Vec::new();
+    for format in egl.dmabuf_render_formats().iter() {
+        match formats.iter_mut().find(|(code, _)| *code == format.code) {
+            Some((_, modifiers)) => modifiers.push(format.modifier),
+            None => formats.push((format.code, vec![format.modifier])),
+        }
+    }
+    if formats.is_empty() {
+        return None;
+    }
+
+    // Put Xrgb8888 and Argb8888 first since some clients always take the
+    // first advertised format (e.g. wl-mirror, grim).
+    let one = if needs_alpha { 1 } else { 0 };
+    formats.sort_by_key(|(code, _)| match code {
+        Fourcc::Xrgb8888 => one,
+        Fourcc::Argb8888 => 1 - one,
+        _ => 2,
+    });
+
+    Some(DmabufConstraints { node, formats })
+}
+
+#[derive(Clone, Copy)]
+pub struct CursorCaptureGeometry {
+    /// Size of the elements' encompassing geo.
+    pub size: Size<i32, BufferCoords>,
+    /// Location of the cursor's hotspot on the cursor bitmap.
+    pub hotspot: Point<i32, BufferCoords>,
+}
+
+pub fn cursor_capture_constraints(size: Size<i32, BufferCoords>) -> BufferConstraints {
+    BufferConstraints {
+        size,
         shm: vec![wl_shm::Format::Argb8888],
         dma: None,
     }
-}
-
-/// Size the cursor renders at on this output.
-fn cursor_capture_size(niri: &Niri, output: &Output) -> Size<i32, BufferCoords> {
-    let int_scale = output.current_scale().integer_scale();
-    let scale = Scale::from(output.current_scale().fractional_scale());
-
-    let size: Size<i32, Physical> = match niri.cursor_manager.get_render_cursor(int_scale) {
-        RenderCursor::Hidden => Size::from((0, 0)),
-        RenderCursor::Surface { surface, .. } => {
-            let bbox = smithay::desktop::utils::bbox_from_surface_tree(&surface, (0, 0));
-            bbox.to_f64().to_physical_precise_up(scale).size
-        }
-        RenderCursor::Named {
-            scale: buffer_scale,
-            cursor,
-            ..
-        } => {
-            // All frames are the same size since CursorManager::load_xcursor()
-            // picks one size and rejects frames which differ.
-            let (_idx, frame) = cursor.frame(niri.start_time.elapsed().as_millis() as u32);
-            // The image is loaded at the integer scale but drawn at the fractional one, so it
-            // ends up smaller than its own buffer whenever the two differ.
-            let logical = Size::<f64, Logical>::from((
-                f64::from(frame.width) / f64::from(buffer_scale),
-                f64::from(frame.height) / f64::from(buffer_scale),
-            ));
-            logical.to_physical_precise_ceil(scale)
-        }
-    };
-
-    // Fall back to the nominal cursor size when the cursor is currently hidden or has no
-    // buffer, so that the session always has valid constraints.
-    if size.is_empty() {
-        let fallback = i32::from(niri.config.borrow().cursor.xcursor_size) * int_scale;
-        return Size::from((fallback, fallback));
-    }
-
-    Size::from((size.w, size.h))
-}
-
-/// Cursor hotspot in capture buffer coordinates.
-pub fn cursor_capture_hotspot(niri: &Niri, output: &Output) -> Point<i32, BufferCoords> {
-    let int_scale = output.current_scale().integer_scale();
-    let scale = Scale::from(output.current_scale().fractional_scale());
-
-    let hotspot: Point<i32, Physical> = match niri.cursor_manager.get_render_cursor(int_scale) {
-        RenderCursor::Hidden => Point::from((0, 0)),
-        RenderCursor::Surface { surface, hotspot } => {
-            // The tree is shifted to put its bounding box at the origin in
-            // render_cursor_for_capture(), so shift the hotspot too.
-            let bbox = smithay::desktop::utils::bbox_from_surface_tree(&surface, (0, 0));
-            (hotspot - bbox.loc)
-                .to_f64()
-                .to_physical_precise_round(scale)
-        }
-        RenderCursor::Named {
-            scale: buffer_scale,
-            cursor,
-            ..
-        } => {
-            let (_idx, frame) = cursor.frame(niri.start_time.elapsed().as_millis() as u32);
-            // Same rescaling as in cursor_capture_size().
-            XCursor::hotspot(frame)
-                .to_logical(buffer_scale)
-                .to_f64()
-                .to_physical_precise_round(scale)
-        }
-    };
-
-    Point::from((hotspot.x, hotspot.y))
-}
-
-pub enum CaptureBuffer {
-    Dma(Dmabuf),
-    Shm,
 }
 
 /// Checks a frame's buffer for compatibility with the render helpers.
@@ -229,23 +220,18 @@ pub enum CaptureBuffer {
 /// a client to attach a larger buffer than asked for, but the render helpers
 /// need an exact match, and checking them here allows mismatches to be reported
 /// to the client.
-pub fn capture_buffer(
-    buffer: &WlBuffer,
-    size: Size<i32, BufferCoords>,
-    format: wl_shm::Format,
-) -> Option<CaptureBuffer> {
+pub fn capture_buffer(buffer: &WlBuffer, size: Size<i32, BufferCoords>) -> Option<CaptureBuffer> {
     if let Ok(dmabuf) = get_dmabuf(buffer) {
         let size_matches = dmabuf.width() == size.w as u32 && dmabuf.height() == size.h as u32;
         return size_matches.then(|| CaptureBuffer::Dma(dmabuf.clone()));
     }
 
-    // Stride and pool placement are defined by the client, but the format and
-    // dimensions need to match.
+    // Stride and pool placement are defined by the client, but the dimensions need to match.
     let matches = shm::with_buffer_contents(buffer, |_ptr, _len, data| {
-        data.format == format && data.width == size.w && data.height == size.h
+        data.width == size.w && data.height == size.h
     })
     .unwrap_or(false);
-    matches.then_some(CaptureBuffer::Shm)
+    matches.then_some(CaptureBuffer::Shm(buffer.clone()))
 }
 
 /// Finishes a frame, waiting for `sync_point` first if the render is still in flight.
@@ -256,10 +242,10 @@ pub fn frame_success_after_sync<T>(
     transform: Transform,
     damage: Vec<Rectangle<i32, BufferCoords>>,
     presented: Duration,
-    sync_point: Option<SyncPoint>,
+    sync_point: SyncPoint,
     event_loop: &LoopHandle<'static, T>,
 ) {
-    let Some(sync_fd) = sync_point.and_then(|sync| sync.export()) else {
+    let Some(sync_fd) = sync_point.export() else {
         frame.success(transform, damage, presented);
         return;
     };
@@ -296,17 +282,32 @@ impl ImageCopyCaptureHandler for State {
     }
 
     fn capture_constraints(&mut self, source: &ImageCaptureSource) -> Option<BufferConstraints> {
-        let output = source_output(source)?;
-        if !self.niri.output_state.contains_key(&output) {
-            return None;
-        }
+        if let Some(id) = source_mapped_id(source) {
+            let Some((mapped, Some(output))) = self.niri.find_mapped_output_by_id(id) else {
+                return None;
+            };
+            if !self.niri.output_state.contains_key(output) {
+                return None;
+            }
 
-        let render_node = self.backend.primary_render_node();
-        self.backend
-            .with_primary_renderer(|renderer| {
-                output_capture_constraints(renderer, render_node, &output)
+            let render_node = self.backend.primary_render_node();
+            self.backend.with_primary_renderer(|renderer| {
+                window_capture_constraints(renderer, render_node, mapped, output)
             })
-            .flatten()
+        } else if let Some(output) = source_output(source) {
+            if !self.niri.output_state.contains_key(&output) {
+                return None;
+            }
+
+            let render_node = self.backend.primary_render_node();
+            self.backend
+                .with_primary_renderer(|renderer| {
+                    output_capture_constraints(renderer, render_node, &output)
+                })
+                .flatten()
+        } else {
+            None
+        }
     }
 
     fn cursor_capture_constraints(
@@ -314,12 +315,16 @@ impl ImageCopyCaptureHandler for State {
         source: &ImageCaptureSource,
         _pointer: &WlPointer,
     ) -> Option<BufferConstraints> {
-        let output = source_output(source)?;
+        let output = source_session_output(&self.niri, source)?;
         if !self.niri.output_state.contains_key(&output) {
             return None;
         }
 
-        Some(cursor_capture_constraints(&self.niri, &output))
+        let (_, geometry) = self.backend.with_primary_renderer(|renderer| {
+            self.niri.render_cursor_for_capture(renderer, &output)
+        })?;
+
+        Some(cursor_capture_constraints(geometry.size))
     }
 
     fn new_session(&mut self, session: Session) {
@@ -334,6 +339,7 @@ impl ImageCopyCaptureHandler for State {
             session_id,
             stream_id: CastStreamId::next(),
             credentials,
+            frames_requested: 0,
         });
     }
 
@@ -351,8 +357,9 @@ impl ImageCopyCaptureHandler for State {
                 session_id,
                 stream_id: CastStreamId::next(),
                 credentials,
+                frames_requested: 0,
             });
-        // Send the initial cursor position and hotspot.
+        // Send the initial cursor position.
         self.niri.refresh_image_copy_cursor_sessions();
     }
 
@@ -378,9 +385,10 @@ impl ImageCopyCaptureHandler for State {
             return;
         }
         s.pending_frame = Some(frame);
+        s.frames_requested = s.frames_requested.saturating_add(1);
 
         // The frame is captured on the next redraw with damage.
-        if let Some(output) = source_output(&session.source()) {
+        if let Some(output) = source_session_output(&self.niri, &session.source()) {
             // The output may be gone already (the global lingers).
             if self.niri.output_exists(&output) {
                 self.niri.queue_redraw(&output);
@@ -406,9 +414,10 @@ impl ImageCopyCaptureHandler for State {
             return;
         }
         s.pending_frame = Some(frame);
+        s.frames_requested = s.frames_requested.saturating_add(1);
 
         // The frame is captured on the next redraw when the cursor image changes.
-        if let Some(output) = source_output(&session.source()) {
+        if let Some(output) = source_session_output(&self.niri, &session.source()) {
             // The output may be gone already (the global lingers).
             if self.niri.output_exists(&output) {
                 self.niri.queue_redraw(&output);

@@ -526,6 +526,11 @@ async fn monitor_disappeared_clients(
             continue;
         };
 
+        if args.name() != name {
+            // The owner has dropped some other well-known name, but it remains.
+            continue;
+        }
+
         if args.new_owner().is_none() {
             trace!("keyboard monitor client disconnected: {name}");
 

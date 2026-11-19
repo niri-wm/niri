@@ -248,12 +248,16 @@ jobs:
   freebsd:
     runs-on: ubuntu-24.04
     env:
-      CARGO_HOME: /home/runner/work/niri/niri/cargo-home
+      CARGO_HOME: /home/runner/work/cargo-home
 
     steps:
       - uses: actions/checkout@v6
         with:
           show-progress: false
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
 
       # Remove man-db triggers to speed up Ubuntu upgrade by a minute or two during vmactions/freebsd-vm action run.
       - run: |
@@ -263,12 +267,15 @@ jobs:
         uses: vmactions/freebsd-vm@v1
         with:
           release: "15.1"
-          copyback: false
           prepare: |
             pkg update -f
             pkg install -y ${{ env.DEPS_PKG }}
           run: |
-            export CARGO_HOME="$PWD/cargo-home"
+            export CARGO_HOME="$HOME/work/cargo-home"
+
+            # Clear stale patched crates
+            rm -rf "$CARGO_HOME"/registry/src/index.crates.io-*/pipewire-sys-0.10.1
+            rm -rf "$CARGO_HOME"/registry/src/index.crates.io-*/libdisplay-info-sys-0.3.0
 
             cargo fetch
 

@@ -369,6 +369,15 @@ input {
 }
 ```
 
+<sup>Since: next release</sup> You can optionally set `outputs-only`.
+When true, focus only changes between monitors, instead of individual windows.
+
+```kdl
+input {
+    focus-follows-mouse outputs-only=true
+}
+```
+
 #### `workspace-auto-back-and-forth`
 
 Normally, switching to the same workspace by index twice will do nothing (since you're already on that workspace).

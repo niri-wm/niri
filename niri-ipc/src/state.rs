@@ -35,7 +35,7 @@ pub struct EventStreamState {
     /// State of workspaces.
     pub workspaces: WorkspacesState,
 
-    /// State of workspaces.
+    /// State of windows.
     pub windows: WindowsState,
 
     /// State of the keyboard layouts.

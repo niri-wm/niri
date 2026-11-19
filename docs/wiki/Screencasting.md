@@ -42,6 +42,19 @@ layer-rule {
 }
 ```
 
+<sup>Since: next release</sup>
+You can also set `kind="hide"` to hide the surface entirely instead of drawing a black rectangle.
+Careful: this way you could unintentionally expose sensitive data.
+
+```kdl
+// Hide mako notifications from screencasts.
+layer-rule {
+    match namespace="^notifications$"
+
+    block-out-from "screencast" kind="hide"
+}
+```
+
 Check [the corresponding wiki section](./Configuration:-Window-Rules.md#block-out-from) for more details and examples.
 
 ### Dynamic screencast target

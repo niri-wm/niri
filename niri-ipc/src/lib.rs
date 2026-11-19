@@ -199,6 +199,12 @@ pub enum Action {
         #[cfg_attr(feature = "clap", arg(short, long))]
         skip_confirmation: bool,
     },
+    /// Change the virtual terminal.
+    ChangeVt {
+        /// Virtual terminal to change to.
+        #[cfg_attr(feature = "clap", arg(required = true))]
+        vt: u8,
+    },
     /// Power off all monitors via DPMS.
     PowerOffMonitors {},
     /// Power on all monitors via DPMS.
@@ -319,6 +325,75 @@ pub enum Action {
     )]
     ToggleWindowedFullscreen {
         /// Id of the window to toggle windowed fullscreen of.
+        ///
+        /// If `None`, uses the focused window.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: Option<u64>,
+    },
+    /// Make a window fullscreen.
+    #[cfg_attr(feature = "clap", clap(about = "Make the focused window fullscreen"))]
+    SetWindowFullscreen {
+        /// Id of the window to make fullscreen.
+        ///
+        /// If `None`, uses the focused window.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: Option<u64>,
+    },
+    /// Take a window out of fullscreen.
+    #[cfg_attr(
+        feature = "clap",
+        clap(about = "Take the focused window out of fullscreen")
+    )]
+    UnsetWindowFullscreen {
+        /// Id of the window to take out of fullscreen.
+        ///
+        /// If `None`, uses the focused window.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: Option<u64>,
+    },
+    /// Maximize a window to the screen edges.
+    #[cfg_attr(
+        feature = "clap",
+        clap(about = "Maximize the focused window to the screen edges")
+    )]
+    SetWindowMaximizedToEdges {
+        /// Id of the window to maximize to edges.
+        ///
+        /// If `None`, uses the focused window.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: Option<u64>,
+    },
+    /// Unmaximize a window from the screen edges.
+    #[cfg_attr(
+        feature = "clap",
+        clap(about = "Unmaximize the focused window from the screen edges")
+    )]
+    UnsetWindowMaximizedToEdges {
+        /// Id of the window to unmaximize from edges.
+        ///
+        /// If `None`, uses the focused window.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: Option<u64>,
+    },
+    /// Enable windowed (fake) fullscreen on a window.
+    #[cfg_attr(
+        feature = "clap",
+        clap(about = "Enable windowed (fake) fullscreen on the focused window")
+    )]
+    SetWindowedFullscreen {
+        /// Id of the window to enable windowed fullscreen on.
+        ///
+        /// If `None`, uses the focused window.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: Option<u64>,
+    },
+    /// Disable windowed (fake) fullscreen on a window.
+    #[cfg_attr(
+        feature = "clap",
+        clap(about = "Disable windowed (fake) fullscreen on the focused window")
+    )]
+    UnsetWindowedFullscreen {
+        /// Id of the window to disable windowed fullscreen on.
         ///
         /// If `None`, uses the focused window.
         #[cfg_attr(feature = "clap", arg(long))]
@@ -1602,7 +1677,18 @@ pub enum CastKind {
     ///
     /// A client capturing both an output and the cursor creates two sessions, which are reported
     /// as two `Cast`s sharing one [`session_id`](Cast::session_id).
+    ///
+    /// A session is reported once it requests its second frame. Sessions requesting only one
+    /// frame are treated as regular screenshots (e.g. grim) and not reported as screencasts.
     ExtImageCopyCapture,
+    /// ext-image-copy-capture protocol cursor screencast.
+    ///
+    /// `Cast`s of this kind show the image of the cursor and cursor position. Their
+    /// [`target`](Cast::target) indicates the output or window that the cursor is captured over.
+    ///
+    /// Like [`ExtImageCopyCapture`](CastKind::ExtImageCopyCapture), reported once the session
+    /// requests its second frame.
+    ExtImageCopyCaptureCursor,
 }
 
 /// Target of a screencast.

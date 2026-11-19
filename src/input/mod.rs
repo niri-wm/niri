@@ -7,19 +7,20 @@ use calloop::timer::{TimeoutAction, Timer};
 use calloop::RegistrationToken;
 use input::event::gesture::GestureEventCoordinates as _;
 use niri_config::{
-    is_keysym_modifier, Action, Bind, Binds, BoundAction, Config, Key, ModKey, Modifiers,
-    MruDirection, SwitchBinds, Trigger,
+    Action, Bind, Binds, BoundAction, Config, Key, ModKey, Modifiers, MruDirection, SwitchBinds,
+    Trigger,
 };
 use niri_ipc::LayoutSwitchTarget;
 use smithay::backend::input::{
     AbsolutePositionEvent, Axis, AxisSource, ButtonState, Device, DeviceCapability, Event,
     GestureBeginEvent, GestureEndEvent, GesturePinchUpdateEvent as _, GestureSwipeUpdateEvent as _,
-    InputEvent, KeyState, KeyboardKeyEvent, Keycode, MouseButton, PointerAxisEvent,
+    InputEvent, InputTime, KeyState, KeyboardKeyEvent, Keycode, MouseButton, PointerAxisEvent,
     PointerButtonEvent, PointerMotionEvent, ProximityState, Switch, SwitchState, SwitchToggleEvent,
     TabletToolButtonEvent, TabletToolEvent, TabletToolProximityEvent, TabletToolTipEvent,
     TabletToolTipState, TouchEvent,
 };
 use smithay::backend::libinput::LibinputInputBackend;
+use smithay::desktop::layer_map_for_output;
 use smithay::input::dnd::DnDGrab;
 use smithay::input::keyboard::{keysyms, KeyboardSource, Keysym, Layout, ModifiersState};
 use smithay::input::pointer::{
@@ -40,6 +41,7 @@ use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Rectangle, Transform, SERIAL_COUNTER};
 use smithay::wayland::keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitor;
 use smithay::wayland::pointer_constraints::{with_pointer_constraint, PointerConstraint};
+use smithay::wayland::shell::wlr_layer::{self, Layer};
 use smithay::wayland::virtual_keyboard::VirtualKeyboardDevice;
 use touch_overview_grab::TouchOverviewGrab;
 
@@ -50,6 +52,8 @@ use self::resize_grab::ResizeGrab;
 use self::spatial_movement_grab::SpatialMovementGrab;
 #[cfg(feature = "dbus")]
 use crate::dbus::freedesktop_a11y::KbMonBlock;
+#[cfg(feature = "dbus")]
+use crate::dbus::gnome_shell::GlobalShortcutsPortalBinds;
 use crate::layout::scrolling::ScrollDirection;
 use crate::layout::{ActivateWindow, LayoutElement as _};
 use crate::niri::{CastTarget, Niri, PointerVisibility, State};
@@ -57,6 +61,7 @@ use crate::ui::mru::{WindowMru, WindowMruUi};
 use crate::ui::screenshot_ui::ScreenshotUi;
 use crate::utils::spawning::{spawn, spawn_sh};
 use crate::utils::{center, get_monotonic_time, CastSessionId, ResizeEdge};
+use crate::window::mapped::MappedId;
 
 pub mod backend_ext;
 pub mod click_grab;
@@ -145,6 +150,25 @@ enum ShouldInterceptResult {
     InterceptAndHandle(Bind),
     /// Do not forward the event, and do nothing else.
     InterceptOnly,
+}
+
+impl ShouldInterceptResult {
+    pub fn should_forward(&self) -> bool {
+        match self {
+            ShouldInterceptResult::Forward | ShouldInterceptResult::ForwardAndHandle(_) => true,
+            ShouldInterceptResult::InterceptAndHandle(_) | ShouldInterceptResult::InterceptOnly => {
+                false
+            }
+        }
+    }
+
+    pub fn into_bind(self) -> Option<Bind> {
+        match self {
+            ShouldInterceptResult::ForwardAndHandle(bind)
+            | ShouldInterceptResult::InterceptAndHandle(bind) => Some(bind),
+            ShouldInterceptResult::Forward | ShouldInterceptResult::InterceptOnly => None,
+        }
+    }
 }
 
 impl State {
@@ -487,7 +511,7 @@ impl State {
                 if !pressed {
                     if let Some(bind) = self.niri.pending_release_binds.remove(&event.key_code()) {
                         self.niri.suppressed_keys.remove(&event.key_code());
-                        self.handle_bind(bind, false);
+                        self.handle_bind(bind, false, time);
                     }
                 }
                 return;
@@ -507,12 +531,79 @@ impl State {
             event.key_code(),
             event.state(),
             |this, mods, keysym| {
-                let key_code = event.key_code();
-                let modified = keysym.modified_sym();
-                let raw = keysym.raw_latin_sym_or_raw_current_sym();
+                let key_code = keysym.raw_code();
                 let modifiers = modifiers_from_state(*mods);
 
-                this.update_key_repeats(key_code, pressed, modified);
+                // When resolving a bind, we can try three keysyms:
+                // - modified: the actual final keysym we got by pressing this key
+                // - raw: keysym from the 0th layer of the current layout (usually lowercase letter)
+                // - raw_ascii: keysym from the same key on an ASCII layout
+                // (if raw isn't ASCII itself)
+                let (modified, raw, raw_ascii) = {
+                    let xkb = keysym.xkb();
+                    let xkb = xkb.lock().unwrap();
+
+                    // SAFETY: xkb_state does not outlive xkb.
+                    let (modified, layout) = unsafe {
+                        let xkb_state = xkb.state();
+                        (
+                            xkb_state.key_get_one_sym(key_code),
+                            Layout(xkb_state.key_get_layout(key_code)),
+                        )
+                    };
+                    let modified = (modified != Keysym::NoSymbol).then_some(modified);
+
+                    let raw_sym = |layout| {
+                        let raw_syms = xkb.raw_syms_for_key_in_layout(key_code, layout);
+
+                        // Match the xkb_key_get_one_sym() logic.
+                        if raw_syms.len() == 1 {
+                            Some(raw_syms[0])
+                        } else {
+                            None
+                        }
+                    };
+
+                    let raw = raw_sym(layout);
+
+                    // We include numbers and symbols too to have more binds working on us,ru and
+                    // avoid some surprising behavior.
+                    let is_ascii = |keysym: Keysym| {
+                        keysym.key_char().is_some_and(|key| key.is_ascii_graphic())
+                    };
+
+                    let mut raw_ascii = None;
+
+                    // Only check if raw is ASCII and not modified, so that e.g. pressing Shift
+                    // does not change the fallback behavior on layouts where raw isn't ASCII but
+                    // the shifted key is.
+                    if !raw.is_some_and(is_ascii) {
+                        // Haven't seen a latin keysym yet; try to find.
+                        for layout in xkb.layouts().filter(|l| *l != layout) {
+                            if let Some(raw) = raw_sym(layout) {
+                                if is_ascii(raw) {
+                                    raw_ascii = Some(raw);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    (modified, raw, raw_ascii)
+                };
+
+                // Avoid unnecessary lookups if raw is the same as modified.
+                let raw = raw.filter(|k| Some(*k) != modified);
+
+                // We don't differentiate between raw and raw_ascii when it comes to bind handling.
+                let raw = match (raw, raw_ascii) {
+                    (None, None) => &[][..],
+                    (None, Some(b)) => &[b][..],
+                    (Some(a), None) => &[a][..],
+                    (Some(a), Some(b)) => &[a, b][..],
+                };
+
+                this.update_key_repeats(key_code, pressed, modified.unwrap_or(Keysym::NoSymbol));
 
                 // After updating XKB state from accessibility-grabbed keys, return right away and
                 // don't handle them.
@@ -541,14 +632,16 @@ impl State {
 
                         let forward = matches!(
                             modified,
-                            Keysym::Shift_L
-                                | Keysym::Shift_R
-                                | Keysym::Control_L
-                                | Keysym::Control_R
-                                | Keysym::Super_L
-                                | Keysym::Super_R
-                                | Keysym::Alt_L
-                                | Keysym::Alt_R
+                            Some(
+                                Keysym::Shift_L
+                                    | Keysym::Shift_R
+                                    | Keysym::Control_L
+                                    | Keysym::Control_R
+                                    | Keysym::Super_L
+                                    | Keysym::Super_R
+                                    | Keysym::Alt_L
+                                    | Keysym::Alt_R
+                            )
                         );
                         return bind_intercept_result(bind, forward);
                     }
@@ -557,7 +650,7 @@ impl State {
                 }
 
                 if this.niri.exit_confirm_dialog.is_open() && pressed {
-                    if raw == Some(Keysym::Return) {
+                    if modified == Some(Keysym::Return) {
                         info!("quitting after confirming exit dialog");
                         this.niri.stop_signal.stop();
                     }
@@ -570,7 +663,7 @@ impl State {
                 // Check if all modifiers were released while the MRU UI was open. If so, close the
                 // UI (which will also transfer the focus to the current MRU UI selection).
                 if this.niri.window_mru_ui.is_open() && !pressed && modifiers.is_empty() {
-                    this.do_action(Action::MruConfirm, false);
+                    this.do_action(Action::MruConfirm, false, time);
 
                     // A pending release action recorded for the key must still run if it
                     // closed the MRU instead of going through the regular bind lookup.
@@ -581,7 +674,7 @@ impl State {
                     );
                 }
 
-                if pressed && raw == Some(Keysym::Escape) {
+                if pressed && modified == Some(Keysym::Escape) {
                     // Cancel certain grabs on Escape.
                     let pointer = this.niri.seat.get_pointer().unwrap();
                     if pointer
@@ -594,7 +687,7 @@ impl State {
                     }
                 }
 
-                if let Some(Keysym::space) = raw {
+                if modified == Some(Keysym::space) {
                     this.niri.screenshot_ui.set_space_down(pressed);
                 }
 
@@ -603,10 +696,18 @@ impl State {
                 }
 
                 let is_locked = this.niri.is_locked();
+                let is_in_screenshot = this.niri.screenshot_ui.is_open();
                 let res = {
                     let config = this.niri.config.borrow();
-                    let bindings =
-                        make_binds_iter(&config, &mut this.niri.window_mru_ui, modifiers);
+                    let bindings = make_binds_iter(
+                        &config,
+                        &this.niri.screenshot_ui,
+                        &mut this.niri.window_mru_ui,
+                        #[cfg(feature = "dbus")]
+                        &this.niri.global_shortcuts_portal_binds,
+                        this.niri.keyboard_focus.is_overview(),
+                        modifiers,
+                    );
 
                     should_intercept_key(
                         &mut this.niri.suppressed_keys,
@@ -618,22 +719,22 @@ impl State {
                         modified,
                         raw,
                         pressed,
-                        *mods,
-                        &this.niri.screenshot_ui,
+                        modifiers,
                         this.niri.config.borrow().input.disable_power_key_handling,
                         is_inhibiting_shortcuts,
                         is_locked,
+                        is_in_screenshot,
                     )
                 };
 
-                if matches!(res, ShouldInterceptResult::Forward) {
-                    // If we didn't find any bind, try other hardcoded keys.
-                    if this.niri.keyboard_focus.is_overview() && pressed {
-                        if let Some(bind) = raw.and_then(|raw| hardcoded_overview_bind(raw, *mods))
-                        {
-                            this.niri.suppressed_keys.insert(key_code);
-                            return ShouldInterceptResult::InterceptAndHandle(bind);
-                        }
+                if res.should_forward() {
+                    if pressed && this.handle_focus_on_type_in_overview(modified) {
+                        // Update keyboard focus right away so that input_forward() below
+                        // sends the key to this newly focused surface.
+                        //
+                        // In case of track-layout "window", this will also switch to the target
+                        // layout before forwarding the key.
+                        this.update_keyboard_focus();
                     }
 
                     // Interaction with the active window, immediately update the active window's
@@ -647,35 +748,26 @@ impl State {
             return;
         };
 
-        // Forward the event to the client, unless the key was intercepted.
-        match &result {
-            ShouldInterceptResult::Forward | ShouldInterceptResult::ForwardAndHandle(_) => {
-                keyboard.input_forward(
-                    self,
-                    event.key_code(),
-                    event.state(),
-                    serial,
-                    time,
-                    mods_changed,
-                );
-            }
-            ShouldInterceptResult::InterceptAndHandle(_) | ShouldInterceptResult::InterceptOnly => {
-                if mods_changed {
-                    keyboard.advertise_modifier_state(self);
-                }
-            }
+        if result.should_forward() {
+            // Forward the key to client.
+            keyboard.input_forward(
+                self,
+                event.key_code(),
+                event.state(),
+                serial,
+                time,
+                mods_changed,
+            );
+        } else if mods_changed {
+            keyboard.advertise_modifier_state(self);
         }
 
         // Handle the bind, if the result came with one.
-        match result {
-            ShouldInterceptResult::ForwardAndHandle(bind)
-            | ShouldInterceptResult::InterceptAndHandle(bind) => {
-                if pressed && bind.repeat {
-                    self.start_key_repeat(event.key_code(), bind.clone());
-                }
-                self.handle_bind(bind, pressed);
+        if let Some(bind) = result.into_bind() {
+            if pressed && bind.repeat {
+                self.start_key_repeat(event.key_code(), bind.clone());
             }
-            ShouldInterceptResult::Forward | ShouldInterceptResult::InterceptOnly => {}
+            self.handle_bind(bind, pressed, time);
         }
     }
 
@@ -704,7 +796,10 @@ impl State {
             .niri
             .event_loop
             .insert_source(repeat_timer, move |_, _, state| {
-                state.handle_bind(bind.clone(), true);
+                // We don't get an InputTime from the timer (only an instant). Just use now instead.
+                // It should be close enough.
+                let time = InputTime::now();
+                state.handle_bind(bind.clone(), true, time);
                 TimeoutAction::ToDuration(repeat_duration)
             })
             .unwrap();
@@ -746,7 +841,7 @@ impl State {
         self.niri.queue_redraw_all();
     }
 
-    pub fn handle_bind(&mut self, bind: Bind, pressed: bool) {
+    pub fn handle_bind(&mut self, bind: Bind, pressed: bool, time: InputTime) {
         let allowed_when_locked = bind_allowed_when_locked(&bind, pressed);
         let allowed_during_screenshot = bind_allowed_during_screenshot(&bind, pressed);
 
@@ -754,10 +849,7 @@ impl State {
         if self.niri.is_locked() && !allowed_when_locked {
             return;
         }
-
-        // The bind lookup already substitutes the screenshot UI's own
-        // actions for presses, so only releases need to be filtered here.
-        if !pressed && self.niri.screenshot_ui.is_open() && !allowed_during_screenshot {
+        if self.niri.screenshot_ui.is_open() && !allowed_during_screenshot {
             return;
         }
 
@@ -791,11 +883,11 @@ impl State {
             return;
         };
 
-        self.do_action(action, allowed_when_locked);
+        self.do_action(action, allowed_when_locked, time);
     }
 
     /// Forgets all held inputs, running the release actions of anything that was still held.
-    pub fn release_held_inputs(&mut self) {
+    pub fn release_held_inputs(&mut self, time: InputTime) {
         let mut binds = Vec::new();
         binds.extend(
             self.niri
@@ -820,11 +912,11 @@ impl State {
         self.niri.clear_input_state();
 
         for bind in binds {
-            self.handle_bind(bind, false);
+            self.handle_bind(bind, false, time);
         }
     }
 
-    pub fn do_action(&mut self, action: Action, allow_when_locked: bool) {
+    pub fn do_action(&mut self, action: Action, allow_when_locked: bool, time: InputTime) {
         if self.niri.is_locked() && !(allow_when_locked || allowed_when_locked(&action)) {
             return;
         }
@@ -846,14 +938,14 @@ impl State {
             Action::ChangeVt(vt) => {
                 // Changing VT may not deliver the key releases, so treat the held binds as
                 // released while the session is still usable.
-                self.release_held_inputs();
+                self.release_held_inputs(time);
 
-                self.backend.change_vt(vt);
+                self.backend.change_vt(vt as i32);
             }
             Action::Suspend => {
                 // Suspend may not deliver the key releases, so treat the held binds as
                 // released before suspending.
-                self.release_held_inputs();
+                self.release_held_inputs(time);
 
                 self.backend.suspend();
             }
@@ -961,10 +1053,8 @@ impl State {
                 show_pointer,
                 path,
             } => {
-                let mut windows = self.niri.layout.windows();
-                let window = windows.find(|(_, m)| m.id().get() == id);
-                if let Some((Some(monitor), mapped)) = window {
-                    let output = monitor.output();
+                let id = MappedId::specific(id);
+                if let Some((mapped, Some(output))) = self.niri.find_mapped_output_by_id(id) {
                     self.backend.with_primary_renderer(|renderer| {
                         if let Err(err) = self.niri.screenshot_window(
                             renderer,
@@ -998,8 +1088,8 @@ impl State {
                 }
             }
             Action::CloseWindowById(id) => {
-                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
-                if let Some((_, mapped)) = window {
+                let id = MappedId::specific(id);
+                if let Some((mapped, _)) = self.niri.find_mapped_output_by_id(id) {
                     mapped.toplevel().send_close();
                 }
             }
@@ -1012,9 +1102,8 @@ impl State {
                 }
             }
             Action::FullscreenWindowById(id) => {
-                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
-                let window = window.map(|(_, m)| m.window.clone());
-                if let Some(window) = window {
+                let id = MappedId::specific(id);
+                if let Some(window) = self.niri.find_window_by_id(id) {
                     self.niri.layout.toggle_fullscreen(&window);
                     // FIXME: granular
                     self.niri.queue_redraw_all();
@@ -1029,18 +1118,112 @@ impl State {
                 }
             }
             Action::ToggleWindowedFullscreenById(id) => {
-                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
-                let window = window.map(|(_, m)| m.window.clone());
-                if let Some(window) = window {
+                let id = MappedId::specific(id);
+                if let Some(window) = self.niri.find_window_by_id(id) {
                     self.niri.layout.toggle_windowed_fullscreen(&window);
                     // FIXME: granular
                     self.niri.queue_redraw_all();
                 }
             }
+            Action::SetWindowFullscreen => {
+                let focus = self.niri.layout.focus().map(|m| m.window.clone());
+                if let Some(window) = focus {
+                    self.niri.layout.set_fullscreen(&window, true);
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
+                }
+            }
+            Action::SetWindowFullscreenById(id) => {
+                let id = MappedId::specific(id);
+                if let Some(window) = self.niri.find_window_by_id(id) {
+                    self.niri.layout.set_fullscreen(&window, true);
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
+                }
+            }
+            Action::UnsetWindowFullscreen => {
+                let focus = self.niri.layout.focus().map(|m| m.window.clone());
+                if let Some(window) = focus {
+                    self.niri.layout.set_fullscreen(&window, false);
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
+                }
+            }
+            Action::UnsetWindowFullscreenById(id) => {
+                let id = MappedId::specific(id);
+                if let Some(window) = self.niri.find_window_by_id(id) {
+                    self.niri.layout.set_fullscreen(&window, false);
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
+                }
+            }
+            Action::SetWindowedFullscreen => {
+                let focus = self.niri.layout.focus().map(|m| m.window.clone());
+                if let Some(window) = focus {
+                    self.niri.layout.set_windowed_fullscreen(&window, true);
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
+                }
+            }
+            Action::SetWindowedFullscreenById(id) => {
+                let id = MappedId::specific(id);
+                if let Some(window) = self.niri.find_window_by_id(id) {
+                    self.niri.layout.set_windowed_fullscreen(&window, true);
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
+                }
+            }
+            Action::UnsetWindowedFullscreen => {
+                let focus = self.niri.layout.focus().map(|m| m.window.clone());
+                if let Some(window) = focus {
+                    self.niri.layout.set_windowed_fullscreen(&window, false);
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
+                }
+            }
+            Action::UnsetWindowedFullscreenById(id) => {
+                let id = MappedId::specific(id);
+                if let Some(window) = self.niri.find_window_by_id(id) {
+                    self.niri.layout.set_windowed_fullscreen(&window, false);
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
+                }
+            }
+            Action::SetWindowMaximizedToEdges => {
+                let focus = self.niri.layout.focus().map(|m| m.window.clone());
+                if let Some(window) = focus {
+                    self.niri.layout.set_maximized(&window, true);
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
+                }
+            }
+            Action::SetWindowMaximizedToEdgesById(id) => {
+                let id = MappedId::specific(id);
+                if let Some(window) = self.niri.find_window_by_id(id) {
+                    self.niri.layout.set_maximized(&window, true);
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
+                }
+            }
+            Action::UnsetWindowMaximizedToEdges => {
+                let focus = self.niri.layout.focus().map(|m| m.window.clone());
+                if let Some(window) = focus {
+                    self.niri.layout.set_maximized(&window, false);
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
+                }
+            }
+            Action::UnsetWindowMaximizedToEdgesById(id) => {
+                let id = MappedId::specific(id);
+                if let Some(window) = self.niri.find_window_by_id(id) {
+                    self.niri.layout.set_maximized(&window, false);
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
+                }
+            }
             Action::FocusWindow(id) => {
-                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
-                let window = window.map(|(_, m)| m.window.clone());
-                if let Some(window) = window {
+                let id = MappedId::specific(id);
+                if let Some(window) = self.niri.find_window_by_id(id) {
                     self.focus_window(&window);
                 }
             }
@@ -1204,9 +1387,8 @@ impl State {
                 self.niri.queue_redraw_all();
             }
             Action::ConsumeOrExpelWindowLeftById(id) => {
-                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
-                let window = window.map(|(_, m)| m.window.clone());
-                if let Some(window) = window {
+                let id = MappedId::specific(id);
+                if let Some(window) = self.niri.find_window_by_id(id) {
                     self.niri.layout.consume_or_expel_window_left(Some(&window));
                     self.maybe_warp_cursor_to_focus();
                     // FIXME: granular
@@ -1220,9 +1402,8 @@ impl State {
                 self.niri.queue_redraw_all();
             }
             Action::ConsumeOrExpelWindowRightById(id) => {
-                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
-                let window = window.map(|(_, m)| m.window.clone());
-                if let Some(window) = window {
+                let id = MappedId::specific(id);
+                if let Some(window) = self.niri.find_window_by_id(id) {
                     self.niri
                         .layout
                         .consume_or_expel_window_right(Some(&window));
@@ -1518,9 +1699,8 @@ impl State {
                 reference,
                 focus,
             } => {
-                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
-                let window = window.map(|(_, m)| m.window.clone());
-                if let Some(window) = window {
+                let id = MappedId::specific(id);
+                if let Some(window) = self.niri.find_window_by_id(id) {
                     if let Some((output, index)) =
                         self.niri.find_output_and_workspace_index(reference)
                     {
@@ -1778,16 +1958,14 @@ impl State {
                 self.niri.layout.toggle_window_width(None, false);
             }
             Action::SwitchPresetWindowWidthById(id) => {
-                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
-                let window = window.map(|(_, m)| m.window.clone());
-                if let Some(window) = window {
+                let id = MappedId::specific(id);
+                if let Some(window) = self.niri.find_window_by_id(id) {
                     self.niri.layout.toggle_window_width(Some(&window), true);
                 }
             }
             Action::SwitchPresetWindowWidthBackById(id) => {
-                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
-                let window = window.map(|(_, m)| m.window.clone());
-                if let Some(window) = window {
+                let id = MappedId::specific(id);
+                if let Some(window) = self.niri.find_window_by_id(id) {
                     self.niri.layout.toggle_window_width(Some(&window), false);
                 }
             }
@@ -1798,16 +1976,14 @@ impl State {
                 self.niri.layout.toggle_window_height(None, false);
             }
             Action::SwitchPresetWindowHeightById(id) => {
-                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
-                let window = window.map(|(_, m)| m.window.clone());
-                if let Some(window) = window {
+                let id = MappedId::specific(id);
+                if let Some(window) = self.niri.find_window_by_id(id) {
                     self.niri.layout.toggle_window_height(Some(&window), true);
                 }
             }
             Action::SwitchPresetWindowHeightBackById(id) => {
-                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
-                let window = window.map(|(_, m)| m.window.clone());
-                if let Some(window) = window {
+                let id = MappedId::specific(id);
+                if let Some(window) = self.niri.find_window_by_id(id) {
                     self.niri.layout.toggle_window_height(Some(&window), false);
                 }
             }
@@ -1822,9 +1998,8 @@ impl State {
                 self.niri.queue_redraw_all();
             }
             Action::CenterWindowById(id) => {
-                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
-                let window = window.map(|(_, m)| m.window.clone());
-                if let Some(window) = window {
+                let id = MappedId::specific(id);
+                if let Some(window) = self.niri.find_window_by_id(id) {
                     self.niri.layout.center_window(Some(&window));
                     // FIXME: granular
                     self.niri.queue_redraw_all();
@@ -1847,9 +2022,8 @@ impl State {
                 }
             }
             Action::MaximizeWindowToEdgesById(id) => {
-                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
-                let window = window.map(|(_, m)| m.window.clone());
-                if let Some(window) = window {
+                let id = MappedId::specific(id);
+                if let Some(window) = self.niri.find_window_by_id(id) {
                     self.niri.layout.toggle_maximized(&window);
                     // FIXME: granular
                     self.niri.queue_redraw_all();
@@ -2032,10 +2206,8 @@ impl State {
             }
             Action::MoveWindowToMonitorById { id, output } => {
                 if let Some(output) = self.niri.output_by_name_match(&output).cloned() {
-                    let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
-                    let window = window.map(|(_, m)| m.window.clone());
-
-                    if let Some(window) = window {
+                    let id = MappedId::specific(id);
+                    if let Some(window) = self.niri.find_window_by_id(id) {
                         let target_was_active = self
                             .niri
                             .layout
@@ -2178,9 +2350,8 @@ impl State {
                 }
             }
             Action::SetWindowWidthById { id, change } => {
-                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
-                let window = window.map(|(_, m)| m.window.clone());
-                if let Some(window) = window {
+                let id = MappedId::specific(id);
+                if let Some(window) = self.niri.find_window_by_id(id) {
                     self.niri.layout.set_window_width(Some(&window), change);
                 }
             }
@@ -2195,9 +2366,8 @@ impl State {
                 }
             }
             Action::SetWindowHeightById { id, change } => {
-                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
-                let window = window.map(|(_, m)| m.window.clone());
-                if let Some(window) = window {
+                let id = MappedId::specific(id);
+                if let Some(window) = self.niri.find_window_by_id(id) {
                     self.niri.layout.set_window_height(Some(&window), change);
                 }
             }
@@ -2205,9 +2375,8 @@ impl State {
                 self.niri.layout.reset_window_height(None);
             }
             Action::ResetWindowHeightById(id) => {
-                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
-                let window = window.map(|(_, m)| m.window.clone());
-                if let Some(window) = window {
+                let id = MappedId::specific(id);
+                if let Some(window) = self.niri.find_window_by_id(id) {
                     self.niri.layout.reset_window_height(Some(&window));
                 }
             }
@@ -2307,9 +2476,8 @@ impl State {
                 self.niri.queue_redraw_all();
             }
             Action::ToggleWindowFloatingById(id) => {
-                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
-                let window = window.map(|(_, m)| m.window.clone());
-                if let Some(window) = window {
+                let id = MappedId::specific(id);
+                if let Some(window) = self.niri.find_window_by_id(id) {
                     self.niri.layout.toggle_window_floating(Some(&window));
                     // FIXME: granular
                     self.niri.queue_redraw_all();
@@ -2321,9 +2489,8 @@ impl State {
                 self.niri.queue_redraw_all();
             }
             Action::MoveWindowToFloatingById(id) => {
-                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
-                let window = window.map(|(_, m)| m.window.clone());
-                if let Some(window) = window {
+                let id = MappedId::specific(id);
+                if let Some(window) = self.niri.find_window_by_id(id) {
                     self.niri.layout.set_window_floating(Some(&window), true);
                     // FIXME: granular
                     self.niri.queue_redraw_all();
@@ -2335,9 +2502,8 @@ impl State {
                 self.niri.queue_redraw_all();
             }
             Action::MoveWindowToTilingById(id) => {
-                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
-                let window = window.map(|(_, m)| m.window.clone());
-                if let Some(window) = window {
+                let id = MappedId::specific(id);
+                if let Some(window) = self.niri.find_window_by_id(id) {
                     self.niri.layout.set_window_floating(Some(&window), false);
                     // FIXME: granular
                     self.niri.queue_redraw_all();
@@ -2363,8 +2529,8 @@ impl State {
             }
             Action::MoveFloatingWindowById { id, x, y } => {
                 let window = if let Some(id) = id {
-                    let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
-                    let window = window.map(|(_, m)| m.window.clone());
+                    let id = MappedId::specific(id);
+                    let window = self.niri.find_window_by_id(id);
                     if window.is_none() {
                         return;
                     }
@@ -2574,6 +2740,36 @@ impl State {
                 if self.niri.window_mru_ui.is_open() {
                     self.niri.window_mru_ui.cycle_scope();
                     self.niri.queue_redraw_mru_output();
+                }
+            }
+            Action::GlobalShortcutActivateAction(action) => {
+                #[cfg(not(feature = "dbus"))]
+                let _ = action;
+                #[cfg(feature = "dbus")]
+                {
+                    let Some(shell) = self.niri.gnome_shell.as_ref() else {
+                        error!(
+                            "attempted to activate global shortcut {action} \
+                             but gnome_shell is missing"
+                        );
+                        return;
+                    };
+                    shell.activate_action(action, time, &mut self.niri.activation_state);
+                }
+            }
+            Action::GlobalShortcutDeactivateAction(action) => {
+                #[cfg(not(feature = "dbus"))]
+                let _ = action;
+                #[cfg(feature = "dbus")]
+                {
+                    let Some(shell) = self.niri.gnome_shell.as_ref() else {
+                        error!(
+                            "attempted to deactivate global shortcut {action} \
+                             but gnome_shell is missing"
+                        );
+                        return;
+                    };
+                    shell.deactivate_action(action, time, &mut self.niri.activation_state);
                 }
             }
             Action::TestAction => {
@@ -2938,11 +3134,17 @@ impl State {
         let modifiers = modifiers_from_state(mods);
 
         let config = self.niri.config.borrow();
-        let bindings = make_binds_iter(&config, &mut self.niri.window_mru_ui, modifiers);
+        let bindings = make_binds_iter(
+            &config,
+            &self.niri.screenshot_ui,
+            &mut self.niri.window_mru_ui,
+            #[cfg(feature = "dbus")]
+            &self.niri.global_shortcuts_portal_binds,
+            self.niri.keyboard_focus.is_overview(),
+            modifiers,
+        );
 
-        find_configured_bind(bindings, mod_key, trigger, mods).filter(|bind| {
-            !self.niri.screenshot_ui.is_open() || bind_allowed_during_screenshot(bind, true)
-        })
+        find_configured_bind(bindings, mod_key, trigger, mods)
     }
 
     fn on_pointer_button<I: InputBackend>(&mut self, event: I::PointerButtonEvent) {
@@ -2965,7 +3167,7 @@ impl State {
         if ButtonState::Released == button_state {
             if let Some(bind) = self.niri.pending_mouse_release_binds.remove(&button_code) {
                 self.niri.suppressed_buttons.remove(&button_code);
-                self.handle_bind(bind, false);
+                self.handle_bind(bind, false, event.time());
                 return;
             }
         }
@@ -3001,6 +3203,8 @@ impl State {
 
             if is_mru_open || self.niri.mods_with_mouse_binds.contains(&modifiers) {
                 if let Some(bind) = match button {
+                    // Screenshot UI takes precedence over binds.
+                    Some(MouseButton::Left) if self.niri.screenshot_ui.is_open() => None,
                     Some(MouseButton::Left) => Some(Trigger::MouseLeft),
                     Some(MouseButton::Right) => Some(Trigger::MouseRight),
                     Some(MouseButton::Middle) => Some(Trigger::MouseMiddle),
@@ -3014,6 +3218,7 @@ impl State {
                     if should_record_release_bind(
                         &bind,
                         self.niri.is_locked(),
+                        self.niri.screenshot_ui.is_open(),
                         &self.niri.bind_cooldown_timers,
                     ) {
                         self.niri
@@ -3021,7 +3226,7 @@ impl State {
                             .insert(button_code, bind.clone());
                     }
                     if bind.has_press() {
-                        self.handle_bind(bind.clone(), true);
+                        self.handle_bind(bind.clone(), true, event.time());
                     }
                     return;
                 }
@@ -3355,6 +3560,7 @@ impl State {
                                 },
                                 action: BoundAction::Press(Action::FocusColumnLeftUnderMouse),
                                 repeat: true,
+                                pass_through: None,
                                 cooldown: None,
                                 allow_when_locked: false,
                                 allow_inhibiting: false,
@@ -3367,6 +3573,7 @@ impl State {
                                 },
                                 action: BoundAction::Press(Action::FocusColumnRightUnderMouse),
                                 repeat: true,
+                                pass_through: None,
                                 cooldown: None,
                                 allow_when_locked: false,
                                 allow_inhibiting: false,
@@ -3382,12 +3589,12 @@ impl State {
 
                     if let Some(right) = bind_right {
                         for _ in 0..ticks {
-                            self.handle_bind(right.clone(), true);
+                            self.handle_bind(right.clone(), true, event.time());
                         }
                     }
                     if let Some(left) = bind_left {
                         for _ in ticks..0 {
-                            self.handle_bind(left.clone(), true);
+                            self.handle_bind(left.clone(), true, event.time());
                         }
                     }
                 }
@@ -3415,6 +3622,7 @@ impl State {
                             },
                             action: BoundAction::Press(Action::FocusWorkspaceUpUnderMouse),
                             repeat: true,
+                            pass_through: None,
                             cooldown: Some(Duration::from_millis(50)),
                             allow_when_locked: false,
                             allow_inhibiting: false,
@@ -3427,6 +3635,7 @@ impl State {
                             },
                             action: BoundAction::Press(Action::FocusWorkspaceDownUnderMouse),
                             repeat: true,
+                            pass_through: None,
                             cooldown: Some(Duration::from_millis(50)),
                             allow_when_locked: false,
                             allow_inhibiting: false,
@@ -3441,6 +3650,7 @@ impl State {
                             },
                             action: BoundAction::Press(Action::FocusColumnLeftUnderMouse),
                             repeat: true,
+                            pass_through: None,
                             cooldown: Some(Duration::from_millis(50)),
                             allow_when_locked: false,
                             allow_inhibiting: false,
@@ -3453,6 +3663,7 @@ impl State {
                             },
                             action: BoundAction::Press(Action::FocusColumnRightUnderMouse),
                             repeat: true,
+                            pass_through: None,
                             cooldown: Some(Duration::from_millis(50)),
                             allow_when_locked: false,
                             allow_inhibiting: false,
@@ -3468,12 +3679,12 @@ impl State {
 
                     if let Some(down) = bind_down {
                         for _ in 0..ticks {
-                            self.handle_bind(down.clone(), true);
+                            self.handle_bind(down.clone(), true, event.time());
                         }
                     }
                     if let Some(up) = bind_up {
                         for _ in ticks..0 {
-                            self.handle_bind(up.clone(), true);
+                            self.handle_bind(up.clone(), true, event.time());
                         }
                     }
                 }
@@ -3603,12 +3814,12 @@ impl State {
 
                     if let Some(right) = bind_right {
                         for _ in 0..ticks {
-                            self.handle_bind(right.clone(), true);
+                            self.handle_bind(right.clone(), true, event.time());
                         }
                     }
                     if let Some(left) = bind_left {
                         for _ in ticks..0 {
-                            self.handle_bind(left.clone(), true);
+                            self.handle_bind(left.clone(), true, event.time());
                         }
                     }
                 }
@@ -3625,12 +3836,12 @@ impl State {
 
                     if let Some(down) = bind_down {
                         for _ in 0..ticks {
-                            self.handle_bind(down.clone(), true);
+                            self.handle_bind(down.clone(), true, event.time());
                         }
                     }
                     if let Some(up) = bind_up {
                         for _ in ticks..0 {
-                            self.handle_bind(up.clone(), true);
+                            self.handle_bind(up.clone(), true, event.time());
                         }
                     }
                 }
@@ -3985,7 +4196,7 @@ impl State {
                         },
                     );
 
-                    // Is proximity in usually immediatelly followed by other events like button? If
+                    // Is proximity in usually immediately followed by other events like button? If
                     // so, then it might be worth delaying this frame() until the loop callback to
                     // batch all of them in.
                     tool.frame(self, time);
@@ -4039,7 +4250,7 @@ impl State {
             if button_state == ButtonState::Released {
                 if let Some(bind) = self.niri.pending_tablet_release_binds.remove(&button) {
                     self.niri.suppressed_buttons.remove(&button);
-                    self.handle_bind(bind, false);
+                    self.handle_bind(bind, false, event.time());
                     return;
                 }
             }
@@ -4064,6 +4275,7 @@ impl State {
                             if should_record_release_bind(
                                 &bind,
                                 self.niri.is_locked(),
+                                self.niri.screenshot_ui.is_open(),
                                 &self.niri.bind_cooldown_timers,
                             ) {
                                 self.niri
@@ -4071,7 +4283,7 @@ impl State {
                                     .insert(button, bind.clone());
                             }
                             if bind.has_press() {
-                                self.handle_bind(bind.clone(), true);
+                                self.handle_bind(bind.clone(), true, event.time());
                             }
                             return;
                         }
@@ -4663,7 +4875,7 @@ impl State {
         };
 
         if let Some(action) = action {
-            self.do_action(action, true);
+            self.do_action(action, true, evt.time());
         }
     }
 
@@ -4678,6 +4890,68 @@ impl State {
         let grab = grab.as_any();
 
         grab.is::<PickWindowGrab>() || grab.is::<PickColorGrab>() || Self::is_dnd_grab(grab)
+    }
+
+    /// Updates focus according to the focus-on-type-in-overview layer rule.
+    ///
+    /// `keysym` is the modified keysym that just got pressed.
+    ///
+    /// Returns `true` if some surface got focused.
+    fn handle_focus_on_type_in_overview(&mut self, keysym: Option<Keysym>) -> bool {
+        /// Checks whether the key should trigger focus-on-type.
+        ///
+        /// This check notably excludes Compose and dead keys:
+        ///
+        /// - They are normally handled by the IME, and an IME cannot work with this focus-on-type
+        ///   implementation since it requires the surface to be focused.
+        /// - Among toolkits that can handle them without an IME, GTK has that disabled by default,
+        ///   and Qt has a bug where it drops the first Compose or dead key (the one that arrives
+        ///   right after wl_keyboard.enter).
+        /// - Dead keys are a bit annoying to check for as there's not a ready-made function for
+        ///   that in xkb.
+        /// - This only concerns the very first typed key, and it is very unlikely that the user
+        ///   wants to start their type to search with a dead key.
+        fn is_typed_keysym(keysym: Keysym) -> bool {
+            keysym.key_char().is_some_and(|c| !c.is_ascii_control())
+        }
+
+        if !self.niri.keyboard_focus.is_overview() {
+            return false;
+        }
+
+        if !keysym.is_some_and(is_typed_keysym) {
+            return false;
+        }
+
+        // Find the surface to focus.
+        //
+        // The focus is on the overview, so we know there are no exclusive or grabbing
+        // layer surfaces.
+        let Some(surface) = self.niri.layout.active_output().and_then(|output| {
+            let layers = layer_map_for_output(output);
+
+            // The order matches how update_keyboard_focus() generally works.
+            let overlay = layers.layers_on(Layer::Overlay).rev();
+            let top = layers.layers_on(Layer::Top).rev();
+            let surface = overlay.chain(top).find(|surface| {
+                if surface.cached_state().keyboard_interactivity
+                    != wlr_layer::KeyboardInteractivity::OnDemand
+                {
+                    return false;
+                }
+
+                self.niri
+                    .mapped_layer_surfaces
+                    .get(surface)
+                    .is_some_and(|mapped| mapped.rules().focus_on_type_in_overview)
+            });
+            surface.cloned()
+        }) else {
+            return false;
+        };
+
+        self.niri.layer_shell_on_demand_focus = Some(surface);
+        true
     }
 }
 
@@ -4729,6 +5003,9 @@ fn is_bind_on_cooldown(bind: &Bind, cooldown_timers: &HashMap<Key, RegistrationT
 /// A release-only bind is cancelled by other input before this runs; see
 /// `cancel_interrupted_release_binds()`. A bind with a press action always runs its release action.
 ///
+/// A bind with `pass-through` still runs its actions, but also forwards the presses and releases to
+/// clients.
+///
 /// A bind whose press action is rate-limited by its cooldown is skipped entirely:
 /// No action runs, and no release action is recorded.
 #[allow(clippy::too_many_arguments)]
@@ -4736,17 +5013,17 @@ fn should_intercept_key<'a>(
     suppressed_keys: &mut HashSet<Keycode>,
     pending_release_binds: &mut HashMap<Keycode, Bind>,
     cooldown_timers: &HashMap<Key, RegistrationToken>,
-    bindings: impl IntoIterator<Item = &'a Bind>,
+    bindings: impl Iterator<Item = &'a Bind> + Clone,
     mod_key: ModKey,
     key_code: Keycode,
-    modified: Keysym,
-    raw: Option<Keysym>,
+    modified: Option<Keysym>,
+    raw: &[Keysym],
     pressed: bool,
-    mods: ModifiersState,
-    screenshot_ui: &ScreenshotUi,
+    mods: Modifiers,
     disable_power_key_handling: bool,
     is_inhibiting_shortcuts: bool,
     is_locked: bool,
+    is_in_screenshot: bool,
 ) -> ShouldInterceptResult {
     // A release never runs a press action, so its result depends only on the bind recorded when
     // the key was pressed, and on whether that press was suppressed.
@@ -4754,7 +5031,7 @@ fn should_intercept_key<'a>(
         return released_key_intercept_result(suppressed_keys, pending_release_binds, key_code);
     }
 
-    let mut final_bind = find_bind(
+    let bind = find_bind(
         bindings,
         mod_key,
         modified,
@@ -4762,98 +5039,68 @@ fn should_intercept_key<'a>(
         mods,
         disable_power_key_handling,
     );
+    // If we don't have a bind, forward the key.
+    let Some(bind) = bind else {
+        return ShouldInterceptResult::Forward;
+    };
 
-    // Allow only a subset of compositor actions while the screenshot UI is open, since the user
-    // cannot see the screen.
-    if screenshot_ui.is_open() {
-        let mut use_screenshot_ui_action = true;
-
-        if let Some(bind) = &final_bind {
-            if bind_allowed_during_screenshot(bind, true) {
-                use_screenshot_ui_action = false;
-            }
-        }
-
-        if use_screenshot_ui_action {
-            if let Some(raw) = raw {
-                final_bind = screenshot_ui.action(raw, mods).map(|action| Bind {
-                    key: Key {
-                        trigger: Trigger::Keysym(raw),
-                        // Not entirely correct but it doesn't matter in how we currently use it.
-                        modifiers: Modifiers::empty(),
-                    },
-                    action: BoundAction::Press(action),
-                    repeat: true,
-                    cooldown: None,
-                    allow_when_locked: false,
-                    // The screenshot UI owns the focus anyway, so this doesn't really matter.
-                    // But logically, nothing can inhibit its actions. Only opening it can be
-                    // inhibited.
-                    allow_inhibiting: false,
-                    hotkey_overlay_title: None,
-                });
-            }
-        }
+    // When inhibiting shortcuts, forward the key.
+    if is_inhibiting_shortcuts && bind.allow_inhibiting {
+        return ShouldInterceptResult::Forward;
     }
 
-    match final_bind {
-        Some(bind) => {
-            if is_inhibiting_shortcuts && bind.allow_inhibiting {
-                ShouldInterceptResult::Forward
-            } else if bind.has_press() && is_bind_on_cooldown(&bind, cooldown_timers) {
-                // If on cooldown, do not run the press action, record a release action,
-                // or forward the press.
-                suppressed_keys.insert(key_code);
-                ShouldInterceptResult::InterceptOnly
-            } else if is_keysym_modifier(modified) {
-                if should_record_release_bind(&bind, is_locked, cooldown_timers) {
-                    pending_release_binds.insert(key_code, bind.clone());
-                }
-                if bind.has_press() {
-                    suppressed_keys.insert(key_code);
-                    // A bind with a press action takes the key press. Applications will still learn
-                    // about the modifier state via `advertise_modifier_state()`.
-                    ShouldInterceptResult::InterceptAndHandle(bind)
-                } else {
-                    // This is to ensure that, if you have a modifier-triggered release bind like
-                    // Ctrl+Alt, We still forward the Ctrl and Alt presses to the application
-                    // to use for its own shortcuts.
-                    ShouldInterceptResult::Forward
-                }
-            } else {
-                if should_record_release_bind(&bind, is_locked, cooldown_timers) {
-                    pending_release_binds.insert(key_code, bind.clone());
-                }
-                suppressed_keys.insert(key_code);
-                if bind.has_press() {
-                    ShouldInterceptResult::InterceptAndHandle(bind)
-                } else {
-                    // Release-only bind: intercept the key press so that it doesn't reach the
-                    // client, and remember to trigger the release action when the key is
-                    // released.
-                    ShouldInterceptResult::InterceptOnly
-                }
-            }
-        }
-        None => ShouldInterceptResult::Forward,
+    // If the bind is not allowed when locked, forward the key.
+    //
+    // This early return is not necessary to prevent the action from running because
+    // allow_when_locked is also checked in handle_bind() (this is required for key repeat).
+    // However, especially with the GlobalShortcuts portal, it's quite easy to bind single letter
+    // keys. This forward lets them work to type on the lock screen so the user isn't locked out.
+    if is_locked && !bind_allowed_when_locked(&bind, true) {
+        return ShouldInterceptResult::Forward;
     }
+
+    // By default we intercept the key which hides both the press and release from clients.
+    // Clients still learn about the modifier state via `advertise_modifier_state()`.
+    //
+    // Release-only binds are not intercepted by default so that bindings like `Ctrl+Alt`
+    // do not break application shortcuts.
+    let forward = bind.pass_through.unwrap_or(!bind.has_press());
+    if !forward {
+        suppressed_keys.insert(key_code);
+    }
+
+    if should_record_release_bind(&bind, is_locked, is_in_screenshot, cooldown_timers) {
+        pending_release_binds.insert(key_code, bind.clone());
+    }
+
+    // We need to check cooldown here matching the check in should_record_release_bind() above.
+    // Otherwise, a bind on cooldown would start repeat, which would then trigger its press action
+    // without recording the corresponding release action.
+    //
+    // Another (arguably more correct) way would be to ensure a pending release bind when running
+    // key repeat. If that's implemented, this condition can be simplified.
+    let run_press_action = bind.has_press() && !is_bind_on_cooldown(&bind, cooldown_timers);
+
+    bind_intercept_result(run_press_action.then_some(bind), forward)
 }
 
-fn find_bind<'a>(
-    bindings: impl IntoIterator<Item = &'a Bind>,
+fn find_bind<'a, I: Iterator<Item = &'a Bind> + Clone>(
+    bindings: I,
     mod_key: ModKey,
-    modified: Keysym,
-    raw: Option<Keysym>,
-    mods: ModifiersState,
+    modified: Option<Keysym>,
+    raw: &[Keysym],
+    mods: Modifiers,
     disable_power_key_handling: bool,
 ) -> Option<Bind> {
+    let _span = tracy_client::span!("find_bind");
+
     use keysyms::*;
 
     // Handle hardcoded binds.
     #[allow(non_upper_case_globals)] // wat
-    let hardcoded_action = match modified.raw() {
+    let hardcoded_action = match modified.map_or(KEY_NoSymbol, Keysym::raw) {
         modified @ KEY_XF86Switch_VT_1..=KEY_XF86Switch_VT_12 => {
-            let vt = (modified - KEY_XF86Switch_VT_1 + 1) as i32;
+            let vt = (modified - KEY_XF86Switch_VT_1 + 1) as u8;
             Some(Action::ChangeVt(vt))
         }
         KEY_XF86PowerOff if !disable_power_key_handling => Some(Action::Suspend),
@@ -4864,13 +5111,14 @@ fn find_bind<'a>(
         return Some(Bind {
             key: Key {
                 // Not entirely correct but it doesn't matter in how we currently use it.
-                trigger: Trigger::Keysym(modified),
+                trigger: Trigger::Keysym(modified.unwrap()),
                 modifiers: Modifiers::empty(),
             },
             action: BoundAction::Press(action),
             // Repeating VT switches and power off doesn't make sense (and it actually happens on
             // FreeBSD where it doesn't get released and ends up broken).
             repeat: false,
+            pass_through: None,
             cooldown: None,
             allow_when_locked: false,
             // In a worst-case scenario, the user has no way to unlock the compositor and a
@@ -4883,65 +5131,67 @@ fn find_bind<'a>(
         });
     }
 
-    let raw = raw?;
-
-    let modifiers = modifiers_from_state(mods);
-
     // A modifier key can trigger binds bound as the compositor mod key (`Mod`), by its own keysym
     // (like `Alt_L`), or as the modifier itself (like `Alt`). Return the first bind that matches.
-    bindings
-        .into_iter()
-        .find(|bind| {
-            let bind_trigger = bind.key.trigger;
-            // Check that the bind modifiers match the held modifiers.
-            //
-            // Pass the bind's trigger itself since we'll check the trigger match below.
-            // (Note that this means mod_key is not properly checked when it matches the trigger.)
-            if !bind_matches_trigger(bind, bind_trigger, mod_key, modifiers) {
-                return false;
-            }
-
-            // Binds that consist only of generic modifiers can be hit in any order (trigger key
-            // does not have to be the last). This is consistent with how these types of binds work
-            // elsewhere.
-            //
-            // For example:
-            // - Alt + Shift to switch keyboard layout on Windows
-            // - Ctrl + Alt to show inlay hints in VSCode
-            if bind_trigger.is_generic_modifier() {
-                // Bind trigger matching compositor mod isn't properly checked above.
-                // Check it here.
-                if (bind_trigger == Trigger::CompositorMod
-                    || bind_trigger == Trigger::Modifier(mod_key))
-                    && !modifiers.contains(mod_key.to_modifiers())
-                {
+    let find = |mut bindings: I, key: Keysym| {
+        bindings
+            .find(|bind| {
+                let bind_trigger = bind.key.trigger;
+                // Check that the bind modifiers match the held modifiers.
+                //
+                // Pass the bind's trigger itself since we'll check the trigger match below.
+                // (Note that this means mod_key is not properly checked when it matches the
+                // trigger.)
+                if !bind_matches_trigger(bind, bind_trigger, mod_key, mods) {
                     return false;
                 }
 
-                // Check that the key we pressed is one of the bind modifiers.
-                let mut raw_mods = Trigger::Keysym(raw).implied_modifier();
-                if mod_key.matches_keysym(raw) {
-                    raw_mods |= Modifiers::COMPOSITOR;
-                }
-                return !raw_mods.is_empty() && bind.key.modifiers.intersects(raw_mods);
-            }
+                // Binds that consist only of generic modifiers can be hit in any order (trigger key
+                // does not have to be the last). This is consistent with how these types of binds
+                // work elsewhere.
+                //
+                // For example:
+                // - Alt + Shift to switch keyboard layout on Windows
+                // - Ctrl + Alt to show inlay hints in VSCode
+                if bind_trigger.is_generic_modifier() {
+                    // Bind trigger matching compositor mod isn't properly checked above.
+                    // Check it here.
+                    if (bind_trigger == Trigger::CompositorMod
+                        || bind_trigger == Trigger::Modifier(mod_key))
+                        && !mods.contains(mod_key.to_modifiers())
+                    {
+                        return false;
+                    }
 
-            // Modifier-only binds can be written in several ways:
-            // - `Mod { quit; }` - Trigger::CompositorMod
-            // - `Super { quit; }` - Trigger::Modifier(_)
-            // - `Super_L { quit; }` - Trigger::Keysym(_)
-            //
-            // These only matter for keyboard keys and not for mouse or others. So, check them here.
-            trigger_matches_keysym(bind_trigger, raw, mod_key)
-        })
-        .cloned()
+                    // Check that the key we pressed is one of the bind modifiers.
+                    let mut raw_mods = Trigger::Keysym(key).implied_modifier();
+                    if mod_key.matches_keysym(key) {
+                        raw_mods |= Modifiers::COMPOSITOR;
+                    }
+                    return !raw_mods.is_empty() && bind.key.modifiers.intersects(raw_mods);
+                }
+
+                // Modifier-only binds can be written in several ways:
+                // - `Mod { quit; }` - Trigger::CompositorMod
+                // - `Super { quit; }` - Trigger::Modifier(_)
+                // - `Super_L { quit; }` - Trigger::Keysym(_)
+                //
+                // These only matter for keyboard keys and not for mouse or others. So, check them
+                // here.
+                trigger_matches_keysym(bind_trigger, key, mod_key)
+            })
+            .cloned()
+    };
+
+    let mut keys = modified.into_iter().chain(raw.iter().copied());
+    keys.find_map(|key| find(bindings.clone(), key))
 }
 
-fn trigger_matches_keysym(trigger: Trigger, raw: Keysym, mod_key: ModKey) -> bool {
+fn trigger_matches_keysym(trigger: Trigger, key: Keysym, mod_key: ModKey) -> bool {
     match trigger {
-        Trigger::CompositorMod => mod_key.matches_keysym(raw),
-        Trigger::Keysym(keysym) => keysym == raw,
-        Trigger::Modifier(modifier) => modifier.matches_keysym(raw),
+        Trigger::CompositorMod => mod_key.matches_keysym(key),
+        Trigger::Keysym(keysym) => keysym == key,
+        Trigger::Modifier(modifier) => modifier.matches_keysym(key),
         _ => false,
     }
 }
@@ -5145,13 +5395,16 @@ fn bind_allowed_when_locked(bind: &Bind, pressed: bool) -> bool {
 fn should_record_release_bind(
     bind: &Bind,
     is_locked: bool,
+    is_in_screenshot: bool,
     cooldown_timers: &HashMap<Key, RegistrationToken>,
 ) -> bool {
     if bind.has_press() && is_bind_on_cooldown(bind, cooldown_timers) {
         return false;
     }
 
-    bind.has_release() && (!is_locked || bind_allowed_when_locked(bind, true))
+    bind.has_release()
+        && (!is_locked || bind_allowed_when_locked(bind, true))
+        && (!is_in_screenshot || bind_allowed_during_screenshot(bind, true))
 }
 
 fn allowed_during_screenshot(action: &Action) -> bool {
@@ -5192,6 +5445,10 @@ fn allowed_during_screenshot(action: &Action) -> bool {
             | Action::SetWindowWidth(_)
             | Action::SetWindowHeight(_)
             | Action::SetColumnWidth(_)
+            // Screenshot UI's own actions.
+            | Action::CancelScreenshot
+            | Action::ConfirmScreenshot { .. }
+            | Action::ScreenshotTogglePointer
     )
 }
 
@@ -5209,41 +5466,6 @@ fn bind_allowed_during_screenshot(bind: &Bind, pressed: bool) -> bool {
             }
         }
     }
-}
-
-fn hardcoded_overview_bind(raw: Keysym, mods: ModifiersState) -> Option<Bind> {
-    let mods = modifiers_from_state(mods);
-    if !mods.is_empty() {
-        return None;
-    }
-
-    let mut repeat = true;
-    let action = match raw {
-        Keysym::Escape | Keysym::Return => {
-            repeat = false;
-            Action::ToggleOverview
-        }
-        Keysym::Left => Action::FocusColumnLeft,
-        Keysym::Right => Action::FocusColumnRight,
-        Keysym::Up => Action::FocusWindowOrWorkspaceUp,
-        Keysym::Down => Action::FocusWindowOrWorkspaceDown,
-        _ => {
-            return None;
-        }
-    };
-
-    Some(Bind {
-        key: Key {
-            trigger: Trigger::Keysym(raw),
-            modifiers: Modifiers::empty(),
-        },
-        action: BoundAction::Press(action),
-        repeat,
-        cooldown: None,
-        allow_when_locked: false,
-        allow_inhibiting: false,
-        hotkey_overlay_title: None,
-    })
 }
 
 pub fn apply_libinput_settings(
@@ -5640,16 +5862,50 @@ fn grab_allows_hot_corner(grab: &(dyn PointerGrab<State> + 'static)) -> bool {
     true
 }
 
+fn hardcoded_overview_binds<'a>() -> impl Iterator<Item = &'a Bind> + Clone {
+    const fn bind(key: Keysym, action: Action, repeat: bool) -> Bind {
+        Bind {
+            key: Key {
+                trigger: Trigger::Keysym(key),
+                modifiers: Modifiers::empty(),
+            },
+            action: BoundAction::Press(action),
+            repeat,
+            pass_through: None,
+            cooldown: None,
+            allow_when_locked: false,
+            allow_inhibiting: false,
+            hotkey_overlay_title: None,
+        }
+    }
+
+    const BINDS: &[Bind] = &[
+        bind(Keysym::Escape, Action::ToggleOverview, false),
+        bind(Keysym::Return, Action::ToggleOverview, false),
+        bind(Keysym::Left, Action::FocusColumnLeft, true),
+        bind(Keysym::Right, Action::FocusColumnRight, true),
+        bind(Keysym::Up, Action::FocusWindowOrWorkspaceUp, true),
+        bind(Keysym::Down, Action::FocusWindowOrWorkspaceDown, true),
+    ];
+
+    BINDS.iter()
+}
+
 /// Returns an iterator over bindings.
 ///
 /// Includes dynamically populated bindings like the MRU UI.
 fn make_binds_iter<'a>(
     config: &'a Config,
+    screenshot_ui: &'a ScreenshotUi,
     mru: &'a mut WindowMruUi,
+    #[cfg(feature = "dbus")] global_shortcuts: &'a GlobalShortcutsPortalBinds,
+    overview_focused: bool,
     mods: Modifiers,
-) -> impl Iterator<Item = &'a Bind> {
+) -> impl Iterator<Item = &'a Bind> + Clone {
+    let general_binds = config.binds.0.iter();
+
     // Figure out the binds to use depending on whether the MRU is enabled and/or open.
-    let general_binds = (!mru.is_open()).then_some(config.binds.0.iter());
+    let general_binds = (!mru.is_open()).then_some(general_binds);
     let general_binds = general_binds.into_iter().flatten();
 
     let mru_binds =
@@ -5659,22 +5915,39 @@ fn make_binds_iter<'a>(
     let mru_open_binds = mru.is_open().then(|| mru.opened_bindings(mods));
     let mru_open_binds = mru_open_binds.into_iter().flatten();
 
-    // General binds take precedence over the MRU binds.
-    general_binds.chain(mru_binds).chain(mru_open_binds)
+    // Screenshot UI binds already disable themselves when it's closed.
+    let screenshot_binds = screenshot_ui.binds();
+
+    let overview_binds = overview_focused
+        .then(hardcoded_overview_binds)
+        .into_iter()
+        .flatten();
+
+    // The precedence is screenshot UI, then general, then MRU binds.
+    let all_binds = screenshot_binds
+        .chain(general_binds)
+        .chain(mru_binds)
+        .chain(mru_open_binds)
+        .chain(overview_binds);
+
+    // The GlobalShortcuts portal binds go last.
+    #[cfg(feature = "dbus")]
+    let all_binds = all_binds.chain(global_shortcuts.binds());
+
+    all_binds
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::animation::Clock;
 
     const CLOSE_KEYSYM: Keysym = Keysym::q;
     const CLOSE_KEY_CODE: Keycode = Keycode::new(CLOSE_KEYSYM.raw());
     struct TestState {
-        screenshot_ui: ScreenshotUi,
         disable_power_key_handling: bool,
         is_inhibiting: bool,
         is_locked: bool,
+        is_in_screenshot: bool,
         suppressed_keys: HashSet<Keycode>,
         pending_release_binds: HashMap<Keycode, Bind>,
         cooldown_timers: HashMap<Key, RegistrationToken>,
@@ -5682,10 +5955,10 @@ mod tests {
 
     fn create_test_state() -> TestState {
         TestState {
-            screenshot_ui: ScreenshotUi::new(Clock::default(), Default::default()),
             disable_power_key_handling: false,
             is_inhibiting: false,
             is_locked: false,
+            is_in_screenshot: false,
             suppressed_keys: HashSet::new(),
             pending_release_binds: HashMap::new(),
             cooldown_timers: HashMap::new(),
@@ -5698,6 +5971,7 @@ mod tests {
             key: Key { trigger, modifiers },
             action,
             repeat: false,
+            pass_through: None,
             cooldown: None,
             allow_when_locked: false,
             allow_inhibiting: true,
@@ -5710,18 +5984,11 @@ mod tests {
         bind(Trigger::Keysym(CLOSE_KEYSYM), Modifiers::COMPOSITOR, action)
     }
 
-    fn mod_held() -> ModifiersState {
-        ModifiersState {
-            logo: true,
-            ..Default::default()
-        }
-    }
-
     /// Processes a press of the `Mod+Q` bind that the tests are written with.
     fn press_close_key(
         state: &mut TestState,
         bindings: &Binds,
-        mods: ModifiersState,
+        mods: Modifiers,
     ) -> ShouldInterceptResult {
         process_close_key(state, bindings, mods, KeyState::Pressed)
     }
@@ -5730,7 +5997,7 @@ mod tests {
     fn release_close_key(
         state: &mut TestState,
         bindings: &Binds,
-        mods: ModifiersState,
+        mods: Modifiers,
     ) -> ShouldInterceptResult {
         process_close_key(state, bindings, mods, KeyState::Released)
     }
@@ -5738,7 +6005,7 @@ mod tests {
     fn process_close_key(
         state: &mut TestState,
         bindings: &Binds,
-        mods: ModifiersState,
+        mods: Modifiers,
         key_state: KeyState,
     ) -> ShouldInterceptResult {
         let pressed = key_state == KeyState::Pressed;
@@ -5751,17 +6018,17 @@ mod tests {
             &mut state.suppressed_keys,
             &mut state.pending_release_binds,
             &state.cooldown_timers,
-            &bindings.0,
+            bindings.0.iter(),
             ModKey::Super,
             CLOSE_KEY_CODE,
-            CLOSE_KEYSYM,
             Some(CLOSE_KEYSYM),
+            &[],
             pressed,
             mods,
-            &state.screenshot_ui,
             state.disable_power_key_handling,
             state.is_inhibiting,
             state.is_locked,
+            state.is_in_screenshot,
         )
     }
 
@@ -6031,14 +6298,14 @@ mod tests {
             is_locked: true,
             ..create_test_state()
         };
-        let result = press_close_key(&mut state, &bindings, mod_held());
+        let result = press_close_key(&mut state, &bindings, Modifiers::SUPER);
 
         // `handle_bind()` drops the press while locked, and nothing is recorded to undo.
-        assert_matches!(result, ShouldInterceptResult::InterceptAndHandle(_));
+        assert_matches!(result, ShouldInterceptResult::Forward);
         assert!(state.pending_release_binds.is_empty());
 
-        let result = release_close_key(&mut state, &bindings, mod_held());
-        assert_matches!(result, ShouldInterceptResult::InterceptOnly);
+        let result = release_close_key(&mut state, &bindings, Modifiers::SUPER);
+        assert_matches!(result, ShouldInterceptResult::Forward);
     }
 
     #[test]
@@ -6051,12 +6318,12 @@ mod tests {
         })]);
 
         let mut state = create_test_state();
-        let result = press_close_key(&mut state, &bindings, mod_held());
+        let result = press_close_key(&mut state, &bindings, Modifiers::SUPER);
         assert_matches!(result, ShouldInterceptResult::InterceptAndHandle(_));
         assert!(state.pending_release_binds.contains_key(&CLOSE_KEY_CODE));
 
         state.is_locked = true;
-        let result = release_close_key(&mut state, &bindings, mod_held());
+        let result = release_close_key(&mut state, &bindings, Modifiers::SUPER);
         assert_matches!(
             result,
             ShouldInterceptResult::InterceptAndHandle(Bind {
@@ -6075,14 +6342,14 @@ mod tests {
         let bindings = Binds(vec![close_bind(BoundAction::Release(Action::CloseWindow))]);
 
         let mut state = create_test_state();
-        let result = press_close_key(&mut state, &bindings, mod_held());
-        assert_matches!(result, ShouldInterceptResult::InterceptOnly);
+        let result = press_close_key(&mut state, &bindings, Modifiers::SUPER);
+        assert_matches!(result, ShouldInterceptResult::Forward);
         assert!(state.pending_release_binds.contains_key(&CLOSE_KEY_CODE));
 
-        let result = release_close_key(&mut state, &bindings, mod_held());
+        let result = release_close_key(&mut state, &bindings, Modifiers::SUPER);
         assert_matches!(
             result,
-            ShouldInterceptResult::InterceptAndHandle(Bind {
+            ShouldInterceptResult::ForwardAndHandle(Bind {
                 action: BoundAction::Release(Action::CloseWindow),
                 ..
             })
@@ -6101,14 +6368,14 @@ mod tests {
             is_locked: true,
             ..create_test_state()
         };
-        let result = press_close_key(&mut state, &bindings, mod_held());
-        assert_matches!(result, ShouldInterceptResult::InterceptOnly);
+        let result = press_close_key(&mut state, &bindings, Modifiers::SUPER);
+        assert_matches!(result, ShouldInterceptResult::Forward);
         assert!(state.pending_release_binds.contains_key(&CLOSE_KEY_CODE));
 
-        let result = release_close_key(&mut state, &bindings, mod_held());
+        let result = release_close_key(&mut state, &bindings, Modifiers::SUPER);
         assert_matches!(
             result,
-            ShouldInterceptResult::InterceptAndHandle(Bind {
+            ShouldInterceptResult::ForwardAndHandle(Bind {
                 action: BoundAction::Release(Action::CloseWindow),
                 ..
             })
@@ -6124,12 +6391,12 @@ mod tests {
             is_locked: true,
             ..create_test_state()
         };
-        let result = press_close_key(&mut state, &bindings, mod_held());
-        assert_matches!(result, ShouldInterceptResult::InterceptOnly);
+        let result = press_close_key(&mut state, &bindings, Modifiers::SUPER);
+        assert_matches!(result, ShouldInterceptResult::Forward);
         assert!(state.pending_release_binds.is_empty());
 
-        let result = release_close_key(&mut state, &bindings, mod_held());
-        assert_matches!(result, ShouldInterceptResult::InterceptOnly);
+        let result = release_close_key(&mut state, &bindings, Modifiers::SUPER);
+        assert_matches!(result, ShouldInterceptResult::Forward);
         assert!(state.pending_release_binds.is_empty());
     }
 

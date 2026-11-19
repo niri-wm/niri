@@ -165,7 +165,7 @@ impl State {
                 }
                 return;
             }
-            CastTarget::Window { id } => *id,
+            CastTarget::Window { id } => MappedId::specific(*id),
         };
 
         // Lack of partial borrowing strikes again...
@@ -174,9 +174,9 @@ impl State {
         let mut stop = false;
         // Use a loop {} so we can break instead of early-return.
         #[allow(clippy::never_loop)]
+        #[allow(clippy::while_let_loop)]
         loop {
-            let mut windows = self.niri.layout.windows();
-            let Some((_, mapped)) = windows.find(|(_, mapped)| mapped.id().get() == id) else {
+            let Some((mapped, _)) = self.niri.find_mapped_output_by_id(id) else {
                 break;
             };
 
@@ -187,10 +187,7 @@ impl State {
             };
 
             let scale = Scale::from(output.current_scale().fractional_scale());
-            let bbox = mapped
-                .window
-                .bbox_with_popups()
-                .to_physical_precise_up(scale);
+            let bbox = mapped.capture_bbox(scale);
 
             match cast.ensure_size(bbox.size) {
                 Ok(CastSizeChange::Ready) => (),
@@ -228,8 +225,13 @@ impl State {
                     }
                 }
 
+                let ctx = RenderCtx {
+                    renderer,
+                    target: RenderTarget::Screencast,
+                    xray: None,
+                };
                 let main_start = elements.len();
-                mapped.render_for_screen_cast(renderer, scale, &mut |elem| {
+                mapped.render_for_screen_cast(ctx, scale, &mut |elem| {
                     elements.push(CastRenderElement::from(elem))
                 });
 
@@ -469,20 +471,6 @@ impl State {
 }
 
 impl Niri {
-    pub fn refresh_mapped_cast_window_rules(&mut self) {
-        // O(N^2) but should be fine since there aren't many casts usually.
-        self.layout.with_windows_mut(|mapped, _| {
-            let id = mapped.id().get();
-            // Find regardless of cast.is_active.
-            let value = self
-                .casting
-                .casts
-                .iter()
-                .any(|cast| cast.target == (CastTarget::Window { id }));
-            mapped.set_is_window_cast_target(value);
-        });
-    }
-
     pub fn refresh_mapped_cast_outputs(&mut self) {
         let mut seen = HashSet::new();
         let mut output_changed = vec![];
@@ -648,10 +636,7 @@ impl Niri {
                 continue;
             };
 
-            let bbox = mapped
-                .window
-                .bbox_with_popups()
-                .to_physical_precise_up(scale);
+            let bbox = mapped.capture_bbox(scale);
 
             match cast.ensure_size(bbox.size) {
                 Ok(CastSizeChange::Ready) => (),
@@ -688,8 +673,13 @@ impl Niri {
                 }
             }
 
+            let ctx = RenderCtx {
+                renderer,
+                target: RenderTarget::Screencast,
+                xray: None,
+            };
             let main_start = elements.len();
-            mapped.render_for_screen_cast(renderer, scale, &mut |elem| {
+            mapped.render_for_screen_cast(ctx, scale, &mut |elem| {
                 elements.push(CastRenderElement::from(elem))
             });
 
@@ -778,10 +768,7 @@ impl Niri {
             .find(|(_, m)| m.id().get() == window_id)?;
         let output = self.casting.mapped_cast_output.get(&mapped.window)?;
         let scale = Scale::from(output.current_scale().fractional_scale());
-        let bbox = mapped
-            .window
-            .bbox_with_popups()
-            .to_physical_precise_up(scale);
+        let bbox = mapped.capture_bbox(scale);
         let refresh = output.current_mode().unwrap().refresh as u32;
         Some((bbox.size, refresh))
     }

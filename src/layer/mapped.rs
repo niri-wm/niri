@@ -179,7 +179,7 @@ impl MappedLayer {
             return Point::from((0., 0.));
         }
 
-        let y = baba_is_float_offset(self.clock.now(), self.view_size.h);
+        let y = baba_is_float_offset(self.clock.now_unadjusted(), self.view_size.h);
         let y = round_logical_in_physical(self.scale, y);
         Point::from((0., y))
     }
@@ -192,6 +192,10 @@ impl MappedLayer {
         xray_pos: XrayPos,
         push: &mut dyn FnMut(LayerSurfaceRenderElement<R>),
     ) {
+        if ctx.target.should_hide(self.rules.block_out_from) {
+            return;
+        }
+
         let scale = Scale::from(self.scale);
         let alpha = self.rules.opacity.unwrap_or(1.).clamp(0., 1.);
 

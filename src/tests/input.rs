@@ -12,6 +12,7 @@ fn repeat_bind(keysym: Keysym, action: Action) -> Bind {
         },
         action: BoundAction::Press(action),
         repeat: true,
+        pass_through: None,
         cooldown: None,
         allow_when_locked: false,
         allow_inhibiting: false,

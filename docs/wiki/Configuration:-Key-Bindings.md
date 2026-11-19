@@ -86,14 +86,25 @@ binds {
 > Here, look at `sym: Left` and `sym: Right`: these are the key names.
 > I was pressing the left and the right arrow in this example.
 >
-> Keep in mind that binding shifted keys requires spelling out Shift and the unshifted version of the key, according to your XKB layout.
-> For example, on the US QWERTY layout, <kbd>&lt;</kbd> is on <kbd>Shift</kbd> + <kbd>,</kbd>, so to bind it, you spell out something like `Mod+Shift+Comma`.
+> Keep in mind that binding a key requires spelling out the modifiers that you hold when typing it.
+> So, symbols that you type while holding Shift need the Shift modifier in the corresponding binding.
+> For example, on the US QWERTY layout, <kbd>&lt;</kbd> is on <kbd>Shift</kbd> + <kbd>,</kbd>, so to bind it, you spell out something like `Mod+Shift+Less` or `Mod+Shift+Comma` (just `Mod+Less` will not work).
 >
 > As another example, if you've configured the French [BÉPO](https://en.wikipedia.org/wiki/B%C3%89PO) XKB layout, your <kbd>&lt;</kbd> is on <kbd>AltGr</kbd> + <kbd>«</kbd>.
-> <kbd>AltGr</kbd> is `ISO_Level3_Shift`, or equivalently `Mod5`, so to bind it, you spell out something like `Mod+Mod5+guillemotleft`.
+> <kbd>AltGr</kbd> is `ISO_Level3_Shift`, or equivalently `Mod5`, so to bind it, you spell out something like `Mod+Mod5+Less` or `Mod+Mod5+guillemotleft`.
 >
-> When resolving latin keys, niri will search for the *first* configured XKB layout that has the latin key.
-> So for example with US QWERTY and RU layouts configured, US QWERTY will be used for latin binds.
+> When resolving ASCII (latin) keys, niri will search for the *first* configured XKB layout that has the ASCII key.
+> So for example with US Colemak and RU layouts configured, US Colemak will be used for ASCII binds.
+>
+> Keys from the current layout have priority though.
+> For example, if you have US QWERTY and Russian layouts, and both `Mod+Z` and `Mod+Cyrillic_ya` binds, then on Russian the `Mod+Cyrillic_ya` bind will trigger, while on US, the `Mod+Z` bind will trigger.
+>
+> Also, binds that spell out the typed character have priority over binds that spell out an unshifted character.
+> For example, on US QWERTY, `Mod+Shift+At` will have priority over `Mod+Shift+2` if both are configured.
+>
+> <sup>Since: next release</sup> You used to need to spell out the *unshifted* version of the trigger key.
+> So to bind <kbd>&lt;</kbd> on US QWERTY you could use only `Mod+Shift+Comma` (since <kbd>,</kbd> is the unshifted version of that key).
+> This is no longer the case: you can spell out either version of the key.
 
 <sup>Since: 0.1.8</sup> Binds will repeat by default (i.e. holding down a bind will make it trigger repeatedly).
 You can disable that for specific binds with `repeat=false`:
@@ -171,6 +182,32 @@ binds {
     Mod+Shift+Q repeat=true {
         press { spawn "notify-send" "Pressed (repeating)"; }
         release { spawn "notify-send" "Released"; }
+    }
+}
+```
+
+By default, bound key presses/releases are not passed to applications.
+You can set `pass-through=true` if you want applications to see the bound key:
+
+```kdl
+binds {
+    // Let applications see the Alt key presses/releases.
+    Alt pass-through=true {
+        press { spawn "notify-send" "Pressed"; }
+        release { spawn "notify-send" "Released"; }
+    }
+}
+```
+
+Keyboard release-only bindings are passed through by default though.
+You can set `pass-through=false` on those if you don't like that:
+
+```kdl
+binds {
+    // Do not pass Mod press/release event to applications.
+    // (They will still see the modifiers event.)
+    Mod pass-through=false {
+        release { toggle-overview; }
     }
 }
 ```

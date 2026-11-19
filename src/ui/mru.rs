@@ -466,6 +466,9 @@ impl Thumbnail {
         // Hide title for blocked-out windows, but only after computing the title size. This way,
         // the background and the border won't have to oscillate in size between normal and
         // screencast renders, causing excessive damage.
+        //
+        // If the window is hidden (kind="hide"), it still makes sense to show its slot in the MRU,
+        // otherwise there would be a weird gap.
         let should_block_out = ctx.target.should_block_out(mapped.rules().block_out_from);
         let title_texture = title_texture.filter(|_| !should_block_out);
 
@@ -1581,14 +1584,14 @@ impl Inner {
 
         let current_id = self.wmru.current_id;
 
-        let bob_y = baba_is_float_offset(self.clock.now(), output_size.h);
+        let bob_y = baba_is_float_offset(self.clock.now_unadjusted(), output_size.h);
         let bob_y = round_logical_in_physical(scale, bob_y);
 
         let config = self.config.borrow();
 
         for (thumbnail, geo) in self.thumbnails_in_view_render() {
             let id = thumbnail.id;
-            let Some((_, mapped)) = niri.layout.windows().find(|(_, m)| m.id() == id) else {
+            let Some((mapped, _)) = niri.find_mapped_output_by_id(id) else {
                 error!("window in the MRU must be present in the layout");
                 continue;
             };
@@ -1836,6 +1839,7 @@ fn make_preset_opened_binds() -> Vec<Bind> {
             },
             action: BoundAction::Press(action),
             repeat: true,
+            pass_through: None,
             cooldown: None,
             allow_when_locked: false,
             allow_inhibiting: false,

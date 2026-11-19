@@ -616,10 +616,25 @@ pub struct InsertHintPart {
     pub gradient: Option<Gradient>,
 }
 
+#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlockOutFrom {
+    #[knuffel(argument)]
+    pub target: BlockOutTarget,
+    #[knuffel(property, default)]
+    pub kind: BlockOutKind,
+}
+
 #[derive(knuffel::DecodeScalar, Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BlockOutFrom {
+pub enum BlockOutTarget {
     Screencast,
     ScreenCapture,
+}
+
+#[derive(knuffel::DecodeScalar, Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum BlockOutKind {
+    #[default]
+    Fill,
+    Hide,
 }
 
 #[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq)]

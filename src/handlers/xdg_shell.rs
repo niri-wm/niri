@@ -363,6 +363,13 @@ impl XdgShellHandler for State {
                         return;
                     }
                 }
+
+                let mon = self.niri.layout.monitor_for_output(output).unwrap();
+                if mon.render_above_top_layer() && layer.layer() != Layer::Overlay {
+                    trace!("ignoring popup grab for a layer surface below fullscreen window");
+                    let _ = PopupManager::dismiss_popup(&root, &popup);
+                    return;
+                }
             } else {
                 // This is a grab for a regular window; check that there's no layer surface with a
                 // higher input priority.

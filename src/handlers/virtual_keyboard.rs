@@ -13,9 +13,8 @@
 //! - Modifiers set through the `modifiers` request apply to the shared xkb state (see
 //!   `DeviceRemoved`).
 
-use std::sync::Arc;
-
 use smithay::backend::input::{Event, InputEvent, KeyboardKeyEvent};
+use smithay::input::keyboard::KeymapFile;
 use smithay::utils::SERIAL_COUNTER;
 use smithay::wayland::input_method::InputMethodSeat;
 use smithay::wayland::virtual_keyboard::{
@@ -29,7 +28,7 @@ use crate::niri::{SavedKeyboardState, State};
 #[derive(Debug)]
 pub struct VirtualKeyboardKeymap {
     pub device: VirtualKeyboardDevice,
-    pub keymap: Arc<str>,
+    pub keymap: KeymapFile,
     pub saved: SavedKeyboardState,
 }
 
@@ -159,7 +158,7 @@ impl State {
         };
 
         if let Some(active) = &mut self.niri.virtual_keyboard_keymap {
-            if active.keymap == keymap {
+            if active.keymap.id() == keymap.id() {
                 // Another virtual keyboard may have installed an identical
                 // keymap. Take ownership of it anyway, so that removing that
                 // one doesn't take the keymap out from under us.
@@ -171,7 +170,7 @@ impl State {
         // A keymap identical to the configured one (e.g. from an input method
         // forwarding keys with the keymap it received from us) doesn't need to
         // be swapped in, which would needlessly reset the keyboard state.
-        if *self.configured_keymap() == *keymap {
+        if self.configured_keymap().id() == keymap.id() {
             self.restore_configured_keymap();
             return;
         }
@@ -185,7 +184,7 @@ impl State {
         };
 
         let keyboard = self.niri.seat.get_keyboard().unwrap();
-        if let Err(err) = keyboard.set_keymap_from_string(self, keymap.to_string()) {
+        if let Err(err) = keyboard.set_keymap_from_keymap_file(self, keymap.clone()) {
             warn!("error setting virtual keyboard keymap: {err:?}");
             return;
         }
@@ -210,7 +209,7 @@ impl State {
         let keyboard = self.niri.seat.get_keyboard().unwrap();
         let restored = self.niri.configured_keymap.clone().is_some_and(|keymap| {
             keyboard
-                .set_keymap_from_string(self, keymap.to_string())
+                .set_keymap_from_keymap_file(self, keymap)
                 .inspect_err(|err| warn!("error restoring configured keymap: {err:?}"))
                 .is_ok()
         });
@@ -231,7 +230,7 @@ impl State {
     }
 
     /// Returns the configured keymap as XKB_KEYMAP_FORMAT_TEXT_V1.
-    fn configured_keymap(&mut self) -> Arc<str> {
+    fn configured_keymap(&mut self) -> KeymapFile {
         if let Some(keymap) = &self.niri.configured_keymap {
             return keymap.clone();
         }
@@ -242,11 +241,7 @@ impl State {
         }
 
         let keyboard = self.niri.seat.get_keyboard().unwrap();
-        let keymap: Arc<str> = keyboard
-            .with_xkb_state(self, |context| {
-                context.xkb().lock().unwrap().keymap_as_string()
-            })
-            .into();
+        let keymap = keyboard.keymap_file();
         self.niri.configured_keymap = Some(keymap.clone());
         keymap
     }
