@@ -11,7 +11,7 @@ These provide a cross-desktop API for apps to use for various things like file p
 Portals **require** [running niri as a session](./Getting-Started.md), which means through the `niri-session` script or from a display manager. You will want the following portals installed:
 
 * `xdg-desktop-portal-gtk`: implements most of the basic functionality, this is the "default fallback portal".
-* `xdg-desktop-portal-gnome`: required for screencasting support.
+* `xdg-desktop-portal-gnome`: required for screencasting and screenshot support.
 * `gnome-keyring`: implements the Secret portal, required for certain apps to work.
 
 Then systemd should start them on-demand automatically. These particular portals are configured in `niri-portals.conf` which [must be installed](./Getting-Started.md#manual-installation) in the correct location.
