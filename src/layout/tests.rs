@@ -4355,6 +4355,150 @@ fn workspace_render_geo_at_fractional_scale() {
     );
 }
 
+#[test]
+fn fractional_scale_gaps_zero_working_area_and_window_size() {
+    let ops = [
+        Op::AddScaledOutput {
+            id: 1,
+            scale: 1.75,
+            layout_config: Some(Box::new(niri_config::LayoutPart {
+                gaps: Some(FloatOrInt(0.)),
+                border: Some(niri_config::BorderRule {
+                    off: true,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            })),
+        },
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::SetColumnWidth(SizeChange::SetProportion(100.0)),
+        Op::CompleteAnimations,
+    ];
+
+    let layout = check_ops(ops);
+
+    let MonitorSet::Normal { monitors, .. } = &layout.monitor_set else {
+        unreachable!()
+    };
+
+    let mon = &monitors[0];
+    let mut iter = mon.workspaces_with_render_geo();
+    let (ws, _geo) = iter.next().unwrap();
+
+    let working_area = ws.working_area();
+    let view_size = ws.view_size();
+    let output_size = output_size(&mon.output);
+
+    // Working area snaps to output dimensions on fractional scale
+    assert_eq!(working_area.loc, Point::from((0.0, 0.0)));
+    assert_eq!(working_area.size, output_size);
+    assert_eq!(working_area.size, view_size);
+
+    let win = ws.windows().next().unwrap();
+    let req = win.0.requested_size.get().unwrap();
+    // Size request is floored to integer logical pixels
+    assert_eq!(req.w, view_size.w.floor() as i32);
+    assert_eq!(req.h, view_size.h.floor() as i32);
+}
+
+#[test]
+fn fractional_scale_multi_column_within_working_area_no_scroll() {
+    let ops = [
+        Op::AddScaledOutput {
+            id: 1,
+            scale: 1.75,
+            layout_config: Some(Box::new(niri_config::LayoutPart {
+                gaps: Some(FloatOrInt(0.)),
+                border: Some(niri_config::BorderRule {
+                    off: true,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            })),
+        },
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::SetColumnWidth(SizeChange::SetProportion(50.0)),
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+        Op::SetColumnWidth(SizeChange::SetProportion(50.0)),
+        Op::CompleteAnimations,
+        Op::FocusColumnRight,
+        Op::CompleteAnimations,
+    ];
+
+    let layout = check_ops(ops);
+
+    let MonitorSet::Normal { monitors, .. } = &layout.monitor_set else {
+        unreachable!()
+    };
+
+    let mon = &monitors[0];
+    let mut iter = mon.workspaces_with_render_geo();
+    let (ws, _geo) = iter.next().unwrap();
+
+    let working_area = ws.working_area();
+
+    // Two 50% columns must fit within the snapped working area without scrolling
+    assert_eq!(ws.scrolling().view_pos(), 0.0);
+
+    let tiles: Vec<_> = ws.scrolling().tiles_with_render_positions().collect();
+    assert_eq!(tiles.len(), 2);
+
+    let total_width: f64 = tiles.iter().map(|(tile, _, _)| tile.tile_size().w).sum();
+    assert!(total_width <= working_area.size.w);
+
+    for (tile, pos, _) in &tiles {
+        assert!(pos.x >= 0.0);
+        assert!(pos.x + tile.tile_size().w <= working_area.size.w);
+    }
+}
+
+#[test]
+fn fractional_scale_gaps_nonzero_floors_size() {
+    let ops = [
+        Op::AddScaledOutput {
+            id: 1,
+            scale: 1.75,
+            layout_config: Some(Box::new(niri_config::LayoutPart {
+                gaps: Some(FloatOrInt(8.)),
+                border: Some(niri_config::BorderRule {
+                    off: true,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            })),
+        },
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::SetColumnWidth(SizeChange::SetProportion(100.0)),
+        Op::CompleteAnimations,
+    ];
+
+    let layout = check_ops(ops);
+
+    let MonitorSet::Normal { monitors, .. } = &layout.monitor_set else {
+        unreachable!()
+    };
+
+    let mon = &monitors[0];
+    let mut iter = mon.workspaces_with_render_geo();
+    let (ws, _geo) = iter.next().unwrap();
+
+    let win = ws.windows().next().unwrap();
+    let req = win.0.requested_size.get().unwrap();
+    // With gaps > 0, size must be floored to avoid multi-column overflow
+    let expected_w = (ws.working_area().size.w - 16.).floor() as i32;
+    let expected_h = (ws.working_area().size.h - 16.).floor() as i32;
+    assert_eq!(req.w, expected_w);
+    assert_eq!(req.h, expected_h);
+}
+
 fn parent_id_causes_loop(layout: &Layout<TestWindow>, id: usize, mut parent_id: usize) -> bool {
     if parent_id == id {
         return true;

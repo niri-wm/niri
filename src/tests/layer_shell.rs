@@ -538,3 +538,72 @@ fn focus_on_type_in_overview() {
     key released: 16
     ");
 }
+
+#[test]
+fn fractional_scale_working_area_preserves_exclusive_zones() {
+    let mut config = Config::default();
+    config.outputs.0.push(niri_config::Output {
+        name: "headless-1".to_string(),
+        scale: Some(niri_config::FloatOrInt(1.75)),
+        ..Default::default()
+    });
+
+    let mut f = Fixture::with_config(config);
+    f.add_output(1, (1920, 1080));
+    let id = f.add_client();
+
+    let layer = f.client(id).create_layer(None, Layer::Top, "");
+    let top_bar_surface = layer.surface.clone();
+    layer.set_configure_props(LayerConfigureProps {
+        anchor: Some(Anchor::Left | Anchor::Right | Anchor::Top),
+        size: Some((0, 32)),
+        exclusive_zone: Some(32),
+        ..Default::default()
+    });
+    layer.commit();
+
+    let layer = f.client(id).create_layer(None, Layer::Top, "");
+    let bottom_trigger_surface = layer.surface.clone();
+    layer.set_configure_props(LayerConfigureProps {
+        anchor: Some(Anchor::Left | Anchor::Right | Anchor::Bottom),
+        size: Some((0, 1)),
+        exclusive_zone: Some(1),
+        ..Default::default()
+    });
+    layer.commit();
+
+    f.roundtrip(id);
+
+    let layer = f.client(id).layer(&top_bar_surface);
+    layer.attach_new_buffer();
+    layer.set_size(1097, 32);
+    layer.ack_last_and_commit();
+
+    let layer = f.client(id).layer(&bottom_trigger_surface);
+    layer.attach_new_buffer();
+    layer.set_size(1097, 1);
+    layer.ack_last_and_commit();
+
+    f.double_roundtrip(id);
+
+    let output = f.niri_output(1);
+    let working_area = crate::layout::workspace::compute_working_area(&output);
+    let output_size = crate::utils::output_size(&output);
+
+    // Top exclusive zone is 32px, so working area starts at y = 32.
+    assert_eq!(working_area.loc.x, 0.0);
+    assert_eq!(working_area.loc.y, 32.0);
+
+    // Right edge has no exclusive zone, so it snaps to the fractional output width.
+    assert_eq!(working_area.size.w, output_size.w);
+
+    // Bottom edge has a 1px exclusive trigger, so it must not snap to output_size.h - loc.y.
+    // Instead, it preserves the 1px exclusive zone (non_exclusive_zone height = 584).
+    let non_exclusive_h = smithay::desktop::layer_map_for_output(&output)
+        .non_exclusive_zone()
+        .size
+        .h as f64;
+    assert_eq!(non_exclusive_h, 584.0);
+    assert_eq!(working_area.size.h, 584.0);
+    assert_ne!(working_area.size.h, output_size.h - working_area.loc.y);
+}
