@@ -3342,13 +3342,55 @@ fn hide_floating_windows_applies_to_all_workspaces() {
 }
 
 #[test]
-fn unhide_floating_windows_focuses_floating_on_active_workspace() {
+fn unhide_floating_windows_does_not_take_focus() {
     let mut layout = check_ops(hidden_floating_setup_ops());
     check_ops_on_layout(&mut layout, [Op::UnhideFloatingLayout]);
     assert_eq!(floating_visible_per_workspace(&layout), [true, true]);
-    assert_eq!(focused_id(&layout), Some(3));
+    assert_eq!(focused_id(&layout), Some(2));
 
     check_ops_on_layout(&mut layout, [Op::FocusWorkspace(0)]);
+    assert_eq!(focused_id(&layout), Some(0));
+}
+
+/// One tiled fullscreen window with focus, covering one floating window.
+fn floating_behind_fullscreen_ops() -> [Op; 7] {
+    [
+        Op::AddOutput(0),
+        Op::AddWindow {
+            params: TestWindowParams::new(0),
+        },
+        Op::AddWindow {
+            params: TestWindowParams {
+                is_floating: true,
+                ..TestWindowParams::new(1)
+            },
+        },
+        Op::FocusWindow(0),
+        Op::FullscreenWindow(0),
+        Op::Communicate(0),
+        // The fullscreen window only covers floating once the view stops moving.
+        Op::CompleteAnimations,
+    ]
+}
+
+#[test]
+fn unhide_raises_floating_above_fullscreen_without_focus() {
+    let mut layout = check_ops(floating_behind_fullscreen_ops());
+    assert_eq!(floating_visible_per_workspace(&layout), [false]);
+
+    check_ops_on_layout(&mut layout, [Op::UnhideFloatingLayout]);
+    assert_eq!(floating_visible_per_workspace(&layout), [true]);
+    assert_eq!(focused_id(&layout), Some(0));
+}
+
+#[test]
+fn unhide_after_hide_raises_floating_above_fullscreen() {
+    let mut layout = check_ops(floating_behind_fullscreen_ops());
+    check_ops_on_layout(&mut layout, [Op::HideFloatingLayout]);
+    assert_eq!(floating_visible_per_workspace(&layout), [false]);
+
+    check_ops_on_layout(&mut layout, [Op::UnhideFloatingLayout]);
+    assert_eq!(floating_visible_per_workspace(&layout), [true]);
     assert_eq!(focused_id(&layout), Some(0));
 }
 
@@ -3357,6 +3399,7 @@ fn toggle_floating_windows_round_trips() {
     let mut layout = check_ops(hidden_floating_setup_ops());
     check_ops_on_layout(&mut layout, [Op::ToggleFloatingLayout]);
     assert_eq!(floating_visible_per_workspace(&layout), [true, true]);
+    assert_eq!(focused_id(&layout), Some(2));
     check_ops_on_layout(&mut layout, [Op::ToggleFloatingLayout]);
     assert_eq!(floating_visible_per_workspace(&layout), [false, false]);
 }

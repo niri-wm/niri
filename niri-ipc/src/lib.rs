@@ -1002,7 +1002,7 @@ pub enum Action {
     ToggleFloatingWindows {},
     /// Hides the floating windows.
     HideFloatingWindows {},
-    /// Shows the floating windows if currently hidden.
+    /// Shows the floating windows, raising them without focusing
     UnhideFloatingWindows {},
     /// Move a floating window on screen.
     #[cfg_attr(feature = "clap", clap(about = "Move the floating window on screen"))]

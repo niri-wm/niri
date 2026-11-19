@@ -590,6 +590,9 @@ Quickly toggle the visibility of floating windows on or off.
 Useful for quickly "peeking" at a tiling window behind a floating window without having to close or move the floating window.
 If the floating layout is hidden and a new floating window appears, or if you switch focus to the floating layout, it will automatically unhide itself.
 
+Hiding applies to all workspaces at once.
+Unhiding raises and shows the floating windows without focusing them.
+
 ```kdl
 binds {
     // Press to hide or unhide.

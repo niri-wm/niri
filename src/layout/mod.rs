@@ -3300,10 +3300,9 @@ impl<W: LayoutElement> Layout<W> {
     }
 
     pub fn focus_floating(&mut self) {
+        // Unhide on every workspace even if the active one has no floating windows to focus.
         if self.floating_hidden.get() {
-            // Unhides on every workspace and focuses floating on the active one, if it has any.
             self.unhide_floating_layout();
-            return;
         }
 
         let Some(workspace) = self.active_workspace_mut() else {
@@ -3333,22 +3332,24 @@ impl<W: LayoutElement> Layout<W> {
 
         self.floating_hidden.set(true);
         for ws in self.workspaces_mut() {
-            ws.sync_floating_hidden(false);
+            ws.sync_floating_hidden();
         }
     }
 
+    /// Shows the floating windows on every workspace.
+    ///
+    /// On the active workspace they are also raised without
+    /// taking focus. This applies even if they weren't hidden.
     pub fn unhide_floating_layout(&mut self) {
-        if !self.floating_hidden.get() {
-            return;
-        }
-
         self.floating_hidden.set(false);
 
-        // Unhiding focuses the floating windows on the active workspace.
         let active_ws_id = self.active_workspace().map(|ws| ws.id());
         for ws in self.workspaces_mut() {
-            let focus_floating = Some(ws.id()) == active_ws_id;
-            ws.sync_floating_hidden(focus_floating);
+            if Some(ws.id()) == active_ws_id {
+                ws.raise_floating();
+            } else {
+                ws.sync_floating_hidden();
+            }
         }
     }
 

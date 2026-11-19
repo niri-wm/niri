@@ -696,32 +696,43 @@ impl<W: LayoutElement> Workspace<W> {
     ///
     /// floating_active() should always be used instead of reading floating_is_active directly.
     fn floating_active(&self) -> FloatingActive {
-        self.resolve_floating_active(false)
-    }
-
-    fn resolve_floating_active(&self, focus_floating: bool) -> FloatingActive {
         if self.floating_hidden.get() {
             return FloatingActive::NoAndHidden;
         }
 
         match self.floating_is_active_raw {
             FloatingActive::NoAndHidden => {
-                if !self.floating.is_empty() && (focus_floating || self.scrolling.is_empty()) {
+                // With nothing tiled, the floating windows must take focus once shown.
+                if !self.floating.is_empty() && self.scrolling.is_empty() {
                     FloatingActive::Yes
                 } else {
                     FloatingActive::No
                 }
             }
-            state => state,
+            FloatingActive::No => FloatingActive::No,
+            FloatingActive::NoButRaised => FloatingActive::NoButRaised,
+            FloatingActive::Yes => FloatingActive::Yes,
         }
     }
 
     /// Stores the floating state reconciled with the shared hidden flag.
-    ///
-    /// If the floating windows were unhidden, `focus_floating` moves focus to them, as long as
-    /// this workspace has any.
-    pub(super) fn sync_floating_hidden(&mut self, focus_floating: bool) {
-        self.floating_is_active_raw = self.resolve_floating_active(focus_floating);
+    pub(super) fn sync_floating_hidden(&mut self) {
+        self.floating_is_active_raw = self.floating_active();
+    }
+
+    /// Shows the floating windows above the scrolling ones without focusing them
+    pub(super) fn raise_floating(&mut self) {
+        self.sync_floating_hidden();
+
+        if self.floating.is_empty() {
+            return;
+        }
+
+        self.floating_is_active_raw = match self.floating_is_active_raw {
+            FloatingActive::No | FloatingActive::NoAndHidden => FloatingActive::NoButRaised,
+            FloatingActive::NoButRaised => FloatingActive::NoButRaised,
+            FloatingActive::Yes => FloatingActive::Yes,
+        };
     }
 
     fn is_floating_hidden(&self) -> bool {
@@ -1971,7 +1982,7 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     pub fn refresh(&mut self, is_active: bool, is_focused: bool) {
-        self.sync_floating_hidden(false);
+        self.sync_floating_hidden();
 
         self.scrolling
             .refresh(is_active && !self.floating_active().get(), is_focused);
