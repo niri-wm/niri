@@ -546,6 +546,14 @@ enum Op {
         below: bool,
         focus: bool,
     },
+    MoveColumnToNewWorkspace {
+        #[proptest(strategy = "proptest::option::of(1..=5usize)")]
+        ws_name: Option<usize>,
+        #[proptest(strategy = "proptest::option::of(0..=4usize)")]
+        ws_idx: Option<usize>,
+        below: bool,
+        focus: bool,
+    },
     MoveColumnToWorkspaceDown(bool),
     MoveColumnToWorkspaceUp(bool),
     MoveColumnToWorkspace(#[proptest(strategy = "0..=4usize")] usize, bool),
@@ -1253,19 +1261,21 @@ impl Op {
                 below,
                 focus,
             } => {
-                let reference = if let Some(ws_name) = ws_name {
-                    let name = format!("ws{ws_name}");
-                    let Some(reference) = layout.monitors().find_map(|mon| {
-                        let idx = mon.find_named_workspace_index(&name)?;
-                        Some((Some(mon.output().clone()), idx))
-                    }) else {
-                        return;
-                    };
-                    Some(reference)
-                } else {
-                    ws_idx.map(|idx| (None, idx))
+                let Some(reference) = new_workspace_reference(layout, ws_name, ws_idx) else {
+                    return;
                 };
                 layout.move_to_new_workspace(reference, below, focus);
+            }
+            Op::MoveColumnToNewWorkspace {
+                ws_name,
+                ws_idx,
+                below,
+                focus,
+            } => {
+                let Some(reference) = new_workspace_reference(layout, ws_name, ws_idx) else {
+                    return;
+                };
+                layout.move_column_to_new_workspace(reference, below, focus);
             }
             Op::MoveColumnToWorkspaceDown(focus) => layout.move_column_to_workspace_down(focus),
             Op::MoveColumnToWorkspaceUp(focus) => layout.move_column_to_workspace_up(focus),
@@ -1702,6 +1712,25 @@ impl Op {
 }
 
 #[track_caller]
+/// Resolves the reference of the move-*-to-new-workspace ops, or returns `None` if it doesn't match
+/// any workspace.
+fn new_workspace_reference(
+    layout: &Layout<TestWindow>,
+    ws_name: Option<usize>,
+    ws_idx: Option<usize>,
+) -> Option<Option<(Option<Output>, usize)>> {
+    let Some(ws_name) = ws_name else {
+        return Some(ws_idx.map(|idx| (None, idx)));
+    };
+
+    let name = format!("ws{ws_name}");
+    let reference = layout.monitors().find_map(|mon| {
+        let idx = mon.find_named_workspace_index(&name)?;
+        Some((Some(mon.output().clone()), idx))
+    })?;
+    Some(Some(reference))
+}
+
 fn check_ops_on_layout(layout: &mut Layout<TestWindow>, ops: impl IntoIterator<Item = Op>) {
     for op in ops {
         op.apply(layout);
@@ -1943,6 +1972,18 @@ fn operations_dont_panic() {
             below: false,
             focus: false,
         },
+        Op::MoveColumnToNewWorkspace {
+            ws_name: None,
+            ws_idx: None,
+            below: true,
+            focus: true,
+        },
+        Op::MoveColumnToNewWorkspace {
+            ws_name: None,
+            ws_idx: None,
+            below: false,
+            focus: false,
+        },
         Op::MoveColumnToWorkspaceDown(true),
         Op::MoveColumnToWorkspaceUp(true),
         Op::MoveColumnToWorkspace(1, true),
@@ -2137,6 +2178,18 @@ fn operations_from_starting_state_dont_panic() {
         Op::MoveWindowToNewWorkspace {
             ws_name: None,
             ws_idx: Some(0),
+            below: false,
+            focus: false,
+        },
+        Op::MoveColumnToNewWorkspace {
+            ws_name: None,
+            ws_idx: None,
+            below: true,
+            focus: true,
+        },
+        Op::MoveColumnToNewWorkspace {
+            ws_name: None,
+            ws_idx: None,
             below: false,
             focus: false,
         },
@@ -2638,6 +2691,50 @@ fn move_window_to_new_workspace_with_empty_workspace_above_first() {
         let mon = layout.active_monitor_ref().unwrap();
         assert_eq!(ws_window_ids(mon), [vec![], vec![2], vec![1], vec![]]);
         assert_eq!(mon.active_workspace_idx, 1);
+    }
+}
+
+#[test]
+fn move_column_to_new_workspace_below_and_above() {
+    for (below, focus, expected, active) in [
+        (true, true, [vec![1], vec![2, 3]], 1),
+        (true, false, [vec![1], vec![2, 3]], 0),
+        (false, true, [vec![2, 3], vec![1]], 0),
+        (false, false, [vec![2, 3], vec![1]], 1),
+    ] {
+        // Window 1 in its own column, windows 2 and 3 in one column, window 3 focused.
+        let ops = [
+            Op::AddOutput(1),
+            Op::AddWindow {
+                params: TestWindowParams::new(1),
+            },
+            Op::AddWindow {
+                params: TestWindowParams::new(2),
+            },
+            Op::AddWindow {
+                params: TestWindowParams::new(3),
+            },
+            Op::ConsumeOrExpelWindowLeft { id: None },
+            Op::MoveColumnToNewWorkspace {
+                ws_name: None,
+                ws_idx: None,
+                below,
+                focus,
+            },
+            Op::CompleteAnimations,
+        ];
+        let layout = check_ops(ops);
+
+        let mon = layout.active_monitor_ref().unwrap();
+        let expected = expected.into_iter().chain([vec![]]);
+        assert_eq!(ws_window_ids(mon), Vec::from_iter(expected));
+        assert_eq!(mon.active_workspace_idx, active);
+
+        let column_ws = if below { 1 } else { 0 };
+        assert_eq!(mon.workspaces[column_ws].scrolling().columns().count(), 1);
+        if focus {
+            assert_eq!(layout.focus().unwrap().id(), &3);
+        }
     }
 }
 
