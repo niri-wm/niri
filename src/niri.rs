@@ -4459,6 +4459,14 @@ impl Niri {
             KeyboardFocus::Mru => true,
         };
 
+        // Also pick up modifier changes from virtual keyboards and keymap replacements.
+        let modifiers = self.seat.get_keyboard().unwrap().modifier_state();
+        if self
+            .layout
+            .set_modifiers(crate::input::modifiers_from_state(modifiers))
+        {
+            self.queue_redraw_all();
+        }
         self.layout.refresh(layout_is_active);
     }
 

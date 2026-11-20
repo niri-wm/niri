@@ -39,7 +39,8 @@ use std::time::Duration;
 use monitor::{InsertHint, InsertPosition, InsertWorkspace, MonitorAddWindowTarget};
 use niri_config::utils::MergeWith as _;
 use niri_config::{
-    Config, CornerRadius, LayoutPart, PresetSize, Workspace as WorkspaceConfig, WorkspaceReference,
+    Config, CornerRadius, LayoutPart, Modifiers, PresetSize, Workspace as WorkspaceConfig,
+    WorkspaceReference,
 };
 use niri_ipc::{ColumnDisplay, PositionChange, SizeChange, WindowLayout};
 use scrolling::{Column, ColumnWidth};
@@ -358,6 +359,8 @@ pub struct Layout<W: LayoutElement> {
     last_active_workspace_id: HashMap<String, WorkspaceId>,
     /// Ongoing interactive move.
     interactive_move: Option<InteractiveMoveState<W>>,
+    /// Held keyboard modifiers, including while no move is active.
+    modifiers: Modifiers,
     /// Ongoing drag-and-drop operation.
     dnd: Option<DndData<W>>,
     /// Clock for driving animations.
@@ -426,10 +429,14 @@ enum InteractiveMoveState<W: LayoutElement> {
 
 #[derive(Debug)]
 struct InteractiveMoveData<W: LayoutElement> {
+    /// Held keyboard modifiers, used to invert floating edge snapping.
+    modifiers: Modifiers,
     /// The window being moved.
     pub(self) tile: Tile<W>,
     /// Output where the window is currently located/rendered.
     pub(self) output: Output,
+    /// Cached working area since rendering and hit testing may already hold the layer-map lock.
+    working_area: Rectangle<f64, Logical>,
     /// Current pointer position within output.
     pub(self) pointer_pos_within_output: Point<f64, Logical>,
     /// Window column width.
@@ -614,9 +621,42 @@ impl<W: LayoutElement> InteractiveMoveData<W> {
             window_size.w * self.pointer_ratio_within_window.0,
             window_size.h * self.pointer_ratio_within_window.1,
         ));
-        let pos = self.pointer_pos_within_output
-            - (pointer_offset_within_window + self.tile.window_loc() - self.tile.render_offset())
-                .upscale(zoom);
+        let mut pos = self.pointer_pos_within_output
+            - (pointer_offset_within_window + self.tile.window_loc()).upscale(zoom);
+        // Overview workspaces have their own scaled coordinate spaces. Only snap on the desktop.
+        if self.is_floating
+            && zoom == 1.
+            && self
+                .tile
+                .options
+                .gestures
+                .window_drag_snap
+                .is_enabled(self.modifiers)
+        {
+            let area = self.working_area;
+            let size = self.tile.tile_size();
+            for (coord, start, end) in [
+                (&mut pos.x, area.loc.x, area.loc.x + area.size.w - size.w),
+                (&mut pos.y, area.loc.y, area.loc.y + area.size.h - size.h),
+            ] {
+                let edge = if (*coord - start).abs() <= (*coord - end).abs() {
+                    start
+                } else {
+                    end
+                };
+                if (*coord - edge).abs()
+                    <= self
+                        .tile
+                        .options
+                        .gestures
+                        .window_drag_snap
+                        .monitor_snap_distance
+                {
+                    *coord = edge;
+                }
+            }
+        }
+        let pos = pos + self.tile.render_offset().upscale(zoom);
         // Round to physical pixels.
         pos.to_physical_precise_round(scale).to_logical(scale)
     }
@@ -723,6 +763,7 @@ impl<W: LayoutElement> Layout<W> {
             is_active: true,
             last_active_workspace_id: HashMap::new(),
             interactive_move: None,
+            modifiers: Modifiers::empty(),
             dnd: None,
             clock,
             update_render_elements_time: Duration::ZERO,
@@ -748,6 +789,7 @@ impl<W: LayoutElement> Layout<W> {
             is_active: true,
             last_active_workspace_id: HashMap::new(),
             interactive_move: None,
+            modifiers: Modifiers::empty(),
             dnd: None,
             clock,
             update_render_elements_time: Duration::ZERO,
@@ -1510,6 +1552,12 @@ impl<W: LayoutElement> Layout<W> {
         };
 
         mon.update_output_size();
+        let working_area = mon.working_area();
+        if let Some(InteractiveMoveState::Moving(move_)) = &mut self.interactive_move {
+            if move_.output == *output {
+                move_.working_area = working_area;
+            }
+        }
     }
 
     pub fn scroll_amount_to_activate(&self, window: &W::Id) -> f64 {
@@ -3861,6 +3909,18 @@ impl<W: LayoutElement> Layout<W> {
         true
     }
 
+    /// Update snapping immediately, even if the pointer is stationary.
+    pub fn set_modifiers(&mut self, modifiers: Modifiers) -> bool {
+        self.modifiers = modifiers;
+        if let Some(InteractiveMoveState::Moving(move_)) = &mut self.interactive_move {
+            let config = move_.tile.options.gestures.window_drag_snap;
+            let changed = config.is_enabled(move_.modifiers) != config.is_enabled(modifiers);
+            move_.modifiers = modifiers;
+            return move_.is_floating && changed;
+        }
+        false
+    }
+
     pub fn interactive_move_begin(
         &mut self,
         window_id: W::Id,
@@ -4070,9 +4130,14 @@ impl<W: LayoutElement> Layout<W> {
                     tile.hold_alpha_animation_after_done();
                 }
 
+                let working_area = self
+                    .monitor_for_output(&output)
+                    .map_or(Rectangle::from_size(view_size), |mon| mon.working_area());
                 let mut data = InteractiveMoveData {
+                    modifiers: self.modifiers,
                     tile,
                     output,
+                    working_area,
                     pointer_pos_within_output,
                     width,
                     is_full_width,
@@ -4098,6 +4163,7 @@ impl<W: LayoutElement> Layout<W> {
 
                 let mut ws_id = None;
                 if let Some(mon) = self.monitor_for_output(&output) {
+                    move_.working_area = mon.working_area();
                     let (insert_ws, _) = mon.insert_position(move_.pointer_pos_within_output);
                     if let InsertWorkspace::Existing(id) = insert_ws {
                         ws_id = Some(id);
