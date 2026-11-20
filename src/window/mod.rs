@@ -131,6 +131,9 @@ pub struct ResolvedWindowRules {
 
     /// Rules for this window's popups.
     pub popups: ResolvedPopupsRules,
+
+    /// Whether to lock the mouse inside this window while it is focused.
+    pub grab_mouse_when_focused: Option<bool>,
 }
 
 impl<'a> WindowRef<'a> {
@@ -314,6 +317,9 @@ impl ResolvedWindowRules {
                 }
                 if let Some(x) = rule.tiled_state {
                     resolved.tiled_state = Some(x);
+                }
+                if let Some(x) = rule.grab_mouse_when_focused {
+                    resolved.grab_mouse_when_focused = Some(x);
                 }
 
                 resolved
