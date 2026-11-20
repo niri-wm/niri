@@ -18,6 +18,7 @@ rust-version = "1.87"
 anyhow = "1.0.104"
 bitflags = "2.13"
 clap = { version = "4.6.6", features = ["derive"] }
+clap_complete = "4.6.12"
 insta = "1.48.0"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
@@ -62,7 +63,7 @@ bitflags.workspace = true
 bytemuck = { version = "1.25.2", features = ["derive"] }
 calloop = { version = "0.14.5", features = ["executor", "futures-io", "signals"] }
 clap = { workspace = true, features = ["string"] }
-clap_complete = "4.6"
+clap_complete = { workspace = true, features = ["unstable-dynamic"] }
 clap_complete_nushell = "4.6"
 directories = "6.0.0"
 drm-ffi = "0.9.1"

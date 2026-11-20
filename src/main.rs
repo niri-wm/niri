@@ -1,18 +1,19 @@
 #[macro_use]
 extern crate tracing;
 
+use std::env::{self, args_os};
 use std::fmt::Write as _;
 use std::fs::File;
 use std::io::{self, Write};
+use std::mem;
 use std::os::fd::FromRawFd;
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::atomic::Ordering;
-use std::{env, mem};
 
 use calloop::EventLoop;
 use clap::{CommandFactory, Parser};
-use clap_complete::Shell;
+use clap_complete::{CompleteEnv, Shell};
 use clap_complete_nushell::Nushell;
 use directories::ProjectDirs;
 use niri::cli::{Cli, CompletionShell, Sub};
@@ -39,6 +40,8 @@ static GLOBAL: tracy_client::ProfiledAllocator<std::alloc::System> =
     tracy_client::ProfiledAllocator::new(std::alloc::System, 100);
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    CompleteEnv::with_factory(Cli::command).complete();
+
     // Set backtrace defaults if not set.
     if env::var_os("RUST_BACKTRACE").is_none() {
         env::set_var("RUST_BACKTRACE", "1");
@@ -126,13 +129,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         );
                     }
                     other => {
-                        let generator = Shell::try_from(other).unwrap();
-                        clap_complete::generate(
-                            generator,
-                            &mut Cli::command(),
-                            "niri",
-                            &mut io::stdout(),
-                        );
+                        env::set_var("COMPLETE", Shell::try_from(other).unwrap().to_string());
+                        CompleteEnv::with_factory(Cli::command)
+                            .try_complete(args_os().take(1), None)?;
                     }
                 }
                 return Ok(());
