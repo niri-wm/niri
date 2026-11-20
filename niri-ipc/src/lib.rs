@@ -201,6 +201,8 @@ pub struct PickedRegion {
     pub width: f64,
     /// Height of the region.
     pub height: f64,
+    /// Scale of the output containing the region.
+    pub scale: f64,
 }
 
 /// Actions that niri can perform.

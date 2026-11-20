@@ -2380,6 +2380,7 @@ impl State {
                     y: rect.loc.y,
                     width: rect.size.w,
                     height: rect.size.h,
+                    scale,
                 });
             }
         }
