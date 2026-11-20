@@ -14,8 +14,8 @@ use super::insert_hint_element::{InsertHintElement, InsertHintRenderElement};
 use super::scrolling::{Column, ColumnWidth};
 use super::tile::Tile;
 use super::workspace::{
-    compute_working_area, FloatingHidden, OutputId, Workspace, WorkspaceAddWindowTarget,
-    WorkspaceId, WorkspaceRenderElement,
+    compute_working_area, OutputId, Workspace, WorkspaceAddWindowTarget, WorkspaceId,
+    WorkspaceRenderElement,
 };
 use super::{compute_overview_zoom, ActivateWindow, HitType, LayoutElement, Options};
 use crate::animation::{Animation, Clock};
@@ -83,8 +83,8 @@ pub struct Monitor<W: LayoutElement> {
     overview_progress: Option<OverviewProgress>,
     /// Clock for driving animations.
     pub(super) clock: Clock,
-    /// Whether floating windows are hidden, shared with the layout and all workspaces.
-    pub(super) floating_hidden: FloatingHidden,
+    /// Whether floating windows are hidden, as set by the layout. New workspaces start with it.
+    pub(super) floating_hidden: bool,
     /// Configurable properties of the layout as received from the parent layout.
     pub(super) base_options: Rc<Options>,
     /// Configurable properties of the layout.
@@ -297,7 +297,7 @@ impl<W: LayoutElement> Monitor<W> {
         mut workspaces: Vec<Workspace<W>>,
         ws_id_to_activate: Option<WorkspaceId>,
         clock: Clock,
-        floating_hidden: FloatingHidden,
+        floating_hidden: bool,
         base_options: Rc<Options>,
         layout_config: Option<LayoutPart>,
     ) -> Self {
@@ -326,8 +326,8 @@ impl<W: LayoutElement> Monitor<W> {
             let ws = Workspace::new(
                 output.clone(),
                 clock.clone(),
-                floating_hidden.clone(),
                 options.clone(),
+                floating_hidden,
             );
             workspaces.insert(0, ws);
             active_workspace_idx += 1;
@@ -336,8 +336,8 @@ impl<W: LayoutElement> Monitor<W> {
         let ws = Workspace::new(
             output.clone(),
             clock.clone(),
-            floating_hidden.clone(),
             options.clone(),
+            floating_hidden,
         );
         workspaces.push(ws);
 
@@ -430,8 +430,8 @@ impl<W: LayoutElement> Monitor<W> {
         let ws = Workspace::new(
             self.output.clone(),
             self.clock.clone(),
-            self.floating_hidden.clone(),
             self.options.clone(),
+            self.floating_hidden,
         );
 
         self.workspaces.insert(idx, ws);
