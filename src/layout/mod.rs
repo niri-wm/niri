@@ -2567,6 +2567,7 @@ impl<W: LayoutElement> Layout<W> {
                         workspace.floating_hidden.ptr_eq(&self.floating_hidden),
                         "workspace must share the layout floating hidden flag"
                     );
+
                     workspace.verify_invariants(move_win_id.as_ref());
                 }
 
