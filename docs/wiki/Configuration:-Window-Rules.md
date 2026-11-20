@@ -1141,3 +1141,22 @@ window-rule {
     min-width 876
 }
 ```
+
+<sup>Since: next release</sup> Size override rules also apply to windows that are fullscreen and maximized-to-edges.
+This can be useful to letterbox games on ultrawide monitors.
+
+```kdl
+// Make osu! fullscreen as 16:9 on an ultrawide 3840×1600 monitor.
+window-rule {
+    match app-id=r#"^sh\.ppy\.osu$"#
+    max-width 2844
+}
+
+// Also, map my 16:9 tablet to the focused window,
+// which will honor osu!'s window size.
+input {
+    tablet {
+        map-to-focused-window
+    }
+}
+```

@@ -316,8 +316,8 @@ fn fullscreen_max_size() {
     assert_snapshot!(
         f.client(id).window(&surface).format_recent_configures(),
         @"
-    size: 1920 × 1080, bounds: 1888 × 1048, states: [Fullscreen]
-    size: 1920 × 1080, bounds: 1888 × 1048, states: [Fullscreen, Activated]
+    size: 500 × 700, bounds: 1888 × 1048, states: [Fullscreen]
+    size: 500 × 700, bounds: 1888 × 1048, states: [Fullscreen, Activated]
     "
     );
 }
@@ -337,8 +337,8 @@ fn fullscreen_min_size() {
     assert_snapshot!(
         f.client(id).window(&surface).format_recent_configures(),
         @"
-    size: 1920 × 1080, bounds: 1888 × 1048, states: [Fullscreen]
-    size: 1920 × 1080, bounds: 1888 × 1048, states: [Fullscreen, Activated]
+    size: 2000 × 3000, bounds: 1888 × 1048, states: [Fullscreen]
+    size: 2000 × 3000, bounds: 1888 × 1048, states: [Fullscreen, Activated]
     "
     );
 }
@@ -358,8 +358,8 @@ fn maximized_max_size() {
     assert_snapshot!(
         f.client(id).window(&surface).format_recent_configures(),
         @"
-    size: 1920 × 1080, bounds: 1888 × 1048, states: [Maximized]
-    size: 1920 × 1080, bounds: 1888 × 1048, states: [Maximized, Activated]
+    size: 500 × 700, bounds: 1888 × 1048, states: [Maximized]
+    size: 500 × 700, bounds: 1888 × 1048, states: [Maximized, Activated]
     "
     );
 }
@@ -379,8 +379,8 @@ fn maximized_min_size() {
     assert_snapshot!(
         f.client(id).window(&surface).format_recent_configures(),
         @"
-    size: 1920 × 1080, bounds: 1888 × 1048, states: [Maximized]
-    size: 1920 × 1080, bounds: 1888 × 1048, states: [Maximized, Activated]
+    size: 2000 × 3000, bounds: 1888 × 1048, states: [Maximized]
+    size: 2000 × 3000, bounds: 1888 × 1048, states: [Maximized, Activated]
     "
     );
 }

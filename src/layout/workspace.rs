@@ -895,9 +895,19 @@ impl<W: LayoutElement> Workspace<W> {
         });
         toplevel.with_pending_state(|state| {
             if state.states.contains(xdg_toplevel::State::Fullscreen) {
-                state.size = Some(self.view_size.to_i32_round());
+                let size = self.view_size.to_i32_round();
+
+                // We ignore the window's requested min/max here, but still apply our own.
+                let size = rules.apply_max_size(size);
+                let size = rules.apply_min_size(size);
+                state.size = Some(size);
             } else if state.states.contains(xdg_toplevel::State::Maximized) {
-                state.size = Some(self.working_area.size.to_i32_round());
+                let size = self.working_area.size.to_i32_round();
+
+                // We ignore the window's requested min/max here, but still apply our own.
+                let size = rules.apply_max_size(size);
+                let size = rules.apply_min_size(size);
+                state.size = Some(size);
             } else {
                 let size =
                     self.new_window_size(width, height, is_floating, rules, (min_size, max_size));
