@@ -543,27 +543,20 @@ fn key_name(screen_reader: bool, mod_key: ModKey, key: &Key) -> String {
         name.push_str(" + ");
     }
 
-    if modifiers.contains(Modifiers::SUPER) && !(has_comp_mod && mod_key == ModKey::Super) {
-        name.push_str("Super + ");
-    }
-    if modifiers.contains(Modifiers::CTRL) && !(has_comp_mod && mod_key == ModKey::Ctrl) {
-        name.push_str("Ctrl + ");
-    }
-    if modifiers.contains(Modifiers::SHIFT) && !(has_comp_mod && mod_key == ModKey::Shift) {
-        name.push_str("Shift + ");
-    }
-    if modifiers.contains(Modifiers::ALT) && !(has_comp_mod && mod_key == ModKey::Alt) {
-        name.push_str("Alt + ");
-    }
-    if modifiers.contains(Modifiers::ISO_LEVEL3_SHIFT)
-        && !(has_comp_mod && mod_key == ModKey::IsoLevel3Shift)
-    {
-        name.push_str("Mod5 + ");
-    }
-    if modifiers.contains(Modifiers::ISO_LEVEL5_SHIFT)
-        && !(has_comp_mod && mod_key == ModKey::IsoLevel5Shift)
-    {
-        name.push_str("Mod3 + ");
+    const MOD_KEYS: [ModKey; 6] = [
+        ModKey::Super,
+        ModKey::Ctrl,
+        ModKey::Shift,
+        ModKey::Alt,
+        ModKey::IsoLevel3Shift,
+        ModKey::IsoLevel5Shift,
+    ];
+
+    for m in MOD_KEYS {
+        if modifiers.contains(m.to_modifiers()) && !(has_comp_mod && mod_key == m) {
+            name.push_str(modifier_name(m));
+            name.push_str(" + ");
+        }
     }
 
     let pretty = match key.trigger {
