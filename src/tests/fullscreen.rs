@@ -1,5 +1,6 @@
 use client::ClientId;
 use insta::assert_snapshot;
+use niri_config::Config;
 use smithay::utils::Point;
 use wayland_client::protocol::wl_surface::WlSurface;
 
@@ -8,7 +9,11 @@ use crate::layout::LayoutElement as _;
 
 // Sets up a fixture with two outputs and 100×100 window.
 fn set_up() -> (Fixture, ClientId, WlSurface) {
-    let mut f = Fixture::new();
+    set_up_with_config(Config::default())
+}
+
+fn set_up_with_config(config: Config) -> (Fixture, ClientId, WlSurface) {
+    let mut f = Fixture::with_config(config);
     f.add_output(1, (1920, 1080));
     f.add_output(2, (1280, 720));
 
@@ -293,5 +298,89 @@ fn interactive_move_unmaximize_to_scrolling_restores_size() {
     assert_snapshot!(
         f.client(id).window(&surface).format_recent_configures(),
         @"size: 936 × 1048, bounds: 1920 × 1080, states: [Activated]"
+    );
+}
+
+#[test]
+fn fullscreen_max_size() {
+    let config = r#"
+    window-rule {
+        open-fullscreen true
+        max-width 500
+        max-height 700
+    }
+    "#;
+    let config = Config::parse_mem(config).unwrap();
+    let (mut f, id, surface) = set_up_with_config(config);
+
+    assert_snapshot!(
+        f.client(id).window(&surface).format_recent_configures(),
+        @"
+    size: 1920 × 1080, bounds: 1888 × 1048, states: [Fullscreen]
+    size: 1920 × 1080, bounds: 1888 × 1048, states: [Fullscreen, Activated]
+    "
+    );
+}
+
+#[test]
+fn fullscreen_min_size() {
+    let config = r#"
+    window-rule {
+        open-fullscreen true
+        min-width 2000
+        min-height 3000
+    }
+    "#;
+    let config = Config::parse_mem(config).unwrap();
+    let (mut f, id, surface) = set_up_with_config(config);
+
+    assert_snapshot!(
+        f.client(id).window(&surface).format_recent_configures(),
+        @"
+    size: 1920 × 1080, bounds: 1888 × 1048, states: [Fullscreen]
+    size: 1920 × 1080, bounds: 1888 × 1048, states: [Fullscreen, Activated]
+    "
+    );
+}
+
+#[test]
+fn maximized_max_size() {
+    let config = r#"
+    window-rule {
+        open-maximized-to-edges true
+        max-width 500
+        max-height 700
+    }
+    "#;
+    let config = Config::parse_mem(config).unwrap();
+    let (mut f, id, surface) = set_up_with_config(config);
+
+    assert_snapshot!(
+        f.client(id).window(&surface).format_recent_configures(),
+        @"
+    size: 1920 × 1080, bounds: 1888 × 1048, states: [Maximized]
+    size: 1920 × 1080, bounds: 1888 × 1048, states: [Maximized, Activated]
+    "
+    );
+}
+
+#[test]
+fn maximized_min_size() {
+    let config = r#"
+    window-rule {
+        open-maximized-to-edges true
+        min-width 2000
+        min-height 3000
+    }
+    "#;
+    let config = Config::parse_mem(config).unwrap();
+    let (mut f, id, surface) = set_up_with_config(config);
+
+    assert_snapshot!(
+        f.client(id).window(&surface).format_recent_configures(),
+        @"
+    size: 1920 × 1080, bounds: 1888 × 1048, states: [Maximized]
+    size: 1920 × 1080, bounds: 1888 × 1048, states: [Maximized, Activated]
+    "
     );
 }
