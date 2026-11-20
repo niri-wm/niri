@@ -8,7 +8,7 @@ use calloop::RegistrationToken;
 use input::event::gesture::GestureEventCoordinates as _;
 use niri_config::{
     Action, Bind, Binds, BoundAction, Config, Key, ModKey, Modifiers, MruDirection, MruFilter,
-    MruScope, SwitchBinds, Trigger,
+    MruScope, SwitchBinds, Trigger, WorkspaceReference,
 };
 use niri_ipc::LayoutSwitchTarget;
 use smithay::backend::input::{
@@ -1682,43 +1682,35 @@ impl State {
                 self.niri.queue_redraw_all();
             }
             Action::MoveWindowToWorkspace(reference, focus) => {
-                if let Some((mut output, index)) =
-                    self.niri.find_output_and_workspace_index(reference)
-                {
-                    // The source output is always the active output, so if the target output is
-                    // also the active output, we don't need to use move_to_output().
-                    if let Some(active) = self.niri.layout.active_output() {
-                        if output.as_ref() == Some(active) {
-                            output = None;
-                        }
-                    }
+                let Some((output, index)) = self.niri.resolve_workspace_reference(reference) else {
+                    return;
+                };
 
-                    let activate = if focus {
-                        ActivateWindow::Smart
-                    } else {
-                        ActivateWindow::No
-                    };
+                let activate = if focus {
+                    ActivateWindow::Smart
+                } else {
+                    ActivateWindow::No
+                };
 
-                    if let Some(output) = output {
-                        self.niri
-                            .layout
-                            .move_to_output(None, &output, Some(index), activate);
+                if let Some(output) = output {
+                    self.niri
+                        .layout
+                        .move_to_output(None, &output, Some(index), activate);
 
-                        if focus {
-                            if !self.maybe_warp_cursor_to_focus_centered() {
-                                self.move_cursor_to_output(&output);
-                            }
-                        } else {
-                            self.maybe_warp_cursor_to_focus();
+                    if focus {
+                        if !self.maybe_warp_cursor_to_focus_centered() {
+                            self.move_cursor_to_output(&output);
                         }
                     } else {
-                        self.niri.layout.move_to_workspace(None, index, activate);
                         self.maybe_warp_cursor_to_focus();
                     }
-
-                    // FIXME: granular
-                    self.niri.queue_redraw_all();
+                } else {
+                    self.niri.layout.move_to_workspace(None, index, activate);
+                    self.maybe_warp_cursor_to_focus();
                 }
+
+                // FIXME: granular
+                self.niri.queue_redraw_all();
             }
             Action::MoveWindowToWorkspaceById {
                 window_id: id,
@@ -1789,32 +1781,26 @@ impl State {
                 self.niri.queue_redraw_all();
             }
             Action::MoveColumnToWorkspace(reference, focus) => {
-                if let Some((mut output, index)) =
-                    self.niri.find_output_and_workspace_index(reference)
-                {
-                    if let Some(active) = self.niri.layout.active_output() {
-                        if output.as_ref() == Some(active) {
-                            output = None;
-                        }
-                    }
+                let Some((output, index)) = self.niri.resolve_workspace_reference(reference) else {
+                    return;
+                };
 
-                    if let Some(output) = output {
-                        self.niri
-                            .layout
-                            .move_column_to_output(&output, Some(index), focus);
-                        if focus && !self.maybe_warp_cursor_to_focus_centered() {
-                            self.move_cursor_to_output(&output);
-                        }
-                    } else {
-                        self.niri.layout.move_column_to_workspace(index, focus);
-                        if focus {
-                            self.maybe_warp_cursor_to_focus();
-                        }
+                if let Some(output) = output {
+                    self.niri
+                        .layout
+                        .move_column_to_output(&output, Some(index), focus);
+                    if focus && !self.maybe_warp_cursor_to_focus_centered() {
+                        self.move_cursor_to_output(&output);
                     }
-
-                    // FIXME: granular
-                    self.niri.queue_redraw_all();
+                } else {
+                    self.niri.layout.move_column_to_workspace(index, focus);
+                    if focus {
+                        self.maybe_warp_cursor_to_focus();
+                    }
                 }
+
+                // FIXME: granular
+                self.niri.queue_redraw_all();
             }
             Action::MoveColumnToIndex(idx, focus) => {
                 self.niri.layout.move_column_to_index(idx, focus);
@@ -1857,35 +1843,29 @@ impl State {
                 }
             }
             Action::FocusWorkspace(reference) => {
-                if let Some((mut output, index)) =
-                    self.niri.find_output_and_workspace_index(reference)
-                {
-                    if let Some(active) = self.niri.layout.active_output() {
-                        if output.as_ref() == Some(active) {
-                            output = None;
-                        }
-                    }
+                let Some((output, index)) = self.niri.resolve_workspace_reference(reference) else {
+                    return;
+                };
 
-                    if let Some(output) = output {
-                        self.niri.layout.focus_output(&output);
-                        self.niri.layout.switch_workspace(index);
-                        if !self.maybe_warp_cursor_to_focus_centered() {
-                            self.move_cursor_to_output(&output);
-                        }
+                if let Some(output) = output {
+                    self.niri.layout.focus_output(&output);
+                    self.niri.layout.switch_workspace(index);
+                    if !self.maybe_warp_cursor_to_focus_centered() {
+                        self.move_cursor_to_output(&output);
+                    }
+                } else {
+                    let config = &self.niri.config;
+                    if config.borrow().input.workspace_auto_back_and_forth {
+                        self.niri.layout.switch_workspace_auto_back_and_forth(index);
                     } else {
-                        let config = &self.niri.config;
-                        if config.borrow().input.workspace_auto_back_and_forth {
-                            self.niri.layout.switch_workspace_auto_back_and_forth(index);
-                        } else {
-                            self.niri.layout.switch_workspace(index);
-                        }
-                        self.maybe_warp_cursor_to_focus();
+                        self.niri.layout.switch_workspace(index);
                     }
-                    self.niri.layer_shell_on_demand_focus = None;
-
-                    // FIXME: granular
-                    self.niri.queue_redraw_all();
+                    self.maybe_warp_cursor_to_focus();
                 }
+                self.niri.layer_shell_on_demand_focus = None;
+
+                // FIXME: granular
+                self.niri.queue_redraw_all();
             }
             Action::FocusWorkspacePrevious => {
                 self.niri.layout.switch_workspace_previous();
@@ -5009,6 +4989,27 @@ impl Niri {
         retain_press_binds(&mut self.pending_release_binds);
         retain_press_binds(&mut self.pending_mouse_release_binds);
         retain_press_binds(&mut self.pending_tablet_release_binds);
+    }
+
+    /// Returns output and workspace index for a workspace reference.
+    ///
+    /// The output is `None` if it matches the active output (because in this case, no cross-output
+    /// movement is necessary).
+    ///
+    /// Returns `None` if the reference doesn't match any workspace.
+    fn resolve_workspace_reference(
+        &self,
+        reference: WorkspaceReference,
+    ) -> Option<(Option<Output>, usize)> {
+        let (mut output, index) = self.find_output_and_workspace_index(reference)?;
+        if let Some(active) = self.layout.active_output() {
+            if output.as_ref() == Some(active) {
+                // No cross-output window movement is necessary.
+                output = None;
+            }
+        }
+
+        Some((output, index))
     }
 }
 
