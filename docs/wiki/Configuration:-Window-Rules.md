@@ -390,6 +390,8 @@ If such an output does not exist, the window will open on the currently focused 
 
 If the window opens on an output that is not currently focused, the window will not be automatically focused.
 
+Note that `open-on-workspace` takes precedence over `open-on-output`.
+
 ```kdl
 // Open Firefox and Telegram (but not its Media Viewer)
 // on a specific monitor.
@@ -406,6 +408,16 @@ window-rule {
 
 <sup>Since: 0.1.9</sup> `open-on-output` can now use monitor manufacturer, model, and serial.
 Before, it could only use the connector name.
+
+<sup>Since: next release</sup> You can now write multiple `open-on-output` lines.
+If the first output is not connected, the window will open on the second output, and so on.
+
+```kdl
+window-rule {
+    open-on-output "DP-1"
+    open-on-output "DP-2" // fallback
+}
+```
 
 #### `open-on-workspace`
 
@@ -1127,5 +1139,24 @@ window-rule {
     match app-id=r#"^com\.obsproject\.Studio$"#
 
     min-width 876
+}
+```
+
+<sup>Since: next release</sup> Size override rules also apply to windows that are fullscreen and maximized-to-edges.
+This can be useful to letterbox games on ultrawide monitors.
+
+```kdl
+// Make osu! fullscreen as 16:9 on an ultrawide 3840×1600 monitor.
+window-rule {
+    match app-id=r#"^sh\.ppy\.osu$"#
+    max-width 2844
+}
+
+// Also, map my 16:9 tablet to the focused window,
+// which will honor osu!'s window size.
+input {
+    tablet {
+        map-to-focused-window
+    }
 }
 ```
