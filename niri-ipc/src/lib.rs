@@ -191,8 +191,6 @@ pub struct PickedColor {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct PickedRegion {
-    /// Name of the output containing the region.
-    pub output: String,
     /// X coordinate of the top-left corner.
     pub x: f64,
     /// Y coordinate of the top-left corner.
@@ -201,8 +199,26 @@ pub struct PickedRegion {
     pub width: f64,
     /// Height of the region.
     pub height: f64,
-    /// Scale of the output containing the region.
+    /// The region on its output, if it is fully contained in an output.
+    pub output: Option<PickedRegionOutput>,
+}
+
+/// Screen region picked with the selection UI, relative to the output containing it.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct PickedRegionOutput {
+    /// Name of the output.
+    pub name: String,
+    /// Scale of the output.
     pub scale: f64,
+    /// X coordinate of the top-left corner.
+    pub x: i32,
+    /// Y coordinate of the top-left corner.
+    pub y: i32,
+    /// Width of the region.
+    pub width: i32,
+    /// Height of the region.
+    pub height: i32,
 }
 
 /// Actions that niri can perform.

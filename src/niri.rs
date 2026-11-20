@@ -21,6 +21,7 @@ use niri_config::{
     Bind, Config, FloatOrInt, Key, Modifiers, OutputName, TrackLayout, WarpMouseToFocusMode,
     WorkspaceReference, Xkb,
 };
+use niri_ipc::{PickedRegion, PickedRegionOutput};
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::input::{InputTime, Keycode};
 use smithay::backend::renderer::damage::OutputDamageTracker;
@@ -2370,17 +2371,24 @@ impl State {
             SelectionMode::PickRegion(tx) => {
                 let output = &selection.0;
                 let scale = output.current_scale().fractional_scale();
-                let rect = rect_from_corner_points(selection.1, selection.2).to_f64();
-                let mut rect = rect.to_logical(scale);
+                let physical = rect_from_corner_points(selection.1, selection.2);
+                let mut rect = physical.to_f64().to_logical(scale);
                 let loc = self.niri.global_space.output_geometry(output).unwrap().loc;
                 rect.loc += loc.to_f64();
-                let _ = tx.try_send(niri_ipc::PickedRegion {
-                    output: output.name(),
+                let _ = tx.try_send(PickedRegion {
                     x: rect.loc.x,
                     y: rect.loc.y,
                     width: rect.size.w,
                     height: rect.size.h,
-                    scale,
+                    // The selection is always contained in a single output.
+                    output: Some(PickedRegionOutput {
+                        name: output.name(),
+                        scale,
+                        x: physical.loc.x,
+                        y: physical.loc.y,
+                        width: physical.size.w,
+                        height: physical.size.h,
+                    }),
                 });
             }
         }
