@@ -581,19 +581,19 @@ binds {
 The toggle state is combined with the [`off` setting](./Configuration:-Input.md#pointing-devices) in the config: both the config and the toggle must allow the touchpad for it to be enabled.
 The toggle state resets when niri restarts, and applies to newly hot-plugged touchpads.
 
-#### `move-window-to-new-workspace-below`, `move-window-to-new-workspace-above`
+#### `move-column-to-new-workspace-below`, `move-column-to-new-workspace-above`, `move-window-to-new-workspace-below`, `move-window-to-new-workspace-above`
 
 <sup>Since: next release</sup>
 
-Move the focused window to a new workspace, inserted right below or above the focused workspace.
+Move the focused column or window to a new workspace, inserted right below or above the focused workspace.
 
 You can pass a workspace index or name to insert the new workspace next to that workspace instead.
-Like with `move-window-to-workspace`, the `focus=false` property keeps the focus on the current workspace.
+Like with `move-column-to-workspace`, the `focus=false` property keeps the focus on the current workspace.
 
 ```kdl
 binds {
-    Mod+Ctrl+Shift+Page_Down { move-window-to-new-workspace-below; }
-    Mod+Ctrl+Shift+Page_Up   { move-window-to-new-workspace-above; }
+    Mod+Ctrl+Shift+Page_Down { move-column-to-new-workspace-below; }
+    Mod+Ctrl+Shift+Page_Up   { move-column-to-new-workspace-above; }
 
     // Put the window into a new workspace right below the "chat" workspace.
     Mod+Ctrl+C { move-window-to-new-workspace-below "chat" focus=false; }

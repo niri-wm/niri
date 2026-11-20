@@ -2220,8 +2220,60 @@ impl<W: LayoutElement> Layout<W> {
         below: bool,
         focus: bool,
     ) {
-        if let Some(InteractiveMoveState::Moving(_)) = &self.interactive_move {
+        let Some((output, idx)) = self.add_workspace_for_move(reference, below) else {
             return;
+        };
+
+        let activate = if focus {
+            ActivateWindow::Smart
+        } else {
+            ActivateWindow::No
+        };
+
+        if let Some(output) = output {
+            self.move_to_output(None, &output, Some(idx), activate);
+        } else {
+            // This animates the window and the view the same way as move-window-to-workspace,
+            // since the new workspace is a regular workspace by now.
+            let monitor = self.active_monitor().unwrap();
+            monitor.move_to_workspace(None, idx, activate);
+        }
+    }
+
+    /// Moves the focused column to a new workspace right below or above the reference workspace.
+    ///
+    /// Without a reference, uses the active workspace. A reference without an output means the
+    /// active output.
+    pub fn move_column_to_new_workspace(
+        &mut self,
+        reference: Option<(Option<Output>, usize)>,
+        below: bool,
+        focus: bool,
+    ) {
+        let Some((output, idx)) = self.add_workspace_for_move(reference, below) else {
+            return;
+        };
+
+        if let Some(output) = output {
+            self.move_column_to_output(&output, Some(idx), focus);
+        } else {
+            let monitor = self.active_monitor().unwrap();
+            monitor.move_column_to_workspace(idx, focus);
+        }
+    }
+
+    /// Adds a workspace right below or above the reference workspace to move the focused window
+    /// or column to.
+    ///
+    /// Returns the workspace's output (`None` for the active output) and index, or `None` if
+    /// there's nothing to move.
+    fn add_workspace_for_move(
+        &mut self,
+        reference: Option<(Option<Output>, usize)>,
+        below: bool,
+    ) -> Option<(Option<Output>, usize)> {
+        if let Some(InteractiveMoveState::Moving(_)) = &self.interactive_move {
+            return None;
         }
 
         let MonitorSet::Normal {
@@ -2230,19 +2282,15 @@ impl<W: LayoutElement> Layout<W> {
             ..
         } = &mut self.monitor_set
         else {
-            return;
+            return None;
         };
 
         // Check this before adding a workspace so that we don't leave a stray empty one.
-        if monitors[*active_monitor_idx].active_window().is_none() {
-            return;
-        }
+        monitors[*active_monitor_idx].active_window()?;
 
         let (mon_idx, ref_idx) = match reference {
             Some((Some(output), ref_idx)) => {
-                let Some(mon_idx) = monitors.iter().position(|mon| mon.output == output) else {
-                    return;
-                };
+                let mon_idx = monitors.iter().position(|mon| mon.output == output)?;
                 (mon_idx, ref_idx)
             }
             Some((None, ref_idx)) => (*active_monitor_idx, ref_idx),
@@ -2257,20 +2305,8 @@ impl<W: LayoutElement> Layout<W> {
         let idx = if below { ref_idx + 1 } else { ref_idx };
         let new_idx = mon.add_or_reuse_empty_workspace_at(idx);
 
-        let activate = if focus {
-            ActivateWindow::Smart
-        } else {
-            ActivateWindow::No
-        };
-
-        if mon_idx == *active_monitor_idx {
-            // This animates the window and the view the same way as move-window-to-workspace,
-            // since the new workspace is a regular workspace by now.
-            mon.move_to_workspace(None, new_idx, activate);
-        } else {
-            let output = mon.output.clone();
-            self.move_to_output(None, &output, Some(new_idx), activate);
-        }
+        let output = (mon_idx != *active_monitor_idx).then(|| mon.output.clone());
+        Some((output, new_idx))
     }
 
     pub fn move_column_to_workspace_up(&mut self, activate: bool) {
