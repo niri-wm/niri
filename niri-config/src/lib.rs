@@ -1692,6 +1692,7 @@ mod tests {
                                 on_demand: true,
                             },
                         ),
+                        drm_lease: false,
                         focus_at_startup: true,
                         background_color: Some(
                             Color {
@@ -1734,6 +1735,7 @@ mod tests {
                         ),
                         modeline: None,
                         variable_refresh_rate: None,
+                        drm_lease: false,
                         focus_at_startup: false,
                         background_color: None,
                         backdrop_color: None,
@@ -1764,6 +1766,7 @@ mod tests {
                             },
                         ),
                         variable_refresh_rate: None,
+                        drm_lease: false,
                         focus_at_startup: false,
                         background_color: None,
                         backdrop_color: None,
@@ -2297,9 +2300,9 @@ mod tests {
                             ),
                         ),
                     ),
-                    open_on_output: Some(
+                    open_on_output: [
                         "eDP-1",
-                    ),
+                    ],
                     open_on_workspace: None,
                     open_maximized: Some(
                         true,

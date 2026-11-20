@@ -785,13 +785,13 @@ impl<W: LayoutElement> Monitor<W> {
     }
 
     pub fn move_down_or_to_workspace_down(&mut self) {
-        if !self.active_workspace().move_down() {
+        if !self.active_workspace().move_down(true) {
             self.move_to_workspace_down(ActivateWindow::Smart);
         }
     }
 
     pub fn move_up_or_to_workspace_up(&mut self) {
-        if !self.active_workspace().move_up() {
+        if !self.active_workspace().move_up(true) {
             self.move_to_workspace_up(ActivateWindow::Smart);
         }
     }

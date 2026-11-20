@@ -162,6 +162,15 @@ fn bind_triggers(bind: &Bind, action: &Action) -> bool {
     bind.press_action() == Some(action) || bind.release_action() == Some(action)
 }
 
+/// Returns the first action in `actions` that can be triggered by a bind in `binds`.
+/// Returns `None` if no such action exists.
+fn find_bound_action(binds: &[Bind], actions: &[&'static Action]) -> Option<&'static Action> {
+    actions
+        .iter()
+        .map(|action| *action)
+        .find(|action| binds.iter().any(|bind| bind_triggers(bind, action)))
+}
+
 fn format_bind(binds: &[Bind], action: &Action) -> Option<(Option<Key>, String)> {
     let mut bind_with_non_null = None;
     let mut bind_with_custom_title = None;
@@ -212,63 +221,66 @@ fn collect_actions(config: &Config) -> Vec<&Action> {
 
     // Prefer Quit(false) if found, otherwise try Quit(true), and if there's neither, fall back to
     // Quit(false).
-    if binds
-        .iter()
-        .any(|bind| bind_triggers(bind, &Action::Quit(false)))
-    {
-        actions.push(&Action::Quit(false));
-    } else if binds
-        .iter()
-        .any(|bind| bind_triggers(bind, &Action::Quit(true)))
-    {
-        actions.push(&Action::Quit(true));
-    } else {
-        actions.push(&Action::Quit(false));
-    }
+    actions.push(
+        find_bound_action(&binds, &[&Action::Quit(false), &Action::Quit(true)])
+            .unwrap_or(&Action::Quit(false)),
+    );
+
+    let action_move_column_left = find_bound_action(
+        &binds,
+        &[
+            &Action::MoveColumnLeft(true),
+            &Action::MoveColumnLeft(false),
+        ],
+    )
+    .unwrap_or(&Action::MoveColumnLeft(true));
+
+    let action_move_column_right = find_bound_action(
+        &binds,
+        &[
+            &Action::MoveColumnRight(true),
+            &Action::MoveColumnRight(false),
+        ],
+    )
+    .unwrap_or(&Action::MoveColumnRight(true));
 
     actions.extend(&[
         &Action::CloseWindow,
         &Action::FocusColumnLeft,
         &Action::FocusColumnRight,
-        &Action::MoveColumnLeft,
-        &Action::MoveColumnRight,
+        action_move_column_left,
+        action_move_column_right,
         &Action::FocusWorkspaceDown,
         &Action::FocusWorkspaceUp,
     ]);
 
     // Prefer move-column-to-workspace-down, but fall back to move-window-to-workspace-down.
-    if let Some(action) = binds
-        .iter()
-        .flat_map(bind_actions)
-        .find(|action| matches!(action, Action::MoveColumnToWorkspaceDown(_)))
-    {
-        actions.push(action);
-    } else if binds
-        .iter()
-        .flat_map(bind_actions)
-        .any(|action| matches!(action, Action::MoveWindowToWorkspaceDown(_)))
-    {
-        actions.push(&Action::MoveWindowToWorkspaceDown(true));
-    } else {
-        actions.push(&Action::MoveColumnToWorkspaceDown(true));
-    }
+    actions.push(
+        find_bound_action(
+            &binds,
+            &[
+                &Action::MoveColumnToWorkspaceDown(true),
+                &Action::MoveColumnToWorkspaceDown(false),
+                &Action::MoveWindowToWorkspaceDown(true),
+                &Action::MoveWindowToWorkspaceDown(false),
+            ],
+        )
+        .unwrap_or(&Action::MoveColumnToWorkspaceDown(true)),
+    );
 
     // Same for -up.
-    if let Some(action) = binds
-        .iter()
-        .flat_map(bind_actions)
-        .find(|action| matches!(action, Action::MoveColumnToWorkspaceUp(_)))
-    {
-        actions.push(action);
-    } else if binds
-        .iter()
-        .flat_map(bind_actions)
-        .any(|action| matches!(action, Action::MoveWindowToWorkspaceUp(_)))
-    {
-        actions.push(&Action::MoveWindowToWorkspaceUp(true));
-    } else {
-        actions.push(&Action::MoveColumnToWorkspaceUp(true));
-    }
+    actions.push(
+        find_bound_action(
+            &binds,
+            &[
+                &Action::MoveColumnToWorkspaceUp(true),
+                &Action::MoveColumnToWorkspaceUp(false),
+                &Action::MoveWindowToWorkspaceUp(true),
+                &Action::MoveWindowToWorkspaceUp(false),
+            ],
+        )
+        .unwrap_or(&Action::MoveColumnToWorkspaceUp(true)),
+    );
 
     actions.extend(&[
         &Action::SwitchPresetColumnWidth,
@@ -490,8 +502,8 @@ fn action_name(action: &Action) -> String {
         Action::CloseWindow => String::from("Close Focused Window"),
         Action::FocusColumnLeft => String::from("Focus Column to the Left"),
         Action::FocusColumnRight => String::from("Focus Column to the Right"),
-        Action::MoveColumnLeft => String::from("Move Column Left"),
-        Action::MoveColumnRight => String::from("Move Column Right"),
+        Action::MoveColumnLeft(_) => String::from("Move Column Left"),
+        Action::MoveColumnRight(_) => String::from("Move Column Right"),
         Action::FocusWorkspaceDown => String::from("Switch Workspace Down"),
         Action::FocusWorkspaceUp => String::from("Switch Workspace Up"),
         Action::MoveColumnToWorkspaceDown(_) => String::from("Move Column to Workspace Down"),
@@ -543,27 +555,20 @@ fn key_name(screen_reader: bool, mod_key: ModKey, key: &Key) -> String {
         name.push_str(" + ");
     }
 
-    if modifiers.contains(Modifiers::SUPER) && !(has_comp_mod && mod_key == ModKey::Super) {
-        name.push_str("Super + ");
-    }
-    if modifiers.contains(Modifiers::CTRL) && !(has_comp_mod && mod_key == ModKey::Ctrl) {
-        name.push_str("Ctrl + ");
-    }
-    if modifiers.contains(Modifiers::SHIFT) && !(has_comp_mod && mod_key == ModKey::Shift) {
-        name.push_str("Shift + ");
-    }
-    if modifiers.contains(Modifiers::ALT) && !(has_comp_mod && mod_key == ModKey::Alt) {
-        name.push_str("Alt + ");
-    }
-    if modifiers.contains(Modifiers::ISO_LEVEL3_SHIFT)
-        && !(has_comp_mod && mod_key == ModKey::IsoLevel3Shift)
-    {
-        name.push_str("Mod5 + ");
-    }
-    if modifiers.contains(Modifiers::ISO_LEVEL5_SHIFT)
-        && !(has_comp_mod && mod_key == ModKey::IsoLevel5Shift)
-    {
-        name.push_str("Mod3 + ");
+    const MOD_KEYS: [ModKey; 6] = [
+        ModKey::Super,
+        ModKey::Ctrl,
+        ModKey::Shift,
+        ModKey::Alt,
+        ModKey::IsoLevel3Shift,
+        ModKey::IsoLevel5Shift,
+    ];
+
+    for m in MOD_KEYS {
+        if modifiers.contains(m.to_modifiers()) && !(has_comp_mod && mod_key == m) {
+            name.push_str(modifier_name(m));
+            name.push_str(" + ");
+        }
     }
 
     let pretty = match key.trigger {
@@ -960,5 +965,40 @@ mod tests {
         Super+Ctrl
         Mod+Alt
         ");
+    }
+
+    #[test]
+    fn test_find_bound_action() {
+        let priority = [&Action::Quit(false), &Action::Quit(true)];
+        for (config_text, expected_match) in [
+            (
+                r"binds { Mod+Q { quit skip-confirmation=true; }; }",
+                Some(&Action::Quit(true)),
+            ),
+            (
+                r"binds { Mod+Q { quit skip-confirmation=false; }; }",
+                Some(&Action::Quit(false)),
+            ),
+            (
+                r"binds {
+                    Mod+Shift+Q { quit skip-confirmation=true; };
+                    Mod+Q { quit skip-confirmation=false; };
+                }",
+                Some(&Action::Quit(false)),
+            ),
+            (
+                r"binds {
+                    Mod+Shift+Q { quit skip-confirmation=false; };
+                    Mod+Q { quit skip-confirmation=true; };
+                }",
+                Some(&Action::Quit(false)),
+            ),
+            (r"binds { }", None),
+        ] {
+            let config = Config::parse_mem(config_text).unwrap();
+            let binds = config.binds.0;
+
+            assert_eq!(find_bound_action(&binds, &priority), expected_match)
+        }
     }
 }

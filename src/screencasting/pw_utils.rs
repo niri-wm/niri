@@ -485,15 +485,52 @@ impl PipeWire {
 
                                     let _span = tracy_client::span!("sending PipeWireStreamAdded");
                                     async_io::block_on(async {
-                                        let res =
+                                        let res_v1 =
                                             mutter_screen_cast::Stream::pipe_wire_stream_added(
                                                 &signal_ctx,
                                                 id,
                                             )
                                             .await;
 
-                                        if let Err(err) = res {
+                                        if let Err(err) = &res_v1 {
                                             warn!("error sending PipeWireStreamAdded: {err:?}");
+                                        }
+
+                                        // PipeWireStreamAddedV2 is like PipeWireStreamAdded, but
+                                        // with the node serial-id, added in ScreenCast V6. Both
+                                        // versions are sent for backward compability.
+                                        //
+                                        // Based on Mutter implementation: https://gitlab.gnome.org/GNOME/mutter/-/merge_requests/5467
+                                        // xdp-gnome implementation: https://gitlab.gnome.org/GNOME/xdg-desktop-portal-gnome/-/merge_requests/276
+
+                                        // The value is required, so defaults to 0, following the
+                                        // Mutter implementation
+                                        let serial = stream
+                                            .properties()
+                                            .get("object.serial")
+                                            .and_then(|s| s.parse().ok())
+                                            .unwrap_or(0);
+
+                                        trace!(
+                                            "sending PipeWireStreamAddedV2 with serial {serial}"
+                                        );
+
+                                        let props = mutter_screen_cast::PipeWireStreamProperties {
+                                            node_id: id,
+                                            node_serial: serial,
+                                        };
+                                        let res_v2 =
+                                            mutter_screen_cast::Stream::pipe_wire_stream_added_v2(
+                                                &signal_ctx,
+                                                props,
+                                            )
+                                            .await;
+
+                                        if let Err(err) = &res_v2 {
+                                            warn!("error sending PipeWireStreamAddedV2: {err:?}");
+                                        }
+
+                                        if res_v1.is_err() && res_v2.is_err() {
                                             stop_cast();
                                         }
                                     });
