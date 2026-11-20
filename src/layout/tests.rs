@@ -777,9 +777,9 @@ enum Op {
         #[proptest(strategy = "arbitrary_layout_part().prop_map(Box::new)")]
         layout_config: Box<niri_config::LayoutPart>,
     },
-    ToggleFloatingLayout,
-    HideFloatingLayout,
-    UnhideFloatingLayout,
+    ToggleFloatingWindows,
+    HideFloatingWindows,
+    UnhideFloatingWindows,
 }
 
 impl Op {
@@ -1690,14 +1690,14 @@ impl Op {
 
                 layout.update_options(options);
             }
-            Op::ToggleFloatingLayout => {
-                layout.toggle_floating_layout();
+            Op::ToggleFloatingWindows => {
+                layout.toggle_floating_windows();
             }
-            Op::HideFloatingLayout => {
-                layout.hide_floating_layout();
+            Op::HideFloatingWindows => {
+                layout.hide_floating_windows();
             }
-            Op::UnhideFloatingLayout => {
-                layout.unhide_floating_layout();
+            Op::UnhideFloatingWindows => {
+                layout.unhide_floating_windows();
             }
         }
     }
@@ -3314,7 +3314,7 @@ fn hidden_floating_setup_ops() -> [Op; 7] {
                 ..TestWindowParams::new(3)
             },
         },
-        Op::HideFloatingLayout,
+        Op::HideFloatingWindows,
     ]
 }
 
@@ -3344,7 +3344,7 @@ fn hide_floating_windows_applies_to_all_workspaces() {
 #[test]
 fn unhide_floating_windows_does_not_take_focus() {
     let mut layout = check_ops(hidden_floating_setup_ops());
-    check_ops_on_layout(&mut layout, [Op::UnhideFloatingLayout]);
+    check_ops_on_layout(&mut layout, [Op::UnhideFloatingWindows]);
     assert_eq!(floating_visible_per_workspace(&layout), [true, true]);
     assert_eq!(focused_id(&layout), Some(2));
 
@@ -3378,7 +3378,7 @@ fn unhide_raises_floating_above_fullscreen_without_focus() {
     let mut layout = check_ops(floating_behind_fullscreen_ops());
     assert_eq!(floating_visible_per_workspace(&layout), [false]);
 
-    check_ops_on_layout(&mut layout, [Op::UnhideFloatingLayout]);
+    check_ops_on_layout(&mut layout, [Op::UnhideFloatingWindows]);
     assert_eq!(floating_visible_per_workspace(&layout), [true]);
     assert_eq!(focused_id(&layout), Some(0));
 }
@@ -3386,10 +3386,10 @@ fn unhide_raises_floating_above_fullscreen_without_focus() {
 #[test]
 fn unhide_after_hide_raises_floating_above_fullscreen() {
     let mut layout = check_ops(floating_behind_fullscreen_ops());
-    check_ops_on_layout(&mut layout, [Op::HideFloatingLayout]);
+    check_ops_on_layout(&mut layout, [Op::HideFloatingWindows]);
     assert_eq!(floating_visible_per_workspace(&layout), [false]);
 
-    check_ops_on_layout(&mut layout, [Op::UnhideFloatingLayout]);
+    check_ops_on_layout(&mut layout, [Op::UnhideFloatingWindows]);
     assert_eq!(floating_visible_per_workspace(&layout), [true]);
     assert_eq!(focused_id(&layout), Some(0));
 }
@@ -3397,10 +3397,10 @@ fn unhide_after_hide_raises_floating_above_fullscreen() {
 #[test]
 fn toggle_floating_windows_round_trips() {
     let mut layout = check_ops(hidden_floating_setup_ops());
-    check_ops_on_layout(&mut layout, [Op::ToggleFloatingLayout]);
+    check_ops_on_layout(&mut layout, [Op::ToggleFloatingWindows]);
     assert_eq!(floating_visible_per_workspace(&layout), [true, true]);
     assert_eq!(focused_id(&layout), Some(2));
-    check_ops_on_layout(&mut layout, [Op::ToggleFloatingLayout]);
+    check_ops_on_layout(&mut layout, [Op::ToggleFloatingWindows]);
     assert_eq!(floating_visible_per_workspace(&layout), [false, false]);
 }
 
@@ -3469,7 +3469,7 @@ fn closing_last_tiled_window_keeps_floating_hidden() {
     assert_eq!(focused_id(&layout), None);
 
     // With nothing tiled, unhiding focuses the floating window
-    check_ops_on_layout(&mut layout, [Op::UnhideFloatingLayout]);
+    check_ops_on_layout(&mut layout, [Op::UnhideFloatingWindows]);
     assert_eq!(focused_id(&layout), Some(3));
 }
 

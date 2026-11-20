@@ -3302,7 +3302,7 @@ impl<W: LayoutElement> Layout<W> {
     pub fn focus_floating(&mut self) {
         // Unhide on every workspace even if the active one has no floating windows to focus.
         if self.floating_hidden.get() {
-            self.unhide_floating_layout();
+            self.unhide_floating_windows();
         }
 
         let Some(workspace) = self.active_workspace_mut() else {
@@ -3325,7 +3325,7 @@ impl<W: LayoutElement> Layout<W> {
         workspace.switch_focus_floating_tiling();
     }
 
-    pub fn hide_floating_layout(&mut self) {
+    pub fn hide_floating_windows(&mut self) {
         if self.floating_hidden.get() {
             return;
         }
@@ -3340,7 +3340,7 @@ impl<W: LayoutElement> Layout<W> {
     ///
     /// On the active workspace they are also raised without
     /// taking focus. This applies even if they weren't hidden.
-    pub fn unhide_floating_layout(&mut self) {
+    pub fn unhide_floating_windows(&mut self) {
         self.floating_hidden.set(false);
 
         let active_ws_id = self.active_workspace().map(|ws| ws.id());
@@ -3353,11 +3353,11 @@ impl<W: LayoutElement> Layout<W> {
         }
     }
 
-    pub fn toggle_floating_layout(&mut self) {
+    pub fn toggle_floating_windows(&mut self) {
         if self.floating_hidden.get() {
-            self.unhide_floating_layout();
+            self.unhide_floating_windows();
         } else {
-            self.hide_floating_layout();
+            self.hide_floating_windows();
         }
     }
 
