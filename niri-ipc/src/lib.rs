@@ -998,6 +998,12 @@ pub enum Action {
     FocusTiling {},
     /// Toggles the focus between the floating and the tiling layout.
     SwitchFocusBetweenFloatingAndTiling {},
+    /// Toggles the visibility of the floating windows.
+    ToggleFloatingWindows {},
+    /// Hides the floating windows.
+    HideFloatingWindows {},
+    /// Shows the floating windows, raising them without focusing
+    UnhideFloatingWindows {},
     /// Move a floating window on screen.
     #[cfg_attr(feature = "clap", clap(about = "Move the floating window on screen"))]
     MoveFloatingWindow {

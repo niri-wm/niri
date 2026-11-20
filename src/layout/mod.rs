@@ -371,6 +371,8 @@ pub struct Layout<W: LayoutElement> {
     overview_open: bool,
     /// The overview zoom progress.
     overview_progress: Option<OverviewProgress>,
+    /// Whether floating windows are currently hidden.
+    floating_hidden: bool,
     /// Configurable properties of the layout.
     options: Rc<Options>,
 }
@@ -728,18 +730,25 @@ impl<W: LayoutElement> Layout<W> {
             update_render_elements_time: Duration::ZERO,
             overview_open: false,
             overview_progress: None,
+            floating_hidden: false,
             options: Rc::new(options),
         }
     }
 
     fn with_options_and_workspaces(clock: Clock, config: &Config, options: Options) -> Self {
         let opts = Rc::new(options);
+        let floating_hidden = false;
 
         let workspaces = config
             .workspaces
             .iter()
             .map(|ws| {
-                Workspace::new_with_config_no_outputs(Some(ws.clone()), clock.clone(), opts.clone())
+                Workspace::new_with_config_no_outputs(
+                    Some(ws.clone()),
+                    clock.clone(),
+                    opts.clone(),
+                    floating_hidden,
+                )
             })
             .collect();
 
@@ -753,6 +762,7 @@ impl<W: LayoutElement> Layout<W> {
             update_render_elements_time: Duration::ZERO,
             overview_open: false,
             overview_progress: None,
+            floating_hidden: floating_hidden,
             options: opts,
         }
     }
@@ -839,6 +849,7 @@ impl<W: LayoutElement> Layout<W> {
                     workspaces,
                     ws_id_to_activate,
                     self.clock.clone(),
+                    self.floating_hidden,
                     self.options.clone(),
                     layout_config,
                 );
@@ -860,6 +871,7 @@ impl<W: LayoutElement> Layout<W> {
                     workspaces,
                     ws_id_to_activate,
                     self.clock.clone(),
+                    self.floating_hidden,
                     self.options.clone(),
                     layout_config,
                 );
@@ -979,7 +991,7 @@ impl<W: LayoutElement> Layout<W> {
         is_full_width: bool,
         is_floating: bool,
         activate: ActivateWindow,
-    ) -> Option<&Output> {
+    ) -> Option<Output> {
         let scrolling_height = height.map(SizeChange::from);
         let id = window.id().clone();
 
@@ -1072,8 +1084,11 @@ impl<W: LayoutElement> Layout<W> {
                         ws.set_window_height(Some(&id), change);
                     }
                 }
-
-                Some(&mon.output)
+                let output = mon.output.clone();
+                if is_floating && activate != ActivateWindow::No {
+                    self.reconcile_floating_hidden();
+                }
+                Some(output)
             }
             MonitorSet::NoOutputs { workspaces } => {
                 let (ws_idx, target) = match target {
@@ -1082,6 +1097,7 @@ impl<W: LayoutElement> Layout<W> {
                             workspaces.push(Workspace::new_no_outputs(
                                 self.clock.clone(),
                                 self.options.clone(),
+                                self.floating_hidden,
                             ));
                         }
 
@@ -1112,6 +1128,7 @@ impl<W: LayoutElement> Layout<W> {
                                 workspaces.push(Workspace::new_no_outputs(
                                     self.clock.clone(),
                                     self.options.clone(),
+                                    self.floating_hidden,
                                 ));
                             }
 
@@ -1145,6 +1162,9 @@ impl<W: LayoutElement> Layout<W> {
                     if let Some(change) = scrolling_height {
                         ws.set_window_height(Some(&id), change);
                     }
+                }
+                if is_floating && activate != ActivateWindow::No {
+                    self.reconcile_floating_hidden();
                 }
 
                 None
@@ -1594,6 +1614,7 @@ impl<W: LayoutElement> Layout<W> {
                                 || gesture.current_idx.ceil() == workspace_idx as f64 => {}
                         _ => mon.switch_workspace(workspace_idx),
                     }
+                    self.reconcile_floating_hidden();
 
                     return;
                 }
@@ -1630,6 +1651,7 @@ impl<W: LayoutElement> Layout<W> {
                                 || gesture.current_idx.ceil() == workspace_idx as f64 => {}
                         _ => mon.switch_workspace(workspace_idx),
                     }
+                    self.reconcile_floating_hidden();
 
                     return;
                 }
@@ -2210,6 +2232,11 @@ impl<W: LayoutElement> Layout<W> {
             monitor
         };
         monitor.move_to_workspace(window, idx, activate);
+        // Without an explicit window, the active one moves, and that one is never a hidden
+        // floating window.
+        if window.is_some() {
+            self.reconcile_floating_hidden();
+        }
     }
 
     pub fn move_column_to_workspace_up(&mut self, activate: bool) {
@@ -2438,6 +2465,22 @@ impl<W: LayoutElement> Layout<W> {
         use approx::assert_abs_diff_eq;
 
         let zoom = self.overview_zoom();
+
+        if let MonitorSet::Normal { monitors, .. } = &self.monitor_set {
+            for mon in monitors {
+                assert_eq!(
+                    mon.floating_hidden, self.floating_hidden,
+                    "monitor floating_hidden must be synchronized with layout"
+                );
+            }
+        }
+        for (_, _, ws) in self.workspaces() {
+            assert_eq!(
+                ws.is_floating_hidden(),
+                self.floating_hidden,
+                "a workspace must be NoAndHidden exactly while floating windows are hidden"
+            );
+        }
 
         let mut move_win_id = None;
         if let Some(state) = &self.interactive_move {
@@ -2980,12 +3023,17 @@ impl<W: LayoutElement> Layout<W> {
                     Some(ws_config.clone()),
                     clock,
                     options,
+                    self.floating_hidden,
                 );
                 mon.insert_workspace(ws, 0, false);
             }
             MonitorSet::NoOutputs { workspaces } => {
-                let ws =
-                    Workspace::new_with_config_no_outputs(Some(ws_config.clone()), clock, options);
+                let ws = Workspace::new_with_config_no_outputs(
+                    Some(ws_config.clone()),
+                    clock,
+                    options,
+                    self.floating_hidden,
+                );
                 workspaces.insert(0, ws);
             }
         }
@@ -3236,6 +3284,7 @@ impl<W: LayoutElement> Layout<W> {
             return;
         };
         workspace.toggle_window_floating(window);
+        self.reconcile_floating_hidden();
     }
 
     pub fn set_window_floating(&mut self, window: Option<&W::Id>, floating: bool) {
@@ -3262,9 +3311,17 @@ impl<W: LayoutElement> Layout<W> {
             return;
         };
         workspace.set_window_floating(window, floating);
+        if floating {
+            self.reconcile_floating_hidden();
+        }
     }
 
     pub fn focus_floating(&mut self) {
+        // Unhide on every workspace even if the active one has no floating windows to focus.
+        if self.floating_hidden {
+            self.unhide_floating_windows();
+        }
+
         let Some(workspace) = self.active_workspace_mut() else {
             return;
         };
@@ -3283,6 +3340,60 @@ impl<W: LayoutElement> Layout<W> {
             return;
         };
         workspace.switch_focus_floating_tiling();
+        self.reconcile_floating_hidden();
+    }
+
+    pub fn hide_floating_windows(&mut self) {
+        if self.floating_hidden {
+            return;
+        }
+
+        self.set_floating_hidden(true);
+    }
+
+    /// Shows the floating windows on every workspace.
+    ///
+    /// On the active workspace they are also raised without
+    /// taking focus. This applies even if they weren't hidden.
+    pub fn unhide_floating_windows(&mut self) {
+        self.set_floating_hidden(false);
+
+        if let Some(ws) = self.active_workspace_mut() {
+            ws.raise_floating();
+        }
+    }
+
+    /// Sets the floating hidden flag on the layout, every monitor and every workspace.
+    fn set_floating_hidden(&mut self, floating_hidden: bool) {
+        self.floating_hidden = floating_hidden;
+
+        if let MonitorSet::Normal { monitors, .. } = &mut self.monitor_set {
+            for mon in monitors {
+                mon.floating_hidden = floating_hidden;
+            }
+        }
+
+        for ws in self.workspaces_mut() {
+            ws.set_floating_hidden(floating_hidden);
+        }
+    }
+
+    pub fn toggle_floating_windows(&mut self) {
+        if self.floating_hidden {
+            self.unhide_floating_windows();
+        } else {
+            self.hide_floating_windows();
+        }
+    }
+
+    /// Checks if any workspace has unhidden floating windows (such as from focusing them) and
+    /// carries over the change to the rest of the workspaces.
+    pub fn reconcile_floating_hidden(&mut self) {
+        if !self.floating_hidden || self.workspaces().all(|(_, _, ws)| ws.is_floating_hidden()) {
+            return;
+        }
+
+        self.set_floating_hidden(false);
     }
 
     pub fn move_floating_window(
@@ -3425,6 +3536,9 @@ impl<W: LayoutElement> Layout<W> {
             if mon.workspace_switch.is_none() {
                 monitors[mon_idx].clean_up_workspaces();
             }
+            if activate == ActivateWindow::Yes {
+                self.reconcile_floating_hidden();
+            }
         }
     }
 
@@ -3560,11 +3674,12 @@ impl<W: LayoutElement> Layout<W> {
             }
         }
 
-        for ws in self.workspaces_mut() {
-            if ws.has_window(id) {
-                ws.set_fullscreen(id, is_fullscreen);
-                return;
-            }
+        let Some(ws) = self.workspaces_mut().find(|ws| ws.has_window(id)) else {
+            return;
+        };
+        ws.set_fullscreen(id, is_fullscreen);
+        if !is_fullscreen {
+            self.reconcile_floating_hidden();
         }
     }
 
@@ -3575,12 +3690,11 @@ impl<W: LayoutElement> Layout<W> {
             }
         }
 
-        for ws in self.workspaces_mut() {
-            if ws.has_window(id) {
-                ws.toggle_fullscreen(id);
-                return;
-            }
-        }
+        let Some(ws) = self.workspaces_mut().find(|ws| ws.has_window(id)) else {
+            return;
+        };
+        ws.toggle_fullscreen(id);
+        self.reconcile_floating_hidden();
     }
 
     pub fn set_windowed_fullscreen(&mut self, id: &W::Id, fullscreen: bool) {
@@ -3598,6 +3712,7 @@ impl<W: LayoutElement> Layout<W> {
                     break;
                 }
             }
+            self.reconcile_floating_hidden();
         }
 
         // This will switch is_pending_fullscreen() to false right away.
@@ -3618,6 +3733,7 @@ impl<W: LayoutElement> Layout<W> {
                     break;
                 }
             }
+            self.reconcile_floating_hidden();
         }
 
         // This will switch is_pending_fullscreen() to false right away.
@@ -3635,11 +3751,12 @@ impl<W: LayoutElement> Layout<W> {
             }
         }
 
-        for ws in self.workspaces_mut() {
-            if ws.has_window(id) {
-                ws.set_maximized(id, maximize);
-                return;
-            }
+        let Some(ws) = self.workspaces_mut().find(|ws| ws.has_window(id)) else {
+            return;
+        };
+        ws.set_maximized(id, maximize);
+        if !maximize {
+            self.reconcile_floating_hidden();
         }
     }
 
@@ -3650,12 +3767,11 @@ impl<W: LayoutElement> Layout<W> {
             }
         }
 
-        for ws in self.workspaces_mut() {
-            if ws.has_window(id) {
-                ws.toggle_maximized(id);
-                return;
-            }
-        }
+        let Some(ws) = self.workspaces_mut().find(|ws| ws.has_window(id)) else {
+            return;
+        };
+        ws.toggle_maximized(id);
+        self.reconcile_floating_hidden();
     }
 
     pub fn workspace_switch_gesture_begin(&mut self, output: &Output, is_touchpad: bool) {
@@ -4030,6 +4146,7 @@ impl<W: LayoutElement> Layout<W> {
                     .unwrap();
                 ws.set_fullscreen(window, false);
                 ws.set_maximized(window, false);
+                self.reconcile_floating_hidden();
 
                 let RemovedTile {
                     mut tile,
@@ -4391,12 +4508,16 @@ impl<W: LayoutElement> Layout<W> {
                 if !matches!(position, InsertPosition::Floating) {
                     tile.set_anim_y_between_workspaces();
                 }
+                if position == InsertPosition::Floating {
+                    self.reconcile_floating_hidden();
+                }
             }
             MonitorSet::NoOutputs { workspaces, .. } => {
                 if workspaces.is_empty() {
                     workspaces.push(Workspace::new_no_outputs(
                         self.clock.clone(),
                         self.options.clone(),
+                        self.floating_hidden,
                     ));
                 }
                 let ws = &mut workspaces[0];
@@ -4411,6 +4532,9 @@ impl<W: LayoutElement> Layout<W> {
                     move_.is_floating,
                     None,
                 );
+                if move_.is_floating {
+                    self.reconcile_floating_hidden();
+                }
             }
         }
     }
@@ -4909,6 +5033,7 @@ impl<W: LayoutElement> Layout<W> {
 
     pub fn refresh(&mut self, is_active: bool) {
         let _span = tracy_client::span!("Layout::refresh");
+        self.reconcile_floating_hidden();
 
         self.is_active = is_active;
 

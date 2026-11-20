@@ -171,6 +171,12 @@ pub enum ResolvedSize {
 enum FloatingActive {
     /// The scrolling space is active.
     No,
+    /// The scrolling space is active and floating windows are hidden.
+    ///
+    /// Set on every workspace by the layout while floating windows are hidden. A workspace leaves
+    /// this state by activating its floating space, which the layout then carries over to the
+    /// other workspaces.
+    NoAndHidden,
     /// The scrolling space is active, but the floating space should render on top, even if the
     /// active scrolling window is fullscreen.
     ///
@@ -201,14 +207,22 @@ impl OutputId {
 }
 
 impl FloatingActive {
+    fn new(floating_hidden: bool) -> Self {
+        if floating_hidden {
+            Self::NoAndHidden
+        } else {
+            Self::No
+        }
+    }
+
     fn get(self) -> bool {
         self == Self::Yes
     }
 }
 
 impl<W: LayoutElement> Workspace<W> {
-    pub fn new(output: Output, clock: Clock, options: Rc<Options>) -> Self {
-        Self::new_with_config(output, None, clock, options)
+    pub fn new(output: Output, clock: Clock, options: Rc<Options>, floating_hidden: bool) -> Self {
+        Self::new_with_config(output, None, clock, options, floating_hidden)
     }
 
     pub fn new_with_config(
@@ -216,6 +230,7 @@ impl<W: LayoutElement> Workspace<W> {
         mut config: Option<WorkspaceConfig>,
         clock: Clock,
         base_options: Rc<Options>,
+        floating_hidden: bool,
     ) -> Self {
         let mut original_outputs: Vec<OutputId> = config
             .as_ref()
@@ -261,7 +276,7 @@ impl<W: LayoutElement> Workspace<W> {
         Self {
             scrolling,
             floating,
-            floating_is_active: FloatingActive::No,
+            floating_is_active: FloatingActive::new(floating_hidden),
             original_outputs,
             scale,
             transform: output.current_transform(),
@@ -283,6 +298,7 @@ impl<W: LayoutElement> Workspace<W> {
         mut config: Option<WorkspaceConfig>,
         clock: Clock,
         base_options: Rc<Options>,
+        floating_hidden: bool,
     ) -> Self {
         let original_outputs = config
             .as_ref()
@@ -323,7 +339,7 @@ impl<W: LayoutElement> Workspace<W> {
         Self {
             scrolling,
             floating,
-            floating_is_active: FloatingActive::No,
+            floating_is_active: FloatingActive::new(floating_hidden),
             output: None,
             scale,
             transform: Transform::Normal,
@@ -341,8 +357,8 @@ impl<W: LayoutElement> Workspace<W> {
         }
     }
 
-    pub fn new_no_outputs(clock: Clock, options: Rc<Options>) -> Self {
-        Self::new_with_config_no_outputs(None, clock, options)
+    pub fn new_no_outputs(clock: Clock, options: Rc<Options>, floating_hidden: bool) -> Self {
+        Self::new_with_config_no_outputs(None, clock, options, floating_hidden)
     }
 
     pub fn id(&self) -> WorkspaceId {
@@ -632,6 +648,62 @@ impl<W: LayoutElement> Workspace<W> {
         )
     }
 
+    /// Sets the floating hidden state to the layout's flag.
+    pub(super) fn set_floating_hidden(&mut self, floating_hidden: bool) {
+        self.floating_is_active = if floating_hidden {
+            FloatingActive::NoAndHidden
+        } else {
+            match self.floating_is_active {
+                FloatingActive::NoAndHidden => {
+                    // With nothing tiled, the floating windows must take focus once shown.
+                    if self.scrolling.is_empty() && !self.floating.is_empty() {
+                        FloatingActive::Yes
+                    } else {
+                        FloatingActive::No
+                    }
+                }
+                FloatingActive::No => FloatingActive::No,
+                FloatingActive::NoButRaised => FloatingActive::NoButRaised,
+                FloatingActive::Yes => FloatingActive::Yes,
+            }
+        };
+    }
+
+    /// Shows the floating windows above the scrolling ones without focusing them
+    pub(super) fn raise_floating(&mut self) {
+        if self.floating.is_empty() {
+            return;
+        }
+
+        self.floating_is_active = match self.floating_is_active {
+            FloatingActive::No | FloatingActive::NoAndHidden | FloatingActive::NoButRaised => {
+                FloatingActive::NoButRaised
+            }
+            FloatingActive::Yes => FloatingActive::Yes,
+        };
+    }
+
+    pub(super) fn is_floating_hidden(&self) -> bool {
+        self.floating_is_active == FloatingActive::NoAndHidden
+    }
+
+    /// Focuses the floating space.
+    ///
+    /// If floating windows were hidden, this leaves the hidden state, and the layout then unhides
+    /// floating windows on the other workspaces too.
+    fn activate_floating(&mut self) {
+        self.floating_is_active = FloatingActive::Yes;
+    }
+
+    fn deactivate_floating(&mut self) {
+        self.floating_is_active = match self.floating_is_active {
+            FloatingActive::NoAndHidden => FloatingActive::NoAndHidden,
+            FloatingActive::No | FloatingActive::NoButRaised | FloatingActive::Yes => {
+                FloatingActive::No
+            }
+        }
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn add_tile(
         &mut self,
@@ -656,7 +728,9 @@ impl<W: LayoutElement> Workspace<W> {
                 if is_floating && tile.window().pending_sizing_mode().is_normal() {
                     self.floating.add_tile(tile, activate);
 
-                    if activate || self.scrolling.is_empty() {
+                    if activate {
+                        self.activate_floating();
+                    } else if self.scrolling.is_empty() && !self.is_floating_hidden() {
                         self.floating_is_active = FloatingActive::Yes;
                     }
                 } else {
@@ -664,7 +738,7 @@ impl<W: LayoutElement> Workspace<W> {
                         .add_tile(None, tile, activate, width, is_full_width, anim);
 
                     if activate {
-                        self.floating_is_active = FloatingActive::No;
+                        self.deactivate_floating();
                     }
                 }
             }
@@ -674,11 +748,13 @@ impl<W: LayoutElement> Workspace<W> {
                     .add_tile(Some(col_idx), tile, activate, width, is_full_width, anim);
 
                 if activate {
-                    self.floating_is_active = FloatingActive::No;
+                    self.deactivate_floating();
                 }
             }
             WorkspaceAddWindowTarget::NextTo(next_to) => {
-                let activate = activate.map_smart(|| self.active_window().unwrap().id() == next_to);
+                // There's no active window when the only windows are hidden floating ones.
+                let activate = activate
+                    .map_smart(|| self.active_window().is_some_and(|win| win.id() == next_to));
 
                 let floating_has_window = self.floating.has_window(next_to);
 
@@ -706,7 +782,9 @@ impl<W: LayoutElement> Workspace<W> {
                         self.floating.add_tile(tile, activate);
                     }
 
-                    if activate || self.scrolling.is_empty() {
+                    if activate {
+                        self.activate_floating();
+                    } else if self.scrolling.is_empty() && !self.is_floating_hidden() {
                         self.floating_is_active = FloatingActive::Yes;
                     }
                 } else if floating_has_window {
@@ -714,7 +792,7 @@ impl<W: LayoutElement> Workspace<W> {
                         .add_tile(None, tile, activate, width, is_full_width, anim);
 
                     if activate {
-                        self.floating_is_active = FloatingActive::No;
+                        self.deactivate_floating();
                     }
                 } else {
                     self.scrolling.add_tile_right_of(
@@ -727,7 +805,7 @@ impl<W: LayoutElement> Workspace<W> {
                     );
 
                     if activate {
-                        self.floating_is_active = FloatingActive::No;
+                        self.deactivate_floating();
                     }
                 }
             }
@@ -746,7 +824,7 @@ impl<W: LayoutElement> Workspace<W> {
             .add_tile_to_column(col_idx, tile_idx, tile, activate);
 
         if activate {
-            self.floating_is_active = FloatingActive::No;
+            self.deactivate_floating();
         }
     }
 
@@ -763,18 +841,20 @@ impl<W: LayoutElement> Workspace<W> {
         self.scrolling.add_column(None, column, activate, anim);
 
         if activate {
-            self.floating_is_active = FloatingActive::No;
+            self.deactivate_floating();
         }
     }
 
     fn update_focus_floating_tiling_after_removing(&mut self, removed_from_floating: bool) {
         if removed_from_floating {
             if self.floating.is_empty() {
-                self.floating_is_active = FloatingActive::No;
+                self.deactivate_floating();
             }
         } else {
-            // Scrolling should remain focused if both are empty.
-            if self.scrolling.is_empty() && !self.floating.is_empty() {
+            // Scrolling should remain focused if both are empty. Hidden floating windows don't
+            // take focus on their own.
+            if self.scrolling.is_empty() && !self.floating.is_empty() && !self.is_floating_hidden()
+            {
                 self.floating_is_active = FloatingActive::Yes;
             }
         }
@@ -799,8 +879,7 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     pub fn remove_active_column(&mut self) -> Option<Column<W>> {
-        let from_floating = self.floating_is_active.get();
-        if from_floating {
+        if self.floating_is_active.get() {
             return None;
         }
 
@@ -812,7 +891,7 @@ impl<W: LayoutElement> Workspace<W> {
             }
         }
 
-        self.update_focus_floating_tiling_after_removing(from_floating);
+        self.update_focus_floating_tiling_after_removing(false);
 
         Some(column)
     }
@@ -1449,7 +1528,7 @@ impl<W: LayoutElement> Workspace<W> {
                 None,
             );
             if target_is_active {
-                self.floating_is_active = FloatingActive::No;
+                self.deactivate_floating();
             }
         } else {
             let mut removed = self.scrolling.remove_tile(&id, Transaction::new());
@@ -1473,7 +1552,7 @@ impl<W: LayoutElement> Workspace<W> {
 
             self.floating.add_tile(removed.tile, target_is_active);
             if target_is_active {
-                self.floating_is_active = FloatingActive::Yes;
+                self.activate_floating();
             }
         }
 
@@ -1512,16 +1591,16 @@ impl<W: LayoutElement> Workspace<W> {
         if self.floating.is_empty() {
             // If floating is empty, keep focus on scrolling.
             return;
-        } else if self.scrolling.is_empty() {
+        } else if self.scrolling.is_empty() && !self.is_floating_hidden() {
             // If floating isn't empty but scrolling is, keep focus on floating.
             return;
         }
 
-        self.floating_is_active = if self.floating_is_active.get() {
-            FloatingActive::No
+        if self.floating_is_active.get() {
+            self.floating_is_active = FloatingActive::No;
         } else {
-            FloatingActive::Yes
-        };
+            self.activate_floating();
+        }
     }
 
     pub fn move_floating_window(
@@ -1730,11 +1809,12 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     pub fn is_floating_visible(&self) -> bool {
-        // If the focus is on a fullscreen scrolling window, hide the floating windows.
-        matches!(
-            self.floating_is_active,
-            FloatingActive::Yes | FloatingActive::NoButRaised
-        ) || self.fullscreen_window_above_top_layer().is_none()
+        match self.floating_is_active {
+            FloatingActive::NoAndHidden => false,
+            FloatingActive::Yes | FloatingActive::NoButRaised => true,
+            // If the focus is on a fullscreen scrolling window, hide the floating windows.
+            FloatingActive::No => self.fullscreen_window_above_top_layer().is_none(),
+        }
     }
 
     pub fn store_unmap_snapshot_if_empty(
@@ -1881,10 +1961,10 @@ impl<W: LayoutElement> Workspace<W> {
 
     pub fn activate_window(&mut self, window: &W::Id) -> bool {
         if self.floating.activate_window(window) {
-            self.floating_is_active = FloatingActive::Yes;
+            self.activate_floating();
             true
         } else if self.scrolling.activate_window(window) {
-            self.floating_is_active = FloatingActive::No;
+            self.deactivate_floating();
             true
         } else {
             false
@@ -1893,11 +1973,12 @@ impl<W: LayoutElement> Workspace<W> {
 
     pub fn activate_window_without_raising(&mut self, window: &W::Id) -> bool {
         if self.floating.activate_window_without_raising(window) {
-            self.floating_is_active = FloatingActive::Yes;
+            self.activate_floating();
             true
         } else if self.scrolling.activate_window(window) {
             self.floating_is_active = match self.floating_is_active {
                 FloatingActive::No => FloatingActive::No,
+                FloatingActive::NoAndHidden => FloatingActive::NoAndHidden,
                 FloatingActive::NoButRaised => FloatingActive::NoButRaised,
                 FloatingActive::Yes => FloatingActive::NoButRaised,
             };
@@ -2083,8 +2164,8 @@ impl<W: LayoutElement> Workspace<W> {
             );
         } else if self.scrolling.is_empty() {
             assert!(
-                self.floating_is_active.get(),
-                "when scrolling is empty but floating isn't, floating should be active"
+                self.floating_is_active.get() || self.is_floating_hidden(),
+                "when scrolling is empty but floating isn't, floating should be active unless hidden"
             );
         }
 

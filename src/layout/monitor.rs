@@ -83,6 +83,8 @@ pub struct Monitor<W: LayoutElement> {
     overview_progress: Option<OverviewProgress>,
     /// Clock for driving animations.
     pub(super) clock: Clock,
+    /// Whether floating windows are hidden, as set by the layout. New workspaces start with it.
+    pub(super) floating_hidden: bool,
     /// Configurable properties of the layout as received from the parent layout.
     pub(super) base_options: Rc<Options>,
     /// Configurable properties of the layout.
@@ -295,6 +297,7 @@ impl<W: LayoutElement> Monitor<W> {
         mut workspaces: Vec<Workspace<W>>,
         ws_id_to_activate: Option<WorkspaceId>,
         clock: Clock,
+        floating_hidden: bool,
         base_options: Rc<Options>,
         layout_config: Option<LayoutPart>,
     ) -> Self {
@@ -320,12 +323,22 @@ impl<W: LayoutElement> Monitor<W> {
         }
 
         if options.layout.empty_workspace_above_first && !workspaces.is_empty() {
-            let ws = Workspace::new(output.clone(), clock.clone(), options.clone());
+            let ws = Workspace::new(
+                output.clone(),
+                clock.clone(),
+                options.clone(),
+                floating_hidden,
+            );
             workspaces.insert(0, ws);
             active_workspace_idx += 1;
         }
 
-        let ws = Workspace::new(output.clone(), clock.clone(), options.clone());
+        let ws = Workspace::new(
+            output.clone(),
+            clock.clone(),
+            options.clone(),
+            floating_hidden,
+        );
         workspaces.push(ws);
 
         Self {
@@ -344,6 +357,7 @@ impl<W: LayoutElement> Monitor<W> {
             overview_progress: None,
             workspace_switch: None,
             clock,
+            floating_hidden,
             base_options,
             options,
             layout_config,
@@ -417,6 +431,7 @@ impl<W: LayoutElement> Monitor<W> {
             self.output.clone(),
             self.clock.clone(),
             self.options.clone(),
+            self.floating_hidden,
         );
 
         self.workspaces.insert(idx, ws);
