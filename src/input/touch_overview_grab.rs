@@ -35,6 +35,10 @@ pub struct TouchOverviewGrab {
     // Accumulated and applied in frame().
     new_location: Point<f64, Logical>,
     event_timestamp: Option<Duration>,
+
+    // Set when the touch was cancelled rather than lifted, so that ending the
+    // grab doesn't count as a tap.
+    cancelled: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -69,6 +73,7 @@ impl TouchOverviewGrab {
             gesture: GestureState::Recognizing,
             new_location: location,
             event_timestamp: None,
+            cancelled: false,
         }
     }
 
@@ -178,6 +183,7 @@ impl TouchOverviewGrab {
     fn on_ungrab(&mut self, state: &mut State) {
         let layout = &mut state.niri.layout;
         match self.gesture {
+            GestureState::Recognizing if self.cancelled => (),
             GestureState::Recognizing => {
                 // Tap to activate.
                 layout.focus_output(&self.output);
@@ -295,6 +301,7 @@ impl TouchGrab<State> for TouchOverviewGrab {
     }
 
     fn cancel(&mut self, data: &mut State, handle: &mut TouchInnerHandle<'_, State>) {
+        self.cancelled = true;
         handle.cancel(data);
         handle.unset_grab(self, data);
     }

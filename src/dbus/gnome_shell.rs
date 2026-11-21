@@ -133,6 +133,8 @@ impl GlobalShortcutsPortalBinds {
             allow_when_locked: false,
             allow_inhibiting: true,
             hotkey_overlay_title: None,
+            sensitivity: None,
+            natural_scroll: false,
         });
         action
     }
