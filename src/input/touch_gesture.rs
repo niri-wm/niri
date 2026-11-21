@@ -44,7 +44,10 @@ use super::{
     dominant_axis, find_configured_bind, modifiers_from_state, overview_action_sign, AnyStartData,
 };
 use crate::layout::LayoutElement;
-use crate::niri::{ActiveTouchBind, PointerVisibility, State, TapCandidate, TouchEdgeSwipeState};
+use crate::niri::{
+    ActiveTouchBind, Niri, PointContents, PointerVisibility, State, TapCandidate,
+    TouchEdgeSwipeState,
+};
 use crate::utils::with_toplevel_role;
 
 /// Default sensitivity for touchscreen gestures (both edge and multi-finger).
@@ -228,9 +231,33 @@ impl State {
 
         let serial = SERIAL_COUNTER.next_serial();
 
-        let under = self.niri.contents_under(pos);
+        let edge_pending = match self.niri.touch_edge_swipe {
+            Some(TouchEdgeSwipeState::Pending {
+                edge,
+                slot: Some(edge_slot),
+                ..
+            }) if edge_slot == slot => Some(edge),
+            _ => None,
+        };
+        let (under, down_pos) = match edge_pending {
+            Some(edge) => edge_touch_target(&self.niri, pos, edge),
+            None => (self.niri.contents_under(pos), pos),
+        };
 
         let mod_key = self.backend.mod_key(&self.niri.config.borrow());
+
+        // An edge touch on a client goes to it right away (scrollbars, close buttons) and is
+        // cancelled if it becomes an edge swipe. Elsewhere it is held back until ruled out.
+        let edge_mod_down = {
+            let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
+            modifiers_from_state(mods).contains(mod_key.to_modifiers())
+        };
+        let hold_edge_touch = in_edge_zone
+            && (under.surface.is_none()
+                || under.overview
+                || edge_mod_down
+                || self.niri.window_mru_ui.is_open()
+                || self.niri.screenshot_ui.is_open());
 
         // Touchscreen gesture passthrough: if this is the first finger and it
         // landed on a window whose rule opts into passthrough, flip the state
@@ -252,9 +279,9 @@ impl State {
             }
         }
 
-        if in_edge_zone {
-            // Edge zone touch — skip window activation and client forwarding.
-            // The gesture will either activate (swipe) or cancel (lift = no-op).
+        if hold_edge_touch {
+            // Held-back edge touch: skip window activation and client forwarding until it is
+            // either an edge swipe or handed to the client.
         } else if self.niri.screenshot_ui.is_open() {
             if let Some(output) = under.output.clone() {
                 let geom = self.niri.global_space.output_geometry(&output).unwrap();
@@ -377,8 +404,8 @@ impl State {
             self.niri.focus_layer_surface_if_on_demand(under.layer);
         };
 
-        // Only forward to client if not tracking a multi-finger gesture or edge swipe.
-        if !tracking_gesture && !in_edge_zone {
+        // Only forward to client if not tracking a multi-finger gesture or a held-back edge touch.
+        if !tracking_gesture && !hold_edge_touch {
             tracing::debug!(
                 target: "niri::input::touch_gesture",
                 "TOUCH-DBG FORWARD slot={:?} has_surface={}",
@@ -390,12 +417,15 @@ impl State {
                 under.surface,
                 &DownEvent {
                     slot,
-                    location: pos,
+                    location: down_pos,
                     serial,
                     time: evt.time(),
                 },
             );
             self.niri.touch_forwarded_slots.insert(slot);
+            if edge_pending.is_some() {
+                self.niri.touch_edge_client_slots.insert(slot);
+            }
         } else {
             tracing::debug!(
                 target: "niri::input::touch_gesture",
@@ -460,23 +490,18 @@ impl State {
                     ..
                 } => {
                     if Some(slot) == *edge_slot {
-                        let (start, travel) = (*start, cx.hypot(*cy));
+                        let (edge, start, travel) = (*edge, *start, cx.hypot(*cy));
+                        let (cx, cy) = (*cx, *cy);
                         tracing::debug!(
                             target: "niri::input::touch_gesture",
                             "TOUCH-DBG EDGE released edge={edge:?} travel={travel:.0}",
                         );
                         self.niri.touch_edge_swipe = None;
 
-                        let wobble = self
-                            .niri
-                            .config
-                            .borrow()
-                            .input
-                            .touchscreen
-                            .tap_wobble_threshold();
-                        if travel <= wobble {
-                            self.replay_edge_tap(&handle, slot, start, evt.time());
-                        }
+                        // Lifted before it became an edge swipe: a tap or a short drag for the
+                        // client.
+                        let end = start + Point::from((cx, cy));
+                        self.hand_edge_touch_to_client(&handle, slot, edge, start, end, evt.time());
                     }
                 }
                 TouchEdgeSwipeState::Active { kind, .. } => {
@@ -623,6 +648,7 @@ impl State {
             self.niri.touch_gesture_cumulative = None;
             self.niri.touch_gesture_locked = false;
             self.niri.touch_forwarded_slots.clear();
+            self.niri.touch_edge_client_slots.clear();
             self.niri.touchscreen_gesture_passthrough = false;
             self.niri.touch_frame_dirty = false;
             self.niri.touch_frame_delta = (0., 0.);
@@ -674,17 +700,23 @@ impl State {
         }
     }
 
-    /// A touch in the edge strip is held back from the client until it is known not to be an edge
-    /// swipe. When it lifts as a tap, deliver the touch-down it never got, so the following
-    /// touch-up completes a normal tap.
-    fn replay_edge_tap(
+    /// A held-back edge touch (see `hold_edge_touch`) that turns out not to be an edge swipe:
+    /// deliver the touch-down it never got at `start`, then move it to `current`, so the client
+    /// sees the whole tap or drag. No-op for an edge touch the client already has.
+    fn hand_edge_touch_to_client(
         &mut self,
         handle: &TouchHandle<State>,
         slot: TouchSlot,
+        edge: ScreenEdge,
         start: Point<f64, Logical>,
+        current: Point<f64, Logical>,
         time: InputTime,
     ) {
-        let under = self.niri.contents_under(start);
+        if self.niri.touch_forwarded_slots.contains(&slot) {
+            return;
+        }
+
+        let (under, start) = edge_touch_target(&self.niri, start, edge);
         if under.overview || self.niri.window_mru_ui.is_open() {
             return;
         }
@@ -705,6 +737,31 @@ impl State {
                 time,
             },
         );
+        self.niri.touch_forwarded_slots.insert(slot);
+        self.niri.touch_edge_client_slots.insert(slot);
+
+        if current != start {
+            let under = self.niri.contents_under(current);
+            handle.motion(
+                self,
+                under.surface,
+                &TouchMotionEvent {
+                    slot,
+                    location: current,
+                    time,
+                },
+            );
+        }
+    }
+
+    /// An edge touch became an edge swipe: take it back from the client, which may have had it
+    /// since touch-down, and keep a deferred tap-to-focus from firing. The touch moved this
+    /// frame, so Smithay delivers the cancel to it.
+    fn cancel_edge_touch_on_client(&mut self, handle: &TouchHandle<State>) {
+        handle.cancel(self);
+        self.niri.touch_forwarded_slots.clear();
+        self.niri.touch_edge_client_slots.clear();
+        self.niri.touch_pending_activation = None;
     }
 
     pub(super) fn on_touch_motion<I: InputBackend>(&mut self, evt: I::TouchMotionEvent) {
@@ -999,18 +1056,22 @@ impl State {
                         edge,
                         zone,
                         zoned,
+                        start,
                         cumulative,
                         slot: edge_slot,
-                        ..
                     } => {
                         let edge = *edge;
                         let zone = *zone;
                         let zoned = *zoned;
+                        let start = *start;
                         let (cx, cy) = *cumulative;
                         let edge_slot = *edge_slot;
-                        let threshold = {
-                            let config = self.niri.config.borrow();
-                            config.input.touchscreen.edge_trigger_distance()
+                        let (threshold, wobble) = {
+                            let touchscreen = &self.niri.config.borrow().input.touchscreen;
+                            (
+                                touchscreen.edge_trigger_distance(),
+                                touchscreen.tap_wobble_threshold(),
+                            )
                         };
 
                         // Only travel away from the edge counts; a drag along the edge is not
@@ -1019,15 +1080,29 @@ impl State {
                         let inward = cx * ix + cy * iy;
                         let along = (cx * iy - cy * ix).abs();
 
-                        let past_threshold = cx * cx + cy * cy >= threshold * threshold;
+                        let travel = cx.hypot(cy);
+                        let past_threshold = travel >= threshold;
+                        let current = start + Point::from((cx, cy));
 
-                        if past_threshold && inward <= along {
+                        // Decide along-edge drags early, so a scrollbar drag reaches the client
+                        // after the wobble distance rather than the full trigger distance.
+                        if travel > wobble && inward <= along {
                             tracing::debug!(
                                 target: "niri::input::touch_gesture",
                                 "TOUCH-DBG EDGE dropped edge={edge:?} inward={inward:.0} \
                                  along={along:.0}",
                             );
                             self.niri.touch_edge_swipe = None;
+                            if let Some(edge_slot) = edge_slot {
+                                self.hand_edge_touch_to_client(
+                                    &handle,
+                                    edge_slot,
+                                    edge,
+                                    start,
+                                    current,
+                                    evt.time(),
+                                );
+                            }
                         } else if past_threshold {
                             let trigger = Trigger::TouchEdge {
                                 edge,
@@ -1066,18 +1141,29 @@ impl State {
                                             overview_forward: (fx * sign, fy * sign),
                                             slot: edge_slot,
                                         });
-                                    handle.cancel(self);
+                                    self.cancel_edge_touch_on_client(&handle);
                                     begin_continuous_gesture(self, kind, pos);
                                     self.niri.queue_redraw_all();
                                 } else {
-                                    handle.cancel(self);
+                                    self.cancel_edge_touch_on_client(&handle);
                                     if !matches!(action, Action::Noop) {
                                         self.handle_bind(bind, true, evt.time());
                                     }
                                     self.niri.touch_edge_swipe = None;
                                 }
                             } else {
+                                // No bind under the current modifiers: not a gesture after all.
                                 self.niri.touch_edge_swipe = None;
+                                if let Some(edge_slot) = edge_slot {
+                                    self.hand_edge_touch_to_client(
+                                        &handle,
+                                        edge_slot,
+                                        edge,
+                                        start,
+                                        current,
+                                        evt.time(),
+                                    );
+                                }
                             }
                         }
                     }
@@ -1395,6 +1481,7 @@ impl State {
         self.niri.touch_edge_swipe = None;
         self.niri.touch_gesture_locked = false;
         self.niri.touch_forwarded_slots.clear();
+        self.niri.touch_edge_client_slots.clear();
         self.niri.touch_gesture_initial_spread = None;
         self.niri.touch_gesture_cumulative_rotation = 0.0;
         self.niri.touch_gesture_previous_angles.clear();
@@ -1586,6 +1673,33 @@ fn begin_continuous_gesture(
 
 /// Unit vector pointing from a screen edge into the screen: the direction an
 /// edge swipe travels.
+/// What an edge-zone touch lands on, and where to deliver it. A touch in the gap between a window
+/// and the screen edge snaps inward to the nearest surface within `edge-start-distance`, so a
+/// scrollbar or button at the window's edge is hit however close to the bezel the finger lands.
+fn edge_touch_target(
+    niri: &Niri,
+    pos: Point<f64, Logical>,
+    edge: ScreenEdge,
+) -> (PointContents, Point<f64, Logical>) {
+    let under = niri.contents_under(pos);
+    if under.surface.is_some() || under.overview {
+        return (under, pos);
+    }
+
+    let max = niri.config.borrow().input.touchscreen.edge_start_distance();
+    let (ix, iy) = edge_inward(edge);
+    let mut d = 1.;
+    while d <= max {
+        let probe = pos + Point::from((ix * d, iy * d));
+        let probed = niri.contents_under(probe);
+        if probed.surface.is_some() {
+            return (probed, probe);
+        }
+        d += 1.;
+    }
+    (under, pos)
+}
+
 fn edge_inward(edge: ScreenEdge) -> (f64, f64) {
     match edge {
         ScreenEdge::Left => (1., 0.),

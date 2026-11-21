@@ -246,7 +246,7 @@ pub enum TouchEdgeSwipeState {
         /// unzoned parent trigger was the one that matched (fallback path).
         /// Determines which Trigger name to emit for IPC events.
         zoned: bool,
-        /// Where the finger landed, to replay the touch as a tap on early release.
+        /// Where the finger landed, to hand a held-back touch to the client once ruled out.
         start: Point<f64, Logical>,
         cumulative: (f64, f64),
         slot: Option<TouchSlot>,
@@ -565,6 +565,9 @@ pub struct Niri {
     /// phantom "still-down" touches — the gesture gate will otherwise
     /// suppress their real up events.
     pub touch_forwarded_slots: HashSet<TouchSlot>,
+    /// Forwarded touches that started in a screen-edge zone. A client's interactive-resize
+    /// request from one of these is refused: near the bezel a touch means scroll or swipe.
+    pub touch_edge_client_slots: HashSet<TouchSlot>,
     /// Set when the first finger of a touch gesture landed on a window with
     /// `touchscreen-gesture-passthrough true`. While set, the gesture
     /// recognizer is bypassed and touch events forward directly to the
@@ -3176,6 +3179,7 @@ impl Niri {
             touch_edge_swipe: None,
             touch_gesture_locked: false,
             touch_forwarded_slots: HashSet::new(),
+            touch_edge_client_slots: HashSet::new(),
             touchscreen_gesture_passthrough: false,
             touch_active_bind: None,
             touch_gesture_initial_spread: None,
