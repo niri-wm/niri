@@ -7,8 +7,8 @@ use calloop::timer::{TimeoutAction, Timer};
 use calloop::RegistrationToken;
 use input::event::gesture::GestureEventCoordinates as _;
 use niri_config::{
-    Action, Bind, Binds, BoundAction, Config, Key, ModKey, Modifiers, MruDirection, SwitchBinds,
-    Trigger,
+    Action, Bind, Binds, BoundAction, Config, Key, ModKey, Modifiers, MruDirection, MruFilter,
+    MruScope, SwitchBinds, Trigger,
 };
 use niri_ipc::LayoutSwitchTarget;
 use smithay::backend::input::{
@@ -60,8 +60,9 @@ use crate::niri::{CastTarget, Niri, PointerVisibility, State};
 use crate::ui::mru::{WindowMru, WindowMruUi};
 use crate::ui::screenshot_ui::ScreenshotUi;
 use crate::utils::spawning::{spawn, spawn_sh};
-use crate::utils::{center, get_monotonic_time, CastSessionId, ResizeEdge};
+use crate::utils::{center, get_monotonic_time, with_toplevel_role, CastSessionId, ResizeEdge};
 use crate::window::mapped::MappedId;
+use crate::window::Mapped;
 
 pub mod backend_ext;
 pub mod click_grab;
@@ -1234,16 +1235,33 @@ impl State {
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
-            Action::FocusWindowPrevious => {
-                let current = self.niri.layout.focus().map(|win| win.id());
-                if let Some(window) = self
-                    .niri
-                    .layout
+            Action::FocusWindowPrevious(scope, filter) => {
+                let layout = &self.niri.layout;
+                let current = layout.focus();
+                let app_id =
+                    |win: &Mapped| with_toplevel_role(win.toplevel(), |role| role.app_id.clone());
+
+                let current_app_id = current
+                    .and_then(app_id)
+                    .filter(|_| filter == MruFilter::AppId);
+
+                if let Some(window) = layout
                     .windows()
-                    .map(|(_, win)| win)
-                    .filter(|win| Some(win.id()) != current)
-                    .max_by_key(|win| win.get_focus_timestamp())
-                    .map(|win| win.window.clone())
+                    .filter(|(_, win)| Some(win.id()) != current.map(|win| win.id()))
+                    .filter(|(mon, win)| match scope {
+                        MruScope::All => true,
+                        MruScope::Output => mon.map(|mon| mon.output()) == layout.active_output(),
+                        MruScope::Workspace => layout
+                            .active_workspace()
+                            .is_some_and(|ws| ws.has_window(&win.window)),
+                    })
+                    .filter(|(_, win)| {
+                        current_app_id
+                            .as_ref()
+                            .is_none_or(|current| app_id(win).as_ref() == Some(current))
+                    })
+                    .max_by_key(|(_, win)| win.get_focus_timestamp())
+                    .map(|(_, win)| win.window.clone())
                 {
                     // Commit current focus so repeated focus-window-previous works as expected.
                     self.niri.mru_apply_keyboard_commit();

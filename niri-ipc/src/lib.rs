@@ -414,7 +414,16 @@ pub enum Action {
         index: u8,
     },
     /// Focus the previously focused window.
-    FocusWindowPrevious {},
+    FocusWindowPrevious {
+        /// Which windows to consider. Defaults to all windows.
+        #[cfg_attr(feature = "clap", arg(long))]
+        #[serde(default)]
+        scope: Option<RecentWindowsScope>,
+        /// Additional filter for the considered windows.
+        #[cfg_attr(feature = "clap", arg(long))]
+        #[serde(default)]
+        filter: Option<RecentWindowsFilter>,
+    },
     /// Focus the column to the left.
     FocusColumnLeft {},
     /// Focus the column to the right.
@@ -1432,6 +1441,30 @@ pub struct LogicalOutput {
     pub scale: f64,
     /// Transform.
     pub transform: Transform,
+}
+
+/// Which windows to consider when picking a recently focused window.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum RecentWindowsScope {
+    /// All windows.
+    All,
+    /// Windows on the active output.
+    Output,
+    /// Windows on the active workspace.
+    Workspace,
+}
+
+/// Additional filter for the windows considered when picking a recently focused window.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum RecentWindowsFilter {
+    /// All windows.
+    All,
+    /// Windows with the same app id as the focused window.
+    AppId,
 }
 
 /// Output transform, which goes counter-clockwise.

@@ -185,6 +185,23 @@ recent-windows {
 }
 ```
 
+#### Focusing the previous window without the switcher
+
+<sup>Since: next release</sup> The `focus-window-previous` action, which focuses the previously focused window without opening the switcher, accepts the same `scope` and `filter` properties.
+It is a normal bind, so it goes in the [`binds {}` section](./Configuration:-Key-Bindings.md), and it can use a single key.
+
+```kdl
+binds {
+    // Go back to the previous window on the current workspace.
+    F1 { focus-window-previous scope="workspace"; }
+
+    // Go back to the previous window of the same application.
+    F2 { focus-window-previous filter="app-id"; }
+}
+```
+
+If the focused window has no app ID, `filter="app-id"` is ignored, like in the switcher.
+
 #### Bindings inside the switcher
 
 When the switcher is open, some hardcoded binds are available:
