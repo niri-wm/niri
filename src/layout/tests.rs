@@ -536,6 +536,7 @@ enum Op {
     ToggleColumnTabbedDisplay,
     SetColumnDisplay(#[proptest(strategy = "arbitrary_column_display()")] ColumnDisplay),
     CenterColumn,
+    ToggleCenterColumn,
     CenterWindow {
         #[proptest(strategy = "proptest::option::of(1..=5usize)")]
         id: Option<usize>,
@@ -1236,6 +1237,7 @@ impl Op {
             Op::ToggleColumnTabbedDisplay => layout.toggle_column_tabbed_display(),
             Op::SetColumnDisplay(display) => layout.set_column_display(display),
             Op::CenterColumn => layout.center_column(),
+            Op::ToggleCenterColumn => layout.toggle_center_column(),
             Op::CenterWindow { id } => {
                 let id = id.filter(|id| layout.has_window(id));
                 layout.center_window(id.as_ref());
@@ -1901,6 +1903,7 @@ fn operations_dont_panic() {
         Op::ConsumeWindowIntoColumn,
         Op::ExpelWindowFromColumn,
         Op::CenterColumn,
+        Op::ToggleCenterColumn,
         Op::FocusWorkspaceDown,
         Op::FocusWorkspaceUp,
         Op::FocusWorkspace(1),
