@@ -1034,6 +1034,11 @@ impl XdgDecorationHandler for State {
             }
         }
     }
+
+    fn decoration_destroyed(&mut self, _toplevel: ToplevelSurface) {
+        // We rely on Smithay's decoration_mode (which it resets on its own), and don't track any
+        // state on our own. Nothing to do here.
+    }
 }
 
 /// Whether KDE server decorations are in use.
