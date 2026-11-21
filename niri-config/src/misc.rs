@@ -1,6 +1,10 @@
+use knuffel::ast::SpannedNode;
+use knuffel::errors::DecodeError;
+use knuffel::traits::ErrorSpan;
+
 use crate::appearance::{Color, WorkspaceShadow, WorkspaceShadowPart, DEFAULT_BACKDROP_COLOR};
-use crate::utils::{Flag, MergeWith};
-use crate::FloatOrInt;
+use crate::utils::{expect_only_children, Flag, MergeWith};
+use crate::{Action, FloatOrInt};
 
 #[derive(knuffel::Decode, Debug, Clone, PartialEq, Eq)]
 pub struct SpawnAtStartup {
@@ -196,5 +200,92 @@ impl MergeWith<XwaylandSatellitePart> for XwaylandSatellite {
         }
 
         merge_clone!((self, part), path);
+    }
+}
+
+#[derive(Default, Debug, Clone, PartialEq)]
+pub struct SystemBell {
+    pub action: Option<Action>,
+    pub mark_window_urgent: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SystemBellPart {
+    pub action: Option<Action>,
+    pub mark_window_urgent: bool,
+}
+
+impl<S> knuffel::Decode<S> for SystemBellPart
+where
+    S: ErrorSpan,
+{
+    fn decode_node(
+        node: &SpannedNode<S>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) -> Result<Self, DecodeError<S>> {
+        expect_only_children(node, ctx);
+
+        let mut action = None;
+        let mut mark_window_urgent = false;
+
+        for child in node.children() {
+            match child.node_name.as_ref() {
+                "mark-window-urgent" => mark_window_urgent = true,
+                "action" => {
+                    if action.is_some() {
+                        ctx.emit_error(DecodeError::unexpected(
+                            child,
+                            "section",
+                            "duplicate `action` section",
+                        ));
+                        continue;
+                    }
+
+                    expect_only_children(child, ctx);
+
+                    let mut children = child.children();
+                    let Some(action_child) = children.next() else {
+                        ctx.emit_error(DecodeError::missing(
+                            child,
+                            "expected an action for this `action` section",
+                        ));
+                        continue;
+                    };
+
+                    for c in children {
+                        ctx.emit_error(DecodeError::unexpected(
+                            c,
+                            "node",
+                            "only one action is allowed",
+                        ));
+                    }
+
+                    match Action::decode_node(action_child, ctx) {
+                        Ok(a) => action = Some(a),
+                        Err(e) => ctx.emit_error(e),
+                    }
+                }
+                other => {
+                    ctx.emit_error(DecodeError::unexpected(
+                        child,
+                        "node",
+                        format!("unexpected node `{}`", other),
+                    ));
+                }
+            }
+        }
+
+        Ok(Self {
+            action,
+            mark_window_urgent,
+        })
+    }
+}
+
+impl MergeWith<SystemBellPart> for SystemBell {
+    fn merge_with(&mut self, part: &SystemBellPart) {
+        self.mark_window_urgent |= part.mark_window_urgent;
+
+        merge_clone_opt!((self, part), action);
     }
 }
