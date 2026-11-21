@@ -8,7 +8,7 @@ use calloop::RegistrationToken;
 use input::event::gesture::GestureEventCoordinates as _;
 use niri_config::{
     Action, Bind, Binds, BoundAction, Config, Key, ModKey, Modifiers, MruDirection, SwitchBinds,
-    Trigger,
+    Trigger, WorkspaceReference,
 };
 use niri_ipc::LayoutSwitchTarget;
 use smithay::backend::input::{
@@ -1750,6 +1750,18 @@ impl State {
                     }
                 }
             }
+            Action::MoveWindowToNewWorkspaceBelow(reference, focus) => {
+                self.move_window_to_new_workspace(reference, true, focus);
+            }
+            Action::MoveWindowToNewWorkspaceAbove(reference, focus) => {
+                self.move_window_to_new_workspace(reference, false, focus);
+            }
+            Action::MoveColumnToNewWorkspaceBelow(reference, focus) => {
+                self.move_column_to_new_workspace(reference, true, focus);
+            }
+            Action::MoveColumnToNewWorkspaceAbove(reference, focus) => {
+                self.move_column_to_new_workspace(reference, false, focus);
+            }
             Action::MoveColumnToWorkspaceDown(focus) => {
                 self.niri.layout.move_column_to_workspace_down(focus);
                 self.maybe_warp_cursor_to_focus();
@@ -2779,6 +2791,87 @@ impl State {
                 }
             }
         }
+    }
+
+    fn move_window_to_new_workspace(
+        &mut self,
+        reference: Option<WorkspaceReference>,
+        below: bool,
+        focus: bool,
+    ) {
+        let Some(reference) = self.resolve_new_workspace_reference(reference) else {
+            return;
+        };
+        let target_output = reference.as_ref().and_then(|(output, _)| output.clone());
+
+        self.niri
+            .layout
+            .move_to_new_workspace(reference, below, focus);
+
+        match target_output {
+            Some(output) if focus => {
+                if !self.maybe_warp_cursor_to_focus_centered() {
+                    self.move_cursor_to_output(&output);
+                }
+            }
+            _ => {
+                self.maybe_warp_cursor_to_focus();
+            }
+        }
+
+        // FIXME: granular
+        self.niri.queue_redraw_all();
+    }
+
+    fn move_column_to_new_workspace(
+        &mut self,
+        reference: Option<WorkspaceReference>,
+        below: bool,
+        focus: bool,
+    ) {
+        let Some(reference) = self.resolve_new_workspace_reference(reference) else {
+            return;
+        };
+        let target_output = reference.as_ref().and_then(|(output, _)| output.clone());
+
+        self.niri
+            .layout
+            .move_column_to_new_workspace(reference, below, focus);
+
+        if focus {
+            if let Some(output) = target_output {
+                if !self.maybe_warp_cursor_to_focus_centered() {
+                    self.move_cursor_to_output(&output);
+                }
+            } else {
+                self.maybe_warp_cursor_to_focus();
+            }
+        }
+
+        // FIXME: granular
+        self.niri.queue_redraw_all();
+    }
+
+    /// Resolves the reference for the move-*-to-new-workspace actions.
+    ///
+    /// The output is `None` for the active output. Returns `None` if the reference doesn't match
+    /// any workspace.
+    fn resolve_new_workspace_reference(
+        &self,
+        reference: Option<WorkspaceReference>,
+    ) -> Option<Option<(Option<Output>, usize)>> {
+        let Some(reference) = reference else {
+            return Some(None);
+        };
+
+        let (mut output, index) = self.niri.find_output_and_workspace_index(reference)?;
+        if let Some(active) = self.niri.layout.active_output() {
+            if output.as_ref() == Some(active) {
+                output = None;
+            }
+        }
+
+        Some(Some((output, index)))
     }
 
     fn on_pointer_motion<I: InputBackend>(&mut self, event: I::PointerMotionEvent) {
