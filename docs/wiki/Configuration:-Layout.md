@@ -7,6 +7,7 @@ Here are the contents of this section at a glance:
 ```kdl
 layout {
     gaps 16
+	workspace-gaps 16
     center-focused-column "never"
     always-center-single-column
     empty-workspace-above-first
@@ -113,6 +114,18 @@ For example, `gaps 0.5` on an output with `scale 2` will result in one physical-
 ```kdl
 layout {
     gaps 16
+}
+```
+
+<sup>Since: next release</sup>
+
+### `workspace-gaps`
+
+Set gaps between workspaces in logical pixels.
+
+```kdl
+layout {
+    workspace-gaps 16
 }
 ```
 
