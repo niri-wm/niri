@@ -63,6 +63,7 @@ impl FocusRing {
         is_urgent: bool,
         view_rect: Rectangle<f64, Logical>,
         radius: CornerRadius,
+        exponent: f32,
         scale: f64,
         alpha: f32,
     ) {
@@ -190,6 +191,7 @@ impl FocusRing {
                     Rectangle::new(full_rect.loc - loc, full_rect.size),
                     rounded_corner_border_width,
                     radius,
+                    exponent,
                     scale as f32,
                     alpha,
                 );
@@ -209,6 +211,7 @@ impl FocusRing {
                 Rectangle::new(full_rect.loc - self.locations[0], full_rect.size),
                 rounded_corner_border_width,
                 radius,
+                exponent,
                 scale as f32,
                 alpha,
             );
