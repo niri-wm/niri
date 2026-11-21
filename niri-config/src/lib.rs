@@ -1276,6 +1276,7 @@ mod tests {
                 tab-indicator {
                     width 10
                     position "top"
+                    scroll-to-switch-tabs
                 }
 
                 preset-column-widths {
@@ -1885,6 +1886,7 @@ mod tests {
                 tab_indicator: TabIndicator {
                     off: false,
                     hide_when_single_tab: false,
+                    scroll_to_switch_tabs: true,
                     place_within_column: false,
                     gap: 5.0,
                     width: 10.0,
