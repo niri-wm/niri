@@ -167,7 +167,7 @@ fn bind_triggers(bind: &Bind, action: &Action) -> bool {
 fn find_bound_action(binds: &[Bind], actions: &[&'static Action]) -> Option<&'static Action> {
     actions
         .iter()
-        .map(|action| *action)
+        .copied()
         .find(|action| binds.iter().any(|bind| bind_triggers(bind, action)))
 }
 
@@ -222,12 +222,12 @@ fn collect_actions(config: &Config) -> Vec<&Action> {
     // Prefer Quit(false) if found, otherwise try Quit(true), and if there's neither, fall back to
     // Quit(false).
     actions.push(
-        find_bound_action(&binds, &[&Action::Quit(false), &Action::Quit(true)])
+        find_bound_action(binds, &[&Action::Quit(false), &Action::Quit(true)])
             .unwrap_or(&Action::Quit(false)),
     );
 
     let action_move_column_left = find_bound_action(
-        &binds,
+        binds,
         &[
             &Action::MoveColumnLeft(true),
             &Action::MoveColumnLeft(false),
@@ -236,7 +236,7 @@ fn collect_actions(config: &Config) -> Vec<&Action> {
     .unwrap_or(&Action::MoveColumnLeft(true));
 
     let action_move_column_right = find_bound_action(
-        &binds,
+        binds,
         &[
             &Action::MoveColumnRight(true),
             &Action::MoveColumnRight(false),
@@ -257,7 +257,7 @@ fn collect_actions(config: &Config) -> Vec<&Action> {
     // Prefer move-column-to-workspace-down, but fall back to move-window-to-workspace-down.
     actions.push(
         find_bound_action(
-            &binds,
+            binds,
             &[
                 &Action::MoveColumnToWorkspaceDown(true),
                 &Action::MoveColumnToWorkspaceDown(false),
@@ -271,7 +271,7 @@ fn collect_actions(config: &Config) -> Vec<&Action> {
     // Same for -up.
     actions.push(
         find_bound_action(
-            &binds,
+            binds,
             &[
                 &Action::MoveColumnToWorkspaceUp(true),
                 &Action::MoveColumnToWorkspaceUp(false),

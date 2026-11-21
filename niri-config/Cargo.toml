@@ -22,3 +22,6 @@ tracy-client.workspace = true
 insta.workspace = true
 pretty_assertions = "1.4.1"
 diff = "0.1.13"
+
+[lints]
+workspace = true

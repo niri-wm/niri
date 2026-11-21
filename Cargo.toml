@@ -14,6 +14,11 @@ edition = "2021"
 repository = "https://github.com/niri-wm/niri"
 rust-version = "1.87"
 
+[workspace.lints.clippy]
+new_without_default = "allow"
+collapsible_match = "allow"
+needless_bool = "allow"
+
 [workspace.dependencies]
 anyhow = "1.0.104"
 bitflags = "2.13"
@@ -145,9 +150,8 @@ profile-with-tracy-allocations = ["profile-with-tracy"]
 # Enables dinit integration (global environment).
 dinit = []
 
-[lints.clippy]
-new_without_default = "allow"
-collapsible_match = "allow"
+[lints]
+workspace = true
 
 [profile.release]
 debug = "line-tables-only"
