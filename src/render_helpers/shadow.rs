@@ -39,36 +39,6 @@ struct Parameters {
 }
 
 impl ShadowRenderElement {
-    pub fn new(
-        size: Size<f64, Logical>,
-        geometry: Rectangle<f64, Logical>,
-        color: Color,
-        sigma: f32,
-        corner_radius: CornerRadius,
-        scale: f32,
-        window_geometry: Rectangle<f64, Logical>,
-        window_corner_radius: CornerRadius,
-        alpha: f32,
-    ) -> Self {
-        let inner = ShaderRenderElement::empty(ProgramType::Shadow, Kind::Unspecified);
-        let mut rv = Self {
-            inner,
-            params: Parameters {
-                size,
-                geometry,
-                color,
-                sigma,
-                corner_radius,
-                scale,
-                alpha,
-                window_geometry,
-                window_corner_radius,
-            },
-        };
-        rv.update_inner();
-        rv
-    }
-
     pub fn empty() -> Self {
         let inner = ShaderRenderElement::empty(ProgramType::Shadow, Kind::Unspecified);
         Self {

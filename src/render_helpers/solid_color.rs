@@ -60,16 +60,6 @@ impl SolidColorBuffer {
         }
     }
 
-    pub fn update(&mut self, size: impl Into<Size<f64, Logical>>, color: impl Into<Color32F>) {
-        let size = size.into();
-        let color = color.into();
-        if size != self.size || color != self.color {
-            self.size = size;
-            self.color = color;
-            self.commit.increment();
-        }
-    }
-
     pub fn color(&self) -> Color32F {
         self.color
     }
