@@ -182,6 +182,15 @@ pub enum RelativeTo {
     Bottom,
     Left,
     Right,
+    ActiveWindowCenter,
+    ActiveWindowTopLeft,
+    ActiveWindowTopRight,
+    ActiveWindowBottomLeft,
+    ActiveWindowBottomRight,
+    ActiveWindowTop,
+    ActiveWindowBottom,
+    ActiveWindowLeft,
+    ActiveWindowRight,
 }
 
 impl<S: knuffel::traits::ErrorSpan> knuffel::DecodeScalar<S> for VrrRule {
