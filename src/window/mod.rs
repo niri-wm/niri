@@ -183,6 +183,13 @@ impl<'a> WindowRef<'a> {
             WindowRef::Mapped(mapped) => mapped.is_window_cast_target(),
         }
     }
+
+    pub fn is_maximized_to_edges(self) -> bool {
+        match self {
+            WindowRef::Unmapped(_) => false,
+            WindowRef::Mapped(mapped) => mapped.is_maximized_to_edges(),
+        }
+    }
 }
 
 impl ResolvedWindowRules {
@@ -454,6 +461,12 @@ fn window_matches(window: WindowRef, role: &XdgToplevelSurfaceRoleAttributes, m:
 
     if let Some(is_window_cast_target) = m.is_window_cast_target {
         if window.is_window_cast_target() != is_window_cast_target {
+            return false;
+        }
+    }
+
+    if let Some(is_maximized_to_edges) = m.is_maximized_to_edges {
+        if window.is_maximized_to_edges() != is_maximized_to_edges {
             return false;
         }
     }
