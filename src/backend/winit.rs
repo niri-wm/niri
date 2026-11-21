@@ -9,10 +9,12 @@ use niri_config::{Config, OutputName};
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::drm::DrmNode;
 use smithay::backend::egl::EGLDevice;
+use smithay::backend::input::InputTime;
 use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::renderer::{DebugFlags, ImportDma, ImportEgl, Renderer};
 use smithay::backend::winit::{self, WinitEvent, WinitGraphicsBackend};
+use smithay::input::keyboard::KeyboardSource;
 use smithay::output::{Mode, Output, PhysicalProperties, Subpixel};
 use smithay::reexports::calloop::LoopHandle;
 use smithay::reexports::wayland_protocols::wp::presentation_time::server::wp_presentation_feedback;
@@ -55,6 +57,11 @@ impl Winit {
                 WindowAttributesWayland::default().with_name("niri", ""),
             ));
         let (backend, winit) = winit::init_from_attributes(builder)?;
+
+        // unless debug option is set, we dont show cursor in nested mode
+        if !config.borrow().debug.nested_show_host_cursor {
+            backend.window().set_cursor_visible(false);
+        }
 
         let output = Output::new(
             "winit".to_string(),
@@ -147,7 +154,15 @@ impl Winit {
                     state.niri.output_resized(&output);
                 }
                 WinitEvent::Input(event) => state.process_input_event(event),
-                WinitEvent::Focus(_) => (),
+                WinitEvent::Focus(false) => {
+                    // Lost focus. Reset key pressed (like alt or windows key)
+                    state.release_held_inputs(InputTime::now());
+
+                    if let Some(keyboard) = state.niri.seat.get_keyboard() {
+                        keyboard.release_source(state, KeyboardSource::MAIN);
+                    }
+                }
+                WinitEvent::Focus(true) => (),
                 WinitEvent::Redraw => state.niri.queue_redraw(&state.backend.winit().output),
                 WinitEvent::CloseRequested => state.niri.stop_signal.stop(),
             })
@@ -401,5 +416,9 @@ impl Winit {
 
     pub fn ipc_outputs(&self) -> Arc<Mutex<IpcOutputMap>> {
         self.ipc_outputs.clone()
+    }
+
+    pub fn set_cursor_visible(&self, visible: bool) {
+        self.backend.window().set_cursor_visible(visible);
     }
 }

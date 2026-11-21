@@ -573,7 +573,6 @@ impl<W: LayoutElement> Monitor<W> {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub fn add_tile(
         &mut self,
         tile: Tile<W>,
@@ -785,13 +784,13 @@ impl<W: LayoutElement> Monitor<W> {
     }
 
     pub fn move_down_or_to_workspace_down(&mut self) {
-        if !self.active_workspace().move_down() {
+        if !self.active_workspace().move_down(true) {
             self.move_to_workspace_down(ActivateWindow::Smart);
         }
     }
 
     pub fn move_up_or_to_workspace_up(&mut self) {
-        if !self.active_workspace().move_up() {
+        if !self.active_workspace().move_up(true) {
             self.move_to_workspace_up(ActivateWindow::Smart);
         }
     }
@@ -1641,14 +1640,18 @@ impl<W: LayoutElement> Monitor<W> {
         (InsertWorkspace::NewAt(last_idx + 1), dummy)
     }
 
-    pub fn render_above_top_layer(&self) -> bool {
+    pub fn fullscreen_window_above_top_layer(&self) -> Option<&W> {
         // Render above the top layer only if the view is stationary.
         if self.workspace_switch.is_some() || self.overview_progress.is_some() {
-            return false;
+            return None;
         }
 
         let ws = &self.workspaces[self.active_workspace_idx];
-        ws.render_above_top_layer()
+        ws.fullscreen_window_above_top_layer()
+    }
+
+    pub fn render_above_top_layer(&self) -> bool {
+        self.fullscreen_window_above_top_layer().is_some()
     }
 
     pub fn render_insert_hint_between_workspaces<R: NiriRenderer>(

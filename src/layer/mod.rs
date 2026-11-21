@@ -25,6 +25,9 @@ pub struct ResolvedLayerRules {
     /// Whether to place this layer surface within the overview backdrop.
     pub place_within_backdrop: bool,
 
+    /// Whether to focus this layer surface when typing in the overview.
+    pub focus_on_type_in_overview: bool,
+
     /// Whether to bob this window up and down.
     pub baba_is_float: bool,
 
@@ -71,6 +74,9 @@ impl ResolvedLayerRules {
             }
             if let Some(x) = rule.place_within_backdrop {
                 resolved.place_within_backdrop = x;
+            }
+            if let Some(x) = rule.focus_on_type_in_overview {
+                resolved.focus_on_type_in_overview = x;
             }
             if let Some(x) = rule.baba_is_float {
                 resolved.baba_is_float = x;

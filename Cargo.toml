@@ -12,7 +12,16 @@ authors = ["Ivan Molodetskikh <yalterz@gmail.com>"]
 license = "GPL-3.0-or-later"
 edition = "2021"
 repository = "https://github.com/niri-wm/niri"
-rust-version = "1.87"
+rust-version = "1.88"
+
+[workspace.lints.clippy]
+new_without_default = "allow"
+collapsible_match = "allow"
+needless_bool = "allow"
+
+# Silence, Clippy
+# A Smithay user is talking
+too_many_arguments = "allow"
 
 [workspace.dependencies]
 anyhow = "1.0.104"
@@ -28,13 +37,13 @@ tracy-client = { version = "0.18.5", default-features = false }
 [workspace.dependencies.smithay]
 # version = "0.4.1"
 git = "https://github.com/Smithay/smithay.git"
-rev = "19c16d3e34172fcc8fb3d293bcae563b0a19ea70"
+rev = "a38bb709a0400759b6a4fab6129e0f1dd72808c3"
 default-features = false
 
 [workspace.dependencies.smithay-drm-extras]
 # version = "0.1.0"
 git = "https://github.com/Smithay/smithay.git"
-rev = "19c16d3e34172fcc8fb3d293bcae563b0a19ea70"
+rev = "a38bb709a0400759b6a4fab6129e0f1dd72808c3"
 # path = "../smithay/smithay-drm-extras"
 
 [package]
@@ -60,7 +69,7 @@ async-io = { version = "2.6.0", optional = true }
 atomic = "0.6.1"
 bitflags.workspace = true
 bytemuck = { version = "1.25.2", features = ["derive"] }
-calloop = { version = "0.14.4", features = ["executor", "futures-io", "signals"] }
+calloop = { version = "0.14.5", features = ["executor", "futures-io", "signals"] }
 clap = { workspace = true, features = ["string"] }
 clap_complete = "4.6"
 clap_complete_nushell = "4.6"
@@ -145,9 +154,8 @@ profile-with-tracy-allocations = ["profile-with-tracy"]
 # Enables dinit integration (global environment).
 dinit = []
 
-[lints.clippy]
-new_without_default = "allow"
-collapsible_match = "allow"
+[lints]
+workspace = true
 
 [profile.release]
 debug = "line-tables-only"

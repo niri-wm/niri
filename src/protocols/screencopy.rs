@@ -5,7 +5,6 @@ use std::time::Duration;
 
 use calloop::generic::Generic;
 use calloop::{Interest, LoopHandle, Mode, PostAction};
-use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::allocator::{Buffer, Fourcc};
 use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::sync::SyncPoint;
@@ -13,7 +12,6 @@ use smithay::output::{Output, WeakOutput};
 use smithay::reexports::wayland_protocols_wlr::screencopy::v1::server::{
     zwlr_screencopy_frame_v1, zwlr_screencopy_manager_v1,
 };
-use smithay::reexports::wayland_server::protocol::wl_buffer::WlBuffer;
 use smithay::reexports::wayland_server::protocol::wl_shm::Format;
 use smithay::reexports::wayland_server::{
     Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
@@ -25,6 +23,7 @@ use zwlr_screencopy_frame_v1::{Flags, ZwlrScreencopyFrameV1};
 use zwlr_screencopy_manager_v1::ZwlrScreencopyManagerV1;
 
 use crate::protocols::EmptyData;
+use crate::render_helpers::CaptureBuffer;
 use crate::utils::{get_credentials_for_client, get_monotonic_time, CastSessionId, CastStreamId};
 
 const VERSION: u32 = 3;
@@ -546,7 +545,7 @@ where
                 && dmabuf.width() == size.w as u32
                 && dmabuf.height() == size.h as u32
             {
-                ScreencopyBuffer::Dmabuf(dmabuf.clone())
+                CaptureBuffer::Dma(dmabuf.clone())
             } else {
                 frame.post_error(
                     zwlr_screencopy_frame_v1::Error::InvalidBuffer,
@@ -562,7 +561,7 @@ where
         })
         .unwrap_or(false)
         {
-            ScreencopyBuffer::Shm(buffer)
+            CaptureBuffer::Shm(buffer)
         } else {
             frame.post_error(
                 zwlr_screencopy_frame_v1::Error::InvalidBuffer,
@@ -620,18 +619,11 @@ where
     }
 }
 
-/// Screencopy buffer.
-#[derive(Clone)]
-pub enum ScreencopyBuffer {
-    Dmabuf(Dmabuf),
-    Shm(WlBuffer),
-}
-
 /// Screencopy frame.
 pub struct Screencopy {
     info: ScreencopyFrameInfo,
     frame: ZwlrScreencopyFrameV1,
-    buffer: ScreencopyBuffer,
+    buffer: CaptureBuffer,
     with_damage: bool,
     submitted: bool,
 }
@@ -646,7 +638,7 @@ impl Drop for Screencopy {
 
 impl Screencopy {
     /// Get the target buffer to copy to.
-    pub fn buffer(&self) -> &ScreencopyBuffer {
+    pub fn buffer(&self) -> &CaptureBuffer {
         &self.buffer
     }
 
@@ -699,11 +691,11 @@ impl Screencopy {
     pub fn submit_after_sync<T>(
         self,
         y_invert: bool,
-        sync_point: Option<SyncPoint>,
+        sync_point: SyncPoint,
         event_loop: &LoopHandle<'_, T>,
     ) {
         let timestamp = get_monotonic_time();
-        match sync_point.and_then(|s| s.export()) {
+        match sync_point.export() {
             None => self.submit(y_invert, timestamp),
             Some(sync_fd) => {
                 let source = Generic::new(sync_fd, Interest::READ, Mode::OneShot);

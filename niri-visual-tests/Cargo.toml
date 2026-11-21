@@ -16,3 +16,6 @@ niri-config = { version = "26.4.0", path = "../niri-config" }
 smithay.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
+
+[lints]
+workspace = true

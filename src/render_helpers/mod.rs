@@ -1,7 +1,7 @@
 use std::ptr;
 
 use anyhow::{bail, ensure, Context as _};
-use niri_config::BlockOutFrom;
+use niri_config::{BlockOutFrom, BlockOutKind, BlockOutTarget};
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::allocator::{Buffer, Fourcc};
 use smithay::backend::renderer::damage::OutputDamageTracker;
@@ -102,6 +102,14 @@ pub struct BakedBuffer<B> {
     pub dst: Option<Size<i32, Logical>>,
 }
 
+/// Buffer backed by a wl_buffer.
+#[derive(Clone)]
+pub enum CaptureBuffer {
+    // The Dmabuf that is contained inside the WlBuffer.
+    Dma(Dmabuf),
+    Shm(WlBuffer),
+}
+
 pub trait ToRenderElement {
     type RenderElement;
 
@@ -118,11 +126,16 @@ impl RenderTarget {
     pub const COUNT: usize = 3;
 
     pub fn should_block_out(self, block_out_from: Option<BlockOutFrom>) -> bool {
-        match block_out_from {
+        match block_out_from.map(|rule| rule.target) {
             None => false,
-            Some(BlockOutFrom::Screencast) => self == RenderTarget::Screencast,
-            Some(BlockOutFrom::ScreenCapture) => self != RenderTarget::Output,
+            Some(BlockOutTarget::Screencast) => self == RenderTarget::Screencast,
+            Some(BlockOutTarget::ScreenCapture) => self != RenderTarget::Output,
         }
+    }
+
+    pub fn should_hide(self, block_out_from: Option<BlockOutFrom>) -> bool {
+        self.should_block_out(block_out_from)
+            && block_out_from.is_some_and(|rule| rule.kind == BlockOutKind::Hide)
     }
 }
 
@@ -330,7 +343,6 @@ pub fn render_to_shm(
     renderer: &mut GlesRenderer,
     damage_tracker: &mut OutputDamageTracker,
     buffer: &WlBuffer,
-    format: wl_shm::Format,
     elements: &[impl RenderElement<GlesRenderer>],
     states: RenderElementStates,
 ) -> anyhow::Result<()> {
@@ -339,18 +351,16 @@ pub fn render_to_shm(
     // buffers besides this one... buffer_data is the one we want.
     shm::with_buffer_contents_mut(buffer, |pool, pool_len, buffer_data| {
         let (size, _scale, _transform) = damage_tracker.mode().try_into().unwrap();
-        let fourcc = match format {
+        let fourcc = match buffer_data.format {
             wl_shm::Format::Xrgb8888 => Fourcc::Xrgb8888,
             wl_shm::Format::Argb8888 => Fourcc::Argb8888,
-            _ => bail!("unsupported shm format: {format:?}"),
+            _ => bail!("unsupported shm format: {:?}", buffer_data.format),
         };
 
         ensure!(
             // The buffer prefers pixels in little endian ...
-            buffer_data.format == format
-                && buffer_data.width == size.w
-                && buffer_data.height == size.h,
-            "invalid buffer format or size"
+            buffer_data.width == size.w && buffer_data.height == size.h,
+            "invalid buffer size"
         );
 
         // The client chooses the stride and may pad rows, so only the first
@@ -469,4 +479,28 @@ fn render_elements(
     }
 
     frame.finish().context("error finishing frame")
+}
+
+impl CaptureBuffer {
+    pub fn render(
+        &self,
+        renderer: &mut GlesRenderer,
+        damage_tracker: &mut OutputDamageTracker,
+        elements: &[impl RenderElement<GlesRenderer>],
+        states: RenderElementStates,
+    ) -> anyhow::Result<SyncPoint> {
+        match self {
+            CaptureBuffer::Dma(dmabuf) => {
+                let sync =
+                    render_to_dmabuf(renderer, damage_tracker, dmabuf.clone(), elements, states)
+                        .context("error rendering to screencopy dmabuf")?;
+                Ok(sync)
+            }
+            CaptureBuffer::Shm(wl_buffer) => {
+                render_to_shm(renderer, damage_tracker, wl_buffer, elements, states)
+                    .context("error rendering to screencopy shm buffer")?;
+                Ok(SyncPoint::signaled())
+            }
+        }
+    }
 }

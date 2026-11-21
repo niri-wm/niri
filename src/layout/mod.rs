@@ -199,7 +199,6 @@ pub trait LayoutElement {
     }
 
     /// Renders the background effect behind the main surface of the element.
-    #[allow(clippy::too_many_arguments)]
     fn render_background_effect(
         &self,
         _ctx: RenderCtx<GlesRenderer>,
@@ -969,7 +968,6 @@ impl<W: LayoutElement> Layout<W> {
     /// Adds a new window to the layout.
     ///
     /// Returns an output that the window was added to, if there were any outputs.
-    #[allow(clippy::too_many_arguments)]
     pub fn add_window(
         &mut self,
         window: W,
@@ -1465,24 +1463,39 @@ impl<W: LayoutElement> Layout<W> {
     /// Computes the window-geometry-relative target rect for popup unconstraining.
     ///
     /// We will try to fit popups inside this rect.
-    pub fn popup_target_rect(&self, window: &W::Id) -> Rectangle<f64, Logical> {
+    ///
+    /// If `overflow` is true, prefer to return the working area region even for the scrolling
+    /// layout where popups are normally kept constrained to the column width. This is used for
+    /// IME popups where this is a more expected behavior.
+    pub fn popup_target_rect(&self, window: &W::Id, overflow: bool) -> Rectangle<f64, Logical> {
         if let Some(InteractiveMoveState::Moving(move_)) = &self.interactive_move {
             if move_.tile.window().id() == window {
-                // Follow the scrolling layout logic and fit the popup horizontally within the
-                // window geometry.
-                let width = move_.tile.window_size().w;
-                let height = output_size(&move_.output).h;
-                let mut target = Rectangle::from_size(Size::from((width, height)));
-                // FIXME: ideally this shouldn't include the tile render offset, but the code
-                // duplication would be a bit annoying for this edge case.
-                target.loc.y -= move_.tile_render_location(1.).y;
-                target.loc.y -= move_.tile.window_loc().y;
+                // Follow the scrolling layout logic.
+                let output_size = output_size(&move_.output);
+                let tile_pos = move_.tile_render_location(1.);
+
+                let target = if overflow {
+                    let mut target = Rectangle::from_size(output_size);
+                    target.loc -= tile_pos;
+                    target.loc -= move_.tile.window_loc();
+                    target
+                } else {
+                    let width = move_.tile.window_size().w;
+                    let height = output_size.h;
+                    let mut target = Rectangle::from_size(Size::from((width, height)));
+                    // FIXME: ideally this shouldn't include the tile render offset, but the code
+                    // duplication would be a bit annoying for this edge case.
+                    target.loc.y -= tile_pos.y;
+                    target.loc.y -= move_.tile.window_loc().y;
+                    target
+                };
+
                 return target;
             }
         }
 
         self.workspaces()
-            .find_map(|(_, _, ws)| ws.popup_target_rect(window))
+            .find_map(|(_, _, ws)| ws.popup_target_rect(window, overflow))
             .unwrap()
     }
 
@@ -1827,37 +1840,37 @@ impl<W: LayoutElement> Layout<W> {
         self.monitors().map(|mon| &mon.output)
     }
 
-    pub fn move_left(&mut self) {
+    pub fn move_left(&mut self, focus: bool) {
         let Some(workspace) = self.active_workspace_mut() else {
             return;
         };
-        workspace.move_left();
+        workspace.move_left(focus);
     }
 
-    pub fn move_right(&mut self) {
+    pub fn move_right(&mut self, focus: bool) {
         let Some(workspace) = self.active_workspace_mut() else {
             return;
         };
-        workspace.move_right();
+        workspace.move_right(focus);
     }
 
-    pub fn move_column_to_first(&mut self) {
+    pub fn move_column_to_first(&mut self, focus: bool) {
         let Some(workspace) = self.active_workspace_mut() else {
             return;
         };
-        workspace.move_column_to_first();
+        workspace.move_column_to_first(focus);
     }
 
-    pub fn move_column_to_last(&mut self) {
+    pub fn move_column_to_last(&mut self, focus: bool) {
         let Some(workspace) = self.active_workspace_mut() else {
             return;
         };
-        workspace.move_column_to_last();
+        workspace.move_column_to_last(focus);
     }
 
     pub fn move_column_left_or_to_output(&mut self, output: &Output) -> bool {
         if let Some(workspace) = self.active_workspace_mut() {
-            if workspace.move_left() {
+            if workspace.move_left(true) {
                 return false;
             }
         }
@@ -1868,7 +1881,7 @@ impl<W: LayoutElement> Layout<W> {
 
     pub fn move_column_right_or_to_output(&mut self, output: &Output) -> bool {
         if let Some(workspace) = self.active_workspace_mut() {
-            if workspace.move_right() {
+            if workspace.move_right(true) {
                 return false;
             }
         }
@@ -1877,25 +1890,25 @@ impl<W: LayoutElement> Layout<W> {
         true
     }
 
-    pub fn move_column_to_index(&mut self, index: usize) {
+    pub fn move_column_to_index(&mut self, index: usize, focus: bool) {
         let Some(workspace) = self.active_workspace_mut() else {
             return;
         };
-        workspace.move_column_to_index(index);
+        workspace.move_column_to_index(index, focus);
     }
 
-    pub fn move_down(&mut self) {
+    pub fn move_down(&mut self, focus: bool) {
         let Some(workspace) = self.active_workspace_mut() else {
             return;
         };
-        workspace.move_down();
+        workspace.move_down(focus);
     }
 
-    pub fn move_up(&mut self) {
+    pub fn move_up(&mut self, focus: bool) {
         let Some(workspace) = self.active_workspace_mut() else {
             return;
         };
-        workspace.move_up();
+        workspace.move_up(focus);
     }
 
     pub fn move_down_or_to_workspace_down(&mut self) {
@@ -2267,11 +2280,11 @@ impl<W: LayoutElement> Layout<W> {
         workspace.expel_from_column();
     }
 
-    pub fn swap_window_in_direction(&mut self, direction: ScrollDirection) {
+    pub fn swap_window_in_direction(&mut self, direction: ScrollDirection, focus: bool) {
         let Some(workspace) = self.active_workspace_mut() else {
             return;
         };
-        workspace.swap_window_in_direction(direction);
+        workspace.swap_window_in_direction(direction, focus);
     }
 
     pub fn toggle_column_tabbed_display(&mut self) {
@@ -3566,6 +3579,31 @@ impl<W: LayoutElement> Layout<W> {
                 return;
             }
         }
+    }
+
+    pub fn set_windowed_fullscreen(&mut self, id: &W::Id, fullscreen: bool) {
+        let (_, window) = self.windows().find(|(_, win)| win.id() == id).unwrap();
+
+        if window.is_pending_windowed_fullscreen() == fullscreen {
+            return;
+        }
+
+        if window.pending_sizing_mode().is_fullscreen() {
+            // Remove the real fullscreen.
+            for ws in self.workspaces_mut() {
+                if ws.has_window(id) {
+                    ws.set_fullscreen(id, false);
+                    break;
+                }
+            }
+        }
+
+        // This will switch is_pending_fullscreen() to false right away.
+        self.with_windows_mut(|window, _| {
+            if window.id() == id {
+                window.request_windowed_fullscreen(fullscreen);
+            }
+        });
     }
 
     pub fn toggle_windowed_fullscreen(&mut self, id: &W::Id) {

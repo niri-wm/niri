@@ -47,7 +47,6 @@ struct Parameters {
 }
 
 impl BorderRenderElement {
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         size: Size<f64, Logical>,
         gradient_area: Rectangle<f64, Logical>,
@@ -106,7 +105,6 @@ impl BorderRenderElement {
         self.inner.damage_all();
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub fn update(
         &mut self,
         size: Size<f64, Logical>,

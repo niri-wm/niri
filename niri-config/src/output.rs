@@ -70,6 +70,8 @@ pub struct Output {
     #[knuffel(child)]
     pub variable_refresh_rate: Option<Vrr>,
     #[knuffel(child)]
+    pub drm_lease: bool,
+    #[knuffel(child)]
     pub focus_at_startup: bool,
     // Deprecated; use layout.background_color.
     #[knuffel(child)]
@@ -100,6 +102,7 @@ impl Default for Output {
     fn default() -> Self {
         Self {
             off: false,
+            drm_lease: false,
             focus_at_startup: false,
             name: String::new(),
             scale: None,

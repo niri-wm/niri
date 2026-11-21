@@ -50,7 +50,6 @@ impl<T: Texture> TextureBuffer<T> {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub fn from_memory<R: Renderer<TextureId = T> + ImportMem>(
         renderer: &mut R,
         data: &[u8],

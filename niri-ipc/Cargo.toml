@@ -20,3 +20,6 @@ serde_json.workspace = true
 [features]
 clap = ["dep:clap"]
 json-schema = ["dep:schemars"]
+
+[lints]
+# Do not inherit from workspace.

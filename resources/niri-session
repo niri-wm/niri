@@ -33,14 +33,29 @@ if hash systemctl >/dev/null 2>&1; then
     systemctl --user reset-failed
 
     # Import the login manager environment.
-    systemctl --user import-environment
-
-    # DBus activation environment is independent from systemd. While most of
-    # dbus-activated services are already using `SystemdService` directive, some
-    # still don't and thus we should set the dbus environment with a separate
-    # command.
+    #
+    # We intentionally import *all* environment variables.
+    # It's unfortunately commonplace for distros to initialize
+    # things with shell scripts and set environment variables.
+    #
+    # For example, debuginfod is initialized this way, and sets the
+    # $DEBUGINFOD_URLS environment variable. If we don't export it,
+    # then programs started from a systemd service (e.g. from xdg-autostart)
+    # will be unable to use debuginfod.
+    #
+    # We cannot possibly know and list all variables like this, so
+    # we import all of them into the environment. This also covers
+    # any variables the user may have customized, such as $PATH.
     if hash dbus-update-activation-environment 2>/dev/null; then
-        dbus-update-activation-environment --all
+        # The `--systemd` flag also sets the variables for systemd user services,
+        # so we don't need a separate `systemctl --user import-environment` call.
+        #
+        # (This also avoids the deprecation warning printed by
+        # a blanket `systemctl --user import-environment` that
+        # some people find very annoying.)
+        dbus-update-activation-environment --systemd --all
+    else
+        systemctl --user import-environment
     fi
 
     # Start niri and wait for it to terminate.

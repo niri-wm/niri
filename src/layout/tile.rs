@@ -56,7 +56,7 @@ pub struct Tile<W: LayoutElement> {
     /// right away, to avoid black backdrop flicker before the window has had a chance to resize.
     sizing_mode: SizingMode,
 
-    /// The black backdrop for fullscreen windows.
+    /// The backdrop for fullscreen windows.
     fullscreen_backdrop: SolidColorBuffer,
 
     /// Whether the tile should float upon unfullscreening.
@@ -191,6 +191,7 @@ impl<W: LayoutElement> Tile<W> {
         let focus_ring_config = options.layout.focus_ring.merged_with(&rules.focus_ring);
         let shadow_config = options.layout.shadow.merged_with(&rules.shadow);
         let sizing_mode = window.sizing_mode();
+        let fullscreen_backdrop_color = options.layout.fullscreen_backdrop_color;
 
         Self {
             window,
@@ -198,7 +199,7 @@ impl<W: LayoutElement> Tile<W> {
             focus_ring: FocusRing::new(focus_ring_config),
             shadow: Shadow::new(shadow_config),
             sizing_mode,
-            fullscreen_backdrop: SolidColorBuffer::new((0., 0.), [0., 0., 0., 1.]),
+            fullscreen_backdrop: SolidColorBuffer::new((0., 0.), fullscreen_backdrop_color),
             restore_to_floating: false,
             floating_window_size: None,
             floating_pos: None,
@@ -236,6 +237,9 @@ impl<W: LayoutElement> Tile<W> {
         self.view_size = view_size;
         self.scale = scale;
         self.options = options;
+
+        self.fullscreen_backdrop
+            .set_color(self.options.layout.fullscreen_backdrop_color);
 
         let round_max1 = |logical| round_logical_in_physical_max1(self.scale, logical);
 
@@ -997,21 +1001,23 @@ impl<W: LayoutElement> Tile<W> {
         animate: bool,
         transaction: Option<Transaction>,
     ) {
-        self.window.request_size(
-            size.to_i32_round(),
-            SizingMode::Maximized,
-            animate,
-            transaction,
-        );
+        let size = size.to_i32_round();
+        let rules = self.window.rules();
+        let size = rules.apply_max_size(size);
+        let size = rules.apply_min_size(size);
+
+        self.window
+            .request_size(size, SizingMode::Maximized, animate, transaction);
     }
 
     pub fn request_fullscreen(&mut self, animate: bool, transaction: Option<Transaction>) {
-        self.window.request_size(
-            self.view_size.to_i32_round(),
-            SizingMode::Fullscreen,
-            animate,
-            transaction,
-        );
+        let size = self.view_size.to_i32_round();
+        let rules = self.window.rules();
+        let size = rules.apply_max_size(size);
+        let size = rules.apply_min_size(size);
+
+        self.window
+            .request_size(size, SizingMode::Fullscreen, animate, transaction);
     }
 
     pub fn min_size_nonfullscreen(&self) -> Size<f64, Logical> {
@@ -1054,7 +1060,7 @@ impl<W: LayoutElement> Tile<W> {
             return Point::from((0., 0.));
         }
 
-        let y = baba_is_float_offset(self.clock.now(), self.view_size.h);
+        let y = baba_is_float_offset(self.clock.now_unadjusted(), self.view_size.h);
         let y = round_logical_in_physical(self.scale, y);
         Point::from((0., y))
     }
@@ -1360,6 +1366,10 @@ impl<W: LayoutElement> Tile<W> {
         focus_ring: bool,
         push: &mut dyn FnMut(TileRenderElement<R>),
     ) {
+        if ctx.target.should_hide(self.window.rules().block_out_from) {
+            return;
+        }
+
         let _span = tracy_client::span!("Tile::render");
 
         let scale = Scale::from(self.scale);

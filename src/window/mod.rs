@@ -1,7 +1,7 @@
 use std::cmp::{max, min};
 
 use niri_config::utils::MergeWith as _;
-use niri_config::window_rule::{Match, OnXdgActivate, WindowRule};
+use niri_config::window_rule::{Match, OnXdgActivate, VrrRule, WindowRule};
 use niri_config::{
     BackgroundEffect, BlockOutFrom, BorderRule, CornerRadius, FloatingPosition, PresetSize,
     ResolvedPopupsRules, ShadowRule, TabIndicatorRule,
@@ -53,7 +53,7 @@ pub struct ResolvedWindowRules {
     pub default_floating_position: Option<FloatingPosition>,
 
     /// Output to open this window on.
-    pub open_on_output: Option<String>,
+    pub open_on_output: Vec<String>,
 
     /// Workspace to open this window on.
     pub open_on_workspace: Option<String>,
@@ -115,7 +115,7 @@ pub struct ResolvedWindowRules {
     pub block_out_from: Option<BlockOutFrom>,
 
     /// Whether to enable VRR on this window's primary output if it is on-demand.
-    pub variable_refresh_rate: Option<bool>,
+    pub variable_refresh_rate: Option<VrrRule>,
 
     /// Multiplier for all scroll events sent to this window.
     pub scroll_factor: Option<f64>,
@@ -235,8 +235,8 @@ impl ResolvedWindowRules {
                     resolved.default_floating_position = Some(x);
                 }
 
-                if let Some(x) = rule.open_on_output.as_deref() {
-                    open_on_output = Some(x);
+                if !rule.open_on_output.is_empty() {
+                    open_on_output = Some(&rule.open_on_output);
                 }
 
                 if let Some(x) = rule.open_on_workspace.as_deref() {
@@ -323,7 +323,7 @@ impl ResolvedWindowRules {
                 resolved.popups.merge_with(&rule.popups);
             }
 
-            resolved.open_on_output = open_on_output.map(|x| x.to_owned());
+            resolved.open_on_output = open_on_output.into_iter().flatten().cloned().collect();
             resolved.open_on_workspace = open_on_workspace.map(|x| x.to_owned());
         });
 

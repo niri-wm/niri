@@ -11,7 +11,7 @@ pub struct LayerRule {
 
     #[knuffel(child, unwrap(argument))]
     pub opacity: Option<f32>,
-    #[knuffel(child, unwrap(argument))]
+    #[knuffel(child)]
     pub block_out_from: Option<BlockOutFrom>,
     #[knuffel(child, default)]
     pub shadow: ShadowRule,
@@ -19,6 +19,8 @@ pub struct LayerRule {
     pub geometry_corner_radius: Option<CornerRadius>,
     #[knuffel(child, unwrap(argument))]
     pub place_within_backdrop: Option<bool>,
+    #[knuffel(child, unwrap(argument))]
+    pub focus_on_type_in_overview: Option<bool>,
     #[knuffel(child, unwrap(argument))]
     pub baba_is_float: Option<bool>,
     #[knuffel(child, default)]

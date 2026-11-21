@@ -632,7 +632,6 @@ impl<W: LayoutElement> Workspace<W> {
         )
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub fn add_tile(
         &mut self,
         mut tile: Tile<W>,
@@ -895,9 +894,19 @@ impl<W: LayoutElement> Workspace<W> {
         });
         toplevel.with_pending_state(|state| {
             if state.states.contains(xdg_toplevel::State::Fullscreen) {
-                state.size = Some(self.view_size.to_i32_round());
+                let size = self.view_size.to_i32_round();
+
+                // We ignore the window's requested min/max here, but still apply our own.
+                let size = rules.apply_max_size(size);
+                let size = rules.apply_min_size(size);
+                state.size = Some(size);
             } else if state.states.contains(xdg_toplevel::State::Maximized) {
-                state.size = Some(self.working_area.size.to_i32_round());
+                let size = self.working_area.size.to_i32_round();
+
+                // We ignore the window's requested min/max here, but still apply our own.
+                let size = rules.apply_max_size(size);
+                let size = rules.apply_min_size(size);
+                state.size = Some(size);
             } else {
                 let size =
                     self.new_window_size(width, height, is_floating, rules, (min_size, max_size));
@@ -1069,60 +1078,60 @@ impl<W: LayoutElement> Workspace<W> {
         }
     }
 
-    pub fn move_left(&mut self) -> bool {
+    pub fn move_left(&mut self, focus: bool) -> bool {
         if self.floating_is_active.get() {
             self.floating.move_left();
             true
         } else {
-            self.scrolling.move_left()
+            self.scrolling.move_left(focus)
         }
     }
 
-    pub fn move_right(&mut self) -> bool {
+    pub fn move_right(&mut self, focus: bool) -> bool {
         if self.floating_is_active.get() {
             self.floating.move_right();
             true
         } else {
-            self.scrolling.move_right()
+            self.scrolling.move_right(focus)
         }
     }
 
-    pub fn move_column_to_first(&mut self) {
+    pub fn move_column_to_first(&mut self, focus: bool) {
         if self.floating_is_active.get() {
             return;
         }
-        self.scrolling.move_column_to_first();
+        self.scrolling.move_column_to_first(focus);
     }
 
-    pub fn move_column_to_last(&mut self) {
+    pub fn move_column_to_last(&mut self, focus: bool) {
         if self.floating_is_active.get() {
             return;
         }
-        self.scrolling.move_column_to_last();
+        self.scrolling.move_column_to_last(focus);
     }
 
-    pub fn move_column_to_index(&mut self, index: usize) {
+    pub fn move_column_to_index(&mut self, index: usize, focus: bool) {
         if self.floating_is_active.get() {
             return;
         }
-        self.scrolling.move_column_to_index(index);
+        self.scrolling.move_column_to_index(index, focus);
     }
 
-    pub fn move_down(&mut self) -> bool {
+    pub fn move_down(&mut self, focus: bool) -> bool {
         if self.floating_is_active.get() {
             self.floating.move_down();
             true
         } else {
-            self.scrolling.move_down()
+            self.scrolling.move_down(focus)
         }
     }
 
-    pub fn move_up(&mut self) -> bool {
+    pub fn move_up(&mut self, focus: bool) -> bool {
         if self.floating_is_active.get() {
             self.floating.move_up();
             true
         } else {
-            self.scrolling.move_up()
+            self.scrolling.move_up(focus)
         }
     }
 
@@ -1158,11 +1167,11 @@ impl<W: LayoutElement> Workspace<W> {
         self.scrolling.expel_from_column();
     }
 
-    pub fn swap_window_in_direction(&mut self, direction: ScrollDirection) {
+    pub fn swap_window_in_direction(&mut self, direction: ScrollDirection, focus: bool) {
         if self.floating_is_active.get() {
             return;
         }
-        self.scrolling.swap_window_in_direction(direction);
+        self.scrolling.swap_window_in_direction(direction, focus);
     }
 
     pub fn toggle_column_tabbed_display(&mut self) {
@@ -1647,11 +1656,15 @@ impl<W: LayoutElement> Workspace<W> {
         }
     }
 
-    pub fn popup_target_rect(&self, window: &W::Id) -> Option<Rectangle<f64, Logical>> {
+    pub fn popup_target_rect(
+        &self,
+        window: &W::Id,
+        overflow: bool,
+    ) -> Option<Rectangle<f64, Logical>> {
         if self.floating.has_window(window) {
             self.floating.popup_target_rect(window)
         } else {
-            self.scrolling.popup_target_rect(window)
+            self.scrolling.popup_target_rect(window, overflow)
         }
     }
 
@@ -1711,8 +1724,8 @@ impl<W: LayoutElement> Workspace<W> {
         )
     }
 
-    pub fn render_above_top_layer(&self) -> bool {
-        self.scrolling.render_above_top_layer()
+    pub fn fullscreen_window_above_top_layer(&self) -> Option<&W> {
+        self.scrolling.fullscreen_window_above_top_layer()
     }
 
     pub fn is_floating_visible(&self) -> bool {
@@ -1720,7 +1733,7 @@ impl<W: LayoutElement> Workspace<W> {
         matches!(
             self.floating_is_active,
             FloatingActive::Yes | FloatingActive::NoButRaised
-        ) || !self.render_above_top_layer()
+        ) || self.fullscreen_window_above_top_layer().is_none()
     }
 
     pub fn store_unmap_snapshot_if_empty(

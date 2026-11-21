@@ -250,7 +250,6 @@ impl KeyboardMonitor {
 }
 
 impl KeyboardMonitor {
-    #[allow(clippy::too_many_arguments)]
     pub fn process_key(
         &self,
         repeat_delay: Duration,
@@ -525,6 +524,11 @@ async fn monitor_disappeared_clients(
         let Some(name) = &**args.old_owner() else {
             continue;
         };
+
+        if args.name() != name {
+            // The owner has dropped some other well-known name, but it remains.
+            continue;
+        }
 
         if args.new_owner().is_none() {
             trace!("keyboard monitor client disconnected: {name}");
