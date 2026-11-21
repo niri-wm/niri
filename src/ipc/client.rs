@@ -36,6 +36,7 @@ pub fn handle_msg(mut msg: Msg, json: bool, print_request: bool) -> anyhow::Resu
         Msg::FocusedOutput => Request::FocusedOutput,
         Msg::PickWindow => Request::PickWindow,
         Msg::PickColor => Request::PickColor,
+        Msg::PickRegion => Request::PickRegion,
         Msg::Action { action } => Request::Action(action.clone()),
         Msg::Output { output, action } => Request::Output {
             output: output.clone(),
@@ -331,6 +332,25 @@ pub fn handle_msg(mut msg: Msg, json: bool, print_request: bool) -> anyhow::Resu
                 println!("Hex: #{r:02x}{g:02x}{b:02x}");
             } else {
                 println!("No color was picked.");
+            }
+        }
+        Msg::PickRegion => {
+            let Response::PickedRegion(region) = response else {
+                bail!("unexpected response: expected PickedRegion, got {response:?}");
+            };
+
+            if json {
+                let region = serde_json::to_string(&region).context("error formatting response")?;
+                println!("{region}");
+                return Ok(());
+            }
+
+            if let Some(s) = region {
+                // Round like slurp, because tools like grim don't accept fractional values.
+                let [x, y, w, h] = [s.x, s.y, s.width, s.height].map(|v| v.round() as i32);
+                println!("{x},{y} {w}x{h}");
+            } else {
+                println!("No region was picked.");
             }
         }
         Msg::Action { .. } => {

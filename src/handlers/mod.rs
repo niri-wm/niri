@@ -95,9 +95,9 @@ impl SeatHandler for State {
     }
 
     fn cursor_image(&mut self, _seat: &Seat<Self>, mut image: CursorImageStatus) {
-        // FIXME: this hack should be removable once the screenshot UI is tracked with a
+        // FIXME: this hack should be removable once the selection UI is tracked with a
         // PointerFocus properly.
-        if self.niri.screenshot_ui.is_open() {
+        if self.niri.selection_ui.is_open() {
             image = CursorImageStatus::Named(CursorIcon::Crosshair);
         }
         self.niri.cursor_manager.set_cursor_image(image);

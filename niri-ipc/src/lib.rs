@@ -85,6 +85,8 @@ pub enum Request {
     PickWindow,
     /// Request picking a color from the screen.
     PickColor,
+    /// Request picking a screen region with the screenshot UI.
+    PickRegion,
     /// Perform an action.
     Action(Action),
     /// Change output configuration temporarily.
@@ -159,6 +161,8 @@ pub enum Response {
     PickedWindow(Option<Window>),
     /// Information about the picked color.
     PickedColor(Option<PickedColor>),
+    /// Information about the picked screen region.
+    PickedRegion(Option<PickedRegion>),
     /// Output configuration change result.
     OutputConfigChanged(OutputConfigChanged),
     /// Information about the overview.
@@ -181,6 +185,40 @@ pub struct Overview {
 pub struct PickedColor {
     /// Color values as red, green, blue, each ranging from 0.0 to 1.0.
     pub rgb: [f64; 3],
+}
+
+/// Screen region picked with the selection UI.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct PickedRegion {
+    /// X coordinate of the top-left corner.
+    pub x: f64,
+    /// Y coordinate of the top-left corner.
+    pub y: f64,
+    /// Width of the region.
+    pub width: f64,
+    /// Height of the region.
+    pub height: f64,
+    /// The region on its output, if it is fully contained in an output.
+    pub output: Option<PickedRegionOutput>,
+}
+
+/// Screen region picked with the selection UI, relative to the output containing it.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct PickedRegionOutput {
+    /// Name of the output.
+    pub name: String,
+    /// Scale of the output.
+    pub scale: f64,
+    /// X coordinate of the top-left corner.
+    pub x: i32,
+    /// Y coordinate of the top-left corner.
+    pub y: i32,
+    /// Width of the region.
+    pub width: i32,
+    /// Height of the region.
+    pub height: i32,
 }
 
 /// Actions that niri can perform.

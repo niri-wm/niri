@@ -21,6 +21,7 @@ use niri_config::{
     Bind, Config, FloatOrInt, Key, Modifiers, OutputName, TrackLayout, WarpMouseToFocusMode,
     WorkspaceReference, Xkb,
 };
+use niri_ipc::{PickedRegion, PickedRegionOutput};
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::input::{InputTime, Keycode};
 use smithay::backend::renderer::damage::OutputDamageTracker;
@@ -185,7 +186,9 @@ use crate::ui::exit_confirm_dialog::{ExitConfirmDialog, ExitConfirmDialogRenderE
 use crate::ui::hotkey_overlay::HotkeyOverlay;
 use crate::ui::mru::{MruCloseRequest, WindowMruUi, WindowMruUiRenderElement};
 use crate::ui::screen_transition::{self, ScreenTransition};
-use crate::ui::screenshot_ui::{OutputScreenshot, ScreenshotUi, ScreenshotUiRenderElement};
+use crate::ui::selection_ui::{
+    rect_from_corner_points, OutputScreenshot, SelectionMode, SelectionUi, SelectionUiRenderElement,
+};
 use crate::utils::scale::{closest_representable_scale, guess_monitor_scale};
 use crate::utils::spawning::{CHILD_DISPLAY, CHILD_ENV};
 use crate::utils::vblank_throttle::VBlankThrottle;
@@ -456,7 +459,7 @@ pub struct Niri {
     // State that we last sent to the logind LockedHint.
     pub locked_hint: Option<bool>,
 
-    pub screenshot_ui: ScreenshotUi,
+    pub selection_ui: SelectionUi,
     pub config_error_notification: ConfigErrorNotification,
     pub hotkey_overlay: HotkeyOverlay,
     pub exit_confirm_dialog: ExitConfirmDialog,
@@ -597,7 +600,7 @@ pub enum KeyboardFocus {
     Layout { surface: Option<WlSurface> },
     LayerShell { surface: WlSurface },
     LockScreen { surface: Option<WlSurface> },
-    ScreenshotUi,
+    SelectionUi,
     ExitConfirmDialog,
     Overview,
     Mru,
@@ -748,7 +751,7 @@ impl KeyboardFocus {
             KeyboardFocus::Layout { surface } => surface.as_ref(),
             KeyboardFocus::LayerShell { surface } => Some(surface),
             KeyboardFocus::LockScreen { surface } => surface.as_ref(),
-            KeyboardFocus::ScreenshotUi => None,
+            KeyboardFocus::SelectionUi => None,
             KeyboardFocus::ExitConfirmDialog => None,
             KeyboardFocus::Overview => None,
             KeyboardFocus::Mru => None,
@@ -760,7 +763,7 @@ impl KeyboardFocus {
             KeyboardFocus::Layout { surface } => surface,
             KeyboardFocus::LayerShell { surface } => Some(surface),
             KeyboardFocus::LockScreen { surface } => surface,
-            KeyboardFocus::ScreenshotUi => None,
+            KeyboardFocus::SelectionUi => None,
             KeyboardFocus::ExitConfirmDialog => None,
             KeyboardFocus::Overview => None,
             KeyboardFocus::Mru => None,
@@ -1248,7 +1251,7 @@ impl State {
 
         if !self.niri.exit_confirm_dialog.is_open()
             && !self.niri.is_locked()
-            && !self.niri.screenshot_ui.is_open()
+            && !self.niri.selection_ui.is_open()
         {
             // Don't refresh cursor focus during transitions.
             if let Some((output, _)) = self.niri.output_under(location) {
@@ -1361,8 +1364,8 @@ impl State {
             KeyboardFocus::LockScreen {
                 surface: self.niri.lock_surface_focus(),
             }
-        } else if self.niri.screenshot_ui.is_open() {
-            KeyboardFocus::ScreenshotUi
+        } else if self.niri.selection_ui.is_open() {
+            KeyboardFocus::SelectionUi
         } else if self.niri.window_mru_ui.is_open() {
             KeyboardFocus::Mru
         } else if let Some(output) = self.niri.layout.active_output() {
@@ -2265,8 +2268,8 @@ impl State {
         self.niri.output_management_state.notify_changes(new_config);
     }
 
-    pub fn open_screenshot_ui(&mut self, show_pointer: bool, path: Option<String>) {
-        if self.niri.is_locked() || self.niri.screenshot_ui.is_open() {
+    pub fn open_selection_ui(&mut self, show_pointer: bool, mode: SelectionMode) {
+        if self.niri.is_locked() || self.niri.selection_ui.is_open() {
             return;
         }
 
@@ -2278,22 +2281,33 @@ impl State {
             return;
         };
 
-        self.niri.update_render_elements(None);
+        let screenshots = if mode.is_frozen() {
+            self.niri.update_render_elements(None);
 
-        let Some(screenshots) = self
-            .backend
-            .with_primary_renderer(|renderer| self.niri.capture_screenshots(renderer).collect())
-        else {
-            return;
+            let Some(screenshots) = self.backend.with_primary_renderer(|renderer| {
+                self.niri
+                    .capture_screenshots(renderer)
+                    .map(|(output, s)| (output, Some(s)))
+                    .collect()
+            }) else {
+                return;
+            };
+            screenshots
+        } else {
+            self.niri
+                .global_space
+                .outputs()
+                .map(|output| (output.clone(), None))
+                .collect()
         };
 
-        // Now that we captured the screenshots, clear grabs.
+        // Now that we captured the screenshots (if needed), clear grabs.
         self.cancel_pointing_grabs();
 
         self.backend.with_primary_renderer(|renderer| {
             self.niri
-                .screenshot_ui
-                .open(renderer, screenshots, default_output, show_pointer, path)
+                .selection_ui
+                .open(renderer, screenshots, default_output, show_pointer, mode)
         });
 
         self.niri
@@ -2335,26 +2349,61 @@ impl State {
         self.niri.queue_redraw_all();
     }
 
-    pub fn confirm_screenshot(&mut self, write_to_disk: bool) {
-        let ScreenshotUi::Open { path, .. } = &mut self.niri.screenshot_ui else {
+    pub fn handle_pick_region(&mut self, tx: async_channel::Sender<niri_ipc::PickedRegion>) {
+        self.open_selection_ui(false, SelectionMode::PickRegion(tx));
+    }
+
+    pub fn confirm_selection(&mut self, write_to_disk: bool) {
+        let SelectionUi::Open {
+            selection, mode, ..
+        } = &mut self.niri.selection_ui
+        else {
             return;
         };
-        let path = path.take();
-
-        self.backend.with_primary_renderer(|renderer| {
-            match self.niri.screenshot_ui.capture(renderer) {
-                Ok((size, pixels)) => {
-                    if let Err(err) = self.niri.save_screenshot(size, pixels, write_to_disk, path) {
-                        warn!("error saving screenshot: {err:?}");
+        match mode {
+            SelectionMode::Screenshot { path } => {
+                let path = path.take();
+                self.backend.with_primary_renderer(|renderer| {
+                    match self.niri.selection_ui.capture(renderer) {
+                        Ok((size, pixels)) => {
+                            if let Err(err) =
+                                self.niri.save_screenshot(size, pixels, write_to_disk, path)
+                            {
+                                warn!("error saving screenshot: {err:?}");
+                            }
+                        }
+                        Err(err) => {
+                            warn!("error capturing screenshot: {err:?}");
+                        }
                     }
-                }
-                Err(err) => {
-                    warn!("error capturing screenshot: {err:?}");
-                }
+                });
             }
-        });
+            SelectionMode::PickRegion(tx) => {
+                let output = &selection.0;
+                let scale = output.current_scale().fractional_scale();
+                let physical = rect_from_corner_points(selection.1, selection.2);
+                let mut rect = physical.to_f64().to_logical(scale);
+                let loc = self.niri.global_space.output_geometry(output).unwrap().loc;
+                rect.loc += loc.to_f64();
+                let _ = tx.try_send(PickedRegion {
+                    x: rect.loc.x,
+                    y: rect.loc.y,
+                    width: rect.size.w,
+                    height: rect.size.h,
+                    // The selection is always contained in a single output.
+                    output: Some(PickedRegionOutput {
+                        name: output.name(),
+                        scale,
+                        x: physical.loc.x,
+                        y: physical.loc.y,
+                        width: physical.size.w,
+                        height: physical.size.h,
+                    }),
+                });
+            }
+        }
 
-        self.niri.screenshot_ui.close();
+        self.niri.selection_ui.close();
         self.niri
             .cursor_manager
             .set_cursor_image(CursorImageStatus::default_named());
@@ -2809,7 +2858,7 @@ impl Niri {
         let mods_with_finger_scroll_binds = mods_with_finger_scroll_binds(mod_key, &config_.binds);
         let mods_with_tablet_stylus_binds = mods_with_tablet_stylus_binds(mod_key, &config_.binds);
 
-        let screenshot_ui = ScreenshotUi::new(animation_clock.clone(), config.clone());
+        let selection_ui = SelectionUi::new(animation_clock.clone(), config.clone());
         let window_mru_ui = WindowMruUi::new(config.clone());
         let config_error_notification =
             ConfigErrorNotification::new(animation_clock.clone(), config.clone());
@@ -3017,7 +3066,7 @@ impl Niri {
             lock_state: LockState::Unlocked,
             locked_hint: None,
 
-            screenshot_ui,
+            selection_ui,
             config_error_notification,
             hotkey_overlay,
             exit_confirm_dialog,
@@ -3393,7 +3442,7 @@ impl Niri {
             }
         }
 
-        if self.screenshot_ui.close() {
+        if self.selection_ui.close() {
             self.cursor_manager
                 .set_cursor_image(CursorImageStatus::default_named());
             self.queue_redraw_all();
@@ -3434,8 +3483,8 @@ impl Niri {
             }
         }
 
-        // If the output size changed with an open screenshot UI, close the screenshot UI.
-        if let Some((old_size, old_scale, old_transform)) = self.screenshot_ui.output_size(output) {
+        // If the output size changed with an open selection UI, close the selection UI.
+        if let Some((old_size, old_scale, old_transform)) = self.selection_ui.output_size(output) {
             let output_mode = output.current_mode().unwrap();
             let size = transform.transform_size(output_mode.size);
             let scale = output.current_scale().fractional_scale();
@@ -3443,7 +3492,7 @@ impl Niri {
             // I haven't quite figured out how to draw the screenshot textures in
             // physical coordinates.
             if old_size != size || old_scale != scale || old_transform != transform {
-                self.screenshot_ui.close();
+                self.selection_ui.close();
                 self.cursor_manager
                     .set_cursor_image(CursorImageStatus::default_named());
                 self.queue_redraw_all();
@@ -3644,7 +3693,7 @@ impl Niri {
         extended_bounds: bool,
         pos: Point<f64, Logical>,
     ) -> Option<(Output, &Workspace<Mapped>)> {
-        if self.exit_confirm_dialog.is_open() || self.is_locked() || self.screenshot_ui.is_open() {
+        if self.exit_confirm_dialog.is_open() || self.is_locked() || self.selection_ui.is_open() {
             return None;
         }
 
@@ -3679,7 +3728,7 @@ impl Niri {
     pub fn window_under(&self, pos: Point<f64, Logical>) -> Option<&Mapped> {
         if self.exit_confirm_dialog.is_open()
             || self.is_locked()
-            || self.screenshot_ui.is_open()
+            || self.selection_ui.is_open()
             || self.window_mru_ui.is_open()
         {
             return None;
@@ -3760,7 +3809,7 @@ impl Niri {
             return rv;
         }
 
-        if self.screenshot_ui.is_open() || self.window_mru_ui.is_open() {
+        if self.selection_ui.is_open() || self.window_mru_ui.is_open() {
             return rv;
         }
 
@@ -4475,10 +4524,10 @@ impl Niri {
             // Draw layout as active in these cases to reduce unnecessary window animations.
             // There's no confusion because these are both fullscreen modes.
             //
-            // FIXME: when going into the screenshot UI from a layer-shell focus, and then back to
+            // FIXME: when going into the selection UI from a layer-shell focus, and then back to
             // layer-shell, the layout will briefly draw as active, despite never having focus.
             KeyboardFocus::LockScreen { .. } => true,
-            KeyboardFocus::ScreenshotUi => true,
+            KeyboardFocus::SelectionUi => true,
             KeyboardFocus::ExitConfirmDialog => true,
             KeyboardFocus::Overview => true,
             KeyboardFocus::Mru => true,
@@ -4552,7 +4601,7 @@ impl Niri {
         self.layout.advance_animations();
         self.config_error_notification.advance_animations();
         self.exit_confirm_dialog.advance_animations();
-        self.screenshot_ui.advance_animations();
+        self.selection_ui.advance_animations();
         self.window_mru_ui.advance_animations();
 
         for state in self.output_state.values_mut() {
@@ -4763,15 +4812,17 @@ impl Niri {
         )
         .into();
 
-        // If the screenshot UI is open, draw it.
-        if self.screenshot_ui.is_open() {
-            self.screenshot_ui
+        // If the selection UI is open, draw it.
+        if self.selection_ui.is_open() {
+            self.selection_ui
                 .render_output(output, ctx.target, &mut |elem| push(elem.into()));
 
-            // Add the backdrop for outputs that were connected while the screenshot UI was open.
-            push(backdrop);
+            if self.selection_ui.is_frozen() {
+                // Add the backdrop for outputs that were connected while the UI was open.
+                push(backdrop);
 
-            return;
+                return;
+            }
         }
 
         // Draw the hotkey overlay on top.
@@ -5092,7 +5143,7 @@ impl Niri {
             state.unfinished_animations_remain |=
                 self.config_error_notification.are_animations_ongoing();
             state.unfinished_animations_remain |= self.exit_confirm_dialog.are_animations_ongoing();
-            state.unfinished_animations_remain |= self.screenshot_ui.are_animations_ongoing();
+            state.unfinished_animations_remain |= self.selection_ui.are_animations_ongoing();
             state.unfinished_animations_remain |= self.window_mru_ui.are_animations_ongoing();
             state.unfinished_animations_remain |= state.screen_transition.is_some();
 
@@ -7002,7 +7053,7 @@ impl Niri {
             } => {
                 self.event_loop.remove(deadline_token);
 
-                self.screenshot_ui.close();
+                self.selection_ui.close();
                 self.cursor_manager
                     .set_cursor_image(CursorImageStatus::default_named());
                 self.cancel_mru();
@@ -7624,7 +7675,7 @@ niri_render_elements! {
         Pointer = PointerRenderElements<R>,
         Wayland = WaylandSurfaceRenderElement<R>,
         SolidColor = SolidColorRenderElement,
-        ScreenshotUi = ScreenshotUiRenderElement,
+        SelectionUi = SelectionUiRenderElement,
         WindowMruUi = WindowMruUiRenderElement<R>,
         ExitConfirmDialog = ExitConfirmDialogRenderElement,
         Texture = PrimaryGpuTextureRenderElement,

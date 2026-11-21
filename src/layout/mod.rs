@@ -345,7 +345,7 @@ pub struct Layout<W: LayoutElement> {
     /// Whether the layout should draw as active.
     ///
     /// This normally indicates that the layout has keyboard focus, but not always. E.g. when the
-    /// screenshot UI is open, it keeps the layout drawing as active.
+    /// selection UI is open, it keeps the layout drawing as active.
     is_active: bool,
     /// Map from monitor name to id of its last active workspace.
     ///
