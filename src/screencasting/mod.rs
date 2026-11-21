@@ -7,13 +7,12 @@ use anyhow::Context as _;
 use calloop::LoopHandle;
 use smithay::backend::allocator::format::FormatSet;
 use smithay::backend::allocator::gbm::GbmDevice;
-use smithay::backend::drm::DrmDeviceFd;
 use smithay::backend::renderer::element::utils::{Relocate, RelocateRenderElement};
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::desktop::Window;
 use smithay::output::Output;
 use smithay::reexports::gbm::Modifier;
-use smithay::utils::{Physical, Point, Scale, Size};
+use smithay::utils::{DeviceFd, Physical, Point, Scale, Size};
 use zbus::object_server::SignalEmitter;
 
 use crate::dbus::mutter_screen_cast::{self, CursorMode, ScreenCastToNiri, StreamTargetId};
@@ -77,12 +76,7 @@ impl Screencasting {
 }
 
 impl State {
-    fn prepare_pw_cast(&mut self) -> anyhow::Result<(GbmDevice<DrmDeviceFd>, FormatSet)> {
-        let gbm = self
-            .backend
-            .gbm_device()
-            .context("no GBM device available")?;
-
+    fn prepare_pw_cast(&mut self) -> anyhow::Result<Option<(GbmDevice<DeviceFd>, FormatSet)>> {
         // Ensure PipeWire is initialized.
         if self.niri.casting.pipewire.is_none() {
             let pw = PipeWire::new(
@@ -92,6 +86,15 @@ impl State {
             .context("error initializing PipeWire")?;
             self.niri.casting.pipewire = Some(pw);
         }
+
+        if self.niri.config.borrow().debug.disable_pipewire_dmabuf {
+            return Ok(None);
+        }
+
+        let Some(gbm) = self.backend.gbm_device() else {
+            // We will offer shm only.
+            return Ok(None);
+        };
 
         let mut render_formats = self
             .backend
@@ -110,7 +113,7 @@ impl State {
             }
         }
 
-        Ok((gbm, render_formats))
+        Ok(Some((gbm, render_formats)))
     }
 
     pub fn on_pw_msg(&mut self, msg: PwToNiri) {
@@ -151,7 +154,7 @@ impl State {
             CastTarget::Nothing => {
                 self.backend.with_primary_renderer(|renderer| {
                     if cast.dequeue_buffer_and_clear(renderer) {
-                        cast.last_frame_time = get_monotonic_time();
+                        cast.record_frame_time(get_monotonic_time());
                     }
                 });
                 return;
@@ -162,7 +165,7 @@ impl State {
                 }
                 return;
             }
-            CastTarget::Window { id } => *id,
+            CastTarget::Window { id } => MappedId::specific(*id),
         };
 
         // Lack of partial borrowing strikes again...
@@ -171,9 +174,9 @@ impl State {
         let mut stop = false;
         // Use a loop {} so we can break instead of early-return.
         #[allow(clippy::never_loop)]
+        #[allow(clippy::while_let_loop)]
         loop {
-            let mut windows = self.niri.layout.windows();
-            let Some((_, mapped)) = windows.find(|(_, mapped)| mapped.id().get() == id) else {
+            let Some((mapped, _)) = self.niri.find_mapped_output_by_id(id) else {
                 break;
             };
 
@@ -184,10 +187,7 @@ impl State {
             };
 
             let scale = Scale::from(output.current_scale().fractional_scale());
-            let bbox = mapped
-                .window
-                .bbox_with_popups()
-                .to_physical_precise_up(scale);
+            let bbox = mapped.capture_bbox(scale);
 
             match cast.ensure_size(bbox.size) {
                 Ok(CastSizeChange::Ready) => (),
@@ -225,8 +225,13 @@ impl State {
                     }
                 }
 
+                let ctx = RenderCtx {
+                    renderer,
+                    target: RenderTarget::Screencast,
+                    xray: None,
+                };
                 let main_start = elements.len();
-                mapped.render_for_screen_cast(renderer, scale, &mut |elem| {
+                mapped.render_for_screen_cast(ctx, scale, &mut |elem| {
                     elements.push(CastRenderElement::from(elem))
                 });
 
@@ -240,7 +245,7 @@ impl State {
                     bbox.size,
                     scale,
                 ) {
-                    cast.last_frame_time = get_monotonic_time();
+                    cast.record_frame_time(get_monotonic_time());
                 }
             });
 
@@ -332,7 +337,7 @@ impl State {
             }
         };
 
-        let (gbm, render_formats) = match self.prepare_pw_cast() {
+        let gbm = match self.prepare_pw_cast() {
             Ok(x) => x,
             Err(err) => {
                 warn!("error starting pending screencasts: {err:?}");
@@ -356,7 +361,6 @@ impl State {
         for pending in self.niri.casting.pending_dynamic_casts.drain(..) {
             let res = pw.start_cast(
                 gbm.clone(),
-                render_formats.clone(),
                 pending.session_id,
                 pending.stream_id,
                 target.clone(),
@@ -430,7 +434,7 @@ impl State {
                     }
                 };
 
-                let (gbm, render_formats) = match self.prepare_pw_cast() {
+                let gbm = match self.prepare_pw_cast() {
                     Ok(x) => x,
                     Err(err) => {
                         warn!("error starting screencast: {err:?}");
@@ -442,7 +446,6 @@ impl State {
 
                 let res = pw.start_cast(
                     gbm,
-                    render_formats,
                     session_id,
                     stream_id,
                     target,
@@ -468,20 +471,6 @@ impl State {
 }
 
 impl Niri {
-    pub fn refresh_mapped_cast_window_rules(&mut self) {
-        // O(N^2) but should be fine since there aren't many casts usually.
-        self.layout.with_windows_mut(|mapped, _| {
-            let id = mapped.id().get();
-            // Find regardless of cast.is_active.
-            let value = self
-                .casting
-                .casts
-                .iter()
-                .any(|cast| cast.target == (CastTarget::Window { id }));
-            mapped.set_is_window_cast_target(value);
-        });
-    }
-
     pub fn refresh_mapped_cast_outputs(&mut self) {
         let mut seen = HashSet::new();
         let mut output_changed = vec![];
@@ -610,7 +599,7 @@ impl Niri {
             let cursor_data = cursor_data.as_ref().unwrap();
 
             if cast.dequeue_buffer_and_render(renderer, &elements, cursor_data, size, scale) {
-                cast.last_frame_time = target_presentation_time;
+                cast.record_frame_time(target_presentation_time);
             }
         }
         self.casting.casts = casts;
@@ -647,10 +636,7 @@ impl Niri {
                 continue;
             };
 
-            let bbox = mapped
-                .window
-                .bbox_with_popups()
-                .to_physical_precise_up(scale);
+            let bbox = mapped.capture_bbox(scale);
 
             match cast.ensure_size(bbox.size) {
                 Ok(CastSizeChange::Ready) => (),
@@ -687,15 +673,20 @@ impl Niri {
                 }
             }
 
+            let ctx = RenderCtx {
+                renderer,
+                target: RenderTarget::Screencast,
+                xray: None,
+            };
             let main_start = elements.len();
-            mapped.render_for_screen_cast(renderer, scale, &mut |elem| {
+            mapped.render_for_screen_cast(ctx, scale, &mut |elem| {
                 elements.push(CastRenderElement::from(elem))
             });
 
             let cursor_data = CursorData::compute(&elements, main_start, pointer_location, scale);
 
             if cast.dequeue_buffer_and_render(renderer, &elements, &cursor_data, bbox.size, scale) {
-                cast.last_frame_time = target_presentation_time;
+                cast.record_frame_time(target_presentation_time);
             }
         }
         self.casting.casts = casts;
@@ -777,10 +768,7 @@ impl Niri {
             .find(|(_, m)| m.id().get() == window_id)?;
         let output = self.casting.mapped_cast_output.get(&mapped.window)?;
         let scale = Scale::from(output.current_scale().fractional_scale());
-        let bbox = mapped
-            .window
-            .bbox_with_popups()
-            .to_physical_precise_up(scale);
+        let bbox = mapped.capture_bbox(scale);
         let refresh = output.current_mode().unwrap().refresh as u32;
         Some((bbox.size, refresh))
     }

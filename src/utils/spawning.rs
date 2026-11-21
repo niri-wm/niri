@@ -220,7 +220,11 @@ mod systemd {
         use libc::closefrom;
 
         #[cfg(not(target_env = "gnu"))] // musl
-        pub fn close_range(first: libc::c_uint, last: libc::c_uint, flags: libc::c_uint) -> i64 {
+        pub fn close_range(
+            first: libc::c_uint,
+            last: libc::c_uint,
+            flags: libc::c_uint,
+        ) -> libc::c_long {
             unsafe {
                 libc::syscall(
                     libc::SYS_close_range,

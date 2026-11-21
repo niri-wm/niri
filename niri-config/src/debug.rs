@@ -15,6 +15,7 @@ pub struct Debug {
     pub render_drm_device: Option<PathBuf>,
     pub ignored_drm_devices: Vec<PathBuf>,
     pub force_pipewire_invalid_modifier: bool,
+    pub disable_pipewire_dmabuf: bool,
     pub emulate_zero_presentation_time: bool,
     pub disable_resize_throttling: bool,
     pub disable_transactions: bool,
@@ -25,6 +26,7 @@ pub struct Debug {
     pub deactivate_unfocused_windows: bool,
     pub skip_cursor_only_updates_during_vrr: bool,
     pub disable_10bit_output: bool,
+    pub nested_show_host_cursor: bool,
 }
 
 #[derive(knuffel::Decode, Debug, Default, PartialEq)]
@@ -52,6 +54,8 @@ pub struct DebugPart {
     #[knuffel(child)]
     pub force_pipewire_invalid_modifier: Option<Flag>,
     #[knuffel(child)]
+    pub disable_pipewire_dmabuf: Option<Flag>,
+    #[knuffel(child)]
     pub emulate_zero_presentation_time: Option<Flag>,
     #[knuffel(child)]
     pub disable_resize_throttling: Option<Flag>,
@@ -71,6 +75,8 @@ pub struct DebugPart {
     pub skip_cursor_only_updates_during_vrr: Option<Flag>,
     #[knuffel(child)]
     pub disable_10bit_output: Option<Flag>,
+    #[knuffel(child)]
+    pub nested_show_host_cursor: Option<Flag>,
 }
 
 impl MergeWith<DebugPart> for Debug {
@@ -85,6 +91,7 @@ impl MergeWith<DebugPart> for Debug {
             restrict_primary_scanout_to_matching_format,
             force_disable_connectors_on_resume,
             force_pipewire_invalid_modifier,
+            disable_pipewire_dmabuf,
             emulate_zero_presentation_time,
             disable_resize_throttling,
             disable_transactions,
@@ -95,6 +102,7 @@ impl MergeWith<DebugPart> for Debug {
             deactivate_unfocused_windows,
             skip_cursor_only_updates_during_vrr,
             disable_10bit_output,
+            nested_show_host_cursor,
         );
 
         merge_clone_opt!((self, part), preview_render, render_drm_device);

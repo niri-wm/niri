@@ -14,7 +14,8 @@ For instance:
 
 Anything with access to niri's Wayland socket can, among other things:
 
-- Record the user's screen via [wlr-screencopy](https://wayland.app/protocols/wlr-screencopy-unstable-v1).
+- Record the user's screen via [ext-image-copy-capture](https://wayland.app/protocols/ext-image-copy-capture-v1) or [wlr-screencopy](https://wayland.app/protocols/wlr-screencopy-unstable-v1).
+- Track the cursor's image and position via [ext-image-copy-capture](https://wayland.app/protocols/ext-image-copy-capture-v1).
 - Emulate input via [wlr-virtual-pointer](https://wayland.app/protocols/wlr-virtual-pointer-unstable-v1) and [virtual-keyboard](https://wayland.app/protocols/virtual-keyboard-unstable-v1).
 - Get the user's clipboard contents via [wlr-data-control](https://wayland.app/protocols/ext-data-control-v1).
 - Create arbitrary fullscreen surfaces through [wlr-layer-shell](https://wayland.app/protocols/wlr-layer-shell-unstable-v1) that can steal the user's input, pretend to be a password entry, or lock the user out of their session.
@@ -52,8 +53,11 @@ When the session is locked via [ext-session-lock](https://wayland.app/protocols/
 Only a very small set of safe actions is allowed.
 In particular, spawning will not work, with the exception of binds explicitly configured with `allow-when-locked=true`.
 
+<sup>Until: next release</sup>
 Importantly, the **quit** action is allowed—you can always quit niri, even when on a lock screen.
-Therefore, you must ensure that quitting niri does not drop you into an unprotected TTY commandline.
+
+Be careful if you allow the **quit** action, or if your lock screen has a way to exit niri.
+You must ensure that quitting niri does not drop you into an unprotected TTY commandline.
 Usually, a display manager, like GDM, will do this for you: when niri exits (via the quit bind or if it crashes), it'll put you back into a safe password prompt.
 
 Other than quitting, the only way to exit a lock screen is for the lock screen client to tell niri to unlock the session.

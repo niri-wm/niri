@@ -7,7 +7,7 @@ You can screencast both monitors and individual windows.
 In order to use it, you need a working D-Bus session, pipewire, `xdg-desktop-portal-gnome`, and [running niri as a session](./Getting-Started.md) (i.e. through `niri-session` or from a display manager).
 On widely used distros this should all "just work".
 
-Alternatively, you can use tools that rely on the `wlr-screencopy` protocol, which niri also supports.
+Alternatively, you can use tools that rely on the `ext-image-copy-capture` protocol, or the older `wlr-screencopy`, both of which niri also supports.
 
 There are several features in niri designed for screencasting.
 Let's take a look!
@@ -39,6 +39,19 @@ layer-rule {
     match namespace="^notifications$"
 
     block-out-from "screencast"
+}
+```
+
+<sup>Since: next release</sup>
+You can also set `kind="hide"` to hide the surface entirely instead of drawing a black rectangle.
+Careful: this way you could unintentionally expose sensitive data.
+
+```kdl
+// Hide mako notifications from screencasts.
+layer-rule {
+    match namespace="^notifications$"
+
+    block-out-from "screencast" kind="hide"
 }
 ```
 

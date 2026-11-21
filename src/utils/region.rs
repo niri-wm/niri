@@ -104,7 +104,7 @@ pub fn region_to_non_overlapping_rects(
         region
             .rects
             .iter()
-            .flat_map(|(_, r)| [r.loc.y, r.loc.y + r.size.h]),
+            .flat_map(|(_, r)| [r.loc.y, r.loc.y.saturating_add(r.size.h)]),
     );
 
     let mut ys = ys.into_iter();
@@ -122,12 +122,12 @@ pub fn region_to_non_overlapping_rects(
 
         'region: for (kind, r) in &region.rects {
             // Skip rects that don't overlap with the Y band.
-            if hi <= r.loc.y || r.loc.y + r.size.h <= lo {
+            if hi <= r.loc.y || r.loc.y.saturating_add(r.size.h) <= lo {
                 continue;
             }
 
             let mut x1 = r.loc.x;
-            let mut x2 = r.loc.x + r.size.w;
+            let mut x2 = r.loc.x.saturating_add(r.size.w);
             if x1 == x2 {
                 // Empty rect.
                 continue;
@@ -277,6 +277,30 @@ mod tests {
             check(&[(Add, (0, 0, 10, 10)), (Add, (10, 0, 20, 10))]),
             @" 0  0 - 20 10"
         );
+    }
+
+    // A client can send a region like wl_region.add(0, i32::MAX, 1, 1), and smithay stores the
+    // coordinates as they came in. Computing the rect extremities must not overflow here, since
+    // that panics with overflow-checks on.
+    #[test]
+    fn test_extremity_overflow() {
+        let region = RegionAttributes {
+            rects: vec![
+                (
+                    RectangleKind::Add,
+                    Rectangle::new(Point::new(0, i32::MAX), Size::new(1, 1)),
+                ),
+                (
+                    RectangleKind::Add,
+                    Rectangle::new(Point::new(i32::MAX, 0), Size::new(1, 1)),
+                ),
+            ],
+        };
+
+        // Both rects are degenerate after clamping, so nothing comes out.
+        let mut output = Vec::new();
+        region_to_non_overlapping_rects(&region, &mut output);
+        assert!(output.is_empty());
     }
 
     proptest! {

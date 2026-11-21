@@ -1081,8 +1081,9 @@ impl<W: LayoutElement> FloatingSpace<W> {
         // FIXME: I guess this should rather preserve the stacking order when the window is closed.
         if layer.is_normal() {
             for closing in self.closing_windows.iter().rev() {
-                let elem = closing.render(ctx.as_gles(), view_rect, scale);
-                push(elem.into());
+                if let Some(elem) = closing.render(ctx.as_gles(), view_rect, scale) {
+                    push(elem.into());
+                }
             }
         }
 

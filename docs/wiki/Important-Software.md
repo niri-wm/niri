@@ -12,7 +12,8 @@ Portals **require** [running niri as a session](./Getting-Started.md), which mea
 
 * `xdg-desktop-portal-gtk`: implements most of the basic functionality, this is the "default fallback portal".
 * `xdg-desktop-portal-gnome`: required for screencasting support.
-* `gnome-keyring`: implements the Secret portal, required for certain apps to work.
+* `oo7-portal` or `gnome-keyring`: implements the Secret portal, required for certain apps to work.
+* `gnome-control-center`: required for the global shortcuts portal to work. If you want to run the GNOME Settings GUI to edit the shortcuts, run it like `XDG_CURRENT_DESKTOP=gnome gnome-control-center`.
 
 Then systemd should start them on-demand automatically. These particular portals are configured in `niri-portals.conf` which [must be installed](./Getting-Started.md#manual-installation) in the correct location.
 

@@ -1,3 +1,4 @@
+use std::cell::Cell;
 use std::cmp::{max, min};
 use std::ffi::{CString, OsStr};
 use std::fmt::Display;
@@ -237,6 +238,13 @@ pub fn panel_orientation(output: &Output) -> Transform {
         .unwrap_or(Transform::Normal)
 }
 
+// For winit-backed outputs.
+#[derive(Default)]
+pub struct WinitScale(pub Cell<f64>);
+pub fn winit_scale(output: &Output) -> Option<f64> {
+    output.user_data().get::<WinitScale>().map(|x| x.0.get())
+}
+
 pub fn ipc_transform_to_smithay(transform: niri_ipc::Transform) -> Transform {
     match transform {
         niri_ipc::Transform::Normal => Transform::Normal,
@@ -423,7 +431,7 @@ pub fn update_tiled_state(
     let should_tile = || {
         // Figure out if the client bound any decoration globals for this window. In this case,
         // the pending decoration mode will be set to something (we always set it upon binding the
-        // global and never reset to None).
+        // global).
         //
         // If the client bound a decoration global, use the mode that we negotiated. This way,
         // changing the decoration mode on the client at runtime will synchronize with the

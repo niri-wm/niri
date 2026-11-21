@@ -168,6 +168,7 @@ impl WatcherInner {
                 CheckResult::Unchanged
             }
         } else {
+            self.last_props = None;
             CheckResult::Missing
         }
     }
@@ -507,6 +508,22 @@ mod tests {
                 sh.remove_path("niri/config.kdl")?;
                 sh.write_file("niri/config.kdl", "b")?;
                 test.assert_changed_to("b");
+
+                Ok(())
+            })
+    }
+
+    #[test]
+    fn recreate_file_with_same_props() -> Result {
+        TestPath::Explicit("niri/config.kdl")
+            .setup(|sh| sh.write_file("niri/config.kdl", "a"))
+            .assert_initial("a")
+            .run(|sh, test| {
+                cmd!(sh, "mv niri/config.kdl niri/config2.kdl").run()?;
+                test.assert_unchanged();
+
+                cmd!(sh, "mv niri/config2.kdl niri/config.kdl").run()?;
+                test.assert_changed_to("a");
 
                 Ok(())
             })

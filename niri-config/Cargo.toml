@@ -9,7 +9,7 @@ repository.workspace = true
 
 [dependencies]
 bitflags.workspace = true
-csscolorparser = "0.8.3"
+csscolorparser = "0.8"
 knuffel = "3.2.0"
 miette = { version = "5.10.0", features = ["fancy-no-backtrace"] }
 niri-ipc = { version = "26.4.0", path = "../niri-ipc" }
@@ -22,3 +22,6 @@ tracy-client.workspace = true
 insta.workspace = true
 pretty_assertions = "1.4.1"
 diff = "0.1.13"
+
+[lints]
+workspace = true

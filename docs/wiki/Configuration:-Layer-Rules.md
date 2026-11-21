@@ -20,6 +20,7 @@ layer-rule {
     opacity 0.5
     block-out-from "screencast"
     // block-out-from "screen-capture"
+    // block-out-from "screen-capture" kind="hide"
 
     shadow {
         on
@@ -34,6 +35,7 @@ layer-rule {
 
     geometry-corner-radius 12
     place-within-backdrop true
+    focus-on-type-in-overview true
     baba-is-float true
 
     background-effect {
@@ -126,6 +128,9 @@ layer-rule {
     match namespace="^notifications$"
 
     block-out-from "screencast"
+
+    // Or, hide entirely:
+    // block-out-from "screencast" kind="hide"
 }
 ```
 
@@ -208,6 +213,34 @@ layer-rule {
     match namespace="^wallpaper$"
 
     place-within-backdrop true
+}
+```
+
+#### `focus-on-type-in-overview`
+
+<sup>Since: next release</sup>
+
+Set to `true` to make niri focus this surface when typing in the [Overview](./Overview.md).
+It is intended for app launchers, to enable "type to search" integration.
+
+The layer surface must be mapped and have `on-demand` keyboard focus.
+
+> [!NOTE]
+> This rule needs some cooperation from the layer surface.
+> Here's an example.
+>
+> An application launcher should map a layer surface with `none` keyboard interactivity, then switch it to `on-demand`, and commit.
+> The result is an unfocused layer surface with `on-demand` keyboard focus, ready to be focused by niri.
+> Then, typing in the Overview will focus this layer surface and forward the text.
+>
+> If the user deletes the text and you want to hide the surface, you should set keyboard interactivity to `none`, commit, then set it back to `on-demand`, and commit again to drop the keyboard focus back to niri.
+> This way, the surface is ready to receive keyboard focus again.
+
+```kdl
+layer-rule {
+    match namespace="^my-launcher-surface$"
+
+    focus-on-type-in-overview true
 }
 ```
 

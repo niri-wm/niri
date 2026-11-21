@@ -60,7 +60,7 @@ Many people are daily-driving niri, and are happy to help in our [Matrix channel
 
 Give it a try!
 Follow the instructions on the [Getting Started](https://niri-wm.github.io/niri/Getting-Started.html) page.
-Grab a desktop shell like [DankMaterialShell] or [Noctalia] (or build a more traditional setup): niri by itself is not a complete desktop environment.
+Grab a desktop shell like [Dux Modular Shell] or [Noctalia] (or build a more traditional setup): niri by itself is not a complete desktop environment.
 Also check out [awesome-niri], a list of niri-related links and projects.
 
 Here are some points you may have questions about:
@@ -93,6 +93,12 @@ We talk about niri development and history, and my experience building and maint
 [A tour of the niri scrolling-tiling Wayland compositor](https://lwn.net/Articles/1025866/) · *July 2025*
 
 An LWN article with a nice overview and introduction to niri.
+
+[How to test a Wayland compositor?](https://youtu.be/w44fYK5z418?list=PLK4NE4dSsLlw) · *October 2026*
+
+My talk about some testing techniques used in niri: property-based tests, snapshot tests, client-server tests.
+The first half overlaps with my RustCon talk, the second half is new.
+The talk is in Russian, but I prepared full English subtitles that you can find in YouTube's subtitle language selector.
 
 ## Contributing
 
@@ -132,5 +138,5 @@ We also have a community Discord server: https://discord.gg/vT8Sfjy7sx
 [PaperWM.spoon]: https://github.com/mogenson/PaperWM.spoon
 [Matrix channel]: https://matrix.to/#/#niri:matrix.org
 [OpenTabletDriver]: https://opentabletdriver.net/
-[DankMaterialShell]: https://danklinux.com/
+[Dux Modular Shell]: https://duxlabs.dev/
 [Noctalia]: https://noctalia.dev/

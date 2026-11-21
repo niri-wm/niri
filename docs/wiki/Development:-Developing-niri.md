@@ -52,6 +52,12 @@ We have integration with the [Tracy](https://github.com/wolfpld/tracy) profiler 
 cargo build --release --features=profile-with-tracy-ondemand
 ```
 
+Before starting Tracy-integrated niri, run the following commands to give Tracy access to CPU scheduling and context switches (can be very useful for diagnosing slowdowns):
+
+```
+sudo mount -o remount,gid=$(id -g),mode=750 /sys/kernel/tracing; echo -1 | sudo tee /proc/sys/kernel/perf_event_paranoid
+```
+
 Then you can open Tracy (you will need the latest stable release) and attach to a running niri instance to collect profiling data. Profiling data is collected "on demand"—that is, only when Tracy is connected. You can run a niri build like this as your main compositor if you'd like.
 
 > [!NOTE]
