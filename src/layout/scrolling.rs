@@ -1416,7 +1416,11 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
             // We might need to move the view to ensure the resized window is still visible. But
             // only do it when the view isn't frozen by an interactive resize or a view gesture.
-            if self.interactive_resize.is_none() && !self.view_offset.is_gesture() {
+            //
+            // Commits that keep the column size leave the view alone, so a column activated
+            // without scrolling stays where it is.
+            let size_changed = offset != 0. || was_normal != is_normal;
+            if size_changed && self.interactive_resize.is_none() && !self.view_offset.is_gesture() {
                 // Synchronize the horizontal view movement with the resize so that it looks nice.
                 // This is especially important for always-centered view.
                 let config = if ongoing_resize_anim {
