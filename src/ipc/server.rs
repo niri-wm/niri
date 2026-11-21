@@ -208,7 +208,12 @@ async fn handle_client(ctx: ClientCtx, stream: Async<'static, UnixStream>) -> an
             .context("error parsing request")
             .map_err(|err| err.to_string());
         let requested_error = matches!(request, Ok(Request::ReturnError));
-        let requested_event_stream = matches!(request, Ok(Request::EventStream));
+
+        let event_stream_filter = if let Ok(Request::EventStream { filter }) = &request {
+            Some(filter.clone())
+        } else {
+            None
+        };
 
         let reply = match request {
             Ok(request) => process(&ctx, request).await,
@@ -226,7 +231,7 @@ async fn handle_client(ctx: ClientCtx, stream: Async<'static, UnixStream>) -> an
         buf.push(b'\n');
         write.write_all(&buf).await.context("error writing reply")?;
 
-        if requested_event_stream {
+        if let Some(filter) = event_stream_filter {
             let (events_tx, events_rx) = async_channel::bounded(EVENT_STREAM_BUFFER_SIZE);
             let (disconnect_tx, disconnect_rx) = async_channel::bounded(1);
 
@@ -236,8 +241,9 @@ async fn handle_client(ctx: ClientCtx, stream: Async<'static, UnixStream>) -> an
                 disconnect: disconnect_rx,
                 write: Box::new(write) as _,
             };
+            let filter_clone = filter.clone();
             let future = async move {
-                if let Err(err) = handle_event_stream_client(client).await {
+                if let Err(err) = handle_event_stream_client(client, filter_clone).await {
                     warn!("error handling IPC event stream client: {err:?}");
                 }
             };
@@ -249,9 +255,12 @@ async fn handle_client(ctx: ClientCtx, stream: Async<'static, UnixStream>) -> an
             {
                 let state = ctx.event_stream_state.borrow();
                 for event in state.replicate() {
-                    events_tx
-                        .try_send(event)
-                        .expect("initial event burst had more events than buffer size");
+                    let event_name = get_event_name(&event);
+                    if filter.is_empty() || filter.iter().any(|s| s == event_name) {
+                        events_tx
+                            .try_send(event)
+                            .expect("initial event burst had more events than buffer size");
+                    }
                 }
             }
 
@@ -448,7 +457,7 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
             let output = result.map_err(|_| String::from("error getting active output info"))?;
             Response::FocusedOutput(output)
         }
-        Request::EventStream => Response::Handled,
+        Request::EventStream { .. } => Response::Handled,
         Request::OverviewState => {
             let state = ctx.event_stream_state.borrow();
             let is_open = state.overview.is_open;
@@ -489,7 +498,35 @@ fn validate_action(action: &Action) -> Result<(), String> {
     Ok(())
 }
 
-async fn handle_event_stream_client(client: EventStreamClient) -> anyhow::Result<()> {
+fn get_event_name(event: &Event) -> &str {
+    match event {
+        Event::WorkspacesChanged { .. } => "WorkspacesChanged",
+        Event::WorkspaceUrgencyChanged { .. } => "WorkspaceUrgencyChanged",
+        Event::WorkspaceActivated { .. } => "WorkspaceActivated",
+        Event::WorkspaceActiveWindowChanged { .. } => "WorkspaceActiveWindowChanged",
+        Event::WindowsChanged { .. } => "WindowsChanged",
+        Event::WindowOpenedOrChanged { .. } => "WindowOpenedOrChanged",
+        Event::WindowClosed { .. } => "WindowClosed",
+        Event::WindowFocusChanged { .. } => "WindowFocusChanged",
+        Event::WindowFocusTimestampChanged { .. } => "WindowFocusTimestampChanged",
+        Event::WindowUrgencyChanged { .. } => "WindowUrgencyChanged",
+        Event::WindowLayoutsChanged { .. } => "WindowLayoutsChanged",
+        Event::KeyboardLayoutsChanged { .. } => "KeyboardLayoutsChanged",
+        Event::KeyboardLayoutSwitched { .. } => "KeyboardLayoutSwitched",
+        Event::OverviewOpenedOrClosed { .. } => "OverviewOpenedOrClosed",
+        Event::ConfigLoaded { .. } => "ConfigLoaded",
+        Event::ScreenshotCaptured { .. } => "ScreenshotCaptured",
+        Event::CastsChanged { .. } => "CastsChanged",
+        Event::CastStartedOrChanged { .. } => "CastStartedOrChanged",
+        Event::CastStopped { .. } => "CastStopped",
+        Event::TouchpadToggled { .. } => "TouchpadToggled",
+    }
+}
+
+async fn handle_event_stream_client(
+    client: EventStreamClient,
+    filter: Vec<String>,
+) -> anyhow::Result<()> {
     let EventStreamClient {
         events,
         disconnect,
@@ -497,6 +534,11 @@ async fn handle_event_stream_client(client: EventStreamClient) -> anyhow::Result
     } = client;
 
     while let Ok(event) = events.recv().await {
+        let event_name = get_event_name(&event);
+        if !filter.is_empty() && !filter.iter().any(|s| s == event_name) {
+            continue;
+        }
+
         let mut buf = serde_json::to_vec(&event).context("error formatting event")?;
         buf.push(b'\n');
 

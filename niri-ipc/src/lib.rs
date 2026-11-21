@@ -112,7 +112,10 @@ pub enum Request {
     /// case. For example, a window may end up with a workspace id for a workspace that had already
     /// been removed. This can happen if the corresponding [`Event::WorkspacesChanged`] arrives
     /// before the corresponding [`Event::WindowOpenedOrChanged`].
-    EventStream,
+    EventStream {
+        /// Optional event names to filter the event stream.
+        filter: Vec<String>,
+    },
     /// Respond with an error (for testing error handling).
     ReturnError,
     /// Request information about the overview.
