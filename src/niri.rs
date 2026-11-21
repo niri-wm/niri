@@ -72,7 +72,7 @@ use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::{Client, Display, DisplayHandle, Resource};
 use smithay::utils::{
     Buffer as BufferCoords, ClockSource, IsAlive as _, Logical, Monotonic, Physical, Point,
-    Rectangle, Scale, Size, Transform, SERIAL_COUNTER,
+    Rectangle, Scale, Serial, Size, Transform, SERIAL_COUNTER,
 };
 use smithay::wayland::background_effect::BackgroundEffectState;
 use smithay::wayland::compositor::{
@@ -356,6 +356,7 @@ pub struct Niri {
     pub security_context_state: SecurityContextState,
     pub gamma_control_manager_state: GammaControlManagerState,
     pub activation_state: XdgActivationState,
+    pub last_touch_down_serial: Option<Serial>,
     pub mutter_x11_interop_state: MutterX11InteropManagerState,
 
     // This will not work as is outside of tests, so it is gated with #[cfg(test)] for now. In
@@ -2974,6 +2975,7 @@ impl Niri {
             security_context_state,
             gamma_control_manager_state,
             activation_state,
+            last_touch_down_serial: None,
             mutter_x11_interop_state,
             #[cfg(test)]
             single_pixel_buffer_state,
