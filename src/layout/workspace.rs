@@ -1906,6 +1906,34 @@ impl<W: LayoutElement> Workspace<W> {
         }
     }
 
+    pub fn activate_window_in_place(&mut self, window: &W::Id) -> bool {
+        if self.floating.activate_window(window) {
+            self.floating_is_active = FloatingActive::Yes;
+            true
+        } else if self.scrolling.activate_window_in_place(window) {
+            self.floating_is_active = FloatingActive::No;
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn activate_window_in_place_without_raising(&mut self, window: &W::Id) -> bool {
+        if self.floating.activate_window_without_raising(window) {
+            self.floating_is_active = FloatingActive::Yes;
+            true
+        } else if self.scrolling.activate_window_in_place(window) {
+            self.floating_is_active = match self.floating_is_active {
+                FloatingActive::No => FloatingActive::No,
+                FloatingActive::NoButRaised => FloatingActive::NoButRaised,
+                FloatingActive::Yes => FloatingActive::NoButRaised,
+            };
+            true
+        } else {
+            false
+        }
+    }
+
     pub(super) fn scrolling_insert_position(&self, pos: Point<f64, Logical>) -> InsertPosition {
         self.scrolling.insert_position(pos)
     }

@@ -1571,6 +1571,16 @@ impl<W: LayoutElement> Layout<W> {
         self.activate_window_with(window, Workspace::activate_window_without_raising);
     }
 
+    /// Activates a window without moving the view.
+    pub fn activate_window_in_place(&mut self, window: &W::Id) {
+        self.activate_window_with(window, Workspace::activate_window_in_place);
+    }
+
+    /// Activates a window without raising it or moving the view.
+    pub fn activate_window_in_place_without_raising(&mut self, window: &W::Id) {
+        self.activate_window_with(window, Workspace::activate_window_in_place_without_raising);
+    }
+
     fn activate_window_with(
         &mut self,
         window: &W::Id,

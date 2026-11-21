@@ -1479,6 +1479,27 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         true
     }
 
+    pub fn activate_window_in_place(&mut self, window: &W::Id) -> bool {
+        let column_idx = self.columns.iter().position(|col| col.contains(window));
+        let Some(column_idx) = column_idx else {
+            return false;
+        };
+
+        self.columns[column_idx].activate_window(window);
+
+        if self.active_column_idx != column_idx {
+            let delta = self.column_x(self.active_column_idx) - self.column_x(column_idx);
+            self.view_offset.offset(delta);
+
+            self.active_column_idx = column_idx;
+            self.activate_prev_column_on_removal = None;
+            self.view_offset_to_restore = None;
+            self.interactive_resize = None;
+        }
+
+        true
+    }
+
     pub fn start_close_animation_for_window(
         &mut self,
         renderer: &mut GlesRenderer,
