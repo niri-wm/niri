@@ -941,9 +941,10 @@ impl Dispatch<XdgToplevel, ()> for State {
                 let configure = &mut window.pending_configure;
                 configure.size = (width, height);
                 configure.states = states
-                    .chunks_exact(4)
-                    .flat_map(TryInto::<[u8; 4]>::try_into)
-                    .map(u32::from_ne_bytes)
+                    .as_chunks::<4>()
+                    .0
+                    .iter()
+                    .map(|x| u32::from_ne_bytes(*x))
                     .flat_map(xdg_toplevel::State::try_from)
                     .collect();
             }

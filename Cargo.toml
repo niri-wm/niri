@@ -12,7 +12,7 @@ authors = ["Ivan Molodetskikh <yalterz@gmail.com>"]
 license = "GPL-3.0-or-later"
 edition = "2021"
 repository = "https://github.com/niri-wm/niri"
-rust-version = "1.87"
+rust-version = "1.88"
 
 [workspace.lints.clippy]
 new_without_default = "allow"
