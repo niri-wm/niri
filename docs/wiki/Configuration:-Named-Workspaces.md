@@ -9,6 +9,7 @@ workspace "browser"
 
 workspace "chat" {
     open-on-output "Some Company CoolMonitor 1234"
+    active-at-startup
 }
 ```
 
@@ -58,6 +59,28 @@ workspace "browser" {
 
 The output order is reevaluated whenever outputs connect or disconnect.
 Connecting a higher-priority output will move the workspace there.
+
+### `active-at-startup`
+
+<sup>Since: next release</sup>
+
+Show this workspace by default when niri starts.
+
+If multiple workspaces have `active-at-startup` defined, each connected output will show the first workspace it contains with this flag set based on the order of the workspaces defined in the config. This can be useful if you have more than one named workspace defined for multiple outputs with `open-on-output`.
+
+When none of the named workspaces are explicitly `active-at-startup`, niri will focus the first one on each output.
+
+```kdl
+workspace "browser"
+
+// Show chat by default instead of browser.
+workspace "chat" {
+    active-at-startup
+}
+```
+
+> [!TIP]
+> If you have applications configured to open at startup on other workspaces, you might want to set `open-focused false` under their `window-rule` to avoid switching to a different workspace right after showing the one configured with `active-at-startup`.
 
 ### Layout config overrides
 
