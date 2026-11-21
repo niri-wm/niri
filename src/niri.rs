@@ -213,6 +213,9 @@ const FRAME_CALLBACK_THROTTLE: Option<Duration> = Some(Duration::from_millis(995
 #[cfg(feature = "dbus")]
 const POWER_KEY_IGNORE_AFTER_WAKE: Duration = Duration::from_secs(3);
 
+/// How long an unused xray buffer keeps its full-output textures before freeing them.
+const XRAY_BUFFER_IDLE_RELEASE: Duration = Duration::from_secs(5);
+
 /// Parts of the seat keyboard state that get reset when its keymap is replaced.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct SavedKeyboardState {
@@ -4991,12 +4994,12 @@ impl Niri {
         let xray = &state.xray;
 
         // Clear the xray elements for all render targets after all rendering that could use them
-        // did so.
-        for buf in &xray.background {
-            buf.borrow_mut().elements().clear();
-        }
-        for buf in &xray.backdrop {
-            buf.borrow_mut().elements().clear();
+        // did so. Buffers that went unused for a while (e.g. after the overview closed, or when no
+        // surface asks for xray anymore) also drop their full-output textures.
+        for buf in xray.background.iter().chain(&xray.backdrop) {
+            let mut buf = buf.borrow_mut();
+            buf.elements().clear();
+            buf.release_if_idle(XRAY_BUFFER_IDLE_RELEASE);
         }
     }
 
