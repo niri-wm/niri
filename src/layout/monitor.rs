@@ -384,14 +384,6 @@ impl<W: LayoutElement> Monitor<W> {
         })
     }
 
-    pub fn find_named_workspace_index(&self, workspace_name: &str) -> Option<usize> {
-        self.workspaces.iter().position(|ws| {
-            ws.name
-                .as_ref()
-                .is_some_and(|name| name.eq_ignore_ascii_case(workspace_name))
-        })
-    }
-
     pub fn active_workspace(&mut self) -> &mut Workspace<W> {
         &mut self.workspaces[self.active_workspace_idx]
     }
@@ -2107,14 +2099,6 @@ impl<W: LayoutElement> Monitor<W> {
 
     pub fn scale(&self) -> smithay::output::Scale {
         self.scale
-    }
-
-    pub fn view_size(&self) -> Size<f64, Logical> {
-        self.view_size
-    }
-
-    pub fn working_area(&self) -> Rectangle<f64, Logical> {
-        self.working_area
     }
 
     pub fn layout_config(&self) -> Option<&niri_config::LayoutPart> {

@@ -4245,10 +4245,6 @@ impl<W: LayoutElement> Column<W> {
         offset
     }
 
-    pub fn animate_move_from(&mut self, from: Point<f64, Logical>) {
-        self.animate_move_from_with_config(from, self.options.animations.window_movement.0);
-    }
-
     pub fn animate_move_from_with_config(
         &mut self,
         from: Point<f64, Logical>,
@@ -4281,13 +4277,6 @@ impl<W: LayoutElement> Column<W> {
             from: from_x_offset + current_offset,
             is_between_workspaces: current_between,
         });
-    }
-
-    pub fn animate_move_y_from(&mut self, from_y_offset: f64) {
-        self.animate_move_y_from_with_config(
-            from_y_offset,
-            self.options.animations.window_movement.0,
-        );
     }
 
     pub fn animate_move_y_from_with_config(

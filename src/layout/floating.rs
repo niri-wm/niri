@@ -1334,11 +1334,6 @@ impl<W: LayoutElement> FloatingSpace<W> {
     }
 
     #[cfg(test)]
-    pub fn scale(&self) -> f64 {
-        self.scale
-    }
-
-    #[cfg(test)]
     pub fn clock(&self) -> &Clock {
         &self.clock
     }
