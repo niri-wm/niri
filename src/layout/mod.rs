@@ -3657,6 +3657,10 @@ impl<W: LayoutElement> Layout<W> {
     }
 
     pub fn workspace_switch_gesture_begin(&mut self, output: &Output, is_touchpad: bool) {
+        if self.options.gestures.workspace_switch.off {
+            return;
+        }
+
         let monitors = match &mut self.monitor_set {
             MonitorSet::Normal { monitors, .. } => monitors,
             MonitorSet::NoOutputs { .. } => unreachable!(),
