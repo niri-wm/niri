@@ -5,6 +5,7 @@ mod fixture;
 mod server;
 mod test_input_backend;
 
+mod activation;
 mod animations;
 mod binds;
 mod floating;
