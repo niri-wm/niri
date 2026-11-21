@@ -399,7 +399,6 @@ impl PipeWire {
         })
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub fn start_cast(
         &self,
         gbm: Option<(GbmDevice<DeviceFd>, FormatSet)>,
@@ -1244,7 +1243,6 @@ impl Cast {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub fn dequeue_buffer_and_render(
         &mut self,
         renderer: &mut GlesRenderer,

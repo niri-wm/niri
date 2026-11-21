@@ -632,7 +632,6 @@ impl<W: LayoutElement> Workspace<W> {
         )
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub fn add_tile(
         &mut self,
         mut tile: Tile<W>,

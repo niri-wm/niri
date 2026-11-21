@@ -573,7 +573,6 @@ impl<W: LayoutElement> Monitor<W> {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub fn add_tile(
         &mut self,
         tile: Tile<W>,

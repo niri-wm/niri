@@ -250,7 +250,6 @@ impl KeyboardMonitor {
 }
 
 impl KeyboardMonitor {
-    #[allow(clippy::too_many_arguments)]
     pub fn process_key(
         &self,
         repeat_delay: Duration,

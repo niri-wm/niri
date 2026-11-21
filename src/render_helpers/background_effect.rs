@@ -278,9 +278,6 @@ pub fn damage_surface(states: &SurfaceData) {
     }
 }
 
-// Silence, Clippy
-// A Smithay user is talking
-#[allow(clippy::too_many_arguments)]
 pub fn render_for_tile(
     ctx: RenderCtx<GlesRenderer>,
     ns: Option<usize>,

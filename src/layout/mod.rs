@@ -199,7 +199,6 @@ pub trait LayoutElement {
     }
 
     /// Renders the background effect behind the main surface of the element.
-    #[allow(clippy::too_many_arguments)]
     fn render_background_effect(
         &self,
         _ctx: RenderCtx<GlesRenderer>,
@@ -969,7 +968,6 @@ impl<W: LayoutElement> Layout<W> {
     /// Adds a new window to the layout.
     ///
     /// Returns an output that the window was added to, if there were any outputs.
-    #[allow(clippy::too_many_arguments)]
     pub fn add_window(
         &mut self,
         window: W,

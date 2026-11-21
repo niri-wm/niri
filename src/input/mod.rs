@@ -5008,7 +5008,6 @@ fn is_bind_on_cooldown(bind: &Bind, cooldown_timers: &HashMap<Key, RegistrationT
 ///
 /// A bind whose press action is rate-limited by its cooldown is skipped entirely:
 /// No action runs, and no release action is recorded.
-#[allow(clippy::too_many_arguments)]
 fn should_intercept_key<'a>(
     suppressed_keys: &mut HashSet<Keycode>,
     pending_release_binds: &mut HashMap<Keycode, Bind>,

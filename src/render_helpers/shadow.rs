@@ -39,7 +39,6 @@ struct Parameters {
 }
 
 impl ShadowRenderElement {
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         size: Size<f64, Logical>,
         geometry: Rectangle<f64, Logical>,
@@ -92,7 +91,6 @@ impl ShadowRenderElement {
         self.inner.damage_all();
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub fn update(
         &mut self,
         size: Size<f64, Logical>,

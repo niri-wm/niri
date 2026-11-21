@@ -19,6 +19,10 @@ new_without_default = "allow"
 collapsible_match = "allow"
 needless_bool = "allow"
 
+# Silence, Clippy
+# A Smithay user is talking
+too_many_arguments = "allow"
+
 [workspace.dependencies]
 anyhow = "1.0.104"
 bitflags = "2.13"
