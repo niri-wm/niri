@@ -7235,22 +7235,21 @@ impl Niri {
         }
     }
 
-    pub fn handle_focus_follows_mouse(&mut self, new_focus: &PointContents) {
+    pub fn handle_focus_follows_mouse(
+        &mut self,
+        prev_location: Point<f64, Logical>,
+        new_focus: &PointContents,
+    ) {
         let Some(ffm) = self.config.borrow().input.focus_follows_mouse else {
             return;
         };
-
-        let pointer = &self.seat.get_pointer().unwrap();
-        if pointer.is_grabbed() {
-            return;
-        }
 
         if self.window_mru_ui.is_open() {
             return;
         }
 
         // Recompute the current pointer focus because we don't update it during animations.
-        let current_focus = self.contents_under(pointer.current_location());
+        let current_focus = self.contents_under(prev_location);
 
         if let Some(output) = &new_focus.output {
             if current_focus.output.as_ref() != Some(output) {

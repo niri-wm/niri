@@ -2967,7 +2967,9 @@ impl State {
             }
         }
 
-        self.niri.handle_focus_follows_mouse(&under);
+        if !pointer.is_grabbed() {
+            self.niri.handle_focus_follows_mouse(pos, &under);
+        }
 
         self.niri.pointer_contents.clone_from(&under);
 
@@ -3068,7 +3070,10 @@ impl State {
 
         let under = self.niri.contents_under(pos);
 
-        self.niri.handle_focus_follows_mouse(&under);
+        if !pointer.is_grabbed() {
+            let prev_location = pointer.current_location();
+            self.niri.handle_focus_follows_mouse(prev_location, &under);
+        }
 
         self.niri.pointer_contents.clone_from(&under);
 
