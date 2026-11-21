@@ -5508,13 +5508,32 @@ impl Niri {
         let state = self.output_state.get(output).unwrap();
         let sequence = state.frame_callback_sequence;
 
+        // HACK: we set this to true for mapped windows that are screencast targets to keep them
+        // redrawing even when they are invisible.
+        //
+        // This is a workaround until we do it properly (famous last words).
+        //
+        // The reason it works is that currently niri will attempt to redraw an output whenever any
+        // window on this output commits, without checking if the window is currently visible. In
+        // particular, windows on other workspaces will still queue output redraws, even though they
+        // are guaranteed to be invisible. The rendering will then notice that nothing changed, and
+        // won't actually touch the GPU, but it will still queue an estimated vblank and send frame
+        // callbacks, letting this code keep sending frame callbacks to invisible windows.
+        //
+        // When niri stops queueing redraws in response to guaranteed-invisible windows, this
+        // workaround will stop working, so we'll need to do it properly then (by keeping the frame
+        // callback timer going through some other means).
+        let ignore_primary_output = Cell::new(false);
+
         let should_send = |surface: &WlSurface, states: &SurfaceData| {
             // Do the standard primary scanout output check. For pointer surfaces it deduplicates
             // the frame callbacks across potentially multiple outputs, and for regular windows and
             // layer-shell surfaces it avoids sending frame callbacks to invisible surfaces.
-            let current_primary_output = surface_primary_scanout_output(surface, states);
-            if current_primary_output.as_ref() != Some(output) {
-                return None;
+            if !ignore_primary_output.get() {
+                let current_primary_output = surface_primary_scanout_output(surface, states);
+                if current_primary_output.as_ref() != Some(output) {
+                    return None;
+                }
             }
 
             // Next, check the throttling status.
@@ -5544,12 +5563,18 @@ impl Niri {
         let frame_callback_time = get_monotonic_time();
 
         for mapped in self.layout.windows_for_output_mut(output) {
+            if mapped.is_window_cast_target() {
+                ignore_primary_output.set(true);
+            }
+
             mapped.send_frame(
                 output,
                 frame_callback_time,
                 FRAME_CALLBACK_THROTTLE,
                 should_send,
             );
+
+            ignore_primary_output.set(false);
         }
 
         for surface in layer_map_for_output(output).layers() {
