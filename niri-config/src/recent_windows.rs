@@ -12,6 +12,7 @@ pub struct RecentWindows {
     pub highlight: MruHighlight,
     pub previews: MruPreviews,
     pub binds: Vec<Bind>,
+    pub enable_mouse: bool,
 }
 
 impl Default for RecentWindows {
@@ -23,6 +24,7 @@ impl Default for RecentWindows {
             highlight: MruHighlight::default(),
             previews: MruPreviews::default(),
             binds: default_binds(),
+            enable_mouse: true,
         }
     }
 }
@@ -43,6 +45,10 @@ pub struct RecentWindowsPart {
     pub previews: Option<MruPreviewsPart>,
     #[knuffel(child)]
     pub binds: Option<MruBinds>,
+    #[knuffel(child)]
+    pub enable_mouse: bool,
+    #[knuffel(child)]
+    pub disable_mouse: bool,
 }
 
 impl MergeWith<RecentWindowsPart> for RecentWindows {
@@ -50,6 +56,10 @@ impl MergeWith<RecentWindowsPart> for RecentWindows {
         self.on |= part.on;
         if part.off {
             self.on = false;
+        }
+        self.enable_mouse |= part.enable_mouse;
+        if part.disable_mouse {
+            self.enable_mouse = false;
         }
 
         merge_clone!((self, part), debounce_ms, open_delay_ms);
