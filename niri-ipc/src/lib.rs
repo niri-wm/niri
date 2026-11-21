@@ -81,6 +81,8 @@ pub enum Request {
     FocusedOutput,
     /// Request information about the focused window.
     FocusedWindow,
+    /// Request information about the window under the cursor.
+    WindowUnderCursor,
     /// Request picking a window and get its information.
     PickWindow,
     /// Request picking a color from the screen.
@@ -155,6 +157,8 @@ pub enum Response {
     FocusedOutput(Option<Output>),
     /// Information about the focused window.
     FocusedWindow(Option<Window>),
+    /// Information about the window under the cursor.
+    WindowUnderCursor(Option<Window>),
     /// Information about the picked window.
     PickedWindow(Option<Window>),
     /// Information about the picked color.
