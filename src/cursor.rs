@@ -1,14 +1,20 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::env;
-use std::fs::File;
+use std::fs::{self, File};
 use std::io::Read;
+use std::path::PathBuf;
 use std::rc::Rc;
+use std::sync::mpsc;
+use std::{env, thread};
 
-use anyhow::{anyhow, Context};
+use anyhow::{anyhow, bail, Context};
+use librsvg_rebind::prelude::HandleExt;
+use pangocairo::cairo::{self, ImageSurface};
+use serde::{de, Deserialize, Deserializer};
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::element::memory::MemoryRenderBuffer;
 use smithay::input::pointer::{CursorIcon, CursorImageStatus, CursorImageSurfaceData};
+use smithay::reexports::calloop::channel;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{IsAlive, Logical, Physical, Point, Transform};
 use smithay::wayland::compositor::with_states;
@@ -18,35 +24,65 @@ use xcursor::CursorTheme;
 /// Some default looking `left_ptr` icon.
 static FALLBACK_CURSOR_DATA: &[u8] = include_bytes!("../resources/cursor.rgba");
 
-type XCursorCache = HashMap<(CursorIcon, i32), Option<Rc<XCursor>>>;
+struct CachedCursor {
+    cursor: Option<Rc<XCursor>>,
+    pending: bool,
+}
+
+type XCursorCache = HashMap<(CursorIcon, i32), CachedCursor>;
 
 pub struct CursorManager {
     theme: CursorTheme,
-    size: u8,
+    size: u16,
     current_cursor: CursorImageStatus,
     named_cursor_cache: RefCell<XCursorCache>,
+    last_cursor: RefCell<Option<(i32, CursorIcon, Rc<XCursor>)>>,
+    req_tx: mpsc::Sender<RasterizeRequest>,
+    generation: u64,
 }
 
 impl CursorManager {
-    pub fn new(theme: &str, size: u8) -> Self {
+    pub fn new(theme: &str, size: u16, rasterized_tx: channel::Sender<RasterizeResponse>) -> Self {
         Self::ensure_env(theme, size);
 
         let theme = CursorTheme::load(theme);
+
+        let (req_tx, req_rx) = mpsc::channel();
+        if let Err(e) = thread::Builder::new()
+            .name("scalable-cursor-rasterizer".to_owned())
+            .spawn(move || {
+                while let Ok(request) = req_rx.recv() {
+                    let result = rasterize_svg(&request);
+                    let _ = rasterized_tx.send(RasterizeResponse {
+                        icon: request.icon,
+                        scale: request.scale,
+                        generation: request.generation,
+                        result,
+                    });
+                }
+            })
+        {
+            warn!("error spawning cursor rasterizer thread: {:?}", e);
+        }
 
         Self {
             theme,
             size,
             current_cursor: CursorImageStatus::default_named(),
             named_cursor_cache: Default::default(),
+            last_cursor: Default::default(),
+            req_tx,
+            generation: 0,
         }
     }
 
     /// Reload the cursor theme.
-    pub fn reload(&mut self, theme: &str, size: u8) {
+    pub fn reload(&mut self, theme: &str, size: u16) {
         Self::ensure_env(theme, size);
         self.theme = CursorTheme::load(theme);
         self.size = size;
         self.named_cursor_cache.get_mut().clear();
+        self.generation = self.generation.wrapping_add(1);
     }
 
     /// Checks if the cursor WlSurface is alive, and if not, cleans it up.
@@ -80,34 +116,63 @@ impl CursorManager {
     }
 
     fn get_render_cursor_named(&self, icon: CursorIcon, scale: i32) -> RenderCursor {
-        self.get_cursor_with_name(icon, scale)
-            .map(|cursor| RenderCursor::Named {
-                icon,
-                scale,
-                cursor,
-            })
-            .unwrap_or_else(|| RenderCursor::Named {
-                icon: Default::default(),
-                scale,
-                cursor: self.get_default_cursor(scale),
-            })
+        let (cursor, pending) = self.get_cached_cursor(icon, scale);
+
+        if pending {
+            if let Some((scale, icon, cursor)) = self.last_cursor.borrow().as_ref().cloned() {
+                return RenderCursor::Named {
+                    icon,
+                    scale,
+                    cursor,
+                };
+            }
+        }
+
+        let cursor = cursor.unwrap_or_else(|| self.get_default_cursor(scale));
+        let changed = match self.last_cursor.borrow().as_ref() {
+            Some((last_scale, last_icon, last_cursor)) => {
+                *last_scale != scale || *last_icon != icon || !Rc::ptr_eq(last_cursor, &cursor)
+            }
+            None => true,
+        };
+        if changed {
+            *self.last_cursor.borrow_mut() = Some((scale, icon, Rc::clone(&cursor)));
+        }
+        RenderCursor::Named {
+            icon,
+            scale,
+            cursor,
+        }
     }
 
     pub fn is_current_cursor_animated(&self, scale: i32) -> bool {
         match &self.current_cursor {
             CursorImageStatus::Hidden => false,
             CursorImageStatus::Surface(_) => false,
-            CursorImageStatus::Named(icon) => self
-                .get_cursor_with_name(*icon, scale)
-                .unwrap_or_else(|| self.get_default_cursor(scale))
-                .is_animated_cursor(),
+            CursorImageStatus::Named(icon) => {
+                let (cursor, pending) = self.get_cached_cursor(*icon, scale);
+                if pending {
+                    let last = self.last_cursor.borrow();
+                    if let Some((_, _, last_cursor)) = last.as_ref() {
+                        return last_cursor.is_animated_cursor();
+                    }
+                }
+                cursor
+                    .unwrap_or_else(|| self.get_default_cursor(scale))
+                    .is_animated_cursor()
+            }
         }
     }
 
     /// Get named cursor for the given `icon` and `scale`.
     pub fn get_cursor_with_name(&self, icon: CursorIcon, scale: i32) -> Option<Rc<XCursor>> {
-        self.named_cursor_cache
-            .borrow_mut()
+        self.get_cached_cursor(icon, scale).0
+    }
+
+    /// Returns the cached cursor and whether its scalable version is still rasterizing.
+    fn get_cached_cursor(&self, icon: CursorIcon, scale: i32) -> (Option<Rc<XCursor>>, bool) {
+        let mut cache = self.named_cursor_cache.borrow_mut();
+        let entry = cache
             .entry((icon, scale))
             .or_insert_with_key(|(icon, scale)| {
                 let size = self.size as i32 * scale;
@@ -132,9 +197,80 @@ impl CursorManager {
                     cursor = Ok(Self::fallback_cursor());
                 }
 
-                cursor.ok().map(Rc::new)
-            })
-            .clone()
+                let pending = if let Some(dir) =
+                    self.theme.load_scalable(icon.name()).or_else(|| {
+                        icon.alt_names()
+                            .iter()
+                            .find_map(|name| self.theme.load_scalable(name))
+                    }) {
+                    self.req_tx
+                        .send(RasterizeRequest {
+                            icon: *icon,
+                            scale: *scale,
+                            size,
+                            dir,
+                            generation: self.generation,
+                        })
+                        .is_ok()
+                } else {
+                    false
+                };
+                CachedCursor {
+                    cursor: cursor.ok().map(Rc::new),
+                    pending,
+                }
+            });
+
+        (entry.cursor.as_ref().map(Rc::clone), entry.pending)
+    }
+
+    pub fn apply_rasterized(&self, resp: RasterizeResponse) -> bool {
+        if resp.generation != self.generation {
+            return false;
+        }
+
+        let frames = match resp.result {
+            Ok(frames) => frames,
+            Err(e) => {
+                warn!(
+                    "error rasterizing SVG cursor {:?}@{}: {}",
+                    resp.icon, resp.scale, e
+                );
+                if let Some(cached) = self
+                    .named_cursor_cache
+                    .borrow_mut()
+                    .get_mut(&(resp.icon, resp.scale))
+                {
+                    cached.pending = false;
+                }
+                return true;
+            }
+        };
+
+        let animation_duration = frames.iter().fold(0, |dur, f| dur + f.delay);
+        self.named_cursor_cache.borrow_mut().insert(
+            (resp.icon, resp.scale),
+            CachedCursor {
+                cursor: Some(Rc::new(XCursor {
+                    images: frames
+                        .into_iter()
+                        .map(|f| Image {
+                            size: self.size as u32 * resp.scale as u32,
+                            width: f.width,
+                            height: f.height,
+                            xhot: f.xhot,
+                            yhot: f.yhot,
+                            delay: f.delay,
+                            pixels_rgba: f.pixels.into(),
+                            pixels_argb: Vec::new(),
+                        })
+                        .collect(),
+                    animation_duration,
+                })),
+                pending: false,
+            },
+        );
+        true
     }
 
     /// Get default cursor.
@@ -187,7 +323,7 @@ impl CursorManager {
     }
 
     /// Set the common XCURSOR env variables.
-    fn ensure_env(theme: &str, size: u8) {
+    fn ensure_env(theme: &str, size: u16) {
         env::set_var("XCURSOR_THEME", theme);
         env::set_var("XCURSOR_SIZE", size.to_string());
     }
@@ -209,6 +345,106 @@ impl CursorManager {
             animation_duration: 0,
         }
     }
+}
+
+// See https://invent.kde.org/plasma/breeze/-/blob/master/cursors/svg-cursor-format.schema.json
+#[derive(Debug, Clone, Deserialize)]
+struct SvgCursorMeta {
+    filename: String,
+    #[serde(deserialize_with = "unsigned_float")]
+    nominal_size: f64,
+    hotspot_x: f64,
+    hotspot_y: f64,
+    #[serde(default)]
+    delay: u32,
+}
+
+fn unsigned_float<'d, D>(deserializer: D) -> Result<f64, D::Error>
+where
+    D: Deserializer<'d>,
+{
+    let res = f64::deserialize(deserializer)?;
+    if res <= 0. {
+        Err(de::Error::custom(format!(
+            "{} should be greater than 0",
+            res
+        )))
+    } else {
+        Ok(res)
+    }
+}
+
+pub struct RasterizeRequest {
+    pub icon: CursorIcon,
+    pub scale: i32,
+    pub size: i32,
+    pub dir: PathBuf,
+    pub generation: u64,
+}
+
+pub struct RasterizedFrame {
+    pub width: u32,
+    pub height: u32,
+    pub xhot: u32,
+    pub yhot: u32,
+    pub delay: u32,
+    pub pixels: Box<[u8]>,
+}
+
+pub struct RasterizeResponse {
+    pub icon: CursorIcon,
+    pub scale: i32,
+    pub generation: u64,
+    pub result: anyhow::Result<Vec<RasterizedFrame>>,
+}
+
+fn rasterize_svg(request: &RasterizeRequest) -> anyhow::Result<Vec<RasterizedFrame>> {
+    let metadata = fs::read(request.dir.join("metadata.json"))?;
+    let metas: Vec<SvgCursorMeta> = serde_json::from_slice(&metadata)?;
+
+    let mut frames = Vec::with_capacity(metas.len());
+    for meta in &metas {
+        let svg_path = request.dir.join(&meta.filename);
+        let Some(svg_path) = svg_path.to_str() else {
+            bail!("failed to get svg path {svg_path:?}");
+        };
+        let Some(handle) = librsvg_rebind::Handle::from_file(svg_path)? else {
+            bail!("failed to get handle from file {svg_path}");
+        };
+        let Some((svg_width, svg_height)) = handle.intrinsic_size_in_pixels() else {
+            bail!("cursor has no intrinsic size");
+        };
+        let factor = request.size as f64 / meta.nominal_size;
+        let width = ((svg_width * factor).ceil() as u32).max(1);
+        let height = ((svg_height * factor).ceil() as u32).max(1);
+        let surface = ImageSurface::create(cairo::Format::ARgb32, width as i32, height as i32)?;
+        let cr = cairo::Context::new(&surface)?;
+        let viewport = librsvg_rebind::Rectangle::new(0., 0., width as f64, height as f64);
+        handle.render_document(&cr, &viewport)?;
+
+        let stride = surface.stride();
+        let row_len = width as usize * 4;
+        let mut pixels = Vec::with_capacity(row_len * height as usize);
+        surface.with_data(|data| {
+            for row in data.chunks_exact(stride as usize).take(height as usize) {
+                pixels.extend_from_slice(&row[..row_len]);
+            }
+        })?;
+        frames.push(RasterizedFrame {
+            width,
+            height,
+            xhot: ((meta.hotspot_x * factor).round() as u32).clamp(0, width),
+            yhot: ((meta.hotspot_y * factor).round() as u32).clamp(0, height),
+            delay: meta.delay,
+            pixels: pixels.into_boxed_slice(),
+        });
+    }
+
+    if frames.is_empty() {
+        bail!("no image found in {:?}", request.dir);
+    }
+
+    Ok(frames)
 }
 
 /// The cursor prepared for renderer.
