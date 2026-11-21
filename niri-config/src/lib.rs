@@ -2171,6 +2171,11 @@ mod tests {
                 saturation: 1.5,
             },
             gestures: Gestures {
+                window_drag_snap: WindowDragSnap {
+                    default: false,
+                    mod_key: Shift,
+                    monitor_snap_distance: 16.0,
+                },
                 dnd_edge_view_scroll: DndEdgeViewScroll {
                     trigger_width: 10.0,
                     delay_ms: 100,
