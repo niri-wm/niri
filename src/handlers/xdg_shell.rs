@@ -208,6 +208,10 @@ impl XdgShellHandler for State {
         if let Some(touch) = self.niri.seat.get_touch() {
             if touch.has_grab(serial) {
                 if let Some(start_data) = touch.grab_start_data() {
+                    if self.niri.touch_edge_client_slots.contains(&start_data.slot) {
+                        debug!("TOUCH-DBG EDGE resize-denied slot={:?}", start_data.slot);
+                        return;
+                    }
                     if let Some((focus, _)) = &start_data.focus {
                         if focus.id().same_client_as(&wl_surface.id()) {
                             grab_start_data = Some(AnyStartData::Touch(start_data));
