@@ -3429,7 +3429,11 @@ impl State {
                 }
 
                 if !is_overview_open {
-                    self.niri.layout.activate_window(&window);
+                    if self.niri.config.borrow().input.focus_without_scrolling {
+                        self.niri.layout.activate_window_in_place(&window);
+                    } else {
+                        self.niri.layout.activate_window(&window);
+                    }
                 }
 
                 // FIXME: granular.
@@ -4119,7 +4123,12 @@ impl State {
                             );
                             tool.set_grab(self, grab, time, serial, Focus::Clear);
                         } else if let Some((window, _)) = under.window {
-                            self.niri.layout.activate_window(&window);
+                            if !mod_down && self.niri.config.borrow().input.focus_without_scrolling
+                            {
+                                self.niri.layout.activate_window_in_place(&window);
+                            } else {
+                                self.niri.layout.activate_window(&window);
+                            }
 
                             // Check if we need to start a tablet tool move grab.
                             if mod_down {
@@ -4770,7 +4779,11 @@ impl State {
                 );
                 handle.set_grab(self, grab, serial);
             } else if let Some((window, _)) = under.window {
-                self.niri.layout.activate_window(&window);
+                if !mod_down && self.niri.config.borrow().input.focus_without_scrolling {
+                    self.niri.layout.activate_window_in_place(&window);
+                } else {
+                    self.niri.layout.activate_window(&window);
+                }
 
                 // Check if we need to start a touch move grab.
                 if mod_down {
