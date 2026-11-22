@@ -3092,24 +3092,7 @@ impl State {
         // Activate a new confinement if necessary.
         self.niri.maybe_activate_pointer_constraint();
 
-        // Inform the layout of an ongoing DnD operation.
-        let is_dnd_grab = pointer
-            .with_grab(|_, grab| Self::is_dnd_grab(grab.as_any()))
-            .unwrap_or(false);
-        if is_dnd_grab {
-            if let Some((output, pos_within_output)) = self.niri.output_under(new_pos) {
-                let output = output.clone();
-                self.niri.layout.dnd_update(output, pos_within_output);
-            }
-        }
-
-        // Notify a11y.
-        #[cfg(feature = "dbus")]
-        self.a11y_notify_pointer_motion();
-
-        // Redraw to update the cursor position.
-        // FIXME: redraw only outputs overlapping the cursor.
-        self.niri.queue_redraw_all();
+        self.finish_pointer_motion(new_pos);
     }
 
     fn on_pointer_motion_absolute<I: InputBackend>(
@@ -3191,6 +3174,12 @@ impl State {
         // We moved the regular pointer, so show it now.
         self.niri.tablet_cursor_location = None;
 
+        self.finish_pointer_motion(pos);
+    }
+
+    fn finish_pointer_motion(&mut self, pos: Point<f64, Logical>) {
+        let pointer = self.niri.seat.get_pointer().unwrap();
+
         // Inform the layout of an ongoing DnD operation.
         let is_dnd_grab = pointer
             .with_grab(|_, grab| Self::is_dnd_grab(grab.as_any()))
@@ -3234,15 +3223,24 @@ impl State {
     }
 
     fn on_pointer_button<I: InputBackend>(&mut self, event: I::PointerButtonEvent) {
+        self.handle_pointer_button(
+            event.button(),
+            event.button_code(),
+            event.state(),
+            event.time(),
+        );
+    }
+
+    fn handle_pointer_button(
+        &mut self,
+        button: Option<MouseButton>,
+        button_code: u32,
+        button_state: ButtonState,
+        time: InputTime,
+    ) {
         let pointer = self.niri.seat.get_pointer().unwrap();
 
         let serial = SERIAL_COUNTER.next_serial();
-
-        let button = event.button();
-
-        let button_code = event.button_code();
-
-        let button_state = event.state();
 
         let mod_key = self.backend.mod_key(&self.niri.config.borrow());
 
@@ -3253,7 +3251,7 @@ impl State {
         if ButtonState::Released == button_state {
             if let Some(bind) = self.niri.pending_mouse_release_binds.remove(&button_code) {
                 self.niri.suppressed_buttons.remove(&button_code);
-                self.handle_bind(bind, false, event.time());
+                self.handle_bind(bind, false, time);
                 return;
             }
         }
@@ -3312,7 +3310,7 @@ impl State {
                             .insert(button_code, bind.clone());
                     }
                     if bind.has_press() {
-                        self.handle_bind(bind.clone(), true, event.time());
+                        self.handle_bind(bind.clone(), true, time);
                     }
                     return;
                 }
@@ -3573,7 +3571,7 @@ impl State {
                 button: button_code,
                 state: button_state,
                 serial,
-                time: event.time(),
+                time,
             },
         );
         pointer.frame(self);
