@@ -34,6 +34,7 @@ use wayland_client::protocol::wl_compositor::WlCompositor;
 use wayland_client::protocol::wl_display::WlDisplay;
 use wayland_client::protocol::wl_keyboard::{self, WlKeyboard};
 use wayland_client::protocol::wl_output::{self, WlOutput};
+use wayland_client::protocol::wl_pointer::{self, WlPointer};
 use wayland_client::protocol::wl_registry::{self, WlRegistry};
 use wayland_client::protocol::wl_seat::{self, WlSeat};
 use wayland_client::protocol::wl_surface::{self, WlSurface};
@@ -102,18 +103,45 @@ pub struct LayerSurface {
 #[derive(Debug, Default)]
 pub struct Seat {
     pub keyboard: Option<Keyboard>,
+    pub pointer: Option<Pointer>,
 }
 
 #[derive(Debug)]
 pub struct Surface {
     pub keyboard_events_received: Vec<KeyboardEvent>,
     pub keyboard_events_looked_at: usize,
+    pub pointer_events_received: Vec<PointerEvent>,
+    pub pointer_events_looked_at: usize,
 }
 
 #[derive(Debug)]
 pub struct Keyboard {
     pub proxy: WlKeyboard,
     pub surface: Option<WlSurface>,
+}
+
+#[derive(Debug)]
+pub struct Pointer {
+    pub proxy: WlPointer,
+    pub surface: Option<WlSurface>,
+}
+
+#[derive(Debug)]
+pub enum PointerEvent {
+    Enter {
+        x: f64,
+        y: f64,
+    },
+    Leave,
+    Motion {
+        x: f64,
+        y: f64,
+    },
+    Button {
+        button: u32,
+        state: wl_pointer::ButtonState,
+        time: u32,
+    },
 }
 
 #[derive(Debug)]
@@ -178,6 +206,35 @@ pub struct ClientId(u64);
 impl ClientId {
     fn next() -> ClientId {
         ClientId(CLIENT_ID_COUNTER.next())
+    }
+}
+
+impl fmt::Display for PointerEvent {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            PointerEvent::Enter { x, y } => {
+                write!(f, "enter: {x}, {y}")?;
+            }
+            PointerEvent::Leave => {
+                write!(f, "leave")?;
+            }
+            PointerEvent::Motion { x, y } => {
+                write!(f, "motion: {x}, {y}")?;
+            }
+            PointerEvent::Button {
+                button,
+                state,
+                time,
+            } => {
+                let action = match state {
+                    wl_pointer::ButtonState::Released => "released",
+                    wl_pointer::ButtonState::Pressed => "pressed",
+                    _ => unreachable!(),
+                };
+                write!(f, "button {action}: {button} (time={time})")?;
+            }
+        }
+        Ok(())
     }
 }
 
@@ -339,6 +396,8 @@ impl State {
             Surface {
                 keyboard_events_received: Vec::new(),
                 keyboard_events_looked_at: 0,
+                pointer_events_received: Vec::new(),
+                pointer_events_looked_at: 0,
             },
         );
         surface
@@ -430,6 +489,19 @@ impl State {
     pub fn format_recent_keyboard_events(&mut self, surface: &WlSurface) -> String {
         let surface = self.surfaces.get_mut(surface).unwrap();
         surface.format_recent_keyboard_events()
+    }
+
+    pub fn recent_pointer_events(
+        &mut self,
+        surface: &WlSurface,
+    ) -> impl Iterator<Item = &PointerEvent> + '_ {
+        let surface = self.surfaces.get_mut(surface).unwrap();
+        surface.recent_pointer_events()
+    }
+
+    pub fn format_recent_pointer_events(&mut self, surface: &WlSurface) -> String {
+        let surface = self.surfaces.get_mut(surface).unwrap();
+        surface.format_recent_pointer_events()
     }
 
     pub fn inhibit_shortcuts(&self, surface: &WlSurface) -> ZwpKeyboardShortcutsInhibitorV1 {
@@ -618,6 +690,23 @@ impl Surface {
         }
         buf
     }
+
+    pub fn recent_pointer_events(&mut self) -> impl Iterator<Item = &PointerEvent> {
+        let start = self.pointer_events_looked_at;
+        self.pointer_events_looked_at = self.pointer_events_received.len();
+        self.pointer_events_received[start..].iter()
+    }
+
+    pub fn format_recent_pointer_events(&mut self) -> String {
+        let mut buf = String::new();
+        for event in self.recent_pointer_events() {
+            if !buf.is_empty() {
+                buf.push('\n');
+            }
+            write!(buf, "{event}").unwrap();
+        }
+        buf
+    }
 }
 
 impl Dispatch<WlCallback, Arc<SyncData>> for State {
@@ -749,6 +838,18 @@ impl Dispatch<WlSeat, ()> for State {
                         keyboard.proxy.release();
                     }
                 }
+
+                if capabilities.contains(wl_seat::Capability::Pointer) {
+                    if data.pointer.is_none() {
+                        let pointer = Pointer {
+                            proxy: seat.get_pointer(qh, seat.clone()),
+                            surface: None,
+                        };
+                        data.pointer = Some(pointer);
+                    }
+                } else if let Some(pointer) = data.pointer.take() {
+                    pointer.proxy.release();
+                }
             }
             wl_seat::Event::Name { .. } => (),
             _ => unreachable!(),
@@ -822,6 +923,85 @@ impl Dispatch<WlKeyboard, WlSeat> for State {
                 surface.keyboard_events_received.push(event);
             }
             wl_keyboard::Event::RepeatInfo { .. } => (),
+            _ => unreachable!(),
+        }
+    }
+}
+
+impl Dispatch<WlPointer, WlSeat> for State {
+    fn event(
+        state: &mut Self,
+        _pointer: &WlPointer,
+        event: <WlPointer as wayland_client::Proxy>::Event,
+        seat: &WlSeat,
+        _conn: &Connection,
+        _qhandle: &QueueHandle<Self>,
+    ) {
+        let seat = state.seats.get_mut(seat).unwrap();
+        let pointer = seat.pointer.as_mut().unwrap();
+
+        match event {
+            wl_pointer::Event::Enter {
+                surface,
+                surface_x,
+                surface_y,
+                ..
+            } => {
+                pointer.surface = Some(surface.clone());
+
+                let event = PointerEvent::Enter {
+                    x: surface_x,
+                    y: surface_y,
+                };
+                let surface = state.surfaces.get_mut(&surface).unwrap();
+                surface.pointer_events_received.push(event);
+            }
+            wl_pointer::Event::Leave { surface, .. } => {
+                let expected = pointer.surface.take().unwrap();
+                assert_eq!(expected, surface);
+
+                let event = PointerEvent::Leave;
+                let surface = state.surfaces.get_mut(&surface).unwrap();
+                surface.pointer_events_received.push(event);
+            }
+            wl_pointer::Event::Motion {
+                surface_x,
+                surface_y,
+                ..
+            } => {
+                let surface = pointer.surface.clone().unwrap();
+
+                let event = PointerEvent::Motion {
+                    x: surface_x,
+                    y: surface_y,
+                };
+                let surface = state.surfaces.get_mut(&surface).unwrap();
+                surface.pointer_events_received.push(event);
+            }
+            wl_pointer::Event::Button {
+                button,
+                state: button_state,
+                time,
+                ..
+            } => {
+                let button_state = button_state.into_result().unwrap();
+                let surface = pointer.surface.clone().unwrap();
+
+                let event = PointerEvent::Button {
+                    button,
+                    state: button_state,
+                    time,
+                };
+                let surface = state.surfaces.get_mut(&surface).unwrap();
+                surface.pointer_events_received.push(event);
+            }
+            wl_pointer::Event::Frame
+            | wl_pointer::Event::Axis { .. }
+            | wl_pointer::Event::AxisSource { .. }
+            | wl_pointer::Event::AxisStop { .. }
+            | wl_pointer::Event::AxisDiscrete { .. }
+            | wl_pointer::Event::AxisValue120 { .. }
+            | wl_pointer::Event::AxisRelativeDirection { .. } => (),
             _ => unreachable!(),
         }
     }
