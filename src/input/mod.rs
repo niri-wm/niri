@@ -66,6 +66,7 @@ use crate::window::Mapped;
 
 pub mod backend_ext;
 pub mod click_grab;
+pub mod dwell;
 pub mod move_grab;
 pub mod pick_color_grab;
 pub mod pick_window_grab;
@@ -210,6 +211,22 @@ impl State {
 
         let mut consumed_by_a11y = false;
         use InputEvent::*;
+        if matches!(
+            event,
+            PointerAxis { .. }
+                | TabletToolAxis { .. }
+                | TabletToolTip { .. }
+                | TabletToolProximity { .. }
+                | TabletToolButton { .. }
+                | TouchDown { .. }
+                | TouchMotion { .. }
+                | GestureSwipeBegin { .. }
+                | GesturePinchBegin { .. }
+                | GestureHoldBegin { .. }
+        ) {
+            self.dwell_cancel_pending();
+        }
+
         match event {
             DeviceAdded { device } => self.on_device_added(device),
             DeviceRemoved { device } => self.on_device_removed(device),
@@ -539,6 +556,7 @@ impl State {
         // events for modifier keys. This lets us do things like bind Control_L to an
         // action without confusing applications about its state.
         let keyboard = self.niri.seat.get_keyboard().unwrap();
+        let mut is_modifier_key = false;
         let Some((result, mods_changed)) = keyboard.input_intercept(
             source,
             self,
@@ -566,6 +584,7 @@ impl State {
                         )
                     };
                     let modified = (modified != Keysym::NoSymbol).then_some(modified);
+                    is_modifier_key = modified.is_some_and(niri_config::is_keysym_modifier);
 
                     let raw_sym = |layout| {
                         let raw_syms = xkb.raw_syms_for_key_in_layout(key_code, layout);
@@ -760,6 +779,10 @@ impl State {
             return;
         };
 
+        if pressed && !is_modifier_key {
+            self.dwell_cancel_pending();
+        }
+
         if result.should_forward() {
             // Forward the key to client.
             keyboard.input_forward(
@@ -839,6 +862,7 @@ impl State {
         }
 
         self.niri.pointer_visibility = PointerVisibility::Hidden;
+        self.dwell_cancel_pending();
         self.niri.queue_redraw_all();
     }
 
@@ -910,6 +934,7 @@ impl State {
         );
 
         // Forget the rest of the input state: the releases will never arrive.
+        self.dwell_cancel_all();
         self.niri.clear_input_state();
 
         for bind in binds {
@@ -959,6 +984,7 @@ impl State {
                 self.do_action(Action::Suspend, allow_when_locked, time);
             }
             Action::PowerOffMonitors => {
+                self.dwell_cancel_all();
                 self.niri.deactivate_monitors(&mut self.backend);
             }
             Action::PowerOnMonitors => {
@@ -988,6 +1014,10 @@ impl State {
                     }
                 }
             }
+            Action::ToggleDwellClick => self.dwell_toggle_enabled(),
+            Action::SetDwellClickMode(mode) => self.dwell_set_mode(mode),
+            Action::ToggleDwellClickLock => self.dwell_toggle_lock(),
+            Action::CancelDwellDrag => self.dwell_cancel_drag(),
             Action::Spawn(command) => {
                 let (token, _) = self.niri.activation_state.create_external_token(None);
                 spawn(command, Some(token.clone()));
@@ -2935,6 +2965,7 @@ impl State {
 
                 // I guess a redraw to hide the tablet cursor could be nice? Doesn't matter too
                 // much here I think.
+                self.dwell_cancel_pending();
                 return;
             }
         }
@@ -3195,9 +3226,33 @@ impl State {
         #[cfg(feature = "dbus")]
         self.a11y_notify_pointer_motion();
 
+        if self.niri.monitors_active && !self.is_pointer_locked() {
+            self.dwell_on_motion(pos);
+        } else {
+            self.dwell_cancel_pending();
+        }
+
         // Redraw to update the cursor position.
         // FIXME: redraw only outputs overlapping the cursor.
         self.niri.queue_redraw_all();
+    }
+
+    fn is_pointer_locked(&self) -> bool {
+        let Some((surface, surface_loc)) = &self.niri.pointer_contents.surface else {
+            return false;
+        };
+        let pointer = self.niri.seat.get_pointer().unwrap();
+        if Some(surface) != pointer.current_focus().as_ref() {
+            return false;
+        }
+        let pos_within_surface = (pointer.current_location() - *surface_loc).to_i32_round();
+        with_pointer_constraint(surface, &pointer, |constraint| {
+            constraint.is_some_and(|c| {
+                c.is_active()
+                    && matches!(&*c, PointerConstraint::Locked(_))
+                    && c.region().is_none_or(|r| r.contains(pos_within_surface))
+            })
+        })
     }
 
     fn find_pointer_bind(
@@ -3223,12 +3278,14 @@ impl State {
     }
 
     fn on_pointer_button<I: InputBackend>(&mut self, event: I::PointerButtonEvent) {
-        self.handle_pointer_button(
-            event.button(),
-            event.button_code(),
-            event.state(),
-            event.time(),
-        );
+        let button = event.button();
+        let button_code = event.button_code();
+        let button_state = event.state();
+        let time = event.time();
+
+        self.dwell_on_physical_button(button, button_state);
+
+        self.handle_pointer_button(button, button_code, button_state, time);
     }
 
     fn handle_pointer_button(
@@ -5494,6 +5551,10 @@ fn allowed_when_locked(action: &Action) -> bool {
             | Action::SwitchLayout(_)
             | Action::ToggleKeyboardShortcutsInhibit
             | Action::ToggleTouchpad
+            | Action::ToggleDwellClick
+            | Action::SetDwellClickMode(_)
+            | Action::ToggleDwellClickLock
+            | Action::CancelDwellDrag
     )
 }
 
@@ -5540,6 +5601,10 @@ fn allowed_during_screenshot(action: &Action) -> bool {
             | Action::PowerOffMonitors
             | Action::PowerOnMonitors
             | Action::ToggleTouchpad
+            | Action::ToggleDwellClick
+            | Action::SetDwellClickMode(_)
+            | Action::ToggleDwellClickLock
+            | Action::CancelDwellDrag
             // Intended for binds such as volume up/down, lock the screen, etc.
             | Action::Spawn(_)
             | Action::SpawnSh(_)

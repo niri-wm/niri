@@ -459,6 +459,10 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
             let casts = state.casts.casts.values().cloned().collect();
             Response::Casts(casts)
         }
+        Request::DwellClickState => {
+            let state = ctx.event_stream_state.borrow();
+            Response::DwellClickState(state.dwell_click.state)
+        }
     };
 
     Ok(response)
@@ -1004,6 +1008,24 @@ impl State {
         }
 
         let event = Event::TouchpadToggled { on };
+        state.apply(event.clone());
+        server.send_event(event);
+    }
+
+    pub fn ipc_refresh_dwell_click(&mut self) {
+        let Some(server) = &self.niri.ipc_server else {
+            return;
+        };
+
+        let mut state = server.event_stream_state.borrow_mut();
+        let state = &mut state.dwell_click;
+        let current = self.niri.dwell_click.state();
+
+        if state.state == current {
+            return;
+        }
+
+        let event = Event::DwellClickStateChanged { state: current };
         state.apply(event.clone());
         server.send_event(event);
     }

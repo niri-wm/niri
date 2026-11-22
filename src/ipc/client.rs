@@ -7,8 +7,9 @@ use anyhow::{anyhow, bail, Context};
 use niri_config::OutputName;
 use niri_ipc::socket::Socket;
 use niri_ipc::{
-    Action, Cast, CastKind, CastTarget, Event, KeyboardLayouts, LogicalOutput, Mode, Output,
-    OutputConfigChanged, Overview, Request, Response, Transform, Window, WindowLayout,
+    Action, Cast, CastKind, CastTarget, DwellClickMode, Event, KeyboardLayouts, LogicalOutput,
+    Mode, Output, OutputConfigChanged, Overview, Request, Response, Transform, Window,
+    WindowLayout,
 };
 use serde_json::json;
 
@@ -49,6 +50,7 @@ pub fn handle_msg(mut msg: Msg, json: bool, print_request: bool) -> anyhow::Resu
         Msg::RequestError => Request::ReturnError,
         Msg::OverviewState => Request::OverviewState,
         Msg::Casts => Request::Casts,
+        Msg::DwellClickState => Request::DwellClickState,
         Msg::RawRequest => {
             let mut buf = Vec::new();
             let mut stdin = std::io::stdin().lock();
@@ -525,8 +527,38 @@ pub fn handle_msg(mut msg: Msg, json: bool, print_request: bool) -> anyhow::Resu
                     Event::TouchpadToggled { on } => {
                         println!("Touchpad enabled: {on}");
                     }
+                    Event::DwellClickStateChanged { state } => {
+                        println!("Dwell click state changed: {state:?}");
+                    }
                 }
             }
+        }
+        Msg::DwellClickState => {
+            let Response::DwellClickState(response) = response else {
+                bail!("unexpected response: expected DwellClickState, got {response:?}");
+            };
+
+            if json {
+                let response =
+                    serde_json::to_string(&response).context("error formatting response")?;
+                println!("{response}");
+                return Ok(());
+            }
+
+            let fmt_bool = |v: bool| if v { "yes" } else { "no" };
+            let fmt_mode = |m: DwellClickMode| match m {
+                DwellClickMode::Left => "left",
+                DwellClickMode::Right => "right",
+                DwellClickMode::Middle => "middle",
+                DwellClickMode::Double => "double",
+                DwellClickMode::Drag => "drag",
+            };
+
+            println!("Enabled: {}", fmt_bool(response.enabled));
+            println!("Mode: {}", fmt_mode(response.mode));
+            println!("Default mode: {}", fmt_mode(response.default_mode));
+            println!("Mode locked: {}", fmt_bool(response.mode_locked));
+            println!("Dragging: {}", fmt_bool(response.dragging));
         }
         Msg::OverviewState => {
             let Response::OverviewState(response) = response else {

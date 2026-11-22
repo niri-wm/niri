@@ -119,6 +119,8 @@ pub enum Request {
     OverviewState,
     /// Request information about screencasts.
     Casts,
+    /// Request the current dwell clicker state.
+    DwellClickState,
 }
 
 /// Reply from niri to client.
@@ -165,6 +167,8 @@ pub enum Response {
     OverviewState(Overview),
     /// Information about screencasts.
     Casts(Vec<Cast>),
+    /// Information about the dwell clicker.
+    DwellClickState(DwellClickState),
 }
 
 /// Overview information.
@@ -1091,6 +1095,18 @@ pub enum Action {
     DebugToggleDamage {},
     /// Toggle the touchpad on/off at runtime.
     ToggleTouchpad {},
+    /// Toggle the dwell clicker on/off at runtime.
+    ToggleDwellClick {},
+    /// Set the active dwell clicker mode.
+    SetDwellClickMode {
+        /// Click mode to activate.
+        #[cfg_attr(feature = "clap", arg())]
+        mode: DwellClickMode,
+    },
+    /// Toggle whether the selected dwell click mode stays locked across clicks.
+    ToggleDwellClickLock {},
+    /// Cancel an active two-dwell drag operation, if any.
+    CancelDwellDrag {},
     /// Move the focused window between the floating and the tiling layout.
     ToggleWindowFloating {
         /// Id of the window to move.
@@ -2076,6 +2092,11 @@ pub enum Event {
         /// disabled in hardware, or via `input { touchpad { off; } }`—this is not reflected here.
         on: bool,
     },
+    /// Dwell clicker state changed.
+    DwellClickStateChanged {
+        /// The new dwell clicker state.
+        state: DwellClickState,
+    },
 }
 
 impl From<Duration> for Timestamp {
@@ -2528,7 +2549,7 @@ mod tests {
     }
 
     #[test]
-    fn dwell_click_mode_from_str() {
+    fn dwell_click_ipc_round_trip() {
         assert_eq!(
             "left".parse::<DwellClickMode>().unwrap(),
             DwellClickMode::Left
@@ -2550,5 +2571,18 @@ mod tests {
             DwellClickMode::Drag
         );
         assert!("invalid".parse::<DwellClickMode>().is_err());
+
+        let state = DwellClickState {
+            enabled: true,
+            mode: DwellClickMode::Right,
+            default_mode: DwellClickMode::Left,
+            mode_locked: true,
+            dragging: false,
+        };
+        let encoded = serde_json::to_string(&Response::DwellClickState(state)).unwrap();
+        let Response::DwellClickState(decoded) = serde_json::from_str(&encoded).unwrap() else {
+            panic!("unexpected response variant");
+        };
+        assert_eq!(decoded, state);
     }
 }
