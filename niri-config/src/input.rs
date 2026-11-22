@@ -7,9 +7,11 @@ use std::str::FromStr;
 use knuffel::errors::DecodeError;
 use knuffel::DecodeScalar;
 use miette::miette;
+use niri_ipc::DwellClickMode;
 use smithay::input::keyboard::{keysyms, Keysym, XkbConfig};
 use smithay::reexports::input;
 
+use crate::appearance::Color;
 use crate::binds::Modifiers;
 use crate::utils::{expand_home_path, Flag, MergeWith, Percent};
 use crate::{FloatOrInt, Includes};
@@ -26,6 +28,7 @@ pub struct Input {
     pub disable_power_key_handling: bool,
     pub warp_mouse_to_focus: Option<WarpMouseToFocus>,
     pub focus_follows_mouse: Option<FocusFollowsMouse>,
+    pub dwell_click: DwellClick,
     pub workspace_auto_back_and_forth: bool,
     pub mod_key: Option<ModKey>,
     pub mod_key_nested: Option<ModKey>,
@@ -54,6 +57,8 @@ pub struct InputPart {
     #[knuffel(child)]
     pub focus_follows_mouse: Option<FocusFollowsMouse>,
     #[knuffel(child)]
+    pub dwell_click: Option<DwellClickPart>,
+    #[knuffel(child)]
     pub workspace_auto_back_and_forth: Option<Flag>,
     #[knuffel(child, unwrap(argument, str))]
     pub mod_key: Option<ModKey>,
@@ -66,6 +71,7 @@ impl MergeWith<InputPart> for Input {
         merge!(
             (self, part),
             keyboard,
+            dwell_click,
             disable_power_key_handling,
             workspace_auto_back_and_forth,
         );
@@ -422,6 +428,111 @@ impl FromStr for WarpMouseToFocusMode {
             _ => Err(miette!(
                 r#"invalid mode for warp-mouse-to-focus, can be "center-xy" or "center-xy-always" (or leave unset for separate centering)"#
             )),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DwellClick {
+    pub on: bool,
+    pub delay_ms: u16,
+    pub dwell_ms: u16,
+    pub motion_threshold: f64,
+    pub default_mode: DwellClickMode,
+    pub mode_locked: bool,
+    pub indicator: DwellClickIndicator,
+}
+
+impl Default for DwellClick {
+    fn default() -> Self {
+        Self {
+            on: false,
+            delay_ms: 150,
+            dwell_ms: 500,
+            motion_threshold: 5.,
+            default_mode: DwellClickMode::Left,
+            mode_locked: false,
+            indicator: DwellClickIndicator::default(),
+        }
+    }
+}
+
+#[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq)]
+pub struct DwellClickPart {
+    #[knuffel(child)]
+    pub off: bool,
+    #[knuffel(child)]
+    pub on: bool,
+    #[knuffel(child, unwrap(argument))]
+    pub delay_ms: Option<u16>,
+    #[knuffel(child, unwrap(argument))]
+    pub dwell_ms: Option<u16>,
+    #[knuffel(child, unwrap(argument))]
+    pub motion_threshold: Option<FloatOrInt<0, 1000>>,
+    #[knuffel(child, unwrap(argument, str))]
+    pub default_mode: Option<DwellClickMode>,
+    #[knuffel(child)]
+    pub mode_locked: Option<Flag>,
+    #[knuffel(child)]
+    pub indicator: Option<DwellClickIndicatorPart>,
+}
+
+impl MergeWith<DwellClickPart> for DwellClick {
+    fn merge_with(&mut self, part: &DwellClickPart) {
+        self.on |= part.on;
+        if part.off {
+            self.on = false;
+        }
+
+        merge_clone!((self, part), delay_ms, dwell_ms, default_mode);
+        merge!((self, part), motion_threshold, mode_locked, indicator);
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DwellClickIndicator {
+    pub on: bool,
+    pub color: Color,
+    pub width: f64,
+    pub radius: Option<f64>,
+}
+
+impl Default for DwellClickIndicator {
+    fn default() -> Self {
+        Self {
+            on: true,
+            color: Color::from_rgba8_unpremul(127, 200, 255, 160),
+            width: 4.,
+            radius: None,
+        }
+    }
+}
+
+#[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq)]
+pub struct DwellClickIndicatorPart {
+    #[knuffel(child)]
+    pub off: bool,
+    #[knuffel(child)]
+    pub on: bool,
+    #[knuffel(child)]
+    pub color: Option<Color>,
+    #[knuffel(child, unwrap(argument))]
+    pub width: Option<FloatOrInt<1, 64>>,
+    #[knuffel(child, unwrap(argument))]
+    pub radius: Option<FloatOrInt<4, 256>>,
+}
+
+impl MergeWith<DwellClickIndicatorPart> for DwellClickIndicator {
+    fn merge_with(&mut self, part: &DwellClickIndicatorPart) {
+        self.on |= part.on;
+        if part.off {
+            self.on = false;
+        }
+
+        merge_clone!((self, part), color);
+        merge!((self, part), width);
+        if let Some(radius) = part.radius {
+            self.radius = Some(radius.0);
         }
     }
 }
@@ -867,5 +978,113 @@ mod tests {
             2.0,
         )
         ");
+    }
+
+    #[test]
+    fn parse_dwell_click_explicit_on_off() {
+        let empty = do_parse("dwell-click {}");
+        assert!(!empty.dwell_click.on);
+        assert_eq!(empty.dwell_click, DwellClick::default());
+
+        let enabled = do_parse(
+            r#"
+            dwell-click {
+                on
+                delay-ms 200
+                dwell-ms 600
+                motion-threshold 7.5
+                default-mode "right"
+                mode-locked
+            }
+            "#,
+        );
+        assert_eq!(
+            enabled.dwell_click,
+            DwellClick {
+                on: true,
+                delay_ms: 200,
+                dwell_ms: 600,
+                motion_threshold: 7.5,
+                default_mode: DwellClickMode::Right,
+                mode_locked: true,
+                indicator: DwellClickIndicator::default(),
+            }
+        );
+
+        let indicator = do_parse(
+            r##"
+            dwell-click {
+                on
+                indicator {
+                    color "#112233cc"
+                    width 6
+                    radius 24
+                }
+            }
+            "##,
+        );
+        assert_eq!(
+            indicator.dwell_click.indicator,
+            DwellClickIndicator {
+                on: true,
+                color: Color::from_rgba8_unpremul(0x11, 0x22, 0x33, 0xcc),
+                width: 6.,
+                radius: Some(24.),
+            }
+        );
+
+        let indicator_off = do_parse(
+            r#"
+            dwell-click {
+                indicator {
+                    off
+                }
+            }
+            "#,
+        );
+        assert!(!indicator_off.dwell_click.indicator.on);
+
+        let mut merged = enabled.dwell_click;
+        let part: InputPart = knuffel::parse("test.kdl", "dwell-click { off; }").unwrap();
+        merged.merge_with(part.dwell_click.as_ref().unwrap());
+        assert!(!merged.on);
+        assert_eq!(merged.delay_ms, 200);
+
+        let part: InputPart = knuffel::parse("test.kdl", "dwell-click { on; }").unwrap();
+        merged.merge_with(part.dwell_click.as_ref().unwrap());
+        assert!(merged.on);
+
+        let same_block = do_parse(
+            r#"
+            dwell-click {
+                on
+                off
+                indicator {
+                    on
+                    off
+                }
+            }
+            "#,
+        );
+        assert!(!same_block.dwell_click.on);
+        assert!(!same_block.dwell_click.indicator.on);
+
+        let mut ind_merged = indicator_off.dwell_click;
+        let part: InputPart =
+            knuffel::parse("test.kdl", "dwell-click { indicator { on; }; }").unwrap();
+        ind_merged.merge_with(part.dwell_click.as_ref().unwrap());
+        assert!(ind_merged.indicator.on);
+
+        for invalid in [
+            r#"dwell-click { default-mode "invalid"; }"#,
+            "dwell-click { motion-threshold -1; }",
+            "dwell-click { indicator { width 0; }; }",
+            "dwell-click { indicator { radius 3; }; }",
+        ] {
+            assert!(
+                knuffel::parse::<InputPart>("test.kdl", invalid).is_err(),
+                "expected error for `{invalid}`"
+            );
+        }
     }
 }
