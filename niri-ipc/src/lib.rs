@@ -175,6 +175,40 @@ pub struct Overview {
     pub is_open: bool,
 }
 
+/// Dwell clicker state.
+#[derive(Serialize, Deserialize, Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct DwellClickState {
+    /// Whether dwell clicking is enabled.
+    pub enabled: bool,
+    /// Active click mode.
+    pub mode: DwellClickMode,
+    /// Fallback mode restored after one-shot clicks.
+    pub default_mode: DwellClickMode,
+    /// Whether non-default modes stay active across clicks.
+    pub mode_locked: bool,
+    /// Whether a two-dwell left-button drag is currently active.
+    pub dragging: bool,
+}
+
+/// Click action performed by the dwell clicker.
+#[derive(Serialize, Deserialize, Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum DwellClickMode {
+    /// Single left click.
+    #[default]
+    Left,
+    /// Single right click.
+    Right,
+    /// Single middle click.
+    Middle,
+    /// Double left click.
+    Double,
+    /// Two-dwell left-button drag (first dwell presses, second dwell releases).
+    Drag,
+}
+
 /// Color picked from the screen.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
@@ -2184,6 +2218,23 @@ impl FromStr for ColumnDisplay {
     }
 }
 
+impl FromStr for DwellClickMode {
+    type Err = &'static str;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "left" => Ok(Self::Left),
+            "right" => Ok(Self::Right),
+            "middle" => Ok(Self::Middle),
+            "double" => Ok(Self::Double),
+            "drag" => Ok(Self::Drag),
+            _ => Err(
+                r#"invalid dwell click mode, can be "left", "right", "middle", "double" or "drag""#,
+            ),
+        }
+    }
+}
+
 impl FromStr for Transform {
     type Err = &'static str;
 
@@ -2474,5 +2525,30 @@ mod tests {
         );
         assert!("-".parse::<PositionChange>().is_err());
         assert!("10% ".parse::<PositionChange>().is_err());
+    }
+
+    #[test]
+    fn dwell_click_mode_from_str() {
+        assert_eq!(
+            "left".parse::<DwellClickMode>().unwrap(),
+            DwellClickMode::Left
+        );
+        assert_eq!(
+            "right".parse::<DwellClickMode>().unwrap(),
+            DwellClickMode::Right
+        );
+        assert_eq!(
+            "middle".parse::<DwellClickMode>().unwrap(),
+            DwellClickMode::Middle
+        );
+        assert_eq!(
+            "double".parse::<DwellClickMode>().unwrap(),
+            DwellClickMode::Double
+        );
+        assert_eq!(
+            "drag".parse::<DwellClickMode>().unwrap(),
+            DwellClickMode::Drag
+        );
+        assert!("invalid".parse::<DwellClickMode>().is_err());
     }
 }
