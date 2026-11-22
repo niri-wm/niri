@@ -384,3 +384,71 @@ fn maximized_min_size() {
     "
     );
 }
+
+#[test]
+fn fullscreen_backdrop_color_and_draw_background() {
+    let config = r##"
+    layout {
+        draw-fullscreen-background true
+    }
+    window-rule {
+        opacity 0.75
+    }
+    "##;
+    let config = Config::parse_mem(config).unwrap();
+    let (mut f, id, surface) = set_up_with_config(config);
+
+    let niri = f.niri();
+    let mapped = niri.layout.windows().next().unwrap().1;
+    let window_id = mapped.window.clone();
+
+    // Toggle fullscreen.
+    niri.layout.toggle_fullscreen(&window_id);
+    f.double_roundtrip(id);
+
+    let window = f.client(id).window(&surface);
+    window.ack_last_and_commit();
+    f.roundtrip(id);
+
+    let tile = f.niri().layout.find_tile_for_window(&window_id).unwrap();
+
+    // With draw-fullscreen-background true and no custom backdrop, no solid quad is drawn.
+    assert!(!tile.renders_fullscreen_backdrop());
+    // Window maintains its configured opacity since wallpaper is rendered underneath.
+    assert_eq!(tile.effective_window_alpha(), 0.75);
+}
+
+#[test]
+fn fullscreen_custom_backdrop_color_with_draw_background_false() {
+    let config = r##"
+    layout {
+        draw-fullscreen-background false
+    }
+    window-rule {
+        draw-fullscreen-background false
+        fullscreen-backdrop-color "#112233"
+        opacity 0.60
+    }
+    "##;
+    let config = Config::parse_mem(config).unwrap();
+    let (mut f, id, surface) = set_up_with_config(config);
+
+    let niri = f.niri();
+    let mapped = niri.layout.windows().next().unwrap().1;
+    let window_id = mapped.window.clone();
+
+    // Toggle fullscreen.
+    niri.layout.toggle_fullscreen(&window_id);
+    f.double_roundtrip(id);
+
+    let window = f.client(id).window(&surface);
+    window.ack_last_and_commit();
+    f.roundtrip(id);
+
+    let tile = f.niri().layout.find_tile_for_window(&window_id).unwrap();
+
+    // With draw-fullscreen-background false, solid backdrop quad is rendered to block wallpaper.
+    assert!(tile.renders_fullscreen_backdrop());
+    // Since custom backdrop has opaque alpha (0xff), alpha is interpolated to 1.0.
+    assert_eq!(tile.effective_window_alpha(), 1.0);
+}

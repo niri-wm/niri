@@ -5148,6 +5148,18 @@ impl<W: LayoutElement> Layout<W> {
         self.windows().any(|(_, win)| win.id() == window)
     }
 
+    #[cfg(test)]
+    pub(crate) fn find_tile_for_window(&self, window: &W::Id) -> Option<&Tile<W>> {
+        if let Some(move_) = self.interactive_move.as_ref().and_then(|x| x.moving()) {
+            if move_.tile.window().id() == window {
+                return Some(&move_.tile);
+            }
+        }
+        self.workspaces()
+            .flat_map(|(_, _, ws)| ws.tiles())
+            .find(|tile| tile.window().id() == window)
+    }
+
     pub fn is_overview_open(&self) -> bool {
         self.overview_open
     }

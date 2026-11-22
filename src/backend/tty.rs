@@ -33,7 +33,10 @@ use smithay::backend::libinput::{LibinputInputBackend, LibinputSessionInterface}
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::renderer::multigpu::gbm::GbmGlesBackend;
 use smithay::backend::renderer::multigpu::{GpuManager, MultiFrame, MultiRenderer};
-use smithay::backend::renderer::{DebugFlags, ImportDma, ImportEgl, RendererSuper};
+use smithay::backend::renderer::utils::RendererSurfaceStateUserData;
+use smithay::backend::renderer::{
+    buffer_has_alpha, DebugFlags, ImportDma, ImportEgl, RendererSuper,
+};
 use smithay::backend::session::libseat::LibSeatSession;
 use smithay::backend::session::{Event as SessionEvent, Session};
 use smithay::backend::udev::{self, UdevBackend, UdevEvent};
@@ -52,7 +55,8 @@ use smithay::reexports::input::Libinput;
 use smithay::reexports::rustix::fs::OFlags;
 use smithay::reexports::wayland_protocols;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::utils::{DeviceFd, Transform};
+use smithay::utils::{DeviceFd, Rectangle, Transform};
+use smithay::wayland::compositor::with_states;
 use smithay::wayland::dmabuf::{DmabufFeedback, DmabufFeedbackBuilder, DmabufGlobal};
 use smithay::wayland::drm_lease::{
     DrmLease, DrmLeaseBuilder, DrmLeaseRequest, DrmLeaseState, LeaseRejected,
@@ -65,6 +69,7 @@ use wayland_protocols::wp::presentation_time::server::wp_presentation_feedback;
 use super::{IpcOutputMap, RenderResult};
 use crate::backend::OutputId;
 use crate::frame_clock::FrameClock;
+use crate::layout::LayoutElement;
 use crate::niri::{Niri, RedrawState, State};
 use crate::render_helpers::debug::draw_damage;
 use crate::render_helpers::renderer::AsGlesRenderer;
@@ -1980,6 +1985,53 @@ impl Tty {
                 flags.insert(FrameFlags::ALLOW_OVERLAY_PLANE_SCANOUT);
             }
             if debug.disable_direct_scanout {
+                flags.remove(primary_scanout_flag);
+                flags.remove(FrameFlags::ALLOW_OVERLAY_PLANE_SCANOUT);
+            }
+
+            let fullscreen_window_has_transparency = niri
+                .layout
+                .monitors()
+                .find(|mon| mon.output() == output)
+                .and_then(|mon| mon.fullscreen_window_above_top_layer())
+                .is_some_and(|mapped| {
+                    let rules = mapped.rules();
+                    let opacity = if mapped.is_ignoring_opacity_window_rule() {
+                        1.0
+                    } else {
+                        rules.opacity.unwrap_or(1.0)
+                    };
+                    if opacity < 1.0 {
+                        return true;
+                    }
+                    with_states(mapped.toplevel().wl_surface(), |states| {
+                        states
+                            .data_map
+                            .get::<RendererSurfaceStateUserData>()
+                            .and_then(|data| data.lock().ok())
+                            .map(|state| {
+                                let has_alpha = state
+                                    .buffer()
+                                    .and_then(|b| buffer_has_alpha(b))
+                                    .unwrap_or(false);
+                                if !has_alpha {
+                                    return false;
+                                }
+                                if let Some(size) = state.surface_size() {
+                                    let surf_rect = Rectangle::from_size(size);
+                                    if let Some(opaque) = state.opaque_regions() {
+                                        return !surf_rect
+                                            .subtract_rects(opaque.iter().copied())
+                                            .is_empty();
+                                    }
+                                }
+                                true
+                            })
+                            .unwrap_or(false)
+                    })
+                });
+
+            if fullscreen_window_has_transparency {
                 flags.remove(primary_scanout_flag);
                 flags.remove(FrameFlags::ALLOW_OVERLAY_PLANE_SCANOUT);
             }

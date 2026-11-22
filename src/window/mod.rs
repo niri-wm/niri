@@ -3,7 +3,7 @@ use std::cmp::{max, min};
 use niri_config::utils::MergeWith as _;
 use niri_config::window_rule::{Match, OnXdgActivate, VrrRule, WindowRule};
 use niri_config::{
-    BackgroundEffect, BlockOutFrom, BorderRule, CornerRadius, FloatingPosition, PresetSize,
+    BackgroundEffect, BlockOutFrom, BorderRule, Color, CornerRadius, FloatingPosition, PresetSize,
     ResolvedPopupsRules, ShadowRule, TabIndicatorRule,
 };
 use niri_ipc::ColumnDisplay;
@@ -98,6 +98,12 @@ pub struct ResolvedWindowRules {
     ///
     /// `None` means using the SSD heuristic.
     pub draw_border_with_background: Option<bool>,
+
+    /// Whether to draw the fullscreen background quad.
+    pub draw_fullscreen_background: Option<bool>,
+
+    /// Fullscreen backdrop color override.
+    pub fullscreen_backdrop_color: Option<Color>,
 
     /// Extra opacity to draw this window with.
     pub opacity: Option<f32>,
@@ -284,6 +290,13 @@ impl ResolvedWindowRules {
                 resolved.border.merge_with(&rule.border);
                 resolved.shadow.merge_with(&rule.shadow);
                 resolved.tab_indicator.merge_with(&rule.tab_indicator);
+
+                if let Some(x) = rule.draw_fullscreen_background {
+                    resolved.draw_fullscreen_background = Some(x);
+                }
+                if let Some(x) = rule.fullscreen_backdrop_color {
+                    resolved.fullscreen_backdrop_color = Some(x);
+                }
 
                 if let Some(x) = rule.draw_border_with_background {
                     resolved.draw_border_with_background = Some(x);
