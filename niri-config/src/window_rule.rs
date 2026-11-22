@@ -2,8 +2,8 @@ use knuffel::errors::DecodeError;
 use niri_ipc::ColumnDisplay;
 
 use crate::appearance::{
-    BackgroundEffect, BackgroundEffectRule, BlockOutFrom, BorderRule, CornerRadius, ShadowRule,
-    TabIndicatorRule,
+    BackgroundEffect, BackgroundEffectRule, BlockOutFrom, BorderRule, Color, CornerRadius,
+    ShadowRule, TabIndicatorRule,
 };
 use crate::layout::DefaultPresetSize;
 use crate::utils::{MergeWith, RegexEq};
@@ -58,6 +58,10 @@ pub struct WindowRule {
     pub tab_indicator: TabIndicatorRule,
     #[knuffel(child, unwrap(argument))]
     pub draw_border_with_background: Option<bool>,
+    #[knuffel(child, unwrap(argument))]
+    pub draw_fullscreen_background: Option<bool>,
+    #[knuffel(child)]
+    pub fullscreen_backdrop_color: Option<Color>,
     #[knuffel(child, unwrap(argument))]
     pub opacity: Option<f32>,
     #[knuffel(child)]

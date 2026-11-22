@@ -25,6 +25,7 @@ pub struct Layout {
     pub struts: Struts,
     pub background_color: Color,
     pub fullscreen_backdrop_color: Color,
+    pub draw_fullscreen_background: bool,
 }
 
 impl Default for Layout {
@@ -54,6 +55,7 @@ impl Default for Layout {
             ],
             background_color: DEFAULT_BACKGROUND_COLOR,
             fullscreen_backdrop_color: Color::from_array_unpremul([0., 0., 0., 1.]),
+            draw_fullscreen_background: true,
         }
     }
 }
@@ -82,6 +84,10 @@ impl MergeWith<LayoutPart> for Layout {
             background_color,
             fullscreen_backdrop_color,
         );
+
+        if let Some(x) = part.draw_fullscreen_background {
+            self.draw_fullscreen_background = x;
+        }
 
         if let Some(x) = part.default_column_width {
             self.default_column_width = x.0;
@@ -131,6 +137,8 @@ pub struct LayoutPart {
     pub background_color: Option<Color>,
     #[knuffel(child)]
     pub fullscreen_backdrop_color: Option<Color>,
+    #[knuffel(child, unwrap(argument))]
+    pub draw_fullscreen_background: Option<bool>,
 }
 
 #[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]

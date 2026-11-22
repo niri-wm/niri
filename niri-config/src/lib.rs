@@ -1998,6 +1998,7 @@ mod tests {
                     b: 0.0,
                     a: 1.0,
                 },
+                draw_fullscreen_background: true,
             },
             prefer_no_csd: true,
             cursor: Cursor {
@@ -2380,6 +2381,8 @@ mod tests {
                         urgent_gradient: None,
                     },
                     draw_border_with_background: None,
+                    draw_fullscreen_background: None,
+                    fullscreen_backdrop_color: None,
                     opacity: None,
                     geometry_corner_radius: None,
                     clip_to_geometry: None,
