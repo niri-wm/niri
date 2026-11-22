@@ -980,6 +980,32 @@ window-rule {
 }
 ```
 
+#### `draw-fullscreen-background`
+
+<sup>Since: next release</sup>
+
+Override whether to draw the wallpaper behind this window when it is fullscreen.
+
+```kdl
+window-rule {
+    match app-id="foot"
+    draw-fullscreen-background false
+}
+```
+
+#### `fullscreen-backdrop-color`
+
+<sup>Since: next release</sup>
+
+Override the solid backdrop color rendered behind this window when it is fullscreen.
+
+```kdl
+window-rule {
+    match app-id="foot"
+    fullscreen-backdrop-color "#000000"
+}
+```
+
 #### `tiled-state`
 
 <sup>Since: 25.05</sup>

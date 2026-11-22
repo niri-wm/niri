@@ -578,3 +578,17 @@ layout {
     fullscreen-backdrop-color "transparent"
 }
 ```
+
+### `draw-fullscreen-background`
+
+<sup>Since: next release</sup>
+
+Whether to draw the wallpaper beneath fullscreen windows.
+
+Defaults to `true`. When enabled, semitransparent fullscreen windows show the desktop wallpaper rather than a solid backdrop. Set to `false` to disable wallpaper drawing under fullscreen windows.
+
+```kdl
+layout {
+    draw-fullscreen-background false
+}
+```
