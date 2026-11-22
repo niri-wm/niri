@@ -43,3 +43,11 @@ If you're shipping niri and would like to make it work better for screen readers
 ## Desktop zoom
 
 There's no built-in zoom yet, but you can use third-party utilities like [wooz](https://github.com/negrel/wooz).
+
+## Dwell clicking
+
+<sup>Since: next release</sup>
+
+Niri has built-in dwell clicking (hovering the pointer still to click automatically) with support for left, right, middle, double-click, and click-and-drag modes, plus a circular progress indicator around the cursor.
+
+You can enable and configure it in [`input { dwell-click { ... } }`](./Configuration:-Input.md#dwell-click) and control it at runtime via key bindings ([`toggle-dwell-click`](./Configuration:-Key-Bindings.md#toggle-dwell-click), [`set-dwell-click-mode`](./Configuration:-Key-Bindings.md#set-dwell-click-mode), [`toggle-dwell-click-lock`](./Configuration:-Key-Bindings.md#toggle-dwell-click-lock), [`cancel-dwell-drag`](./Configuration:-Key-Bindings.md#cancel-dwell-drag)) or [IPC](./IPC.md) (`niri msg dwell-click-state` and `niri msg action set-dwell-click-mode`).

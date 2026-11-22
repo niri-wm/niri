@@ -599,3 +599,53 @@ binds {
     Mod+Ctrl+C { move-window-to-new-workspace-below "chat" focus=false; }
 }
 ```
+
+#### `toggle-dwell-click`
+
+<sup>Since: next release</sup>
+
+Toggle [dwell clicking](./Configuration:-Input.md#dwell-click) on or off at runtime.
+
+```kdl
+binds {
+    Mod+Alt+D { toggle-dwell-click; }
+}
+```
+
+#### `set-dwell-click-mode`
+
+<sup>Since: next release</sup>
+
+Set the active click mode for [dwell clicking](./Configuration:-Input.md#dwell-click): `"left"`, `"right"`, `"middle"`, `"double"`, or `"drag"`.
+
+```kdl
+binds {
+    Mod+F6 { set-dwell-click-mode "right"; }
+    Mod+F7 { set-dwell-click-mode "double"; }
+    Mod+F8 { set-dwell-click-mode "drag"; }
+}
+```
+
+#### `toggle-dwell-click-lock`
+
+<sup>Since: next release</sup>
+
+Toggle whether non-default [dwell click modes](#set-dwell-click-mode) stay active across clicks instead of reverting to `default-mode` after one click.
+
+```kdl
+binds {
+    Mod+Alt+M { toggle-dwell-click-lock; }
+}
+```
+
+#### `cancel-dwell-drag`
+
+<sup>Since: next release</sup>
+
+Cancel an active dwell drag (releasing the held mouse button) and reset the current dwell timer.
+
+```kdl
+binds {
+    Mod+Alt+C { cancel-dwell-drag; }
+}
+```
