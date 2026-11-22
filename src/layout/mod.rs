@@ -3447,7 +3447,12 @@ impl<W: LayoutElement> Layout<W> {
             let ws = current.active_workspace();
 
             if ws.floating_is_active() {
-                self.move_to_output(None, output, None, ActivateWindow::Smart);
+                let activate = if activate {
+                    ActivateWindow::Smart
+                } else {
+                    ActivateWindow::No
+                };
+                self.move_to_output(None, output, target_ws_idx, activate);
                 return;
             }
 
