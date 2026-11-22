@@ -5148,6 +5148,41 @@ impl<W: LayoutElement> Layout<W> {
         self.windows().any(|(_, win)| win.id() == window)
     }
 
+    pub(crate) fn find_tile_for_window(&self, window: &W::Id) -> Option<&Tile<W>> {
+        if let Some(move_) = self.interactive_move.as_ref().and_then(|x| x.moving()) {
+            if move_.tile.window().id() == window {
+                return Some(&move_.tile);
+            }
+        }
+        self.workspaces()
+            .flat_map(|(_, _, ws)| ws.tiles())
+            .find(|tile| tile.window().id() == window)
+    }
+
+    pub(crate) fn tile_pos_for_window(
+        &self,
+        output: &Output,
+        window: &W::Id,
+    ) -> Option<Point<f64, Logical>> {
+        if let Some(move_) = self.interactive_move.as_ref().and_then(|x| x.moving()) {
+            if move_.tile.window().id() == window && &move_.output == output {
+                return Some(move_.tile_render_location(1.));
+            }
+        }
+
+        if let Some(mon) = self.monitor_for_output(output) {
+            for (ws, ws_geo) in mon.workspaces_with_render_geo() {
+                for (t, pos, _) in ws.tiles_with_render_positions() {
+                    if t.window().id() == window {
+                        return Some(ws_geo.loc + pos);
+                    }
+                }
+            }
+        }
+
+        None
+    }
+
     pub fn is_overview_open(&self) -> bool {
         self.overview_open
     }

@@ -2,7 +2,7 @@ use niri_ipc::PickedColor;
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::input::ButtonState;
 use smithay::backend::renderer::element::utils::{Relocate, RelocateRenderElement};
-use smithay::backend::renderer::ExportMem as _;
+use smithay::backend::renderer::{Color32F, ExportMem as _};
 use smithay::input::pointer::{
     AxisFrame, ButtonEvent, CursorImageStatus, GestureHoldBeginEvent, GestureHoldEndEvent,
     GesturePinchBeginEvent, GesturePinchEndEvent, GesturePinchUpdateEvent, GestureSwipeBeginEvent,
@@ -67,6 +67,7 @@ impl PickColorGrab {
                         let offset = pos.upscale(-1);
                         RelocateRenderElement::from_element(elem, offset, Relocate::Relative)
                     }),
+                    Color32F::TRANSPARENT,
                 ) {
                     Ok(mapping) => mapping,
                     Err(_) => return None,

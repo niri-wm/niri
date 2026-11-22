@@ -294,6 +294,37 @@ pub enum Action {
         /// If `None`, the screenshot is saved according to the `screenshot-path` config setting.
         #[cfg_attr(feature = "clap", arg(long, action = clap::ArgAction::Set))]
         path: Option<String>,
+
+        /// Whether to include the window's drop shadow in the screenshot.
+        #[cfg_attr(
+            feature = "clap",
+            arg(
+                long,
+                num_args = 0..=1,
+                default_missing_value = "true",
+                action = clap::ArgAction::Set
+            )
+        )]
+        include_shadows: Option<bool>,
+
+        /// Background to draw behind the window.
+        ///
+        /// Accepts "transparent", "desktop", "wallpaper", or any valid CSS/hex color.
+        #[cfg_attr(feature = "clap", arg(long, action = clap::ArgAction::Set))]
+        window_background: Option<String>,
+
+        /// Padding around the window in the screenshot.
+        ///
+        /// Supports uniform "32", symmetric "24 32", 4 values "top right bottom left",
+        /// or properties "top=16 bottom=24 left=32 right=32".
+        #[cfg_attr(feature = "clap", arg(long, action = clap::ArgAction::Set))]
+        padding: Option<String>,
+
+        /// Background for the padding area outside the window.
+        ///
+        /// Accepts "transparent", "desktop", "wallpaper", or any valid CSS/hex color.
+        #[cfg_attr(feature = "clap", arg(long, action = clap::ArgAction::Set))]
+        padding_background: Option<String>,
     },
     /// Enable or disable the keyboard shortcuts inhibitor (if any) for the focused surface.
     ToggleKeyboardShortcutsInhibit {},

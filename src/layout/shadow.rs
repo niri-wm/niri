@@ -40,6 +40,25 @@ impl Shadow {
         scale: f64,
         alpha: f32,
     ) {
+        self.update_render_elements_draw_behind(
+            win_size,
+            is_active,
+            radius,
+            scale,
+            alpha,
+            self.config.draw_behind_window,
+        );
+    }
+
+    pub fn update_render_elements_draw_behind(
+        &mut self,
+        win_size: Size<f64, Logical>,
+        is_active: bool,
+        radius: CornerRadius,
+        scale: f64,
+        alpha: f32,
+        draw_behind_window: bool,
+    ) {
         let ceil = |logical: f64| (logical * scale).ceil() / scale;
 
         // All of this stuff should end up aligned to physical pixels because:
@@ -87,7 +106,7 @@ impl Shadow {
         // This is actually offset relative to shader_geo, this is handled below.
         let window_geo = Rectangle::new(Point::from((0., 0.)), win_size);
 
-        if !self.config.draw_behind_window {
+        if !draw_behind_window {
             let top_left = ceil(f64::from(win_radius.top_left));
             let top_right = f64::min(win_size.w - top_left, ceil(f64::from(win_radius.top_right)));
             let bottom_left = f64::min(

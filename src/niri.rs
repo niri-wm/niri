@@ -16,9 +16,11 @@ use calloop::futures::Scheduler;
 use niri_config::debug::PreviewRender;
 use niri_config::input::XkbFile;
 use niri_config::output::MaxBpc;
+use niri_config::utils::MergeWith as _;
 use niri_config::window_rule::VrrRule;
 use niri_config::{
-    Bind, Config, FloatOrInt, Key, Modifiers, OutputName, TrackLayout, WarpMouseToFocusMode,
+    Bind, Config, FloatOrInt, GradientInterpolation, Key, Modifiers, OutputName,
+    ScreenshotBackground, TrackLayout, WarpMouseToFocusMode, WindowScreenshotRule,
     WorkspaceReference, Xkb,
 };
 use smithay::backend::allocator::Fourcc;
@@ -167,9 +169,11 @@ use crate::protocols::mutter_x11_interop::MutterX11InteropManagerState;
 use crate::protocols::output_management::OutputManagementManagerState;
 use crate::protocols::screencopy::{Screencopy, ScreencopyManagerState};
 use crate::render_helpers::blur::BlurOptions;
+use crate::render_helpers::border::BorderRenderElement;
 use crate::render_helpers::debug::push_opaque_regions;
 use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use crate::render_helpers::renderer::NiriRenderer;
+use crate::render_helpers::shadow::ShadowRenderElement;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
 use crate::render_helpers::surface::push_elements_from_surface_tree;
 use crate::render_helpers::texture::TextureBuffer;
@@ -6795,10 +6799,60 @@ impl Niri {
             Transform::Normal,
             Fourcc::Abgr8888,
             elements,
+            Color32F::TRANSPARENT,
         )?;
 
         self.save_screenshot(size, pixels, write_to_disk, path)
             .context("error saving screenshot")
+    }
+
+    fn render_desktop_background<R: NiriRenderer>(
+        &self,
+        mut ctx: RenderCtx<R>,
+        output: &Output,
+        mapped: Option<&Mapped>,
+        push: &mut dyn FnMut(OutputRenderElements<R>),
+    ) {
+        let layer_map = layer_map_for_output(output);
+        self.render_layer_normal(
+            ctx.r(),
+            None,
+            &layer_map,
+            Layer::Background,
+            XrayPos::default(),
+            false,
+            &mut |elem| push(elem.into()),
+        );
+
+        let ws = mapped
+            .and_then(|mapped| {
+                self.layout.workspaces().find_map(|(_, _, ws)| {
+                    if ws.windows().any(|w| w.id() == mapped.id()) {
+                        Some(ws)
+                    } else {
+                        None
+                    }
+                })
+            })
+            .or_else(|| {
+                self.layout
+                    .monitors()
+                    .find(|m| m.output() == output)
+                    .and_then(|mon| mon.workspaces_with_render_geo().next().map(|(ws, _)| ws))
+            });
+
+        if let Some(ws) = ws {
+            push(ws.render_background().into());
+        }
+
+        let state = self.output_state.get(output).unwrap();
+        let backdrop = SolidColorRenderElement::from_buffer(
+            &state.backdrop_buffer,
+            Point::new(0., 0.),
+            1.,
+            Kind::Unspecified,
+        );
+        push(backdrop.into());
     }
 
     pub fn screenshot_window(
@@ -6809,6 +6863,7 @@ impl Niri {
         write_to_disk: bool,
         show_pointer: bool,
         path: Option<String>,
+        options: Option<WindowScreenshotRule>,
     ) -> anyhow::Result<()> {
         let target = RenderTarget::ScreenCapture;
         if target.should_hide(mapped.rules().block_out_from) {
@@ -6818,6 +6873,12 @@ impl Niri {
 
         let _span = tracy_client::span!("Niri::screenshot_window");
 
+        let mut resolved = self.config.borrow().screenshot.clone();
+        resolved.merge_with(&mapped.rules().screenshot);
+        if let Some(opts) = options {
+            resolved.merge_with(&opts);
+        }
+
         let scale = Scale::from(output.current_scale().fractional_scale());
         let alpha =
             if mapped.sizing_mode().is_fullscreen() || mapped.is_ignoring_opacity_window_rule() {
@@ -6826,9 +6887,8 @@ impl Niri {
                 mapped.rules().opacity.unwrap_or(1.).clamp(0., 1.)
             };
 
-        let mut elements: Vec<WindowScreenshotRenderElement<GlesRenderer>> = Vec::new();
-
-        // Add pointer if requested and it's over this window.
+        // Pointer elements (top-most).
+        let mut pointer_elements: Vec<WindowScreenshotRenderElement<GlesRenderer>> = Vec::new();
         if show_pointer {
             if let Some((_, win_pos)) = self.pointer_pos_for_window_cast(mapped) {
                 // Pointer elements are at output-local physical coords.
@@ -6836,42 +6896,167 @@ impl Niri {
                 let pos = win_pos.to_physical_precise_round(scale).upscale(-1);
                 self.render_pointer(renderer, output, &mut |elem| {
                     let elem = RelocateRenderElement::from_element(elem, pos, Relocate::Relative);
-                    elements.push(elem.into());
+                    pointer_elements.push(elem.into());
                 });
             }
         }
-        let pointer_count = elements.len();
 
-        let ctx = RenderCtx {
+        let mut ctx = RenderCtx {
             renderer,
             target,
             xray: None,
         };
+        let mut window_elements: Vec<WindowScreenshotRenderElement<GlesRenderer>> = Vec::new();
         mapped.render(
-            ctx,
+            ctx.r(),
             mapped.window.geometry().loc.to_f64(),
             scale,
             alpha,
             XrayPos::default(),
-            &mut |elem| elements.push(elem.into()),
+            &mut |elem| window_elements.push(elem.into()),
         );
 
-        // The pointer is not included in encompassing_geo because we don't want it to expand the
-        // screenshot size.
-        let geo = encompassing_geo(scale, elements.iter().skip(pointer_count));
+        let win_geo = mapped.window.geometry();
+        let win_size = win_geo.size.to_f64();
+        let win_loc = win_geo.loc.to_f64();
+        let win_geo_phys = Rectangle::new(win_loc, win_size).to_physical_precise_round(scale);
+
+        let mut shadow_elements: Vec<WindowScreenshotRenderElement<GlesRenderer>> = Vec::new();
+        if resolved.include_shadows {
+            if let Some(tile) = self.layout.find_tile_for_window(&mapped.window) {
+                let shadow_loc = match tile.visual_border_width() {
+                    Some(width) => win_loc - Point::from((width, width)),
+                    None => win_loc,
+                };
+                let draw_behind_window = match resolved.window_background {
+                    ScreenshotBackground::Transparent => false,
+                    ScreenshotBackground::Color(_) | ScreenshotBackground::Desktop => true,
+                };
+                tile.render_shadow(ctx.renderer, shadow_loc, draw_behind_window, &mut |elem| {
+                    shadow_elements.push(elem.into());
+                });
+            }
+        }
+
+        let base_geo =
+            encompassing_geo(scale, window_elements.iter().chain(shadow_elements.iter()));
+
+        let pad = resolved.padding;
+        let pad_l = (pad.left.max(0.0) * scale.x).round() as i32;
+        let pad_r = (pad.right.max(0.0) * scale.x).round() as i32;
+        let pad_t = (pad.top.max(0.0) * scale.y).round() as i32;
+        let pad_b = (pad.bottom.max(0.0) * scale.y).round() as i32;
+
+        let canvas_size: Size<i32, Physical> = Size::new(
+            base_geo.size.w + pad_l + pad_r,
+            base_geo.size.h + pad_t + pad_b,
+        );
+        let canvas_loc: Point<i32, Physical> =
+            Point::new(base_geo.loc.x - pad_l, base_geo.loc.y - pad_t);
+
+        // Framebuffer clear color: eliminates 1px seam and avoids an extra background element.
+        let clear_color = match resolved.padding_background {
+            ScreenshotBackground::Color(col) => Color32F::new(col.r, col.g, col.b, col.a),
+            ScreenshotBackground::Transparent | ScreenshotBackground::Desktop => {
+                Color32F::TRANSPARENT
+            }
+        };
+
+        let tile_pos = self
+            .layout
+            .tile_pos_for_window(output, &mapped.window)
+            .unwrap_or_default();
+        let output_win_phys = (tile_pos + win_loc).to_physical_precise_round(scale);
+        let shift = win_geo_phys.loc - output_win_phys;
+
+        // Window background.
+        let mut window_bg_elements: Vec<WindowScreenshotRenderElement<GlesRenderer>> = Vec::new();
+        match resolved.window_background {
+            ScreenshotBackground::Transparent => {}
+            ScreenshotBackground::Color(col) => {
+                let corner_radius = mapped.geometry_corner_radius();
+                if BorderRenderElement::has_shader(ctx.renderer) {
+                    let elem = BorderRenderElement::new(
+                        win_size,
+                        Rectangle::from_size(win_size),
+                        GradientInterpolation::default(),
+                        col,
+                        col,
+                        0.,
+                        Rectangle::from_size(win_size),
+                        0.,
+                        corner_radius,
+                        scale.x as f32,
+                        1.,
+                    )
+                    .with_location(win_loc);
+                    window_bg_elements.push(elem.into());
+                } else {
+                    let buffer = SolidColorBuffer::new(win_size, col);
+                    let elem = SolidColorRenderElement::from_buffer(
+                        &buffer,
+                        win_loc,
+                        1.,
+                        Kind::Unspecified,
+                    );
+                    window_bg_elements.push(elem.into());
+                }
+            }
+            ScreenshotBackground::Desktop => {
+                if resolved.padding_background != ScreenshotBackground::Desktop {
+                    let mut bg_elements = Vec::new();
+                    self.render_desktop_background(ctx.r(), output, Some(mapped), &mut |elem| {
+                        bg_elements.push(elem)
+                    });
+                    for elem in bg_elements {
+                        let relocated =
+                            RelocateRenderElement::from_element(elem, shift, Relocate::Relative);
+                        if let Some(cropped) =
+                            CropRenderElement::from_element(relocated, scale, win_geo_phys)
+                        {
+                            window_bg_elements.push(cropped.into());
+                        }
+                    }
+                }
+            }
+        }
+
+        // Outer padding background.
+        let mut padding_bg_elements: Vec<WindowScreenshotRenderElement<GlesRenderer>> = Vec::new();
+        if resolved.padding_background == ScreenshotBackground::Desktop {
+            let mut bg_elements = Vec::new();
+            self.render_desktop_background(ctx.r(), output, Some(mapped), &mut |elem| {
+                bg_elements.push(elem)
+            });
+            for elem in bg_elements {
+                let relocated =
+                    RelocateRenderElement::from_element(elem, shift, Relocate::Relative);
+                padding_bg_elements.push(relocated.into());
+            }
+        }
+
+        // Stack back to front: padding background, shadow, window background, window, pointer.
+        let mut elements: Vec<WindowScreenshotRenderElement<GlesRenderer>> = Vec::new();
+        elements.extend(pointer_elements);
+        elements.extend(window_elements);
+        elements.extend(window_bg_elements);
+        elements.extend(shadow_elements);
+        elements.extend(padding_bg_elements);
+
         let elements = elements.iter().rev().map(|elem| {
-            RelocateRenderElement::from_element(elem, geo.loc.upscale(-1), Relocate::Relative)
+            RelocateRenderElement::from_element(elem, canvas_loc.upscale(-1), Relocate::Relative)
         });
         let pixels = render_to_vec(
-            renderer,
-            geo.size,
+            ctx.renderer,
+            canvas_size,
             scale,
             Transform::Normal,
             Fourcc::Abgr8888,
             elements,
+            clear_color,
         )?;
 
-        self.save_screenshot(geo.size, pixels, write_to_disk, path)
+        self.save_screenshot(canvas_size, pixels, write_to_disk, path)
             .context("error saving screenshot")
     }
 
@@ -7828,6 +8013,11 @@ niri_render_elements! {
     WindowScreenshotRenderElement<R> => {
         Layout = LayoutElementRenderElement<R>,
         Pointer = RelocateRenderElement<PointerRenderElements<R>>,
+        Shadow = ShadowRenderElement,
+        Border = BorderRenderElement,
+        SolidColor = SolidColorRenderElement,
+        RelocatedOutput = RelocateRenderElement<OutputRenderElements<R>>,
+        CroppedRelocatedOutput = CropRenderElement<RelocateRenderElement<OutputRenderElements<R>>>,
     }
 }
 
