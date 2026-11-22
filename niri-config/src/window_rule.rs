@@ -6,6 +6,7 @@ use crate::appearance::{
     TabIndicatorRule,
 };
 use crate::layout::DefaultPresetSize;
+use crate::screenshot::{ScreenshotBackground, ScreenshotPadding};
 use crate::utils::{MergeWith, RegexEq};
 use crate::FloatOrInt;
 
@@ -56,6 +57,8 @@ pub struct WindowRule {
     pub shadow: ShadowRule,
     #[knuffel(child, default)]
     pub tab_indicator: TabIndicatorRule,
+    #[knuffel(child, default)]
+    pub screenshot: WindowScreenshotRule,
     #[knuffel(child, unwrap(argument))]
     pub draw_border_with_background: Option<bool>,
     #[knuffel(child, unwrap(argument))]
@@ -94,6 +97,31 @@ pub enum VrrRule {
     On,
     /// Enable VRR when the window is the current fullscreen window.
     FullscreenOnly,
+}
+
+/// Rules for screenshot styling.
+#[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq)]
+pub struct WindowScreenshotRule {
+    #[knuffel(child, unwrap(argument))]
+    pub window_background: Option<ScreenshotBackground>,
+    #[knuffel(child, unwrap(argument))]
+    pub include_shadows: Option<bool>,
+    #[knuffel(child)]
+    pub padding: Option<ScreenshotPadding>,
+    #[knuffel(child, unwrap(argument))]
+    pub padding_background: Option<ScreenshotBackground>,
+}
+
+impl MergeWith<Self> for WindowScreenshotRule {
+    fn merge_with(&mut self, part: &Self) {
+        merge_clone_opt!(
+            (self, part),
+            window_background,
+            include_shadows,
+            padding,
+            padding_background,
+        );
+    }
 }
 
 /// Rules for popup surfaces.
