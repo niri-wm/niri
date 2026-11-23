@@ -3301,6 +3301,10 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         let end_pos = gesture.tracker.projected_end_pos() * norm_factor;
         let target_view_offset = end_pos + gesture.delta_from_tracker;
 
+        let active_col_x = self.column_x(self.active_column_idx);
+        let current_view_pos = active_col_x + current_view_offset;
+        let target_view_pos = active_col_x + target_view_offset;
+
         // Compute the snapping points. These are where the view aligns with column boundaries on
         // either side.
         struct Snap {
@@ -3419,8 +3423,6 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         // Find the closest snapping point.
         snapping_points.sort_by_key(|snap| NotNan::new(snap.view_pos).unwrap());
 
-        let active_col_x = self.column_x(self.active_column_idx);
-        let target_view_pos = active_col_x + target_view_offset;
         let target_snap = snapping_points
             .iter()
             .min_by_key(|snap| NotNan::new((snap.view_pos - target_view_pos).abs()).unwrap())
