@@ -980,6 +980,31 @@ window-rule {
 }
 ```
 
+#### `screenshot`
+
+<sup>Since: next release</sup>
+
+Override window screenshot options for matching windows:
+
+- `window-background`: `"transparent"`, `"desktop"` / `"wallpaper"`, or a color string like `"#1a1b26"`.
+- `include-shadows`: `true` or `false`.
+- `padding`: logical pixels (single number, pair `top/bottom left/right`, or four values `top right bottom left`).
+- `padding-background`: canvas fill outside the window (`"transparent"`, `"desktop"`, or color).
+
+```kdl
+// Capture terminal screenshots with wallpaper background and shadows.
+window-rule {
+    match app-id="foot"
+
+    screenshot {
+        window-background "desktop"
+        include-shadows true
+        padding 16
+        padding-background "#ffffff"
+    }
+}
+```
+
 #### `tiled-state`
 
 <sup>Since: 25.05</sup>
