@@ -3431,6 +3431,12 @@ impl Niri {
             state.lock_color_buffer.resize(output_size);
             if let Some(lock_surface) = &state.lock_surface {
                 configure_lock_surface(lock_surface, output);
+
+                for (popup, _) in PopupManager::popups_for_surface(lock_surface.wl_surface()) {
+                    with_surfaces_surface_tree(popup.wl_surface(), |surface, data| {
+                        send_scale_transform(surface, data, scale, transform);
+                    });
+                }
             }
         }
 
@@ -3779,12 +3785,33 @@ impl Niri {
             let Some(surface) = state.lock_surface.as_ref() else {
                 return rv;
             };
+            let surface = surface.wl_surface();
+            let location = Point::new(0, 0);
+
+            // Check the popups (e.g. an IME popup).
+            for (popup, offset) in PopupManager::popups_for_surface(surface) {
+                let surface = popup.wl_surface();
+                let popup_geo = popup.geometry();
+                let surface_loc = location + offset - popup_geo.loc;
+
+                if let Some((surface, pos_within_output)) = under_from_surface_tree(
+                    surface,
+                    pos_within_output,
+                    surface_loc,
+                    WindowSurfaceType::ALL,
+                ) {
+                    rv.surface = Some((
+                        surface,
+                        (pos_within_output + output_pos_in_global_space).to_f64(),
+                    ));
+                    return rv;
+                }
+            }
 
             rv.surface = under_from_surface_tree(
-                surface.wl_surface(),
+                surface,
                 pos_within_output,
-                // We put lock surfaces at (0, 0).
-                (0, 0),
+                location,
                 WindowSurfaceType::ALL,
             )
             .map(|(surface, pos_within_output)| {
@@ -4118,13 +4145,17 @@ impl Niri {
             return output;
         }
 
-        // Check layer-shell.
-        let has_layer_surface = |o: &&Output| {
-            layer_map_for_output(o)
-                .layer_for_surface(root, WindowSurfaceType::TOPLEVEL)
-                .is_some()
+        // Check layer-shell and ext-session-lock.
+        let has_surface = |o: &&Output| {
+            self.output_state[o]
+                .lock_surface
+                .as_ref()
+                .is_some_and(|s| s.wl_surface() == root)
+                || layer_map_for_output(o)
+                    .layer_for_surface(root, WindowSurfaceType::TOPLEVEL)
+                    .is_some()
         };
-        self.layout.outputs().find(has_layer_surface)
+        self.layout.outputs().find(has_surface)
     }
 
     pub fn lock_surface_focus(&self) -> Option<WlSurface> {
@@ -4800,10 +4831,30 @@ impl Niri {
             drop(layer_map);
 
             if let Some(surface) = state.lock_surface.as_ref() {
+                let surface = surface.wl_surface();
+                let location = Point::new(0, 0);
+
+                // Render the popups (e.g. an IME popup).
+                for (popup, offset) in PopupManager::popups_for_surface(surface) {
+                    let surface = popup.wl_surface();
+                    let popup_geo = popup.geometry();
+                    let surface_loc = location + offset - popup_geo.loc;
+
+                    push_elements_from_surface_tree(
+                        ctx.renderer,
+                        surface,
+                        surface_loc.to_physical_precise_round(output_scale),
+                        output_scale,
+                        1.,
+                        Kind::ScanoutCandidate,
+                        &mut |elem| push(elem.into()),
+                    );
+                }
+
                 push_elements_from_surface_tree(
                     ctx.renderer,
-                    surface.wl_surface(),
-                    Point::new(0, 0),
+                    surface,
+                    location.to_physical_precise_round(output_scale),
                     output_scale,
                     1.,
                     Kind::ScanoutCandidate,
@@ -5503,8 +5554,10 @@ impl Niri {
         }
 
         if let Some(surface) = &self.output_state[output].lock_surface {
+            let surface = surface.wl_surface();
+
             with_surface_tree_downward(
-                surface.wl_surface(),
+                surface,
                 (),
                 |_, _, _| TraversalAction::DoChildren(()),
                 |surface, states, _| {
@@ -5519,6 +5572,21 @@ impl Niri {
                 },
                 |_, _, _| true,
             );
+
+            for (popup, _) in PopupManager::popups_for_surface(surface) {
+                let surface = popup.wl_surface();
+                with_surfaces_surface_tree(surface, |surface, states| {
+                    update_surface_primary_scanout_output(
+                        surface,
+                        output,
+                        states,
+                        None,
+                        render_element_states,
+                        // Lock surfaces are shown only on one output at a time.
+                        |_, _, output, _| output,
+                    );
+                });
+            }
         }
     }
 
@@ -5564,8 +5632,10 @@ impl Niri {
         }
 
         if let Some(surface) = &self.output_state[output].lock_surface {
+            let surface = surface.wl_surface();
+
             send_dmabuf_feedback_surface_tree(
-                surface.wl_surface(),
+                surface,
                 output,
                 |_, _| Some(output.clone()),
                 |surface, _| {
@@ -5577,6 +5647,23 @@ impl Niri {
                     )
                 },
             );
+
+            for (popup, _) in PopupManager::popups_for_surface(surface) {
+                let surface = popup.wl_surface();
+                send_dmabuf_feedback_surface_tree(
+                    surface,
+                    output,
+                    |_, _| Some(output.clone()),
+                    |surface, _| {
+                        select_dmabuf_feedback(
+                            surface,
+                            render_element_states,
+                            &feedback.render,
+                            &feedback.scanout,
+                        )
+                    },
+                );
+            }
         }
 
         if let Some(surface) = self.dnd_icon.as_ref().map(|icon| &icon.surface) {
@@ -5701,13 +5788,26 @@ impl Niri {
         }
 
         if let Some(surface) = &self.output_state[output].lock_surface {
+            let surface = surface.wl_surface();
+
             send_frames_surface_tree(
-                surface.wl_surface(),
+                surface,
                 output,
                 frame_callback_time,
                 FRAME_CALLBACK_THROTTLE,
                 should_send,
             );
+
+            for (popup, _) in PopupManager::popups_for_surface(surface) {
+                let surface = popup.wl_surface();
+                send_frames_surface_tree(
+                    surface,
+                    output,
+                    frame_callback_time,
+                    FRAME_CALLBACK_THROTTLE,
+                    should_send,
+                );
+            }
         }
 
         if let Some(surface) = self.dnd_icon.as_ref().map(|icon| &icon.surface) {
@@ -5773,13 +5873,26 @@ impl Niri {
             }
 
             if let Some(surface) = &state.lock_surface {
+                let surface = surface.wl_surface();
+
                 send_frames_surface_tree(
-                    surface.wl_surface(),
+                    surface,
                     output,
                     frame_callback_time,
                     FRAME_CALLBACK_THROTTLE,
                     |_, _| None,
                 );
+
+                for (popup, _) in PopupManager::popups_for_surface(surface) {
+                    let surface = popup.wl_surface();
+                    send_frames_surface_tree(
+                        surface,
+                        output,
+                        frame_callback_time,
+                        FRAME_CALLBACK_THROTTLE,
+                        |_, _| None,
+                    );
+                }
             }
         }
 
@@ -5870,8 +5983,10 @@ impl Niri {
         }
 
         if let Some(surface) = &self.output_state[output].lock_surface {
+            let surface = surface.wl_surface();
+
             take_presentation_feedback_surface_tree(
-                surface.wl_surface(),
+                surface,
                 &mut feedback,
                 surface_primary_scanout_output,
                 |surface, _| {
@@ -5882,6 +5997,23 @@ impl Niri {
                     )
                 },
             );
+
+            for (popup, _) in PopupManager::popups_for_surface(surface) {
+                let surface = popup.wl_surface();
+
+                take_presentation_feedback_surface_tree(
+                    surface,
+                    &mut feedback,
+                    surface_primary_scanout_output,
+                    |surface, _| {
+                        surface_presentation_feedback_flags_from_states(
+                            surface,
+                            None,
+                            render_element_states,
+                        )
+                    },
+                );
+            }
         }
 
         feedback
