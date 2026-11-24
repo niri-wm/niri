@@ -2884,6 +2884,7 @@ mod tests {
                 skip_cursor_only_updates_during_vrr: false,
                 disable_10bit_output: false,
                 nested_show_host_cursor: false,
+                disable_idle_drm_device_suspend: false,
             },
             workspaces: [
                 Workspace {
@@ -3096,5 +3097,17 @@ mod tests {
         +                0.66667,
         "#,
         );
+    }
+
+    #[test]
+    fn test_parse_debug_disable_idle_drm_device_suspend() {
+        for (config, expected) in [
+            ("", false),
+            ("debug { disable-idle-drm-device-suspend; }", true),
+            ("debug { disable-idle-drm-device-suspend false; }", false),
+        ] {
+            let config = Config::parse_mem(config).unwrap();
+            assert_eq!(config.debug.disable_idle_drm_device_suspend, expected);
+        }
     }
 }
