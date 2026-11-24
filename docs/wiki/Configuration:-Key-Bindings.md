@@ -599,3 +599,18 @@ binds {
     Mod+Ctrl+C { move-window-to-new-workspace-below "chat" focus=false; }
 }
 ```
+
+#### `focus-workspace`, `focus-workspace-down`, `focus-workspace-up`, `focus-workspace-previous`
+
+Switch to a different workspace on the focused monitor.
+
+You can pass a workspace index or name to `focus-workspace`.
+
+<sup>Since next release</sup>, you can switch instantly using the `skip-animation=true` property (or `--skip-animation` over IPC):
+
+```kdl
+binds {
+    Mod+1 { focus-workspace 1 skip-animation=true; }
+    Mod+Page_Down { focus-workspace-down skip-animation=true; }
+}
+```

@@ -1257,13 +1257,13 @@ impl Op {
                 layout.center_window(id.as_ref());
             }
             Op::CenterVisibleColumns => layout.center_visible_columns(),
-            Op::FocusWorkspaceDown => layout.switch_workspace_down(),
-            Op::FocusWorkspaceUp => layout.switch_workspace_up(),
-            Op::FocusWorkspace(idx) => layout.switch_workspace(idx),
+            Op::FocusWorkspaceDown => layout.switch_workspace_down(true),
+            Op::FocusWorkspaceUp => layout.switch_workspace_up(true),
+            Op::FocusWorkspace(idx) => layout.switch_workspace(idx, true),
             Op::FocusWorkspaceAutoBackAndForth(idx) => {
-                layout.switch_workspace_auto_back_and_forth(idx)
+                layout.switch_workspace_auto_back_and_forth(idx, true)
             }
-            Op::FocusWorkspacePrevious => layout.switch_workspace_previous(),
+            Op::FocusWorkspacePrevious => layout.switch_workspace_previous(true),
             Op::MoveWindowToWorkspaceDown(focus) => layout.move_to_workspace_down(focus),
             Op::MoveWindowToWorkspaceUp(focus) => layout.move_to_workspace_up(focus),
             Op::MoveWindowToWorkspace {
