@@ -1,16 +1,54 @@
-use futures_util::StreamExt;
+use futures_util::{FutureExt, StreamExt};
 use zbus::fdo;
 use zbus::names::InterfaceName;
 
 pub enum Login1ToNiri {
     LidClosedChanged(bool),
     PrepareForSleep(bool),
+    SleepInhibitor(Option<std::os::fd::OwnedFd>),
+}
+
+async fn take_sleep_inhibitor(proxy: &zbus::Proxy<'_>) -> Option<std::os::fd::OwnedFd> {
+    let call = proxy
+        .call(
+            "Inhibit",
+            &("sleep", "niri", "Waiting for GPU access", "delay"),
+        )
+        .fuse();
+    let timeout = FutureExt::fuse(async_io::Timer::after(std::time::Duration::from_secs(1)));
+    futures_util::pin_mut!(call, timeout);
+
+    let fd: zbus::zvariant::OwnedFd = match futures_util::select! {
+        result = call => Some(result),
+        _ = timeout => None,
+    } {
+        Some(Ok(fd)) => fd,
+        None => {
+            warn!("timed out acquiring sleep inhibitor");
+            return None;
+        }
+        Some(Err(err)) => {
+            warn!("failed to acquire sleep inhibitor: {err:?}");
+            return None;
+        }
+    };
+    let fd = fd.into();
+    if let Err(err) = smithay::reexports::rustix::io::fcntl_setfd(
+        &fd,
+        smithay::reexports::rustix::io::FdFlags::CLOEXEC,
+    ) {
+        warn!("failed to set CLOEXEC on sleep inhibitor: {err:?}");
+        return None;
+    }
+    Some(fd)
 }
 
 pub fn start(
     to_niri: calloop::channel::Sender<Login1ToNiri>,
 ) -> anyhow::Result<zbus::blocking::Connection> {
-    let conn = zbus::blocking::Connection::system()?;
+    let conn = zbus::blocking::connection::Builder::system()?
+        .method_timeout(std::time::Duration::from_secs(5))
+        .build()?;
 
     let to_niri_sleep = to_niri.clone();
 
@@ -129,18 +167,30 @@ pub fn start(
             }
         };
 
-        while let Some(message) = signals.next().await {
-            let start: bool = match message.body().deserialize() {
-                Ok(x) => x,
-                Err(err) => {
-                    warn!("error parsing PrepareForSleep: {err:?}");
-                    continue;
+        let mut inhibitor = take_sleep_inhibitor(&proxy).boxed().fuse();
+        loop {
+            futures_util::select_biased! {
+                fd = inhibitor => {
+                    if to_niri_sleep.send(Login1ToNiri::SleepInhibitor(fd)).is_err() {
+                        return;
+                    }
                 }
-            };
-
-            if let Err(err) = to_niri_sleep.send(Login1ToNiri::PrepareForSleep(start)) {
-                warn!("error sending message to niri: {err:?}");
-                return;
+                message = signals.next().fuse() => {
+                    let Some(message) = message else { return; };
+                    let start: bool = match message.body().deserialize() {
+                        Ok(x) => x,
+                        Err(err) => {
+                            warn!("error parsing PrepareForSleep: {err:?}");
+                            continue;
+                        }
+                    };
+                    if to_niri_sleep.send(Login1ToNiri::PrepareForSleep(start)).is_err() {
+                        return;
+                    }
+                    if !start {
+                        inhibitor = take_sleep_inhibitor(&proxy).boxed().fuse();
+                    }
+                }
             }
         }
     };
