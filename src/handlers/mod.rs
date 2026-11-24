@@ -245,11 +245,20 @@ impl InputMethodHandler for State {
     fn popup_repositioned(&mut self, surface: PopupSurface) {
         let popup = PopupKind::InputMethod(surface);
         self.unconstrain_popup(&popup);
+
+        if let Some(output) = self.output_for_popup(&popup) {
+            self.niri.queue_redraw(&output.clone());
+        }
     }
 
     fn dismiss_popup(&mut self, surface: PopupSurface) {
         if let Some(parent) = surface.get_parent().map(|parent| parent.surface.clone()) {
-            let _ = PopupManager::dismiss_popup(&parent, &PopupKind::from(surface));
+            let popup = PopupKind::InputMethod(surface);
+            if let Some(output) = self.output_for_popup(&popup) {
+                self.niri.queue_redraw(&output.clone());
+            }
+
+            let _ = PopupManager::dismiss_popup(&parent, &popup);
         }
     }
 
