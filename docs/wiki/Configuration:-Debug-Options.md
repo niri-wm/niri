@@ -36,6 +36,7 @@ debug {
     deactivate-unfocused-windows
     disable-10bit-output
     nested-show-host-cursor
+    disable-idle-drm-device-suspend
 }
 
 binds {
@@ -356,6 +357,23 @@ Until this is fixed in Smithay, you can disable 10-bit color formats by setting 
 ```kdl
 debug {
     disable-10bit-output
+}
+```
+
+### `disable-idle-drm-device-suspend`
+
+<sup>Since: next release</sup>
+
+Keep idle secondary GPUs active and use their own renderers and buffer allocation.
+
+Use this flag to work around display hotplug, wakeup, or rendering failures on secondary GPUs.
+Changing it while niri runs reconnects secondary outputs and ends their DRM leases.
+
+See [GPUs](./GPUs.md#power-management) for details.
+
+```kdl
+debug {
+    disable-idle-drm-device-suspend
 }
 ```
 
