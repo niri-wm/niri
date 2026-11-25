@@ -1,12 +1,18 @@
+use std::cell::RefCell;
+use std::fs;
+use std::path::PathBuf;
+use std::rc::Rc;
 use std::str::FromStr;
 
+use knuffel::errors::DecodeError;
+use knuffel::DecodeScalar;
 use miette::miette;
-use smithay::input::keyboard::XkbConfig;
+use smithay::input::keyboard::{keysyms, Keysym, XkbConfig};
 use smithay::reexports::input;
 
 use crate::binds::Modifiers;
-use crate::utils::{Flag, MergeWith, Percent};
-use crate::FloatOrInt;
+use crate::utils::{expand_home_path, Flag, MergeWith, Percent};
+use crate::{FloatOrInt, Includes};
 
 #[derive(Debug, Default, PartialEq)]
 pub struct Input {
@@ -144,7 +150,7 @@ pub struct Xkb {
     #[knuffel(child, unwrap(argument))]
     pub options: Option<String>,
     #[knuffel(child, unwrap(argument))]
-    pub file: Option<String>,
+    pub file: Option<XkbFile>,
 }
 
 impl Xkb {
@@ -158,6 +164,9 @@ impl Xkb {
         }
     }
 }
+
+#[derive(PartialEq, Eq, Clone, Debug)]
+pub struct XkbFile(pub Option<String>);
 
 #[derive(knuffel::DecodeScalar, Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum TrackLayout {
@@ -225,6 +234,8 @@ pub struct Touchpad {
     pub middle_emulation: bool,
     #[knuffel(child)]
     pub scroll_factor: Option<ScrollFactor>,
+    #[knuffel(child, unwrap(argument))]
+    pub pinch_sensitivity: Option<FloatOrInt<0, 100>>,
 }
 
 #[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]
@@ -370,6 +381,8 @@ pub struct Tablet {
     #[knuffel(child)]
     pub map_to_focused_output: bool,
     #[knuffel(child)]
+    pub map_to_focused_window: bool,
+    #[knuffel(child)]
     pub left_handed: bool,
 }
 
@@ -385,6 +398,8 @@ pub struct Touch {
 
 #[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
 pub struct FocusFollowsMouse {
+    #[knuffel(property)]
+    pub outputs_only: Option<bool>,
     #[knuffel(property, str)]
     pub max_scroll_amount: Option<Percent>,
 }
@@ -421,7 +436,7 @@ impl FromStr for WarpMouseToFocusMode {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub enum ModKey {
     Ctrl,
     Shift,
@@ -441,6 +456,23 @@ impl ModKey {
             ModKey::IsoLevel3Shift => Modifiers::ISO_LEVEL3_SHIFT,
             ModKey::IsoLevel5Shift => Modifiers::ISO_LEVEL5_SHIFT,
         }
+    }
+
+    /// Returns the modifier key for a keysym, if the keysym is a modifier key.
+    pub fn from_keysym(keysym: Keysym) -> Option<Self> {
+        match keysym.raw() {
+            keysyms::KEY_Control_L | keysyms::KEY_Control_R => Some(Self::Ctrl),
+            keysyms::KEY_Shift_L | keysyms::KEY_Shift_R => Some(Self::Shift),
+            keysyms::KEY_Alt_L | keysyms::KEY_Alt_R => Some(Self::Alt),
+            keysyms::KEY_Super_L | keysyms::KEY_Super_R => Some(Self::Super),
+            keysyms::KEY_ISO_Level3_Shift => Some(Self::IsoLevel3Shift),
+            keysyms::KEY_ISO_Level5_Shift => Some(Self::IsoLevel5Shift),
+            _ => None,
+        }
+    }
+
+    pub fn matches_keysym(self, keysym: Keysym) -> bool {
+        Self::from_keysym(keysym) == Some(self)
     }
 }
 
@@ -518,6 +550,49 @@ impl FromStr for TapButtonMap {
     }
 }
 
+impl<S> DecodeScalar<S> for XkbFile
+where
+    S: knuffel::traits::ErrorSpan,
+{
+    fn type_check(
+        type_name: &Option<knuffel::span::Spanned<knuffel::ast::TypeName, S>>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) {
+        if let Some(type_name) = &type_name {
+            ctx.emit_error(DecodeError::unexpected(
+                type_name,
+                "type name",
+                "no type name expected for this node",
+            ));
+        }
+    }
+
+    fn raw_decode(
+        value: &knuffel::span::Spanned<knuffel::ast::Literal, S>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) -> Result<Self, DecodeError<S>> {
+        let path = PathBuf::raw_decode(value, ctx)?;
+        match expand_home_path(path, value, ctx) {
+            Ok(p) => {
+                let includes = ctx.get::<Rc<RefCell<Includes>>>().unwrap();
+                includes.borrow_mut().0.push(p.to_path_buf());
+
+                match fs::read_to_string(&p) {
+                    Ok(c) => Ok(Self(Some(c))),
+                    Err(e) => {
+                        warn!("failed to read xkb file from {p:?}: {e}");
+                        Ok(Self(None))
+                    }
+                }
+            }
+            Err(e) => {
+                warn!("failed to expand xkb file path: {:?}", e);
+                Ok(Self(None))
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use insta::assert_debug_snapshot;
@@ -530,6 +605,55 @@ mod tests {
             .map_err(miette::Report::new)
             .unwrap();
         Input::from_part(&part)
+    }
+
+    #[test]
+    fn mod_key_names_are_consistent() {
+        // The X11 `ModN` modifier indices are a separate numbering from the ISO level numbers,
+        // and the two happen to be crossed over: ISO Level 3 Shift is Mod5, and ISO Level 5 Shift
+        // is Mod3. This test guards against "fixing" this apparent mismatch.
+        for (name, modifier, keysym, modifiers) in [
+            (
+                "Mod5",
+                ModKey::IsoLevel3Shift,
+                keysyms::KEY_ISO_Level3_Shift,
+                Modifiers::ISO_LEVEL3_SHIFT,
+            ),
+            (
+                "Mod3",
+                ModKey::IsoLevel5Shift,
+                keysyms::KEY_ISO_Level5_Shift,
+                Modifiers::ISO_LEVEL5_SHIFT,
+            ),
+        ] {
+            // Name -> variant.
+            assert_eq!(
+                name.parse::<ModKey>().unwrap(),
+                modifier,
+                "parsing `{name}`"
+            );
+
+            // Keysym -> variant.
+            assert_eq!(
+                ModKey::from_keysym(Keysym::from(keysym)),
+                Some(modifier),
+                "keysym for `{name}`",
+            );
+            assert!(modifier.matches_keysym(Keysym::from(keysym)));
+
+            // Variant -> held modifiers.
+            assert_eq!(modifier.to_modifiers(), modifiers, "modifiers for `{name}`");
+        }
+
+        // ISO_Level3_Shift and Mod5 are the same modifier, and so are ISO_Level5_Shift and Mod3.
+        assert_eq!(
+            "ISO_Level3_Shift".parse::<ModKey>().unwrap(),
+            "Mod5".parse::<ModKey>().unwrap()
+        );
+        assert_eq!(
+            "ISO_Level5_Shift".parse::<ModKey>().unwrap(),
+            "Mod3".parse::<ModKey>().unwrap()
+        );
     }
 
     #[test]

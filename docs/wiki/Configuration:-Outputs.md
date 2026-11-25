@@ -13,8 +13,10 @@ output "eDP-1" {
     transform "90"
     position x=1280 y=0
     variable-refresh-rate // on-demand=true
+    // drm-lease
     focus-at-startup
     backdrop-color "#001100"
+    // max-bpc 8
 
     hot-corners {
         // off
@@ -225,6 +227,22 @@ output "HDMI-A-1" {
 }
 ```
 
+### `drm-lease`
+
+<sup>Since: next release</sup>
+
+Force this output to be offered for [DRM leasing](https://wayland.app/protocols/drm-lease-v1) instead of being used as a regular monitor.
+
+Normally, niri automatically offers connectors with the `non-desktop` DRM property for DRM leasing (e.g. VR headsets).
+However, some drivers (notably NVIDIA) do not always set this property.
+In that case, you can use `drm-lease` to manually mark the output for leasing.
+
+```kdl
+output "Your VR Headset Name" {
+    drm-lease
+}
+```
+
 ### `focus-at-startup`
 
 <sup>Since: 25.05</sup>
@@ -276,6 +294,27 @@ The alpha channel for this color will be ignored.
 ```kdl
 output "HDMI-A-1" {
     backdrop-color "#001100"
+}
+```
+
+### `max-bpc`
+
+<sup>Since: next release</sup>
+
+Set the maximum bits per channel (BPC) for this output.
+
+You *do not* need to set this option normally.
+It influences the encoding of the display signal on the wire and *is not* directly related to the color bitness or framebuffer format.
+
+Setting `max-bpc` to a low value may help if you hit a bandwidth issue (can't set a monitor configuration that works on other compositor).
+Otherwise, you're advised to leave it unset (keeping a default, usually high value) and let the GPU driver figure things out automatically.
+
+Valid values are `6`, `8`, `10`, `12`, `14`, `16`.
+
+```kdl
+// Set 8 max-bpc on HDMI-A-1 to lower the bandwidth.
+output "HDMI-A-1" {
+    max-bpc 8
 }
 ```
 

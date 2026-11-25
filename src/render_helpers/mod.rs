@@ -1,7 +1,7 @@
 use std::ptr;
 
-use anyhow::{ensure, Context as _};
-use niri_config::BlockOutFrom;
+use anyhow::{bail, ensure, Context as _};
+use niri_config::{BlockOutFrom, BlockOutKind, BlockOutTarget};
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::allocator::{Buffer, Fourcc};
 use smithay::backend::renderer::damage::OutputDamageTracker;
@@ -102,6 +102,14 @@ pub struct BakedBuffer<B> {
     pub dst: Option<Size<i32, Logical>>,
 }
 
+/// Buffer backed by a wl_buffer.
+#[derive(Clone)]
+pub enum CaptureBuffer {
+    // The Dmabuf that is contained inside the WlBuffer.
+    Dma(Dmabuf),
+    Shm(WlBuffer),
+}
+
 pub trait ToRenderElement {
     type RenderElement;
 
@@ -118,11 +126,16 @@ impl RenderTarget {
     pub const COUNT: usize = 3;
 
     pub fn should_block_out(self, block_out_from: Option<BlockOutFrom>) -> bool {
-        match block_out_from {
+        match block_out_from.map(|rule| rule.target) {
             None => false,
-            Some(BlockOutFrom::Screencast) => self == RenderTarget::Screencast,
-            Some(BlockOutFrom::ScreenCapture) => self != RenderTarget::Output,
+            Some(BlockOutTarget::Screencast) => self == RenderTarget::Screencast,
+            Some(BlockOutTarget::ScreenCapture) => self != RenderTarget::Output,
         }
+    }
+
+    pub fn should_hide(self, block_out_from: Option<BlockOutFrom>) -> bool {
+        self.should_block_out(block_out_from)
+            && block_out_from.is_some_and(|rule| rule.kind == BlockOutKind::Hide)
     }
 }
 
@@ -251,6 +264,35 @@ pub fn render_and_download(
     copy_framebuffer(renderer, &target, fourcc).context("error copying framebuffer")
 }
 
+pub fn render_and_download_with_damage(
+    renderer: &mut GlesRenderer,
+    damage_tracker: &mut OutputDamageTracker,
+    fourcc: Fourcc,
+    elements: &[impl RenderElement<GlesRenderer>],
+    states: RenderElementStates,
+) -> anyhow::Result<GlesMapping> {
+    let _span = tracy_client::span!();
+
+    let (size, _scale, _transform) = damage_tracker.mode().try_into().unwrap();
+    let mut texture = create_texture(renderer, size, fourcc).context("error creating texture")?;
+    let mut target = renderer
+        .bind(&mut texture)
+        .context("error binding texture")?;
+
+    let _res = damage_tracker
+        .render_output_with_states(
+            renderer,
+            &mut target,
+            0,
+            elements,
+            Color32F::TRANSPARENT,
+            states,
+        )
+        .context("error rendering")?;
+
+    copy_framebuffer(renderer, &target, fourcc).context("error copying framebuffer")
+}
+
 pub fn render_to_vec(
     renderer: &mut GlesRenderer,
     size: Size<i32, Physical>,
@@ -305,18 +347,38 @@ pub fn render_to_shm(
     states: RenderElementStates,
 ) -> anyhow::Result<()> {
     let _span = tracy_client::span!();
-    shm::with_buffer_contents_mut(buffer, |shm_buffer, shm_len, buffer_data| {
+    // The pointer and length are the client's entire pool, which may hold other
+    // buffers besides this one... buffer_data is the one we want.
+    shm::with_buffer_contents_mut(buffer, |pool, pool_len, buffer_data| {
         let (size, _scale, _transform) = damage_tracker.mode().try_into().unwrap();
-        let fourcc = Fourcc::Xrgb8888;
+        let fourcc = match buffer_data.format {
+            wl_shm::Format::Xrgb8888 => Fourcc::Xrgb8888,
+            wl_shm::Format::Argb8888 => Fourcc::Argb8888,
+            _ => bail!("unsupported shm format: {:?}", buffer_data.format),
+        };
 
         ensure!(
             // The buffer prefers pixels in little endian ...
-            buffer_data.format == wl_shm::Format::Xrgb8888
-                && buffer_data.width == size.w
-                && buffer_data.height == size.h
-                && buffer_data.stride == size.w * 4
-                && shm_len == buffer_data.stride as usize * buffer_data.height as usize,
-            "invalid buffer format or size"
+            buffer_data.width == size.w && buffer_data.height == size.h,
+            "invalid buffer size"
+        );
+
+        // The client chooses the stride and may pad rows, so only the first
+        // row_len bytes can be used here.
+        let row_len = size.w as usize * 4;
+        let height = size.h as usize;
+        let offset = usize::try_from(buffer_data.offset).context("negative buffer offset")?;
+        let stride = usize::try_from(buffer_data.stride).context("negative buffer stride")?;
+
+        // This should have already been validated by wl_shm, and a pool can
+        // only grow, but check again just in case.
+        let end = stride
+            .checked_mul(height.saturating_sub(1))
+            .and_then(|len| len.checked_add(row_len))
+            .and_then(|len| len.checked_add(offset));
+        ensure!(
+            stride >= row_len && end.is_some_and(|end| end <= pool_len),
+            "buffer does not fit in its shm pool"
         );
 
         let mut texture =
@@ -342,9 +404,22 @@ pub fn render_to_shm(
             .map_texture(&mapping)
             .context("error mapping texture")?;
 
+        ensure!(bytes.len() >= row_len * height, "short texture mapping");
+
         unsafe {
             let _span = tracy_client::span!("copy_nonoverlapping");
-            ptr::copy_nonoverlapping(bytes.as_ptr(), shm_buffer.cast(), shm_len);
+            let dst = pool.add(offset);
+            if stride == row_len {
+                ptr::copy_nonoverlapping(bytes.as_ptr(), dst, row_len * height);
+            } else {
+                for y in 0..height {
+                    ptr::copy_nonoverlapping(
+                        bytes.as_ptr().add(y * row_len),
+                        dst.add(y * stride),
+                        row_len,
+                    );
+                }
+            }
         }
 
         Ok(())
@@ -404,4 +479,28 @@ fn render_elements(
     }
 
     frame.finish().context("error finishing frame")
+}
+
+impl CaptureBuffer {
+    pub fn render(
+        &self,
+        renderer: &mut GlesRenderer,
+        damage_tracker: &mut OutputDamageTracker,
+        elements: &[impl RenderElement<GlesRenderer>],
+        states: RenderElementStates,
+    ) -> anyhow::Result<SyncPoint> {
+        match self {
+            CaptureBuffer::Dma(dmabuf) => {
+                let sync =
+                    render_to_dmabuf(renderer, damage_tracker, dmabuf.clone(), elements, states)
+                        .context("error rendering to screencopy dmabuf")?;
+                Ok(sync)
+            }
+            CaptureBuffer::Shm(wl_buffer) => {
+                render_to_shm(renderer, damage_tracker, wl_buffer, elements, states)
+                    .context("error rendering to screencopy shm buffer")?;
+                Ok(SyncPoint::signaled())
+            }
+        }
+    }
 }

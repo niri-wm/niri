@@ -5,7 +5,6 @@ use std::time::Duration;
 
 use calloop::generic::Generic;
 use calloop::{Interest, LoopHandle, Mode, PostAction};
-use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::allocator::{Buffer, Fourcc};
 use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::sync::SyncPoint;
@@ -13,20 +12,25 @@ use smithay::output::{Output, WeakOutput};
 use smithay::reexports::wayland_protocols_wlr::screencopy::v1::server::{
     zwlr_screencopy_frame_v1, zwlr_screencopy_manager_v1,
 };
-use smithay::reexports::wayland_server::protocol::wl_buffer::WlBuffer;
 use smithay::reexports::wayland_server::protocol::wl_shm::Format;
 use smithay::reexports::wayland_server::{
     Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
 };
 use smithay::utils::{Physical, Point, Rectangle, Size, Transform};
-use smithay::wayland::{dmabuf, shm};
+use smithay::wayland::{dmabuf, shm, Dispatch2, GlobalDispatch2};
 use wayland_backend::server::Credentials;
 use zwlr_screencopy_frame_v1::{Flags, ZwlrScreencopyFrameV1};
 use zwlr_screencopy_manager_v1::ZwlrScreencopyManagerV1;
 
+use crate::protocols::EmptyData;
+use crate::render_helpers::CaptureBuffer;
 use crate::utils::{get_credentials_for_client, get_monotonic_time, CastSessionId, CastStreamId};
 
 const VERSION: u32 = 3;
+
+fn screencopy_shm_buffer_stride(size: Size<i32, Physical>) -> i32 {
+    size.w * 4
+}
 
 /// Inactivity timeout for considering a screencopy cast as stopped.
 ///
@@ -211,8 +215,6 @@ impl ScreencopyManagerState {
     pub fn new<D, F>(display: &DisplayHandle, filter: F) -> Self
     where
         D: GlobalDispatch<ZwlrScreencopyManagerV1, ScreencopyManagerGlobalData>,
-        D: Dispatch<ZwlrScreencopyManagerV1, ()>,
-        D: Dispatch<ZwlrScreencopyFrameV1, ScreencopyFrameState>,
         D: ScreencopyHandler,
         D: 'static,
         F: for<'c> Fn(&'c Client) -> bool + Send + Sync + 'static,
@@ -278,24 +280,21 @@ impl ScreencopyManagerState {
     }
 }
 
-impl<D> GlobalDispatch<ZwlrScreencopyManagerV1, ScreencopyManagerGlobalData, D>
-    for ScreencopyManagerState
+impl<D> GlobalDispatch2<ZwlrScreencopyManagerV1, D> for ScreencopyManagerGlobalData
 where
-    D: GlobalDispatch<ZwlrScreencopyManagerV1, ScreencopyManagerGlobalData>,
-    D: Dispatch<ZwlrScreencopyManagerV1, ()>,
-    D: Dispatch<ZwlrScreencopyFrameV1, ScreencopyFrameState>,
+    D: Dispatch<ZwlrScreencopyManagerV1, EmptyData>,
     D: ScreencopyHandler,
     D: 'static,
 {
     fn bind(
+        &self,
         state: &mut D,
         dh: &DisplayHandle,
         client: &Client,
         manager: New<ZwlrScreencopyManagerV1>,
-        _manager_state: &ScreencopyManagerGlobalData,
         data_init: &mut DataInit<'_, D>,
     ) {
-        let manager = data_init.init(manager, ());
+        let manager = data_init.init(manager, EmptyData);
 
         let state = state.screencopy_state();
         let credentials = get_credentials_for_client(dh, client);
@@ -303,25 +302,23 @@ where
         state.queues.insert(manager.clone(), queue);
     }
 
-    fn can_view(client: Client, global_data: &ScreencopyManagerGlobalData) -> bool {
-        (global_data.filter)(&client)
+    fn can_view(&self, client: &Client) -> bool {
+        (self.filter)(client)
     }
 }
 
-impl<D> Dispatch<ZwlrScreencopyManagerV1, (), D> for ScreencopyManagerState
+impl<D> Dispatch2<ZwlrScreencopyManagerV1, D> for EmptyData
 where
-    D: GlobalDispatch<ZwlrScreencopyManagerV1, ScreencopyManagerGlobalData>,
-    D: Dispatch<ZwlrScreencopyManagerV1, ()>,
     D: Dispatch<ZwlrScreencopyFrameV1, ScreencopyFrameState>,
     D: ScreencopyHandler,
     D: 'static,
 {
     fn request(
+        &self,
         state: &mut D,
         _client: &Client,
         manager: &ZwlrScreencopyManagerV1,
         request: zwlr_screencopy_manager_v1::Request,
-        _data: &(),
         _display: &DisplayHandle,
         data_init: &mut DataInit<'_, D>,
     ) {
@@ -422,7 +419,7 @@ where
             Format::Xrgb8888,
             buffer_size.w as u32,
             buffer_size.h as u32,
-            buffer_size.w as u32 * 4,
+            screencopy_shm_buffer_stride(buffer_size) as u32,
         );
 
         if frame.version() >= 3 {
@@ -443,10 +440,10 @@ where
     }
 
     fn destroyed(
+        &self,
         state: &mut D,
         _client: wayland_backend::server::ClientId,
         manager: &ZwlrScreencopyManagerV1,
-        _data: &(),
     ) {
         let state = state.screencopy_state();
 
@@ -483,24 +480,6 @@ pub trait ScreencopyHandler {
     fn screencopy_state(&mut self) -> &mut ScreencopyManagerState;
 }
 
-#[allow(missing_docs)]
-#[macro_export]
-macro_rules! delegate_screencopy {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        smithay::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            smithay::reexports::wayland_protocols_wlr::screencopy::v1::server::zwlr_screencopy_manager_v1::ZwlrScreencopyManagerV1: $crate::protocols::screencopy::ScreencopyManagerGlobalData
-        ] => $crate::protocols::screencopy::ScreencopyManagerState);
-
-        smithay::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            smithay::reexports::wayland_protocols_wlr::screencopy::v1::server::zwlr_screencopy_manager_v1::ZwlrScreencopyManagerV1: ()
-        ] => $crate::protocols::screencopy::ScreencopyManagerState);
-
-        smithay::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            smithay::reexports::wayland_protocols_wlr::screencopy::v1::server::zwlr_screencopy_frame_v1::ZwlrScreencopyFrameV1: $crate::protocols::screencopy::ScreencopyFrameState
-        ] => $crate::protocols::screencopy::ScreencopyManagerState);
-    };
-}
-
 #[derive(Clone)]
 pub struct ScreencopyFrameInfo {
     output: Output,
@@ -518,18 +497,17 @@ pub enum ScreencopyFrameState {
     },
 }
 
-impl<D> Dispatch<ZwlrScreencopyFrameV1, ScreencopyFrameState, D> for ScreencopyManagerState
+impl<D> Dispatch2<ZwlrScreencopyFrameV1, D> for ScreencopyFrameState
 where
-    D: Dispatch<ZwlrScreencopyFrameV1, ScreencopyFrameState>,
     D: ScreencopyHandler,
     D: 'static,
 {
     fn request(
+        &self,
         state: &mut D,
         _client: &Client,
         frame: &ZwlrScreencopyFrameV1,
         request: zwlr_screencopy_frame_v1::Request,
-        data: &ScreencopyFrameState,
         _display: &DisplayHandle,
         _data_init: &mut DataInit<'_, D>,
     ) {
@@ -541,7 +519,7 @@ where
             manager,
             info,
             copied,
-        } = data
+        } = self
         else {
             return;
         };
@@ -567,7 +545,7 @@ where
                 && dmabuf.width() == size.w as u32
                 && dmabuf.height() == size.h as u32
             {
-                ScreencopyBuffer::Dmabuf(dmabuf.clone())
+                CaptureBuffer::Dma(dmabuf.clone())
             } else {
                 frame.post_error(
                     zwlr_screencopy_frame_v1::Error::InvalidBuffer,
@@ -575,16 +553,15 @@ where
                 );
                 return;
             }
-        } else if shm::with_buffer_contents(&buffer, |_, shm_len, buffer_data| {
+        } else if shm::with_buffer_contents(&buffer, |_, _, buffer_data| {
             buffer_data.format == Format::Xrgb8888
                 && buffer_data.width == size.w
                 && buffer_data.height == size.h
-                && buffer_data.stride == size.w * 4
-                && shm_len == buffer_data.stride as usize * buffer_data.height as usize
+                && buffer_data.stride == screencopy_shm_buffer_stride(size)
         })
         .unwrap_or(false)
         {
-            ScreencopyBuffer::Shm(buffer)
+            CaptureBuffer::Shm(buffer)
         } else {
             frame.post_error(
                 zwlr_screencopy_frame_v1::Error::InvalidBuffer,
@@ -617,12 +594,12 @@ where
     }
 
     fn destroyed(
+        &self,
         state: &mut D,
         _client: wayland_backend::server::ClientId,
         frame: &ZwlrScreencopyFrameV1,
-        data: &ScreencopyFrameState,
     ) {
-        let ScreencopyFrameState::Pending { manager, .. } = data else {
+        let ScreencopyFrameState::Pending { manager, .. } = self else {
             return;
         };
 
@@ -642,18 +619,11 @@ where
     }
 }
 
-/// Screencopy buffer.
-#[derive(Clone)]
-pub enum ScreencopyBuffer {
-    Dmabuf(Dmabuf),
-    Shm(WlBuffer),
-}
-
 /// Screencopy frame.
 pub struct Screencopy {
     info: ScreencopyFrameInfo,
     frame: ZwlrScreencopyFrameV1,
-    buffer: ScreencopyBuffer,
+    buffer: CaptureBuffer,
     with_damage: bool,
     submitted: bool,
 }
@@ -668,7 +638,7 @@ impl Drop for Screencopy {
 
 impl Screencopy {
     /// Get the target buffer to copy to.
-    pub fn buffer(&self) -> &ScreencopyBuffer {
+    pub fn buffer(&self) -> &CaptureBuffer {
         &self.buffer
     }
 
@@ -721,11 +691,11 @@ impl Screencopy {
     pub fn submit_after_sync<T>(
         self,
         y_invert: bool,
-        sync_point: Option<SyncPoint>,
+        sync_point: SyncPoint,
         event_loop: &LoopHandle<'_, T>,
     ) {
         let timestamp = get_monotonic_time();
-        match sync_point.and_then(|s| s.export()) {
+        match sync_point.export() {
             None => self.submit(y_invert, timestamp),
             Some(sync_fd) => {
                 let source = Generic::new(sync_fd, Interest::READ, Mode::OneShot);

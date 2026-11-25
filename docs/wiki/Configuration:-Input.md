@@ -36,6 +36,7 @@ input {
         natural-scroll
         // accel-speed 0.2
         // accel-profile "flat"
+        // pinch-sensitivity 1.0
         // scroll-factor 1.0
         // scroll-factor vertical=1.0 horizontal=-2.0
         // scroll-method "two-finger"
@@ -90,6 +91,7 @@ input {
         // off
         map-to-output "eDP-1"
         // map-to-focused-output
+        // map-to-focused-window
         // left-handed
         // calibration-matrix 1.0 0.0 0.0 0.0 1.0 0.0
     }
@@ -229,6 +231,9 @@ A few settings are common between input devices:
 
 - `off`: if set, no events will be sent from this device.
 
+> [!TIP]
+> <sup>Since: next release</sup> For touchpads, you can also toggle them on/off at runtime using the [`toggle-touchpad` action](./Configuration:-Key-Bindings.md#toggle-touchpad), without editing the config.
+
 A few settings are common between `touchpad`, `mouse`, `trackpoint`, and `trackball`:
 
 - `natural-scroll`: if set, inverts the scrolling direction.
@@ -248,6 +253,8 @@ Settings specific to `touchpad`s:
 - `dwtp`: disable-when-trackpointing.
 - `drag`: <sup>Since: 25.05</sup> can be `true` or `false`, controls if tap-and-drag is enabled.
 - `drag-lock`: <sup>Since: 25.02</sup> if set, lifting the finger off for a short time while dragging will not drop the dragged item. See the [libinput documentation](https://wayland.freedesktop.org/libinput/doc/latest/tapping.html#tap-and-drag).
+- `pinch-sensitivity`: <sup>Since: next release</sup> scales the sensitivity of pinch gestures sent to applications.
+  Values above `1.0` increase sensitivity, while values below `1.0` decrease it.
 - `tap-button-map`: can be `left-right-middle` or `left-middle-right`, controls which button corresponds to a two-finger tap and a three-finger tap.
 - `click-method`: can be `button-areas` or `clickfinger`, changes the [click method](https://wayland.freedesktop.org/libinput/doc/latest/clickpad-softbuttons.html).
 - `disabled-on-external-mouse`: do not send events while external pointer device is plugged in.
@@ -282,9 +289,15 @@ Valid output names are the same as the ones used for output configuration.
 
 <sup>Since: 0.1.7</sup> When a tablet is not mapped to any output, it will map to the union of all connected outputs, without aspect ratio correction.
 
-Setting specific to `tablet`:
+Settings specific to `tablet`:
 
 - `map-to-focused-output`: <sup>Since: 26.04</sup> will map the tablet to the focused output, takes precedence over `map-to-output`.
+
+- `map-to-focused-window`: <sup>Since: next release</sup> will map the tablet to the focused window's geometry, takes precedence over `map-to-focused-output` and `map-to-output`.
+Falls back to those when no window is focused (for example, in the overview).
+
+    When the tablet is also mapped to a specific output via `map-to-output`, the `map-to-focused-window` flag will map the tablet to the active window on that output.
+    If the tablet isn't mapped to any specific output, it will map the tablet to the current focused window regardless of where it is.
 
 ### General Settings
 
@@ -353,6 +366,15 @@ input {
 input {
     // Allow focus-follows-mouse only when it will not scroll the view.
     focus-follows-mouse max-scroll-amount="0%"
+}
+```
+
+<sup>Since: next release</sup> You can optionally set `outputs-only`.
+When true, focus only changes between monitors, instead of individual windows.
+
+```kdl
+input {
+    focus-follows-mouse outputs-only=true
 }
 ```
 

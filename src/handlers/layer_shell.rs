@@ -1,4 +1,3 @@
-use smithay::delegate_layer_shell;
 use smithay::desktop::{layer_map_for_output, LayerSurface, PopupKind, WindowSurfaceType};
 use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
@@ -73,7 +72,6 @@ impl WlrLayerShellHandler for State {
         self.unconstrain_popup(&PopupKind::Xdg(popup));
     }
 }
-delegate_layer_shell!(State);
 
 impl State {
     pub fn layer_shell_handle_commit(&mut self, surface: &WlSurface) -> bool {
@@ -179,6 +177,15 @@ impl State {
                 // has focus, but Smithay's Layer doesn't implement Ord so this would be a
                 // little annoying.
                 self.niri.layer_shell_on_demand_focus = Some(layer.clone());
+            }
+
+            // If a mapped surface switches from on-demand to none, drop its focus immediately,
+            // because otherwise when a surface switches back and forth in a single event loop
+            // cycle, the focus will never get dropped.
+            let none = layer.cached_state().keyboard_interactivity
+                == wlr_layer::KeyboardInteractivity::None;
+            if none && self.niri.layer_shell_on_demand_focus.as_ref() == Some(layer) {
+                self.niri.layer_shell_on_demand_focus = None;
             }
         } else {
             // The surface is unmapped.

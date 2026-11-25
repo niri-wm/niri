@@ -154,7 +154,6 @@ impl TabIndicator {
         })
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub fn update_render_elements(
         &mut self,
         enabled: bool,

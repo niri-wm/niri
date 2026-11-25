@@ -38,6 +38,7 @@ input {
         natural-scroll
         // accel-speed 0.2
         // accel-profile "flat"
+        // pinch-sensitivity 1.0
         // scroll-method "two-finger"
         // disabled-on-external-mouse
     }
@@ -201,6 +202,7 @@ layout {
         // The settings are the same as for the focus ring.
         // If you enable the border, you probably want to disable the focus ring.
         off
+        // on
 
         width 4
         active-color "#ffc87f"
@@ -342,6 +344,10 @@ window-rule {
 
     // Use this instead if you want them visible on third-party screenshot tools.
     // block-out-from "screencast"
+
+    // You can also hide the window entirely instead of drawing a black rectangle.
+    // Careful: this way you could unintentionally expose sensitive data.
+    // block-out-from "screencast" kind="hide"
 }
 
 // Example: enable rounded corners for all windows.
@@ -361,6 +367,8 @@ binds {
     //
     // Most actions that you can bind here can also be invoked programmatically with
     // `niri msg action do-something`.
+    //
+    // You can find the full list by running `niri msg action --help`.
 
     // Mod-Shift-/, which is usually the same as Mod-?,
     // shows a list of important hotkeys.
@@ -388,6 +396,7 @@ binds {
     // Example media keys mapping using playerctl.
     // This will work with any MPRIS-enabled media player.
     XF86AudioPlay        allow-when-locked=true { spawn-sh "playerctl play-pause"; }
+    XF86AudioPause       allow-when-locked=true { spawn-sh "playerctl play-pause"; }
     XF86AudioStop        allow-when-locked=true { spawn-sh "playerctl stop"; }
     XF86AudioPrev        allow-when-locked=true { spawn-sh "playerctl previous"; }
     XF86AudioNext        allow-when-locked=true { spawn-sh "playerctl next"; }
@@ -398,13 +407,34 @@ binds {
     XF86MonBrightnessUp allow-when-locked=true { spawn "brightnessctl" "--class=backlight" "set" "+10%"; }
     XF86MonBrightnessDown allow-when-locked=true { spawn "brightnessctl" "--class=backlight" "set" "10%-"; }
 
+    // Some laptops have a key for toggling the touchpad.
+    XF86TouchpadToggle repeat=false { toggle-touchpad; }
+
     // Open/close the Overview: a zoomed-out view of workspaces and windows.
     // You can also move the mouse into the top-left hot corner,
     // or do a four-finger swipe up on a touchpad.
-    Mod+O repeat=false { toggle-overview; }
+    //
+    // This is a release bind.
+    // Press and release Mod by itself to trigger it.
+    Mod {
+        release { toggle-overview; }
+    }
 
+    // You can also bind both press and release actions like so.
+    // If the press action fires, the release action
+    // is also guaranteed to fire.
+    // This is useful for binds like push-to-talk.
+    // Alt+Shift {
+    //     press   { spawn "notify-send" "Enable push-to-talk!"; }
+    //     release { spawn "notify-send" "Disable push-to-talk!"; }
+    // }
+
+    // Next, we've got our standard set of binds to close, focus, and move windows.
     Mod+Q repeat=false { close-window; }
+    Alt+F4 repeat=false { close-window; }
 
+    // Window columns are an important "building block" in niri,
+    // and many binds operate on columns rather than individual windows.
     Mod+Left  { focus-column-left; }
     Mod+Down  { focus-window-down; }
     Mod+Up    { focus-window-up; }
@@ -457,10 +487,6 @@ binds {
     // Mod+Shift+Ctrl+Left  { move-window-to-monitor-left; }
     // ...
 
-    // And you can also move a whole workspace to another monitor:
-    // Mod+Shift+Ctrl+Left  { move-workspace-to-monitor-left; }
-    // ...
-
     Mod+Page_Down      { focus-workspace-down; }
     Mod+Page_Up        { focus-workspace-up; }
     Mod+U              { focus-workspace-down; }
@@ -474,10 +500,29 @@ binds {
     // Mod+Ctrl+Page_Down { move-window-to-workspace-down; }
     // ...
 
+    // Move a column to a new workspace inserted right below or above the current one.
+    Mod+Ctrl+Shift+Page_Down { move-column-to-new-workspace-below; }
+    Mod+Ctrl+Shift+Page_Up   { move-column-to-new-workspace-above; }
+    Mod+Ctrl+Shift+U         { move-column-to-new-workspace-below; }
+    Mod+Ctrl+Shift+I         { move-column-to-new-workspace-above; }
+
+    // Move the whole workspace up or down in the workspace list.
+    // Useful to put workspaces together to switch back and forth with one bind.
     Mod+Shift+Page_Down { move-workspace-down; }
     Mod+Shift+Page_Up   { move-workspace-up; }
     Mod+Shift+U         { move-workspace-down; }
     Mod+Shift+I         { move-workspace-up; }
+
+    // You can move a whole workspace to another monitor.
+    // Useful when you connect a new monitor and want to move some work there.
+    Super+Shift+Alt+Left  { move-workspace-to-monitor-left; }
+    Super+Shift+Alt+Down  { move-workspace-to-monitor-down; }
+    Super+Shift+Alt+Up    { move-workspace-to-monitor-up; }
+    Super+Shift+Alt+Right { move-workspace-to-monitor-right; }
+    Super+Shift+Alt+H     { move-workspace-to-monitor-left; }
+    Super+Shift+Alt+J     { move-workspace-to-monitor-down; }
+    Super+Shift+Alt+K     { move-workspace-to-monitor-up; }
+    Super+Shift+Alt+L     { move-workspace-to-monitor-right; }
 
     // You can bind mouse wheel scroll ticks using the following syntax.
     // These binds will change direction based on the natural-scroll setting.
@@ -616,6 +661,15 @@ binds {
     Print { screenshot; }
     Ctrl+Print { screenshot-screen; }
     Alt+Print { screenshot-window; }
+
+    // When starting a window screencast, you can pick a special
+    // "niri Dynamic Cast Target" stream. Then, use the following binds
+    // to change what it shows without having to restart the stream.
+    //
+    // https://niri-wm.github.io/niri/Screencasting.html#dynamic-screencast-target
+    Super+Alt+M { set-dynamic-cast-monitor; }  // Show the focused monitor.
+    Super+Alt+W { set-dynamic-cast-window; }   // Show the focused window.
+    Super+Alt+C { clear-dynamic-cast-target; } // Clear (show nothing).
 
     // Applications such as remote-desktop clients and software KVM switches may
     // request that niri stops processing the keyboard shortcuts defined here

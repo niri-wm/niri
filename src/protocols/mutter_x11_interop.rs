@@ -2,6 +2,7 @@ use mutter_x11_interop::MutterX11Interop;
 use smithay::reexports::wayland_server::{
     Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
 };
+use smithay::wayland::{Dispatch2, GlobalData, GlobalDispatch2};
 
 use super::raw::mutter_x11_interop::v1::server::mutter_x11_interop;
 
@@ -19,7 +20,6 @@ impl MutterX11InteropManagerState {
     pub fn new<D, F>(display: &DisplayHandle, filter: F) -> Self
     where
         D: GlobalDispatch<MutterX11Interop, MutterX11InteropManagerGlobalData>,
-        D: Dispatch<MutterX11Interop, ()>,
         D: MutterX11InteropHandler,
         D: 'static,
         F: for<'c> Fn(&'c Client) -> bool + Send + Sync + 'static,
@@ -33,42 +33,37 @@ impl MutterX11InteropManagerState {
     }
 }
 
-impl<D> GlobalDispatch<MutterX11Interop, MutterX11InteropManagerGlobalData, D>
-    for MutterX11InteropManagerState
+impl<D> GlobalDispatch2<MutterX11Interop, D> for MutterX11InteropManagerGlobalData
 where
-    D: GlobalDispatch<MutterX11Interop, MutterX11InteropManagerGlobalData>,
-    D: Dispatch<MutterX11Interop, ()>,
+    D: Dispatch<MutterX11Interop, GlobalData>,
     D: MutterX11InteropHandler,
-    D: 'static,
 {
     fn bind(
+        &self,
         _state: &mut D,
         _handle: &DisplayHandle,
         _client: &Client,
         manager: New<MutterX11Interop>,
-        _manager_state: &MutterX11InteropManagerGlobalData,
         data_init: &mut DataInit<'_, D>,
     ) {
-        data_init.init(manager, ());
+        data_init.init(manager, GlobalData);
     }
 
-    fn can_view(client: Client, global_data: &MutterX11InteropManagerGlobalData) -> bool {
-        (global_data.filter)(&client)
+    fn can_view(&self, client: &Client) -> bool {
+        (self.filter)(client)
     }
 }
 
-impl<D> Dispatch<MutterX11Interop, (), D> for MutterX11InteropManagerState
+impl<D> Dispatch2<MutterX11Interop, D> for GlobalData
 where
-    D: Dispatch<MutterX11Interop, ()>,
     D: MutterX11InteropHandler,
-    D: 'static,
 {
     fn request(
+        &self,
         _state: &mut D,
         _client: &Client,
         _resource: &MutterX11Interop,
         request: <MutterX11Interop as Resource>::Request,
-        _data: &(),
         _dhandle: &DisplayHandle,
         _data_init: &mut DataInit<'_, D>,
     ) {
@@ -77,17 +72,4 @@ where
             mutter_x11_interop::Request::SetX11Parent { .. } => (),
         }
     }
-}
-
-#[macro_export]
-macro_rules! delegate_mutter_x11_interop {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        smithay::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::protocols::raw::mutter_x11_interop::v1::server::mutter_x11_interop::MutterX11Interop: $crate::protocols::mutter_x11_interop::MutterX11InteropManagerGlobalData
-        ] => $crate::protocols::mutter_x11_interop::MutterX11InteropManagerState);
-
-        smithay::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::protocols::raw::mutter_x11_interop::v1::server::mutter_x11_interop::MutterX11Interop: ()
-        ] => $crate::protocols::mutter_x11_interop::MutterX11InteropManagerState);
-    };
 }

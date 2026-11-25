@@ -20,7 +20,6 @@ use crate::backend::tty::{TtyFrame, TtyRenderer, TtyRendererError};
 pub struct ResizeRenderElement(ShaderRenderElement);
 
 impl ResizeRenderElement {
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         area: Rectangle<f64, Logical>,
         scale: Scale<f64>,

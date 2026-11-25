@@ -9,6 +9,7 @@ use std::sync::{Arc, Mutex};
 use anyhow::Context as _;
 use niri_config::OutputName;
 use smithay::backend::allocator::dmabuf::Dmabuf;
+use smithay::backend::drm::DrmNode;
 use smithay::backend::egl::native::EGLSurfacelessDisplay;
 use smithay::backend::egl::{EGLContext, EGLDisplay};
 use smithay::backend::renderer::element::RenderElementStates;
@@ -109,6 +110,7 @@ impl Headless {
                 vrr_supported: false,
                 vrr_enabled: false,
                 logical: Some(logical_output(&output)),
+                max_bpc: None,
             },
         );
 
@@ -124,6 +126,10 @@ impl Headless {
         f: impl FnOnce(&mut GlesRenderer) -> T,
     ) -> Option<T> {
         self.renderer.as_mut().map(f)
+    }
+
+    pub fn primary_render_node(&mut self) -> Option<DrmNode> {
+        None
     }
 
     pub fn render(&mut self, niri: &mut Niri, output: &Output) -> RenderResult {

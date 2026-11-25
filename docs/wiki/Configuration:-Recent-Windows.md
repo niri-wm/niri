@@ -167,7 +167,23 @@ recent-windows {
 The recent windows binds have lower precedence than the [normal binds](./Configuration:-Key-Bindings.md), meaning that if you have <kbd>Alt</kbd><kbd>Tab</kbd> bound to something else in the normal binds, the `recent-windows` bind won't work.
 In this case, you can remove the conflicting normal bind.
 
-All binds in this section must have a modifier key like <kbd>Alt</kbd> or <kbd>Mod</kbd> because the recent windows switcher remains open only while you hold any modifier key.
+All binds in this section must have a modifier key like <kbd>Alt</kbd> or <kbd>Mod</kbd> (that isn't the same as the trigger key) because the recent windows switcher remains open only while you hold any modifier key.
+
+```kdl
+recent-windows {
+    binds {
+        // Allowed: has a modifier, two keys.
+        Ctrl+Alt { next-window; }
+
+        // Not allowed: only a single key.
+        // Alt { next-window; }
+
+        // Not allowed: modifier matches the key
+        // (effectively only a single key).
+        // Alt+Alt_L { next-window; }
+    }
+}
+```
 
 #### Bindings inside the switcher
 
@@ -191,3 +207,20 @@ For example, if you have <kbd>Mod</kbd><kbd>Shift</kbd><kbd>C</kbd> bound to `cl
 
 This way we don't need to hardcode things like HJKL directional movements.
 If you have, say, Colemak-DH MNEI binds instead, they will work for you in the window switcher (as long as they don't conflict with the hardcoded ones).
+
+#### Focusing the previous window without the switcher
+
+<sup>Since: next release</sup> The `focus-window-previous` action, which focuses the previously focused window without opening the switcher, accepts the same `scope` and `filter` properties.
+It is a normal bind, so it goes in the [`binds {}` section](./Configuration:-Key-Bindings.md), and it can use a single key.
+
+```kdl
+binds {
+    // Go back to the previous window on the current workspace.
+    F1 { focus-window-previous scope="workspace"; }
+
+    // Go back to the previous window of the same application.
+    F2 { focus-window-previous filter="app-id"; }
+}
+```
+
+If the focused window has no app ID, `filter="app-id"` is ignored, like in the switcher.

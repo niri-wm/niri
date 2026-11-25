@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::mem;
 use std::rc::Rc;
@@ -7,17 +7,20 @@ use std::sync::{Arc, Mutex};
 use anyhow::Context as _;
 use niri_config::{Config, OutputName};
 use smithay::backend::allocator::dmabuf::Dmabuf;
+use smithay::backend::drm::DrmNode;
 use smithay::backend::egl::EGLDevice;
+use smithay::backend::input::InputTime;
 use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::renderer::{DebugFlags, ImportDma, ImportEgl, Renderer};
 use smithay::backend::winit::{self, WinitEvent, WinitGraphicsBackend};
+use smithay::input::keyboard::KeyboardSource;
 use smithay::output::{Mode, Output, PhysicalProperties, Subpixel};
 use smithay::reexports::calloop::LoopHandle;
 use smithay::reexports::wayland_protocols::wp::presentation_time::server::wp_presentation_feedback;
 use smithay::reexports::winit::dpi::LogicalSize;
-use smithay::reexports::winit::platform::wayland::WindowAttributesExtWayland;
-use smithay::reexports::winit::window::Window;
+use smithay::reexports::winit::platform::wayland::WindowAttributesWayland;
+use smithay::reexports::winit::window::WindowAttributes;
 use smithay::wayland::dmabuf::{DmabufFeedbackBuilder, DmabufGlobal};
 use smithay::wayland::presentation::Refresh;
 
@@ -25,14 +28,17 @@ use super::{IpcOutputMap, OutputId, RenderResult};
 use crate::niri::{Niri, RedrawState, State};
 use crate::render_helpers::debug::draw_damage;
 use crate::render_helpers::{resources, shaders, RenderCtx, RenderTarget};
-use crate::utils::{get_monotonic_time, logical_output};
+use crate::utils::{get_monotonic_time, logical_output, WinitScale};
 
 pub struct Winit {
     config: Rc<RefCell<Config>>,
     output: Output,
     backend: WinitGraphicsBackend<GlesRenderer>,
     damage_tracker: OutputDamageTracker,
+    render_node: Option<DrmNode>,
     dmabuf_global: Option<DmabufGlobal>,
+    #[cfg(feature = "xdp-gnome-screencast")]
+    gbm_device: Option<smithay::backend::allocator::gbm::GbmDevice<smithay::utils::DeviceFd>>,
     ipc_outputs: Arc<Mutex<IpcOutputMap>>,
 }
 
@@ -43,12 +49,19 @@ impl Winit {
     ) -> Result<Self, winit::Error> {
         let _span = tracy_client::span!("Winit::new");
 
-        let builder = Window::default_attributes()
-            .with_inner_size(LogicalSize::new(1280.0, 800.0))
+        let builder = WindowAttributes::default()
+            .with_surface_size(LogicalSize::new(1280.0, 800.0))
             // .with_resizable(false)
             .with_title("niri")
-            .with_name("niri", "");
+            .with_platform_attributes(Box::new(
+                WindowAttributesWayland::default().with_name("niri", ""),
+            ));
         let (backend, winit) = winit::init_from_attributes(builder)?;
+
+        // unless debug option is set, we dont show cursor in nested mode
+        if !config.borrow().debug.nested_show_host_cursor {
+            backend.window().set_cursor_visible(false);
+        }
 
         let output = Output::new(
             "winit".to_string(),
@@ -75,6 +88,10 @@ impl Winit {
             serial: None,
         });
 
+        output
+            .user_data()
+            .insert_if_missing(|| WinitScale(Cell::new(backend.scale_factor())));
+
         let physical_properties = output.physical_properties();
         let ipc_outputs = Arc::new(Mutex::new(HashMap::from([(
             OutputId::next(),
@@ -95,6 +112,7 @@ impl Winit {
                 vrr_supported: false,
                 vrr_enabled: false,
                 logical: Some(logical_output(&output)),
+                max_bpc: None,
             },
         )])));
 
@@ -102,9 +120,10 @@ impl Winit {
 
         event_loop
             .insert_source(winit, move |event, _, state| match event {
-                WinitEvent::Resized { size, .. } => {
+                WinitEvent::Resized { size, scale_factor } => {
                     let winit = state.backend.winit();
-                    winit.output.change_current_state(
+                    let output = winit.output.clone();
+                    output.change_current_state(
                         Some(Mode {
                             size,
                             refresh: 60_000,
@@ -115,22 +134,35 @@ impl Winit {
                     );
 
                     {
+                        let scale = output.user_data().get_or_insert(WinitScale::default);
+                        scale.0.set(scale_factor);
+                    }
+
+                    {
                         let mut ipc_outputs = winit.ipc_outputs.lock().unwrap();
                         let output = ipc_outputs.values_mut().next().unwrap();
                         let mode = &mut output.modes[0];
                         mode.width = size.w.clamp(0, u16::MAX as i32) as u16;
                         mode.height = size.h.clamp(0, u16::MAX as i32) as u16;
-                        if let Some(logical) = output.logical.as_mut() {
-                            logical.width = size.w as u32;
-                            logical.height = size.h as u32;
-                        }
                         state.niri.ipc_outputs_changed = true;
                     }
 
-                    state.niri.output_resized(&winit.output);
+                    state.reload_output_config();
+
+                    // reload_output_config() will call output_resized() for scale changes,
+                    // but not for size-only changes. Even if this is the second call, it's fine.
+                    state.niri.output_resized(&output);
                 }
                 WinitEvent::Input(event) => state.process_input_event(event),
-                WinitEvent::Focus(_) => (),
+                WinitEvent::Focus(false) => {
+                    // Lost focus. Reset key pressed (like alt or windows key)
+                    state.release_held_inputs(InputTime::now());
+
+                    if let Some(keyboard) = state.niri.seat.get_keyboard() {
+                        keyboard.release_source(state, KeyboardSource::MAIN);
+                    }
+                }
+                WinitEvent::Focus(true) => (),
                 WinitEvent::Redraw => state.niri.queue_redraw(&state.backend.winit().output),
                 WinitEvent::CloseRequested => state.niri.stop_signal.stop(),
             })
@@ -141,7 +173,10 @@ impl Winit {
             output,
             backend,
             damage_tracker,
+            render_node: None,
             dmabuf_global: None,
+            #[cfg(feature = "xdp-gnome-screencast")]
+            gbm_device: None,
             ipc_outputs,
         })
     }
@@ -172,23 +207,50 @@ impl Winit {
 
         niri.update_shaders();
 
+        // Winit creates a single EGL display, so its render node cannot change.
+        self.render_node = match self.fetch_render_node() {
+            Ok(node) => {
+                if let Some(path) = node.dev_path() {
+                    debug!("using as the render node: {path:?}");
+                } else {
+                    debug!("using as the render node: {node}");
+                }
+
+                Some(node)
+            }
+            Err(err) => {
+                debug!("failed querying render node: {err:?}");
+                None
+            }
+        };
+
         self.create_dmabuf_global(niri);
 
+        #[cfg(feature = "xdp-gnome-screencast")]
+        if let Err(err) = self.create_gbm_device() {
+            debug!("couldn't create GBM device for screencasting: {err:?}");
+        };
+
         niri.add_output(self.output.clone(), None, false);
+    }
+
+    fn fetch_render_node(&mut self) -> anyhow::Result<DrmNode> {
+        let display = self.backend.renderer().egl_context().display();
+        EGLDevice::device_for_display(display)
+            .context("error getting EGL device")?
+            .try_get_render_node()
+            .context("error getting EGL device render node")?
+            .context("failed to query EGL device render node")
     }
 
     pub fn create_dmabuf_global(&mut self, niri: &mut Niri) {
         let renderer = self.backend.renderer();
 
         let default_feedback = || {
-            let display = renderer.egl_context().display();
-            let device =
-                EGLDevice::device_for_display(display).context("error getting EGL device")?;
-            let node = device
-                .try_get_render_node()
-                .context("error getting EGL device render node")?
-                .context("failed to query EGL device render node")?;
-
+            let node = self
+                .render_node
+                .as_ref()
+                .context("no render node available")?;
             let primary_formats = renderer.dmabuf_formats();
             DmabufFeedbackBuilder::new(node.dev_id(), primary_formats)
                 .build()
@@ -210,6 +272,38 @@ impl Winit {
         assert!(self.dmabuf_global.replace(dmabuf_global).is_none());
     }
 
+    #[cfg(feature = "xdp-gnome-screencast")]
+    fn create_gbm_device(&mut self) -> anyhow::Result<()> {
+        use std::os::fd::OwnedFd;
+
+        use smithay::backend::allocator::gbm::GbmDevice;
+        use smithay::utils::DeviceFd;
+
+        let node = self
+            .render_node
+            .as_ref()
+            .context("no render node available")?;
+        let path = node.dev_path().context("render node has no device path")?;
+        let file = std::fs::File::options()
+            .read(true)
+            .write(true)
+            .open(path)
+            .context("error opening render node")?;
+
+        let gbm_device = GbmDevice::new(DeviceFd::from(OwnedFd::from(file)))
+            .context("error creating GBM device")?;
+
+        self.gbm_device = Some(gbm_device);
+        Ok(())
+    }
+
+    #[cfg(feature = "xdp-gnome-screencast")]
+    pub fn gbm_device(
+        &self,
+    ) -> Option<smithay::backend::allocator::gbm::GbmDevice<smithay::utils::DeviceFd>> {
+        self.gbm_device.clone()
+    }
+
     pub fn seat_name(&self) -> String {
         "winit".to_owned()
     }
@@ -219,6 +313,10 @@ impl Winit {
         f: impl FnOnce(&mut GlesRenderer) -> T,
     ) -> Option<T> {
         Some(f(self.backend.renderer()))
+    }
+
+    pub fn primary_render_node(&mut self) -> Option<DrmNode> {
+        self.render_node
     }
 
     pub fn render(&mut self, niri: &mut Niri, output: &Output) -> RenderResult {
@@ -318,5 +416,9 @@ impl Winit {
 
     pub fn ipc_outputs(&self) -> Arc<Mutex<IpcOutputMap>> {
         self.ipc_outputs.clone()
+    }
+
+    pub fn set_cursor_visible(&self, visible: bool) {
+        self.backend.window().set_cursor_visible(visible);
     }
 }

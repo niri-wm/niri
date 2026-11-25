@@ -166,6 +166,6 @@ impl<R: Renderer> RenderElement<R> for SolidColorRenderElement {
 
     #[inline]
     fn underlying_storage(&self, _renderer: &mut R) -> Option<UnderlyingStorage<'_>> {
-        None
+        Some(UnderlyingStorage::SolidColor(self.color))
     }
 }

@@ -1,4 +1,4 @@
-use std::io::ErrorKind;
+use std::io::{BufRead as _, ErrorKind};
 use std::iter::Peekable;
 use std::path::Path;
 use std::{env, slice};
@@ -15,7 +15,7 @@ use serde_json::json;
 use crate::cli::Msg;
 use crate::utils::version;
 
-pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
+pub fn handle_msg(mut msg: Msg, json: bool, print_request: bool) -> anyhow::Result<()> {
     // For actions taking paths, prepend the niri CLI's working directory.
     if let Msg::Action {
         action:
@@ -49,8 +49,24 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
         Msg::RequestError => Request::ReturnError,
         Msg::OverviewState => Request::OverviewState,
         Msg::Casts => Request::Casts,
+        Msg::RawRequest => {
+            let mut buf = Vec::new();
+            let mut stdin = std::io::stdin().lock();
+            stdin
+                .read_until(b'\n', &mut buf)
+                .context("error reading from stdin")?;
+            serde_json::from_slice(&buf).context("error parsing request JSON from stdin")?
+        }
     };
 
+    if print_request {
+        let json_str =
+            serde_json::to_string(&request).context("error formatting request as JSON")?;
+        println!("{json_str}");
+        return Ok(());
+    }
+
+    let is_event_stream = matches!(request, Request::EventStream);
     let mut socket = Socket::connect().context("error connecting to the niri socket")?;
 
     let result = socket.send(request);
@@ -220,7 +236,7 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
 
             let print = |surface: &niri_ipc::LayerSurface| {
                 println!("    Surface:");
-                println!("      Namespace: \"{}\"", &surface.namespace);
+                println!("      Namespace: \"{}\"", surface.namespace);
 
                 let interactivity = match surface.keyboard_interactivity {
                     niri_ipc::LayerSurfaceKeyboardInteractivity::None => "none",
@@ -506,6 +522,9 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
                     Event::CastStopped { stream_id } => {
                         println!("Cast stopped: stream id {stream_id}");
                     }
+                    Event::TouchpadToggled { on } => {
+                        println!("Touchpad enabled: {on}");
+                    }
                 }
             }
         }
@@ -550,6 +569,19 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
                 println!();
             }
         }
+        Msg::RawRequest => {
+            let output = serde_json::to_string(&response).context("error formatting response")?;
+            println!("{output}");
+
+            if is_event_stream {
+                let mut read_event = socket.read_events();
+                loop {
+                    let event = read_event().context("error reading event from niri")?;
+                    let event = serde_json::to_string(&event).context("error formatting event")?;
+                    println!("{event}");
+                }
+            }
+        }
     }
 
     Ok(())
@@ -568,6 +600,7 @@ fn print_output(output: Output) -> anyhow::Result<()> {
         vrr_supported,
         vrr_enabled,
         logical,
+        max_bpc,
     } = output;
 
     let serial = serial.as_deref().unwrap_or("Unknown");
@@ -649,6 +682,10 @@ fn print_output(output: Output) -> anyhow::Result<()> {
             Transform::Flipped270 => "270° counter-clockwise, flipped horizontally",
         };
         println!("  Transform: {transform}");
+    }
+
+    if let Some(max_bpc) = max_bpc {
+        println!("  Max bits per channel: {max_bpc}");
     }
 
     println!("  Available modes:");
@@ -746,6 +783,8 @@ fn print_cast(cast: &Cast) {
     let kind = match cast.kind {
         CastKind::PipeWire => "PipeWire",
         CastKind::WlrScreencopy => "wlr-screencopy",
+        CastKind::ExtImageCopyCapture => "ext-image-copy-capture",
+        CastKind::ExtImageCopyCaptureCursor => "ext-image-copy-capture (cursor)",
     };
     println!("  Kind: {kind}");
 

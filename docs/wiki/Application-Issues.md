@@ -33,6 +33,8 @@ JetBrains IDEs can run directly on Wayland, but it's not the default.
 
 For JetBrainsRuntime > 17, you can set the flag `-Dawt.toolkit.name=WLToolkit` inside of `help -> edit custom vm options -> add`.
 
+If the settings window fails to load under Wayland, and the UI becomes unresponsive afterwards, also set the flag `-Dsun.awt.wl.WindowDecorationStyle=builtin` in the custom vm options. This gives the settings window a titlebar, but it at least makes the IDE functional.
+
 ### WezTerm
 
 > [!NOTE]
@@ -74,7 +76,7 @@ environment {
 }
 ```
 
-Note that the niri environment config does not propagate to apps and shells started by systemd, for example to DankMaterialShell and its application launcher.
+Note that the niri environment config does not propagate to apps and shells started by systemd, for example to Dux Modular Shell and its application launcher.
 You can set the variable in your login shell config (i.e. `~/.bash_profile`) instead, though keep in mind that then it will be set for all compositors, not just niri.
 
 ### Fullscreen games

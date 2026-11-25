@@ -1,2 +1,0 @@
-# LFS configuration for images from the wiki
-*.png filter=lfs diff=lfs merge=lfs -text

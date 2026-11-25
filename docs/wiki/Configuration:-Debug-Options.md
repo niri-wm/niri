@@ -22,6 +22,7 @@ debug {
     ignore-drm-device "/dev/dri/renderD128"
     ignore-drm-device "/dev/dri/renderD130"
     force-pipewire-invalid-modifier
+    disable-pipewire-dmabuf
     dbus-interfaces-in-non-session-instances
     wait-for-frame-completion-before-queueing
     emulate-zero-presentation-time
@@ -33,6 +34,8 @@ debug {
     honor-xdg-activation-with-invalid-serial
     skip-cursor-only-updates-during-vrr
     deactivate-unfocused-windows
+    disable-10bit-output
+    nested-show-host-cursor
 }
 
 binds {
@@ -160,13 +163,28 @@ debug {
 }
 ```
 
+### `disable-pipewire-dmabuf`
+
+<sup>Since: next release</sup>
+
+Disable DMA-BUF sharing for PipeWire screencasts, forcing shared-memory buffers instead.
+
+Useful for testing shm screencasting.
+
+```kdl
+debug {
+    disable-pipewire-dmabuf
+}
+```
+
 ### `dbus-interfaces-in-non-session-instances`
 
 Make niri create its D-Bus interfaces even if it's not running as a `--session`.
 
 Useful for testing screencasting changes without having to relogin.
 
-The main niri instance will *not* currently take back the interfaces when you close the test instance, so you will need to relogin in the end to make screencasting work again.
+<sup>Since: next release</sup>
+The main niri instance will automatically take back the interfaces once the new instance quits.
 
 ```kdl
 debug {
@@ -283,6 +301,8 @@ Most of the time, these fresh tokens will have invalid serials, because the app 
 By default, niri ignores xdg-activation tokens with invalid serials, to prevent windows from randomly stealing focus.
 This debug flag makes niri honor such tokens, making the aforementioned widely-used apps get focus when clicking on their tray icon or notification.
 
+Use the [`on-xdg-activate` window rule](./Configuration:-Window-Rules.md#on-xdg-activate) to control what niri does for individual windows when it accepts an xdg-activation request.
+
 Amusingly, clicking on a notification sends the app a perfectly valid activation token from the notification daemon, but these apps seem to simply ignore it.
 Maybe in the future these apps/toolkits (Electron, Qt) are fixed, making this debug flag unnecessary.
 
@@ -324,24 +344,18 @@ debug {
 }
 ```
 
-### `keep-max-bpc-unchanged`
+### `disable-10bit-output`
 
-<sup>Since: 25.08</sup>
+<sup>Since: next release</sup>
 
-When connecting monitors, niri sets their max bpc to 8 in order to reduce display bandwidth and to potentially allow more monitors to be connected at once.
-Restricting bpc to 8 is not a problem since we don't support HDR or color management yet and can't really make use of higher bpc.
+By default, niri will try to output a 10-bit color format to the monitor (before falling back to 8-bit).
+However, this can currently cause problems on some Intel + NVIDIA mixed-GPU setups: the screen doesn't light up, or displays only white, etc.
 
-Apparently, setting max bpc to 8 breaks some displays driven by AMDGPU.
-If this happens to you, set this debug flag, which will prevent niri from changing max bpc.
-AMDGPU bug report: https://gitlab.freedesktop.org/drm/amd/-/issues/4487.
-
-<sup>Since: 25.11</sup>
-This setting is deprecated and does nothing: niri no longer sets max bpc.
-The old niri behavior with this setting enabled matches the new behavior.
+Until this is fixed in Smithay, you can disable 10-bit color formats by setting this debug flag.
 
 ```kdl
 debug {
-    keep-max-bpc-unchanged
+    disable-10bit-output
 }
 ```
 
@@ -384,5 +398,17 @@ Tints damaged regions with red.
 ```kdl
 binds {
     Mod+Shift+Ctrl+D { debug-toggle-damage; }
+}
+```
+
+### `nested-show-host-cursor`
+
+<sup>Since: next release</sup>
+
+Shows the host cursor when running niri as a nested window, on top of the nested niri cursor.
+
+```kdl
+debug {
+    nested-show-host-cursor
 }
 ```

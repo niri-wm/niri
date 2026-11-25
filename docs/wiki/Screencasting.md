@@ -7,7 +7,7 @@ You can screencast both monitors and individual windows.
 In order to use it, you need a working D-Bus session, pipewire, `xdg-desktop-portal-gnome`, and [running niri as a session](./Getting-Started.md) (i.e. through `niri-session` or from a display manager).
 On widely used distros this should all "just work".
 
-Alternatively, you can use tools that rely on the `wlr-screencopy` protocol, which niri also supports.
+Alternatively, you can use tools that rely on the `ext-image-copy-capture` protocol, or the older `wlr-screencopy`, both of which niri also supports.
 
 There are several features in niri designed for screencasting.
 Let's take a look!
@@ -42,6 +42,19 @@ layer-rule {
 }
 ```
 
+<sup>Since: next release</sup>
+You can also set `kind="hide"` to hide the surface entirely instead of drawing a black rectangle.
+Careful: this way you could unintentionally expose sensitive data.
+
+```kdl
+// Hide mako notifications from screencasts.
+layer-rule {
+    match namespace="^notifications$"
+
+    block-out-from "screencast" kind="hide"
+}
+```
+
 Check [the corresponding wiki section](./Configuration:-Window-Rules.md#block-out-from) for more details and examples.
 
 ### Dynamic screencast target
@@ -53,12 +66,12 @@ It shows up as "niri Dynamic Cast Target" in the screencast window dialog.
 
 ![Screencast dialog showing niri Dynamic Cast Target.](https://github.com/user-attachments/assets/e236ce74-98ec-4f3a-a99b-29ac1ff324dd)
 
-When you select it, it will start as an empty, transparent video stream.
-Then, you can use the following binds to change what it shows:
+Choose it, then use the following binds to change what it shows.
+The stream won't start until you make your first target selection.
 
 - `set-dynamic-cast-window` to cast the focused window.
 - `set-dynamic-cast-monitor` to cast the focused monitor.
-- `clear-dynamic-cast-target` to go back to an empty stream.
+- `clear-dynamic-cast-target` to reset to an empty video stream.
 
 You can also use these actions from the command line, for example to interactively pick which window to cast:
 

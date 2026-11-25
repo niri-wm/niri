@@ -1,4 +1,6 @@
 use insta::assert_snapshot;
+use niri_config::Config;
+use smithay::backend::input::{InputEvent, InputTime, KeyState};
 use smithay::reexports::wayland_protocols_wlr::layer_shell::v1::client::zwlr_layer_shell_v1::Layer;
 use smithay::reexports::wayland_protocols_wlr::layer_shell::v1::client::zwlr_layer_surface_v1::{
     Anchor, KeyboardInteractivity,
@@ -6,6 +8,7 @@ use smithay::reexports::wayland_protocols_wlr::layer_shell::v1::client::zwlr_lay
 
 use super::*;
 use crate::tests::client::{LayerConfigureProps, LayerMargin};
+use crate::tests::test_input_backend::{TestInputBackend, TestKeyboardKeyEvent};
 
 #[test]
 fn simple_top_anchor() {
@@ -255,4 +258,283 @@ fn multiple_commits_before_mapping() {
     let layer = f.client(id).layer(&surface);
     // Configure with new size.
     assert_snapshot!(layer.format_recent_configures(), @"size: 1920 × 50");
+}
+
+#[test]
+fn keyboard_interactivity_none_then_on_demand() {
+    let mut f = Fixture::new();
+    f.add_output(1, (1920, 1080));
+    let id = f.add_client();
+
+    let layer = f.client(id).create_layer(None, Layer::Overlay, "");
+    let surface = layer.surface.clone();
+    layer.set_configure_props(LayerConfigureProps {
+        size: Some((100, 100)),
+        kb_interactivity: Some(KeyboardInteractivity::None),
+        ..Default::default()
+    });
+    layer.commit();
+    f.roundtrip(id);
+
+    // Start with None; switch to OnDemand immediately after mapping.
+    let layer = f.client(id).layer(&surface);
+    layer.attach_new_buffer();
+    layer.set_size(100, 100);
+    layer.ack_last_and_commit();
+
+    layer.set_configure_props(LayerConfigureProps {
+        kb_interactivity: Some(KeyboardInteractivity::OnDemand),
+        ..Default::default()
+    });
+    layer.commit();
+
+    f.double_roundtrip(id);
+
+    assert_snapshot!(f.client(id).state.format_recent_keyboard_events(&surface), @"");
+}
+
+#[test]
+fn keyboard_interactivity_on_demand_to_none_then_on_demand() {
+    let mut f = Fixture::new();
+    f.add_output(1, (1920, 1080));
+    let id = f.add_client();
+
+    let layer = f.client(id).create_layer(None, Layer::Overlay, "");
+    let surface = layer.surface.clone();
+    layer.set_configure_props(LayerConfigureProps {
+        size: Some((100, 100)),
+        kb_interactivity: Some(KeyboardInteractivity::OnDemand),
+        ..Default::default()
+    });
+    layer.commit();
+    f.roundtrip(id);
+
+    let layer = f.client(id).layer(&surface);
+    layer.attach_new_buffer();
+    layer.set_size(100, 100);
+    layer.ack_last_and_commit();
+    f.double_roundtrip(id);
+
+    assert_snapshot!(f.client(id).state.format_recent_keyboard_events(&surface), @"
+    enter: []
+    modifiers: depressed=0, latched=0, locked=0, group=0
+    ");
+
+    // Set to None and back to OnDemand within one compositor event loop iteration.
+    let layer = f.client(id).layer(&surface);
+    layer.set_configure_props(LayerConfigureProps {
+        kb_interactivity: Some(KeyboardInteractivity::None),
+        ..Default::default()
+    });
+    layer.commit();
+    layer.set_configure_props(LayerConfigureProps {
+        kb_interactivity: Some(KeyboardInteractivity::OnDemand),
+        ..Default::default()
+    });
+    layer.commit();
+    f.double_roundtrip(id);
+
+    assert_snapshot!(f.client(id).state.format_recent_keyboard_events(&surface), @"leave");
+}
+
+#[test]
+fn keyboard_interactivity_exclusive_to_on_demand() {
+    let mut f = Fixture::new();
+    f.add_output(1, (1920, 1080));
+    let id = f.add_client();
+
+    let layer = f.client(id).create_layer(None, Layer::Overlay, "");
+    let surface = layer.surface.clone();
+    layer.set_configure_props(LayerConfigureProps {
+        size: Some((100, 100)),
+        kb_interactivity: Some(KeyboardInteractivity::Exclusive),
+        ..Default::default()
+    });
+    layer.commit();
+    f.roundtrip(id);
+
+    let layer = f.client(id).layer(&surface);
+    layer.attach_new_buffer();
+    layer.set_size(100, 100);
+    layer.ack_last_and_commit();
+    f.double_roundtrip(id);
+
+    assert_snapshot!(f.client(id).state.format_recent_keyboard_events(&surface), @"
+    enter: []
+    modifiers: depressed=0, latched=0, locked=0, group=0
+    ");
+
+    let layer = f.client(id).layer(&surface);
+    layer.set_configure_props(LayerConfigureProps {
+        kb_interactivity: Some(KeyboardInteractivity::OnDemand),
+        ..Default::default()
+    });
+    layer.commit();
+    f.double_roundtrip(id);
+
+    assert_snapshot!(f.client(id).state.format_recent_keyboard_events(&surface), @"leave");
+}
+
+#[test]
+fn focus_on_type_in_overview() {
+    let config = r#"
+    input {
+        keyboard {
+            xkb {
+                layout "us,ru"
+                options "grp:lalt_toggle"
+            }
+        }
+    }
+
+    layer-rule {
+        focus-on-type-in-overview true
+    }
+    "#;
+    let config = Config::parse_mem(config).unwrap();
+    let mut f = Fixture::with_config(config);
+    f.add_output(1, (1920, 1080));
+    let id = f.add_client();
+
+    // Open the overview.
+    f.niri().layout.toggle_overview();
+
+    // Spawn a None->OnDemand layer surface (no automatic keyboard focus).
+    let layer = f.client(id).create_layer(None, Layer::Overlay, "");
+    let surface = layer.surface.clone();
+    layer.set_configure_props(LayerConfigureProps {
+        size: Some((100, 100)),
+        kb_interactivity: Some(KeyboardInteractivity::None),
+        ..Default::default()
+    });
+    layer.commit();
+    f.roundtrip(id);
+
+    let layer = f.client(id).layer(&surface);
+    layer.attach_new_buffer();
+    layer.set_size(100, 100);
+    layer.ack_last_and_commit();
+
+    layer.set_configure_props(LayerConfigureProps {
+        kb_interactivity: Some(KeyboardInteractivity::OnDemand),
+        ..Default::default()
+    });
+    layer.commit();
+
+    f.double_roundtrip(id);
+
+    assert_snapshot!(f.client(id).state.format_recent_keyboard_events(&surface), @"");
+
+    let event = |f: &mut Fixture, key: &str, down: bool| {
+        let state = f.niri_state();
+
+        let keyboard = state.niri.seat.get_keyboard().unwrap();
+        let code = keyboard.with_xkb_state(state, |xkb| {
+            let xkb = xkb.xkb().lock().unwrap();
+            let keymap = unsafe { xkb.keymap() };
+            keymap.key_by_name(key).expect("unknown key")
+        });
+
+        let key_state = if down {
+            KeyState::Pressed
+        } else {
+            KeyState::Released
+        };
+
+        state.process_input_event(InputEvent::<TestInputBackend>::Keyboard {
+            event: TestKeyboardKeyEvent {
+                time: InputTime::from_micros(0),
+                code,
+                state: key_state,
+                count: 1, // niri doesn't use this
+            },
+        });
+    };
+
+    // Hardcoded overview binds don't put focus on the layer surface.
+    event(&mut f, "LEFT", true);
+    event(&mut f, "LEFT", false);
+    f.roundtrip(id);
+
+    assert_snapshot!(f.client(id).state.format_recent_keyboard_events(&surface), @"");
+
+    // Other non-typing keys don't put focus on the layer surface.
+    event(&mut f, "BKSP", true);
+    event(&mut f, "BKSP", false);
+    f.roundtrip(id);
+
+    assert_snapshot!(f.client(id).state.format_recent_keyboard_events(&surface), @"");
+
+    // Typing keys do.
+    event(&mut f, "LatQ", true);
+    event(&mut f, "LatQ", false);
+    f.roundtrip(id);
+
+    assert_snapshot!(f.client(id).state.format_recent_keyboard_events(&surface), @"
+    enter: []
+    modifiers: depressed=0, latched=0, locked=0, group=0
+    key pressed: 16
+    key released: 16
+    ");
+
+    // Drop keyboard focus.
+    let layer = f.client(id).layer(&surface);
+    layer.set_configure_props(LayerConfigureProps {
+        kb_interactivity: Some(KeyboardInteractivity::None),
+        ..Default::default()
+    });
+    layer.commit();
+    layer.set_configure_props(LayerConfigureProps {
+        kb_interactivity: Some(KeyboardInteractivity::OnDemand),
+        ..Default::default()
+    });
+    layer.commit();
+    f.double_roundtrip(id);
+    assert_snapshot!(f.client(id).state.format_recent_keyboard_events(&surface), @"leave");
+
+    // Hit Shift first. By itself, it shouldn't focus the surface, but the letter should,
+    // with correct modifiers.
+    event(&mut f, "LFSH", true);
+    event(&mut f, "LatQ", true);
+    event(&mut f, "LatQ", false);
+    event(&mut f, "LFSH", false);
+    f.roundtrip(id);
+
+    assert_snapshot!(f.client(id).state.format_recent_keyboard_events(&surface), @"
+    enter: [42]
+    modifiers: depressed=1, latched=0, locked=0, group=0
+    key pressed: 16
+    key released: 16
+    key released: 42
+    modifiers: depressed=0, latched=0, locked=0, group=0
+    ");
+
+    // Drop keyboard focus.
+    let layer = f.client(id).layer(&surface);
+    layer.set_configure_props(LayerConfigureProps {
+        kb_interactivity: Some(KeyboardInteractivity::None),
+        ..Default::default()
+    });
+    layer.commit();
+    layer.set_configure_props(LayerConfigureProps {
+        kb_interactivity: Some(KeyboardInteractivity::OnDemand),
+        ..Default::default()
+    });
+    layer.commit();
+    f.double_roundtrip(id);
+    assert_snapshot!(f.client(id).state.format_recent_keyboard_events(&surface), @"leave");
+
+    // Switch layout and try with a non-ASCII typing character.
+    event(&mut f, "LALT", true);
+    event(&mut f, "LALT", false);
+    event(&mut f, "LatQ", true);
+    event(&mut f, "LatQ", false);
+    f.roundtrip(id);
+
+    assert_snapshot!(f.client(id).state.format_recent_keyboard_events(&surface), @"
+    enter: []
+    modifiers: depressed=0, latched=0, locked=0, group=1
+    key pressed: 16
+    key released: 16
+    ");
 }

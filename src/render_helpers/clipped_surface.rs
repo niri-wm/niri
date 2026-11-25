@@ -73,11 +73,11 @@ impl<R: NiriRenderer> ClippedSurfaceRenderElement<R> {
             x => x,
         };
         let transform_matrix = Mat3::from_translation(Vec2::new(0.5, 0.5))
-            * Mat3::from_cols_array(transform.matrix().as_ref())
+            * transform.matrix()
             * Mat3::from_translation(-Vec2::new(0.5, 0.5));
 
         let y_invert = if buffer_y_inverted(self.inner.buffer()).unwrap_or(false) {
-            Mat3::from_scale(Vec2::new(1., -1.))
+            Mat3::from_translation(Vec2::new(0., 1.)) * Mat3::from_scale(Vec2::new(1., -1.))
         } else {
             Mat3::IDENTITY
         };
