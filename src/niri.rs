@@ -1916,6 +1916,12 @@ impl State {
             output_config_changed = true;
         }
 
+        if config.debug.disable_idle_drm_device_suspend
+            != old_config.debug.disable_idle_drm_device_suspend
+        {
+            output_config_changed = true;
+        }
+
         // FIXME: move backdrop rendering into layout::Monitor, then this will become unnecessary.
         if config.overview.backdrop_color != old_config.overview.backdrop_color {
             output_config_changed = true;
@@ -2556,6 +2562,11 @@ impl State {
                 trace!("login1 lid {}", if is_closed { "closed" } else { "opened" });
                 self.set_lid_closed(is_closed);
             }
+            Login1ToNiri::SleepInhibitor(fd) => {
+                if let Some(tty) = self.backend.tty_checked() {
+                    tty.set_sleep_inhibitor(&mut self.niri, fd);
+                }
+            }
             Login1ToNiri::PrepareForSleep(start) => {
                 trace!(
                     "login1 {}",
@@ -2567,6 +2578,7 @@ impl State {
                     get_monotonic_time() + POWER_KEY_IGNORE_AFTER_WAKE
                 };
                 self.niri.ignore_power_key_until = Some(until);
+                self.backend.on_prepare_for_sleep(&mut self.niri, start);
             }
         }
     }

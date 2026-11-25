@@ -1,3 +1,5 @@
+For multi-GPU power management (dGPUs, eGPUs, and hybrid graphics), see [GPUs](./GPUs.md).
+
 ### High VRAM usage fix
 
 Presently, there is a quirk in the NVIDIA drivers that affects niri's VRAM usage (the driver does not properly release VRAM back into the pool). Niri *should* use on the order of 100 MiB of VRAM (as checked in [nvtop](https://github.com/Syllo/nvtop)); if you see anywhere close to 1 GiB of VRAM in use, you are likely hitting this issue (heap not returning freed buffers to the driver).
