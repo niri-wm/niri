@@ -5,6 +5,7 @@ use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use std::{env, io, process};
 
 use anyhow::Context;
@@ -12,13 +13,13 @@ use async_channel::{Receiver, Sender, TrySendError};
 use calloop::futures::Scheduler;
 use calloop::io::Async;
 use directories::BaseDirs;
-use futures_util::io::{AsyncReadExt, BufReader};
+use futures_util::io::BufReader;
 use futures_util::{select_biased, AsyncBufReadExt, AsyncWrite, AsyncWriteExt, FutureExt as _};
 use niri_config::OutputName;
 use niri_ipc::state::{EventStreamState, EventStreamStatePart as _};
 use niri_ipc::{
     Action, Event, KeyboardLayouts, OutputConfigChanged, Overview, Reply, Request, Response,
-    Timestamp, WindowLayout, Workspace,
+    Screenshot, ScreenshotRequest, ScreenshotTarget, Timestamp, WindowLayout, Workspace,
 };
 use smithay::backend::input::InputTime;
 use smithay::desktop::layer_map_for_output;
@@ -26,7 +27,9 @@ use smithay::input::pointer::{
     CursorIcon, CursorImageStatus, Focus, GrabStartData as PointerGrabStartData,
 };
 use smithay::reexports::calloop::generic::Generic;
+use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use smithay::reexports::calloop::{Interest, LoopHandle, Mode, PostAction};
+use smithay::reexports::rustix::event::{poll, PollFd, PollFlags, Timespec};
 use smithay::reexports::rustix::fs::unlink;
 use smithay::utils::SERIAL_COUNTER;
 use smithay::wayland::shell::wlr_layer::{KeyboardInteractivity, Layer};
@@ -187,8 +190,7 @@ fn on_new_ipc_client(state: &mut State, stream: UnixStream) {
 }
 
 async fn handle_client(ctx: ClientCtx, stream: Async<'static, UnixStream>) -> anyhow::Result<()> {
-    let (read, mut write) = stream.split();
-    let mut read = BufReader::new(read);
+    let mut read = BufReader::new(stream);
 
     loop {
         // Don't keep buf around to avoid clients wasting RAM by filling it with bogus data.
@@ -207,6 +209,9 @@ async fn handle_client(ctx: ClientCtx, stream: Async<'static, UnixStream>) -> an
         let request = serde_json::from_slice(&buf)
             .context("error parsing request")
             .map_err(|err| err.to_string());
+        if let Ok(Request::Screenshot(request)) = request {
+            return handle_screenshot(&ctx, read.into_inner(), request).await;
+        }
         let requested_error = matches!(request, Ok(Request::ReturnError));
         let requested_event_stream = matches!(request, Ok(Request::EventStream));
 
@@ -224,7 +229,10 @@ async fn handle_client(ctx: ClientCtx, stream: Async<'static, UnixStream>) -> an
         buf.clear();
         serde_json::to_writer(&mut buf, &reply).context("error formatting reply")?;
         buf.push(b'\n');
-        write.write_all(&buf).await.context("error writing reply")?;
+        read.get_mut()
+            .write_all(&buf)
+            .await
+            .context("error writing reply")?;
 
         if requested_event_stream {
             let (events_tx, events_rx) = async_channel::bounded(EVENT_STREAM_BUFFER_SIZE);
@@ -234,7 +242,7 @@ async fn handle_client(ctx: ClientCtx, stream: Async<'static, UnixStream>) -> an
             let client = EventStreamClient {
                 events: events_rx,
                 disconnect: disconnect_rx,
-                write: Box::new(write) as _,
+                write: Box::new(read.into_inner()) as _,
             };
             let future = async move {
                 if let Err(err) = handle_event_stream_client(client).await {
@@ -380,6 +388,7 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
             let color = result.map_err(|_| String::from("error getting picked color"))?;
             Response::PickedColor(color)
         }
+        Request::Screenshot(_) => unreachable!("screenshot requests are handled separately"),
         Request::Action(action) => {
             validate_action(&action)?;
 
@@ -462,6 +471,78 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
     };
 
     Ok(response)
+}
+
+async fn handle_screenshot(
+    ctx: &ClientCtx,
+    mut stream: Async<'static, UnixStream>,
+    request: ScreenshotRequest,
+) -> anyhow::Result<()> {
+    let (tx, rx) = async_channel::bounded(1);
+    let timer = if matches!(request.target, ScreenshotTarget::Selection) {
+        // A client may shut down its write end and keep waiting for the PNG.
+        let socket = stream.get_mut().try_clone()?;
+        let pending = tx.clone();
+        let interval = Duration::from_millis(250);
+        let token = ctx
+            .event_loop
+            .insert_source(Timer::from_duration(interval), move |_, _, state| {
+                let fd = PollFd::new(&socket, PollFlags::empty());
+                let mut fds = [fd];
+                let timeout = Timespec {
+                    tv_sec: 0,
+                    tv_nsec: 0,
+                };
+                if poll(&mut fds, Some(&timeout)).is_ok()
+                    && fds[0].revents().intersects(PollFlags::HUP | PollFlags::ERR)
+                {
+                    pending.close();
+                    state.niri.cancel_ipc_screenshot(&pending);
+                }
+                TimeoutAction::ToDuration(interval)
+            })
+            .map_err(|err| err.error)
+            .context("error monitoring screenshot client")?;
+        Some(token)
+    } else {
+        None
+    };
+    ctx.event_loop.insert_idle(move |state| {
+        if !tx.is_closed() {
+            if let Err(err) = state.handle_ipc_screenshot(request, tx.clone()) {
+                let _ = tx.try_send(Err(format!("{err:#}")));
+            }
+        }
+    });
+
+    let result = rx.recv().await;
+    if let Some(timer) = timer {
+        ctx.event_loop.remove(timer);
+    }
+    let Ok(result) = result else {
+        return Ok(());
+    };
+    let reply = result
+        .as_ref()
+        .map(|payload| {
+            Response::Screenshot(payload.as_ref().map(|data| Screenshot {
+                data_length: data.len() as u64,
+            }))
+        })
+        .map_err(Clone::clone);
+    let mut buf = serde_json::to_vec(&reply)?;
+    buf.push(b'\n');
+    stream
+        .write_all(&buf)
+        .await
+        .context("error writing screenshot reply")?;
+    if let Ok(Some(payload)) = result {
+        stream
+            .write_all(&payload)
+            .await
+            .context("error writing screenshot data")?;
+    }
+    Ok(())
 }
 
 fn validate_action(action: &Action) -> Result<(), String> {
