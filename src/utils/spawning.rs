@@ -383,7 +383,7 @@ mod systemd {
         use zbus::zvariant::{OwnedObjectPath, Value};
         let scope_name = scope_name(name, child_pid);
         let mut signals = proxy
-            .receive_signal("JobRemoved")
+            .receive_signal_with_args("JobRemoved", &[(2, &scope_name)])
             .await
             .context("error creating a signal iterator")?;
 
