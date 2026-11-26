@@ -1,12 +1,11 @@
 use std::ffi::OsStr;
-use std::io;
 use std::os::fd::{AsFd, AsRawFd};
 use std::os::unix::process::CommandExt;
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::RwLock;
-use std::thread;
+use std::{io, thread};
 
 use anyhow::Context;
 use atomic::Atomic;
@@ -190,7 +189,12 @@ fn prepare_command(
         process.env("DESKTOP_STARTUP_ID", token.as_str());
     }
 
-    restore_state_in_pre_exec(&mut process);
+    unsafe {
+        process.pre_exec(|| {
+            restore_nofile_rlimit();
+            crate::utils::signals::unblock_all()
+        });
+    }
 
     let mut process = async_process::Command::from(process);
     process
@@ -201,16 +205,16 @@ fn prepare_command(
     process
 }
 
-fn restore_state_in_pre_exec(cmd: &mut std::process::Command) {
-    unsafe {
-        cmd.pre_exec(|| {
-            restore_nofile_rlimit();
-            crate::utils::signals::unblock_all()
-        });
-    }
-}
-
 pub fn spawnserver() -> Result<(), anyhow::Error> {
+    let mut limits = std::env::args().skip(1).map(|arg| arg.parse::<rlim_t>());
+    let (Some(Ok(cur)), Some(Ok(max))) = (limits.next(), limits.next()) else {
+        anyhow::bail!("usage: niri-spawnserver <nofile_rlim_cur> <nofile_rlim_max>");
+    };
+    ORIGINAL_NOFILE_RLIMIT_CUR.store(cur, Ordering::Relaxed);
+    ORIGINAL_NOFILE_RLIMIT_MAX.store(max, Ordering::Relaxed);
+    restore_nofile_rlimit();
+    crate::utils::signals::unblock_all()?;
+
     async_io::block_on(async {
         let scope = async {
             #[cfg(feature = "systemd")]
@@ -257,8 +261,8 @@ pub fn spawnserver() -> Result<(), anyhow::Error> {
         }));
         command.stdin(Stdio::null());
         command.stdout(Stdio::null());
-        // SUBTLE: The following will close `stderr` descriptor before the exec, so we make a CLOEXEC
-        // copy of it and will restore stderr if exec fails so we can print out the error.
+        // SUBTLE: The following will close `stderr` descriptor before the exec, so we make a
+        // CLOEXEC copy of it and will restore stderr if exec fails so we can print out the error.
         command.stderr(Stdio::null());
         let stderr = io::stderr().as_fd().try_clone_to_owned()?;
         let exec_err = Err(command.exec());
@@ -274,8 +278,10 @@ fn prepare_spawnserver() -> Option<async_process::Child> {
         std::process::Command::new(std::env::current_exe().ok()?)
     };
 
-    restore_state_in_pre_exec(&mut spawnserver);
     spawnserver.arg0("niri-spawnserver");
+    let limit_args = [&ORIGINAL_NOFILE_RLIMIT_CUR, &ORIGINAL_NOFILE_RLIMIT_MAX]
+        .map(|limit| limit.load(Ordering::SeqCst).to_string());
+    spawnserver.args(limit_args);
 
     let mut spawnserver = async_process::Command::from(spawnserver);
     spawnserver.stdin(Stdio::piped());
