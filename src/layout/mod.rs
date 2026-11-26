@@ -1177,6 +1177,29 @@ impl<W: LayoutElement> Layout<W> {
         window: &W::Id,
         transaction: Transaction,
     ) -> Option<RemovedTile<W>> {
+        let on_active_workspace = self
+            .active_workspace()
+            .is_some_and(|ws| ws.has_window(window));
+
+        let removed = self.take_window(window, transaction)?;
+
+        // Removing the last tiled window on the focused workspace hands focus to its floating
+        // windows, so they have to become visible.
+        if self.floating_hidden
+            && on_active_workspace
+            && !removed.is_floating
+            && self
+                .active_workspace()
+                .is_some_and(|ws| ws.scrolling().is_empty() && !ws.floating().is_empty())
+        {
+            self.set_floating_hidden(false);
+        }
+
+        Some(removed)
+    }
+
+    /// Removes the window from the layout without unhiding floating windows.
+    fn take_window(&mut self, window: &W::Id, transaction: Transaction) -> Option<RemovedTile<W>> {
         if let Some(state) = &self.interactive_move {
             match state {
                 InteractiveMoveState::Starting { window_id, .. } => {
@@ -4153,7 +4176,7 @@ impl<W: LayoutElement> Layout<W> {
                     width,
                     is_full_width,
                     is_floating,
-                } = self.remove_window(window, Transaction::new()).unwrap();
+                } = self.take_window(window, Transaction::new()).unwrap();
 
                 tile.stop_move_animations();
                 tile.interactive_move_offset = Point::from((0., 0.));

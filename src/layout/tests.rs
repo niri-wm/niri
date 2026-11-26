@@ -3462,14 +3462,10 @@ fn adding_focused_floating_window_unhides() {
 }
 
 #[test]
-fn closing_last_tiled_window_keeps_floating_hidden() {
+fn closing_last_tiled_window_unhides_floating() {
     let mut layout = check_ops(hidden_floating_setup_ops());
     check_ops_on_layout(&mut layout, [Op::CloseWindow(2)]);
-    assert_eq!(floating_visible_per_workspace(&layout), [false, false]);
-    assert_eq!(focused_id(&layout), None);
-
-    // With nothing tiled, unhiding focuses the floating window
-    check_ops_on_layout(&mut layout, [Op::UnhideFloatingWindows]);
+    assert_eq!(floating_visible_per_workspace(&layout), [true, true]);
     assert_eq!(focused_id(&layout), Some(3));
 }
 
