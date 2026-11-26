@@ -237,32 +237,24 @@ pub fn spawnserver() -> Result<(), anyhow::Error> {
         let (_, read) = futures_util::future::join(scope, read).await;
 
         let buf = read?;
-        let Some((argc, buf)) = buf.split_first_chunk() else {
-            std::process::exit(0)
+        let Some((argc, mut buf)) = buf.split_first_chunk() else {
+            std::process::exit(1)
         };
-        let argc = usize::from_ne_bytes(*argc);
-
-        let mut bufi = buf
-            .split(|b| *b == 0)
-            .map(|b| unsafe { OsStr::from_encoded_bytes_unchecked(b) });
-
-        let Some(program) = bufi.next() else {
-            return Ok(());
-        };
-        let mut command = Command::new(program);
-
-        for _ in 0..argc {
-            let arg = bufi
-                .next()
-                .ok_or_else(|| anyhow::anyhow!("malformed command"))?;
-            command.arg(arg);
-        }
-
+        let argc = u32::from_ne_bytes(*argc);
+        let mut command_args = std::iter::from_fn(move || {
+            let (size_chunk, remainder) = buf.split_first_chunk()?;
+            let len = u32::from_ne_bytes(*size_chunk);
+            let (string, remainder) = remainder.split_at_checked(len as usize)?;
+            buf = remainder;
+            Some(unsafe { OsStr::from_encoded_bytes_unchecked(string) })
+        });
+        let arg0 = command_args.next().context("missing program")?;
+        let mut command = Command::new(arg0);
+        command.args(command_args.by_ref().take(argc as usize));
         command.env_clear();
-        while let (Some(k), Some(v)) = (bufi.next(), bufi.next()) {
-            command.env(k, v);
-        }
-
+        command.envs(std::iter::from_fn(|| {
+            Some((command_args.next()?, command_args.next()?))
+        }));
         command.stdin(Stdio::null());
         command.stdout(Stdio::null());
         // SUBTLE: The following will close `stderr` descriptor before the exec, so we make a CLOEXEC
@@ -271,7 +263,7 @@ pub fn spawnserver() -> Result<(), anyhow::Error> {
         let stderr = io::stderr().as_fd().try_clone_to_owned()?;
         let exec_err = Err(command.exec());
         unsafe { libc::dup2(stderr.as_raw_fd(), io::stderr().as_raw_fd()) };
-        exec_err.context(format!("could not spawn {program:?}"))
+        exec_err.context(format!("could not spawn {arg0:?}"))
     })
 }
 
@@ -305,29 +297,32 @@ async fn spawn_in_spawnserver(
     mut spawnserver: async_process::Child,
     command: async_process::Command,
 ) -> Option<async_process::Child> {
-    let mut buf = Vec::new();
+    let mut buf = Vec::with_capacity(1024);
     let args = command.get_args();
-    buf.extend_from_slice(&args.len().to_ne_bytes());
-    buf.extend_from_slice(command.get_program().as_encoded_bytes());
-    buf.push(0);
+    buf.extend_from_slice(&(args.len() as u32).to_ne_bytes());
+    let mut serialize = |str: &OsStr| {
+        let len = str.len() as u32;
+        buf.extend_from_slice(&len.to_ne_bytes());
+        buf.extend_from_slice(str.as_encoded_bytes());
+    };
+    serialize(command.get_program());
     for arg in args {
-        buf.extend_from_slice(arg.as_encoded_bytes());
-        buf.push(0);
+        serialize(arg);
     }
-
-    let mut environ = std::env::vars_os().collect::<std::collections::HashMap<_, _>>();
-    for (k, v) in command.get_envs() {
-        if let Some(v) = v {
-            environ.insert(k.into(), v.into());
-        } else {
-            environ.remove(k);
+    let overrides = command
+        .get_envs()
+        .collect::<std::collections::HashMap<_, _>>();
+    for (k, v) in std::env::vars_os() {
+        if !overrides.contains_key(&*k) {
+            serialize(&k);
+            serialize(&v);
         }
     }
-    for (k, v) in environ {
-        buf.extend_from_slice(k.as_encoded_bytes());
-        buf.push(0);
-        buf.extend_from_slice(v.as_encoded_bytes());
-        buf.push(0);
+    for (k, v) in overrides {
+        if let Some(v) = v {
+            serialize(k);
+            serialize(v);
+        }
     }
 
     {
