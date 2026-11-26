@@ -1175,7 +1175,10 @@ impl State {
         drop(config);
 
         self.niri.layout.focus_output(&target);
-        self.move_cursor_to_output(&target);
+
+        // Always center: at startup, the cursor sits at the corner of the first output.
+        let geo = self.niri.global_space.output_geometry(&target).unwrap();
+        self.move_cursor(center(geo).to_f64());
     }
 
     /// Focus a specific window, taking care of a potential active output change and cursor
@@ -1318,7 +1321,12 @@ impl State {
         true
     }
 
+    /// Moves the cursor to the center of the output, unless it's already on that output.
     pub fn move_cursor_to_output(&mut self, output: &Output) {
+        if self.niri.output_under_cursor().as_ref() == Some(output) {
+            return;
+        }
+
         let geo = self.niri.global_space.output_geometry(output).unwrap();
         self.move_cursor(center(geo).to_f64());
     }
