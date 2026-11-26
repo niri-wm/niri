@@ -4560,6 +4560,8 @@ impl Niri {
 
         self.idle_inhibiting_surfaces.retain(|s| s.is_alive());
 
+        // The FDO ScreenSaver doesn't currently wake up the event loop when changing its atomic
+        // value, so this relies on the frame callback 1 second timer waking up regularly.
         let is_inhibited = self.is_fdo_idle_inhibited.load(Ordering::SeqCst)
             || self.idle_inhibiting_surfaces.iter().any(|surface| {
                 with_states(surface, |states| {
