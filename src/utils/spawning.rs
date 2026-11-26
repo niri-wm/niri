@@ -1,5 +1,5 @@
 use std::ffi::OsStr;
-use std::io::{self, Read};
+use std::io;
 use std::os::fd::{AsFd, AsRawFd};
 use std::os::unix::process::CommandExt;
 use std::path::Path;
@@ -10,6 +10,7 @@ use std::thread;
 
 use anyhow::Context;
 use atomic::Atomic;
+use futures_util::AsyncWriteExt;
 use libc::{getrlimit, rlim_t, rlimit, setrlimit, RLIMIT_NOFILE};
 use niri_config::Environment;
 use smithay::wayland::xdg_activation::XdgActivationToken;
@@ -34,31 +35,23 @@ impl Spawner {
         thread::Builder::new()
             .name("Command Spawner".to_owned())
             .spawn(move || {
-                let ex = async_executor::LocalExecutor::new();
-                async_io::block_on(ex.run(async {
-                    #[cfg(feature = "systemd")]
-                    let mut spawnserver = systemd::prepare_spawnserver();
-
+                async_io::block_on(async {
+                    let mut spawnserver = prepare_spawnserver();
                     while let Ok((command, token)) = receiver.recv().await {
                         let Some((command, args)) = command.split_first() else {
                             continue;
                         };
                         let spawnee = prepare_command(command, args, token);
 
-                        #[cfg(feature = "systemd")]
-                        {
-                            let server = spawnserver.take().or_else(systemd::prepare_spawnserver);
-                            if let Some(server) = server {
-                                ex.spawn(systemd::spawn_in_spawnserver(server, spawnee))
-                                    .detach();
-                                spawnserver = systemd::prepare_spawnserver();
-                                continue;
-                            }
-                        }
-
-                        just_spawn(spawnee);
+                        let server = spawnserver.take();
+                        if let Some(server) = server {
+                            spawn_in_spawnserver(server, spawnee).await
+                        } else {
+                            just_spawn(spawnee)
+                        };
+                        spawnserver = prepare_spawnserver();
                     }
-                }));
+                });
             })
             .unwrap();
 
@@ -130,9 +123,13 @@ pub fn restore_nofile_rlimit() {
     unsafe { setrlimit(RLIMIT_NOFILE, &rlim) };
 }
 
-fn just_spawn(mut command: async_process::Command) {
-    if let Err(err) = command.spawn() {
-        warn!("error spawning {command:?}: {err:?}");
+fn just_spawn(mut command: async_process::Command) -> Option<async_process::Child> {
+    match command.spawn() {
+        Ok(child) => Some(child),
+        Err(err) => {
+            warn!("error spawning {command:?}: {err:?}");
+            None
+        }
     }
 }
 
@@ -214,63 +211,139 @@ fn restore_state_in_pre_exec(cmd: &mut std::process::Command) {
 }
 
 pub fn spawnserver() -> Result<(), anyhow::Error> {
-    #[cfg(feature = "systemd")]
-    let could_prepare_scope = match systemd::scope_self(OsStr::new("spawnserver")) {
-        Ok(()) => true,
-        Err(err) => {
-            eprintln!("spawnserver could not put itself into scope: {err:?}");
-            false
+    async_io::block_on(async {
+        let scope = async {
+            #[cfg(feature = "systemd")]
+            if super::IS_SYSTEMD_SERVICE.load(Ordering::Relaxed) {
+                let timeout = std::pin::pin!(async {
+                    async_io::Timer::after(std::time::Duration::from_secs(5)).await;
+                    anyhow::bail!("timed out");
+                });
+                let scope = std::pin::pin!(systemd::scope_self(OsStr::new("spawn")));
+                let future = futures_util::future::select(scope, timeout);
+                if let Err(err) = future.await.factor_first().0 {
+                    eprintln!("spawnserver could not put itself into scope: {err:?}")
+                }
+            }
+        };
+        let read = async {
+            let mut stdin = async_io::Async::new(io::stdin())?;
+            let mut buf = Vec::new();
+            futures_util::AsyncReadExt::read_to_end(&mut stdin, &mut buf)
+                .await
+                .context("could not read stdin")?;
+            Ok::<_, anyhow::Error>(buf)
+        };
+        let (_, read) = futures_util::future::join(scope, read).await;
+
+        let buf = read?;
+        let Some((argc, buf)) = buf.split_first_chunk() else {
+            std::process::exit(0)
+        };
+        let argc = usize::from_ne_bytes(*argc);
+
+        let mut bufi = buf
+            .split(|b| *b == 0)
+            .map(|b| unsafe { OsStr::from_encoded_bytes_unchecked(b) });
+
+        let Some(program) = bufi.next() else {
+            return Ok(());
+        };
+        let mut command = Command::new(program);
+
+        for _ in 0..argc {
+            let arg = bufi
+                .next()
+                .ok_or_else(|| anyhow::anyhow!("malformed command"))?;
+            command.arg(arg);
         }
+
+        command.env_clear();
+        while let (Some(k), Some(v)) = (bufi.next(), bufi.next()) {
+            command.env(k, v);
+        }
+
+        command.stdin(Stdio::null());
+        command.stdout(Stdio::null());
+        // SUBTLE: The following will close `stderr` descriptor before the exec, so we make a CLOEXEC
+        // copy of it and will restore stderr if exec fails so we can print out the error.
+        command.stderr(Stdio::null());
+        let stderr = io::stderr().as_fd().try_clone_to_owned()?;
+        let exec_err = Err(command.exec());
+        unsafe { libc::dup2(stderr.as_raw_fd(), io::stderr().as_raw_fd()) };
+        exec_err.context(format!("could not spawn {program:?}"))
+    })
+}
+
+fn prepare_spawnserver() -> Option<async_process::Child> {
+    let mut spawnserver = if std::fs::exists("/proc/self/exe").map_err(|_| ()) == Ok(true) {
+        std::process::Command::new("/proc/self/exe")
+    } else {
+        std::process::Command::new(std::env::current_exe().ok()?)
     };
 
+    restore_state_in_pre_exec(&mut spawnserver);
+    spawnserver.arg0("niri-spawnserver");
+
+    let mut spawnserver = async_process::Command::from(spawnserver);
+    spawnserver.stdin(Stdio::piped());
+    spawnserver.stdout(Stdio::null());
+    // exec errors output by spawnserver.
+    spawnserver.stderr(Stdio::inherit());
+
+    match spawnserver.spawn() {
+        Ok(server) => Some(server),
+        Err(e) => {
+            debug!("could not spawn a spawnserver, will fall back to direct spawning: {e:?}");
+            None
+        }
+    }
+}
+
+/// Send a command to the spawnserver to spawn.
+async fn spawn_in_spawnserver(
+    mut spawnserver: async_process::Child,
+    command: async_process::Command,
+) -> Option<async_process::Child> {
     let mut buf = Vec::new();
-    io::stdin()
-        .lock()
-        .read_to_end(&mut buf)
-        .context("could not read the command to spawn")?;
-
-    let Some((argc, buf)) = buf.split_first_chunk() else {
-        std::process::exit(0)
-    };
-    let argc = usize::from_ne_bytes(*argc);
-
-    let mut bufi = buf
-        .split(|b| *b == 0)
-        .map(|b| unsafe { OsStr::from_encoded_bytes_unchecked(b) });
-
-    let Some(program) = bufi.next() else {
-        return Ok(());
-    };
-    let mut command = Command::new(program);
-
-    for _ in 0..argc {
-        let arg = bufi
-            .next()
-            .ok_or_else(|| anyhow::anyhow!("malformed command"))?;
-        command.arg(arg);
+    let args = command.get_args();
+    buf.extend_from_slice(&args.len().to_ne_bytes());
+    buf.extend_from_slice(command.get_program().as_encoded_bytes());
+    buf.push(0);
+    for arg in args {
+        buf.extend_from_slice(arg.as_encoded_bytes());
+        buf.push(0);
     }
 
-    command.env_clear();
-    while let (Some(k), Some(v)) = (bufi.next(), bufi.next()) {
-        command.env(k, v);
-    }
-
-    #[cfg(feature = "systemd")]
-    if !could_prepare_scope {
-        if let Err(err) = systemd::scope_self(program) {
-            eprintln!("spawnserver could not put itself into scope on 2nd attempt either: {err:?}");
+    let mut environ = std::env::vars_os().collect::<std::collections::HashMap<_, _>>();
+    for (k, v) in command.get_envs() {
+        if let Some(v) = v {
+            environ.insert(k.into(), v.into());
+        } else {
+            environ.remove(k);
         }
     }
+    for (k, v) in environ {
+        buf.extend_from_slice(k.as_encoded_bytes());
+        buf.push(0);
+        buf.extend_from_slice(v.as_encoded_bytes());
+        buf.push(0);
+    }
 
-    command.stdin(Stdio::null());
-    command.stdout(Stdio::null());
-    // SUBTLE: The following will close `stderr` descriptor before the exec, so we make a CLOEXEC
-    // copy of it and will restore stderr if exec fails so we can print out the error.
-    command.stderr(Stdio::null());
-    let stderr = io::stderr().as_fd().try_clone_to_owned()?;
-    let exec_err = Err(command.exec());
-    unsafe { libc::dup2(stderr.as_raw_fd(), io::stderr().as_raw_fd()) };
-    exec_err.context(format!("could not spawn {program:?}"))
+    {
+        let Some(mut stdin) = spawnserver.stdin.take() else {
+            // This should be unreachable, but we have a reasonable fallback to try.
+            let _ = spawnserver.kill();
+            return just_spawn(command);
+        };
+        let Ok(_) = stdin.write_all(&buf).await else {
+            // Likely reason for a failure here is that spawnserver crashed or got killed.
+            let _ = spawnserver.kill();
+            return just_spawn(command);
+        };
+        drop(stdin); // spawnserver may proceed to exec
+    }
+    Some(spawnserver)
 }
 
 #[cfg(feature = "systemd")]
@@ -279,7 +352,7 @@ mod systemd {
     use std::os::unix::ffi::OsStrExt;
 
     use anyhow::Context;
-    use futures_util::{AsyncReadExt, AsyncWriteExt, StreamExt};
+    use futures_util::StreamExt;
 
     use super::*;
 
@@ -297,171 +370,7 @@ mod systemd {
         scope_name
     }
 
-    pub(super) fn prepare_spawnserver() -> Option<async_process::Child> {
-        if !crate::utils::IS_SYSTEMD_SERVICE.load(Ordering::Relaxed) {
-            return None;
-        }
-
-        let mut spawnserver = if std::fs::exists("/proc/self/exe").map_err(|_| ()) == Ok(true) {
-            std::process::Command::new("/proc/self/exe")
-        } else {
-            std::process::Command::new(std::env::current_exe().ok()?)
-        };
-
-        restore_state_in_pre_exec(&mut spawnserver);
-        spawnserver.arg("spawnserver");
-
-        let mut spawnserver = async_process::Command::from(spawnserver);
-        spawnserver.stdin(Stdio::piped());
-        spawnserver.stdout(Stdio::piped());
-        // exec errors output by spawnserver.
-        spawnserver.stderr(Stdio::inherit());
-
-        match spawnserver.spawn() {
-            Ok(server) => Some(server),
-            Err(e) => {
-                debug!("could not spawn a spawnserver, will fall back to direct spawning: {e:?}");
-                None
-            }
-        }
-    }
-
-    /// Send a command to the spawnserver to spawn.
-    pub(super) async fn spawn_in_spawnserver(
-        mut spawnserver: async_process::Child,
-        command: async_process::Command,
-    ) {
-        let mut buf = Vec::new();
-        let args = command.get_args();
-        buf.extend_from_slice(&args.len().to_ne_bytes());
-        buf.extend_from_slice(command.get_program().as_encoded_bytes());
-        buf.push(0);
-        for arg in args {
-            buf.extend_from_slice(arg.as_encoded_bytes());
-            buf.push(0);
-        }
-
-        let mut environ = std::env::vars_os().collect::<std::collections::HashMap<_, _>>();
-        for (k, v) in command.get_envs() {
-            if let Some(v) = v {
-                environ.insert(k.into(), v.into());
-            } else {
-                environ.remove(k);
-            }
-        }
-        for (k, v) in environ {
-            buf.extend_from_slice(k.as_encoded_bytes());
-            buf.push(0);
-            buf.extend_from_slice(v.as_encoded_bytes());
-            buf.push(0);
-        }
-
-        {
-            let Some(mut stdin) = spawnserver.stdin.take() else {
-                // This should be unreachable, but we have a reasonable fallback to try.
-                let _ = spawnserver.kill();
-                return super::just_spawn(command);
-            };
-            let Ok(_) = stdin.write_all(&buf).await else {
-                // Likely reason for a failure here is that spawnserver crashed or got killed.
-                let _ = spawnserver.kill();
-                return super::just_spawn(command);
-            };
-            drop(stdin); // spawnserver may proceed to exec
-        }
-
-        if let Some(mut stdout) = spawnserver.stdout.take() {
-            // Wait for exec to happen, spawnserver indicates this by closing its stdout.
-            let mut buf = [0];
-            let result = stdout.read(&mut buf).await;
-            debug_assert_eq!(result.map_err(|_| ()), Ok(0));
-        }
-
-        if let Ok(None) = spawnserver.try_status() {
-            if let Err(e) = rescope_spawned(command.get_program(), spawnserver.id()).await {
-                warn!("could not migrate spawned program to its named scope: {e:?}");
-            }
-        }
-    }
-
-    pub(super) fn scope_self(name: &OsStr) -> anyhow::Result<()> {
-        if !crate::utils::IS_SYSTEMD_SERVICE.load(Ordering::Relaxed) {
-            return Ok(());
-        }
-
-        async_io::block_on(async {
-            let conn = zbus::Connection::session()
-                .await
-                .context("error connecting to session bus")?;
-            let proxy = zbus::Proxy::new(
-                &conn,
-                "org.freedesktop.systemd1",
-                "/org/freedesktop/systemd1",
-                "org.freedesktop.systemd1.Manager",
-            )
-            .await
-            .context("error creating a Proxy")?;
-
-            start_systemd_scope(&proxy, name, std::process::id())
-                .await
-                .context("could not put spawnserver into an intermediate scope")?;
-
-            Ok(())
-        })
-    }
-
-    async fn rescope_spawned(command: &OsStr, pid: u32) -> anyhow::Result<()> {
-        let conn = zbus::Connection::session()
-            .await
-            .context("could not connect to session bus")?;
-        rescope(conn, command, pid)
-            .await
-            .context("error moving spawned process into its scope")?;
-        Ok(())
-    }
-
-    async fn rescope(conn: zbus::Connection, command: &OsStr, pid: u32) -> anyhow::Result<()> {
-        let from = scope_name(OsStr::new("spawnserver"), pid);
-        let to = scope_name(command, pid);
-        let proxy = zbus::Proxy::new(
-            &conn,
-            "org.freedesktop.systemd1",
-            "/org/freedesktop/systemd1",
-            "org.freedesktop.systemd1.Manager",
-        )
-        .await
-        .context("error creating a Proxy")?;
-        start_systemd_scope(&proxy, command, pid).await?;
-
-        for _ in 0..64 {
-            let procs: Vec<(String, u32, String)> =
-                match proxy.call("GetUnitProcesses", &from).await {
-                    Ok(procs) => procs,
-                    // spawnserver scope emptied and got garbage collected (program has exited).
-                    Err(zbus::Error::MethodError(name, _, _))
-                        if name.as_str() == "org.freedesktop.systemd1.NoSuchUnit" =>
-                    {
-                        return Ok(())
-                    }
-                    Err(err) => return Err(err).context("error calling GetUnitProcesses"),
-                };
-            if procs.is_empty() {
-                return Ok(());
-            }
-            let pids: Vec<u32> = procs.into_iter().map(|(_, pid, _)| pid).collect();
-            trace!("moving {pids:?} from {from} to {to}");
-            // Processes may spawn or exit in between iterations.
-            if let Err(err) = proxy
-                .call::<_, _, ()>("AttachProcessesToUnit", &(&to, "", &pids))
-                .await
-            {
-                trace!("error attaching {pids:?} to {to}: {err:?}");
-            }
-        }
-        anyhow::bail!("{from} still not empty after 64 attempts to rescope, giving up")
-    }
-
-    /// Puts a (newly spawned) pid into a transient systemd scope.
+    /// Puts a pid into a transient systemd scope.
     ///
     /// This separates the pid from the compositor scope, which for example prevents the OOM killer
     /// from bringing down the compositor together with a misbehaving client.
@@ -471,8 +380,6 @@ mod systemd {
         child_pid: u32,
     ) -> anyhow::Result<()> {
         use zbus::zvariant::{OwnedObjectPath, Value};
-
-        // Extract the basename.
         let scope_name = scope_name(name, child_pid);
         let mut signals = proxy
             .receive_signal("JobRemoved")
@@ -496,12 +403,30 @@ mod systemd {
             let body = message.body();
             let body: (u32, OwnedObjectPath, &str, &str) =
                 body.deserialize().context("error parsing signal")?;
-
             if body.1 == job {
-                // Our transient unit had started, we're good to proceed to exec.
+                // Our transient unit had started...
                 break;
             }
         }
+        Ok(())
+    }
+
+    pub(super) async fn scope_self(name: &OsStr) -> anyhow::Result<()> {
+        let conn = zbus::Connection::session()
+            .await
+            .context("error connecting to session bus")?;
+        let proxy = zbus::Proxy::new(
+            &conn,
+            "org.freedesktop.systemd1",
+            "/org/freedesktop/systemd1",
+            "org.freedesktop.systemd1.Manager",
+        )
+        .await
+        .context("error creating a Proxy")?;
+
+        start_systemd_scope(&proxy, name, std::process::id())
+            .await
+            .context("could not put spawnserver into a scope")?;
 
         Ok(())
     }

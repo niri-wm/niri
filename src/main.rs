@@ -46,8 +46,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Want minimal overhead for spawnserver, so handle this early on before any other work setting
     // up the process is done.
     if std::env::args_os()
-        .nth(1)
-        .is_some_and(|a| a == "spawnserver")
+        .next()
+        .is_some_and(|a| a == "niri-spawnserver")
     {
         return spawnserver().map_err(Into::into);
     }

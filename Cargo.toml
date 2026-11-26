@@ -65,7 +65,6 @@ accesskit_unix = { version = "0.23", optional = true }
 anyhow.workspace = true
 arrayvec = "0.7.8"
 async-channel = "2.5.0"
-async-executor = "1.14.0"
 async-io = "2.6.0"
 async-process = "2.5.0"
 atomic = "0.6.1"
