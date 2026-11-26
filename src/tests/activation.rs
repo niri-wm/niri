@@ -147,6 +147,24 @@ fn xdg_activation_without_warp() {
 }
 
 #[test]
+fn activation_of_focused_window_preserves_pointer() {
+    for (activation, rule) in [
+        (Activation::ForeignToplevel, None),
+        (Activation::Xdg, None),
+        (Activation::Xdg, Some("focus")),
+    ] {
+        let (mut f, _) = set_up(true, false, rule);
+        let focused = f.niri().layout.focus().unwrap().window.clone();
+        let before = pointer_location(&mut f);
+
+        activation.activate(&mut f, focused.toplevel().unwrap().wl_surface().clone());
+
+        assert_eq!(f.niri().layout.focus().unwrap().window, focused);
+        assert_eq!(pointer_location(&mut f), before);
+    }
+}
+
+#[test]
 fn xdg_activation_ignore_and_set_urgent_preserve_focus_and_pointer() {
     for rule in ["ignore", "set-urgent"] {
         for cross_output in [false, true] {
