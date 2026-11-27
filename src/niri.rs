@@ -5850,10 +5850,6 @@ impl Niri {
     }
 
     pub fn send_frame_callbacks_on_fallback_timer(&mut self) {
-        if !self.monitors_active || self.output_state.is_empty() {
-            return;
-        }
-
         let _span = tracy_client::span!("Niri::send_frame_callbacks_on_fallback_timer");
 
         // Make up a bogus output; we don't care about it here anyway, just the throttling timer.
