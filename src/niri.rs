@@ -2827,6 +2827,22 @@ impl Niri {
         #[cfg(feature = "dbus")]
         let a11y = A11y::new(event_loop.clone());
 
+        // This timer's purpose is not only to send frame callbacks to invisible surfaces,
+        // but also to generally wake up the event loop periodically. Which is a bit unfortunate
+        // from the power usage standpoint. Currently, at least these things rely on it:
+        //
+        // - Clear expired wlr-screencopy casts (they have a deadline but don't set their own
+        //   timer).
+        // - Refresh the FDO ScreenSaver inhibit value (it doesn't wake up the event loop when
+        //   changing it).
+        // - Advance layout animations and clean up workspaces even when outputs are not redrawing
+        //   (e.g. during power-off-monitors).
+        //
+        // Some of these would be fairly easy to fix, but the advance animations one sounds harder.
+        // And there isn't really a benefit to fixing these one by one instead of all at once (and
+        // completely stopping this timer).
+        //
+        // FIXME: fix all of these and keep this timer stopped in most cases.
         event_loop
             .insert_source(
                 Timer::from_duration(Duration::from_secs(1)),
