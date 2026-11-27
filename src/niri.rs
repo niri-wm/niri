@@ -5312,12 +5312,9 @@ impl Niri {
         }
 
         // If we're in process of locking the session, check if the requirements were met.
-        match mem::take(&mut self.lock_state) {
-            LockState::Locking(confirmation) => {
-                if state.lock_render_state == LockRenderState::Unlocked {
-                    // We needed to render a locked frame on this output but failed.
-                    self.unlock();
-                } else {
+        if state.lock_render_state == LockRenderState::Locked {
+            match mem::take(&mut self.lock_state) {
+                LockState::Locking(confirmation) => {
                     // Check if all outputs are now locked.
                     let all_locked = self
                         .output_state
@@ -5334,8 +5331,8 @@ impl Niri {
                         self.lock_state = LockState::Locking(confirmation);
                     }
                 }
+                lock_state => self.lock_state = lock_state,
             }
-            lock_state => self.lock_state = lock_state,
         }
 
         self.refresh_on_demand_vrr(backend, output);
@@ -7207,11 +7204,25 @@ impl Niri {
 
     pub fn lock(&mut self, confirmation: SessionLocker) {
         // Check if another client is in the process of locking.
-        if matches!(
-            self.lock_state,
-            LockState::WaitingForSurfaces { .. } | LockState::Locking(_)
-        ) {
+        if matches!(self.lock_state, LockState::WaitingForSurfaces { .. }) {
+            // If the client is dead, this will refuse a new one, but that's fine since this state
+            // can only persist for the 1 second deadline.
             info!("refusing lock as another client is currently locking");
+            return;
+        }
+
+        // We might get stuck in Locking(_) for a while when the TTY is inactive.
+        if let LockState::Locking(cur_conf) = &self.lock_state {
+            if cur_conf.ext_session_lock().is_alive() {
+                info!("refusing lock as another client is currently locking");
+                return;
+            }
+
+            // If the client had died, continue with the new lock.
+            info!("locking session (replacing existing dead lock)");
+
+            // The screens have not been blanked yet, go to Locking.
+            self.lock_state = LockState::Locking(confirmation);
             return;
         }
 
