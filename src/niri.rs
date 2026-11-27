@@ -5947,6 +5947,8 @@ impl Niri {
                 throttle_fps = f64::max(throttle_fps, fps);
 
                 let secs = 1. / f64::max(fps, 0.001);
+                // Subtract 1 ms to reduce the chance of timer aliasing.
+                let secs = secs - 0.001;
                 mapped.send_frame(
                     &output,
                     frame_callback_time,
