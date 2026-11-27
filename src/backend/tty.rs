@@ -1841,7 +1841,8 @@ impl Tty {
 
             niri.queue_redraw(&output);
         } else {
-            niri.send_frame_callbacks(&output);
+            let monitors_active = niri.monitors_active && self.is_active();
+            niri.send_frame_callbacks(&output, monitors_active);
         }
     }
 
@@ -2288,6 +2289,10 @@ impl Tty {
                 }
             }
         }
+    }
+
+    pub fn is_active(&self) -> bool {
+        self.session.is_active()
     }
 
     pub fn set_output_on_demand_vrr(&mut self, niri: &mut Niri, output: &Output, enable_vrr: bool) {

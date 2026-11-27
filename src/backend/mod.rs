@@ -189,6 +189,14 @@ impl Backend {
         }
     }
 
+    pub fn is_active(&self) -> bool {
+        match self {
+            Backend::Tty(tty) => tty.is_active(),
+            Backend::Winit(_) => true,
+            Backend::Headless(_) => true,
+        }
+    }
+
     pub fn set_output_on_demand_vrr(&mut self, niri: &mut Niri, output: &Output, enable_vrr: bool) {
         match self {
             Backend::Tty(tty) => tty.set_output_on_demand_vrr(niri, output, enable_vrr),

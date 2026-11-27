@@ -5240,8 +5240,10 @@ impl Niri {
 
         self.update_render_elements(Some(output));
 
+        let monitors_active = self.monitors_active && backend.is_active();
+
         let mut res = RenderResult::Skipped;
-        if self.monitors_active {
+        if monitors_active {
             let state = self.output_state.get_mut(output).unwrap();
             state.unfinished_animations_remain = self.layout.are_animations_ongoing(Some(output));
             state.unfinished_animations_remain |=
@@ -5293,9 +5295,13 @@ impl Niri {
             };
         }
 
-        // Update the lock render state on successful render, or if monitors are inactive. When
-        // monitors are inactive on a TTY, they have no framebuffer attached, so no sensitive data
-        // from a last render will be visible.
+        // Update the lock render state on successful render, or if monitors are inactive.
+        //
+        // When monitors are inactive on a TTY, they have no framebuffer attached,
+        // so no sensitive data from a last render will be visible.
+        //
+        // When the TTY is inactive, we don't know what the framebuffer state is. It might very well
+        // remain drawing the old frame, meaning we can't signal the lock yet.
         if res != RenderResult::Skipped || !self.monitors_active {
             state.lock_render_state = if is_locked {
                 LockRenderState::Locked
@@ -5344,7 +5350,7 @@ impl Niri {
         //
         // However, this should probably be restricted to sending frame callbacks to more surfaces,
         // to err on the safe side.
-        self.send_frame_callbacks(output);
+        self.send_frame_callbacks(output, monitors_active);
         backend.with_primary_renderer(|renderer| {
             #[cfg(feature = "xdp-gnome-screencast")]
             {
@@ -5398,14 +5404,15 @@ impl Niri {
         let token = self
             .event_loop
             .insert_source(timer, move |_, _, data| {
-                data.niri.on_estimated_vblank_timer(output.clone());
+                data.niri
+                    .on_estimated_vblank_timer(&data.backend, output.clone());
                 TimeoutAction::Drop
             })
             .unwrap();
         output_state.redraw_state = RedrawState::WaitingForEstimatedVBlank(token);
     }
 
-    fn on_estimated_vblank_timer(&mut self, output: Output) {
+    fn on_estimated_vblank_timer(&mut self, backend: &Backend, output: Output) {
         let span = tracy_client::span!("Niri::on_estimated_vblank_timer");
 
         let name = output.name();
@@ -5442,7 +5449,8 @@ impl Niri {
         if output_state.unfinished_animations_remain {
             self.queue_redraw(&output);
         } else {
-            self.send_frame_callbacks(&output);
+            let monitors_active = self.monitors_active && backend.is_active();
+            self.send_frame_callbacks(&output, monitors_active);
         }
     }
 
@@ -5805,7 +5813,7 @@ impl Niri {
         }
     }
 
-    pub fn send_frame_callbacks(&mut self, output: &Output) {
+    pub fn send_frame_callbacks(&mut self, output: &Output, monitors_active: bool) {
         let _span = tracy_client::span!("Niri::send_frame_callbacks");
 
         let state = self.output_state.get(output).unwrap();
@@ -5868,7 +5876,7 @@ impl Niri {
         for mapped in self.layout.windows_for_output_mut(output) {
             if mapped.is_window_cast_target() {
                 ignore_primary_output.set(true);
-            } else if !self.monitors_active {
+            } else if !monitors_active {
                 // Don't normally send frame callbacks to windows when monitors are powered off.
                 continue;
             }
@@ -5879,7 +5887,7 @@ impl Niri {
         }
 
         // Everything else is never force-redrawn.
-        if !self.monitors_active {
+        if !monitors_active {
             return;
         }
 
