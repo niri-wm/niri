@@ -1,4 +1,4 @@
-use ::input as libinput;
+extern crate input as libinput;
 use smithay::backend::input;
 use smithay::backend::winit::WinitVirtualDevice;
 use smithay::output::Output;

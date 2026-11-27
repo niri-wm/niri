@@ -484,19 +484,6 @@ impl State {
         let time = Event::time(&event);
         let pressed = event.state() == KeyState::Pressed;
 
-        // Stop bind key repeat on any release. This won't work 100% correctly in cases like:
-        // 1. Press Mod
-        // 2. Press Left (repeat starts)
-        // 3. Press PgDown (new repeat starts)
-        // 4. Release Left (PgDown repeat stops)
-        // But it's good enough for now.
-        // FIXME: handle this properly.
-        if !pressed {
-            if let Some(token) = self.niri.bind_repeat_timer.take() {
-                self.niri.event_loop.remove(token);
-            }
-        }
-
         if pressed {
             self.hide_cursor_if_needed();
         }
@@ -616,6 +603,8 @@ impl State {
                     (Some(a), None) => &[a][..],
                     (Some(a), Some(b)) => &[a, b][..],
                 };
+
+                this.update_key_repeats(key_code, pressed, modified.unwrap_or(Keysym::NoSymbol));
 
                 // After updating XKB state from accessibility-grabbed keys, return right away and
                 // don't handle them.
@@ -777,19 +766,18 @@ impl State {
         // Handle the bind, if the result came with one.
         if let Some(bind) = result.into_bind() {
             if pressed && bind.repeat {
-                self.start_key_repeat(bind.clone());
+                self.start_key_repeat(event.key_code(), bind.clone());
             }
             self.handle_bind(bind, pressed, time);
         }
     }
 
-    fn start_key_repeat(&mut self, bind: Bind) {
+    pub(crate) fn start_key_repeat(&mut self, key_code: Keycode, bind: Bind) {
         if !bind.repeat {
             return;
         }
 
-        // Stop the previous key repeat if any.
-        if let Some(token) = self.niri.bind_repeat_timer.take() {
+        if let Some(token) = self.niri.bind_repeat_timers.remove(&key_code) {
             self.niri.event_loop.remove(token);
         }
 
@@ -817,7 +805,19 @@ impl State {
             })
             .unwrap();
 
-        self.niri.bind_repeat_timer = Some(token);
+        self.niri.bind_repeat_timers.insert(key_code, token);
+    }
+
+    pub(crate) fn update_key_repeats(&mut self, key_code: Keycode, pressed: bool, keysym: Keysym) {
+        if keysym.is_modifier_key() {
+            for (_, token) in self.niri.bind_repeat_timers.drain() {
+                self.niri.event_loop.remove(token);
+            }
+        } else if !pressed {
+            if let Some(token) = self.niri.bind_repeat_timers.remove(&key_code) {
+                self.niri.event_loop.remove(token);
+            }
+        }
     }
 
     fn hide_cursor_if_needed(&mut self) {
