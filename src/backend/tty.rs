@@ -1891,6 +1891,10 @@ impl Tty {
 
         span.emit_text(&surface.name.connector);
 
+        // We'll put it back after successfully submitting a frame.
+        // Otherwise, we won't be expecting a VBlank.
+        let vblank_frame = surface.vblank_frame.take();
+
         if !device.drm.is_active() {
             // This branch hits any time we try to render while the user had switched to a
             // different VT, so don't print anything here.
@@ -2006,6 +2010,9 @@ impl Tty {
                             output_state.frame_callback_sequence =
                                 output_state.frame_callback_sequence.wrapping_add(1);
 
+                            // Put the Tracy frame back since we are expecting a VBlank.
+                            surface.vblank_frame = vblank_frame;
+
                             return RenderResult::Submitted;
                         }
                         Err(err) => {
@@ -2021,9 +2028,6 @@ impl Tty {
                 warn!("error rendering frame: {err}");
             }
         }
-
-        // We're not expecting a vblank right after this.
-        drop(surface.vblank_frame.take());
 
         // Queue a timer to fire at the predicted vblank time.
         niri.queue_estimated_vblank_timer(output.clone(), target_presentation_time);
