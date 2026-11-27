@@ -5238,6 +5238,7 @@ impl Niri {
         // Freeze the clock at the target time.
         self.clock.set_unadjusted(target_presentation_time);
 
+        // Update render elements unconditionally as they may be used to draw screencasts later.
         self.update_render_elements(Some(output));
 
         let monitors_active = self.monitors_active && backend.is_active();
