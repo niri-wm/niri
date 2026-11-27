@@ -1,4 +1,4 @@
-use std::cell::{Cell, RefCell};
+use std::cell::{Cell, LazyCell, RefCell};
 use std::collections::{HashMap, HashSet};
 use std::ffi::OsString;
 use std::os::unix::net::UnixStream;
@@ -200,11 +200,6 @@ use crate::window::mapped::{MappedId, WindowCastRenderElements};
 use crate::window::{InitialConfigureState, Mapped, ResolvedWindowRules, Unmapped, WindowRef};
 
 const CLEAR_COLOR_LOCKED: [f32; 4] = [0.3, 0.1, 0.1, 1.];
-
-// We'll try to send frame callbacks at least once a second. We'll make a timer that fires once a
-// second, so with the worst timing the maximum interval between two frame callbacks for a surface
-// should be ~1.995 seconds.
-const FRAME_CALLBACK_THROTTLE: Option<Duration> = Some(Duration::from_millis(995));
 
 /// How long to keep ignoring the power key after waking up.
 ///
@@ -2847,8 +2842,10 @@ impl Niri {
             .insert_source(
                 Timer::from_duration(Duration::from_secs(1)),
                 |_, _, state| {
-                    state.niri.send_frame_callbacks_on_fallback_timer();
-                    TimeoutAction::ToDuration(Duration::from_secs(1))
+                    let throttle_fps = state.niri.send_throttle_frame_callbacks();
+                    // Keep this timer running at least once a second.
+                    let secs = 1. / f64::max(throttle_fps, 1.);
+                    TimeoutAction::ToDuration(Duration::from_secs_f64(secs))
                 },
             )
             .unwrap();
@@ -5786,149 +5783,79 @@ impl Niri {
                 ignore_primary_output.set(true);
             }
 
-            mapped.send_frame(
-                output,
-                frame_callback_time,
-                FRAME_CALLBACK_THROTTLE,
-                should_send,
-            );
+            mapped.send_frame(output, frame_callback_time, None, should_send);
 
             ignore_primary_output.set(false);
         }
 
         for surface in layer_map_for_output(output).layers() {
-            surface.send_frame(
-                output,
-                frame_callback_time,
-                FRAME_CALLBACK_THROTTLE,
-                should_send,
-            );
+            surface.send_frame(output, frame_callback_time, None, should_send);
         }
 
         if let Some(surface) = &self.output_state[output].lock_surface {
             let surface = surface.wl_surface();
 
-            send_frames_surface_tree(
-                surface,
-                output,
-                frame_callback_time,
-                FRAME_CALLBACK_THROTTLE,
-                should_send,
-            );
+            send_frames_surface_tree(surface, output, frame_callback_time, None, should_send);
 
             for (popup, _) in PopupManager::popups_for_surface(surface) {
                 let surface = popup.wl_surface();
-                send_frames_surface_tree(
-                    surface,
-                    output,
-                    frame_callback_time,
-                    FRAME_CALLBACK_THROTTLE,
-                    should_send,
-                );
+                send_frames_surface_tree(surface, output, frame_callback_time, None, should_send);
             }
         }
 
         if let Some(surface) = self.dnd_icon.as_ref().map(|icon| &icon.surface) {
-            send_frames_surface_tree(
-                surface,
-                output,
-                frame_callback_time,
-                FRAME_CALLBACK_THROTTLE,
-                should_send,
-            );
+            send_frames_surface_tree(surface, output, frame_callback_time, None, should_send);
         }
 
         if let CursorImageStatus::Surface(surface) = self.cursor_manager.cursor_image() {
-            send_frames_surface_tree(
-                surface,
-                output,
-                frame_callback_time,
-                FRAME_CALLBACK_THROTTLE,
-                should_send,
-            );
+            send_frames_surface_tree(surface, output, frame_callback_time, None, should_send);
         }
     }
 
-    pub fn send_frame_callbacks_on_fallback_timer(&mut self) {
-        let _span = tracy_client::span!("Niri::send_frame_callbacks_on_fallback_timer");
+    pub fn send_throttle_frame_callbacks(&mut self) -> f64 {
+        let _span = tracy_client::span!("Niri::send_throttle_frame_callbacks");
 
         // Make up a bogus output; we don't care about it here anyway, just the throttling timer.
-        let output = Output::new(
-            String::new(),
-            PhysicalProperties {
-                size: Size::from((0, 0)),
-                subpixel: Subpixel::Unknown,
-                make: String::new(),
-                model: String::new(),
-                serial_number: String::new(),
-            },
-        );
-        let output = &output;
+        let output = LazyCell::new(|| {
+            Output::new(
+                String::new(),
+                PhysicalProperties {
+                    size: Size::from((0, 0)),
+                    subpixel: Subpixel::Unknown,
+                    make: String::new(),
+                    model: String::new(),
+                    serial_number: String::new(),
+                },
+            )
+        });
 
         let frame_callback_time = get_monotonic_time();
 
+        // Find the highest throttle FPS requested by any throttled window.
+        //
+        // This does mean that an unlucky combination of values can result in one of the windows
+        // getting throttled up to 2× slower, but that's not a big deal.
+        let mut throttle_fps = 0.;
+
         self.layout.with_windows_mut(|mapped, _| {
-            mapped.send_frame(
-                output,
-                frame_callback_time,
-                FRAME_CALLBACK_THROTTLE,
-                |_, _| None,
-            );
+            // Don't check if the window is actually invisible for simplicity, also so that the
+            // window doesn't drop to 1 FPS every time it's made visible and then invisible again,
+            // due to waiting for the slowed-down throttle timer.
+            let fps = mapped.rules().offscreen_fps;
+            if fps > 0. {
+                throttle_fps = f64::max(throttle_fps, fps);
+
+                let secs = 1. / f64::max(fps, 0.001);
+                mapped.send_frame(
+                    &output,
+                    frame_callback_time,
+                    Some(Duration::from_secs_f64(secs)),
+                    |_, _| None,
+                );
+            }
         });
 
-        for (output, state) in self.output_state.iter() {
-            for surface in layer_map_for_output(output).layers() {
-                surface.send_frame(
-                    output,
-                    frame_callback_time,
-                    FRAME_CALLBACK_THROTTLE,
-                    |_, _| None,
-                );
-            }
-
-            if let Some(surface) = &state.lock_surface {
-                let surface = surface.wl_surface();
-
-                send_frames_surface_tree(
-                    surface,
-                    output,
-                    frame_callback_time,
-                    FRAME_CALLBACK_THROTTLE,
-                    |_, _| None,
-                );
-
-                for (popup, _) in PopupManager::popups_for_surface(surface) {
-                    let surface = popup.wl_surface();
-                    send_frames_surface_tree(
-                        surface,
-                        output,
-                        frame_callback_time,
-                        FRAME_CALLBACK_THROTTLE,
-                        |_, _| None,
-                    );
-                }
-            }
-        }
-
-        if let Some(surface) = &self.dnd_icon.as_ref().map(|icon| &icon.surface) {
-            send_frames_surface_tree(
-                surface,
-                output,
-                frame_callback_time,
-                FRAME_CALLBACK_THROTTLE,
-                |_, _| None,
-            );
-        }
-
-        if let CursorImageStatus::Surface(surface) = self.cursor_manager.cursor_image() {
-            send_frames_surface_tree(
-                surface,
-                output,
-                frame_callback_time,
-                FRAME_CALLBACK_THROTTLE,
-                |_, _| None,
-            );
-        }
+        throttle_fps
     }
 
     pub fn take_presentation_feedbacks(

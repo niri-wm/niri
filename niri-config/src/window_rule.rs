@@ -80,6 +80,8 @@ pub struct WindowRule {
     pub pinch_sensitivity: Option<FloatOrInt<0, 100>>,
     #[knuffel(child, unwrap(argument))]
     pub tiled_state: Option<bool>,
+    #[knuffel(child, unwrap(argument))]
+    pub offscreen_fps: Option<FloatOrInt<0, 30>>,
     #[knuffel(child, default)]
     pub background_effect: BackgroundEffectRule,
     #[knuffel(child, default)]

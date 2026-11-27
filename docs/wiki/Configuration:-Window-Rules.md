@@ -102,6 +102,7 @@ window-rule {
     clip-to-geometry true
     tiled-state true
     baba-is-float true
+    offscreen-fps 5
 
     background-effect {
         xray true
@@ -1021,6 +1022,28 @@ window-rule {
 https://github.com/user-attachments/assets/3f4cb1a4-40b2-4766-98b7-eec014c19509
 
 </video>
+
+#### `offscreen-fps`
+
+<sup>Since: next release</sup>
+
+Keep a window redrawing even when it's invisible.
+
+Normally, niri (and other Wayland compositors) stop invisible windows from redrawing (when they're outside the view, or on a different workspace, or obscured by other windows).
+This helps conserve resources, and is actually required by some apps like Firefox to correctly detect when its window is occluded.
+
+However, it causes problems with some games that use VSync and aren't prepared to hang for a long time.
+In this case, you can set `offscreen-fps` to some low FPS value (up to 30; higher means more power drain).
+Then, niri will keep telling this window to draw new frames at roughly this FPS at all times.
+
+```kdl
+// Keep some game running at ~5 FPS even when the window is invisible.
+window-rule {
+    match app-id="^steam_app_12345$" // Some Steam game
+
+    offscreen-fps 5
+}
+```
 
 #### `background-effect`
 

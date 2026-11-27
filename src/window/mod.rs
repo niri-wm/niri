@@ -126,6 +126,9 @@ pub struct ResolvedWindowRules {
     /// Override whether to set the Tiled xdg-toplevel state on the window.
     pub tiled_state: Option<bool>,
 
+    /// Keep sending frame callbacks at this FPS even when this window is invisible.
+    pub offscreen_fps: f64,
+
     /// Background effect configuration.
     pub background_effect: BackgroundEffect,
 
@@ -314,6 +317,9 @@ impl ResolvedWindowRules {
                 }
                 if let Some(x) = rule.tiled_state {
                     resolved.tiled_state = Some(x);
+                }
+                if let Some(x) = rule.offscreen_fps {
+                    resolved.offscreen_fps = x.0;
                 }
 
                 resolved
