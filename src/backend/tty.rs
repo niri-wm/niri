@@ -2018,6 +2018,14 @@ impl Tty {
                         }
                         Err(err) => {
                             warn!("error queueing frame: {err}");
+
+                            // This error can happen when we're trying to lock the session while on
+                            // another TTY, switch to this TTY, then try to draw the first red
+                            // background frame, and it fails to queue. In this case, the
+                            // framebuffer is not cleared, and we must attempt to queue the frame
+                            // again. Reset the buffer ages, so that the damage tracker doesn't
+                            // prevent us from submitting the same red frame.
+                            drm_compositor.reset_buffer_ages();
                         }
                     }
                 } else {
