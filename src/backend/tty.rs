@@ -2029,9 +2029,6 @@ impl Tty {
             }
         }
 
-        // Queue a timer to fire at the predicted vblank time.
-        niri.queue_estimated_vblank_timer(output.clone(), target_presentation_time);
-
         rv
     }
 

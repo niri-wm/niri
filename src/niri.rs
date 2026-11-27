@@ -5266,6 +5266,16 @@ impl Niri {
 
             // Render.
             res = backend.render(self, output, target_presentation_time);
+        } else {
+            // Keep estimated VBlank timer from queueing unnecessary redraws during animations.
+            let state = self.output_state.get_mut(output).unwrap();
+            state.unfinished_animations_remain = false;
+        }
+
+        // If we didn't submit, queue the estimated timer to fire at the predicted time.
+        // It will send frame callbacks if any surfaces wanted them.
+        if res != RenderResult::Submitted {
+            self.queue_estimated_vblank_timer(output.clone(), target_presentation_time);
         }
 
         let is_locked = self.is_locked();
@@ -5355,11 +5365,7 @@ impl Niri {
         });
     }
 
-    pub fn queue_estimated_vblank_timer(
-        &mut self,
-        output: Output,
-        target_presentation_time: Duration,
-    ) {
+    fn queue_estimated_vblank_timer(&mut self, output: Output, target_presentation_time: Duration) {
         let output_state = self.output_state.get_mut(&output).unwrap();
         match mem::take(&mut output_state.redraw_state) {
             RedrawState::Idle => unreachable!(),
@@ -5800,10 +5806,6 @@ impl Niri {
     }
 
     pub fn send_frame_callbacks(&mut self, output: &Output) {
-        if !self.monitors_active {
-            return;
-        }
-
         let _span = tracy_client::span!("Niri::send_frame_callbacks");
 
         let state = self.output_state.get(output).unwrap();
@@ -5866,11 +5868,19 @@ impl Niri {
         for mapped in self.layout.windows_for_output_mut(output) {
             if mapped.is_window_cast_target() {
                 ignore_primary_output.set(true);
+            } else if !self.monitors_active {
+                // Don't normally send frame callbacks to windows when monitors are powered off.
+                continue;
             }
 
             mapped.send_frame(output, frame_callback_time, None, should_send);
 
             ignore_primary_output.set(false);
+        }
+
+        // Everything else is never force-redrawn.
+        if !self.monitors_active {
+            return;
         }
 
         for surface in layer_map_for_output(output).layers() {

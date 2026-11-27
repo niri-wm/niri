@@ -148,7 +148,9 @@ impl Headless {
             RedrawState::Queued => (),
             RedrawState::WaitingForVBlank { .. } => unreachable!(),
             RedrawState::WaitingForEstimatedVBlank(_) => unreachable!(),
-            RedrawState::WaitingForEstimatedVBlankAndQueued(_) => unreachable!(),
+            RedrawState::WaitingForEstimatedVBlankAndQueued(token) => {
+                niri.event_loop.remove(token);
+            }
         }
 
         output_state.frame_callback_sequence = output_state.frame_callback_sequence.wrapping_add(1);

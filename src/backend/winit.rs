@@ -350,7 +350,6 @@ impl Winit {
 
         niri.update_primary_scanout_output(output, &res.states);
 
-        let rv;
         if let Some(damage) = res.damage {
             if self
                 .config
@@ -374,29 +373,30 @@ impl Winit {
                 wp_presentation_feedback::Kind::empty(),
             );
 
-            rv = RenderResult::Submitted;
+            let output_state = niri.output_state.get_mut(output).unwrap();
+            match mem::replace(&mut output_state.redraw_state, RedrawState::Idle) {
+                RedrawState::Idle => unreachable!(),
+                RedrawState::Queued => (),
+                RedrawState::WaitingForVBlank { .. } => unreachable!(),
+                RedrawState::WaitingForEstimatedVBlank(_) => unreachable!(),
+                RedrawState::WaitingForEstimatedVBlankAndQueued(token) => {
+                    niri.event_loop.remove(token);
+                }
+            }
+
+            output_state.frame_callback_sequence =
+                output_state.frame_callback_sequence.wrapping_add(1);
+
+            // FIXME: this should wait until a frame callback from the host compositor, but it
+            // redraws right away instead.
+            if output_state.unfinished_animations_remain {
+                self.backend.window().request_redraw();
+            }
+
+            RenderResult::Submitted
         } else {
-            rv = RenderResult::NoDamage;
+            RenderResult::NoDamage
         }
-
-        let output_state = niri.output_state.get_mut(output).unwrap();
-        match mem::replace(&mut output_state.redraw_state, RedrawState::Idle) {
-            RedrawState::Idle => unreachable!(),
-            RedrawState::Queued => (),
-            RedrawState::WaitingForVBlank { .. } => unreachable!(),
-            RedrawState::WaitingForEstimatedVBlank(_) => unreachable!(),
-            RedrawState::WaitingForEstimatedVBlankAndQueued(_) => unreachable!(),
-        }
-
-        output_state.frame_callback_sequence = output_state.frame_callback_sequence.wrapping_add(1);
-
-        // FIXME: this should wait until a frame callback from the host compositor, but it redraws
-        // right away instead.
-        if output_state.unfinished_animations_remain {
-            self.backend.window().request_redraw();
-        }
-
-        rv
     }
 
     pub fn toggle_debug_tint(&mut self) {
