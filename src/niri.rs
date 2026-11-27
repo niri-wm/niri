@@ -5355,6 +5355,91 @@ impl Niri {
         });
     }
 
+    pub fn queue_estimated_vblank_timer(
+        &mut self,
+        output: Output,
+        target_presentation_time: Duration,
+    ) {
+        let output_state = self.output_state.get_mut(&output).unwrap();
+        match mem::take(&mut output_state.redraw_state) {
+            RedrawState::Idle => unreachable!(),
+            RedrawState::Queued => (),
+            RedrawState::WaitingForVBlank { .. } => unreachable!(),
+            RedrawState::WaitingForEstimatedVBlank(token)
+            | RedrawState::WaitingForEstimatedVBlankAndQueued(token) => {
+                output_state.redraw_state = RedrawState::WaitingForEstimatedVBlank(token);
+                return;
+            }
+        }
+
+        let now = get_monotonic_time();
+        let mut duration = target_presentation_time.saturating_sub(now);
+
+        // No use setting a zero timer, since we'll send frame callbacks anyway right after the call
+        // to render(). This can happen for example with unknown presentation time from DRM.
+        if duration.is_zero() {
+            duration += output_state
+                .frame_clock
+                .refresh_interval()
+                // Unknown refresh interval, i.e. winit backend. Would be good to estimate it
+                // somehow but it's not that important for this code path.
+                .unwrap_or(Duration::from_micros(16_667));
+        }
+
+        trace!("queueing estimated vblank timer to fire in {duration:?}");
+
+        let timer = Timer::from_duration(duration);
+        let token = self
+            .event_loop
+            .insert_source(timer, move |_, _, data| {
+                data.niri.on_estimated_vblank_timer(output.clone());
+                TimeoutAction::Drop
+            })
+            .unwrap();
+        output_state.redraw_state = RedrawState::WaitingForEstimatedVBlank(token);
+    }
+
+    fn on_estimated_vblank_timer(&mut self, output: Output) {
+        let span = tracy_client::span!("Niri::on_estimated_vblank_timer");
+
+        let name = output.name();
+        span.emit_text(&name);
+
+        let Some(output_state) = self.output_state.get_mut(&output) else {
+            error!("missing output state for {name}");
+            return;
+        };
+
+        // We waited for the timer, now we can send frame callbacks again.
+        output_state.frame_callback_sequence = output_state.frame_callback_sequence.wrapping_add(1);
+
+        match mem::replace(&mut output_state.redraw_state, RedrawState::Idle) {
+            RedrawState::WaitingForEstimatedVBlank(_) => (),
+            // The timer fired just in front of a redraw.
+            RedrawState::WaitingForEstimatedVBlankAndQueued(_) => {
+                output_state.redraw_state = RedrawState::Queued;
+                return;
+            }
+            // Unexpected states, but let's not crash the compositor.
+            // https://github.com/niri-wm/niri/issues/4781
+            state @ (RedrawState::Idle
+            | RedrawState::Queued
+            | RedrawState::WaitingForVBlank { .. }) => {
+                error!(
+                    "unexpected redraw state for output {name} \
+                    (should be WaitingForEstimatedVBlank or WaitingForEstimatedVBlankAndQueued): \
+                    {state:?}"
+                );
+            }
+        }
+
+        if output_state.unfinished_animations_remain {
+            self.queue_redraw(&output);
+        } else {
+            self.send_frame_callbacks(&output);
+        }
+    }
+
     pub fn refresh_on_demand_vrr(&mut self, backend: &mut Backend, output: &Output) {
         let _span = tracy_client::span!("Niri::refresh_on_demand_vrr");
 
