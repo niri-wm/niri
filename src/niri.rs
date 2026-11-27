@@ -5858,6 +5858,33 @@ impl Niri {
         throttle_fps
     }
 
+    pub fn force_send_frame_callbacks(&mut self) {
+        let _span = tracy_client::span!("Niri::force_send_frame_callbacks");
+
+        // Make up a bogus output; we don't care about it here anyway, just the throttling timer.
+        let output = Output::new(
+            String::new(),
+            PhysicalProperties {
+                size: Size::from((0, 0)),
+                subpixel: Subpixel::Unknown,
+                make: String::new(),
+                model: String::new(),
+                serial_number: String::new(),
+            },
+        );
+
+        let frame_callback_time = get_monotonic_time();
+
+        self.layout.with_windows_mut(|mapped, _| {
+            mapped.send_frame(
+                &output,
+                frame_callback_time,
+                Some(Duration::ZERO),
+                |_, _| None,
+            );
+        });
+    }
+
     pub fn take_presentation_feedbacks(
         &mut self,
         output: &Output,

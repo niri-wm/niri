@@ -2790,6 +2790,9 @@ impl State {
                     shell.deactivate_action(action, time, &mut self.niri.activation_state);
                 }
             }
+            Action::ForceSendFrameCallbacks => {
+                self.niri.force_send_frame_callbacks();
+            }
             Action::TestAction => {
                 #[cfg(test)]
                 {

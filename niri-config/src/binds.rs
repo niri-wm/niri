@@ -573,6 +573,8 @@ pub enum Action {
     GlobalShortcutActivateAction(u32),
     #[knuffel(skip)]
     GlobalShortcutDeactivateAction(u32),
+    #[knuffel(skip)]
+    ForceSendFrameCallbacks,
 
     // Doesn't look like knuffel allows gating on #[cfg(test)]...
     #[knuffel(skip)]
@@ -942,6 +944,7 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::SetWindowUrgent { id } => Self::SetWindowUrgent(id),
             niri_ipc::Action::UnsetWindowUrgent { id } => Self::UnsetWindowUrgent(id),
             niri_ipc::Action::LoadConfigFile { path } => Self::LoadConfigFile(path),
+            niri_ipc::Action::ForceSendFrameCallbacks {} => Self::ForceSendFrameCallbacks,
         }
     }
 }

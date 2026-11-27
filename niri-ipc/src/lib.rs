@@ -1195,6 +1195,11 @@ pub enum Action {
         #[cfg_attr(feature = "clap", arg(long))]
         path: Option<String>,
     },
+    /// Force-send frame callbacks to all windows.
+    ///
+    /// Can be useful to get currently-invisible windows to redraw,
+    /// e.g. after changing between light and dark style.
+    ForceSendFrameCallbacks {},
 }
 
 /// Change in window or column size.
