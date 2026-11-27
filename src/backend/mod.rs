@@ -184,7 +184,7 @@ impl Backend {
     pub fn set_monitors_active(&mut self, active: bool) {
         match self {
             Backend::Tty(tty) => tty.set_monitors_active(active),
-            Backend::Winit(_) => (),
+            Backend::Winit(winit) => winit.set_monitors_active(active),
             Backend::Headless(_) => (),
         }
     }

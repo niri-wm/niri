@@ -25,7 +25,7 @@ use smithay::wayland::dmabuf::{DmabufFeedbackBuilder, DmabufGlobal};
 use smithay::wayland::presentation::Refresh;
 
 use super::{IpcOutputMap, OutputId, RenderResult};
-use crate::niri::{Niri, RedrawState, State};
+use crate::niri::{Niri, OutputRenderElements, RedrawState, State};
 use crate::render_helpers::debug::draw_damage;
 use crate::render_helpers::{resources, shaders, RenderCtx, RenderTarget};
 use crate::utils::{get_monotonic_time, logical_output, WinitScale};
@@ -163,7 +163,16 @@ impl Winit {
                     }
                 }
                 WinitEvent::Focus(true) => (),
-                WinitEvent::Redraw => state.niri.queue_redraw(&state.backend.winit().output),
+                WinitEvent::Redraw => {
+                    state.niri.queue_redraw(&state.backend.winit().output);
+
+                    // See if we need to submit a frame with the new size if the rendering
+                    // is otherwise paused,to keep the niri window from looking broken when resizing
+                    // while the monitors are "powered off".
+                    if !state.niri.monitors_active {
+                        state.backend.set_monitors_active(false);
+                    }
+                }
                 WinitEvent::CloseRequested => state.niri.stop_signal.stop(),
             })
             .unwrap();
@@ -402,6 +411,33 @@ impl Winit {
     pub fn toggle_debug_tint(&mut self) {
         let renderer = self.backend.renderer();
         renderer.set_debug_flags(renderer.debug_flags() ^ DebugFlags::TINT);
+    }
+
+    pub fn set_monitors_active(&mut self, active: bool) {
+        if active {
+            // Nothing special needed.
+            return;
+        }
+
+        // Simulate monitors powering off by cleaing the display to black.
+        let res = {
+            let (renderer, mut framebuffer) = self.backend.bind().unwrap();
+            self.damage_tracker
+                .render_output::<OutputRenderElements<_>, _>(
+                    renderer,
+                    &mut framebuffer,
+                    0,
+                    &[],
+                    [0.; 4],
+                )
+                .unwrap()
+        };
+
+        if let Some(damage) = res.damage {
+            if let Err(err) = self.backend.submit(Some(damage)) {
+                warn!("error submitting cleared frame: {err:?}");
+            }
+        }
     }
 
     pub fn import_dmabuf(&mut self, dmabuf: &Dmabuf) -> bool {
