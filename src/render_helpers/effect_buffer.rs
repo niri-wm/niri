@@ -1,4 +1,5 @@
 use std::mem;
+use std::time::{Duration, Instant};
 
 use anyhow::{ensure, Context as _};
 use smithay::backend::allocator::Fourcc;
@@ -35,6 +36,8 @@ pub struct EffectBuffer {
 
     /// Commit counter that takes into account both original and blurred texture changes.
     commit_counter: CommitCounter,
+    /// When the buffer was last prepared for drawing.
+    last_used: Option<Instant>,
 }
 
 #[derive(Debug)]
@@ -83,6 +86,7 @@ impl EffectBuffer {
             offscreen: None,
             blur: None,
             commit_counter: CommitCounter::default(),
+            last_used: None,
         }
     }
 
@@ -140,6 +144,8 @@ impl EffectBuffer {
     }
 
     pub fn prepare(&mut self, renderer: &mut GlesRenderer, blur: bool) -> bool {
+        self.last_used = Some(Instant::now());
+
         if let Err(err) = self.prepare_offscreen(renderer) {
             warn!("error preparing offscreen: {err:?}");
             return false;
@@ -299,6 +305,22 @@ impl EffectBuffer {
         .context("error preparing blur textures")?;
 
         Ok(())
+    }
+
+    /// Frees the offscreen and blur textures if nothing has drawn this buffer for `idle`.
+    ///
+    /// They are recreated on the next `prepare()`. Must only be called between frames, when no
+    /// element referencing this buffer is waiting to be rendered.
+    pub fn release_if_idle(&mut self, idle: Duration) {
+        if self
+            .last_used
+            .is_some_and(|last_used| last_used.elapsed() >= idle)
+        {
+            trace!("releasing idle effect buffer textures");
+            self.offscreen = None;
+            self.blur = None;
+            self.last_used = None;
+        }
     }
 
     pub fn render(&mut self, frame: &mut GlesFrame, blur: bool) -> anyhow::Result<GlesTexture> {
