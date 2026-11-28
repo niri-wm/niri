@@ -1419,7 +1419,7 @@ mod tests {
                 Mod+Ctrl+Alt+P { move-column-to-monitor "DP-1"; }
                 Mod+Comma { consume-window-into-column; }
                 Mod+1 { focus-workspace 1; }
-                Mod+Shift+1 { focus-workspace "workspace-1"; }
+                Mod+Shift+1 { focus-workspace "workspace-1" skip-animation=true; }
                 Mod+Shift+E allow-inhibiting=false { quit skip-confirmation=true; }
                 Mod+WheelScrollDown cooldown-ms=150 { focus-workspace-down; }
                 Super+Alt+S allow-when-locked=true { spawn-sh "pkill orca || exec orca"; }
@@ -2705,6 +2705,7 @@ mod tests {
                                 Index(
                                     1,
                                 ),
+                                false,
                             ),
                         ),
                         repeat: true,
@@ -2728,6 +2729,7 @@ mod tests {
                                 Name(
                                     "workspace-1",
                                 ),
+                                true,
                             ),
                         ),
                         repeat: true,
@@ -2766,7 +2768,9 @@ mod tests {
                             ),
                         },
                         action: Press(
-                            FocusWorkspaceDown,
+                            FocusWorkspaceDown(
+                                false,
+                            ),
                         ),
                         repeat: true,
                         pass_through: None,

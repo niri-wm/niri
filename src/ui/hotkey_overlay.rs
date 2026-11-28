@@ -244,14 +244,32 @@ fn collect_actions(config: &Config) -> Vec<&Action> {
     )
     .unwrap_or(&Action::MoveColumnRight(true));
 
+    let action_focus_workspace_down = find_bound_action(
+        binds,
+        &[
+            &Action::FocusWorkspaceDown(false),
+            &Action::FocusWorkspaceDown(true),
+        ],
+    )
+    .unwrap_or(&Action::FocusWorkspaceDown(false));
+
+    let action_focus_workspace_up = find_bound_action(
+        binds,
+        &[
+            &Action::FocusWorkspaceUp(false),
+            &Action::FocusWorkspaceUp(true),
+        ],
+    )
+    .unwrap_or(&Action::FocusWorkspaceUp(false));
+
     actions.extend(&[
         &Action::CloseWindow,
         &Action::FocusColumnLeft,
         &Action::FocusColumnRight,
         action_move_column_left,
         action_move_column_right,
-        &Action::FocusWorkspaceDown,
-        &Action::FocusWorkspaceUp,
+        action_focus_workspace_down,
+        action_focus_workspace_up,
     ]);
 
     // Prefer move-column-to-workspace-down, but fall back to move-window-to-workspace-down.
@@ -504,8 +522,8 @@ fn action_name(action: &Action) -> String {
         Action::FocusColumnRight => String::from("Focus Column to the Right"),
         Action::MoveColumnLeft(_) => String::from("Move Column Left"),
         Action::MoveColumnRight(_) => String::from("Move Column Right"),
-        Action::FocusWorkspaceDown => String::from("Switch Workspace Down"),
-        Action::FocusWorkspaceUp => String::from("Switch Workspace Up"),
+        Action::FocusWorkspaceDown(_) => String::from("Switch Workspace Down"),
+        Action::FocusWorkspaceUp(_) => String::from("Switch Workspace Up"),
         Action::MoveColumnToWorkspaceDown(_) => String::from("Move Column to Workspace Down"),
         Action::MoveColumnToWorkspaceUp(_) => String::from("Move Column to Workspace Up"),
         Action::MoveWindowToWorkspaceDown(_) => String::from("Move Window to Workspace Down"),

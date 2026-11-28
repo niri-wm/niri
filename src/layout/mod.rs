@@ -1590,7 +1590,7 @@ impl<W: LayoutElement> Layout<W> {
                         Some(WorkspaceSwitch::Gesture(gesture))
                             if gesture.current_idx.floor() == workspace_idx as f64
                                 || gesture.current_idx.ceil() == workspace_idx as f64 => {}
-                        _ => mon.switch_workspace(workspace_idx),
+                        _ => mon.switch_workspace(workspace_idx, true),
                     }
 
                     return;
@@ -1626,7 +1626,7 @@ impl<W: LayoutElement> Layout<W> {
                         Some(WorkspaceSwitch::Gesture(gesture))
                             if gesture.current_idx.floor() == workspace_idx as f64
                                 || gesture.current_idx.ceil() == workspace_idx as f64 => {}
-                        _ => mon.switch_workspace(workspace_idx),
+                        _ => mon.switch_workspace(workspace_idx, true),
                     }
 
                     return;
@@ -2330,39 +2330,39 @@ impl<W: LayoutElement> Layout<W> {
         monitor.move_column_to_workspace(idx, activate);
     }
 
-    pub fn switch_workspace_up(&mut self) {
+    pub fn switch_workspace_up(&mut self, animate: bool) {
         let Some(monitor) = self.active_monitor() else {
             return;
         };
-        monitor.switch_workspace_up();
+        monitor.switch_workspace_up(animate);
     }
 
-    pub fn switch_workspace_down(&mut self) {
+    pub fn switch_workspace_down(&mut self, animate: bool) {
         let Some(monitor) = self.active_monitor() else {
             return;
         };
-        monitor.switch_workspace_down();
+        monitor.switch_workspace_down(animate);
     }
 
-    pub fn switch_workspace(&mut self, idx: usize) {
+    pub fn switch_workspace(&mut self, idx: usize, animate: bool) {
         let Some(monitor) = self.active_monitor() else {
             return;
         };
-        monitor.switch_workspace(idx);
+        monitor.switch_workspace(idx, animate);
     }
 
-    pub fn switch_workspace_auto_back_and_forth(&mut self, idx: usize) {
+    pub fn switch_workspace_auto_back_and_forth(&mut self, idx: usize, animate: bool) {
         let Some(monitor) = self.active_monitor() else {
             return;
         };
-        monitor.switch_workspace_auto_back_and_forth(idx);
+        monitor.switch_workspace_auto_back_and_forth(idx, animate);
     }
 
-    pub fn switch_workspace_previous(&mut self) {
+    pub fn switch_workspace_previous(&mut self, animate: bool) {
         let Some(monitor) = self.active_monitor() else {
             return;
         };
-        monitor.switch_workspace_previous();
+        monitor.switch_workspace_previous(animate);
     }
 
     pub fn consume_into_column(&mut self) {

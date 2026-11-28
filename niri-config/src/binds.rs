@@ -376,14 +376,17 @@ pub enum Action {
     #[knuffel(skip)]
     CenterWindowById(u64),
     CenterVisibleColumns,
-    FocusWorkspaceDown,
+    FocusWorkspaceDown(#[knuffel(property(name = "skip-animation"), default)] bool),
     #[knuffel(skip)]
     FocusWorkspaceDownUnderMouse,
-    FocusWorkspaceUp,
+    FocusWorkspaceUp(#[knuffel(property(name = "skip-animation"), default)] bool),
     #[knuffel(skip)]
     FocusWorkspaceUpUnderMouse,
-    FocusWorkspace(#[knuffel(argument)] WorkspaceReference),
-    FocusWorkspacePrevious,
+    FocusWorkspace(
+        #[knuffel(argument)] WorkspaceReference,
+        #[knuffel(property(name = "skip-animation"), default)] bool,
+    ),
+    FocusWorkspacePrevious(#[knuffel(property(name = "skip-animation"), default)] bool),
     MoveWindowToWorkspaceDown(#[knuffel(property(name = "focus"), default = true)] bool),
     MoveWindowToWorkspaceUp(#[knuffel(property(name = "focus"), default = true)] bool),
     MoveWindowToWorkspace(
@@ -734,12 +737,19 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::CenterWindow { id: None } => Self::CenterWindow,
             niri_ipc::Action::CenterWindow { id: Some(id) } => Self::CenterWindowById(id),
             niri_ipc::Action::CenterVisibleColumns {} => Self::CenterVisibleColumns,
-            niri_ipc::Action::FocusWorkspaceDown {} => Self::FocusWorkspaceDown,
-            niri_ipc::Action::FocusWorkspaceUp {} => Self::FocusWorkspaceUp,
-            niri_ipc::Action::FocusWorkspace { reference } => {
-                Self::FocusWorkspace(WorkspaceReference::from(reference))
+            niri_ipc::Action::FocusWorkspaceDown { skip_animation } => {
+                Self::FocusWorkspaceDown(skip_animation)
             }
-            niri_ipc::Action::FocusWorkspacePrevious {} => Self::FocusWorkspacePrevious,
+            niri_ipc::Action::FocusWorkspaceUp { skip_animation } => {
+                Self::FocusWorkspaceUp(skip_animation)
+            }
+            niri_ipc::Action::FocusWorkspace {
+                reference,
+                skip_animation,
+            } => Self::FocusWorkspace(WorkspaceReference::from(reference), skip_animation),
+            niri_ipc::Action::FocusWorkspacePrevious { skip_animation } => {
+                Self::FocusWorkspacePrevious(skip_animation)
+            }
             niri_ipc::Action::MoveWindowToWorkspaceDown { focus } => {
                 Self::MoveWindowToWorkspaceDown(focus)
             }

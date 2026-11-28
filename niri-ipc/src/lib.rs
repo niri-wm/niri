@@ -633,17 +633,37 @@ pub enum Action {
     /// Center all fully visible columns on the screen.
     CenterVisibleColumns {},
     /// Focus the workspace below.
-    FocusWorkspaceDown {},
+    FocusWorkspaceDown {
+        /// Switch to the workspace instantly, without the workspace switch animation.
+        #[cfg_attr(feature = "clap", arg(long))]
+        #[serde(default)]
+        skip_animation: bool,
+    },
     /// Focus the workspace above.
-    FocusWorkspaceUp {},
+    FocusWorkspaceUp {
+        /// Switch to the workspace instantly, without the workspace switch animation.
+        #[cfg_attr(feature = "clap", arg(long))]
+        #[serde(default)]
+        skip_animation: bool,
+    },
     /// Focus a workspace by reference (index or name).
     FocusWorkspace {
         /// Reference (index or name) of the workspace to focus.
         #[cfg_attr(feature = "clap", arg())]
         reference: WorkspaceReferenceArg,
+
+        /// Switch to the workspace instantly, without the workspace switch animation.
+        #[cfg_attr(feature = "clap", arg(long))]
+        #[serde(default)]
+        skip_animation: bool,
     },
     /// Focus the previous workspace.
-    FocusWorkspacePrevious {},
+    FocusWorkspacePrevious {
+        /// Switch to the workspace instantly, without the workspace switch animation.
+        #[cfg_attr(feature = "clap", arg(long))]
+        #[serde(default)]
+        skip_animation: bool,
+    },
     /// Move the focused window to the workspace below.
     MoveWindowToWorkspaceDown {
         /// Whether the focus should follow the target workspace.
