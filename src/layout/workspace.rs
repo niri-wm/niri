@@ -2114,7 +2114,22 @@ impl<W: LayoutElement> Workspace<W> {
 }
 
 pub(super) fn compute_working_area(output: &Output) -> Rectangle<f64, Logical> {
-    layer_map_for_output(output).non_exclusive_zone().to_f64()
+    let zone = layer_map_for_output(output).non_exclusive_zone();
+    let mut working_area = zone.to_f64();
+    let output_size = output_size(output);
+
+    // Smithay rounds the output size. Only snap edges with no exclusive zone.
+    let expected_unzoned_w = output_size.w.round() as i32;
+    if zone.size.w > 0 && zone.loc.x + zone.size.w == expected_unzoned_w {
+        working_area.size.w = (output_size.w - working_area.loc.x).max(0.);
+    }
+
+    let expected_unzoned_h = output_size.h.round() as i32;
+    if zone.size.h > 0 && zone.loc.y + zone.size.h == expected_unzoned_h {
+        working_area.size.h = (output_size.h - working_area.loc.y).max(0.);
+    }
+
+    working_area
 }
 
 fn compute_workspace_shadow_config(
