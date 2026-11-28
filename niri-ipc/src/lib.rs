@@ -53,10 +53,17 @@
 #![warn(missing_docs)]
 
 use std::collections::HashMap;
+#[cfg(feature = "clap")]
+use std::ffi::OsStr;
 use std::str::FromStr;
 use std::time::Duration;
 
+#[cfg(feature = "clap")]
+use clap_complete::engine::{ArgValueCompleter, CompletionCandidate};
 use serde::{Deserialize, Serialize};
+
+#[cfg(feature = "clap")]
+use crate::socket::Socket;
 
 pub mod socket;
 pub mod state;
@@ -270,7 +277,7 @@ pub enum Action {
         /// Id of the window to screenshot.
         ///
         /// If `None`, uses the focused window.
-        #[cfg_attr(feature = "clap", arg(long))]
+        #[cfg_attr(feature = "clap", arg(long, add = ArgValueCompleter::new(complete_windows)))]
         id: Option<u64>,
         /// Write the screenshot to disk in addition to putting it in your clipboard.
         ///
@@ -303,7 +310,7 @@ pub enum Action {
         /// Id of the window to close.
         ///
         /// If `None`, uses the focused window.
-        #[cfg_attr(feature = "clap", arg(long))]
+        #[cfg_attr(feature = "clap", arg(long, add = ArgValueCompleter::new(complete_windows)))]
         id: Option<u64>,
     },
     /// Toggle fullscreen on a window.
@@ -315,7 +322,7 @@ pub enum Action {
         /// Id of the window to toggle fullscreen of.
         ///
         /// If `None`, uses the focused window.
-        #[cfg_attr(feature = "clap", arg(long))]
+        #[cfg_attr(feature = "clap", arg(long, add = ArgValueCompleter::new(complete_windows)))]
         id: Option<u64>,
     },
     /// Toggle windowed (fake) fullscreen on a window.
@@ -327,7 +334,7 @@ pub enum Action {
         /// Id of the window to toggle windowed fullscreen of.
         ///
         /// If `None`, uses the focused window.
-        #[cfg_attr(feature = "clap", arg(long))]
+        #[cfg_attr(feature = "clap", arg(long, add = ArgValueCompleter::new(complete_windows)))]
         id: Option<u64>,
     },
     /// Make a window fullscreen.
@@ -336,7 +343,7 @@ pub enum Action {
         /// Id of the window to make fullscreen.
         ///
         /// If `None`, uses the focused window.
-        #[cfg_attr(feature = "clap", arg(long))]
+        #[cfg_attr(feature = "clap", arg(long, add = ArgValueCompleter::new(complete_windows)))]
         id: Option<u64>,
     },
     /// Take a window out of fullscreen.
@@ -348,7 +355,7 @@ pub enum Action {
         /// Id of the window to take out of fullscreen.
         ///
         /// If `None`, uses the focused window.
-        #[cfg_attr(feature = "clap", arg(long))]
+        #[cfg_attr(feature = "clap", arg(long, add = ArgValueCompleter::new(complete_windows)))]
         id: Option<u64>,
     },
     /// Maximize a window to the screen edges.
@@ -360,7 +367,7 @@ pub enum Action {
         /// Id of the window to maximize to edges.
         ///
         /// If `None`, uses the focused window.
-        #[cfg_attr(feature = "clap", arg(long))]
+        #[cfg_attr(feature = "clap", arg(long, add = ArgValueCompleter::new(complete_windows)))]
         id: Option<u64>,
     },
     /// Unmaximize a window from the screen edges.
@@ -372,7 +379,7 @@ pub enum Action {
         /// Id of the window to unmaximize from edges.
         ///
         /// If `None`, uses the focused window.
-        #[cfg_attr(feature = "clap", arg(long))]
+        #[cfg_attr(feature = "clap", arg(long, add = ArgValueCompleter::new(complete_windows)))]
         id: Option<u64>,
     },
     /// Enable windowed (fake) fullscreen on a window.
@@ -384,7 +391,7 @@ pub enum Action {
         /// Id of the window to enable windowed fullscreen on.
         ///
         /// If `None`, uses the focused window.
-        #[cfg_attr(feature = "clap", arg(long))]
+        #[cfg_attr(feature = "clap", arg(long, add = ArgValueCompleter::new(complete_windows)))]
         id: Option<u64>,
     },
     /// Disable windowed (fake) fullscreen on a window.
@@ -396,13 +403,13 @@ pub enum Action {
         /// Id of the window to disable windowed fullscreen on.
         ///
         /// If `None`, uses the focused window.
-        #[cfg_attr(feature = "clap", arg(long))]
+        #[cfg_attr(feature = "clap", arg(long, add = ArgValueCompleter::new(complete_windows)))]
         id: Option<u64>,
     },
     /// Focus a window by id.
     FocusWindow {
         /// Id of the window to focus.
-        #[cfg_attr(feature = "clap", arg(long))]
+        #[cfg_attr(feature = "clap", arg(long, add = ArgValueCompleter::new(complete_windows)))]
         id: u64,
     },
     /// Focus a window in the focused column by index.
@@ -569,7 +576,7 @@ pub enum Action {
         /// Id of the window to consume or expel.
         ///
         /// If `None`, uses the focused window.
-        #[cfg_attr(feature = "clap", arg(long))]
+        #[cfg_attr(feature = "clap", arg(long, add = ArgValueCompleter::new(complete_windows)))]
         id: Option<u64>,
     },
     /// Consume or expel a window right.
@@ -581,7 +588,7 @@ pub enum Action {
         /// Id of the window to consume or expel.
         ///
         /// If `None`, uses the focused window.
-        #[cfg_attr(feature = "clap", arg(long))]
+        #[cfg_attr(feature = "clap", arg(long, add = ArgValueCompleter::new(complete_windows)))]
         id: Option<u64>,
     },
     /// Consume the window to the right into the focused column.
@@ -627,7 +634,7 @@ pub enum Action {
         /// Id of the window to center.
         ///
         /// If `None`, uses the focused window.
-        #[cfg_attr(feature = "clap", arg(long))]
+        #[cfg_attr(feature = "clap", arg(long, add = ArgValueCompleter::new(complete_windows)))]
         id: Option<u64>,
     },
     /// Center all fully visible columns on the screen.
@@ -673,7 +680,7 @@ pub enum Action {
         /// Id of the window to move.
         ///
         /// If `None`, uses the focused window.
-        #[cfg_attr(feature = "clap", arg(long))]
+        #[cfg_attr(feature = "clap", arg(long, add = ArgValueCompleter::new(complete_windows)))]
         window_id: Option<u64>,
 
         /// Reference (index or name) of the workspace to move the window to.
@@ -866,7 +873,7 @@ pub enum Action {
     /// Focus a monitor by name.
     FocusMonitor {
         /// Name of the output to focus.
-        #[cfg_attr(feature = "clap", arg())]
+        #[cfg_attr(feature = "clap", arg(add = ArgValueCompleter::new(complete_outputs)))]
         output: String,
     },
     /// Move the focused window to the monitor to the left.
@@ -890,11 +897,11 @@ pub enum Action {
         /// Id of the window to move.
         ///
         /// If `None`, uses the focused window.
-        #[cfg_attr(feature = "clap", arg(long))]
+        #[cfg_attr(feature = "clap", arg(long, add = ArgValueCompleter::new(complete_windows)))]
         id: Option<u64>,
 
         /// The target output name.
-        #[cfg_attr(feature = "clap", arg())]
+        #[cfg_attr(feature = "clap", arg(add = ArgValueCompleter::new(complete_outputs)))]
         output: String,
     },
     /// Move the focused column to the monitor to the left.
@@ -912,7 +919,7 @@ pub enum Action {
     /// Move the focused column to a specific monitor.
     MoveColumnToMonitor {
         /// The target output name.
-        #[cfg_attr(feature = "clap", arg())]
+        #[cfg_attr(feature = "clap", arg(add = ArgValueCompleter::new(complete_outputs)))]
         output: String,
     },
     /// Change the width of a window.
@@ -924,7 +931,7 @@ pub enum Action {
         /// Id of the window whose width to set.
         ///
         /// If `None`, uses the focused window.
-        #[cfg_attr(feature = "clap", arg(long))]
+        #[cfg_attr(feature = "clap", arg(long, add = ArgValueCompleter::new(complete_windows)))]
         id: Option<u64>,
 
         /// How to change the width.
@@ -940,7 +947,7 @@ pub enum Action {
         /// Id of the window whose height to set.
         ///
         /// If `None`, uses the focused window.
-        #[cfg_attr(feature = "clap", arg(long))]
+        #[cfg_attr(feature = "clap", arg(long, add = ArgValueCompleter::new(complete_windows)))]
         id: Option<u64>,
 
         /// How to change the height.
@@ -956,7 +963,7 @@ pub enum Action {
         /// Id of the window whose height to reset.
         ///
         /// If `None`, uses the focused window.
-        #[cfg_attr(feature = "clap", arg(long))]
+        #[cfg_attr(feature = "clap", arg(long, add = ArgValueCompleter::new(complete_windows)))]
         id: Option<u64>,
     },
     /// Switch between preset column widths.
@@ -968,7 +975,7 @@ pub enum Action {
         /// Id of the window whose width to switch.
         ///
         /// If `None`, uses the focused window.
-        #[cfg_attr(feature = "clap", arg(long))]
+        #[cfg_attr(feature = "clap", arg(long, add = ArgValueCompleter::new(complete_windows)))]
         id: Option<u64>,
     },
     /// Switch between preset window widths backwards.
@@ -976,7 +983,7 @@ pub enum Action {
         /// Id of the window whose width to switch.
         ///
         /// If `None`, uses the focused window.
-        #[cfg_attr(feature = "clap", arg(long))]
+        #[cfg_attr(feature = "clap", arg(long, add = ArgValueCompleter::new(complete_windows)))]
         id: Option<u64>,
     },
     /// Switch between preset window heights.
@@ -984,7 +991,7 @@ pub enum Action {
         /// Id of the window whose height to switch.
         ///
         /// If `None`, uses the focused window.
-        #[cfg_attr(feature = "clap", arg(long))]
+        #[cfg_attr(feature = "clap", arg(long, add = ArgValueCompleter::new(complete_windows)))]
         id: Option<u64>,
     },
     /// Switch between preset window heights backwards.
@@ -992,7 +999,7 @@ pub enum Action {
         /// Id of the window whose height to switch.
         ///
         /// If `None`, uses the focused window.
-        #[cfg_attr(feature = "clap", arg(long))]
+        #[cfg_attr(feature = "clap", arg(long, add = ArgValueCompleter::new(complete_windows)))]
         id: Option<u64>,
     },
     /// Toggle the maximized state of the focused column.
@@ -1002,7 +1009,7 @@ pub enum Action {
         /// Id of the window to maximize.
         ///
         /// If `None`, uses the focused window.
-        #[cfg_attr(feature = "clap", arg(long))]
+        #[cfg_attr(feature = "clap", arg(long, add = ArgValueCompleter::new(complete_windows)))]
         id: Option<u64>,
     },
     /// Change the width of the focused column.
@@ -1040,7 +1047,7 @@ pub enum Action {
     )]
     MoveWorkspaceToMonitor {
         /// The target output name.
-        #[cfg_attr(feature = "clap", arg())]
+        #[cfg_attr(feature = "clap", arg(add = ArgValueCompleter::new(complete_outputs)))]
         output: String,
 
         // Reference (index or name) of the workspace to move.
@@ -1062,7 +1069,7 @@ pub enum Action {
         /// Id of the window to move.
         ///
         /// If `None`, uses the focused window.
-        #[cfg_attr(feature = "clap", arg(long))]
+        #[cfg_attr(feature = "clap", arg(long, add = ArgValueCompleter::new(complete_windows)))]
         id: Option<u64>,
     },
     /// Move the focused window to the floating layout.
@@ -1070,7 +1077,7 @@ pub enum Action {
         /// Id of the window to move.
         ///
         /// If `None`, uses the focused window.
-        #[cfg_attr(feature = "clap", arg(long))]
+        #[cfg_attr(feature = "clap", arg(long, add = ArgValueCompleter::new(complete_windows)))]
         id: Option<u64>,
     },
     /// Move the focused window to the tiling layout.
@@ -1078,7 +1085,7 @@ pub enum Action {
         /// Id of the window to move.
         ///
         /// If `None`, uses the focused window.
-        #[cfg_attr(feature = "clap", arg(long))]
+        #[cfg_attr(feature = "clap", arg(long, add = ArgValueCompleter::new(complete_windows)))]
         id: Option<u64>,
     },
     /// Switches focus to the floating layout.
@@ -1093,7 +1100,7 @@ pub enum Action {
         /// Id of the window to move.
         ///
         /// If `None`, uses the focused window.
-        #[cfg_attr(feature = "clap", arg(long))]
+        #[cfg_attr(feature = "clap", arg(long, add = ArgValueCompleter::new(complete_windows)))]
         id: Option<u64>,
 
         /// How to change the X position.
@@ -1121,7 +1128,7 @@ pub enum Action {
         /// Id of the window.
         ///
         /// If `None`, uses the focused window.
-        #[cfg_attr(feature = "clap", arg(long))]
+        #[cfg_attr(feature = "clap", arg(long, add = ArgValueCompleter::new(complete_windows)))]
         id: Option<u64>,
     },
     /// Set the dynamic cast target to a window.
@@ -1133,7 +1140,7 @@ pub enum Action {
         /// Id of the window to target.
         ///
         /// If `None`, uses the focused window.
-        #[cfg_attr(feature = "clap", arg(long))]
+        #[cfg_attr(feature = "clap", arg(long, add = ArgValueCompleter::new(complete_windows)))]
         id: Option<u64>,
     },
     /// Set the dynamic cast target to a monitor.
@@ -1145,7 +1152,7 @@ pub enum Action {
         /// Name of the output to target.
         ///
         /// If `None`, uses the focused output.
-        #[cfg_attr(feature = "clap", arg())]
+        #[cfg_attr(feature = "clap", arg(add = ArgValueCompleter::new(complete_outputs)))]
         output: Option<String>,
     },
     /// Clear the dynamic cast target, making it show nothing.
@@ -1169,19 +1176,19 @@ pub enum Action {
     /// Toggle urgent status of a window.
     ToggleWindowUrgent {
         /// Id of the window to toggle urgent.
-        #[cfg_attr(feature = "clap", arg(long))]
+        #[cfg_attr(feature = "clap", arg(long, add = ArgValueCompleter::new(complete_windows)))]
         id: u64,
     },
     /// Set urgent status of a window.
     SetWindowUrgent {
         /// Id of the window to set urgent.
-        #[cfg_attr(feature = "clap", arg(long))]
+        #[cfg_attr(feature = "clap", arg(long, add = ArgValueCompleter::new(complete_windows)))]
         id: u64,
     },
     /// Unset urgent status of a window.
     UnsetWindowUrgent {
         /// Id of the window to unset urgent.
-        #[cfg_attr(feature = "clap", arg(long))]
+        #[cfg_attr(feature = "clap", arg(long, add = ArgValueCompleter::new(complete_windows)))]
         id: u64,
     },
     /// Reload the config file.
@@ -2413,6 +2420,53 @@ fn default_true() -> bool {
 
 fn default_position_change() -> PositionChange {
     PositionChange::AdjustFixed(0.)
+}
+
+#[cfg(feature = "clap")]
+fn complete_windows(current: &OsStr) -> Vec<CompletionCandidate> {
+    let Some(Response::Windows(mut windows)) = Socket::connect()
+        .ok()
+        .as_mut()
+        .and_then(|socket| socket.send(Request::Windows).ok())
+        .and_then(Result::ok)
+    else {
+        return Default::default();
+    };
+
+    windows.sort_unstable_by_key(|window| window.id);
+    let current = current.to_string_lossy();
+    windows
+        .into_iter()
+        .filter_map(|window| {
+            (current.is_empty() || window.id.to_string().starts_with(current.as_ref())).then(|| {
+                CompletionCandidate::new(window.id.to_string()).help(window.title.map(Into::into))
+            })
+        })
+        .collect()
+}
+
+#[cfg(feature = "clap")]
+fn complete_outputs(current: &OsStr) -> Vec<CompletionCandidate> {
+    let Some(Response::Outputs(outputs)) = Socket::connect()
+        .ok()
+        .as_mut()
+        .and_then(|socket| socket.send(Request::Outputs).ok())
+        .and_then(Result::ok)
+    else {
+        return Default::default();
+    };
+
+    let current = current.to_string_lossy();
+    let mut outputs: Vec<_> = outputs
+        .into_iter()
+        .filter_map(|(key, output)| {
+            (current.is_empty() || key.starts_with(current.as_ref()))
+                .then(|| CompletionCandidate::new(key).help(Some(output.model.into())))
+        })
+        .collect();
+
+    outputs.sort_unstable_by_key(|candidate| candidate.get_value().to_os_string());
+    outputs
 }
 
 #[cfg(test)]
