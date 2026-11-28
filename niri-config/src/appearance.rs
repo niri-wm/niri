@@ -458,6 +458,7 @@ impl MergeWith<WorkspaceShadowPart> for WorkspaceShadow {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TabIndicator {
     pub off: bool,
+    pub flip: bool,
     pub hide_when_single_tab: bool,
     pub place_within_column: bool,
     pub gap: f64,
@@ -478,6 +479,7 @@ impl Default for TabIndicator {
     fn default() -> Self {
         Self {
             off: false,
+            flip: false,
             hide_when_single_tab: false,
             place_within_column: false,
             gap: 5.,
@@ -504,6 +506,8 @@ impl MergeWith<TabIndicatorPart> for TabIndicator {
         if part.on {
             self.off = false;
         }
+
+        self.flip ^= part.flip;
 
         merge!(
             (self, part),
@@ -532,6 +536,8 @@ pub struct TabIndicatorPart {
     pub off: bool,
     #[knuffel(child)]
     pub on: bool,
+    #[knuffel(child)]
+    pub flip: bool,
     #[knuffel(child)]
     pub hide_when_single_tab: Option<Flag>,
     #[knuffel(child)]
