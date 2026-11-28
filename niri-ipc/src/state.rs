@@ -9,7 +9,7 @@
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 
-use crate::{Cast, Event, KeyboardLayouts, Window, Workspace};
+use crate::{Cast, DwellClickState, Event, KeyboardLayouts, Window, Workspace};
 
 /// Part of the state communicated via the event stream.
 pub trait EventStreamStatePart {
@@ -52,6 +52,9 @@ pub struct EventStreamState {
 
     /// State of touchpads.
     pub touchpad: TouchpadState,
+
+    /// State of the dwell clicker.
+    pub dwell_click: DwellClickEventState,
 }
 
 /// The workspaces state communicated over the event stream.
@@ -108,6 +111,13 @@ pub struct TouchpadState {
     pub on: bool,
 }
 
+/// The dwell clicker state communicated over the event stream.
+#[derive(Debug, Default)]
+pub struct DwellClickEventState {
+    /// Current dwell clicker state.
+    pub state: DwellClickState,
+}
+
 impl EventStreamStatePart for EventStreamState {
     fn replicate(&self) -> Vec<Event> {
         let mut events = Vec::new();
@@ -118,6 +128,7 @@ impl EventStreamStatePart for EventStreamState {
         events.extend(self.config.replicate());
         events.extend(self.casts.replicate());
         events.extend(self.touchpad.replicate());
+        events.extend(self.dwell_click.replicate());
         events
     }
 
@@ -129,6 +140,7 @@ impl EventStreamStatePart for EventStreamState {
         let event = self.config.apply(event)?;
         let event = self.casts.apply(event)?;
         let event = self.touchpad.apply(event)?;
+        let event = self.dwell_click.apply(event)?;
         Some(event)
     }
 }
@@ -348,6 +360,22 @@ impl EventStreamStatePart for TouchpadState {
         match event {
             Event::TouchpadToggled { on } => {
                 self.on = on;
+            }
+            event => return Some(event),
+        }
+        None
+    }
+}
+
+impl EventStreamStatePart for DwellClickEventState {
+    fn replicate(&self) -> Vec<Event> {
+        vec![Event::DwellClickStateChanged { state: self.state }]
+    }
+
+    fn apply(&mut self, event: Event) -> Option<Event> {
+        match event {
+            Event::DwellClickStateChanged { state } => {
+                self.state = state;
             }
             event => return Some(event),
         }

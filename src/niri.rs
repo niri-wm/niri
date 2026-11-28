@@ -143,6 +143,7 @@ use crate::handlers::image_copy_capture::{
 };
 use crate::handlers::virtual_keyboard::VirtualKeyboardKeymap;
 use crate::handlers::{configure_lock_surface, XDG_ACTIVATION_TOKEN_TIMEOUT};
+use crate::input::dwell::DwellClicker;
 use crate::input::pick_color_grab::PickColorGrab;
 use crate::input::scroll_swipe_gesture::ScrollSwipeGesture;
 use crate::input::scroll_tracker::ScrollTracker;
@@ -170,6 +171,7 @@ use crate::render_helpers::blur::BlurOptions;
 use crate::render_helpers::debug::push_opaque_regions;
 use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use crate::render_helpers::renderer::NiriRenderer;
+use crate::render_helpers::shader_element::ShaderRenderElement;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
 use crate::render_helpers::surface::push_elements_from_surface_tree;
 use crate::render_helpers::texture::TextureBuffer;
@@ -434,6 +436,7 @@ pub struct Niri {
     pub pointer_inside_hot_corner: bool,
     pub pointer_constraint_position_hint: Option<Point<f64, Logical>>,
     pub tablet_cursor_location: Option<Point<f64, Logical>>,
+    pub dwell_click: DwellClicker,
     pub gesture_swipe_3f_cumulative: Option<(f64, f64)>,
     pub overview_scroll_swipe_gesture: ScrollSwipeGesture,
     pub vertical_wheel_tracker: ScrollTracker,
@@ -909,6 +912,7 @@ impl State {
         self.ipc_refresh_layout();
         self.ipc_refresh_keyboard_layout_index();
         self.ipc_refresh_touchpad();
+        self.ipc_refresh_dwell_click();
 
         // Needs to be called after updating the keyboard focus.
         #[cfg(feature = "dbus")]
@@ -1077,6 +1081,7 @@ impl State {
             },
         );
         pointer.frame(self);
+        self.dwell_cancel_pending();
 
         self.niri.maybe_activate_pointer_constraint();
 
@@ -1782,6 +1787,7 @@ impl State {
         let mut cursor_inactivity_timeout_changed = false;
         let mut recent_windows_changed = false;
         let mut xwls_changed = false;
+        let mut dwell_click_config = None;
         let mut old_config = self.niri.config.borrow_mut();
 
         // Reload the cursor.
@@ -1927,6 +1933,10 @@ impl State {
             xwls_changed = true;
         }
 
+        if config.input.dwell_click != old_config.input.dwell_click {
+            dwell_click_config = Some(config.input.dwell_click);
+        }
+
         *old_config = config;
 
         if let Some(outputs) = preserved_output_config {
@@ -1976,6 +1986,10 @@ impl State {
             // Force reset due to timeout change.
             self.niri.pointer_inactivity_timer_got_reset = false;
             self.niri.reset_pointer_inactivity_timer();
+        }
+
+        if let Some(dwell_click_config) = dwell_click_config {
+            self.dwell_update_config(dwell_click_config);
         }
 
         if binds_changed {
@@ -2900,6 +2914,8 @@ impl Niri {
             )
             .unwrap();
 
+        let dwell_click = DwellClicker::new(config_.input.dwell_click);
+
         drop(config_);
         let mut niri = Self {
             config,
@@ -3013,6 +3029,7 @@ impl Niri {
             pointer_inside_hot_corner: false,
             pointer_constraint_position_hint: None,
             tablet_cursor_location: None,
+            dwell_click,
             gesture_swipe_3f_cumulative: None,
             overview_scroll_swipe_gesture: ScrollSwipeGesture::new(),
             vertical_wheel_tracker: ScrollTracker::new(120),
@@ -4791,6 +4808,22 @@ impl Niri {
         // The pointer goes on the top.
         if include_pointer && self.pointer_visibility.is_visible() {
             self.render_pointer(ctx.renderer, output, &mut |elem| push(elem.into()));
+
+            if self.tablet_cursor_location.is_none() && self.dwell_click.are_animations_ongoing() {
+                let output_geo = self.global_space.output_geometry(output).unwrap().to_f64();
+                let pointer_pos = self.seat.get_pointer().unwrap().current_location();
+                let xcursor_size = self.config.borrow().cursor.xcursor_size;
+                let now = self.clock.now_unadjusted();
+                self.dwell_click.render(
+                    ctx.renderer,
+                    output,
+                    output_geo,
+                    pointer_pos,
+                    xcursor_size,
+                    now,
+                    push,
+                );
+            }
         }
 
         // Next, the screen transition texture.
@@ -5252,6 +5285,7 @@ impl Niri {
             state.unfinished_animations_remain |= self.exit_confirm_dialog.are_animations_ongoing();
             state.unfinished_animations_remain |= self.screenshot_ui.are_animations_ongoing();
             state.unfinished_animations_remain |= self.window_mru_ui.are_animations_ongoing();
+            state.unfinished_animations_remain |= self.dwell_click.are_animations_ongoing();
             state.unfinished_animations_remain |= state.screen_transition.is_some();
 
             // Also keep redrawing if the current cursor is animated.
@@ -7316,6 +7350,7 @@ impl Niri {
                 // I don't like this being asynchronous, but it would be a bit involved to move
                 // this whole function to State. This should do for now.
                 self.event_loop.insert_idle(|state| {
+                    state.dwell_cancel_all();
                     state.cancel_pointing_grabs();
                 });
 
@@ -7794,6 +7829,11 @@ impl Niri {
             .insert_source(timer, move |_, _, state| {
                 state.niri.pointer_inactivity_timer = None;
 
+                // Don't hide the cursor while a dwell click cycle is actively counting down.
+                if state.niri.dwell_click.is_active() {
+                    return TimeoutAction::Drop;
+                }
+
                 // If the pointer is already invisible, don't reset it back to Hidden causing one
                 // frame of hover.
                 if state.niri.pointer_visibility.is_visible() {
@@ -7934,6 +7974,7 @@ niri_render_elements! {
         WindowMruUi = WindowMruUiRenderElement<R>,
         ExitConfirmDialog = ExitConfirmDialogRenderElement,
         Texture = PrimaryGpuTextureRenderElement,
+        Shader = ShaderRenderElement,
         // Used for the CPU-rendered panels.
         RelocatedMemoryBuffer = RelocateRenderElement<MemoryRenderBufferRenderElement<R>>,
     }

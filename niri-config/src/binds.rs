@@ -5,7 +5,8 @@ use bitflags::bitflags;
 use knuffel::errors::DecodeError;
 use miette::miette;
 use niri_ipc::{
-    ColumnDisplay, LayoutSwitchTarget, PositionChange, SizeChange, WorkspaceReferenceArg,
+    ColumnDisplay, DwellClickMode, LayoutSwitchTarget, PositionChange, SizeChange,
+    WorkspaceReferenceArg,
 };
 use smithay::input::keyboard::keysyms::KEY_NoSymbol;
 use smithay::input::keyboard::xkb::{keysym_from_name, KEYSYM_CASE_INSENSITIVE, KEYSYM_NO_FLAGS};
@@ -248,6 +249,10 @@ pub enum Action {
     DebugToggleOpaqueRegions,
     DebugToggleDamage,
     ToggleTouchpad,
+    ToggleDwellClick,
+    SetDwellClickMode(#[knuffel(argument, str)] DwellClickMode),
+    ToggleDwellClickLock,
+    CancelDwellDrag,
     Spawn(#[knuffel(arguments)] Vec<String>),
     SpawnSh(#[knuffel(argument)] String),
     DoScreenTransition(#[knuffel(property(name = "delay-ms"))] Option<u16>),
@@ -904,6 +909,10 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::DebugToggleOpaqueRegions {} => Self::DebugToggleOpaqueRegions,
             niri_ipc::Action::DebugToggleDamage {} => Self::DebugToggleDamage,
             niri_ipc::Action::ToggleTouchpad {} => Self::ToggleTouchpad,
+            niri_ipc::Action::ToggleDwellClick {} => Self::ToggleDwellClick,
+            niri_ipc::Action::SetDwellClickMode { mode } => Self::SetDwellClickMode(mode),
+            niri_ipc::Action::ToggleDwellClickLock {} => Self::ToggleDwellClickLock,
+            niri_ipc::Action::CancelDwellDrag {} => Self::CancelDwellDrag,
             niri_ipc::Action::ToggleWindowFloating { id: None } => Self::ToggleWindowFloating,
             niri_ipc::Action::ToggleWindowFloating { id: Some(id) } => {
                 Self::ToggleWindowFloatingById(id)

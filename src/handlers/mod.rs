@@ -214,6 +214,7 @@ impl PointerConstraintsHandler for State {
         }
 
         pointer.set_location(target);
+        self.dwell_cancel_pending();
 
         // Redraw to update the cursor position if it's visible.
         if self.niri.pointer_visibility.is_visible() {

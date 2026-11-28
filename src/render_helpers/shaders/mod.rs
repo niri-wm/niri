@@ -13,6 +13,7 @@ use crate::render_helpers::blur::BlurProgram;
 pub struct Shaders {
     pub border: Option<ShaderProgram>,
     pub shadow: Option<ShaderProgram>,
+    pub dwell_indicator: Option<ShaderProgram>,
     pub clipped_surface: Option<GlesTexProgram>,
     pub postprocess_and_clip: Option<GlesTexProgram>,
     pub resize: Option<ShaderProgram>,
@@ -27,6 +28,7 @@ pub struct Shaders {
 pub enum ProgramType {
     Border,
     Shadow,
+    DwellIndicator,
     Resize,
     Close,
     Open,
@@ -82,6 +84,23 @@ impl Shaders {
         )
         .map_err(|err| {
             warn!("error compiling shadow shader: {err:?}");
+        })
+        .ok();
+
+        let dwell_indicator = ShaderProgram::compile(
+            renderer,
+            include_str!("dwell_indicator.frag"),
+            &[
+                UniformName::new("color", UniformType::_4f),
+                UniformName::new("dwell_progress", UniformType::_1f),
+                UniformName::new("clicked_progress", UniformType::_1f),
+                UniformName::new("stroke_width", UniformType::_1f),
+                UniformName::new("outer_radius", UniformType::_1f),
+            ],
+            &[],
+        )
+        .map_err(|err| {
+            warn!("error compiling dwell indicator shader: {err:?}");
         })
         .ok();
 
@@ -151,6 +170,7 @@ impl Shaders {
         Self {
             border,
             shadow,
+            dwell_indicator,
             clipped_surface,
             postprocess_and_clip,
             resize,
@@ -200,6 +220,7 @@ impl Shaders {
         match program {
             ProgramType::Border => self.border.clone(),
             ProgramType::Shadow => self.shadow.clone(),
+            ProgramType::DwellIndicator => self.dwell_indicator.clone(),
             ProgramType::Resize => self
                 .custom_resize
                 .borrow()

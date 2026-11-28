@@ -109,6 +109,10 @@ input {
 
     // mod-key "Super"
     // mod-key-nested "Alt"
+
+    // dwell-click {
+    //     on
+    // }
 }
 ```
 
@@ -411,3 +415,43 @@ input {
     mod-key-nested "Super"
 }
 ```
+
+#### `dwell-click`
+
+<sup>Since: next release</sup>
+
+Automatically click the pointer when it stops moving for a configurable duration.
+See also the [accessibility page](./Accessibility.md#dwell-clicking) and [dwell-click key bindings](./Configuration:-Key-Bindings.md#toggle-dwell-click).
+
+```kdl
+input {
+    dwell-click {
+        // Must be explicitly enabled (use `off` to temporarily disable).
+        on
+        delay-ms 150
+        dwell-ms 500
+        motion-threshold 5
+        default-mode "left"
+        // mode-locked
+
+        indicator {
+            // off
+            color "#7fc8ffa0"
+            width 4
+            // radius 18
+        }
+    }
+}
+```
+
+- `on` / `off`: enable or disable dwell clicking (disabled by default).
+- `delay-ms`: time in milliseconds the pointer must stay within `motion-threshold` after moving before the dwell timer starts (default: `150`).
+- `dwell-ms`: time in milliseconds to hold still after `delay-ms` before triggering a click (default: `500`).
+- `motion-threshold`: distance in logical pixels (`0` to `1000`) the pointer must move to start a new dwell cycle, and the radius within which minor jitter is ignored during a dwell (default: `5`).
+- `default-mode`: click action used by default (`"left"`, `"right"`, `"middle"`, `"double"`, or `"drag"`, default: `"left"`).
+- `mode-locked`: keep non-default modes active across clicks instead of resetting back to `default-mode` after a single click.
+- `indicator`: configures the circular progress ring drawn around the cursor during a dwell:
+  - `on` / `off`: show or hide the indicator (enabled by default).
+  - `color`: ring color (default: `"#7fc8ffa0"`).
+  - `width`: ring stroke width in logical pixels from `1` to `64` (default: `4`).
+  - `radius`: ring radius in logical pixels from `4` to `256` (defaults to `0.75 *` [`xcursor-size`](./Configuration:-Miscellaneous.md#cursor), minimum `4`).

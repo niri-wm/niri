@@ -50,7 +50,10 @@ pub use crate::binds::*;
 pub use crate::debug::Debug;
 pub use crate::error::{ConfigIncludeError, ConfigParseResult};
 pub use crate::gestures::Gestures;
-pub use crate::input::{Input, ModKey, ScrollMethod, TrackLayout, WarpMouseToFocusMode, Xkb};
+pub use crate::input::{
+    DwellClick, DwellClickIndicator, Input, ModKey, ScrollMethod, TrackLayout,
+    WarpMouseToFocusMode, Xkb,
+};
 pub use crate::layer_rule::LayerRule;
 pub use crate::layout::*;
 pub use crate::misc::*;
@@ -1644,6 +1647,25 @@ mod tests {
                         max_scroll_amount: None,
                     },
                 ),
+                dwell_click: DwellClick {
+                    on: false,
+                    delay_ms: 150,
+                    dwell_ms: 500,
+                    motion_threshold: 5.0,
+                    default_mode: Left,
+                    mode_locked: false,
+                    indicator: DwellClickIndicator {
+                        on: true,
+                        color: Color {
+                            r: 0.49803922,
+                            g: 0.78431374,
+                            b: 1.0,
+                            a: 0.627451,
+                        },
+                        width: 4.0,
+                        radius: None,
+                    },
+                },
                 workspace_auto_back_and_forth: true,
                 mod_key: Some(
                     IsoLevel3Shift,

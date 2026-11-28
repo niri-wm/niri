@@ -112,6 +112,8 @@ pub enum Msg {
     OverviewState,
     /// List screencasts.
     Casts,
+    /// Print the dwell clicker state.
+    DwellClickState,
     /// Send a raw JSON request to the compositor, reading from stdin.
     RawRequest,
 }
