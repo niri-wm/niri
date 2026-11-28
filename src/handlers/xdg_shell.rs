@@ -881,6 +881,21 @@ impl XdgShellHandler for State {
         }
     }
 
+    fn minimize_request(&mut self, toplevel: ToplevelSurface) {
+        if let Some((mapped, _)) = self
+            .niri
+            .layout
+            .find_window_and_output_mut(toplevel.wl_surface())
+        {
+            // Some clients (e.g. SDL) stop drawing until configured after set_minimized.
+            mapped.set_needs_configure();
+        } else if let Some(unmapped) = self.niri.unmapped_windows.get_mut(toplevel.wl_surface()) {
+            if let InitialConfigureState::Configured { .. } = &unmapped.state {
+                toplevel.send_configure();
+            }
+        }
+    }
+
     fn toplevel_destroyed(&mut self, surface: ToplevelSurface) {
         if self
             .niri

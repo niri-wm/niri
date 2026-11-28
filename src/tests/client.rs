@@ -494,6 +494,10 @@ impl Window {
         self.xdg_toplevel.unset_maximized();
     }
 
+    pub(super) fn set_minimized(&self) {
+        self.xdg_toplevel.set_minimized();
+    }
+
     pub fn set_parent(&self, parent: Option<&XdgToplevel>) {
         self.xdg_toplevel.set_parent(parent);
     }
