@@ -92,6 +92,7 @@ pub struct Config {
     pub debug: Debug,
     pub workspaces: Vec<Workspace>,
     pub recent_windows: RecentWindows,
+    pub system_bell: SystemBell,
 }
 
 #[derive(Debug, Clone)]
@@ -207,6 +208,7 @@ where
                 "xwayland-satellite" => m_merge!(xwayland_satellite),
                 "switch-events" => m_merge!(switch_events),
                 "debug" => m_merge!(debug),
+                "system-bell" => m_merge!(system_bell),
 
                 // Multipart sections.
                 "output" => {
@@ -3015,6 +3017,10 @@ mod tests {
                         hotkey_overlay_title: None,
                     },
                 ],
+            },
+            system_bell: SystemBell {
+                action: None,
+                mark_window_urgent: false,
             },
         }
         "#);

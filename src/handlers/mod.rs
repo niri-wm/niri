@@ -14,7 +14,7 @@ use std::time::Duration;
 
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::drm::DrmNode;
-use smithay::backend::input::{InputEvent, TabletToolDescriptor};
+use smithay::backend::input::{InputEvent, InputTime, TabletToolDescriptor};
 use smithay::desktop::{PopupKind, PopupManager};
 use smithay::input::dnd::{self, DnDGrab, DndGrabHandler, DndTarget};
 use smithay::input::pointer::{self, CursorIcon, CursorImageStatus, Focus, PointerHandle};
@@ -81,6 +81,7 @@ use crate::protocols::gamma_control::{GammaControlHandler, GammaControlManagerSt
 use crate::protocols::mutter_x11_interop::MutterX11InteropHandler;
 use crate::protocols::output_management::{OutputManagementHandler, OutputManagementManagerState};
 use crate::protocols::screencopy::{Screencopy, ScreencopyHandler, ScreencopyManagerState};
+use crate::protocols::system_bell::SystemBellHandler;
 use crate::utils::{output_size, send_scale_transform};
 
 pub const XDG_ACTIVATION_TOKEN_TIMEOUT: Duration = Duration::from_secs(10);
@@ -845,3 +846,28 @@ impl OutputManagementHandler for State {
 }
 
 impl MutterX11InteropHandler for State {}
+
+impl SystemBellHandler for State {
+    fn ring(&mut self, surface: Option<WlSurface>) {
+        let (action, mark_window_urgent) = {
+            let config = self.niri.config.borrow();
+            (
+                config.system_bell.action.clone(),
+                config.system_bell.mark_window_urgent,
+            )
+        };
+
+        if mark_window_urgent {
+            if let Some(s) = surface.as_ref() {
+                if let Some((mapped, _)) = self.niri.layout.find_window_and_output_mut(s) {
+                    mapped.set_urgent(true);
+                    self.niri.queue_redraw_all();
+                }
+            }
+        }
+
+        if let Some(a) = action {
+            self.do_action(a, false, InputTime::now());
+        }
+    }
+}

@@ -62,6 +62,11 @@ blur {
     noise 0.02
     saturation 1.5
 }
+
+system-bell {
+    mark-window-urgent
+    action { spawn "play" "sound.mp4"; }
+}
 ```
 
 ### `spawn-at-startup`
@@ -405,5 +410,29 @@ Values above `1` increase saturation; values below `1` reduce it.
 ```kdl
 blur {
     saturation 1.5
+}
+```
+
+### `system-bell`
+
+`system-bell` controls how niri handle the `xdg-system-bell-v1` protocol.
+
+#### `action`
+
+The action to execute when a client ring the system bell.
+
+```kdl
+system-bell {
+    action { spawn "notify-send" "ring"; }
+}
+```
+
+#### `mark-window-urgent`
+
+If the client ring with a surface that belongs to a window, niri will mark that window as urgent.
+
+```kdl
+system-bell {
+    mark-window-urgent
 }
 ```
