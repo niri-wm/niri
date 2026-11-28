@@ -534,11 +534,14 @@ impl ForeignToplevelHandler for State {
     }
 
     fn activate(&mut self, wl_surface: WlSurface) {
+        if self.niri.keyboard_focus.surface() == Some(&wl_surface) {
+            return;
+        }
+
         if let Some((mapped, _)) = self.niri.layout.find_window_and_output(&wl_surface) {
             let window = mapped.window.clone();
-            self.niri.layout.activate_window(&window);
+            self.focus_window(&window);
             self.niri.layer_shell_on_demand_focus = None;
-            self.niri.queue_redraw_all();
         }
     }
 
@@ -797,7 +800,9 @@ impl XdgActivationHandler for State {
         token_data: XdgActivationTokenData,
         surface: WlSurface,
     ) {
-        if token_data.timestamp.elapsed() < XDG_ACTIVATION_TOKEN_TIMEOUT {
+        if token_data.timestamp.elapsed() < XDG_ACTIVATION_TOKEN_TIMEOUT
+            && self.niri.keyboard_focus.surface() != Some(&surface)
+        {
             if let Some((mapped, _)) = self.niri.layout.find_window_and_output_mut(&surface) {
                 let window = mapped.window.clone();
                 match mapped.rules().on_xdg_activate {
@@ -807,18 +812,16 @@ impl XdgActivationHandler for State {
                         self.niri.queue_redraw_all();
                     }
                     Some(niri_config::OnXdgActivate::Focus) => {
-                        self.niri.layout.activate_window(&window);
+                        self.focus_window(&window);
                         self.niri.layer_shell_on_demand_focus = None;
-                        self.niri.queue_redraw_all();
                     }
                     None => {
                         if token_data.user_data.get::<UrgentOnlyMarker>().is_some() {
                             mapped.set_urgent(true);
                             self.niri.queue_redraw_all();
                         } else {
-                            self.niri.layout.activate_window(&window);
+                            self.focus_window(&window);
                             self.niri.layer_shell_on_demand_focus = None;
-                            self.niri.queue_redraw_all();
                         }
                     }
                 }
