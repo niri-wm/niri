@@ -41,7 +41,7 @@ use smithay::backend::renderer::element::utils::{Relocate, RelocateRenderElement
 use smithay::backend::renderer::element::{Element, RenderElement, RenderElementStates};
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::renderer::sync::SyncPoint;
-use smithay::backend::renderer::ExportMem;
+use smithay::backend::renderer::{Color32F, ExportMem};
 use smithay::output::{Output, OutputModeSource};
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::{Interest, LoopHandle, Mode, PostAction};
@@ -1917,6 +1917,7 @@ unsafe fn add_cursor_metadata(
             Transform::Normal,
             Fourcc::Argb8888,
             cursor_data.relocated.iter().rev(),
+            Color32F::TRANSPARENT,
         ) {
             Ok(mapping) => mapping,
             Err(err) => {

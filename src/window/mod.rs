@@ -4,7 +4,7 @@ use niri_config::utils::MergeWith as _;
 use niri_config::window_rule::{Match, OnXdgActivate, VrrRule, WindowRule};
 use niri_config::{
     BackgroundEffect, BlockOutFrom, BorderRule, CornerRadius, FloatingPosition, PresetSize,
-    ResolvedPopupsRules, ShadowRule, TabIndicatorRule,
+    ResolvedPopupsRules, ShadowRule, TabIndicatorRule, WindowScreenshotRule,
 };
 use niri_ipc::ColumnDisplay;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
@@ -107,6 +107,9 @@ pub struct ResolvedWindowRules {
 
     /// Whether to clip this window to its geometry, including the corner radius.
     pub clip_to_geometry: Option<bool>,
+
+    /// Screenshot overrides.
+    pub screenshot: WindowScreenshotRule,
 
     /// Whether to bob this window up and down.
     pub baba_is_float: Option<bool>,
@@ -287,6 +290,7 @@ impl ResolvedWindowRules {
                 resolved.border.merge_with(&rule.border);
                 resolved.shadow.merge_with(&rule.shadow);
                 resolved.tab_indicator.merge_with(&rule.tab_indicator);
+                resolved.screenshot.merge_with(&rule.screenshot);
 
                 if let Some(x) = rule.draw_border_with_background {
                     resolved.draw_border_with_background = Some(x);

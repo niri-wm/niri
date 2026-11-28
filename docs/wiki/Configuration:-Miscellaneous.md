@@ -116,6 +116,36 @@ With `prefer-no-csd` set, applications that negotiate server-side decorations th
 prefer-no-csd
 ```
 
+### `screenshot`
+
+<sup>Since: next release</sup>
+
+Configure defaults for window and screen screenshots.
+
+```kdl
+screenshot {
+    // Path where screenshots are saved. Formatted with strftime(3).
+    // Set to null to disable saving screenshots to disk.
+    path "~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png"
+
+    // Background fill under semitransparent window screenshots:
+    // "transparent" (default), "desktop" / "wallpaper", or a color string.
+    window-background "transparent"
+
+    // Whether window screenshots include drop shadows.
+    // Defaults to false.
+    include-shadows false
+
+    // Outer canvas padding in logical pixels:
+    // Can be uniform (16), vertical/horizontal (16 24), or top/right/bottom/left (16 24 16 24).
+    padding 0
+
+    // Canvas background fill for the outer padding area:
+    // "transparent" (default), "desktop" / "wallpaper", or a color string.
+    padding-background "transparent"
+}
+```
+
 ### `screenshot-path`
 
 Set the path where screenshots are saved.

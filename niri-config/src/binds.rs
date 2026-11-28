@@ -277,11 +277,19 @@ pub enum Action {
         Option<String>,
     ),
     #[knuffel(skip)]
+    ScreenshotWindowWithOptions {
+        write_to_disk: bool,
+        show_pointer: bool,
+        path: Option<String>,
+        rule: crate::window_rule::WindowScreenshotRule,
+    },
+    #[knuffel(skip)]
     ScreenshotWindowById {
         id: u64,
         write_to_disk: bool,
         show_pointer: bool,
         path: Option<String>,
+        rule: crate::window_rule::WindowScreenshotRule,
     },
     ToggleKeyboardShortcutsInhibit,
     CloseWindow,
@@ -604,18 +612,48 @@ impl From<niri_ipc::Action> for Action {
                 write_to_disk,
                 show_pointer,
                 path,
-            } => Self::ScreenshotWindow(write_to_disk, show_pointer, path),
+                include_shadows,
+                window_background,
+                padding,
+                padding_background,
+            } => {
+                let rule = crate::window_rule::WindowScreenshotRule {
+                    include_shadows,
+                    window_background: window_background.as_deref().and_then(|s| s.parse().ok()),
+                    padding: padding.as_deref().and_then(|s| s.parse().ok()),
+                    padding_background: padding_background.as_deref().and_then(|s| s.parse().ok()),
+                };
+                Self::ScreenshotWindowWithOptions {
+                    write_to_disk,
+                    show_pointer,
+                    path,
+                    rule,
+                }
+            }
             niri_ipc::Action::ScreenshotWindow {
                 id: Some(id),
                 write_to_disk,
                 show_pointer,
                 path,
-            } => Self::ScreenshotWindowById {
-                id,
-                write_to_disk,
-                show_pointer,
-                path,
-            },
+                include_shadows,
+                window_background,
+                padding,
+                padding_background,
+            } => {
+                let rule = crate::window_rule::WindowScreenshotRule {
+                    include_shadows,
+                    window_background: window_background.as_deref().and_then(|s| s.parse().ok()),
+                    padding: padding.as_deref().and_then(|s| s.parse().ok()),
+                    padding_background: padding_background.as_deref().and_then(|s| s.parse().ok()),
+                };
+                Self::ScreenshotWindowById {
+                    id,
+                    write_to_disk,
+                    show_pointer,
+                    path,
+                    rule,
+                }
+            }
             niri_ipc::Action::ToggleKeyboardShortcutsInhibit {} => {
                 Self::ToggleKeyboardShortcutsInhibit
             }

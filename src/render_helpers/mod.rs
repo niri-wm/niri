@@ -237,7 +237,15 @@ pub fn render_to_texture(
             .bind(&mut texture)
             .context("error binding texture")?;
 
-        render_elements(renderer, &mut target, size, scale, transform, elements)?
+        render_elements(
+            renderer,
+            &mut target,
+            size,
+            scale,
+            transform,
+            elements,
+            Color32F::TRANSPARENT,
+        )?
     };
 
     Ok((texture, sync_point))
@@ -250,6 +258,7 @@ pub fn render_and_download(
     transform: Transform,
     fourcc: Fourcc,
     elements: impl Iterator<Item = impl RenderElement<GlesRenderer>>,
+    clear_color: Color32F,
 ) -> anyhow::Result<GlesMapping> {
     let _span = tracy_client::span!();
 
@@ -258,8 +267,16 @@ pub fn render_and_download(
         .bind(&mut texture)
         .context("error binding texture")?;
 
-    let _sync = render_elements(renderer, &mut target, size, scale, transform, elements)
-        .context("error rendering")?;
+    let _sync = render_elements(
+        renderer,
+        &mut target,
+        size,
+        scale,
+        transform,
+        elements,
+        clear_color,
+    )
+    .context("error rendering")?;
 
     copy_framebuffer(renderer, &target, fourcc).context("error copying framebuffer")
 }
@@ -300,11 +317,20 @@ pub fn render_to_vec(
     transform: Transform,
     fourcc: Fourcc,
     elements: impl Iterator<Item = impl RenderElement<GlesRenderer>>,
+    clear_color: Color32F,
 ) -> anyhow::Result<Vec<u8>> {
     let _span = tracy_client::span!();
 
-    let mapping = render_and_download(renderer, size, scale, transform, fourcc, elements)
-        .context("error rendering")?;
+    let mapping = render_and_download(
+        renderer,
+        size,
+        scale,
+        transform,
+        fourcc,
+        elements,
+        clear_color,
+    )
+    .context("error rendering")?;
     let copy = renderer
         .map_texture(&mapping)
         .context("error mapping texture")?;
@@ -447,6 +473,7 @@ fn render_elements(
     scale: Scale<f64>,
     transform: Transform,
     elements: impl Iterator<Item = impl RenderElement<GlesRenderer>>,
+    clear_color: Color32F,
 ) -> anyhow::Result<SyncPoint> {
     let transform = transform.invert();
     let output_rect = Rectangle::from_size(transform.transform_size(size));
@@ -456,7 +483,7 @@ fn render_elements(
         .context("error starting frame")?;
 
     frame
-        .clear(Color32F::TRANSPARENT, &[output_rect])
+        .clear(clear_color, &[output_rect])
         .context("error clearing")?;
 
     for element in elements {

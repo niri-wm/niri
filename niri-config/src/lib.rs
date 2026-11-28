@@ -55,12 +55,17 @@ pub use crate::layer_rule::LayerRule;
 pub use crate::layout::*;
 pub use crate::misc::*;
 pub use crate::output::{Output, OutputName, Outputs, Position, Vrr};
+pub mod screenshot;
+use screenshot::ScreenshotPart;
+pub use screenshot::{Screenshot, ScreenshotBackground, ScreenshotPadding};
+
 use crate::recent_windows::RecentWindowsPart;
 pub use crate::recent_windows::{MruDirection, MruFilter, MruPreviews, MruScope, RecentWindows};
 pub use crate::utils::FloatOrInt;
 use crate::utils::{expand_home_path, Flag, MergeWith as _};
 pub use crate::window_rule::{
     FloatingPosition, OnXdgActivate, PopupsRule, RelativeTo, ResolvedPopupsRules, WindowRule,
+    WindowScreenshotRule,
 };
 pub use crate::workspace::{Workspace, WorkspaceLayoutPart};
 
@@ -76,6 +81,7 @@ pub struct Config {
     pub prefer_no_csd: bool,
     pub cursor: Cursor,
     pub screenshot_path: ScreenshotPath,
+    pub screenshot: Screenshot,
     pub clipboard: Clipboard,
     pub hotkey_overlay: HotkeyOverlay,
     pub config_notification: ConfigNotification,
@@ -244,8 +250,17 @@ where
                 }
 
                 "screenshot-path" => {
-                    let part = knuffel::Decode::decode_node(node, ctx)?;
-                    config.borrow_mut().screenshot_path = part;
+                    let part: ScreenshotPath = knuffel::Decode::decode_node(node, ctx)?;
+                    let mut config = config.borrow_mut();
+                    config.screenshot_path = part.clone();
+                    config.screenshot.path = part;
+                }
+
+                "screenshot" => {
+                    let part = ScreenshotPart::decode_node(node, ctx)?;
+                    let mut config = config.borrow_mut();
+                    config.screenshot.merge_with(&part);
+                    config.screenshot_path = config.screenshot.path.clone();
                 }
 
                 "layout" => {
@@ -2013,6 +2028,22 @@ mod tests {
                     "~/Screenshots/screenshot.png",
                 ),
             ),
+            screenshot: Screenshot {
+                path: ScreenshotPath(
+                    Some(
+                        "~/Screenshots/screenshot.png",
+                    ),
+                ),
+                window_background: Transparent,
+                include_shadows: false,
+                padding: ScreenshotPadding {
+                    top: 0.0,
+                    right: 0.0,
+                    bottom: 0.0,
+                    left: 0.0,
+                },
+                padding_background: Transparent,
+            },
             clipboard: Clipboard {
                 disable_primary: true,
             },
@@ -2378,6 +2409,12 @@ mod tests {
                         active_gradient: None,
                         inactive_gradient: None,
                         urgent_gradient: None,
+                    },
+                    screenshot: WindowScreenshotRule {
+                        window_background: None,
+                        include_shadows: None,
+                        padding: None,
+                        padding_background: None,
                     },
                     draw_border_with_background: None,
                     opacity: None,
@@ -3017,7 +3054,7 @@ mod tests {
                 ],
             },
         }
-        "#);
+    "#);
     }
 
     fn diff_lines(expected: &str, actual: &str) -> String {
