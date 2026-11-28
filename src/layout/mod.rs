@@ -629,6 +629,16 @@ impl ActivateWindow {
             ActivateWindow::No => false,
         }
     }
+
+    /// Returns `ActivateWindow::Smart` if `focus` is `true`.
+    /// Otherwise returns `ActivateWindow::No`.
+    pub fn from_focus(focus: bool) -> Self {
+        if focus {
+            ActivateWindow::Smart
+        } else {
+            ActivateWindow::No
+        }
+    }
 }
 
 impl HitType {
@@ -1868,25 +1878,25 @@ impl<W: LayoutElement> Layout<W> {
         workspace.move_column_to_last(focus);
     }
 
-    pub fn move_column_left_or_to_output(&mut self, output: &Output) -> bool {
+    pub fn move_column_left_or_to_output(&mut self, output: &Output, focus: bool) -> bool {
         if let Some(workspace) = self.active_workspace_mut() {
-            if workspace.move_left(true) {
+            if workspace.move_left(focus) {
                 return false;
             }
         }
 
-        self.move_column_to_output(output, None, true);
+        self.move_column_to_output(output, None, focus);
         true
     }
 
-    pub fn move_column_right_or_to_output(&mut self, output: &Output) -> bool {
+    pub fn move_column_right_or_to_output(&mut self, output: &Output, focus: bool) -> bool {
         if let Some(workspace) = self.active_workspace_mut() {
-            if workspace.move_right(true) {
+            if workspace.move_right(focus) {
                 return false;
             }
         }
 
-        self.move_column_to_output(output, None, true);
+        self.move_column_to_output(output, None, focus);
         true
     }
 
@@ -1911,18 +1921,18 @@ impl<W: LayoutElement> Layout<W> {
         workspace.move_up(focus);
     }
 
-    pub fn move_down_or_to_workspace_down(&mut self) {
+    pub fn move_down_or_to_workspace_down(&mut self, focus: bool) {
         let Some(monitor) = self.active_monitor() else {
             return;
         };
-        monitor.move_down_or_to_workspace_down();
+        monitor.move_down_or_to_workspace_down(focus);
     }
 
-    pub fn move_up_or_to_workspace_up(&mut self) {
+    pub fn move_up_or_to_workspace_up(&mut self, focus: bool) {
         let Some(monitor) = self.active_monitor() else {
             return;
         };
-        monitor.move_up_or_to_workspace_up();
+        monitor.move_up_or_to_workspace_up(focus);
     }
 
     pub fn consume_or_expel_window_left(&mut self, window: Option<&W::Id>) {
@@ -3531,6 +3541,10 @@ impl<W: LayoutElement> Layout<W> {
         target_ws_idx: Option<usize>,
         activate: bool,
     ) {
+        if self.active_output() == Some(output) {
+            return;
+        }
+
         if let MonitorSet::Normal {
             monitors,
             active_monitor_idx,

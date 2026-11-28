@@ -798,15 +798,15 @@ impl<W: LayoutElement> Monitor<W> {
         self.clean_up_workspaces();
     }
 
-    pub fn move_down_or_to_workspace_down(&mut self) {
-        if !self.active_workspace().move_down(true) {
-            self.move_to_workspace_down(ActivateWindow::Smart);
+    pub fn move_down_or_to_workspace_down(&mut self, focus: bool) {
+        if !self.active_workspace().move_down(focus) {
+            self.move_to_workspace_down(ActivateWindow::from_focus(focus));
         }
     }
 
-    pub fn move_up_or_to_workspace_up(&mut self) {
-        if !self.active_workspace().move_up(true) {
-            self.move_to_workspace_up(ActivateWindow::Smart);
+    pub fn move_up_or_to_workspace_up(&mut self, focus: bool) {
+        if !self.active_workspace().move_up(focus) {
+            self.move_to_workspace_up(ActivateWindow::from_focus(focus));
         }
     }
 
