@@ -4929,3 +4929,373 @@ proptest! {
         check_ops_with_options(options, ops);
     }
 }
+
+fn add_test_output(
+    layout: &mut Layout<TestWindow>,
+    id: usize,
+    loc: Point<i32, Logical>,
+    size: (i32, i32),
+    scale: f64,
+) -> Output {
+    let name = format!("output{id}");
+    let output = Output::new(
+        name.clone(),
+        PhysicalProperties {
+            size: Size::from(size),
+            subpixel: Subpixel::Unknown,
+            make: String::new(),
+            model: String::new(),
+            serial_number: String::new(),
+        },
+    );
+    output.change_current_state(
+        Some(Mode {
+            size: Size::from(size),
+            refresh: 60000,
+        }),
+        None,
+        Some(smithay::output::Scale::Fractional(scale)),
+        Some(loc),
+    );
+    output.user_data().insert_if_missing(|| OutputName {
+        connector: name,
+        make: None,
+        model: None,
+        serial: None,
+    });
+    layout.add_output(output.clone(), None);
+    output
+}
+
+#[test]
+fn interactive_move_cross_monitor_side_by_side_overlap() {
+    let mut layout = Layout::default();
+    let output1 = add_test_output(&mut layout, 1, Point::from((0, 0)), (1920, 1080), 1.0);
+    let output2 = add_test_output(&mut layout, 2, Point::from((1920, 0)), (1920, 1080), 1.0);
+
+    let win = TestWindow::new(TestWindowParams::new(0));
+    layout.add_window(
+        win,
+        AddWindowTarget::Auto,
+        None,
+        None,
+        false,
+        false,
+        ActivateWindow::default(),
+    );
+
+    layout.interactive_move_begin(0, &output1, Point::from((100., 100.)));
+    layout.interactive_move_update(
+        &0,
+        Point::from((300., 0.)),
+        output1.clone(),
+        Point::from((400., 100.)),
+    );
+
+    assert!(layout.interactive_move_rect_on_output(&output1).is_some());
+    assert!(layout.interactive_move_rect_on_output(&output2).is_none());
+
+    layout.interactive_move_update(
+        &0,
+        Point::from((1750., 0.)),
+        output1.clone(),
+        Point::from((2150., 100.)),
+    );
+
+    let rect1 = layout.interactive_move_rect_on_output(&output1);
+    let rect2 = layout.interactive_move_rect_on_output(&output2);
+    assert!(
+        rect1.is_some(),
+        "window must overlap output 1 when straddling"
+    );
+    assert!(
+        rect2.is_some(),
+        "window must overlap output 2 when straddling"
+    );
+
+    let (pos1, scale1) = rect1.unwrap();
+    let (pos2, scale2) = rect2.unwrap();
+    assert_eq!(scale1, Scale::from(1.0));
+    assert_eq!(scale2, Scale::from(1.0));
+    assert_eq!(pos1, Point::from((1876.0, 16.0)));
+    assert_eq!(pos2, Point::from((-44.0, 16.0)));
+
+    assert!(layout.interactive_move_is_moving_above_output(&output1));
+    assert!(
+        layout.interactive_move_is_moving_above_output(&output2),
+        "interactive_move_is_moving_above_output must be true on all overlapping outputs"
+    );
+
+    layout.update_render_elements(Some(&output1));
+    layout.update_render_elements(Some(&output2));
+    assert!(layout.are_animations_ongoing(Some(&output1)));
+    assert!(layout.are_animations_ongoing(Some(&output2)));
+
+    layout.interactive_move_update(
+        &0,
+        Point::from((1000., 0.)),
+        output2.clone(),
+        Point::from((880., 150.)),
+    );
+
+    assert!(
+        layout.interactive_move_rect_on_output(&output1).is_none(),
+        "window must no longer overlap output 1 when moved entirely onto output 2"
+    );
+    assert!(
+        layout.interactive_move_rect_on_output(&output2).is_some(),
+        "window must overlap output 2"
+    );
+
+    layout.interactive_move_end(&0);
+    layout.verify_invariants();
+}
+
+#[test]
+fn interactive_move_cross_scaled_output_overlap_mixed_dpi() {
+    let mut layout = Layout::default();
+    let output1 = add_test_output(&mut layout, 1, Point::from((0, 0)), (1920, 1080), 1.0);
+    let output2 = add_test_output(&mut layout, 2, Point::from((1920, 0)), (2880, 1620), 1.5);
+
+    let win = TestWindow::new(TestWindowParams::new(0));
+    layout.add_window(
+        win,
+        AddWindowTarget::Auto,
+        None,
+        None,
+        false,
+        false,
+        ActivateWindow::default(),
+    );
+
+    layout.interactive_move_begin(0, &output1, Point::from((100., 100.)));
+    layout.interactive_move_update(
+        &0,
+        Point::from((300., 0.)),
+        output1.clone(),
+        Point::from((400., 100.)),
+    );
+
+    layout.interactive_move_update(
+        &0,
+        Point::from((1750., 0.)),
+        output1.clone(),
+        Point::from((2150., 100.)),
+    );
+
+    let (pos1, scale1) = layout
+        .interactive_move_rect_on_output(&output1)
+        .expect("must overlap output 1");
+    let (pos2, scale2) = layout
+        .interactive_move_rect_on_output(&output2)
+        .expect("must overlap output 2");
+
+    assert_eq!(scale1, Scale::from(1.0));
+    assert_eq!(scale2, Scale::from(1.5));
+    assert_eq!(pos1, Point::from((1876.0, 16.0)));
+    assert_eq!(pos2, Point::from((-44.0, 16.0)));
+
+    layout.interactive_move_end(&0);
+    layout.verify_invariants();
+}
+
+#[test]
+fn interactive_move_cross_output_negative_coordinates() {
+    let mut layout = Layout::default();
+    let output_main = add_test_output(&mut layout, 1, Point::from((0, 0)), (1920, 1080), 1.0);
+    let output_left = add_test_output(&mut layout, 2, Point::from((-1920, 0)), (1920, 1080), 1.0);
+
+    let win = TestWindow::new(TestWindowParams::new(0));
+    layout.add_window(
+        win,
+        AddWindowTarget::Auto,
+        None,
+        None,
+        false,
+        false,
+        ActivateWindow::default(),
+    );
+
+    layout.interactive_move_begin(0, &output_main, Point::from((100., 100.)));
+    layout.interactive_move_update(
+        &0,
+        Point::from((300., 0.)),
+        output_main.clone(),
+        Point::from((400., 100.)),
+    );
+
+    let (offset_x, _tile_w) = match &layout.interactive_move {
+        Some(InteractiveMoveState::Moving(m)) => (
+            m.pointer_pos_within_output.x - m.tile_render_location_for_output(&output_main, 1.0).x,
+            m.tile.tile_size().w,
+        ),
+        _ => unreachable!(),
+    };
+
+    let target_px = -50.0 + offset_x;
+    let dx = target_px - 400.0;
+    layout.interactive_move_update(
+        &0,
+        Point::from((dx, 0.)),
+        output_main.clone(),
+        Point::from((target_px, 100.)),
+    );
+
+    let rect_main = layout.interactive_move_rect_on_output(&output_main);
+    let rect_left = layout.interactive_move_rect_on_output(&output_left);
+    assert!(rect_main.is_some(), "window must overlap output_main");
+    assert!(rect_left.is_some(), "window must overlap output_left");
+
+    let (pos_main, scale_main) = rect_main.unwrap();
+    let (pos_left, scale_left) = rect_left.unwrap();
+    assert_eq!(scale_main, Scale::from(1.0));
+    assert_eq!(scale_left, Scale::from(1.0));
+    assert_eq!(pos_main, Point::from((-50.0, 16.0)));
+    assert_eq!(pos_left, Point::from((1870.0, 16.0)));
+
+    layout.update_render_elements(Some(&output_main));
+    layout.update_render_elements(Some(&output_left));
+    assert!(layout.are_animations_ongoing(Some(&output_main)));
+    assert!(layout.are_animations_ongoing(Some(&output_left)));
+
+    layout.interactive_move_end(&0);
+    layout.verify_invariants();
+}
+
+#[test]
+fn interactive_move_shadow_padding_boundary() {
+    let mut layout = Layout::default();
+    let output1 = add_test_output(&mut layout, 1, Point::from((0, 0)), (1920, 1080), 1.0);
+    let output2 = add_test_output(&mut layout, 2, Point::from((1920, 0)), (1920, 1080), 1.0);
+
+    let win = TestWindow::new(TestWindowParams::new(0));
+    layout.add_window(
+        win,
+        AddWindowTarget::Auto,
+        None,
+        None,
+        false,
+        false,
+        ActivateWindow::default(),
+    );
+
+    layout.interactive_move_begin(0, &output1, Point::from((100., 100.)));
+    layout.interactive_move_update(
+        &0,
+        Point::from((300., 0.)),
+        output1.clone(),
+        Point::from((400., 100.)),
+    );
+
+    let (offset_x, tile_w) = match &layout.interactive_move {
+        Some(InteractiveMoveState::Moving(m)) => (
+            m.pointer_pos_within_output.x - m.tile_render_location_for_output(&output1, 1.0).x,
+            m.tile.tile_size().w,
+        ),
+        _ => unreachable!(),
+    };
+
+    let target_px1 = (1850.0 - tile_w) + offset_x;
+    let dx1 = target_px1 - 400.0;
+    layout.interactive_move_update(
+        &0,
+        Point::from((dx1, 0.)),
+        output1.clone(),
+        Point::from((target_px1, 100.)),
+    );
+    assert!(
+        layout.interactive_move_rect_on_output(&output2).is_none(),
+        "70px away from border must not overlap output 2"
+    );
+    assert!(!layout.windows_for_output(&output2).any(|w| w.id() == &0));
+
+    layout.interactive_move_update(
+        &0,
+        Point::from((20., 0.)),
+        output1.clone(),
+        Point::from((target_px1 + 20.0, 100.)),
+    );
+    assert!(
+        layout.interactive_move_rect_on_output(&output2).is_some(),
+        "50px away from border must overlap output 2 for rendering due to shadow padding"
+    );
+    assert!(
+        !layout.windows_for_output(&output2).any(|w| w.id() == &0),
+        "windows_for_output must not include window when only shadow overlaps"
+    );
+
+    layout.interactive_move_update(
+        &0,
+        Point::from((60., 0.)),
+        output1.clone(),
+        Point::from((target_px1 + 80.0, 100.)),
+    );
+    assert!(
+        layout.windows_for_output(&output2).any(|w| w.id() == &0),
+        "windows_for_output must include window when visible tile overlaps"
+    );
+
+    layout.interactive_move_end(&0);
+}
+
+#[test]
+fn interactive_move_toggle_windowed_fullscreen_ipc_safety() {
+    let mut layout = Layout::default();
+    let output1 = add_test_output(&mut layout, 1, Point::from((0, 0)), (1920, 1080), 1.0);
+
+    layout.add_window(
+        TestWindow::new(TestWindowParams::new(0)),
+        AddWindowTarget::Auto,
+        None,
+        None,
+        false,
+        false,
+        ActivateWindow::default(),
+    );
+    layout.add_window(
+        TestWindow::new(TestWindowParams::new(1)),
+        AddWindowTarget::Auto,
+        None,
+        None,
+        false,
+        false,
+        ActivateWindow::default(),
+    );
+
+    layout.interactive_move_begin(0, &output1, Point::from((100., 100.)));
+    layout.interactive_move_update(
+        &0,
+        Point::from((300., 0.)),
+        output1.clone(),
+        Point::from((400., 100.)),
+    );
+
+    assert!(layout.interactive_move.as_ref().unwrap().moving().is_some());
+
+    layout.toggle_windowed_fullscreen(&0);
+    let moving = layout.interactive_move.as_ref().unwrap().moving().unwrap();
+    assert!(
+        moving.tile.window().pending_sizing_mode().is_normal(),
+        "moving window sizing mode must remain normal despite IPC call"
+    );
+    layout.verify_invariants();
+
+    layout.toggle_windowed_fullscreen(&1);
+    let win1 = layout.windows().find(|(_, w)| w.id() == &1).unwrap().1;
+    assert!(
+        win1.is_pending_windowed_fullscreen(),
+        "non-moving window must toggle windowed fullscreen"
+    );
+    layout.verify_invariants();
+
+    layout.toggle_windowed_fullscreen(&1);
+    let win1 = layout.windows().find(|(_, w)| w.id() == &1).unwrap().1;
+    assert!(
+        !win1.is_pending_windowed_fullscreen(),
+        "non-moving window must restore normal mode"
+    );
+    layout.verify_invariants();
+
+    layout.interactive_move_end(&0);
+    layout.verify_invariants();
+}
