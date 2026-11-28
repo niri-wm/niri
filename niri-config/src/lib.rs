@@ -1663,6 +1663,7 @@ mod tests {
                             ),
                         ),
                         transform: Flipped90,
+                        auto_rotate: false,
                         position: Some(
                             Position {
                                 x: 10,
@@ -1719,6 +1720,7 @@ mod tests {
                         name: "eDP-2",
                         scale: None,
                         transform: Normal,
+                        auto_rotate: false,
                         position: None,
                         max_bpc: None,
                         mode: Some(
@@ -1747,6 +1749,7 @@ mod tests {
                         name: "eDP-3",
                         scale: None,
                         transform: Normal,
+                        auto_rotate: false,
                         position: None,
                         max_bpc: None,
                         mode: None,

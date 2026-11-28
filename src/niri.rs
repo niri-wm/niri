@@ -136,6 +136,8 @@ use crate::dbus::gnome_shell::{GlobalShortcutsPortalBinds, ShellToNiri};
 use crate::dbus::gnome_shell_introspect::{self, IntrospectToNiri, NiriToIntrospect};
 #[cfg(feature = "dbus")]
 use crate::dbus::gnome_shell_screenshot::{NiriToScreenshot, ScreenshotToNiri};
+#[cfg(feature = "dbus")]
+use crate::dbus::net_hadess_sensorproxy::SensorProxyToNiri;
 use crate::frame_clock::FrameClock;
 use crate::handlers::image_copy_capture::{
     self as image_copy_capture_impl, CursorCaptureGeometry, ImageCopyCursorSession,
@@ -477,6 +479,10 @@ pub struct Niri {
     pub inhibit_power_key_fd: Option<zbus::zvariant::OwnedFd>,
     #[cfg(feature = "dbus")]
     pub gnome_shell: Option<crate::dbus::gnome_shell::Shell>,
+
+    //iio-sensor-proxy state.
+    #[cfg(feature = "dbus")]
+    pub accelerometer_orientation: Option<String>,
 
     pub ipc_server: Option<IpcServer>,
     pub ipc_outputs_changed: bool,
@@ -854,6 +860,42 @@ impl State {
         self.niri.clock.clear();
         self.niri.pointer_inactivity_timer_got_reset = false;
         self.niri.notified_activity_this_iteration = false;
+    }
+
+    // set accelerometer orientation from iio-sensor-proxy
+    pub fn set_accelerometer_orientation(&mut self, value: String) {
+        self.niri.accelerometer_orientation = Some(value.clone());
+
+        let transform = match value.as_str() {
+            "\"normal\"" => niri_ipc::Transform::Normal,
+            "\"left-up\"" => niri_ipc::Transform::_90,
+            "\"right-up\"" => niri_ipc::Transform::_270,
+            "\"bottom-up\"" => niri_ipc::Transform::_180,
+            _ => niri_ipc::Transform::Normal,
+        };
+
+
+        let outputs_to_apply: Vec<String> = self.niri.global_space.outputs()
+            .filter_map(|output| {
+                let name = output.user_data().get::<OutputName>()?;
+                let config = self.niri.config.borrow();
+                let output_config = config.outputs.find(name)?;
+
+                if output_config.auto_rotate {
+                    Some(output_config.name.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        for name in outputs_to_apply {
+            debug!("output {} auto-rotated into {:?}", name, transform);
+            self.apply_transient_output_config(
+                &name, 
+                niri_ipc::OutputAction::Transform { transform }
+            );
+        }
     }
 
     // We monitor both libinput and logind: libinput is always there (including without DBus), but
@@ -2545,6 +2587,13 @@ impl State {
     }
 
     #[cfg(feature = "dbus")]
+    pub fn on_sensorproxy_msg(&mut self, msg: SensorProxyToNiri) {
+        let SensorProxyToNiri::SensorProxyChanged(orientation) = msg;
+
+        self.set_accelerometer_orientation(orientation);
+    }
+
+    #[cfg(feature = "dbus")]
     pub fn on_login1_msg(&mut self, msg: Login1ToNiri) {
         match msg {
             Login1ToNiri::LidClosedChanged(is_closed) => {
@@ -3055,6 +3104,7 @@ impl Niri {
             #[cfg(feature = "dbus")]
             inhibit_power_key_fd: None,
             #[cfg(feature = "dbus")]
+            accelerometer_orientation: None,
             gnome_shell: None,
 
             ipc_server,
