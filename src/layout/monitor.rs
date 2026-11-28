@@ -1376,7 +1376,7 @@ impl<W: LayoutElement> Monitor<W> {
 
     fn workspace_gap(&self, zoom: f64) -> f64 {
         let scale = self.scale.fractional_scale();
-        let gap = self.view_size.h * 0.1 * zoom;
+        let gap = self.options.layout.workspace_gaps * zoom;
         round_logical_in_physical_max1(scale, gap)
     }
 
