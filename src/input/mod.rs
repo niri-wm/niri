@@ -3007,11 +3007,12 @@ impl State {
             self.niri.screenshot_ui.pointer_motion(point, None);
         }
 
-        if let Some(mru_output) = self.niri.window_mru_ui.output() {
+        if self.niri.window_mru_ui.is_open() {
             if let Some((output, pos_within_output)) = self.niri.output_under(new_pos) {
-                if mru_output == output {
-                    self.niri.window_mru_ui.pointer_motion(pos_within_output);
-                }
+                let output = output.clone();
+                self.niri
+                    .window_mru_ui
+                    .pointer_motion(&output, pos_within_output);
             }
         }
 
@@ -3144,11 +3145,12 @@ impl State {
             self.niri.screenshot_ui.pointer_motion(point, None);
         }
 
-        if let Some(mru_output) = self.niri.window_mru_ui.output() {
+        if self.niri.window_mru_ui.is_open() {
             if let Some((output, pos_within_output)) = self.niri.output_under(pos) {
-                if mru_output == output {
-                    self.niri.window_mru_ui.pointer_motion(pos_within_output);
-                }
+                let output = output.clone();
+                self.niri
+                    .window_mru_ui
+                    .pointer_motion(&output, pos_within_output);
             }
         }
 
@@ -3269,18 +3271,18 @@ impl State {
             self.niri.cancel_interrupted_release_binds();
 
             let mut is_mru_open = false;
-            if let Some(mru_output) = self.niri.window_mru_ui.output() {
+            if self.niri.window_mru_ui.is_open() {
                 is_mru_open = true;
                 if let Some(MouseButton::Left) = button {
                     let location = pointer.current_location();
                     let (output, pos_within_output) = self.niri.output_under(location).unwrap();
-                    if mru_output == output {
-                        let id = self.niri.window_mru_ui.pointer_motion(pos_within_output);
-                        if id.is_some() {
-                            self.confirm_mru();
-                        } else {
-                            self.niri.cancel_mru();
-                        }
+                    let output = output.clone();
+                    let id = self
+                        .niri
+                        .window_mru_ui
+                        .pointer_motion(&output, pos_within_output);
+                    if id.is_some() {
+                        self.confirm_mru();
                     } else {
                         self.niri.cancel_mru();
                     }
@@ -4034,11 +4036,12 @@ impl State {
             self.niri.screenshot_ui.pointer_motion(point, None);
         }
 
-        if let Some(mru_output) = self.niri.window_mru_ui.output() {
+        if self.niri.window_mru_ui.is_open() {
             if let Some((output, pos_within_output)) = self.niri.output_under(pos) {
-                if mru_output == output {
-                    self.niri.window_mru_ui.pointer_motion(pos_within_output);
-                }
+                let output = output.clone();
+                self.niri
+                    .window_mru_ui
+                    .pointer_motion(&output, pos_within_output);
             }
         }
 
@@ -4148,15 +4151,15 @@ impl State {
                                 self.niri.queue_redraw_all();
                             }
                         }
-                    } else if let Some(mru_output) = self.niri.window_mru_ui.output() {
+                    } else if self.niri.window_mru_ui.is_open() {
                         if let Some((output, pos_within_output)) = self.niri.output_under(pos) {
-                            if mru_output == output {
-                                let id = self.niri.window_mru_ui.pointer_motion(pos_within_output);
-                                if id.is_some() {
-                                    self.confirm_mru();
-                                } else {
-                                    self.niri.cancel_mru();
-                                }
+                            let output = output.clone();
+                            let id = self
+                                .niri
+                                .window_mru_ui
+                                .pointer_motion(&output, pos_within_output);
+                            if id.is_some() {
+                                self.confirm_mru();
                             } else {
                                 self.niri.cancel_mru();
                             }
@@ -4799,15 +4802,15 @@ impl State {
                     self.niri.queue_redraw_all();
                 }
             }
-        } else if let Some(mru_output) = self.niri.window_mru_ui.output() {
+        } else if self.niri.window_mru_ui.is_open() {
             if let Some((output, pos_within_output)) = self.niri.output_under(pos) {
-                if mru_output == output {
-                    let id = self.niri.window_mru_ui.pointer_motion(pos_within_output);
-                    if id.is_some() {
-                        self.confirm_mru();
-                    } else {
-                        self.niri.cancel_mru();
-                    }
+                let output = output.clone();
+                let id = self
+                    .niri
+                    .window_mru_ui
+                    .pointer_motion(&output, pos_within_output);
+                if id.is_some() {
+                    self.confirm_mru();
                 } else {
                     self.niri.cancel_mru();
                 }
