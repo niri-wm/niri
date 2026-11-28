@@ -45,7 +45,9 @@ pub fn handle_msg(mut msg: Msg, json: bool, print_request: bool) -> anyhow::Resu
         Msg::Windows => Request::Windows,
         Msg::Layers => Request::Layers,
         Msg::KeyboardLayouts => Request::KeyboardLayouts,
-        Msg::EventStream => Request::EventStream,
+        Msg::EventStream { filter } => Request::EventStream {
+            filter: filter.clone(),
+        },
         Msg::RequestError => Request::ReturnError,
         Msg::OverviewState => Request::OverviewState,
         Msg::Casts => Request::Casts,
@@ -66,7 +68,7 @@ pub fn handle_msg(mut msg: Msg, json: bool, print_request: bool) -> anyhow::Resu
         return Ok(());
     }
 
-    let is_event_stream = matches!(request, Request::EventStream);
+    let is_event_stream = matches!(request, Request::EventStream { .. });
     let mut socket = Socket::connect().context("error connecting to the niri socket")?;
 
     let result = socket.send(request);
@@ -424,7 +426,7 @@ pub fn handle_msg(mut msg: Msg, json: bool, print_request: bool) -> anyhow::Resu
                 println!("{is_active}{idx} {name}");
             }
         }
-        Msg::EventStream => {
+        Msg::EventStream { .. } => {
             let Response::Handled = response else {
                 bail!("unexpected response: expected Handled, got {response:?}");
             };

@@ -103,7 +103,10 @@ pub enum Msg {
         action: OutputAction,
     },
     /// Start continuously receiving events from the compositor.
-    EventStream,
+    EventStream {
+        #[arg()]
+        filter: Vec<String>,
+    },
     /// Print the version of the running niri instance.
     Version,
     /// Request an error from the running niri instance.
