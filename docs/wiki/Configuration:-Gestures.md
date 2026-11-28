@@ -28,6 +28,10 @@ gestures {
         // bottom-left
         // bottom-right
     }
+
+    workspace-switch {
+        // off
+    }
 }
 ```
 
@@ -113,3 +117,19 @@ gestures {
 ```
 
 You can also customize hot corners per-output [in the output config](./Configuration:-Outputs.md#hot-corners).
+
+### `workspace-switch`
+
+<sup>Since: next release</sup>
+
+Set the `off` flag to stop gestures from switching workspaces.
+This covers touchpad swipes, dragging and scrolling in the overview, and touchscreen swipes.
+Binds that switch workspaces still work.
+
+```kdl
+gestures {
+    workspace-switch {
+        off
+    }
+}
+```
