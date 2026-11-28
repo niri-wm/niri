@@ -1205,7 +1205,9 @@ impl Op {
             Op::FocusWindowUpOrColumnRight => layout.focus_up_or_right(),
             Op::FocusWindowOrWorkspaceDown => layout.focus_window_or_workspace_down(),
             Op::FocusWindowOrWorkspaceUp => layout.focus_window_or_workspace_up(),
-            Op::FocusWindow(id) => layout.activate_window(&id),
+            Op::FocusWindow(id) => {
+                layout.activate_window(&id);
+            }
             Op::FocusWindowInColumn(index) => layout.focus_window_in_column(index),
             Op::FocusWindowTop => layout.focus_window_top(),
             Op::FocusWindowBottom => layout.focus_window_bottom(),
@@ -4856,6 +4858,7 @@ prop_compose! {
     fn arbitrary_tab_indicator()(
         off in any::<bool>(),
         hide_when_single_tab in prop::option::of(any::<bool>().prop_map(Flag)),
+        scroll_to_switch_tabs in prop::option::of(any::<bool>().prop_map(Flag)),
         place_within_column in prop::option::of(any::<bool>().prop_map(Flag)),
         width in prop::option::of(arbitrary_spacing().prop_map(FloatOrInt)),
         gap in prop::option::of(arbitrary_spacing_neg().prop_map(FloatOrInt)),
@@ -4867,6 +4870,7 @@ prop_compose! {
             off,
             on: !off,
             hide_when_single_tab,
+            scroll_to_switch_tabs,
             place_within_column,
             width,
             gap,
