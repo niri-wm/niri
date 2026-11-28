@@ -1,8 +1,9 @@
 use crate::utils::MergeWith;
-use crate::FloatOrInt;
+use crate::{FloatOrInt, ModKey, Modifiers};
 
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub struct Gestures {
+    pub window_drag_snap: WindowDragSnap,
     pub dnd_edge_view_scroll: DndEdgeViewScroll,
     pub dnd_edge_workspace_switch: DndEdgeWorkspaceSwitch,
     pub hot_corners: HotCorners,
@@ -10,6 +11,8 @@ pub struct Gestures {
 
 #[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq)]
 pub struct GesturesPart {
+    #[knuffel(child)]
+    pub window_drag_snap: Option<WindowDragSnapPart>,
     #[knuffel(child)]
     pub dnd_edge_view_scroll: Option<DndEdgeViewScrollPart>,
     #[knuffel(child)]
@@ -22,10 +25,51 @@ impl MergeWith<GesturesPart> for Gestures {
     fn merge_with(&mut self, part: &GesturesPart) {
         merge!(
             (self, part),
+            window_drag_snap,
             dnd_edge_view_scroll,
             dnd_edge_workspace_switch,
         );
         merge_clone!((self, part), hot_corners);
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct WindowDragSnap {
+    pub default: bool,
+    pub mod_key: ModKey,
+    pub monitor_snap_distance: f64,
+}
+
+impl Default for WindowDragSnap {
+    fn default() -> Self {
+        Self {
+            default: false,
+            mod_key: ModKey::Shift,
+            monitor_snap_distance: 16.,
+        }
+    }
+}
+
+#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+pub struct WindowDragSnapPart {
+    #[knuffel(child, unwrap(argument))]
+    pub default: Option<bool>,
+    #[knuffel(child, unwrap(argument, str))]
+    pub mod_key: Option<ModKey>,
+    #[knuffel(child, unwrap(argument))]
+    pub monitor_snap_distance: Option<FloatOrInt<0, 65535>>,
+}
+
+impl MergeWith<WindowDragSnapPart> for WindowDragSnap {
+    fn merge_with(&mut self, part: &WindowDragSnapPart) {
+        merge_clone!((self, part), default, mod_key);
+        merge!((self, part), monitor_snap_distance);
+    }
+}
+
+impl WindowDragSnap {
+    pub fn is_enabled(self, modifiers: Modifiers) -> bool {
+        self.default ^ modifiers.contains(self.mod_key.to_modifiers())
     }
 }
 

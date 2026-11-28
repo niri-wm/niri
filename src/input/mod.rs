@@ -774,6 +774,15 @@ impl State {
             keyboard.advertise_modifier_state(self);
         }
 
+        if mods_changed
+            && self
+                .niri
+                .layout
+                .set_modifiers(modifiers_from_state(keyboard.modifier_state()))
+        {
+            self.niri.queue_redraw_all();
+        }
+
         // Handle the bind, if the result came with one.
         if let Some(bind) = result.into_bind() {
             if pressed && bind.repeat {
@@ -5393,7 +5402,7 @@ fn find_configured_switch_action(
         .map(|switch_action| Action::Spawn(switch_action.spawn.clone()))
 }
 
-fn modifiers_from_state(mods: ModifiersState) -> Modifiers {
+pub(crate) fn modifiers_from_state(mods: ModifiersState) -> Modifiers {
     let mut modifiers = Modifiers::empty();
     if mods.ctrl {
         modifiers |= Modifiers::CTRL;
