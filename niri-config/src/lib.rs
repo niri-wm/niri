@@ -1998,6 +1998,7 @@ mod tests {
                     b: 0.0,
                     a: 1.0,
                 },
+                maximized_window_placement: ExpelFromColumn,
             },
             prefer_no_csd: true,
             cursor: Cursor {
