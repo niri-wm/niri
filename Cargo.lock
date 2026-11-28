@@ -2083,6 +2083,7 @@ dependencies = [
  "arrayvec",
  "async-channel",
  "async-io",
+ "async-process",
  "atomic",
  "bitflags",
  "bytemuck",
