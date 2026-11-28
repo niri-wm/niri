@@ -1219,8 +1219,6 @@ impl<W: LayoutElement> FloatingSpace<W> {
             ) {
                 win.send_pending_configure();
             }
-
-            win.refresh();
         }
     }
 
