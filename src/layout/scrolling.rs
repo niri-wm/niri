@@ -1094,13 +1094,9 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
         let movement_config = anim_config.unwrap_or(self.options.animations.window_movement.0);
 
-        // Animate movement of other tiles.
-        // FIXME: tiles can move by X too, in a centered or resizing layout with one window smaller
-        // than the others.
-        let offset_y = column.tile_offset(tile_idx + 1).y - column.tile_offset(tile_idx).y;
-        for tile in &mut column.tiles[tile_idx + 1..] {
-            tile.animate_move_y_from(offset_y);
-        }
+        // Capture positions of all tiles before removal for animating leftover windows.
+        let prev_offsets: Vec<Point<f64, Logical>> =
+            column.tile_offsets().take(column.tiles.len()).collect();
 
         if column.display_mode == ColumnDisplay::Tabbed && tile_idx != column.active_tile_idx {
             // Fade in when removing background tab from a tabbed column.
@@ -1156,6 +1152,22 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         }
 
         column.update_tile_sizes_with_transaction(true, transaction);
+
+        // Animate tiles to their new positions. This also fixes movement by X due to resizing in
+        // centered columns and such.
+        let mut prev_iter = prev_offsets
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| *i != tile_idx);
+        for (tile, new_pos) in column.tiles_mut() {
+            if let Some((_, &old_pos)) = prev_iter.next() {
+                let offset = old_pos - new_pos;
+                if offset.x.abs() != 0. || offset.y.abs() != 0. {
+                    tile.animate_move_from(offset);
+                }
+            }
+        }
+
         self.data[column_idx].update(column);
         let offset = prev_width - column.width();
 
@@ -4502,14 +4514,18 @@ impl<W: LayoutElement> Column<W> {
     }
 
     fn update_window(&mut self, window: &W::Id) {
-        let (tile_idx, tile) = self
+        let tile_idx = self
             .tiles
-            .iter_mut()
-            .enumerate()
-            .find(|(_, tile)| tile.window().id() == window)
+            .iter()
+            .position(|tile| tile.window().id() == window)
             .unwrap();
 
         let prev_height = self.data[tile_idx].size.h;
+        // Computed before tile.update_window() since it can change the tile's sizing mode, making
+        // the helper return 0.
+        let prev_center = self.single_window_center_offset(prev_height);
+
+        let tile = &mut self.tiles[tile_idx];
 
         tile.update_window();
         self.data[tile_idx].update(tile);
@@ -4552,6 +4568,19 @@ impl<W: LayoutElement> Column<W> {
                 // and forth in quick succession (in a way that cancels the resize animation).
                 for tile in &mut self.tiles[tile_idx + 1..] {
                     tile.offset_move_y_anim_current(offset);
+                }
+            }
+            // Animate vertically centering single window in a column.
+            let center_delta =
+                prev_center - self.single_window_center_offset(self.data[tile_idx].size.h);
+            if center_delta != 0. {
+                if self.tiles[tile_idx].resize_animation().is_some() {
+                    self.tiles[tile_idx].animate_move_y_from_with_config(
+                        center_delta,
+                        self.options.animations.window_resize.anim,
+                    );
+                } else {
+                    self.tiles[tile_idx].offset_move_y_anim_current(center_delta);
                 }
             }
         }
@@ -5379,6 +5408,18 @@ impl<W: LayoutElement> Column<W> {
         origin
     }
 
+    fn single_window_center_offset(&self, tile_height: f64) -> f64 {
+        if self.tiles.len() != 1
+            || self.display_mode == ColumnDisplay::Tabbed
+            || !self.sizing_mode().is_normal()
+            || !self.options.layout.vertically_center_single_window
+        {
+            return 0.;
+        }
+        let avail = self.working_area.size.h - self.options.layout.gaps * 2.;
+        f64::max(0., (avail - tile_height) / 2.)
+    }
+
     // HACK: pass a self.data iterator in manually as a workaround for the lack of method partial
     // borrowing. Note that this method's return value does not borrow the entire &Self!
     fn tile_offsets_iter(
@@ -5402,6 +5443,12 @@ impl<W: LayoutElement> Column<W> {
             .unwrap_or(0.);
 
         let mut origin = self.tiles_origin();
+
+        // Center single windows vertically in columns.
+        origin.y += self
+            .data
+            .first()
+            .map_or(0., |data| self.single_window_center_offset(data.size.h));
 
         // Chain with a dummy value to be able to get one past all tiles' Y.
         let dummy = TileData {
