@@ -10,6 +10,8 @@ pub struct Workspace {
     pub open_on_output: Vec<String>,
     #[knuffel(child)]
     pub layout: Option<WorkspaceLayoutPart>,
+    #[knuffel(child)]
+    pub active_at_startup: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
