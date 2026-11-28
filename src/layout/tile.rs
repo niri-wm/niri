@@ -603,10 +603,6 @@ impl<W: LayoutElement> Tile<W> {
         self.animate_move_y_from_with_config(from.y, config);
     }
 
-    pub fn animate_move_x_from(&mut self, from: f64) {
-        self.animate_move_x_from_with_config(from, self.options.animations.window_movement.0);
-    }
-
     pub fn animate_move_x_from_with_config(&mut self, from: f64, config: niri_config::Animation) {
         let current_offset = self.render_offset().x;
 

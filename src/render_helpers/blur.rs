@@ -84,13 +84,6 @@ impl BlurProgram {
             })
             .context("error making GL context current")?
     }
-
-    pub fn destroy(self, renderer: &mut GlesRenderer) -> Result<(), GlesError> {
-        renderer.with_context(move |gl| unsafe {
-            gl.DeleteProgram(self.0.down.program);
-            gl.DeleteProgram(self.0.up.program);
-        })
-    }
 }
 
 impl Blur {
