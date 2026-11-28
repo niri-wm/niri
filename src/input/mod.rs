@@ -22,7 +22,9 @@ use smithay::backend::input::{
 use smithay::backend::libinput::LibinputInputBackend;
 use smithay::desktop::layer_map_for_output;
 use smithay::input::dnd::DnDGrab;
-use smithay::input::keyboard::{keysyms, KeyboardSource, Keysym, Layout, ModifiersState};
+use smithay::input::keyboard::{
+    keysyms, FilterResult, KeyboardSource, Keysym, Layout, ModifiersState,
+};
 use smithay::input::pointer::{
     AxisFrame, ButtonEvent, CursorIcon, CursorImageStatus, Focus, GestureHoldBeginEvent,
     GestureHoldEndEvent, GesturePinchBeginEvent, GesturePinchEndEvent, GesturePinchUpdateEvent,
@@ -532,8 +534,6 @@ impl State {
             }
             block
         };
-        #[cfg(not(feature = "dbus"))]
-        let _ = consumed_by_a11y;
 
         // We can't use smithay's `input` here because we want to forward _and_ handle
         // events for modifier keys. This lets us do things like bind Control_L to an
@@ -545,6 +545,39 @@ impl State {
             event.key_code(),
             event.state(),
             |this, mods, keysym| {
+                // Start/stop compositor-side key repeat.
+                //
+                // We do it here inside the input_intercept() filter closure because by now
+                // input_intercept() had reconciled keys from different keyboard `source`s.
+                //
+                // consumed_by_a11y doesn't make it to suppressed_keys, so we need to check for it.
+                // !pressed is not strictly needed but it's good to have just in case.
+                if !*consumed_by_a11y || !pressed {
+                    // At this point a key press that doesn't make it to the client will end up in
+                    // suppressed_keys, so we can start the compositor-side key repeat helper.
+                    this.niri.key_repeat.key_event(
+                        &keyboard,
+                        event.key_code(),
+                        event.state(),
+                        time,
+                        |state, key_code, time| {
+                            if state.niri.suppressed_keys.contains(&key_code) {
+                                return;
+                            }
+
+                            let keyboard = state.niri.seat.get_keyboard().unwrap();
+                            let serial = SERIAL_COUNTER.next_serial();
+                            keyboard.input_repeat(
+                                state,
+                                key_code,
+                                serial,
+                                time,
+                                |_state, _mods, _keysym| FilterResult::<()>::Forward,
+                            );
+                        },
+                    );
+                }
+
                 let key_code = keysym.raw_code();
                 let modifiers = modifiers_from_state(*mods);
 

@@ -47,6 +47,7 @@ use smithay::desktop::{
     find_popup_root_surface, layer_map_for_output, LayerMap, LayerSurface, PopupGrab, PopupManager,
     PopupUngrabStrategy, Space, Window, WindowSurfaceType,
 };
+use smithay::input::keyboard::repeat::KeyRepeat;
 use smithay::input::keyboard::{KeymapFile, Layout as KeyboardLayout, LedState, XkbConfig};
 use smithay::input::pointer::{
     CursorIcon, CursorImageStatus, CursorImageSurfaceData, Focus,
@@ -375,6 +376,7 @@ pub struct Niri {
     pub pending_tablet_release_binds: HashMap<u32, Bind>,
     pub bind_cooldown_timers: HashMap<Key, RegistrationToken>,
     pub bind_repeat_timer: Option<RegistrationToken>,
+    pub key_repeat: KeyRepeat<State>,
     pub keyboard_focus: KeyboardFocus,
     pub layer_shell_on_demand_focus: Option<LayerSurface>,
     pub idle_inhibiting_surfaces: HashSet<WlSurface>,
@@ -2789,6 +2791,10 @@ impl Niri {
             modifier_state.num_lock = true;
             keyboard.set_modifier_state(modifier_state);
         }
+
+        keyboard.set_compositor_side_repeat(true);
+        let key_repeat = KeyRepeat::new(event_loop.clone());
+
         seat.add_pointer();
 
         let cursor_shape_manager_state = CursorShapeManagerState::new::<State>(&display_handle);
@@ -2983,6 +2989,7 @@ impl Niri {
             pending_tablet_release_binds: HashMap::new(),
             bind_cooldown_timers: HashMap::new(),
             bind_repeat_timer: Option::default(),
+            key_repeat,
             presentation_state,
             security_context_state,
             gamma_control_manager_state,
@@ -7190,6 +7197,7 @@ impl Niri {
         if let Some(token) = self.bind_repeat_timer.take() {
             self.event_loop.remove(token);
         }
+        self.key_repeat.stop();
     }
 
     pub fn should_ignore_power_key(&self) -> bool {
