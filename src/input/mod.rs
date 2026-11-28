@@ -22,7 +22,7 @@ use smithay::backend::input::{
 use smithay::backend::libinput::LibinputInputBackend;
 use smithay::desktop::layer_map_for_output;
 use smithay::input::dnd::DnDGrab;
-use smithay::input::keyboard::{keysyms, KeyboardSource, Keysym, Layout, ModifiersState};
+use smithay::input::keyboard::{keysyms, xkb, KeyboardSource, Keysym, Layout, ModifiersState};
 use smithay::input::pointer::{
     AxisFrame, ButtonEvent, CursorIcon, CursorImageStatus, Focus, GestureHoldBeginEvent,
     GestureHoldEndEvent, GesturePinchBeginEvent, GesturePinchEndEvent, GesturePinchUpdateEvent,
@@ -553,16 +553,18 @@ impl State {
                 // - raw: keysym from the 0th layer of the current layout (usually lowercase letter)
                 // - raw_ascii: keysym from the same key on an ASCII layout
                 // (if raw isn't ASCII itself)
-                let (modified, raw, raw_ascii) = {
+                let (modified, raw, raw_ascii, consumed_mods) = {
                     let xkb = keysym.xkb();
                     let xkb = xkb.lock().unwrap();
 
-                    // SAFETY: xkb_state does not outlive xkb.
-                    let (modified, layout) = unsafe {
+                    // SAFETY: xkb_state and keymap do not outlive xkb.
+                    let (modified, layout, consumed_mods) = unsafe {
                         let xkb_state = xkb.state();
+                        let keymap = xkb.keymap();
                         (
                             xkb_state.key_get_one_sym(key_code),
                             Layout(xkb_state.key_get_layout(key_code)),
+                            consumed_modifiers(xkb_state, keymap, key_code),
                         )
                     };
                     let modified = (modified != Keysym::NoSymbol).then_some(modified);
@@ -603,7 +605,7 @@ impl State {
                         }
                     }
 
-                    (modified, raw, raw_ascii)
+                    (modified, raw, raw_ascii, consumed_mods)
                 };
 
                 // Avoid unnecessary lookups if raw is the same as modified.
@@ -732,6 +734,7 @@ impl State {
                         raw,
                         pressed,
                         modifiers,
+                        consumed_mods,
                         this.niri.config.borrow().input.disable_power_key_handling,
                         is_inhibiting_shortcuts,
                         is_locked,
@@ -5147,6 +5150,7 @@ fn should_intercept_key<'a>(
     raw: &[Keysym],
     pressed: bool,
     mods: Modifiers,
+    consumed_mods: Modifiers,
     disable_power_key_handling: bool,
     is_inhibiting_shortcuts: bool,
     is_locked: bool,
@@ -5164,6 +5168,7 @@ fn should_intercept_key<'a>(
         modified,
         raw,
         mods,
+        consumed_mods,
         disable_power_key_handling,
     );
     // If we don't have a bind, forward the key.
@@ -5217,6 +5222,7 @@ fn find_bind<'a, I: Iterator<Item = &'a Bind> + Clone>(
     modified: Option<Keysym>,
     raw: &[Keysym],
     mods: Modifiers,
+    consumed_mods: Modifiers,
     disable_power_key_handling: bool,
 ) -> Option<Bind> {
     let _span = tracy_client::span!("find_bind");
@@ -5260,16 +5266,14 @@ fn find_bind<'a, I: Iterator<Item = &'a Bind> + Clone>(
 
     // A modifier key can trigger binds bound as the compositor mod key (`Mod`), by its own keysym
     // (like `Alt_L`), or as the modifier itself (like `Alt`). Return the first bind that matches.
-    let find = |mut bindings: I, key: Keysym| {
+    let find = |mut bindings: I, key: Keysym, effective_mods: Modifiers| {
         bindings
             .find(|bind| {
                 let bind_trigger = bind.key.trigger;
-                // Check that the bind modifiers match the held modifiers.
-                //
                 // Pass the bind's trigger itself since we'll check the trigger match below.
                 // (Note that this means mod_key is not properly checked when it matches the
                 // trigger.)
-                if !bind_matches_trigger(bind, bind_trigger, mod_key, mods) {
+                if !bind_matches_trigger(bind, bind_trigger, mod_key, effective_mods) {
                     return false;
                 }
 
@@ -5285,7 +5289,7 @@ fn find_bind<'a, I: Iterator<Item = &'a Bind> + Clone>(
                     // Check it here.
                     if (bind_trigger == Trigger::CompositorMod
                         || bind_trigger == Trigger::Modifier(mod_key))
-                        && !mods.contains(mod_key.to_modifiers())
+                        && !effective_mods.contains(mod_key.to_modifiers())
                     {
                         return false;
                     }
@@ -5310,8 +5314,26 @@ fn find_bind<'a, I: Iterator<Item = &'a Bind> + Clone>(
             .cloned()
     };
 
-    let mut keys = modified.into_iter().chain(raw.iter().copied());
-    keys.find_map(|key| find(bindings.clone(), key))
+    if let Some(key) = modified {
+        if let Some(bind) = find(bindings.clone(), key, mods) {
+            return Some(bind);
+        }
+    }
+
+    if let Some(bind) = raw
+        .iter()
+        .copied()
+        .find_map(|key| find(bindings.clone(), key, mods))
+    {
+        return Some(bind);
+    }
+
+    let modified_mods = mods.difference(consumed_mods);
+    if modified_mods == mods {
+        return None;
+    }
+
+    modified.and_then(|key| find(bindings, key, modified_mods))
 }
 
 fn trigger_matches_keysym(trigger: Trigger, key: Keysym, mod_key: ModKey) -> bool {
@@ -5414,6 +5436,60 @@ fn modifiers_from_state(mods: ModifiersState) -> Modifiers {
         modifiers |= Modifiers::ISO_LEVEL5_SHIFT;
     }
     modifiers
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+#[allow(non_camel_case_types)]
+enum xkb_consumed_mode {
+    XKB_CONSUMED_MODE_GTK = 1,
+}
+
+extern "C" {
+    fn xkb_state_key_get_consumed_mods2(
+        state: *mut xkb::ffi::xkb_state,
+        key: xkb::ffi::xkb_keycode_t,
+        mode: xkb_consumed_mode,
+    ) -> xkb::ffi::xkb_mod_mask_t;
+}
+
+fn consumed_modifiers(
+    state: &xkb::State,
+    keymap: &xkb::Keymap,
+    key_code: xkb::Keycode,
+) -> Modifiers {
+    // SAFETY: xkb_state is valid for the call.
+    let consumed_mask = unsafe {
+        xkb_state_key_get_consumed_mods2(
+            state.get_raw_ptr(),
+            key_code.raw(),
+            xkb_consumed_mode::XKB_CONSUMED_MODE_GTK,
+        )
+    };
+
+    if consumed_mask == 0 {
+        return Modifiers::empty();
+    }
+
+    let mut consumed = Modifiers::empty();
+
+    let mut check = |mod_name: &core::ffi::CStr, flag: Modifiers| {
+        // SAFETY: keymap and mod_name are valid pointers.
+        let idx =
+            unsafe { xkb::ffi::xkb_keymap_mod_get_index(keymap.get_raw_ptr(), mod_name.as_ptr()) };
+        if idx < 32 && (consumed_mask & (1 << idx)) != 0 {
+            consumed |= flag;
+        }
+    };
+
+    check(c"Control", Modifiers::CTRL);
+    check(c"Shift", Modifiers::SHIFT);
+    check(c"Mod1", Modifiers::ALT);
+    check(c"Mod4", Modifiers::SUPER);
+    check(c"Mod5", Modifiers::ISO_LEVEL3_SHIFT);
+    check(c"Mod3", Modifiers::ISO_LEVEL5_SHIFT);
+
+    consumed
 }
 
 fn should_activate_monitors<I: InputBackend>(event: &InputEvent<I>) -> bool {
@@ -6154,6 +6230,7 @@ mod tests {
             &[],
             pressed,
             mods,
+            Modifiers::empty(),
             state.disable_power_key_handling,
             state.is_inhibiting,
             state.is_locked,

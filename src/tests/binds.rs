@@ -849,9 +849,7 @@ fn layouts() {
     -AC10  47 XK_dead_acute
     ");
 
-    // We require the modifiers to match the bind for it to trigger.
-    // So Ctrl-? cannot be triggered on us-qwerty since entering ? necessarily requires a Shift.
-    // If you spell out Shift like Super-Shift-?, it should be triggerable.
+    // US '?' needs Shift, whether or not the bind includes it.
     let c = r#"
     input {
         keyboard {
@@ -879,9 +877,8 @@ fn layouts() {
         surface key pressed: 42
         surface modifiers: depressed=5, latched=0, locked=0, group=0
     +AB10  61 XK_question
-        surface key pressed: 53
+        niri test-action
     -AB10  61 XK_question
-        surface key released: 53
     ");
     assert_snapshot!(run(c, "+LWIN +LFSH +AB10 -AB10"),
     @"
@@ -896,8 +893,7 @@ fn layouts() {
     -AB10  61 XK_question
     ");
 
-    // The BÉPO example from the docs. The key should be bindable by both « and < trigger.
-    // But you have to spell out Mod5 since niri requires all modifiers be spelled.
+    // Keep explicit Mod5 binds working on BÉPO.
     let c = r#"
     input {
         keyboard {
@@ -2472,4 +2468,165 @@ fn redundant_modifier_binds() {
         run("binds { Alt+Q { release { close-window; }; }; }", input),
         run("binds { Alt+Alt+Q { release { close-window; }; }; }", input)
     );
+}
+
+#[test]
+fn consumed_modifiers_keep_explicit_binds() {
+    insta::allow_duplicates! {
+        for explicit in ["Mod+Shift+plus", "Mod+Shift+equal"] {
+            // Pass-through makes the selected bind visible in client events.
+            let specific = format!("{explicit} pass-through=true {{ close-window; }}");
+            let generic = "Mod+plus { close-window; }";
+            for binds in [
+                format!("{generic}\n{specific}"),
+                format!("{specific}\n{generic}"),
+            ] {
+                let c = format!("binds {{\n{binds}\n}}");
+                assert_snapshot!(run(&c, "+LWIN +LFSH +AE12 -AE12"), @"
+                +LWIN 133 XK_Super_L
+                    surface key pressed: 125
+                    surface modifiers: depressed=64, latched=0, locked=0, group=0
+                +LFSH  50 XK_Shift_L
+                    surface key pressed: 42
+                    surface modifiers: depressed=65, latched=0, locked=0, group=0
+                +AE12  21 XK_plus
+                    niri test-action
+                    surface key pressed: 13
+                -AE12  21 XK_plus
+                    surface key released: 13
+                ");
+            }
+        }
+    }
+}
+
+#[test]
+fn consumed_modifiers() {
+    let c = r#"
+    binds {
+        Mod+equal { focus-column-right; }
+        Mod+plus { close-window; }
+        Mod+Up { focus-window-up; }
+        Ctrl+Alt+BackSpace { quit; }
+    }
+    "#;
+
+    assert_snapshot!(run(c, "+LWIN +LFSH +AE12 -AE12"), @"
+    +LWIN 133 XK_Super_L
+        surface key pressed: 125
+        surface modifiers: depressed=64, latched=0, locked=0, group=0
+    +LFSH  50 XK_Shift_L
+        surface key pressed: 42
+        surface modifiers: depressed=65, latched=0, locked=0, group=0
+    +AE12  21 XK_plus
+        niri test-action
+    -AE12  21 XK_plus
+    ");
+
+    assert_snapshot!(run(c, "+LWIN +AE12 -AE12"), @"
+    +LWIN 133 XK_Super_L
+        surface key pressed: 125
+        surface modifiers: depressed=64, latched=0, locked=0, group=0
+    +AE12  21 XK_equal
+        niri test-action
+    -AE12  21 XK_equal
+    ");
+
+    assert_snapshot!(run(c, "+LWIN +LFSH +UP -UP"), @"
+    +LWIN 133 XK_Super_L
+        surface key pressed: 125
+        surface modifiers: depressed=64, latched=0, locked=0, group=0
+    +LFSH  50 XK_Shift_L
+        surface key pressed: 42
+        surface modifiers: depressed=65, latched=0, locked=0, group=0
+    +UP 111 XK_Up
+        surface key pressed: 103
+    -UP 111 XK_Up
+        surface key released: 103
+    ");
+
+    assert_snapshot!(run(c, "+BKSP -BKSP"), @"
+    +BKSP  22 XK_BackSpace
+        surface key pressed: 14
+    -BKSP  22 XK_BackSpace
+        surface key released: 14
+    ");
+
+    assert_snapshot!(run(c, "+LCTL +LALT +BKSP -BKSP"), @"
+    +LCTL  37 XK_Control_L
+        surface key pressed: 29
+        surface modifiers: depressed=4, latched=0, locked=0, group=0
+    +LALT  64 XK_Alt_L
+        surface key pressed: 56
+        surface modifiers: depressed=12, latched=0, locked=0, group=0
+    +BKSP  22 XK_BackSpace
+        niri test-action
+    -BKSP  22 XK_BackSpace
+    ");
+}
+
+#[test]
+fn consumed_modifiers_altgr() {
+    let c = r#"
+    input {
+        keyboard {
+            xkb {
+                layout "fr"
+                variant "bepo"
+            }
+        }
+    }
+
+    binds {
+        Mod+bar { close-window; }
+        Mod+Up { focus-window-up; }
+    }
+    "#;
+
+    assert_snapshot!(run(c, "+LWIN +RALT +AD01 -AD01"), @"
+    +LWIN 133 XK_Super_L
+        surface key pressed: 125
+        surface modifiers: depressed=64, latched=0, locked=0, group=0
+    +RALT 108 XK_ISO_Level3_Shift
+        surface key pressed: 100
+        surface modifiers: depressed=192, latched=0, locked=0, group=0
+    +AD01  24 XK_bar
+        niri test-action
+    -AD01  24 XK_bar
+    ");
+
+    assert_snapshot!(run(c, "+LWIN +RALT +UP -UP"), @"
+    +LWIN 133 XK_Super_L
+        surface key pressed: 125
+        surface modifiers: depressed=64, latched=0, locked=0, group=0
+    +RALT 108 XK_ISO_Level3_Shift
+        surface key pressed: 100
+        surface modifiers: depressed=192, latched=0, locked=0, group=0
+    +UP 111 XK_Up
+        surface key pressed: 103
+    -UP 111 XK_Up
+        surface key released: 103
+    ");
+}
+
+#[test]
+fn consumed_modifiers_copilot() {
+    let c = r#"
+    binds {
+        XF86Assistant { close-window; }
+    }
+    "#;
+
+    // Some keyboards send Super+Shift+F23 for the Copilot key.
+    assert_snapshot!(run(c, "+LWIN +LFSH +FK23 -FK23"), @"
+    +LWIN 133 XK_Super_L
+        surface key pressed: 125
+        surface modifiers: depressed=64, latched=0, locked=0, group=0
+    +LFSH  50 XK_Shift_L
+        surface key pressed: 42
+        surface modifiers: depressed=65, latched=0, locked=0, group=0
+    +FK23 201 XF86XK_Assistant
+        niri test-action
+    -FK23 201 XF86XK_Assistant
+    ");
 }
