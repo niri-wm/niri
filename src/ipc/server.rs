@@ -380,6 +380,14 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
             let color = result.map_err(|_| String::from("error getting picked color"))?;
             Response::PickedColor(color)
         }
+        Request::PickRegion => {
+            let (tx, rx) = async_channel::bounded(1);
+            ctx.event_loop.insert_idle(move |state| {
+                state.handle_pick_region(tx);
+            });
+            let region = rx.recv().await.ok();
+            Response::PickedRegion(region)
+        }
         Request::Action(action) => {
             validate_action(&action)?;
 

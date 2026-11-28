@@ -42,14 +42,16 @@ const TEXT_HIDE_P: &str =
 const TEXT_SHOW_P: &str =
     "Press <span face='mono' bgcolor='#2C2C2C'> Space </span> to save the screenshot.\n\
      Press <span face='mono' bgcolor='#2C2C2C'> P </span> to show the pointer.";
+const TEXT_PICK: &str =
+    "Press <span face='mono' bgcolor='#2C2C2C'> Space </span> to pick the selected region.";
 
-// Ideally the screenshot UI should support cross-output selections. However, that poses some
+// Ideally the selection UI should support cross-output selections. However, that poses some
 // technical challenges when the outputs have different scales and such. So, this implementation
 // allows only single-output selections for now.
 //
 // As a consequence of this, selection coordinates are in output-local coordinate space.
 #[allow(clippy::large_enum_variant)]
-pub enum ScreenshotUi {
+pub enum SelectionUi {
     Closed {
         last_selection: Option<(WeakOutput, Rectangle<i32, Physical>)>,
         clock: Clock,
@@ -63,8 +65,26 @@ pub enum ScreenshotUi {
         open_anim: Animation,
         clock: Clock,
         config: Rc<RefCell<Config>>,
-        path: Option<String>,
+        mode: SelectionMode,
     },
+}
+
+/// What is the selection used for.
+pub enum SelectionMode {
+    /// Capture and save a screenshot.
+    Screenshot { path: Option<String> },
+    /// Send the selection back.
+    PickRegion(async_channel::Sender<niri_ipc::PickedRegion>),
+}
+
+impl SelectionMode {
+    /// Whether the UI shows a frozen screen.
+    pub fn is_frozen(&self) -> bool {
+        match self {
+            SelectionMode::Screenshot { .. } => true,
+            SelectionMode::PickRegion(_) => false,
+        }
+    }
 }
 
 /// State for moving the selection (as opposed to just drawing).
@@ -90,11 +110,29 @@ pub struct OutputData {
     size: Size<i32, Physical>,
     scale: f64,
     transform: Transform,
-    // Output, screencast, screen capture.
-    screenshot: [OutputScreenshot; 3],
+    // Output, screencast, screen capture. `None` when the mode is not frozen.
+    screenshot: Option<[OutputScreenshot; 3]>,
     buffers: [SolidColorBuffer; 8],
     locations: [Point<i32, Physical>; 8],
-    panel: Option<(TextureBuffer<GlesTexture>, TextureBuffer<GlesTexture>)>,
+    panel: Option<Panel>,
+}
+
+/// Help panel shown at the bottom of the selection UI.
+enum Panel {
+    Single(TextureBuffer<GlesTexture>),
+    PointerToggle {
+        show: TextureBuffer<GlesTexture>,
+        hide: TextureBuffer<GlesTexture>,
+    },
+}
+
+impl OutputData {
+    fn panel(&self, show_pointer: bool) -> Option<&TextureBuffer<GlesTexture>> {
+        match self.panel.as_ref()? {
+            Panel::Single(texture) => Some(texture),
+            Panel::PointerToggle { show, hide } => Some(if show_pointer { hide } else { show }),
+        }
+    }
 }
 
 pub struct OutputScreenshot {
@@ -104,7 +142,7 @@ pub struct OutputScreenshot {
 }
 
 niri_render_elements! {
-    ScreenshotUiRenderElement => {
+    SelectionUiRenderElement => {
         Screenshot = PrimaryGpuTextureRenderElement,
         SolidColor = SolidColorRenderElement,
     }
@@ -126,7 +164,7 @@ impl Button {
     }
 }
 
-impl ScreenshotUi {
+impl SelectionUi {
     pub fn new(clock: Clock, config: Rc<RefCell<Config>>) -> Self {
         Self::Closed {
             last_selection: None,
@@ -139,10 +177,10 @@ impl ScreenshotUi {
         &mut self,
         renderer: &mut GlesRenderer,
         // Output, screencast, screen capture.
-        screenshots: HashMap<Output, [OutputScreenshot; 3]>,
+        screenshots: HashMap<Output, Option<[OutputScreenshot; 3]>>,
         default_output: Output,
         show_pointer: bool,
-        path: Option<String>,
+        mode: SelectionMode,
     ) -> bool {
         if screenshots.is_empty() {
             return false;
@@ -207,9 +245,13 @@ impl ScreenshotUi {
                         .map_err(|err| warn!("error rendering help panel: {err:?}"))
                         .ok()
                 };
-                let panel_show = render_panel_(TEXT_SHOW_P);
-                let panel_hide = render_panel_(TEXT_HIDE_P);
-                let panel = Option::zip(panel_show, panel_hide);
+                let panel = match mode {
+                    SelectionMode::Screenshot { .. } => {
+                        Option::zip(render_panel_(TEXT_SHOW_P), render_panel_(TEXT_HIDE_P))
+                            .map(|(show, hide)| Panel::PointerToggle { show, hide })
+                    }
+                    SelectionMode::PickRegion(_) => render_panel_(TEXT_PICK).map(Panel::Single),
+                };
 
                 let data = OutputData {
                     size,
@@ -237,7 +279,7 @@ impl ScreenshotUi {
             open_anim,
             clock: clock.clone(),
             config: config.clone(),
-            path,
+            mode,
         };
 
         self.update_buffers();
@@ -271,13 +313,22 @@ impl ScreenshotUi {
     }
 
     pub fn toggle_pointer(&mut self) {
-        if let Self::Open { show_pointer, .. } = self {
-            *show_pointer = !*show_pointer;
+        if let Self::Open {
+            show_pointer, mode, ..
+        } = self
+        {
+            if mode.is_frozen() {
+                *show_pointer = !*show_pointer;
+            }
         }
     }
 
     pub fn is_open(&self) -> bool {
-        matches!(self, ScreenshotUi::Open { .. })
+        matches!(self, SelectionUi::Open { .. })
+    }
+
+    pub fn is_frozen(&self) -> bool {
+        matches!(self, SelectionUi::Open { mode, .. } if mode.is_frozen())
     }
 
     pub fn set_space_down(&mut self, down: bool) {
@@ -553,7 +604,7 @@ impl ScreenshotUi {
             ..
         } = self
         else {
-            panic!("screenshot UI must be open to update buffers");
+            panic!("selection UI must be open to update buffers");
         };
 
         let (selection_output, a, b) = selection;
@@ -623,9 +674,9 @@ impl ScreenshotUi {
         &self,
         output: &Output,
         target: RenderTarget,
-        push: &mut dyn FnMut(ScreenshotUiRenderElement),
+        push: &mut dyn FnMut(SelectionUiRenderElement),
     ) {
-        let _span = tracy_client::span!("ScreenshotUi::render_output");
+        let _span = tracy_client::span!("SelectionUi::render_output");
 
         let Self::Open {
             output_data,
@@ -635,7 +686,7 @@ impl ScreenshotUi {
             ..
         } = self
         else {
-            panic!("screenshot UI must be open to render it");
+            panic!("selection UI must be open to render it");
         };
 
         let Some(output_data) = output_data.get(output) else {
@@ -646,8 +697,7 @@ impl ScreenshotUi {
         let progress = open_anim.clamped_value().clamp(0., 1.) as f32;
 
         // The help panel goes on top.
-        if let Some((show, hide)) = &output_data.panel {
-            let buffer = if *show_pointer { hide } else { show };
+        if let Some(buffer) = output_data.panel(*show_pointer) {
             let alpha = if button.is_dragging_selection() {
                 0.3
             } else {
@@ -679,12 +729,15 @@ impl ScreenshotUi {
         }
 
         // The screenshot itself goes last.
+        let Some(screenshot) = &output_data.screenshot else {
+            return;
+        };
         let index = match target {
             RenderTarget::Output => 0,
             RenderTarget::Screencast => 1,
             RenderTarget::ScreenCapture => 2,
         };
-        let screenshot = &output_data.screenshot[index];
+        let screenshot = &screenshot[index];
 
         if *show_pointer {
             if let Some(pointer) = screenshot.pointer.clone() {
@@ -698,7 +751,7 @@ impl ScreenshotUi {
         &self,
         renderer: &mut GlesRenderer,
     ) -> anyhow::Result<(Size<i32, Physical>, Vec<u8>)> {
-        let _span = tracy_client::span!("ScreenshotUi::capture");
+        let _span = tracy_client::span!("SelectionUi::capture");
 
         let Self::Open {
             selection,
@@ -707,13 +760,16 @@ impl ScreenshotUi {
             ..
         } = self
         else {
-            panic!("screenshot UI must be open to capture");
+            panic!("selection UI must be open to capture");
         };
 
         let data = &output_data[&selection.0];
         let rect = rect_from_corner_points(selection.1, selection.2);
 
-        let screenshot = &data.screenshot[0];
+        let screenshot = &data
+            .screenshot
+            .as_ref()
+            .context("no screenshot was captured")?[0];
 
         // Composite the pointer on top if needed.
         let mut tex_rect = None;
@@ -969,8 +1025,7 @@ impl ScreenshotUi {
             return false;
         };
 
-        if let Some((show, hide)) = &output_data.panel {
-            let buffer = if *show_pointer { hide } else { show };
+        if let Some(buffer) = output_data.panel(*show_pointer) {
             let panel_size = buffer.texture().size();
             let location = panel_location(output_data, panel_size);
 
@@ -1049,8 +1104,7 @@ impl ScreenshotUi {
                 return None;
             };
 
-            if let Some((show, hide)) = &output_data.panel {
-                let buffer = if *show_pointer { hide } else { show };
+            if let Some(buffer) = output_data.panel(*show_pointer) {
                 let panel_size = buffer.texture().size();
                 let location = panel_location(output_data, panel_size);
 
@@ -1170,7 +1224,7 @@ fn render_panel(
     scale: f64,
     text: &str,
 ) -> anyhow::Result<TextureBuffer<GlesTexture>> {
-    let _span = tracy_client::span!("screenshot_ui::render_panel");
+    let _span = tracy_client::span!("selection_ui::render_panel");
 
     let padding: i32 = to_physical_precise_round(scale, PADDING);
     // Keep the border width even to avoid blurry edges.
@@ -1194,11 +1248,10 @@ fn render_panel(
     layout.set_markup(text);
     layout.set_spacing(spacing);
 
-    let (mut width, mut height) = layout.pixel_size();
+    let (mut width, text_height) = layout.pixel_size();
 
     width += padding + radius * 2 + padding - half_border_width + padding;
-    height = max(height, radius * 2);
-    height += padding * 2;
+    let height = max(text_height, radius * 2) + padding * 2;
 
     let surface = ImageSurface::create(cairo::Format::ARgb32, width, height)?;
     let cr = cairo::Context::new(&surface)?;
@@ -1226,7 +1279,8 @@ fn render_panel(
     cr.set_source_rgb(1., 1., 1.);
     cr.fill()?;
 
-    cr.move_to(padding + r * 2. + padding - half_border_width, padding);
+    let text_y = f64::from((height - text_height) / 2);
+    cr.move_to(padding + r * 2. + padding - half_border_width, text_y);
 
     let layout = pangocairo::functions::create_layout(&cr);
     layout.context().set_round_glyph_positions(false);

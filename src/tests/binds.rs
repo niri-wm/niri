@@ -1951,7 +1951,7 @@ fn armed_modifier_release_runs_after_the_inhibitor_activates() {
 }
 
 #[test]
-fn egl_release_action_runs_when_press_opens_screenshot_ui() {
+fn egl_release_action_runs_when_press_opens_selection_ui() {
     // Release actions must always run if their press action ran,
     // including if the screenshot UI is opened before the key is released.
     let c = "
@@ -1976,7 +1976,7 @@ fn egl_release_action_runs_when_press_opens_screenshot_ui() {
         niri test-action
     -LWIN 133 XK_Super_L
     ");
-    assert!(f.niri().screenshot_ui.is_open());
+    assert!(f.niri().selection_ui.is_open());
 }
 
 #[test]
