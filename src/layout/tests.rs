@@ -490,6 +490,11 @@ enum Op {
     FocusWindowOrWorkspaceDown,
     FocusWindowOrWorkspaceUp,
     FocusWindow(#[proptest(strategy = "1..=5usize")] usize),
+    FocusWindowInPlace {
+        #[proptest(strategy = "1..=5usize")]
+        id: usize,
+        raise: bool,
+    },
     FocusWindowInColumn(#[proptest(strategy = "1..=5u8")] u8),
     FocusWindowTop,
     FocusWindowBottom,
@@ -1206,6 +1211,10 @@ impl Op {
             Op::FocusWindowOrWorkspaceDown => layout.focus_window_or_workspace_down(),
             Op::FocusWindowOrWorkspaceUp => layout.focus_window_or_workspace_up(),
             Op::FocusWindow(id) => layout.activate_window(&id),
+            Op::FocusWindowInPlace { id, raise: true } => layout.activate_window_in_place(&id),
+            Op::FocusWindowInPlace { id, raise: false } => {
+                layout.activate_window_in_place_without_raising(&id)
+            }
             Op::FocusWindowInColumn(index) => layout.focus_window_in_column(index),
             Op::FocusWindowTop => layout.focus_window_top(),
             Op::FocusWindowBottom => layout.focus_window_bottom(),
@@ -4928,4 +4937,62 @@ proptest! {
 
         check_ops_with_options(options, ops);
     }
+}
+
+#[test]
+fn focus_window_in_place_preserves_view_pos() {
+    let ops = [
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::SetColumnWidth(SizeChange::SetFixed(800)),
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+        Op::SetColumnWidth(SizeChange::SetFixed(800)),
+        Op::Communicate(1),
+        Op::Communicate(2),
+        Op::FocusWindow(1),
+        Op::CompleteAnimations,
+    ];
+
+    let mut layout = check_ops(ops);
+
+    // View pos is looking at the first window.
+    assert_snapshot!(layout.active_workspace().unwrap().scrolling().view_pos(), @"-16");
+
+    let ops = [
+        Op::FocusWindowInPlace { id: 2, raise: true },
+        Op::CompleteAnimations,
+    ];
+    check_ops_on_layout(&mut layout, ops);
+
+    // The second window is focused, but the view stays on the first window.
+    let ws = layout.active_workspace().unwrap();
+    assert_eq!(ws.active_window().unwrap().id(), &2);
+    assert_snapshot!(ws.scrolling().view_pos(), @"-16");
+
+    let ops = [
+        Op::SetWindowHeight {
+            id: Some(2),
+            change: SizeChange::SetFixed(100),
+        },
+        Op::Communicate(2),
+        Op::CompleteAnimations,
+    ];
+    check_ops_on_layout(&mut layout, ops);
+
+    // Height-only change doesn't move the view.
+    assert_snapshot!(layout.active_workspace().unwrap().scrolling().view_pos(), @"-16");
+
+    let ops = [
+        Op::SetColumnWidth(SizeChange::AdjustFixed(10)),
+        Op::Communicate(2),
+        Op::CompleteAnimations,
+    ];
+    check_ops_on_layout(&mut layout, ops);
+
+    // Width change scrolls the view to the second window.
+    assert_snapshot!(layout.active_workspace().unwrap().scrolling().view_pos(), @"362");
 }

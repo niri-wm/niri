@@ -105,6 +105,7 @@ input {
     // disable-power-key-handling
     // warp-mouse-to-focus
     // focus-follows-mouse max-scroll-amount="0%"
+    // focus-without-scrolling
     // workspace-auto-back-and-forth
 
     // mod-key "Super"
@@ -377,6 +378,24 @@ input {
     focus-follows-mouse outputs-only=true
 }
 ```
+
+#### `focus-without-scrolling`
+
+<sup>Since: next release</sup>
+
+Focus a partially visible window without scrolling the view to it.
+
+```kdl
+input {
+    focus-without-scrolling
+}
+```
+
+This applies to clicking, touching, and tablet tapping a window, and to focus-follows-mouse.
+Moving a window with `Mod`, the overview, and focusing with key bindings or IPC still scroll the view.
+When the focused window later resizes or goes fullscreen, the view scrolls to show it.
+
+Since focus-follows-mouse no longer scrolls the view with this flag, its `max-scroll-amount` has no effect.
 
 #### `workspace-auto-back-and-forth`
 

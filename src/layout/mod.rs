@@ -1564,42 +1564,28 @@ impl<W: LayoutElement> Layout<W> {
     }
 
     pub fn activate_window(&mut self, window: &W::Id) {
-        if let Some(InteractiveMoveState::Moving(move_)) = &self.interactive_move {
-            if move_.tile.window().id() == window {
-                return;
-            }
-        }
-
-        let MonitorSet::Normal {
-            monitors,
-            active_monitor_idx,
-            ..
-        } = &mut self.monitor_set
-        else {
-            return;
-        };
-
-        for (monitor_idx, mon) in monitors.iter_mut().enumerate() {
-            for (workspace_idx, ws) in mon.workspaces.iter_mut().enumerate() {
-                if ws.activate_window(window) {
-                    *active_monitor_idx = monitor_idx;
-
-                    // If currently in the middle of a vertical swipe between the target workspace
-                    // and some other, don't switch the workspace.
-                    match &mon.workspace_switch {
-                        Some(WorkspaceSwitch::Gesture(gesture))
-                            if gesture.current_idx.floor() == workspace_idx as f64
-                                || gesture.current_idx.ceil() == workspace_idx as f64 => {}
-                        _ => mon.switch_workspace(workspace_idx),
-                    }
-
-                    return;
-                }
-            }
-        }
+        self.activate_window_with(window, Workspace::activate_window);
     }
 
     pub fn activate_window_without_raising(&mut self, window: &W::Id) {
+        self.activate_window_with(window, Workspace::activate_window_without_raising);
+    }
+
+    /// Activates a window without moving the view.
+    pub fn activate_window_in_place(&mut self, window: &W::Id) {
+        self.activate_window_with(window, Workspace::activate_window_in_place);
+    }
+
+    /// Activates a window without raising it or moving the view.
+    pub fn activate_window_in_place_without_raising(&mut self, window: &W::Id) {
+        self.activate_window_with(window, Workspace::activate_window_in_place_without_raising);
+    }
+
+    fn activate_window_with(
+        &mut self,
+        window: &W::Id,
+        mut activate: impl FnMut(&mut Workspace<W>, &W::Id) -> bool,
+    ) {
         if let Some(InteractiveMoveState::Moving(move_)) = &self.interactive_move {
             if move_.tile.window().id() == window {
                 return;
@@ -1617,7 +1603,7 @@ impl<W: LayoutElement> Layout<W> {
 
         for (monitor_idx, mon) in monitors.iter_mut().enumerate() {
             for (workspace_idx, ws) in mon.workspaces.iter_mut().enumerate() {
-                if ws.activate_window_without_raising(window) {
+                if activate(ws, window) {
                     *active_monitor_idx = monitor_idx;
 
                     // If currently in the middle of a vertical swipe between the target workspace
