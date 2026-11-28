@@ -37,6 +37,7 @@ impl Shadow {
         win_size: Size<f64, Logical>,
         is_active: bool,
         radius: CornerRadius,
+        exponent: f32,
         scale: f64,
         alpha: f32,
     ) {
@@ -133,9 +134,11 @@ impl Shadow {
                     color,
                     sigma as f32,
                     radius,
+                    exponent,
                     scale as f32,
                     Rectangle::new(window_geo.loc - offset - rect.loc, window_geo.size),
                     win_radius,
+                    exponent,
                     alpha,
                 );
 
@@ -152,9 +155,11 @@ impl Shadow {
                 color,
                 sigma as f32,
                 radius,
+                exponent,
                 scale as f32,
                 Rectangle::zero(),
                 Default::default(),
+                exponent,
                 alpha,
             );
 
