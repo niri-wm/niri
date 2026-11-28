@@ -14,6 +14,7 @@
       niri-package =
         {
           lib,
+          bashNonInteractive,
           cairo,
           dbus,
           libGL,
@@ -26,6 +27,7 @@
           pipewire,
           pkg-config,
           rustPlatform,
+          stdenv,
           systemd,
           wayland,
           installShellFiles,
@@ -54,7 +56,8 @@
           };
 
           postPatch = ''
-            patchShebangs resources/niri-session
+            # --host so cross builds get a shell for the target, not the build machine
+            patchShebangs --host resources/niri-session
             substituteInPlace resources/niri.service \
               --replace-fail 'ExecStart=niri' "ExecStart=$out/bin/niri"
           '';
@@ -75,6 +78,7 @@
 
           buildInputs =
             [
+              bashNonInteractive # For niri-session
               cairo
               dbus
               libGL
@@ -115,14 +119,16 @@
 
           postInstall =
             ''
+              install -Dm644 resources/niri.desktop -t $out/share/wayland-sessions
+              install -Dm644 resources/niri-portals.conf -t $out/share/xdg-desktop-portal
+            ''
+            # Generating completions runs niri, which doesn't work when cross-compiling.
+            + lib.optionalString (stdenv.buildPlatform.canExecute stdenv.hostPlatform) ''
               installShellCompletion --cmd niri \
                 --bash <($out/bin/niri completions bash) \
                 --fish <($out/bin/niri completions fish) \
                 --nushell <($out/bin/niri completions nushell) \
                 --zsh <($out/bin/niri completions zsh)
-
-              install -Dm644 resources/niri.desktop -t $out/share/wayland-sessions
-              install -Dm644 resources/niri-portals.conf -t $out/share/xdg-desktop-portal
             ''
             + lib.optionalString withSystemd ''
               install -Dm755 resources/niri-session $out/bin/niri-session
