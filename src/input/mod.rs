@@ -777,13 +777,13 @@ impl State {
         // Handle the bind, if the result came with one.
         if let Some(bind) = result.into_bind() {
             if pressed && bind.repeat {
-                self.start_key_repeat(bind.clone());
+                self.start_bind_repeat(bind.clone());
             }
             self.handle_bind(bind, pressed, time);
         }
     }
 
-    fn start_key_repeat(&mut self, bind: Bind) {
+    fn start_bind_repeat(&mut self, bind: Bind) {
         if !bind.repeat {
             return;
         }
