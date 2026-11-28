@@ -1813,6 +1813,14 @@ impl State {
                 config.input.keyboard.repeat_rate.into(),
                 config.input.keyboard.repeat_delay.into(),
             );
+
+            if config.input.keyboard.repeat_rate != old_config.input.keyboard.repeat_rate {
+                // Stop ongoing key repeat if any. The user may have disabled key repeat.
+                if let Some(token) = self.niri.bind_repeat_timer.take() {
+                    self.niri.event_loop.remove(token);
+                }
+                self.niri.key_repeat.stop();
+            }
         }
 
         if config.input.touchpad != old_config.input.touchpad
