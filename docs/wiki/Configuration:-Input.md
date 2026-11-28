@@ -68,6 +68,11 @@ input {
         // natural-scroll
         // accel-speed 0.2
         // accel-profile "flat"
+        // accel-profile "custom"
+        // accel-custom-curve {
+        //     step 0.5
+        //     points 0.0 0.0 0.1 0.2 0.5 0.8 1.0 1.0
+        // }
         // scroll-method "on-button-down"
         // scroll-button 273
         // scroll-button-lock
@@ -238,7 +243,8 @@ A few settings are common between `touchpad`, `mouse`, `trackpoint`, and `trackb
 
 - `natural-scroll`: if set, inverts the scrolling direction.
 - `accel-speed`: pointer acceleration speed, valid values are from `-1.0` to `1.0` where the default is `0.0`.
-- `accel-profile`: can be `adaptive` (the default) or `flat` (disables pointer acceleration).
+- `accel-profile`: can be `adaptive` (the default), `flat` (disables pointer acceleration), or `custom` (requires libinput 1.23+).
+- `accel-custom-curve`: <sup>Since: next release</sup> defines a custom acceleration curve when `accel-profile` is set to `custom`. See [Custom Acceleration Curves](#custom-acceleration-curves) below for details.
 - `scroll-method`: when to generate scroll events instead of pointer motion events, can be `no-scroll`, `two-finger`, `edge`, or `on-button-down`.
   The default and supported methods vary depending on the device type.
 - `scroll-button`: <sup>Since: 0.1.10</sup> the button code used for the `on-button-down` scroll method. You can find it in `libinput debug-events`.
@@ -298,6 +304,69 @@ Falls back to those when no window is focused (for example, in the overview).
 
     When the tablet is also mapped to a specific output via `map-to-output`, the `map-to-focused-window` flag will map the tablet to the active window on that output.
     If the tablet isn't mapped to any specific output, it will map the tablet to the current focused window regardless of where it is.
+
+#### Custom Acceleration Curves
+
+<sup>Since: next release</sup>
+
+> **Note**: Custom acceleration curves require libinput 1.23 or later. The configuration parsing is available now, but the actual curve application will only work when libinput 1.23+ bindings become available in the `input` crate. Until then, setting `accel-profile "custom"` will fall back to the `adaptive` profile with a warning in the logs.
+
+Custom acceleration curves allow you to define precise pointer acceleration behavior using a Bezier curve. This is particularly useful for trackpoints and other input devices where you want fine-grained control over acceleration.
+
+A custom curve is defined by:
+- **step**: The step size in device units per curve point (floating point number)
+- **points**: A list of alternating x,y coordinates that define the Bezier curve points
+
+The x values represent normalized input speed (0.0 to 1.0), and the y values represent the output acceleration multiplier.
+
+Example configuration for a trackpoint with aggressive acceleration:
+
+```kdl
+input {
+    trackpoint {
+        accel-profile "custom"
+        accel-custom-curve {
+            step 0.5
+            points 0.0 0.0 0.1 0.2 0.5 0.8 1.0 1.0
+        }
+        natural-scroll
+        accel-speed 0.5
+    }
+}
+```
+
+Example with linear acceleration (1:1 mapping):
+
+```kdl
+input {
+    mouse {
+        accel-profile "custom"
+        accel-custom-curve {
+            step 1.0
+            points 0.0 0.0 1.0 1.0
+        }
+    }
+}
+```
+
+Example with gentle touchpad acceleration:
+
+```kdl
+input {
+    touchpad {
+        accel-profile "custom"
+        accel-custom-curve {
+            step 0.3
+            // Starts slow, accelerates smoothly
+            points 0.0 0.0 0.2 0.15 0.5 0.45 0.8 0.75 1.0 1.0
+        }
+        tap
+        natural-scroll
+    }
+}
+```
+
+For more information about custom acceleration curves, see the [libinput documentation](https://wayland.freedesktop.org/libinput/doc/latest/pointer-acceleration.html#ptraccel-profile-custom).
 
 ### General Settings
 
